@@ -159,7 +159,7 @@ const Controls = ({
         </div>
 
         {/* Tools Grid */}
-        <div className="ff-card">
+        <div className="ff-card ff-card-tools">
           <div className="ff-card-header">LZ/PZ Tools</div>
           <div className="tool-grid">
             <button onClick={addHelo} className="ff-tool-btn" title="Add Helo">
@@ -251,7 +251,7 @@ const Controls = ({
         </div>
 
         {/* Export Controls */}
-        <div className="ff-card">
+        <div className="ff-card ff-card-export">
           <div className="ff-card-header">Export</div>
           <div className="export-controls">
             <button
