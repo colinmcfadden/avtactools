@@ -1,0 +1,90 @@
+
+
+/* frontend/src/App.css */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.app-container {
+  display: flex;
+  height: 100vh; /* Full Viewport Height */
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* The Sidebar (Left) */
+.sidebar {
+  width: 300px;
+  background-color: #092137;
+  padding: 0px;
+  box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+  z-index: 1000; /* Keep controls above map */
+  display: flex;
+  flex-direction: column;
+  position: relative; /* Critical for placing the logo */
+  overflow: hidden;   /* Chops off the logo if it gets too big */
+  z-index: 0;         /* Establishes stacking context */
+}
+
+.sidebar::before {
+  content: "";
+  position: absolute;
+  
+  /* Center the logo */
+  top: 35%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  
+  width: 100%; 
+  height: 100%; 
+  
+  background-image: url('/public/img/171-blue.png');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: 200%;
+  opacity: 0.07;
+  pointer-events: none; /* Clicks pass through to the map/tools */
+  z-index: -1; /* Puts it behind the text content */
+}
+
+/* The Map Area (Right) */
+.map-area {
+  flex-grow: 1; /* Take up all remaining space */
+  position: relative;
+  height: 100%; /* Critical for Leaflet */
+}
+
+/* Fix for Leaflet Map Container */
+.leaflet-container {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+/* Input Styling */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+input {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+button {
+  padding: 10px;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.btn-primary { background-color: #007bff; color: white; }
+.btn-primary:hover { background-color: #0056b3; }
+
+.btn-secondary { background-color: #28a745; color: white; }
+.btn-export { background-color: #6c757d; color: white; }

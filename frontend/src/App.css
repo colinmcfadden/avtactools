@@ -1,0 +1,606 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --ff-bg-dark: #111827;       /* Very dark navy */
+  --ff-panel-bg: #1f2937;      /* Lighter navy for cards */
+  --ff-panel-bg-rgb: rgb(15, 23, 42); 
+  --ff-border: #374151;        /* Subtle borders */
+  --ff-text-main: #f3f4f6;     /* Off-white */
+  --ff-text-muted: #9ca3af;    /* Gray text */
+  --ff-accent: #00b5e2;        /* Foreflight Blue */
+  --ff-accent-hover: #009dc4;
+  --ff-success: #10b981;
+  --ff-warning: #f59e0b;
+  --ff-danger: #ef4444;
+
+  --ff-font-stack: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* --- Base Layout --- */
+body, html, .App {
+  height: 100%;
+  margin: 0;
+  overflow: hidden; /* Prevent body scroll, handle inside components */
+  background-color: var(--ff-bg-dark);
+  color: var(--ff-text-main);
+  font-family: var(--ff-font-stack);
+}
+
+.ms-value, .ms-value.lg {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Controls Container (The Sidebar) --- */
+.controls-container {
+  /* This class likely wraps the <Controls /> component in your App.js */
+  height: 100vh;
+  background-color: var(--ff-bg-dark);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #000;
+  box-sizing: border-box;
+  overflow: hidden;
+  position: relative; /* Critical for placing the logo */
+  z-index: 0;         /* Establishes stacking context */
+}
+
+.tactical-header {
+  display: flex;
+  align-items: baseline; /* Aligns version tag to the bottom of the main text */
+  margin: 1em 0;
+  padding: 0 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.version-tag {
+  font-family: var(--ff-font-stack);
+  font-size: 0.65rem;           /* Matches the small analysis labels */
+  font-weight: 600;
+  color: var(--ff-text-muted);  /* Uses your muted gray color */
+  text-transform: uppercase;    /* Forced capitalization */
+  letter-spacing: 0.05em;       /* Tactical tracking/spacing */
+  opacity: 0.8;
+  position: relative;
+  top: -1px; 
+  margin-left: 5px                   /* Tiny visual adjustment for alignment */
+}
+/* --- Main Panel Structure --- */
+.ff-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ff-section {
+  padding: 12px;
+  border: 1px solid var(--ff-border);
+  border-radius: 8px;
+}
+
+/* Search Header Styling */
+.search-section {
+  background-color: var(--ff-panel-bg);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  margin: 0 5px;
+}
+
+.ff-label {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ff-text-muted);
+  margin-bottom: 4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  z-index: 2;
+}
+
+.ff-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.ff-input {
+  flex: 1;
+  background-color: var(--ff-bg-dark);
+  border: 1px solid var(--ff-border);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+}
+
+.ff-input:focus {
+  border-color: var(--ff-accent);
+}
+
+/* --- Scrollable Content Area (No Scrollbar) --- */
+.ff-scroll-content {
+  flex: 1; /* This tells this div to take up ALL available vertical space */
+  overflow-y: auto; /* Enable the scrollbar only for this section */
+  padding: 8px;
+  
+  /* Standard scrollbar styling so you can actually see it */
+  scrollbar-width: thin;
+  scrollbar-color: var(--ff-border) transparent;
+}
+
+.ff-scroll-content::-webkit-scrollbar {
+  width: 6px;
+}
+.ff-scroll-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ff-scroll-content::-webkit-scrollbar-thumb {
+  background-color: var(--ff-border);
+  border-radius: 10px;
+}
+
+/* --- Instrument Cards / Tiles --- */
+.ff-card {
+  background-color: rgba(var(--ff-panel-bg-rgb), 0.8);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--ff-border);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px); /* Safari support */
+}
+
+.ff-card-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--ff-accent);
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  z-index: 2;
+}
+
+/* --- Buttons & Tools --- */
+.ff-btn {
+  padding: 0 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.ff-btn.primary {
+  background-color: var(--ff-accent);
+  color: white;
+}
+.ff-btn.primary:hover { background-color: var(--ff-accent-hover); }
+
+/* Tool Grid (4 columns) */
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 5px;
+  align-items: stretch; /* Ensure all items match height */
+}
+
+.ff-tool-btn {
+  width: 100%;
+  height: 100%;
+  background-color: var(--ff-bg-dark);
+  border: 1px solid var(--ff-border);
+  border-radius: 6px;
+  aspect-ratio: 1; /* Square buttons */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: white;
+  padding: 4px;
+  transition: background 0.2s;
+}
+
+.ff-tool-btn:hover {
+  background-color: #374151;
+  border-color: var(--ff-accent);
+}
+
+.ff-tool-btn .btn-label {
+  font-size: 10px;
+  margin-top: 4px;
+  color: var(--ff-text-muted);
+}
+
+.icon-img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+/* --- Action Buttons (Full width) --- */
+.ff-button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.ff-action-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: center;
+}
+
+.ff-action-btn.warning { background-color: var(--ff-warning); color: #111; }
+.ff-action-btn.blue { background-color: var(--ff-accent); }
+.ff-action-btn.green { background-color: var(--ff-success); }
+.ff-action-btn.disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* --- Toggle Switches --- */
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 15px;
+  background: rgba(0,0,0,0.2);
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+
+.switch input { 
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #4b5563;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: var(--ff-accent);
+}
+
+input:checked + .slider:before {
+  transform: translateX(16px);
+}
+
+.slider.round {
+  border-radius: 34px;
+}
+.slider.round:before {
+  border-radius: 50%;
+}
+
+/* --- Legend & Stats --- */
+.ff-stat-block {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ff-border);
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.mini-legend {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--ff-text-muted);
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 4px;
+}
+.dot.safe { background: #22c55e; }
+.dot.caution { background: #f59e0b; }
+.dot.danger { background: #ef4444; }
+
+/* --- Dropdown Menu --- */
+.relative-wrapper { position: relative; }
+
+.ff-dropdown {
+  position: fixed;
+  width: 220px; /* Wider to prevent text cutting */
+  background: var(--ff-panel-bg);
+  border: 1px solid var(--ff-accent);
+  border-radius: 6px;
+  box-shadow: 5px 5px 25px rgba(0,0,0,0.8);
+  z-index: 10000; /* Must be higher than Leaflet's 1000 */
+  overflow: visible;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  white-space: nowrap; /* Prevent text from wrapping */
+  color: var(--ff-text-main);
+  border-bottom: 1px solid var(--ff-border);
+  cursor: pointer;
+}
+
+.dropdown-item:hover {
+  background-color: var(--ff-accent);
+  color: white;
+}
+
+.dropdown-item img {
+  width: 24px;
+  height: 18px;
+  margin-right: 12px;
+  object-fit: contain;
+}
+
+/* --- Progress Bar --- */
+.progress-bar-bg {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 10px 10px 10px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #4ade80; /* Match your green button */
+  transition: width 0.3s ease;
+}
+
+/* --- Leaflet Overrides for Dark Mode --- */
+.leaflet-div-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Export handles visibility logic */
+body.hide-export-handles .export-move-handle,
+body.hide-export-handles .export-resize-handle,
+body.export-mode-active .export-handle,
+body.export-mode-active .leaflet-control-container {
+  display: none !important;
+}
+
+.hide-ui-for-export .leaflet-control-container,
+.hide-ui-for-export .ff-panel,
+.hide-ui-for-export .export-handle, 
+.hide-ui-for-export .export-box-handle {
+    display: none !important;
+}
+
+.export-controls {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.ff-action-btn.blue, 
+.ff-action-btn.green {
+  flex: 1; /* Each takes exactly 50% */
+  height: 38px;
+  font-size: 10px; /* Slightly smaller to prevent text wrapping */
+  text-transform: uppercase;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap; /* Prevents text from stacking */
+  padding: 0 4px;
+}
+
+/* --- MISSION GRID LAYOUT --- */
+.mission-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr); /* 6 Columns for flexibility */
+  gap: 8px; /* Space between tiles */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* --- TILE BASE STYLES --- */
+.ms-tile {
+  background-color: #1f2937; /* Dark Navy Tile Background */
+  border: 1px solid #374151; /* Subtle Border */
+  border-radius: 6px;
+  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center; /* Center content horizontally */
+  min-height: 60px;
+}
+
+/* Span helpers */
+.span-2 { grid-column: span 2; }
+.span-3 { grid-column: span 3; }
+.span-6 { grid-column: span 6; }
+
+/* --- TYPOGRAPHY --- */
+.ms-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #9ca3af; /* Muted Gray */
+  margin-bottom: 2px;
+  width: 100%;
+  text-align: left; /* Keep labels anchored left */
+}
+
+/* Large Value (for Capacity/Area) */
+.ms-value.lg {
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+/* Standard Value (for Weather) */
+.ms-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f3f4f6; /* Off-white */
+}
+
+/* Unit Text (Smaller, different color) */
+.ms-unit {
+  font-size: 11px;
+  color: #6b7280; /* Darker Gray */
+  margin-left: 2px;
+  font-weight: 600;
+  position: relative;
+  top: 1px; /* Visual alignment */
+}
+
+/* Row wrapper for Value + Unit */
+.ms-value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  width: 100%;
+}
+
+.highlight {
+  color: white; 
+}
+
+/* --- SLOPE ALERT TILE --- */
+.slope-alert-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: none; /* Alerts usually don't need borders if bg is bright */
+}
+
+.slope-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: rgba(0,0,0, 0.6); /* Semi-transparent black for contrast on color */
+  margin-bottom: 0;
+}
+
+.slope-main-text {
+  font-size: 24px;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: rgba(0,0,0, 0.85);
+  line-height: 1;
+}
+
+/* Alert Backgrounds */
+.status-safe { 
+  background-color: #22c55e; /* Green */
+}
+.status-warning { 
+  background-color: #f59e0b; /* Amber */
+}
+.status-danger { 
+  background-color: #ef4444; /* Red */
+}
+
+/* --- MISC --- */
+.wind-arrow {
+  color: #f3f4f6;
+  font-size: 14px;
+  margin-right: 4px;
+}
+
+.station-id {
+  font-size: 9px;
+  color: #00b5e2; /* ForeFlight Blue */
+  margin-top: 2px;
+  text-align: right;
+  width: 100%;
+}
+
+.ms-loading {
+  font-size: 12px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.loading-overlay {
+  position: fixed; /* fix to viewport, ignoring parent containers */
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(9, 33,55, 0.75); /* Dark background */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999; /* Ensure it sits on top of Leaflet (usually z-index 400-1000) */
+  backdrop-filter: blur(4px); /* Optional: Adds a nice blur to the map behind it */
+}
+
+.loader-container {
+  text-align: center;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.loading-text {
+  font-size: 1rem;
+  color: #00b5e2; /* Cyan tactical color */
+}
+
+/* Simple Spinner Animation */
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #00b5e2;
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
