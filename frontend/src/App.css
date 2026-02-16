@@ -357,6 +357,7 @@ input:checked + .slider:before {
 
 .ff-dropdown {
   position: fixed;
+  right: 0;
   width: 220px; /* Wider to prevent text cutting */
   background: var(--ff-panel-bg);
   border: 1px solid var(--ff-accent);
