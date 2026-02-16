@@ -17,11 +17,11 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [showLZOutline, setShowLZOutline] = useState(true);
   const [sectors, setSectors] = useState([]);
-
-  // EXPORT STATE
   const [exportBox, setExportBox] = useState(null); // Just the Red Box bounds now
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+
+  const API_BASE_URL = process.env.REACT_APP_API_URL;
 
   const enableExportMode = () => {
     if (!targetLocation) {
@@ -207,7 +207,7 @@ function App() {
   const fetchTerrainAnalysis = async (polygon) => {
     try {
       const response = await fetch(
-        "http://127.0.0.1:5000/api/terrain-analysis",
+        `${API_BASE_URL}/terrain-analysis`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
