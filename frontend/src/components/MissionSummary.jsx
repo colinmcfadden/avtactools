@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 
+const API_BASE_URL = process.env.BASE_API_URL;
+
 // --- HELPER: Calculate Polygon Area ---
 const getPolygonArea = (coords) => {
   if (!coords || coords.length < 3) return 0;
@@ -59,7 +61,7 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation }) => {
       setLoadingWeather(true);
       try {
         const [lat, lon] = targetLocation;
-        const url = `http://localhost:5000/api/weather?lat=${lat}&lng=${lon}`;
+        const url = `${API_BASE_URL}/weather?lat=${lat}&lng=${lon}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
