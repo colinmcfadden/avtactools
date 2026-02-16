@@ -28,7 +28,7 @@ const Controls = ({
   const [gridInput, setGridInput] = useState("16SGD63383202");
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
-  const API_BASE_URL = process.env.BASE_API_URL;
+  const API_BASE_URL = process.env.REACT_APP_API_URL;
 
   // Reusable SVG for PZ Button
   const pzButtonSvg = (

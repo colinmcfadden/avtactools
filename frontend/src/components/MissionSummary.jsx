@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
 
-const API_BASE_URL = process.env.BASE_API_URL;
+const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 // --- HELPER: Calculate Polygon Area ---
 const getPolygonArea = (coords) => {
