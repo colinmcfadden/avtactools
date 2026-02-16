@@ -28,6 +28,8 @@ const Controls = ({
   const [gridInput, setGridInput] = useState("16SGD63383202");
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
+  const API_BASE_URL = process.env.BASE_API_URL;
+
   // Reusable SVG for PZ Button
   const pzButtonSvg = (
     <svg
@@ -64,13 +66,13 @@ const Controls = ({
   const handleSearch = async () => {
     setLoading(true);
     try {
-      const res = await axios.post("http://localhost:5000/api/convert-grid", {
+      const res = await axios.post(`${API_BASE_URL}/convert-grid`, {
         grid: gridInput,
       });
       const { lat, lon } = res.data;
       setTargetLocation([lat, lon]);
       const analysis = await axios.post(
-        "http://localhost:5000/api/analyze-field",
+        `${API_BASE_URL}/analyze-field`,
         {
           lat,
           lon,
