@@ -2,11 +2,74 @@ from flask import Blueprint, request, send_file, jsonify, current_app
 import zipfile
 import os
 import io
+from openpyxl import load_workbook
+from openpyxl.drawing.image import Image as ExcelImage
+from io import BytesIO
 
-# CHANGED: Import the new function that handles Blue(Tiff) vs Red(Jpg) logic
 from export_service import generate_custom_package
 
 export_bp = Blueprint('export_bp', __name__)
+
+@export_bp.route('/api/generate-excel', methods=['POST'])
+def generate_excel():
+    # 1. Get Data and Image from the request
+    # (Assuming you send data as form-data: 'json_data' and 'map_image')
+    data = request.form 
+    #image_file = 'lz.jpg' #request.files['map_image']
+
+    # 2. Load the Template
+    template_path = 'lz_template.xlsx'
+    wb = load_workbook(template_path)
+    ws = wb.active  # Get the first sheet
+
+    # 3. Fill in the Text Data (Mapping specific cells)
+    ws['A1'] = data.get('lz_label')
+    ws['B1'] = data.get('lz_name')
+
+    ws['D2'] = data.get('objective')
+    ws['D3'] = data.get('mgrs_grid')
+    ws['D4'] = data.get('lat_long')
+    ws['D5'] = data.get('elevation')
+    
+    # Bottom Data Block
+    ws['A23'] = data.get('call_sign')
+    ws['C23'] = data.get('freq')
+    ws['D23'] = data.get('formation')
+    ws['E23'] = data.get('land_dir')
+    ws['H23'] = data.get('go_around')
+    ws['J23'] = data.get('takeoff_dir')
+    ws['J25'] = data.get('formation')
+    ws['F24'] = data.get('door')
+    ws['F25'] = data.get('load')
+    ws['D25'] = data.get('weapons_status')
+    ws['A26'] = data.get('remarks')
+
+    ws['A28'] = data.get('lz_label')
+    ws['B28'] = data.get('lz_name')
+
+    # 4. Insert the Map Image
+    # Need to process the image stream to make it Excel-compatible
+    #img_stream = BytesIO(image_file.read())
+    img = ExcelImage('lz.jpg')
+    
+    # Resize image to fit the cell
+    img.width = 663
+    img.height = 555
+    
+    # Anchor the image to a specific cell (Top-Left corner of the image)
+    ws.add_image(img, 'A6')
+
+    # 5. Save to Memory and Return
+    output_stream = BytesIO()
+    wb.save(output_stream)
+    output_stream.seek(0)
+
+    return send_file(
+        output_stream,
+        as_attachment=True,
+        download_name=f"{data.get('lz_label', 'LZ')}_{data.get('lz_name', 'CARD')}.xlsx",
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 @export_bp.route('/api/export-package', methods=['POST'])
 def export_package():

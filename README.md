@@ -16,17 +16,34 @@ It leverages a responsive React frontend for the mission interface and a Python/
     * **Interactive Markers:** Drag-and-drop tools for Helo, PZ, Sector, Unit icons and go around markers.
 * **📤 Export Capabilities:** Generate high-resolution, mission-ready "LZ Cards" (images).
 
-
-
-
-
-
 # 🚀 Getting Started
 ## Prerequisites
 * Node.js (v16+)
 * Python (v3.11+)
 * Docker (optional, for testing backend container)
 * A Mapbox API Key (optional, if using Mapbox tiles)
+
+### Project Structure
+```
+lz-card-caddy/
+├── frontend/                # React Application
+│   ├── public/              # Static assets
+│   ├── src/
+│   │   ├── components/      # UI Components (Sidebar, MapTools)
+│   │   ├── App.js           # Main Entry
+│   │   └── App.css          # Styles
+│   └── package.json
+│
+├── backend/                 # Python API
+│   ├── src/
+│   │   ├── routes/          # API Routes (Terrain, Export)
+│   │   └── app.py           # Flask Entry Point
+│   ├── sam_b.pt             # AI Model Weights (Git LFS)
+│   ├── Dockerfile           # HF Spaces Config
+│   └── requirements.txt     # Python Dependencies
+│
+└── README.md                # You are here
+```
 
 ## Installation (Frontend)
 The frontend handles the UI and map interactions.
@@ -86,25 +103,3 @@ The backend requires a Docker container due to system dependencies (OpenCV) and 
 2. Upload sam_b.pt via the Files tab (Git LFS).
 3. Ensure your Dockerfile and README.md metadata are configured correctly (see Dockerfile in repo).
 4. The Space will build and provide a URL. Use this URL in your Frontend config.
-
-# 📂 Project Structure
-```
-lz-card-caddy/
-├── frontend/                # React Application
-│   ├── public/              # Static assets
-│   ├── src/
-│   │   ├── components/      # UI Components (Sidebar, MapTools)
-│   │   ├── App.js           # Main Entry
-│   │   └── App.css          # Styles
-│   └── package.json
-│
-├── backend/                 # Python API
-│   ├── src/
-│   │   ├── routes/          # API Routes (Terrain, Export)
-│   │   └── app.py           # Flask Entry Point
-│   ├── sam_b.pt             # AI Model Weights (Git LFS)
-│   ├── Dockerfile           # HF Spaces Config
-│   └── requirements.txt     # Python Dependencies
-│
-└── README.md                # You are here
-```
