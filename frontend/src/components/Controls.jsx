@@ -220,7 +220,7 @@ const Controls = ({
               )}
             </div>
           </div>
-          <div class="tool-grid">
+          <div className="tool-grid">
             <button className="ff-tool-btn" onClick={() => addGoAround("left")}>
               <svg width="24" height="24" viewBox="0 0 100 100">
                 <path

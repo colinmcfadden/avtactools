@@ -650,7 +650,7 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
                     !node.classList?.contains('ff-panel');
            }
         });
-        setExportProgress(60);
+        setExportProgress(40);
 
         // 5. Calculate Crop Coordinates
         // These points are relative to the map container's Top-Left (0,0)
@@ -680,17 +680,32 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
         // source(x,y,w,h) -> dest(0,0,w,h)
         ctx.drawImage(fullCanvas, x, y, w, h, 0, 0, w, h);
 
-        setExportProgress(90);
+        cropCanvas.toBlob((blob) => {
+            setExportProgress(50);
+            
+            // Clean up UI
+            const mapContainer = map.getContainer();
+            mapContainer.classList.remove('hide-ui-for-export');
+            
+            setTimeout(() => {
+                processingRef.current = false;
+                // PASS THE BLOB UP TO APP.JS
+                onExportComplete(blob); 
+            }, 500);
+
+        }, 'image/jpeg', 1.0);
+
+        setExportProgress(60);
 
         // 7. Download
-        const link = document.createElement("a");
-        link.download = `LZ_Diagram_${Date.now()}.jpg`;
-        link.href = cropCanvas.toDataURL('image/jpeg', 1.0);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        //const link = document.createElement("a");
+        //link.download = `LZ_Diagram_${Date.now()}.jpg`;
+        //link.href = cropCanvas.toDataURL('image/jpeg', 1.0);
+        //document.body.appendChild(link);
+        //link.click();
+        //document.body.removeChild(link);
 
-        setExportProgress(100);
+        //setExportProgress(100);
 
       } catch (err) {
         console.error("Export Failed:", err);
@@ -702,7 +717,7 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
         
         setTimeout(() => {
           processingRef.current = false;
-          onExportComplete();
+          onExportComplete(null);
         }, 500);
       }
     };
@@ -883,7 +898,7 @@ const MapView = ({
           id="red"
           bounds={exportBox}
           color="red"
-          aspectRatio={null} // Freeform or fixed, up to you
+          aspectRatio={663/555} // Freeform or fixed, up to you
           onUpdate={updateExportBox}
           onDelete={deleteExportBox}
         />

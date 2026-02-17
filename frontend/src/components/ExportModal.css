@@ -1,0 +1,95 @@
+.export-modal-container {
+  position: fixed;
+  top: 20%;
+  left: 30%;
+  width: 400px;
+  background: rgba(20, 25, 35, 0.85); /* Dark semi-transparent */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 2000; /* Must be higher than the map */
+  color: white;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: grab; /* Shows it is draggable */
+}
+
+.modal-header:active { cursor: grabbing; }
+
+.modal-body { padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Inputs */
+input, select {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 8px;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+input:focus { outline: none; border-color: #4facfe; }
+
+/* Grid Layouts */
+.form-row { display: flex; gap: 10px; }
+.short-input { width: 30%; }
+.long-input { width: 70%; }
+
+.data-block {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.input-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+.input-group label { font-size: 0.8rem; color: #ccc; }
+.input-group input { width: 60%; text-align: right; }
+
+.tactical-grid { display: flex; flex-direction: column; gap: 8px; }
+.split-row { display: flex; gap: 10px; }
+
+/* Buttons */
+.modal-footer {
+  padding: 15px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.export-btn {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  color: #000;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.cancel-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #ddd;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
