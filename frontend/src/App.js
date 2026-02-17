@@ -3,12 +3,14 @@ import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
 import { calculateBearing } from "./utils/Bearing";
+import ExportModal from './components/ExportModal';
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null); // {lat, lon}
   const [detectedLZ, setDetectedLZ] = useState(null);
   const [assets, setAssets] = useState([]);
   const [terrainData, setTerrainData] = useState(null);
+  const [terrainElevation, setTerrainElevation] = useState(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [doghouses, setDoghouses] = useState([]);
   const [goAround, setGoAround] = useState([]);
@@ -20,6 +22,8 @@ function App() {
   const [exportBox, setExportBox] = useState(null); // Just the Red Box bounds now
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [capturedMapBlob, setCapturedMapBlob] = useState(null);
 
   const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -29,23 +33,29 @@ function App() {
       return;
     }
 
-    // --- THE FIX: Parse coordinates as floats first ---
-    // This ensures we are doing math, not string concatenation.
     const centerLat = parseFloat(targetLocation[0]);
     const centerLon = parseFloat(targetLocation[1]);
 
-    // Roughly calculate offsets for default sizes
-    const dLat = 0.002;
-    const dLng = 0.0025;
+    // 1. Define the Height (Lat) first
+    // 0.0025 degrees is roughly 275 meters tall
+    const dLat = 0.0025; 
 
-    // Red Box (Use the parsed numbers)
+    // 2. Calculate Aspect Ratio from your Excel Template
+    const aspectRatio = 663 / 555;
+
+    // 3. Calculate Width (Lon) correcting for Latitude
+    // We divide by cos(lat) because longitude lines shrink as you move north.
+    // This ensures the box LOOKS correct on the screen.
+    const latRadians = centerLat * (Math.PI / 180);
+    const dLng = (dLat * aspectRatio) / Math.cos(latRadians);
+
     const redBounds = [
       [centerLat - dLat, centerLon - dLng], // SouthWest
       [centerLat + dLat, centerLon + dLng], // NorthEast
     ];
 
     setExportBox(redBounds);
-  };
+};
 
   const updateExportBox = (id, newBounds) => {
     setExportBox(newBounds);
@@ -55,11 +65,15 @@ function App() {
     setExportBox(null);
   };
 
-  const handleExportComplete = () => {
-    setIsExporting(false);
-    setExportProgress(0);
-    // Optional: Keep the box on screen or remove it. Currently keeping it.
-    // setExportBox(null);
+  const handleExportComplete = (blob) => {
+    setExportProgress(60);
+    if (blob) {
+      setCapturedMapBlob(blob);
+      setIsExportModalOpen(true);
+    } else {
+        setIsExporting(false);
+        setExportProgress(0);
+    }
   };
 
   // Trigger terrain analysis automatically
@@ -309,6 +323,58 @@ function App() {
     });
   };
 
+  const handleFinalExport = (formData) => {
+    if (!capturedMapBlob) return;
+
+    setExportProgress(70);
+
+    // A. Download the Image (The user gets the JPG immediately)
+    const imgUrl = URL.createObjectURL(capturedMapBlob);
+    const link = document.createElement('a');
+    link.href = imgUrl;
+    link.download = `LZ_${formData.lz_name}_Map.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // B. Generate Excel (Send blob + form data to backend)
+    const apiPayload = new FormData();
+    
+    // Append all text fields
+    Object.keys(formData).forEach(key => {
+      apiPayload.append(key, formData[key]);
+    });
+
+    // Append the image blob
+    apiPayload.append("map_image", capturedMapBlob, "map_capture.jpg");
+
+    // Call Backend
+    fetch(`${process.env.REACT_APP_API_URL}/generate-excel`, {
+      method: "POST",
+      body: apiPayload
+    })
+    .then(response => response.blob())
+    .then(blob => {
+      // C. Download the Excel File
+      const excelUrl = URL.createObjectURL(blob);
+      const excelLink = document.createElement('a');
+      excelLink.href = excelUrl;
+      excelLink.download = `LZ_${formData.lz_name}_Card.xlsx`;
+      document.body.appendChild(excelLink);
+      excelLink.click();
+      
+      setExportProgress(100);
+        
+        // Give a tiny delay so the user sees the bar hit 100%
+        setTimeout(() => {
+            setIsExporting(false);
+            setExportProgress(0);
+            setIsExportModalOpen(false);
+        }, 500);
+    })
+    .catch(err => console.error("Excel generation failed:", err));
+  };
+
   useEffect(() => {
     const handleEdit = (e) => {
       const { id, field } = e.detail;
@@ -390,6 +456,23 @@ function App() {
           setExportProgress={setExportProgress}
         />
       </div>
+
+      <ExportModal 
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        onExport={handleFinalExport}
+        mapData={{
+            mgrs: "16S GD ...", // Connect to your real state if available
+            latLong: targetLocation ? `${targetLocation[0]}, ${targetLocation[1]}` : "",
+            elevation: "1850' MSL" // Connect to state if you have it
+        }}
+        flightData={{
+            dh1: doghouses[0]?.heading || "", // Pass Doghouse info
+            dh2: doghouses[1]?.heading || "",
+            goAround: goAround[0]?.direction || "LEFT"
+        }}
+     />
+
       {loading && (
         <div className="loading-overlay">
           <div className="loader-container">
