@@ -15,7 +15,7 @@ def generate_excel():
     # 1. Get Data and Image from the request
     # (Assuming you send data as form-data: 'json_data' and 'map_image')
     data = request.form 
-    #image_file = 'lz.jpg' #request.files['map_image']
+    image_file = request.files['map_image']
 
     # 2. Load the Template
     template_path = 'lz_template.xlsx'
@@ -50,7 +50,7 @@ def generate_excel():
     # 4. Insert the Map Image
     # Need to process the image stream to make it Excel-compatible
     #img_stream = BytesIO(image_file.read())
-    img = ExcelImage('lz.jpg')
+    img = ExcelImage(image_file)
     
     # Resize image to fit the cell
     img.width = 663
