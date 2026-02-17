@@ -1,112 +1,160 @@
-import React, { useEffect, useRef, useMemo } from "react";
-import { Rectangle, Marker } from "react-leaflet";
+import React, { useRef, useMemo, useEffect } from "react";
+import { Rectangle, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 
-const resizeIcon = L.divIcon({
-  className: "export-handle resize-handle",
-  html: `<div style="background: white; border: 2px solid #ef4444; width: 12px; height: 12px; cursor: nwse-resize; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>`,
-  iconSize: [12, 12],
-  iconAnchor: [6, 6],
-});
-
-const moveIcon = L.divIcon({
-  className: "export-handle move-handle",
-  html: `<div style="background: white; border: 2px solid #0056b3; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: move; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"><svg viewBox="0 0 24 24" width="16" height="16" fill="#0056b3"><path d="M12 2L15 5h-2v14h2l-3 3-3-3h2V5H9l3-3zM5 12l3-3v2h8V9l3 3-3 3v-2H8v2L5 12z"/></svg></div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-});
-
-const ExportBox = ({ id, bounds, onUpdate }) => {
+const ExportBox = ({ bounds, onUpdate, aspectRatio }) => {
+  const map = useMap();
+  
+  // Refs to access standard Leaflet objects directly
   const rectRef = useRef(null);
+  const resizeRef = useRef(null);
+  const moveRef = useRef(null);
 
-  // We use useMemo to calculate the initial positions so we don't recalculate on unrelated renders
-  const { south, west, north, east, center } = useMemo(() => {
-    const b = L.latLngBounds(bounds);
+  // --- ICONS ---
+  const resizeIcon = new L.DivIcon({
+    className: "resize-handle-se",
+    html: `<div style="width: 16px; height: 16px; background: white; border: 2px solid red; cursor: nwse-resize;"></div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+
+  const moveIcon = new L.DivIcon({
+    className: "move-handle",
+    html: `<div style="width: 24px; height: 24px; background: rgba(255,255,255,0.8); border: 2px solid #0056b3; border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: move;">
+            <span style="font-size: 16px; color: #0056b3;">✥</span>
+           </div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+
+  // --- CALCULATIONS ---
+  
+  // Convert standard bounds [[lat1,lng1], [lat2,lng2]] to organized NSEW
+  const getCoords = (b) => {
     return {
-      south: b.getSouth(),
-      west: b.getWest(),
-      north: b.getNorth(),
-      east: b.getEast(),
-      center: b.getCenter(),
+      n: Math.max(b[0][0], b[1][0]),
+      s: Math.min(b[0][0], b[1][0]),
+      e: Math.max(b[0][1], b[1][1]),
+      w: Math.min(b[0][1], b[1][1]),
     };
+  };
+
+  const getCenter = (c) => [(c.n + c.s) / 2, (c.e + c.w) / 2];
+
+  // --- EVENT HANDLERS ---
+
+  // 1. RESIZE HANDLER (Bottom-Right / South-East)
+  const resizeHandlers = useMemo(() => ({
+    drag: (e) => {
+      // Get the "Fixed" Anchor (North-West corner)
+      // We rely on the PROPS for the anchor, assuming it hasn't changed mid-drag
+      const current = getCoords(bounds);
+      const anchorLat = current.n; 
+      const anchorLng = current.w;
+
+      const mouse = e.target.getLatLng();
+      
+      // Calculate new South-East based on Mouse
+      let newSouth = mouse.lat;
+      let newEast = mouse.lng;
+
+      if (aspectRatio) {
+         // Lock Ratio Logic
+         const dLat = anchorLat - newSouth; // Height (Positive)
+         const latRad = (anchorLat + newSouth) / 2 * (Math.PI / 180);
+         const lngScale = 1 / Math.cos(latRad);
+         
+         // Width = Height * Ratio
+         const dLng = dLat * aspectRatio * lngScale;
+         
+         newEast = anchorLng + dLng;
+      }
+
+      // VISUAL UPDATE ONLY (Bypass React)
+      const newBounds = [[anchorLat, anchorLng], [newSouth, newEast]];
+      if (rectRef.current) rectRef.current.setBounds(newBounds);
+      if (moveRef.current) moveRef.current.setLatLng([(anchorLat + newSouth)/2, (anchorLng + newEast)/2]);
+      
+      // Keep the resize handle locked to the corner logic if using ratio
+      if (aspectRatio && resizeRef.current) {
+         resizeRef.current.setLatLng([newSouth, newEast]);
+      }
+    },
+    dragend: (e) => {
+      // NOW we update React State
+      if (rectRef.current) {
+         const b = rectRef.current.getBounds();
+         onUpdate("red", [[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]]);
+      }
+    }
+  }), [bounds, aspectRatio, onUpdate]);
+
+  // 2. MOVE HANDLER (Center)
+  const moveHandlers = useMemo(() => ({
+    drag: (e) => {
+      const mouse = e.target.getLatLng();
+      const current = getCoords(bounds);
+      const center = getCenter(current);
+      
+      // Calculate Delta
+      const dLat = mouse.lat - center[0];
+      const dLng = mouse.lng - center[1];
+
+      const newBounds = [
+        [current.s + dLat, current.w + dLng], 
+        [current.n + dLat, current.e + dLng]
+      ];
+
+      // Visual Update
+      if (rectRef.current) rectRef.current.setBounds(newBounds);
+      if (resizeRef.current) resizeRef.current.setLatLng([current.s + dLat, current.e + dLng]);
+    },
+    dragend: (e) => {
+      if (rectRef.current) {
+         const b = rectRef.current.getBounds();
+         onUpdate("red", [[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]]);
+      }
+    }
+  }), [bounds, onUpdate]);
+
+  // --- RENDER ---
+  const coords = getCoords(bounds);
+  const center = getCenter(coords);
+
+  // We explicitly update positions via Effect to ensure handles snap to 
+  // the correct place if 'bounds' changes externally (or after a dragend)
+  useEffect(() => {
+     if (resizeRef.current) resizeRef.current.setLatLng([coords.s, coords.e]);
+     if (moveRef.current) moveRef.current.setLatLng(center);
   }, [bounds]);
-
-  // --- 1. RESIZE HANDLER (Direct DOM Update) ---
-  const onResizeDrag = (e, anchorLat, anchorLng) => {
-    // This runs 60fps. We CANNOT call setState here.
-    const marker = e.target;
-    const newLat = marker.getLatLng().lat;
-    const newLng = marker.getLatLng().lng;
-
-    // Directly update the Rectangle layer on the map
-    if (rectRef.current) {
-      rectRef.current.setBounds([
-        [anchorLat, anchorLng],
-        [newLat, newLng]
-      ]);
-    }
-  };
-
-  const onResizeEnd = (e, anchorLat, anchorLng) => {
-    // Only update React state when the user LETS GO
-    const marker = e.target;
-    onUpdate(id, [
-      [anchorLat, anchorLng],
-      [marker.getLatLng().lat, marker.getLatLng().lng]
-    ]);
-  };
-
-  // --- 2. MOVE HANDLER (Direct DOM Update) ---
-  const onMoveDrag = (e) => {
-    const marker = e.target;
-    const newCenter = marker.getLatLng();
-    
-    const latOffset = (north - south) / 2;
-    const lngOffset = (east - west) / 2;
-
-    const newBounds = [
-      [newCenter.lat - latOffset, newCenter.lng - lngOffset],
-      [newCenter.lat + latOffset, newCenter.lng + lngOffset]
-    ];
-
-    // Update the blue rectangle instantly
-    if (rectRef.current) {
-      rectRef.current.setBounds(newBounds);
-    }
-  };
-
-  const onMoveEnd = (e) => {
-    const newCenter = e.target.getLatLng();
-    const latOffset = (north - south) / 2;
-    const lngOffset = (east - west) / 2;
-
-    onUpdate(id, [
-      [newCenter.lat - latOffset, newCenter.lng - lngOffset],
-      [newCenter.lat + latOffset, newCenter.lng + lngOffset]
-    ]);
-  };
 
   return (
     <>
-      <Rectangle
+      <Rectangle 
         ref={rectRef}
-        bounds={bounds}
-        pathOptions={{ color: "#ef4444", weight: 2, fillColor: "#ef4444", fillOpacity: 0.1, dashArray: "5, 5" }}
+        bounds={bounds} 
+        pathOptions={{ color: "red", weight: 2, fillOpacity: 0.1 }} 
+      />
+      
+      {/* Center Move Handle */}
+      <Marker 
+        ref={moveRef}
+        position={center} 
+        draggable={true} 
+        eventHandlers={moveHandlers}
+        icon={moveIcon}
+        zIndexOffset={1000}
       />
 
-      {/* Center Move Handle */}
-      <Marker position={center} icon={moveIcon} draggable={true}
-        eventHandlers={{ drag: onMoveDrag, dragend: onMoveEnd }} />
-
-      {/* Corner Resize Handles */}
-      <Marker position={[north, west]} icon={resizeIcon} draggable={true}
-        eventHandlers={{ drag: (e) => onResizeDrag(e, south, east), dragend: (e) => onResizeEnd(e, south, east) }} />
-      <Marker position={[north, east]} icon={resizeIcon} draggable={true}
-        eventHandlers={{ drag: (e) => onResizeDrag(e, south, west), dragend: (e) => onResizeEnd(e, south, west) }} />
-      <Marker position={[south, east]} icon={resizeIcon} draggable={true}
-        eventHandlers={{ drag: (e) => onResizeDrag(e, north, west), dragend: (e) => onResizeEnd(e, north, west) }} />
-      <Marker position={[south, west]} icon={resizeIcon} draggable={true}
-        eventHandlers={{ drag: (e) => onResizeDrag(e, north, east), dragend: (e) => onResizeEnd(e, north, east) }} />
+      {/* South-East Resize Handle */}
+      <Marker 
+        ref={resizeRef}
+        position={[coords.s, coords.e]} 
+        draggable={true} 
+        eventHandlers={resizeHandlers}
+        icon={resizeIcon}
+        zIndexOffset={1000}
+      />
     </>
   );
 };
