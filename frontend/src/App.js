@@ -10,7 +10,6 @@ function App() {
   const [detectedLZ, setDetectedLZ] = useState(null);
   const [assets, setAssets] = useState([]);
   const [terrainData, setTerrainData] = useState(null);
-  const [terrainElevation, setTerrainElevation] = useState(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [doghouses, setDoghouses] = useState([]);
   const [goAround, setGoAround] = useState([]);
@@ -19,11 +18,15 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [showLZOutline, setShowLZOutline] = useState(true);
   const [sectors, setSectors] = useState([]);
-  const [exportBox, setExportBox] = useState(null); // Just the Red Box bounds now
+  const [exportBox, setExportBox] = useState(null); 
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [capturedMapBlob, setCapturedMapBlob] = useState(null);
+  const [gridElevation, setGridElevation] = useState("");
+  const [latLong, setLatLong] = useState("");
+  const [mapData, setMapData] = useState([]);
+  const [flightData, setFlightData] = useState({});
 
   const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -71,7 +74,7 @@ function App() {
       setCapturedMapBlob(blob);
       setIsExportModalOpen(true);
     } else {
-        setIsExporting(false);
+        setIsExporting(true);
         setExportProgress(0);
     }
   };
@@ -267,6 +270,7 @@ function App() {
         heading: "000°",
         time: "01+57",
         dist: "3.13km",
+        airspd: "60 KIAS",
       },
       {
         id: "dh2",
@@ -276,52 +280,37 @@ function App() {
         heading: "000°",
         time: "02+10",
         dist: "5.20km",
+        airspd: "40 KIAS",
       },
     ];
     setDoghouses(houses);
   };
 
-  const updateDoghouse = (id, newPos) => {
+  const updateDoghouse = (id, changes) => {
     setDoghouses((prev) => {
-      const currentHouse = prev.find((dh) => dh.id === id);
-      if (!currentHouse) return prev;
-
-      // 1. Calculate the new bearing based on the mouse/drag position
-      // We calculate from the doghouse center to the new cursor position
-      const newBearing = calculateBearing(
-        currentHouse.lat,
-        currentHouse.lon,
-        newPos.lat,
-        newPos.lng,
-      );
-
       return prev.map((dh) => {
-        // 2. MASTER SYNC: If updating dh2, apply bearing to ALL
-        if (id === "dh2") {
-          return {
-            ...dh,
-            // Only update position for the house actually being dragged
-            lat: dh.id === id ? newPos.lat : dh.lat,
-            lon: dh.id === id ? newPos.lng : dh.lon,
-            // Update heading for EVERYONE
-            heading: `${newBearing.toString().padStart(3, "0")}°`,
-          };
-        }
-
-        // 3. INDEPENDENT UPDATE: For dh1 or others
+        // Simple, independent update: Only update the doghouse that was touched
         if (dh.id === id) {
-          return {
-            ...dh,
-            lat: newPos.lat,
-            lon: newPos.lng,
-            heading: `${newBearing.toString().padStart(3, "0")}°`,
-          };
+           return { ...dh, ...changes };
         }
-
         return dh;
       });
     });
   };
+
+useEffect(() => {
+    const dh2 = doghouses.find(d => d.id === 'dh2');
+    const dh1 = doghouses.find(d => d.id === 'dh1');
+
+    if (dh2 || dh1) {
+      setFlightData(prev => ({
+        ...prev,
+        landing_hdg: dh2 ? dh2.heading : prev.landing_hdg, 
+        takeoff_hdg: dh1 ? dh1.heading : prev.takeoff_hdg
+      }));
+    }
+  }, [doghouses]);
+
 
   const handleFinalExport = (formData) => {
     if (!capturedMapBlob) return;
@@ -421,6 +410,12 @@ function App() {
           setExportProgress={setExportProgress}
           isExporting={isExporting}
           exportProgress={exportProgress}
+          setMapData={setMapData}
+          setLatLong={setLatLong}
+          setGridElevation={setGridElevation}
+          mapData={{
+          elevation: gridElevation
+        }}
         />
       </div>
       <div className="map-area">
@@ -454,23 +449,25 @@ function App() {
           isExporting={isExporting}
           onExportComplete={handleExportComplete}
           setExportProgress={setExportProgress}
+          setExportBox={setExportBox}
+          setIsExporting={setIsExporting}
         />
       </div>
 
       <ExportModal 
         isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
+        onClose={() => {
+          setIsExportModalOpen(false);
+          setIsExporting(false);
+          setExportProgress(0);
+        }}
         onExport={handleFinalExport}
         mapData={{
-            mgrs: "16S GD ...", // Connect to your real state if available
-            latLong: targetLocation ? `${targetLocation[0]}, ${targetLocation[1]}` : "",
-            elevation: "1850' MSL" // Connect to state if you have it
+          mgrs: mapData.mgrs,
+          elevation: gridElevation,
+          latLong: latLong
         }}
-        flightData={{
-            dh1: doghouses[0]?.heading || "", // Pass Doghouse info
-            dh2: doghouses[1]?.heading || "",
-            goAround: goAround[0]?.direction || "LEFT"
-        }}
+        flightData={flightData}
      />
 
       {loading && (

@@ -20,7 +20,7 @@ const getPolygonArea = (coords) => {
   return Math.abs(area);
 };
 
-const MissionSummary = ({ detectedLZ, terrainData, targetLocation }) => {
+const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData }) => {
   const [winds, setWinds] = useState({ speed: 0, dir: 0 });
   const [loadingWeather, setLoadingWeather] = useState(false);
 
@@ -91,14 +91,22 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation }) => {
     <div className="mission-grid">
       
       {/* --- ROW 1: CAPACITY & AREA (Span 3 each) --- */}
-      <div className="ms-tile span-3">
-        <div className="ms-label">Capacity (UH-60)</div>
-        <div className="ms-value lg highlight">{stats.heloCount}</div>
+      <div className="ms-tile span-2">
+        <div className="ms-label">Capacity</div>
+        <div className="ms-value highlight">{stats.heloCount}</div>
       </div>
       
-      <div className="ms-tile span-3">
+      <div className="ms-tile span-2">
         <div className="ms-label">Area (m²)</div>
-        <div className="ms-value lg">{stats.area.toLocaleString()}</div>
+        <div className="ms-value">{stats.area.toLocaleString()}</div>
+      </div>
+
+      <div className="ms-tile span-2">
+        <div className="ms-label">Elevation</div>
+            <div className="ms-value-row">
+                <span className="ms-value">{mapData.elevation}'</span>
+                <span className="ms-unit">MSL</span>
+            </div>
       </div>
 
       {/* --- ROW 2: SLOPE ALERT (Span 6 / Full) --- */}

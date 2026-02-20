@@ -72,6 +72,23 @@ def analyze_field():
         lon = float(data.get('lon'))
     except:
         return jsonify({"status": "error", "message": "Invalid Coords"}), 400
+    
+    try:
+        # Use the same API you used in terrain_analysis
+        elev_url = f"https://api.opentopodata.org/v1/srtm30m?locations={lat},{lon}"
+        elev_res = requests.get(elev_url).json()
+        
+        # Extract the value (default to 0 if API fails)
+        results = elev_res.get('results', [])
+        elevation_meters = results[0].get('elevation') if results else 0
+        
+        # Convert to Feet for aviation (optional, but standard for LZ cards)
+        elevation_feet = int(elevation_meters * 3.28084) if elevation_meters else 0
+        elevation_str = f"{elevation_feet}"
+        
+    except Exception as e:
+        print(f"Elevation Fetch Error: {e}")
+        elevation_str = "TBD"
 
     # CHANGE 1: Zoom out to 15 or 16 to see the whole field context
     zoom_level = 14
@@ -121,6 +138,7 @@ def analyze_field():
             return jsonify({
                 "status": "success",
                 "suggested_lz": lz_polygon, 
+                "elevation": elevation_str,
                 "message": "Field detected"
             })
         else:

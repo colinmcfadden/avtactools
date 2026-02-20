@@ -53,7 +53,7 @@ const calculateHandlePos = (lat, lon, rotation) => {
   return [lat - offset * Math.sin(angleRad), lon + offset * Math.cos(angleRad)];
 };
 
-const getHeloIcon = (rot) => {
+const getHeloIcon = (rot, sizePx = 40) => {
   // Normalize rotation for display (0-359)
   const displayRot = Math.round(((rot % 360) + 360) % 360);
 
@@ -77,11 +77,11 @@ const getHeloIcon = (rot) => {
                 </div>
                 
                 <div style="transform: rotate(${rot || 0}deg); display: flex;">
-                    <img src="/icons/helicopter.png" style="width: 40px; height: 40px;" />
+                    <img src="/icons/helicopter.png" style="width: 100%; height: 100%; object-fit: contain;" />
                 </div>
             </div>`,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
+    iconSize: [sizePx, sizePx],
+    iconAnchor: [sizePx / 2, sizePx / 2],
   });
 };
 
@@ -110,12 +110,32 @@ const ImperativeHelo = ({ asset, updateAsset, deleteAsset }) => {
   const map = useMap();
   const heloRef = useRef(null);
   const handleRef = useRef(null);
+  
+  // Use refs for state and functions that shouldn't trigger a recreation
   const stateRef = useRef(asset);
+  const deleteAssetRef = useRef(deleteAsset);
 
+  // Keep refs up to date without triggering re-renders
   useEffect(() => {
-    // 1. Create Markers
+    stateRef.current = asset;
+    deleteAssetRef.current = deleteAsset;
+  }, [asset, deleteAsset]);
+
+  const calculateSizePx = (lat) => {
+    const zoom = map.getZoom();
+    const rotorDiameterMeters = 16.357; // 53' 8" to meters
+    const metersPerPx = 156543.03392 * Math.cos((lat * Math.PI) / 180) / Math.pow(2, zoom);
+    return Math.max(rotorDiameterMeters / metersPerPx, 15);
+  };
+
+  // --- 1. SETUP & EVENTS (Runs ONLY ONCE per helicopter) ---
+  useEffect(() => {
+    // FIX 1: Calculate the size immediately 
+    const initialSize = calculateSizePx(asset.lat);
+
     const helo = L.marker([asset.lat, asset.lon], {
-      icon: getHeloIcon(asset.rotation || 0),
+      // FIX 2: Pass initialSize to the icon generator
+      icon: getHeloIcon(asset.rotation || 0, initialSize), 
       draggable: true,
       zIndexOffset: 500,
     }).addTo(map);
@@ -127,29 +147,29 @@ const ImperativeHelo = ({ asset, updateAsset, deleteAsset }) => {
         draggable: true,
         zIndexOffset: 1000,
         opacity: 0,
-      },
+      }
     ).addTo(map);
 
     heloRef.current = helo;
     handleRef.current = handle;
 
-    // --- NEW: RIGHT-CLICK TO DELETE ---
+    const handleZoom = () => {
+      const newSize = calculateSizePx(stateRef.current.lat);
+      helo.setIcon(getHeloIcon(stateRef.current.rotation, newSize));
+    };
+    map.on("zoomend", handleZoom);
+
     helo.on("contextmenu", (e) => {
-      // Prevent the browser's default right-click menu from appearing
       L.DomEvent.stopPropagation(e);
       L.DomEvent.preventDefault(e);
-
       if (window.confirm("Delete this helicopter?")) {
-        deleteAsset(asset.id);
+        deleteAssetRef.current(asset.id); // Uses the ref so we don't need it in deps
       }
     });
 
     // --- HOVER LOGIC ---
     let isHovering = false;
-    const show = () => {
-      isHovering = true;
-      handle.setOpacity(1);
-    };
+    const show = () => { isHovering = true; handle.setOpacity(1); };
     const hide = () => {
       isHovering = false;
       setTimeout(() => {
@@ -164,34 +184,25 @@ const ImperativeHelo = ({ asset, updateAsset, deleteAsset }) => {
     handle.on("mouseover", show);
     handle.on("mouseout", hide);
 
-    // --- DRAG/ROTATE LOGIC (using the stable dragend version) ---
+    // --- DRAG LOGIC ---
     helo.on("drag", (e) => {
       const pos = e.target.getLatLng();
       stateRef.current.lat = pos.lat;
       stateRef.current.lon = pos.lng;
-      handle.setLatLng(
-        calculateHandlePos(pos.lat, pos.lng, stateRef.current.rotation),
-      );
+      handle.setLatLng(calculateHandlePos(pos.lat, pos.lng, stateRef.current.rotation));
     });
 
     handle.on("drag", (e) => {
       handle.setOpacity(1);
       const mousePos = e.target.getLatLng();
       const angle = calculateAngle(
-        stateRef.current.lat,
-        stateRef.current.lon,
-        mousePos.lat,
-        mousePos.lng,
+        stateRef.current.lat, stateRef.current.lon, mousePos.lat, mousePos.lng
       );
-
       stateRef.current.rotation = angle;
 
-      // This updates the icon (and the label inside it) instantly
-      helo.setIcon(getHeloIcon(angle));
-
-      handle.setLatLng(
-        calculateHandlePos(stateRef.current.lat, stateRef.current.lon, angle),
-      );
+      const currentSize = calculateSizePx(stateRef.current.lat);
+      helo.setIcon(getHeloIcon(angle, currentSize));
+      handle.setLatLng(calculateHandlePos(stateRef.current.lat, stateRef.current.lon, angle));
     });
 
     const saveToReact = () => {
@@ -206,10 +217,24 @@ const ImperativeHelo = ({ asset, updateAsset, deleteAsset }) => {
     handle.on("dragend", saveToReact);
 
     return () => {
+      map.off("zoomend", handleZoom); 
       helo.remove();
       handle.remove();
     };
-  }, [map, asset.id, deleteAsset]); // Added deleteAsset to dependency array
+  }, [map, asset.id]);
+
+  // --- 2. SYNC EFFECT (Runs when React updates the asset from outside) ---
+  useEffect(() => {
+    if (!heloRef.current || !handleRef.current) return;
+
+    // Recalculate scale in case latitude changed significantly
+    const currentSize = calculateSizePx(asset.lat);
+    
+    // Smoothly update the existing markers without destroying them
+    heloRef.current.setLatLng([asset.lat, asset.lon]);
+    heloRef.current.setIcon(getHeloIcon(asset.rotation || 0, currentSize));
+    handleRef.current.setLatLng(calculateHandlePos(asset.lat, asset.lon, asset.rotation || 0));
+  }, [asset.lat, asset.lon, asset.rotation, map]);
 
   return null;
 };
@@ -238,14 +263,22 @@ const Doghouse = ({ data, updateDoghouse }) => {
   const map = useMap();
   const markerRef = useRef(null);
   const handleRef = useRef(null);
-
-  // We use a Ref to track rotation so we don't need to re-render the whole component on every degree change
   const rotationRef = useRef(parseInt(data.heading) || 0);
+
+  // Refs for state sync (prevents stale data in event listeners)
+  const dataRef = useRef(data);
+  const updateRef = useRef(updateDoghouse);
+
+  useEffect(() => {
+    dataRef.current = data;
+    updateRef.current = updateDoghouse;
+  }, [data, updateDoghouse]);
 
   // --- HTML GENERATOR ---
   const getHtml = (dh, rotation) => {
     const time = (dh.time || "00+00").split("+");
-    // The transform here is what physically rotates the doghouse
+    const airspeed = dh.airspeed ? dh.airspeed.split(" ")[0] : "90";
+
     return `
         <div class="doghouse-wrapper" style="pointer-events: auto; cursor: grab; width: 60px; transform: rotate(${rotation}deg); transform-origin: center center;">
             <div style="width: 0; height: 0; border-left: 30px solid transparent; border-right: 30px solid transparent; border-bottom: 20px solid black; position: relative;">
@@ -264,22 +297,102 @@ const Doghouse = ({ data, updateDoghouse }) => {
                     <span class="dh-input" data-type="time-s" style="cursor: text; min-width: 15px; text-align: left; padding: 2px 0;">${time[1] || "00"}</span>
                 </div>
 
-                <div style="display: flex; justify-content: center; align-items: center;">
+                <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
                     <span class="dh-input" data-type="dist" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${parseFloat(dh.dist) || 0}</span>
-                    <span style="font-size: 10px; margin-left: 1px; pointer-events: none;">km</span>
+                    <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> km</span>
+                </div>
+
+                <div style="display: flex; justify-content: center; align-items: center;">
+                    <span class="dh-input" data-type="airspeed" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${parseInt(airspeed) || 90}</span>
+                    <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> kts</span>
                 </div>
             </div>
         </div>`;
   };
 
+  const attachListeners = (markerInst, handleInst) => {
+    const element = markerInst.getElement();
+    if (!element) return;
+    const inputs = element.querySelectorAll(".dh-input");
+
+    inputs.forEach((span) => {
+      L.DomEvent.disableClickPropagation(span);
+      span.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+        map.dragging.disable();
+      });
+      span.addEventListener("dblclick", (e) => e.stopPropagation());
+
+      span.onclick = (e) => {
+        e.stopPropagation();
+        map.dragging.disable();
+        span.contentEditable = "true";
+        span.focus();
+        span.style.backgroundColor = "#e6f7ff";
+        document.execCommand("selectAll", false, null);
+      };
+
+      span.onblur = () => {
+        span.contentEditable = "false";
+        span.style.backgroundColor = "transparent";
+        map.dragging.enable();
+
+        const val = span.innerText.trim();
+        const type = span.getAttribute("data-type");
+        const currentData = dataRef.current; 
+
+        if (type === "heading") {
+          let newDeg = parseInt(val) || 0;
+          newDeg = (newDeg + 360) % 360; 
+          rotationRef.current = newDeg; 
+
+          markerInst.setIcon(
+            L.divIcon({
+              className: "doghouse-container",
+              html: getHtml({ ...currentData, heading: val }, newDeg),
+              iconSize: [60, 100],
+              iconAnchor: [30, 50],
+            }),
+          );
+
+          handleInst.setLatLng(calculateDoghouseHandlePos(currentData.lat, currentData.lon, newDeg));
+          updateRef.current(currentData.id, { heading: `${newDeg.toString().padStart(3, "0")}°` });
+          setTimeout(() => attachListeners(markerInst, handleInst), 50);
+
+        } else {
+          // Reverted back to simple independent field updates
+          let updates = {};
+          if (type === "id") updates.id_val = val;
+          else if (type === "dist") updates.dist = `${val}km`;
+          else if (type === "airspeed") updates.airspeed = `${val} kts`;
+          else if (type.startsWith("time")) {
+            const row = span.parentElement;
+            const m = row.querySelector('[data-type="time-m"]').innerText;
+            const s = row.querySelector('[data-type="time-s"]').innerText;
+            updates.time = `${m}+${s}`;
+          }
+          
+          updateRef.current(currentData.id, updates);
+        }
+      };
+
+      span.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          span.blur();
+        }
+      };
+    });
+  };
+
+  // --- 1. SETUP EFFECT ---
   useEffect(() => {
-    // 1. Create Markers
     const marker = L.marker([data.lat, data.lon], {
       icon: L.divIcon({
         className: "doghouse-container",
         html: getHtml(data, rotationRef.current),
-        iconSize: [60, 80],
-        iconAnchor: [30, 40],
+        iconSize: [60, 100],
+        iconAnchor: [30, 50],
       }),
       draggable: true,
       zIndexOffset: 2000,
@@ -290,7 +403,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
         className: "rotate-handle",
         html: `<div style="background: white; border: 2px solid #0056b3; width: 12px; height: 12px; border-radius: 50%; cursor: grab;"></div>`,
         iconSize: [12, 12],
-        iconAnchor: [6, 6],
+        iconAnchor: [30, 30],
       }),
       draggable: true,
       zIndexOffset: 2100,
@@ -300,102 +413,10 @@ const Doghouse = ({ data, updateDoghouse }) => {
     markerRef.current = marker;
     handleRef.current = handle;
 
-    // --- INTERACTION LOGIC ---
+    attachListeners(marker, handle);
+    setTimeout(() => attachListeners(marker, handle), 100);
 
-    // This function re-binds listeners every time we redraw the HTML
-    const attachListeners = () => {
-      const element = marker.getElement();
-      if (!element) return;
-      const inputs = element.querySelectorAll(".dh-input");
-
-      inputs.forEach((span) => {
-        // Prevent Map Dragging
-        L.DomEvent.disableClickPropagation(span);
-        span.addEventListener("mousedown", (e) => {
-          e.stopPropagation();
-          map.dragging.disable();
-        });
-        span.addEventListener("dblclick", (e) => e.stopPropagation());
-
-        // Click to Edit
-        span.onclick = (e) => {
-          e.stopPropagation();
-          map.dragging.disable();
-          span.contentEditable = "true";
-          span.focus();
-          span.style.backgroundColor = "#e6f7ff";
-          document.execCommand("selectAll", false, null);
-        };
-
-        // Save on Blur (or Enter)
-        span.onblur = () => {
-          span.contentEditable = "false";
-          span.style.backgroundColor = "transparent";
-          map.dragging.enable();
-
-          const val = span.innerText.trim();
-          const type = span.getAttribute("data-type");
-
-          // --- THE FIX: HANDLE HEADING ROTATION HERE ---
-          if (type === "heading") {
-            let newDeg = parseInt(val) || 0;
-            newDeg = (newDeg + 360) % 360; // Normalize
-            rotationRef.current = newDeg; // Update Local Ref
-
-            // 1. Force Redraw of Doghouse (Rotates it)
-            marker.setIcon(
-              L.divIcon({
-                className: "doghouse-container",
-                html: getHtml({ ...data, heading: val }, newDeg),
-                iconSize: [60, 80],
-                iconAnchor: [30, 40],
-              }),
-            );
-
-            // 2. Move Handle to new position
-            handle.setLatLng(
-              calculateDoghouseHandlePos(data.lat, data.lon, newDeg),
-            );
-
-            // 3. Update React State
-            updateDoghouse(data.id, {
-              heading: `${newDeg.toString().padStart(3, "0")}°`,
-            });
-
-            // 4. Re-attach listeners because setIcon destroyed the DOM
-            setTimeout(attachListeners, 50);
-          } else {
-            // Handle other fields normally
-            let updates = {};
-            if (type === "dist") updates.dist = `${val}km`;
-            else if (type === "id") updates.id_val = val;
-            else if (type.startsWith("time")) {
-              const row = span.parentElement;
-              const m = row.querySelector('[data-type="time-m"]').innerText;
-              const s = row.querySelector('[data-type="time-s"]').innerText;
-              updates.time = `${m}+${s}`;
-            }
-            updateDoghouse(data.id, updates);
-          }
-        };
-
-        span.onkeydown = (e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            span.blur();
-          }
-        };
-      });
-    };
-
-    // Initialize Listeners
-    attachListeners();
-    setTimeout(attachListeners, 100);
-
-    // --- DRAG & HOVER HANDLERS ---
-    const show = () => {
-      handle.setOpacity(1);
-    };
+    const show = () => handle.setOpacity(1);
     const hide = () => {
       setTimeout(() => {
         if (!handle.dragging?._draggable?._dragging) handle.setOpacity(0);
@@ -409,12 +430,13 @@ const Doghouse = ({ data, updateDoghouse }) => {
 
     marker.on("drag", (e) => {
       const pos = e.target.getLatLng();
-      handle.setLatLng(calculateDoghouseHandlePos(pos.lat, pos.lng));
+      handle.setLatLng(calculateDoghouseHandlePos(pos.lat, pos.lng, rotationRef.current));
     });
+
     marker.on("dragend", (e) => {
       const pos = e.target.getLatLng();
-      updateDoghouse(data.id, { lat: pos.lat, lon: pos.lng });
-      setTimeout(attachListeners, 50);
+      updateRef.current(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
+      setTimeout(() => attachListeners(marker, handle), 50);
     });
 
     handle.on("drag", (e) => {
@@ -422,38 +444,57 @@ const Doghouse = ({ data, updateDoghouse }) => {
       const center = marker.getLatLng();
       const mouse = e.target.getLatLng();
       const newAngle = calculateBearing(
-        center.lat * (Math.PI / 180),
-        center.lng * (Math.PI / 180),
-        mouse.lat * (Math.PI / 180),
-        mouse.lng * (Math.PI / 180),
+        center.lat * (Math.PI / 180), center.lng * (Math.PI / 180),
+        mouse.lat * (Math.PI / 180), mouse.lng * (Math.PI / 180)
       );
       rotationRef.current = newAngle;
 
-      // Rotate the Doghouse Icon
       marker.setIcon(
         L.divIcon({
           className: "doghouse-container",
-          html: getHtml(data, newAngle),
-          iconSize: [60, 80],
-          iconAnchor: [30, 40],
-        }),
+          html: getHtml(dataRef.current, newAngle),
+          iconSize: [60, 100],
+          iconAnchor: [30, 50],
+        })
       );
 
-      handle.setLatLng(calculateDoghouseHandlePos(center.lat, center.lng));
+      handle.setLatLng(calculateDoghouseHandlePos(center.lat, center.lng, newAngle));
     });
 
     handle.on("dragend", () => {
-      updateDoghouse(data.id, {
+      updateRef.current(dataRef.current.id, {
         heading: `${Math.round(rotationRef.current).toString().padStart(3, "0")}°`,
       });
-      setTimeout(attachListeners, 50);
+      setTimeout(() => attachListeners(marker, handle), 50);
     });
 
     return () => {
       marker.remove();
       handle.remove();
     };
-  }, [map, data.id]);
+  }, [map]); // Runs only on Mount
+
+  // --- 2. SYNC EFFECT (Keeps DOM matching React State if props change) ---
+  useEffect(() => {
+    if (!markerRef.current || !handleRef.current) return;
+
+    const incomingHeading = parseInt(data.heading) || 0;
+    rotationRef.current = incomingHeading;
+
+    markerRef.current.setIcon(
+      L.divIcon({
+        className: "doghouse-container",
+        html: getHtml(data, incomingHeading),
+        iconSize: [60, 100],
+        iconAnchor: [30, 50],
+      })
+    );
+    
+    markerRef.current.setLatLng([data.lat, data.lon]);
+    handleRef.current.setLatLng(calculateDoghouseHandlePos(data.lat, data.lon, incomingHeading));
+
+    setTimeout(() => attachListeners(markerRef.current, handleRef.current), 50);
+  }, [data.lat, data.lon, data.heading, data.time, data.dist, data.airspeed, data.id_val]);
 
   return null;
 };
@@ -759,6 +800,8 @@ const MapView = ({
   isExporting,
   onExportComplete,
   setExportProgress,
+  setIsExporting,
+  setExportBox
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -900,7 +943,11 @@ const MapView = ({
           color="red"
           aspectRatio={663/555} // Freeform or fixed, up to you
           onUpdate={updateExportBox}
-          onDelete={deleteExportBox}
+          onDelete={() => {
+              setExportBox(null);      // Removes the box from the map
+              setIsExporting(false);   // Kills the UI progress bar overlay
+              setExportProgress(0);    // Resets progress
+          }}
         />
       )}
 
