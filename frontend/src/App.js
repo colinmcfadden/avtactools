@@ -270,6 +270,7 @@ function App() {
         heading: "000°",
         time: "01+57",
         dist: "3.13km",
+        airspd: "60 KIAS",
       },
       {
         id: "dh2",
@@ -279,6 +280,7 @@ function App() {
         heading: "000°",
         time: "02+10",
         dist: "5.20km",
+        airspd: "40 KIAS",
       },
     ];
     setDoghouses(houses);

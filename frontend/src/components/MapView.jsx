@@ -263,14 +263,13 @@ const Doghouse = ({ data, updateDoghouse }) => {
   const map = useMap();
   const markerRef = useRef(null);
   const handleRef = useRef(null);
-
-  // We use a Ref to track rotation so we don't need to re-render the whole component on every degree change
   const rotationRef = useRef(parseInt(data.heading) || 0);
 
   // --- HTML GENERATOR ---
   const getHtml = (dh, rotation) => {
     const time = (dh.time || "00+00").split("+");
-    // The transform here is what physically rotates the doghouse
+    const airspeed = dh.airspd ? dh.airspd.split(" ")[0] : "90";
+
     return `
         <div class="doghouse-wrapper" style="pointer-events: auto; cursor: grab; width: 60px; transform: rotate(${rotation}deg); transform-origin: center center;">
             <div style="width: 0; height: 0; border-left: 30px solid transparent; border-right: 30px solid transparent; border-bottom: 20px solid black; position: relative;">
@@ -289,9 +288,14 @@ const Doghouse = ({ data, updateDoghouse }) => {
                     <span class="dh-input" data-type="time-s" style="cursor: text; min-width: 15px; text-align: left; padding: 2px 0;">${time[1] || "00"}</span>
                 </div>
 
-                <div style="display: flex; justify-content: center; align-items: center;">
+                <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
                     <span class="dh-input" data-type="dist" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${parseFloat(dh.dist) || 0}</span>
-                    <span style="font-size: 10px; margin-left: 1px; pointer-events: none;">km</span>
+                    <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> km</span>
+                </div>
+
+                <div style="display: flex; justify-content: center; align-items: center;">
+                    <span class="dh-input" data-type="airspeed" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${parseInt(airspeed) || 90}</span>
+                    <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> kts</span>
                 </div>
             </div>
         </div>`;
@@ -303,8 +307,8 @@ const Doghouse = ({ data, updateDoghouse }) => {
       icon: L.divIcon({
         className: "doghouse-container",
         html: getHtml(data, rotationRef.current),
-        iconSize: [60, 80],
-        iconAnchor: [30, 40],
+        iconSize: [60, 100],
+        iconAnchor: [30, 50],
       }),
       draggable: true,
       zIndexOffset: 2000,
@@ -315,7 +319,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
         className: "rotate-handle",
         html: `<div style="background: white; border: 2px solid #0056b3; width: 12px; height: 12px; border-radius: 50%; cursor: grab;"></div>`,
         iconSize: [12, 12],
-        iconAnchor: [6, 6],
+        iconAnchor: [30, 30],
       }),
       draggable: true,
       zIndexOffset: 2100,
@@ -372,8 +376,8 @@ const Doghouse = ({ data, updateDoghouse }) => {
               L.divIcon({
                 className: "doghouse-container",
                 html: getHtml({ ...data, heading: val }, newDeg),
-                iconSize: [60, 80],
-                iconAnchor: [30, 40],
+                iconSize: [60, 100],
+                iconAnchor: [30, 50],
               }),
             );
 
@@ -394,6 +398,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
             let updates = {};
             if (type === "dist") updates.dist = `${val}km`;
             else if (type === "id") updates.id_val = val;
+            else if (type === "airspeed") updates.airspeed = `${val} GS`;
             else if (type.startsWith("time")) {
               const row = span.parentElement;
               const m = row.querySelector('[data-type="time-m"]').innerText;
@@ -459,8 +464,8 @@ const Doghouse = ({ data, updateDoghouse }) => {
         L.divIcon({
           className: "doghouse-container",
           html: getHtml(data, newAngle),
-          iconSize: [60, 80],
-          iconAnchor: [30, 40],
+          iconSize: [60, 100],
+          iconAnchor: [30, 50],
         }),
       );
 
