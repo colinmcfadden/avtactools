@@ -393,7 +393,7 @@ input:checked + .slider:before {
 .progress-bar-bg {
   height: 4px;
   background: rgba(255, 255, 255, 0.1);
-  margin: 0 10px 10px 10px;
+  margin: 10px;
   border-radius: 2px;
   overflow: hidden;
 }
@@ -459,12 +459,12 @@ body.export-mode-active .leaflet-control-container {
   background-color: #1f2937; /* Dark Navy Tile Background */
   border: 1px solid #374151; /* Subtle Border */
   border-radius: 6px;
-  padding: 0 8px;
+  padding: 0 5px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center; /* Center content horizontally */
-  min-height: 60px;
+  min-height: 54px;
 }
 
 /* Span helpers */
@@ -479,7 +479,7 @@ body.export-mode-active .leaflet-control-container {
   color: #9ca3af; /* Muted Gray */
   margin-bottom: 2px;
   width: 100%;
-  text-align: left; /* Keep labels anchored left */
+  text-align: center; 
 }
 
 /* Large Value (for Capacity/Area) */
@@ -490,7 +490,7 @@ body.export-mode-active .leaflet-control-container {
 
 /* Standard Value (for Weather) */
 .ms-value {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: #f3f4f6; /* Off-white */
 }

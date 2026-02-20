@@ -36,11 +36,11 @@ const ExportModal = ({
     if (isOpen) {
       setFormData(prev => ({
         ...prev,
-        mgrs_grid: mapData.mgrs || '',
+        mgrs_grid: mapData.mgrs.replace(/^(.{3})(.{2})(.{4})(.{4})$/, '$1 $2 $3 $4') || '',
         lat_long: mapData.latLong || '',
         elevation: mapData.elevation || '', // We will hook this up in App.js
-        land_dir: flightData.dh2 || '', // Doghouse 2 is Landing
-        takeoff_dir: flightData.dh1 || '', // Doghouse 1 is Takeoff
+        land_dir: flightData.landing_hdg || '', // Doghouse 2 is Landing
+        takeoff_dir: flightData.takeoff_hdg || '', // Doghouse 1 is Takeoff
         go_around: flightData.goAround || 'LEFT'
       }));
     }
@@ -68,7 +68,10 @@ const ExportModal = ({
         <div className="modal-body">
           {/* TOP SECTION: IDENTIFIERS */}
           <div className="form-row">
-            <input name="lz_label" value={formData.lz_label} onChange={handleChange} placeholder="Label (LZ)" className="short-input" />
+            <select name="lz_label" value={formData.lz_label} onChange={handleChange} className='short-input'>
+                  <option value="LZ">LZ</option>
+                  <option value="PZ">PZ</option>
+            </select>
             <input name="lz_name" value={formData.lz_name} onChange={handleChange} placeholder="Name (HAWK)" className="long-input" />
           </div>
 
@@ -96,7 +99,11 @@ const ExportModal = ({
           <div className="tactical-grid">
             <input name="call_sign" value={formData.call_sign} onChange={handleChange} placeholder="Call Sign" />
             <input name="freq" value={formData.freq} onChange={handleChange} placeholder="Freq" />
-            <input name="formation" value={formData.formation} onChange={handleChange} placeholder="Formation" />
+            <select name="formation" value={formData.formation} onChange={handleChange} placeholder="Formation">
+                  <option value="STAG LEFT">STAG LEFT</option>
+                  <option value="STAG RIGHT">STAG RIGHT</option>
+                  <option value="TRAIL">TRAIL</option>
+               </select>
             
             <div className="split-row">
               <input name="land_dir" value={formData.land_dir} onChange={handleChange} placeholder="Land Dir" />
@@ -108,7 +115,10 @@ const ExportModal = ({
                   <option value="LEFT">Left</option>
                   <option value="RIGHT">Right</option>
                </select>
-               <input name="door" value={formData.door} onChange={handleChange} placeholder="Door" />
+               <select name="door" value={formData.door} onChange={handleChange}>
+                  <option value="LEFT">Left</option>
+                  <option value="RIGHT">Right</option>
+               </select>
             </div>
 
             <input name="remarks" value={formData.remarks} onChange={handleChange} placeholder="Remarks / Hazards" className="full-width" />

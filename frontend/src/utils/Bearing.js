@@ -13,3 +13,24 @@ export const calculateBearing = (startLat, startLng, endLat, endLng) => {
   const brng = toDeg(Math.atan2(y, x));
   return Math.round((brng + 360) % 360);
 };
+
+export const convertToLatLongString = (lat, lng) => {
+  const toDMS = (coordinate, isLat) => {
+    const absolute = Math.abs(coordinate);
+    const degrees = Math.floor(absolute);
+    const minutesNotTruncated = (absolute - degrees) * 60;
+    const minutes = Math.floor(minutesNotTruncated);
+    const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(2);
+
+    let direction = "";
+    if (isLat) {
+      direction = coordinate >= 0 ? "N" : "S";
+    } else {
+      direction = coordinate >= 0 ? "E" : "W";
+    }
+
+    return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
+  };
+
+  return `${toDMS(lat, true)}  ${toDMS(lng, false)}`;
+};

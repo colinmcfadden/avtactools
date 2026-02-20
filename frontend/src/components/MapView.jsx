@@ -53,7 +53,7 @@ const calculateHandlePos = (lat, lon, rotation) => {
   return [lat - offset * Math.sin(angleRad), lon + offset * Math.cos(angleRad)];
 };
 
-const getHeloIcon = (rot) => {
+const getHeloIcon = (rot, sizePx = 40) => {
   // Normalize rotation for display (0-359)
   const displayRot = Math.round(((rot % 360) + 360) % 360);
 
@@ -77,11 +77,11 @@ const getHeloIcon = (rot) => {
                 </div>
                 
                 <div style="transform: rotate(${rot || 0}deg); display: flex;">
-                    <img src="/icons/helicopter.png" style="width: 40px; height: 40px;" />
+                    <img src="/icons/helicopter.png" style="width: 100%; height: 100%; object-fit: contain;" />
                 </div>
             </div>`,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
+    iconSize: [sizePx, sizePx],
+    iconAnchor: [sizePx / 2, sizePx / 2],
   });
 };
 
@@ -110,12 +110,32 @@ const ImperativeHelo = ({ asset, updateAsset, deleteAsset }) => {
   const map = useMap();
   const heloRef = useRef(null);
   const handleRef = useRef(null);
+  
+  // Use refs for state and functions that shouldn't trigger a recreation
   const stateRef = useRef(asset);
+  const deleteAssetRef = useRef(deleteAsset);
 
+  // Keep refs up to date without triggering re-renders
   useEffect(() => {
-    // 1. Create Markers
+    stateRef.current = asset;
+    deleteAssetRef.current = deleteAsset;
+  }, [asset, deleteAsset]);
+
+  const calculateSizePx = (lat) => {
+    const zoom = map.getZoom();
+    const rotorDiameterMeters = 16.357; // 53' 8" to meters
+    const metersPerPx = 156543.03392 * Math.cos((lat * Math.PI) / 180) / Math.pow(2, zoom);
+    return Math.max(rotorDiameterMeters / metersPerPx, 15);
+  };
+
+  // --- 1. SETUP & EVENTS (Runs ONLY ONCE per helicopter) ---
+  useEffect(() => {
+    // FIX 1: Calculate the size immediately 
+    const initialSize = calculateSizePx(asset.lat);
+
     const helo = L.marker([asset.lat, asset.lon], {
-      icon: getHeloIcon(asset.rotation || 0),
+      // FIX 2: Pass initialSize to the icon generator
+      icon: getHeloIcon(asset.rotation || 0, initialSize), 
       draggable: true,
       zIndexOffset: 500,
     }).addTo(map);
@@ -127,29 +147,29 @@ const ImperativeHelo = ({ asset, updateAsset, deleteAsset }) => {
         draggable: true,
         zIndexOffset: 1000,
         opacity: 0,
-      },
+      }
     ).addTo(map);
 
     heloRef.current = helo;
     handleRef.current = handle;
 
-    // --- NEW: RIGHT-CLICK TO DELETE ---
+    const handleZoom = () => {
+      const newSize = calculateSizePx(stateRef.current.lat);
+      helo.setIcon(getHeloIcon(stateRef.current.rotation, newSize));
+    };
+    map.on("zoomend", handleZoom);
+
     helo.on("contextmenu", (e) => {
-      // Prevent the browser's default right-click menu from appearing
       L.DomEvent.stopPropagation(e);
       L.DomEvent.preventDefault(e);
-
       if (window.confirm("Delete this helicopter?")) {
-        deleteAsset(asset.id);
+        deleteAssetRef.current(asset.id); // Uses the ref so we don't need it in deps
       }
     });
 
     // --- HOVER LOGIC ---
     let isHovering = false;
-    const show = () => {
-      isHovering = true;
-      handle.setOpacity(1);
-    };
+    const show = () => { isHovering = true; handle.setOpacity(1); };
     const hide = () => {
       isHovering = false;
       setTimeout(() => {
@@ -164,34 +184,25 @@ const ImperativeHelo = ({ asset, updateAsset, deleteAsset }) => {
     handle.on("mouseover", show);
     handle.on("mouseout", hide);
 
-    // --- DRAG/ROTATE LOGIC (using the stable dragend version) ---
+    // --- DRAG LOGIC ---
     helo.on("drag", (e) => {
       const pos = e.target.getLatLng();
       stateRef.current.lat = pos.lat;
       stateRef.current.lon = pos.lng;
-      handle.setLatLng(
-        calculateHandlePos(pos.lat, pos.lng, stateRef.current.rotation),
-      );
+      handle.setLatLng(calculateHandlePos(pos.lat, pos.lng, stateRef.current.rotation));
     });
 
     handle.on("drag", (e) => {
       handle.setOpacity(1);
       const mousePos = e.target.getLatLng();
       const angle = calculateAngle(
-        stateRef.current.lat,
-        stateRef.current.lon,
-        mousePos.lat,
-        mousePos.lng,
+        stateRef.current.lat, stateRef.current.lon, mousePos.lat, mousePos.lng
       );
-
       stateRef.current.rotation = angle;
 
-      // This updates the icon (and the label inside it) instantly
-      helo.setIcon(getHeloIcon(angle));
-
-      handle.setLatLng(
-        calculateHandlePos(stateRef.current.lat, stateRef.current.lon, angle),
-      );
+      const currentSize = calculateSizePx(stateRef.current.lat);
+      helo.setIcon(getHeloIcon(angle, currentSize));
+      handle.setLatLng(calculateHandlePos(stateRef.current.lat, stateRef.current.lon, angle));
     });
 
     const saveToReact = () => {
@@ -206,10 +217,24 @@ const ImperativeHelo = ({ asset, updateAsset, deleteAsset }) => {
     handle.on("dragend", saveToReact);
 
     return () => {
+      map.off("zoomend", handleZoom); 
       helo.remove();
       handle.remove();
     };
-  }, [map, asset.id, deleteAsset]); // Added deleteAsset to dependency array
+  }, [map, asset.id]);
+
+  // --- 2. SYNC EFFECT (Runs when React updates the asset from outside) ---
+  useEffect(() => {
+    if (!heloRef.current || !handleRef.current) return;
+
+    // Recalculate scale in case latitude changed significantly
+    const currentSize = calculateSizePx(asset.lat);
+    
+    // Smoothly update the existing markers without destroying them
+    heloRef.current.setLatLng([asset.lat, asset.lon]);
+    heloRef.current.setIcon(getHeloIcon(asset.rotation || 0, currentSize));
+    handleRef.current.setLatLng(calculateHandlePos(asset.lat, asset.lon, asset.rotation || 0));
+  }, [asset.lat, asset.lon, asset.rotation, map]);
 
   return null;
 };
@@ -759,6 +784,8 @@ const MapView = ({
   isExporting,
   onExportComplete,
   setExportProgress,
+  setIsExporting,
+  setExportBox
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -900,7 +927,11 @@ const MapView = ({
           color="red"
           aspectRatio={663/555} // Freeform or fixed, up to you
           onUpdate={updateExportBox}
-          onDelete={deleteExportBox}
+          onDelete={() => {
+              setExportBox(null);      // Removes the box from the map
+              setIsExporting(false);   // Kills the UI progress bar overlay
+              setExportProgress(0);    // Resets progress
+          }}
         />
       )}
 

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import MissionSummary from "./MissionSummary";
 import { UNIT_TYPES } from "./UnitIcons";
+import { convertToLatLongString } from "../utils/Bearing";
 
 const Controls = ({
   setTargetLocation,
@@ -24,8 +25,12 @@ const Controls = ({
   isExporting,
   setIsExporting,
   exportProgress,
+  setMapData,
+  setLatLong,
+  setGridElevation,
+  mapData
 }) => {
-  const [gridInput, setGridInput] = useState("16SGD63383202");
+  const [gridInput, setGridInput] = useState("16S GD 6338 3202");
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
   const API_BASE_URL = process.env.REACT_APP_API_URL;
@@ -65,6 +70,7 @@ const Controls = ({
 
   const handleSearch = async () => {
     setLoading(true);
+    setMapData(prev => ({...prev, mgrs: gridInput}));
     try {
       const res = await axios.post(`${API_BASE_URL}/convert-grid`, {
         grid: gridInput,
@@ -79,6 +85,12 @@ const Controls = ({
         },
       );
       setDetectedLZ(analysis.data.suggested_lz);
+
+      setLatLong(convertToLatLongString(lat, lon));
+
+      if (analysis.data.elevation) {
+        setGridElevation(analysis.data.elevation); 
+      }
     } catch (err) {
       alert("Error finding grid: " + err.message);
     } finally {
@@ -112,6 +124,7 @@ const Controls = ({
               detectedLZ={detectedLZ}
               terrainData={terrainData}
               targetLocation={targetLocation}
+              mapData={mapData}
             />
           </div>
 
@@ -256,10 +269,9 @@ const Controls = ({
           <div className="export-controls">
             <button
               onClick={enableExportMode}
-              disabled={!!exportBox}
-              className={`ff-action-btn blue ${exportBox ? "disabled" : ""}`}
+              className={`ff-action-btn blue`}
             >
-              {exportBox ? "Red Box Active" : "Set Target Area"}
+              Set Capture Area
             </button>
 
             <button
@@ -267,7 +279,7 @@ const Controls = ({
               disabled={!exportBox || isExporting}
               className={`ff-action-btn green ${!exportBox || isExporting ? "disabled" : ""}`}
             >
-              {isExporting ? `Processing...` : "Download High-Res"}
+              {isExporting ? `Processing...` : "Export LZ Card"}
             </button>
           </div>
           {isExporting && (

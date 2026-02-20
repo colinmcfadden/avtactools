@@ -2,7 +2,7 @@ import React, { useRef, useMemo, useEffect } from "react";
 import { Rectangle, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 
-const ExportBox = ({ bounds, onUpdate, aspectRatio }) => {
+const ExportBox = ({ bounds, onUpdate, onDelete, aspectRatio }) => {
   const map = useMap();
   
   // Refs to access standard Leaflet objects directly
@@ -42,6 +42,16 @@ const ExportBox = ({ bounds, onUpdate, aspectRatio }) => {
   const getCenter = (c) => [(c.n + c.s) / 2, (c.e + c.w) / 2];
 
   // --- EVENT HANDLERS ---
+
+  const handleRightClick = useMemo(() => (e) => {
+    // Prevent the browser's default right-click menu
+    e.originalEvent.stopPropagation();
+    e.originalEvent.preventDefault();
+    
+    if (window.confirm("Remove the export box?")) {
+      if (onDelete) onDelete("red");
+    }
+  }, [onDelete]);
 
   // 1. RESIZE HANDLER (Bottom-Right / South-East)
   const resizeHandlers = useMemo(() => ({
@@ -86,8 +96,9 @@ const ExportBox = ({ bounds, onUpdate, aspectRatio }) => {
          const b = rectRef.current.getBounds();
          onUpdate("red", [[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]]);
       }
-    }
-  }), [bounds, aspectRatio, onUpdate]);
+    },
+    contextmenu: handleRightClick
+  }), [bounds, aspectRatio, onUpdate, handleRightClick]);
 
   // 2. MOVE HANDLER (Center)
   const moveHandlers = useMemo(() => ({
@@ -134,6 +145,7 @@ const ExportBox = ({ bounds, onUpdate, aspectRatio }) => {
         ref={rectRef}
         bounds={bounds} 
         pathOptions={{ color: "red", weight: 2, fillOpacity: 0.1 }} 
+        eventHandlers={{ contextmenu: handleRightClick }}
       />
       
       {/* Center Move Handle */}
