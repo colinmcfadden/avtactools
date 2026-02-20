@@ -1,95 +1,199 @@
+/* --- Base Modal Structure --- */
 .export-modal-container {
-  position: fixed;
-  top: 20%;
-  left: 30%;
-  width: 400px;
-  background: rgba(20, 25, 35, 0.85); /* Dark semi-transparent */
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  z-index: 2000; /* Must be higher than the map */
-  color: white;
-  display: flex;
-  flex-direction: column;
+    position: absolute;
+    top: 5vh; 
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    
+    width: 95vw; 
+    max-width: 550px; /* <-- INCREASED FROM 500px */
+    max-height: 90vh; 
+    
+    background: rgba(30, 30, 35, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #e0e0e0;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 9999;
 }
 
+/* 2. Tighten the gap specifically for 3-column rows */
+.three-col-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px; /* <-- Tighter gap gives the inputs more width */
+}
+
+/* 3. NEW: Reduce padding and font size ONLY for 3-column inputs */
+.three-col-grid .input-group select,
+.three-col-grid .input-group input {
+    padding: 10px 4px; /* drastically reduce left/right padding */
+    font-size: 0.85rem; /* drop font size a hair so "Right" fits perfectly */
+    text-align: center; /* centering often looks better on narrow dropdowns */
+}
+
+.export-modal-container * {
+    box-sizing: border-box;
+}
+
+/* --- Body Layout --- */
+.modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    /* The Magic Sauce: Flex 1 tells the body to take up remaining space, 
+       but shrink and scroll if the container hits its max-height */
+    flex: 1; 
+}
+
+/* --- Header --- */
 .modal-header {
-  padding: 15px;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: grab; /* Shows it is draggable */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: move;
 }
 
-.modal-header:active { cursor: grabbing; }
-
-.modal-body { padding: 15px; display: flex; flex-direction: column; gap: 10px; }
-
-/* Inputs */
-input, select {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #fff;
-  padding: 8px;
-  border-radius: 4px;
-  width: 100%;
-  box-sizing: border-box;
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
 }
 
-input:focus { outline: none; border-color: #4facfe; }
-
-/* Grid Layouts */
-.form-row { display: flex; gap: 10px; }
-.short-input { width: 30%; }
-.long-input { width: 70%; }
-
-.data-block {
-  background: rgba(255, 255, 255, 0.03);
-  padding: 10px;
-  border-radius: 6px;
-  margin-bottom: 10px;
+.close-btn {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
 }
 
+.close-btn:hover { color: white; }
+
+/* --- Body Layout --- */
+.modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: 70vh; /* Prevent it being too tall on small screens */
+}
+
+/* Use CSS Grid for professional alignment */
+.form-grid {
+    display: grid;
+    gap: 15px; /* Consistent spacing between inputs */
+    margin-bottom: 15px;
+}
+
+/* A grid that always has 2 equal columns */
+.two-col-grid {
+    grid-template-columns: 1fr 1fr;
+}
+
+/* A grid for the top row (small type, wide name) */
+.header-grid {
+    grid-template-columns: 1fr 3fr;
+}
+
+/* Utility to make an item span 2 columns */
+.span-2 {
+    grid-column: span 2;
+}
+
+/* Subtle dividers between sections */
+.form-divider {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    margin: 15px 0 15px 0;
+    padding-bottom: 5px;
+}
+
+/* --- Input Groups & Styling --- */
 .input-group {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 5px;
+    display: flex;
+    flex-direction: column;
 }
-.input-group label { font-size: 0.8rem; color: #ccc; }
-.input-group input { width: 60%; text-align: right; }
 
-.tactical-grid { display: flex; flex-direction: column; gap: 8px; }
-.split-row { display: flex; gap: 10px; }
+/* The Labels - tighter footprint, professional look */
+.input-group label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    color: #bbb;
+    margin-bottom: 2px; /* Tight spacing */
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
 
-/* Buttons */
+/* The Inputs - Stretched width, modern styling */
+.input-group input,
+.input-group select,
+.input-group textarea {
+    width: 100%; /* Force full width of grid cell */
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.9rem;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.input-group input:focus,
+.input-group select:focus,
+.input-group textarea:focus {
+    outline: none;
+    border-color: #3b82f6; /* A nice blue focus color */
+    background: rgba(0, 0, 0, 0.5);
+}
+
+/* Fix for select options looking ugly in dark mode */
+.input-group select option {
+    background: #222;
+    color: white;
+}
+
+
+/* --- Footer --- */
 .modal-footer {
-  padding: 15px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 15px 20px;
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
 }
 
-.export-btn {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
-  color: #000;
-  font-weight: bold;
-  cursor: pointer;
+.cancel-btn, .export-btn {
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    font-size: 0.9rem;
+    transition: background 0.2s;
 }
 
 .cancel-btn {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: #ddd;
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #ccc;
 }
+.cancel-btn:hover { background: rgba(255,255,255,0.05); color: white; }
+
+.export-btn {
+    background: #3b82f6; /* Match focus color */
+    color: white;
+}
+.export-btn:hover { background: #2563eb; }
