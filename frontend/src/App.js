@@ -289,23 +289,10 @@ function App() {
   const updateDoghouse = (id, changes) => {
     setDoghouses((prev) => {
       return prev.map((dh) => {
-        // 1. MASTER SYNC LOGIC (Moving DH2 updates everyone's heading)
-        if (id === "dh2" && changes.heading) {
-          // If we are updating DH2's heading, apply it to everyone
-          if (dh.id === id) {
-             return { ...dh, ...changes }; // Update DH2 normally
-          } else {
-             return { ...dh, heading: changes.heading }; // Sync others to DH2
-          }
-        }
-
-        // 2. STANDARD UPDATE (Normal case)
+        // Simple, independent update: Only update the doghouse that was touched
         if (dh.id === id) {
-           // We simply merge the 'changes' object into the doghouse.
-           // This handles {lat, lon}, {heading}, {time}, etc. automatically.
            return { ...dh, ...changes };
         }
-
         return dh;
       });
     });
