@@ -1,16 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react'; 
+import React, { useState, useEffect, useRef } from 'react';
 import Draggable from 'react-draggable';
-import './ExportModal.css'; // We will add CSS next
+// Make sure this import path matches your actual CSS file location
+import './ExportModal.css'; 
 
 const ExportModal = ({ 
   isOpen, 
   onClose, 
   onExport, 
-  mapData, // Object containing mgrs, latLong, elevation
-  flightData // Object containing dh1 (takeoff), dh2 (land), goAround, etc.
+  mapData, 
+  flightData 
 }) => {
 
-    const nodeRef = useRef(null);
+  const nodeRef = useRef(null);
 
   const [formData, setFormData] = useState({
     lz_label: 'LZ',
@@ -26,7 +27,7 @@ const ExportModal = ({
     go_around: 'LEFT',
     takeoff_dir: '',
     door: 'RIGHT',
-    load: '',
+    load: 'LEFT',
     weapons_status: 'STOWED',
     remarks: ''
   });
@@ -36,11 +37,11 @@ const ExportModal = ({
     if (isOpen) {
       setFormData(prev => ({
         ...prev,
-        mgrs_grid: mapData.mgrs.replace(/^(.{3})(.{2})(.{4})(.{4})$/, '$1 $2 $3 $4') || '',
+        mgrs_grid: mapData.mgrs ? mapData.mgrs.replace(/^(.{3})(.{2})(.{4})(.{4})$/, '$1 $2 $3 $4') : '',
         lat_long: mapData.latLong || '',
-        elevation: mapData.elevation || '', // We will hook this up in App.js
-        land_dir: flightData.landing_hdg || '', // Doghouse 2 is Landing
-        takeoff_dir: flightData.takeoff_hdg || '', // Doghouse 1 is Takeoff
+        elevation: mapData.elevation || '', 
+        land_dir: flightData.landing_hdg || '', 
+        takeoff_dir: flightData.takeoff_hdg || '', 
         go_around: flightData.goAround || 'LEFT'
       }));
     }
@@ -66,17 +67,26 @@ const ExportModal = ({
         </div>
 
         <div className="modal-body">
-          {/* TOP SECTION: IDENTIFIERS */}
-          <div className="form-row">
-            <select name="lz_label" value={formData.lz_label} onChange={handleChange} className='short-input'>
-                  <option value="LZ">LZ</option>
-                  <option value="PZ">PZ</option>
-            </select>
-            <input name="lz_name" value={formData.lz_name} onChange={handleChange} placeholder="Name (HAWK)" className="long-input" />
+          
+          {/* SECTION 1: IDENTIFIERS (Grid with different column sizes) */}
+          <div className="form-grid header-grid">
+            <div className="input-group">
+              <label>Type</label>
+              <select name="lz_label" value={formData.lz_label} onChange={handleChange}>
+                <option value="LZ">LZ</option>
+                <option value="PZ">PZ</option>
+              </select>
+            </div>
+            <div className="input-group span-flex">
+              <label>Name</label>
+              <input name="lz_name" value={formData.lz_name} onChange={handleChange} />
+            </div>
           </div>
 
-          {/* GRID DATA SECTION */}
-          <div className="data-block">
+          <div className="form-divider">Grid Data</div>
+
+          {/* SECTION 2: 2x2 GRID */}
+          <div className="form-grid two-col-grid">
             <div className="input-group">
               <label>Objective</label>
               <input name="objective" value={formData.objective} onChange={handleChange} />
@@ -95,34 +105,69 @@ const ExportModal = ({
             </div>
           </div>
 
-          {/* TACTICAL DATA SECTION */}
-          <div className="tactical-grid">
-            <input name="call_sign" value={formData.call_sign} onChange={handleChange} placeholder="Call Sign" />
-            <input name="freq" value={formData.freq} onChange={handleChange} placeholder="Freq" />
-            <select name="formation" value={formData.formation} onChange={handleChange} placeholder="Formation">
-                  <option value="STAG LEFT">STAG LEFT</option>
-                  <option value="STAG RIGHT">STAG RIGHT</option>
-                  <option value="TRAIL">TRAIL</option>
-               </select>
+          <div className="form-divider">Tactical Data</div>
+
+          {/* SECTION 3: TACTICAL GRID */}
+          <div className="form-grid two-col-grid">
             
-            <div className="split-row">
-              <input name="land_dir" value={formData.land_dir} onChange={handleChange} placeholder="Land Dir" />
-              <input name="takeoff_dir" value={formData.takeoff_dir} onChange={handleChange} placeholder="T/O Dir" />
+            <div className="input-group">
+              <label>Call Sign</label>
+              <input name="call_sign" value={formData.call_sign} onChange={handleChange} />
+            </div>
+            <div className="input-group">
+              <label>Freq</label>
+              <input name="freq" value={formData.freq} onChange={handleChange} />
             </div>
 
-            <div className="split-row">
+            <div className="input-group span-2">
+              <label>Formation</label>
+              <select name="formation" value={formData.formation} onChange={handleChange}>
+                <option value="STAG LEFT">STAG LEFT</option>
+                <option value="STAG RIGHT">STAG RIGHT</option>
+                <option value="TRAIL">TRAIL</option>
+              </select>
+            </div>
+            
+            <div className="input-group">
+              <label>Land Dir</label>
+              <input name="land_dir" value={formData.land_dir} onChange={handleChange} />
+            </div>
+            <div className="input-group">
+              <label>T/O Dir</label>
+              <input name="takeoff_dir" value={formData.takeoff_dir} onChange={handleChange} />
+            </div>
+          </div>
+
+          <div className="form-grid three-col-grid">
+             <div className="input-group">
+               <label>Go Around</label>
                <select name="go_around" value={formData.go_around} onChange={handleChange}>
                   <option value="LEFT">Left</option>
                   <option value="RIGHT">Right</option>
                </select>
+             </div>
+             <div className="input-group">
+               <label>Door</label>
                <select name="door" value={formData.door} onChange={handleChange}>
+                  <option value="OPEN">Open</option>
+                  <option value="CLOSED">Closed</option>
+               </select>
+             </div>
+             <div className="input-group">
+               <label>Load</label>
+               <select name="load" value={formData.load} onChange={handleChange}>
                   <option value="LEFT">Left</option>
                   <option value="RIGHT">Right</option>
                </select>
+             </div>
             </div>
 
-            <input name="remarks" value={formData.remarks} onChange={handleChange} placeholder="Remarks / Hazards" className="full-width" />
-          </div>
+            <div className="form-grid two-col-grid">
+              <div className="input-group span-2">
+                <label>Remarks / Hazards</label>
+                <textarea rows="2" name="remarks" value={formData.remarks} onChange={handleChange} className="full-width" style={{resize: 'none'}}/>
+              </div>
+            </div>
         </div>
 
         <div className="modal-footer">
