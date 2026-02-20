@@ -39,7 +39,7 @@ const ExportModal = ({
         ...prev,
         mgrs_grid: mapData.mgrs ? mapData.mgrs.replace(/^(.{3})(.{2})(.{4})(.{4})$/, '$1 $2 $3 $4') : '',
         lat_long: mapData.latLong || '',
-        elevation: mapData.elevation || '', 
+        elevation: mapData.elevation + "'" || '', 
         land_dir: flightData.landing_hdg || '', 
         takeoff_dir: flightData.takeoff_hdg || '', 
         go_around: flightData.goAround || 'LEFT'
