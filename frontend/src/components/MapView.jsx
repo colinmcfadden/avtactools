@@ -265,10 +265,19 @@ const Doghouse = ({ data, updateDoghouse }) => {
   const handleRef = useRef(null);
   const rotationRef = useRef(parseInt(data.heading) || 0);
 
+  // Refs for state sync (prevents stale data in event listeners)
+  const dataRef = useRef(data);
+  const updateRef = useRef(updateDoghouse);
+
+  useEffect(() => {
+    dataRef.current = data;
+    updateRef.current = updateDoghouse;
+  }, [data, updateDoghouse]);
+
   // --- HTML GENERATOR ---
   const getHtml = (dh, rotation) => {
     const time = (dh.time || "00+00").split("+");
-    const airspeed = dh.airspd ? dh.airspd.split(" ")[0] : "90";
+    const airspeed = dh.airspeed ? dh.airspeed.split(" ")[0] : "90";
 
     return `
         <div class="doghouse-wrapper" style="pointer-events: auto; cursor: grab; width: 60px; transform: rotate(${rotation}deg); transform-origin: center center;">
@@ -301,8 +310,83 @@ const Doghouse = ({ data, updateDoghouse }) => {
         </div>`;
   };
 
+  const attachListeners = (markerInst, handleInst) => {
+    const element = markerInst.getElement();
+    if (!element) return;
+    const inputs = element.querySelectorAll(".dh-input");
+
+    inputs.forEach((span) => {
+      L.DomEvent.disableClickPropagation(span);
+      span.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+        map.dragging.disable();
+      });
+      span.addEventListener("dblclick", (e) => e.stopPropagation());
+
+      span.onclick = (e) => {
+        e.stopPropagation();
+        map.dragging.disable();
+        span.contentEditable = "true";
+        span.focus();
+        span.style.backgroundColor = "#e6f7ff";
+        document.execCommand("selectAll", false, null);
+      };
+
+      span.onblur = () => {
+        span.contentEditable = "false";
+        span.style.backgroundColor = "transparent";
+        map.dragging.enable();
+
+        const val = span.innerText.trim();
+        const type = span.getAttribute("data-type");
+        const currentData = dataRef.current; 
+
+        if (type === "heading") {
+          let newDeg = parseInt(val) || 0;
+          newDeg = (newDeg + 360) % 360; 
+          rotationRef.current = newDeg; 
+
+          markerInst.setIcon(
+            L.divIcon({
+              className: "doghouse-container",
+              html: getHtml({ ...currentData, heading: val }, newDeg),
+              iconSize: [60, 100],
+              iconAnchor: [30, 50],
+            }),
+          );
+
+          handleInst.setLatLng(calculateDoghouseHandlePos(currentData.lat, currentData.lon, newDeg));
+          updateRef.current(currentData.id, { heading: `${newDeg.toString().padStart(3, "0")}°` });
+          setTimeout(() => attachListeners(markerInst, handleInst), 50);
+
+        } else {
+          // Reverted back to simple independent field updates
+          let updates = {};
+          if (type === "id") updates.id_val = val;
+          else if (type === "dist") updates.dist = `${val}km`;
+          else if (type === "airspeed") updates.airspeed = `${val} kts`;
+          else if (type.startsWith("time")) {
+            const row = span.parentElement;
+            const m = row.querySelector('[data-type="time-m"]').innerText;
+            const s = row.querySelector('[data-type="time-s"]').innerText;
+            updates.time = `${m}+${s}`;
+          }
+          
+          updateRef.current(currentData.id, updates);
+        }
+      };
+
+      span.onkeydown = (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          span.blur();
+        }
+      };
+    });
+  };
+
+  // --- 1. SETUP EFFECT ---
   useEffect(() => {
-    // 1. Create Markers
     const marker = L.marker([data.lat, data.lon], {
       icon: L.divIcon({
         className: "doghouse-container",
@@ -329,103 +413,10 @@ const Doghouse = ({ data, updateDoghouse }) => {
     markerRef.current = marker;
     handleRef.current = handle;
 
-    // --- INTERACTION LOGIC ---
+    attachListeners(marker, handle);
+    setTimeout(() => attachListeners(marker, handle), 100);
 
-    // This function re-binds listeners every time we redraw the HTML
-    const attachListeners = () => {
-      const element = marker.getElement();
-      if (!element) return;
-      const inputs = element.querySelectorAll(".dh-input");
-
-      inputs.forEach((span) => {
-        // Prevent Map Dragging
-        L.DomEvent.disableClickPropagation(span);
-        span.addEventListener("mousedown", (e) => {
-          e.stopPropagation();
-          map.dragging.disable();
-        });
-        span.addEventListener("dblclick", (e) => e.stopPropagation());
-
-        // Click to Edit
-        span.onclick = (e) => {
-          e.stopPropagation();
-          map.dragging.disable();
-          span.contentEditable = "true";
-          span.focus();
-          span.style.backgroundColor = "#e6f7ff";
-          document.execCommand("selectAll", false, null);
-        };
-
-        // Save on Blur (or Enter)
-        span.onblur = () => {
-          span.contentEditable = "false";
-          span.style.backgroundColor = "transparent";
-          map.dragging.enable();
-
-          const val = span.innerText.trim();
-          const type = span.getAttribute("data-type");
-
-          // --- THE FIX: HANDLE HEADING ROTATION HERE ---
-          if (type === "heading") {
-            let newDeg = parseInt(val) || 0;
-            newDeg = (newDeg + 360) % 360; // Normalize
-            rotationRef.current = newDeg; // Update Local Ref
-
-            // 1. Force Redraw of Doghouse (Rotates it)
-            marker.setIcon(
-              L.divIcon({
-                className: "doghouse-container",
-                html: getHtml({ ...data, heading: val }, newDeg),
-                iconSize: [60, 100],
-                iconAnchor: [30, 50],
-              }),
-            );
-
-            // 2. Move Handle to new position
-            handle.setLatLng(
-              calculateDoghouseHandlePos(data.lat, data.lon, newDeg),
-            );
-
-            // 3. Update React State
-            updateDoghouse(data.id, {
-              heading: `${newDeg.toString().padStart(3, "0")}°`,
-            });
-
-            // 4. Re-attach listeners because setIcon destroyed the DOM
-            setTimeout(attachListeners, 50);
-          } else {
-            // Handle other fields normally
-            let updates = {};
-            if (type === "dist") updates.dist = `${val}km`;
-            else if (type === "id") updates.id_val = val;
-            else if (type === "airspeed") updates.airspeed = `${val} GS`;
-            else if (type.startsWith("time")) {
-              const row = span.parentElement;
-              const m = row.querySelector('[data-type="time-m"]').innerText;
-              const s = row.querySelector('[data-type="time-s"]').innerText;
-              updates.time = `${m}+${s}`;
-            }
-            updateDoghouse(data.id, updates);
-          }
-        };
-
-        span.onkeydown = (e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            span.blur();
-          }
-        };
-      });
-    };
-
-    // Initialize Listeners
-    attachListeners();
-    setTimeout(attachListeners, 100);
-
-    // --- DRAG & HOVER HANDLERS ---
-    const show = () => {
-      handle.setOpacity(1);
-    };
+    const show = () => handle.setOpacity(1);
     const hide = () => {
       setTimeout(() => {
         if (!handle.dragging?._draggable?._dragging) handle.setOpacity(0);
@@ -439,12 +430,13 @@ const Doghouse = ({ data, updateDoghouse }) => {
 
     marker.on("drag", (e) => {
       const pos = e.target.getLatLng();
-      handle.setLatLng(calculateDoghouseHandlePos(pos.lat, pos.lng));
+      handle.setLatLng(calculateDoghouseHandlePos(pos.lat, pos.lng, rotationRef.current));
     });
+
     marker.on("dragend", (e) => {
       const pos = e.target.getLatLng();
-      updateDoghouse(data.id, { lat: pos.lat, lon: pos.lng });
-      setTimeout(attachListeners, 50);
+      updateRef.current(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
+      setTimeout(() => attachListeners(marker, handle), 50);
     });
 
     handle.on("drag", (e) => {
@@ -452,38 +444,57 @@ const Doghouse = ({ data, updateDoghouse }) => {
       const center = marker.getLatLng();
       const mouse = e.target.getLatLng();
       const newAngle = calculateBearing(
-        center.lat * (Math.PI / 180),
-        center.lng * (Math.PI / 180),
-        mouse.lat * (Math.PI / 180),
-        mouse.lng * (Math.PI / 180),
+        center.lat * (Math.PI / 180), center.lng * (Math.PI / 180),
+        mouse.lat * (Math.PI / 180), mouse.lng * (Math.PI / 180)
       );
       rotationRef.current = newAngle;
 
-      // Rotate the Doghouse Icon
       marker.setIcon(
         L.divIcon({
           className: "doghouse-container",
-          html: getHtml(data, newAngle),
+          html: getHtml(dataRef.current, newAngle),
           iconSize: [60, 100],
           iconAnchor: [30, 50],
-        }),
+        })
       );
 
-      handle.setLatLng(calculateDoghouseHandlePos(center.lat, center.lng));
+      handle.setLatLng(calculateDoghouseHandlePos(center.lat, center.lng, newAngle));
     });
 
     handle.on("dragend", () => {
-      updateDoghouse(data.id, {
+      updateRef.current(dataRef.current.id, {
         heading: `${Math.round(rotationRef.current).toString().padStart(3, "0")}°`,
       });
-      setTimeout(attachListeners, 50);
+      setTimeout(() => attachListeners(marker, handle), 50);
     });
 
     return () => {
       marker.remove();
       handle.remove();
     };
-  }, [map, data.id]);
+  }, [map]); // Runs only on Mount
+
+  // --- 2. SYNC EFFECT (Keeps DOM matching React State if props change) ---
+  useEffect(() => {
+    if (!markerRef.current || !handleRef.current) return;
+
+    const incomingHeading = parseInt(data.heading) || 0;
+    rotationRef.current = incomingHeading;
+
+    markerRef.current.setIcon(
+      L.divIcon({
+        className: "doghouse-container",
+        html: getHtml(data, incomingHeading),
+        iconSize: [60, 100],
+        iconAnchor: [30, 50],
+      })
+    );
+    
+    markerRef.current.setLatLng([data.lat, data.lon]);
+    handleRef.current.setLatLng(calculateDoghouseHandlePos(data.lat, data.lon, incomingHeading));
+
+    setTimeout(() => attachListeners(markerRef.current, handleRef.current), 50);
+  }, [data.lat, data.lon, data.heading, data.time, data.dist, data.airspeed, data.id_val]);
 
   return null;
 };
