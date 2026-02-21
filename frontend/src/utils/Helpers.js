@@ -1,0 +1,73 @@
+export const calculateBearing = (startLat, startLng, endLat, endLng) => {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const toDeg = (rad) => (rad * 180) / Math.PI;
+
+  const lat1 = toRad(startLat);
+  const lat2 = toRad(endLat);
+  const dLng = toRad(endLng - startLng);
+
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) -
+            Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+
+  const brng = toDeg(Math.atan2(y, x));
+  return Math.round((brng + 360) % 360);
+};
+
+export const convertToLatLongString = (lat, lng) => {
+  const toDMS = (coordinate, isLat) => {
+    const absolute = Math.abs(coordinate);
+    const degrees = Math.floor(absolute);
+    const minutesNotTruncated = (absolute - degrees) * 60;
+    const minutes = Math.floor(minutesNotTruncated);
+    const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(2);
+
+    let direction = "";
+    if (isLat) {
+      direction = coordinate >= 0 ? "N" : "S";
+    } else {
+      direction = coordinate >= 0 ? "E" : "W";
+    }
+
+    return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
+  };
+
+  return `${toDMS(lat, true)}  ${toDMS(lng, false)}`;
+};
+
+export const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Earth radius in meters
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  
+  return R * c; // Distance in meters
+};
+
+export const calculateAngle = (centerLat, centerLon, mouseLat, mouseLon) => {
+  const dy = mouseLat - centerLat;
+  const dx = mouseLon - centerLon;
+  const theta = Math.atan2(dy, dx);
+  let angle = theta * (180 / Math.PI) + 90;
+  return angle;
+};
+
+export const calculateHandlePos = (lat, lon, rotation) => {
+  const offset = 0.0001; // Distance of handle from center
+  const angleRad = (rotation - 90) * (Math.PI / 180);
+  return [lat - offset * Math.sin(angleRad), lon + offset * Math.cos(angleRad)];
+};
+
+export const calculateDoghouseHandlePos = (lat, lon) => {
+  // Fixed offset to the North (approx 30 meters)
+  // Since Lat increases as you go North, we just ADD to the latitude.
+  // 0.0003 is roughly 33 meters, usually good for zoom level 18-20.
+  const offset = 0.0003;
+
+  return [lat + offset, lon];
+};

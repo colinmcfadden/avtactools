@@ -615,3 +615,32 @@ body.export-mode-active .leaflet-control-container {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.alert-queue {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 9999; /* This is crucial to float over Leaflet */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none; /* Lets you click the map behind the alerts */
+}
+
+.proximity-alert {
+  background: rgba(220, 38, 38, 0.9);
+  backdrop-filter: blur(4px);
+  color: white;
+  padding: 12px 16px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  font-weight: 500;
+  font-size: 0.9rem;
+  border-left: 4px solid #991b1b;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
