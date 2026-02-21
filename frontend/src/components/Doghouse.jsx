@@ -106,7 +106,6 @@ const Doghouse = ({ data, updateDoghouse }) => {
           setTimeout(() => attachListeners(markerInst, handleInst), 50);
 
         } else {
-          // Reverted back to simple independent field updates
           let updates = {};
           if (type === "id") updates.id_val = val;
           else if (type === "dist") updates.dist = `${val}km`;
@@ -144,12 +143,23 @@ const Doghouse = ({ data, updateDoghouse }) => {
       zIndexOffset: 2000,
     }).addTo(map);
 
+    // --- FIX 1: THE FAT FINGER ROTATION HANDLE ---
     const handle = L.marker(calculateDoghouseHandlePos(data.lat, data.lon), {
       icon: L.divIcon({
-        className: "rotate-handle",
-        html: `<div style="background: white; border: 2px solid #0056b3; width: 12px; height: 12px; border-radius: 50%; cursor: grab;"></div>`,
-        iconSize: [12, 12],
-        iconAnchor: [30, 30],
+        className: "rotate-handle-wrapper",
+        html: `<div style="
+            width: 44px; 
+            height: 44px; 
+            background: transparent; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            cursor: grab;
+        ">
+            <div style="background: white; border: 2px solid #0056b3; width: 12px; height: 12px; border-radius: 50%;"></div>
+        </div>`,
+        iconSize: [44, 44],
+        iconAnchor: [22, 22], // Center of the 44px box
       }),
       draggable: true,
       zIndexOffset: 2100,
@@ -174,12 +184,23 @@ const Doghouse = ({ data, updateDoghouse }) => {
     handle.on("mouseover", show);
     handle.on("mouseout", hide);
 
+    // --- FIX 2: FLOATING DRAG LOGIC ---
+    marker.on("dragstart", (e) => {
+      if (e.target._icon) {
+        L.DomUtil.addClass(e.target._icon, 'is-mobile-dragging');
+      }
+    });
+
     marker.on("drag", (e) => {
       const pos = e.target.getLatLng();
       handle.setLatLng(calculateDoghouseHandlePos(pos.lat, pos.lng, rotationRef.current));
     });
 
     marker.on("dragend", (e) => {
+      // Remove the floating class when dragging stops
+      if (e.target._icon) {
+        L.DomUtil.removeClass(e.target._icon, 'is-mobile-dragging');
+      }
       const pos = e.target.getLatLng();
       updateRef.current(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
       setTimeout(() => attachListeners(marker, handle), 50);

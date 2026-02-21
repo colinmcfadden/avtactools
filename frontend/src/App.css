@@ -843,3 +843,35 @@ body.export-mode-active .leaflet-control-container {
         color: white;
     }
 }
+
+/* =========================================================
+   MOBILE DRAG FLOATING EFFECT (Touchscreens Only)
+   ========================================================= */
+
+/* Using (pointer: coarse) targets devices where the primary 
+  input is a finger (phones/tablets), ignoring desktop mice! 
+  We also include max-width just to be safe with your existing breakpoints.
+*/
+@media (max-width: 850px), (pointer: coarse) {
+    .is-mobile-dragging {
+        /* Pop the icon 60px UP and scale it slightly so it escapes the finger */
+        transform: translateY(-60px) scale(1.1) !important;
+        transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        z-index: 9999 !important; 
+        pointer-events: none; 
+    }
+
+    /* Draw a dashed targeting line straight down to the actual coordinate */
+    .is-mobile-dragging::after {
+        content: '';
+        position: absolute;
+        top: 100%; /* Start at the bottom of the floating icon */
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2px;
+        height: 60px; /* Match the translateY distance */
+        background-image: linear-gradient(to bottom, rgba(239, 68, 68, 0.8) 50%, transparent 50%);
+        background-size: 100% 8px; /* Creates the dashed effect */
+        pointer-events: none;
+    }
+}
