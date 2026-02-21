@@ -703,3 +703,58 @@ body.export-mode-active .leaflet-control-container {
     from { transform: scale(0.95); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
 }
+
+.suggestions-dropdown {
+    position: absolute;
+    top: 100%; /* Position exactly below the input */
+    left: 0;
+    right: 0;
+    margin: 4px 0 0 0;
+    padding: 0;
+    list-style: none;
+    background: #2a2a30;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Custom Scrollbar for the dropdown */
+.suggestions-dropdown::-webkit-scrollbar {
+    width: 6px;
+}
+.suggestions-dropdown::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.suggestions-dropdown li {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    color: #e0e0e0;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.1s;
+}
+
+.suggestions-dropdown li:last-child {
+    border-bottom: none;
+}
+
+.suggestions-dropdown li:hover {
+    background: #3b82f6; /* Blue highlight */
+    color: white;
+}
+
+/* Highlights the typed letters in the dropdown */
+.text-highlight {
+    color: #fbbf24; /* Amber color */
+    font-weight: 900;
+}
+
+/* Ensure the highlight stays visible even when hovering over the row */
+.suggestions-dropdown li:hover .text-highlight {
+    color: #fcd34d; /* Slightly lighter amber on hover */
+}

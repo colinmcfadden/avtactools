@@ -436,7 +436,7 @@ useEffect(() => {
     <div className="app-container">
       <div className="sidebar">
         <h2 className="tactical-header">
-          LZ Card Caddy <span className="version-tag">1.0.0-alpha.1</span>
+          EZ/PZ Card <span className="version-tag">1.0.0-alpha.1</span>
         </h2>
         <Controls
           setTargetLocation={setTargetLocation}
