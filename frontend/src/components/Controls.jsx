@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import MissionSummary from "./MissionSummary";
 import { UNIT_TYPES } from "./UnitIcons";
-import { convertToLatLongString } from "../utils/Bearing";
+import { convertToLatLongString } from "../utils/Helpers";
 
 const Controls = ({
   setTargetLocation,
