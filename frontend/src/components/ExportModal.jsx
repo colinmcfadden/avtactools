@@ -7,10 +7,12 @@ const ExportModal = ({
   onClose, 
   onExport, 
   mapData, 
-  flightData 
+  flightData,
+  proximityAlerts 
 }) => {
 
   const nodeRef = useRef(null);
+  const [showWarning, setShowWarning] = useState(false);
 
   const [formData, setFormData] = useState({
     lz_label: 'LZ',
@@ -52,7 +54,28 @@ const ExportModal = ({
   };
 
   const handleSubmit = () => {
+    if (proximityAlerts && proximityAlerts.length > 0) {
+      // If there are alerts, show the warning instead of exporting
+      setShowWarning(true);
+    } else {
+      // Otherwise, proceed normally
+      onExport(formData);
+    }
+  };
+
+  const handleConfirmExport = () => {
+    setShowWarning(false);
     onExport(formData);
+  };
+
+  const handleCancelExport = () => {
+    setShowWarning(false);
+  };
+
+  // Ensure warning resets if they close the modal via the 'X' or Cancel button
+  const handleCloseModal = () => {
+    setShowWarning(false);
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -60,6 +83,22 @@ const ExportModal = ({
   return (
     <Draggable nodeRef={nodeRef} handle=".modal-header">
       <div ref={nodeRef} className="export-modal-container glass-panel">
+
+        {showWarning && (
+          <div className="warning-overlay">
+            <div className="warning-box">
+              <h4>⚠️ Proximity Alert</h4>
+              <p>One or more helicopters are placed closer than the 60m minimum separation requirement.</p>
+              <div className="warning-actions">
+                <button className="cancel-btn" onClick={handleCancelExport}>Go Back</button>
+                <button className="export-btn warning-proceed" onClick={handleConfirmExport}>
+                  Disregard & Export
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div className="modal-header">
           <h3>Export LZ Card</h3>
           <button className="close-btn" onClick={onClose}>×</button>
@@ -170,7 +209,7 @@ const ExportModal = ({
         </div>
 
         <div className="modal-footer">
-          <button className="cancel-btn" onClick={onClose}>Cancel</button>
+          <button className="cancel-btn" onClick={handleCloseModal}>Cancel</button>
           <button className="export-btn" onClick={handleSubmit}>Export Package</button>
         </div>
       </div>

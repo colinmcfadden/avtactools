@@ -90,7 +90,7 @@ function App() {
   // Add this useEffect to watch your helicopters array
 useEffect(() => {
   const alerts = [];
-  const minDistance = 60; // 60 meters
+  const minDistance = 59; // 60 meters
 
   // Check every helo against every other helo
   for (let i = 0; i < assets.length; i++) {
@@ -526,6 +526,7 @@ useEffect(() => {
           latLong: latLong
         }}
         flightData={flightData}
+        proximityAlerts={proximityAlerts}
      />
 
       {loading && (

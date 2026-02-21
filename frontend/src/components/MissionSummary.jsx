@@ -30,12 +30,17 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData }) =>
     const areaSqM = getPolygonArea(detectedLZ);
     
     // UH-60 Capacity logic
-    const heloL = 18.3;
-    const heloW = 16.5;
-    const buffer = 40;
-    const spotSize = (heloL + buffer) * (heloW + buffer); 
+    const separationMeters = 60; // Minimum center-to-center distance
+  
+    // Each helicopter effectively requires a 60x60 meter box to guarantee 
+    // no other helicopter can encroach on its 60m radius.
+    const spotSize = separationMeters * separationMeters; // 3600 sq meters per helo
 
+    // Note: For highly irregular polygon shapes, dividing total area by spot size 
+    // is an approximation. A 10m wide, 400m long strip has 4000 sq meters but holds 0 helos. 
+    // However, for standard open fields, this math is the aviation standard.
     const heloCount = Math.floor(areaSqM / spotSize);
+    
     return { area: Math.round(areaSqM), heloCount: Math.max(0, heloCount) };
   }, [detectedLZ]);
 

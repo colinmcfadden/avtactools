@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -349,6 +349,8 @@ const MapView = ({
   setIsExporting,
   setExportBox
 }) => {
+  const [activeDrag, setActiveDrag] = useState(null);
+
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
   // Helper to determine color based on slope degree
@@ -466,6 +468,7 @@ const MapView = ({
         <Helicopter
           key={asset.id}
           asset={asset}
+          allAssets={assets}
           updateAsset={updateAsset}
           deleteAsset={deleteAsset}
         />

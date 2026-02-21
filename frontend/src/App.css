@@ -644,3 +644,62 @@ body.export-mode-active .leaflet-control-container {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+.warning-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 15, 18, 0.85); /* Dark semi-transparent background */
+    backdrop-filter: blur(5px);
+    z-index: 1000; /* Stays above the modal content */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.warning-box {
+    background: #2a2a30;
+    padding: 25px;
+    border-radius: 8px;
+    border: 1px solid #dc2626; /* Red warning border */
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    animation: popIn 0.2s ease-out;
+}
+
+.warning-box h4 {
+    color: #ef4444; /* Tailwind Red-500 */
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 1.2rem;
+    letter-spacing: 0.5px;
+}
+
+.warning-box p {
+    color: #e0e0e0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 25px;
+}
+
+.warning-actions {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+}
+
+.warning-proceed {
+    background: #dc2626 !important; /* Override standard blue */
+}
+
+.warning-proceed:hover {
+    background: #b91c1c !important; /* Darker red on hover */
+}
+
+@keyframes popIn {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}

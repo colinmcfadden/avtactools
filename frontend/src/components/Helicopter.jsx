@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import { calculateAngle, calculateHandlePos } from '../utils/Helpers';
+import { calculateAngle, calculateHandlePos, getDistanceMeters } from '../utils/Helpers';
 
 const getHeloIcon = (rot, sizePx = 40) => {
   // Normalize rotation for display (0-359)
@@ -54,20 +54,23 @@ const rotateHandleIcon = L.divIcon({
   iconAnchor: [7, 7],
 });
 
-const Helicopter = ({ asset, updateAsset, deleteAsset }) => {
+
+
+const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
   const map = useMap();
   const heloRef = useRef(null);
   const handleRef = useRef(null);
-  
-  // Use refs for state and functions that shouldn't trigger a recreation
+  const linesLayerRef = useRef(null);
   const stateRef = useRef(asset);
   const deleteAssetRef = useRef(deleteAsset);
+  const allAssetsRef = useRef(allAssets);
 
   // Keep refs up to date without triggering re-renders
   useEffect(() => {
     stateRef.current = asset;
     deleteAssetRef.current = deleteAsset;
-  }, [asset, deleteAsset]);
+    allAssetsRef.current = allAssets;
+  }, [asset, deleteAsset, allAssets]);
 
   const calculateSizePx = (lat) => {
     const zoom = map.getZoom();
@@ -98,6 +101,9 @@ const Helicopter = ({ asset, updateAsset, deleteAsset }) => {
       }
     ).addTo(map);
 
+    const linesGroup = L.layerGroup().addTo(map);
+    linesLayerRef.current = linesGroup;
+
     heloRef.current = helo;
     handleRef.current = handle;
 
@@ -115,14 +121,68 @@ const Helicopter = ({ asset, updateAsset, deleteAsset }) => {
       }
     });
 
+    // --- DYNAMIC PROXIMITY LINES ---
+    const drawLines = (currentLat, currentLon) => {
+      linesGroup.clearLayers(); // Erase old lines
+      
+      const otherHelos = allAssetsRef.current.filter(a => a.type === "helo" && a.id !== asset.id);
+      
+      otherHelos.forEach(other => {
+         const dist = getDistanceMeters(currentLat, currentLon, other.lat, other.lon);
+         const isViolation = dist < 59;
+         const midLat = (currentLat + other.lat) / 2;
+         const midLon = (currentLon + other.lon) / 2;
+         
+         const line = L.polyline([[currentLat, currentLon], [other.lat, other.lon]], {
+            color: isViolation ? "#dc2626" : "#9ca3af",
+            dashArray: "6, 6",
+            weight: 2,
+            opacity: 0.8,
+            interactive: false
+         });
+         
+         const badge = L.marker([midLat, midLon], {
+            icon: L.divIcon({
+              className: "distance-badge-icon",
+              html: `<div style="
+                background: ${isViolation ? '#dc2626' : '#374151'}; 
+                color: white; 
+                padding: 2px 6px; 
+                border-radius: 10px; 
+                font-size: 10px; 
+                font-weight: bold; 
+                border: 1px solid rgba(255,255,255,0.5); 
+                white-space: nowrap; 
+                width: max-content;
+                transform: translate(-50%, -50%);
+                box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+              ">${Math.round(dist)}m</div>`,
+              iconSize: [0, 0], 
+            }),
+            interactive: false
+         });
+         
+         linesGroup.addLayer(line);
+         linesGroup.addLayer(badge);
+      });
+    };
+
     // --- HOVER LOGIC ---
     let isHovering = false;
-    const show = () => { isHovering = true; handle.setOpacity(1); };
+    let isDragging = false;
+
+    const show = () => { 
+      isHovering = true; 
+      handle.setOpacity(1); 
+      drawLines(stateRef.current.lat, stateRef.current.lon); // Draw lines on hover
+    };
+    
     const hide = () => {
       isHovering = false;
       setTimeout(() => {
-        if (!isHovering && !handle.dragging?._draggable?._dragging) {
+        if (!isHovering && !isDragging && !handle.dragging?._draggable?._dragging) {
           handle.setOpacity(0);
+          linesGroup.clearLayers(); // Erase lines when hover ends
         }
       }, 50);
     };
@@ -133,11 +193,16 @@ const Helicopter = ({ asset, updateAsset, deleteAsset }) => {
     handle.on("mouseout", hide);
 
     // --- DRAG LOGIC ---
+    helo.on("dragstart", () => { isDragging = true; });
+    handle.on("dragstart", () => { isDragging = true; });
+
     helo.on("drag", (e) => {
       const pos = e.target.getLatLng();
       stateRef.current.lat = pos.lat;
       stateRef.current.lon = pos.lng;
       handle.setLatLng(calculateHandlePos(pos.lat, pos.lng, stateRef.current.rotation));
+
+      drawLines(pos.lat, pos.lng);
     });
 
     handle.on("drag", (e) => {
@@ -151,14 +216,18 @@ const Helicopter = ({ asset, updateAsset, deleteAsset }) => {
       const currentSize = calculateSizePx(stateRef.current.lat);
       helo.setIcon(getHeloIcon(angle, currentSize));
       handle.setLatLng(calculateHandlePos(stateRef.current.lat, stateRef.current.lon, angle));
+
+      drawLines(stateRef.current.lat, stateRef.current.lon);
     });
 
     const saveToReact = () => {
+        isDragging = false;
       updateAsset(asset.id, {
         lat: stateRef.current.lat,
         lon: stateRef.current.lon,
         rotation: stateRef.current.rotation,
       });
+      hide();
     };
 
     helo.on("dragend", saveToReact);
@@ -168,6 +237,8 @@ const Helicopter = ({ asset, updateAsset, deleteAsset }) => {
       map.off("zoomend", handleZoom); 
       helo.remove();
       handle.remove();
+      linesGroup.clearLayers(); // Clear lines on cleanup
+      linesGroup.remove();
     };
   }, [map, asset.id]);
 
