@@ -758,3 +758,88 @@ body.export-mode-active .leaflet-control-container {
 .suggestions-dropdown li:hover .text-highlight {
     color: #fcd34d; /* Slightly lighter amber on hover */
 }
+
+/* =========================================================
+   MOBILE RESPONSIVENESS (Hamburger Menu)
+   ========================================================= */
+
+/* Hamburger Button Settings */
+.mobile-hamburger-btn {
+    display: none; /* Hidden by default on desktop */
+}
+
+@media (max-width: 850px) {
+    .mobile-hamburger-btn {
+        display: flex; /* Show the hamburger */
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: 15px;
+        right: 15px; /* MOVED TO THE RIGHT */
+        width: 50px;
+        height: 50px;
+        z-index: 1000;
+        background: rgba(30, 30, 35, 0.95);
+        backdrop-filter: blur(5px);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px; /* Matches QA buttons */
+        font-weight: bold;
+        font-size: 1.5rem;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        padding: 0;
+    }
+}
+
+.close-menu-btn.mobile-only {
+    display: none;
+}
+
+/* Tablet / Phone Layout */
+@media (max-width: 850px) {
+    .mobile-hamburger-btn {
+        display: block; /* Show the hamburger */
+    }
+
+    /* Target the parent sidebar to slide in and out */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -100vw; /* Hidden offscreen to start */
+        width: 100vw !important; /* Force full width on mobile */
+        max-width: none !important;
+        height: 100vh;
+        z-index: 2000; /* Float high above Leaflet */
+        background: #1e1e23; /* Dark background so map doesn't peek through */
+        transition: left 0.3s ease-in-out;
+        overflow-y: auto;
+    }
+
+    /* Class added by App.js state */
+    .sidebar.mobile-open {
+        left: 0;
+    }
+
+    .sidebar-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-right: 20px;
+    }
+
+    .close-menu-btn.mobile-only {
+        display: block;
+        background: none;
+        border: none;
+        color: #9ca3af;
+        font-size: 2rem;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+    }
+
+    .close-menu-btn.mobile-only:hover {
+        color: white;
+    }
+}
