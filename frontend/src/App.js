@@ -2,8 +2,11 @@ import React, { useState, useEffect } from "react";
 import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
-import { getDistanceMeters } from "./utils/Helpers";
+import { getDistanceMeters, convertToLatLongString } from "./utils/Helpers";
 import ExportModal from './components/ExportModal';
+import MobileQuickAccess from "./components/MobileQuickAccess";
+import MobileGridInput from "./components/MobileGridInput";
+import axios from "axios";
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null); // {lat, lon}
@@ -28,6 +31,29 @@ function App() {
   const [mapData, setMapData] = useState([]);
   const [flightData, setFlightData] = useState({});
   const [proximityAlerts, setProximityAlerts] = useState([]);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [gridInput, setGridInput] = useState("16S GD 6338 3202");
+
+  const handleSearch = async () => {
+    setLoading(true);
+    setMapData(prev => ({...prev, mgrs: gridInput}));
+    try {
+      const res = await axios.post(`${API_BASE_URL}/convert-grid`, { grid: gridInput });
+      const { lat, lon } = res.data;
+      setTargetLocation([lat, lon]);
+      const analysis = await axios.post(`${API_BASE_URL}/analyze-field`, { lat, lon });
+      setDetectedLZ(analysis.data.suggested_lz);
+      setLatLong(convertToLatLongString(lat, lon));
+      if (analysis.data.elevation) {
+        setGridElevation(analysis.data.elevation); 
+      }
+    } catch (err) {
+      alert("Error finding grid: " + err.message);
+    } finally {
+      setLoading(false);
+      setIsMobileMenuOpen(false); // Closes menu if they searched from the sidebar!
+    }
+  };
 
   const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -434,10 +460,19 @@ useEffect(() => {
 
   return (
     <div className="app-container">
-      <div className="sidebar">
-        <h2 className="tactical-header">
-          EZ/PZ Card <span className="version-tag">1.0.0-alpha.1</span>
-        </h2>
+      <button 
+        className="mobile-hamburger-btn" 
+        onClick={() => setIsMobileMenuOpen(true)}
+      >
+        ☰
+      </button>
+      <div className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
+        <div className="sidebar-header">
+          <h2 className="tactical-header">
+            EZ/PZ Card <span className="version-tag">1.0.0-alpha.1</span>
+          </h2>
+          <button className="close-menu-btn mobile-only" onClick={() => setIsMobileMenuOpen(false)}>✕</button>
+        </div>
         <Controls
           setTargetLocation={setTargetLocation}
           setDetectedLZ={setDetectedLZ}
@@ -466,9 +501,24 @@ useEffect(() => {
           mapData={{
           elevation: gridElevation
         }}
+        isMobileMenuOpen={isMobileMenuOpen}
+        closeMobileMenu={() => setIsMobileMenuOpen(false)}
+        gridInput={gridInput}               
+        setGridInput={setGridInput}         
+        handleSearch={handleSearch}         
         />
       </div>
       <div className="map-area">
+        <MobileGridInput
+          gridInput={gridInput} 
+          setGridInput={setGridInput} 
+          handleSearch={handleSearch} 
+        />
+        <MobileQuickAccess 
+            addHelo={addHelo}
+            addPZMarker={addPZMarker}
+            addSector={addSector}
+        />
         <MapView
           targetLocation={targetLocation}
           detectedLZ={detectedLZ}

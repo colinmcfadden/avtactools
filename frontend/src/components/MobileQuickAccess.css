@@ -1,0 +1,49 @@
+/* By default (Desktop), hide this component */
+.mobile-quick-access-container {
+    display: none;
+}
+
+/* --- Mobile/Tablet Breakpoint --- */
+@media (max-width: 850px) {
+    .mobile-quick-access-container {
+        display: flex;
+        flex-direction: column;
+        gap: 15px; 
+        position: absolute;
+        right: 15px;
+        top: 80px; 
+        z-index: 1000; 
+    }
+
+    .qa-btn {
+        width: 50px;
+        height: 50px;
+        background: rgba(30, 30, 35, 0.9); 
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        transition: all 0.2s ease;
+        padding: 0;
+    }
+
+    .qa-btn:active {
+        transform: scale(0.95);
+        background: rgba(50, 50, 55, 1);
+    }
+
+    .qa-icon-img {
+        width: 28px;
+        height: 28px;
+        object-fit: contain;
+    }
+
+    .qa-btn svg {
+        width: 28px;
+        height: 28px;
+    }
+}

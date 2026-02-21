@@ -28,9 +28,13 @@ const Controls = ({
   setMapData,
   setLatLong,
   setGridElevation,
-  mapData
+  mapData,
+  isMobileMenuOpen, 
+  closeMobileMenu,
+  gridInput,
+  setGridInput,
+  handleSearch
 }) => {
-  const [gridInput, setGridInput] = useState("16S GD 6338 3202");
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
   const API_BASE_URL = process.env.REACT_APP_API_URL;
@@ -68,35 +72,12 @@ const Controls = ({
     setIsExporting(true);
   };
 
-  const handleSearch = async () => {
-    setLoading(true);
-    setMapData(prev => ({...prev, mgrs: gridInput}));
-    try {
-      const res = await axios.post(`${API_BASE_URL}/convert-grid`, {
-        grid: gridInput,
-      });
-      const { lat, lon } = res.data;
-      setTargetLocation([lat, lon]);
-      const analysis = await axios.post(
-        `${API_BASE_URL}/analyze-field`,
-        {
-          lat,
-          lon,
-        },
-      );
-      setDetectedLZ(analysis.data.suggested_lz);
-
-      setLatLong(convertToLatLongString(lat, lon));
-
-      if (analysis.data.elevation) {
-        setGridElevation(analysis.data.elevation); 
-      }
-    } catch (err) {
-      alert("Error finding grid: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleAddHelo = () => { addHelo(); closeMobileMenu(); };
+  const handleAddPZMarker = () => { addPZMarker(); closeMobileMenu(); };
+  const handleAddSector = () => { addSector(); closeMobileMenu(); };
+  const handleAddGoAround = (dir) => { addGoAround(dir); closeMobileMenu(); };
+  const handleAddUnit = (unit) => { addUnit(unit); setShowUnitMenu(false); closeMobileMenu(); };
+  const handleEnableExportMode = () => { enableExportMode(); closeMobileMenu(); };
 
   return (
     <div className="ff-panel">
@@ -175,7 +156,7 @@ const Controls = ({
         <div className="ff-card ff-card-tools">
           <div className="ff-card-header">LZ/PZ Tools</div>
           <div className="tool-grid">
-            <button onClick={addHelo} className="ff-tool-btn" title="Add Helo">
+            <button onClick={handleAddHelo} className="ff-tool-btn" title="Add Helo">
               <img
                 src="/icons/helicopter.png"
                 alt="Helo"
@@ -185,7 +166,7 @@ const Controls = ({
             </button>
 
             <button
-              onClick={addPZMarker}
+              onClick={handleAddPZMarker}
               className="ff-tool-btn"
               title="PZ/Pickup"
             >
@@ -193,7 +174,7 @@ const Controls = ({
               <span className="btn-label">PZ</span>
             </button>
 
-            <button onClick={addSector} className="ff-tool-btn" title="Sector">
+            <button onClick={handleAddSector} className="ff-tool-btn" title="Sector">
               <svg viewBox="0 0 50 50" width="24" height="24">
                 <polygon
                   points="25,5 45,40 5,40"
@@ -220,7 +201,7 @@ const Controls = ({
                     <div
                       key={unit.id}
                       onClick={() => {
-                        addUnit(unit);
+                        handleAddUnit(unit);
                         setShowUnitMenu(false);
                       }}
                       className="dropdown-item"
@@ -234,7 +215,7 @@ const Controls = ({
             </div>
           </div>
           <div className="tool-grid">
-            <button className="ff-tool-btn" onClick={() => addGoAround("left")}>
+            <button className="ff-tool-btn" onClick={() => handleAddGoAround("left")}>
               <svg width="24" height="24" viewBox="0 0 100 100">
                 <path
                   d="M90,50 Q60,50 40,80 L50,85 L20,95 L5,65 L15,70 Q30,20 90,20 Z"
@@ -248,7 +229,7 @@ const Controls = ({
 
             <button
               className="ff-tool-btn"
-              onClick={() => addGoAround("right")}
+              onClick={() => handleAddGoAround("right")}
             >
               <svg width="24" height="24" viewBox="0 0 100 100">
                 <path
