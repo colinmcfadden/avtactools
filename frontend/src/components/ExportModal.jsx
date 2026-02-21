@@ -1,57 +1,100 @@
-import React, { useState, useEffect, useRef } from 'react';
-import Draggable from 'react-draggable';
-import './ExportModal.css'; 
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import Draggable from "react-draggable";
+import "./ExportModal.css";
+import { BIRD_NAMES, TREE_NAMES } from "../utils/LZDictionary";
 
-const ExportModal = ({ 
-  isOpen, 
-  onClose, 
-  onExport, 
-  mapData, 
+const ExportModal = ({
+  isOpen,
+  onClose,
+  onExport,
+  mapData,
   flightData,
-  proximityAlerts 
+  proximityAlerts,
 }) => {
-
   const nodeRef = useRef(null);
+  const dropdownRef = useRef(null);
   const [showWarning, setShowWarning] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const [formData, setFormData] = useState({
-    lz_label: 'LZ',
-    lz_name: 'HAWK',
-    objective: '',
-    mgrs_grid: '',
-    lat_long: '',
-    elevation: '',
-    call_sign: '',
-    freq: '',
-    formation: 'STAG RIGHT',
-    land_dir: '',
-    go_around: 'LEFT',
-    takeoff_dir: '',
-    door: 'RIGHT',
-    load: 'LEFT',
-    weapons_status: 'STOWED',
-    remarks: ''
+    lz_label: "LZ",
+    lz_name: "",
+    objective: "",
+    mgrs_grid: "",
+    lat_long: "",
+    elevation: "",
+    call_sign: "",
+    freq: "",
+    formation: "STAG RIGHT",
+    land_dir: "",
+    go_around: "LEFT",
+    takeoff_dir: "",
+    door: "RIGHT",
+    load: "LEFT",
+    weapons_status: "STOWED",
+    remarks: "",
   });
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Pre-fill data when the modal opens or data changes
   useEffect(() => {
     if (isOpen) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        mgrs_grid: mapData.mgrs ? mapData.mgrs.replace(/^(.{3})(.{2})(.{4})(.{4})$/, '$1 $2 $3 $4') : '',
-        lat_long: mapData.latLong || '',
-        elevation: mapData.elevation + "' MSL" || '', 
-        land_dir: flightData.landing_hdg || '', 
-        takeoff_dir: flightData.takeoff_hdg || '', 
-        go_around: flightData.goAround || 'LEFT'
+        mgrs_grid: mapData.mgrs
+          ? mapData.mgrs.replace(/^(.{3})(.{2})(.{4})(.{4})$/, "$1 $2 $3 $4")
+          : "",
+        lat_long: mapData.latLong || "",
+        elevation: mapData.elevation + "' MSL" || "",
+        land_dir: flightData.landing_hdg || "",
+        takeoff_dir: flightData.takeoff_hdg || "",
+        go_around: flightData.goAround || "LEFT",
       }));
     }
   }, [isOpen, mapData, flightData]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value.toUpperCase() }));
+    if (name === "lz_name") setShowSuggestions(true);
   };
+
+  const handleSuggestionClick = (name) => {
+    setFormData((prev) => ({ ...prev, lz_name: name }));
+    setShowSuggestions(false);
+  };
+
+  const filteredSuggestions = useMemo(() => {
+    const list = formData.lz_label === "LZ" ? BIRD_NAMES : TREE_NAMES;
+    const query = formData.lz_name.toUpperCase();
+
+    if (!query) {
+      return [...list].sort(() => 0.5 - Math.random()).slice(0, 50);
+    }
+
+    return list
+      .filter((item) => item.includes(query))
+      .sort((a, b) => {
+        // Prioritize words that START with the query
+        const aStarts = a.startsWith(query);
+        const bStarts = b.startsWith(query);
+
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+
+        // If both start with it, or neither do, sort alphabetically
+        return a.localeCompare(b);
+      });
+  }, [formData.lz_label, formData.lz_name]);
 
   const handleSubmit = () => {
     if (proximityAlerts && proximityAlerts.length > 0) {
@@ -78,46 +121,104 @@ const ExportModal = ({
     onClose();
   };
 
+  const renderHighlightedText = (text, highlight) => {
+    if (!highlight) return text;
+    // Split the text safely around the highlighted string, keeping the match
+    const parts = text.split(new RegExp(`(${highlight})`, "gi"));
+    return (
+      <span>
+        {parts.map((part, i) =>
+          part.toLowerCase() === highlight.toLowerCase() ? (
+            <span key={i} className="text-highlight">
+              {part}
+            </span>
+          ) : (
+            part
+          ),
+        )}
+      </span>
+    );
+  };
+
   if (!isOpen) return null;
 
   return (
     <Draggable nodeRef={nodeRef} handle=".modal-header">
       <div ref={nodeRef} className="export-modal-container glass-panel">
-
         {showWarning && (
           <div className="warning-overlay">
             <div className="warning-box">
               <h4>⚠️ Proximity Alert</h4>
-              <p>One or more helicopters are placed closer than the 60m minimum separation requirement.</p>
+              <p>
+                One or more helicopters are placed closer than the 60m minimum
+                separation requirement.
+              </p>
               <div className="warning-actions">
-                <button className="cancel-btn" onClick={handleCancelExport}>Go Back</button>
-                <button className="export-btn warning-proceed" onClick={handleConfirmExport}>
+                <button className="cancel-btn" onClick={handleCancelExport}>
+                  Go Back
+                </button>
+                <button
+                  className="export-btn warning-proceed"
+                  onClick={handleConfirmExport}
+                >
                   Disregard & Export
                 </button>
               </div>
             </div>
           </div>
         )}
-        
+
         <div className="modal-header">
           <h3>Export LZ Card</h3>
-          <button className="close-btn" onClick={onClose}>×</button>
+          <button className="close-btn" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <div className="modal-body">
-          
           {/* SECTION 1: IDENTIFIERS (Grid with different column sizes) */}
           <div className="form-grid header-grid">
             <div className="input-group">
               <label>Type</label>
-              <select name="lz_label" value={formData.lz_label} onChange={handleChange}>
+              <select
+                name="lz_label"
+                value={formData.lz_label}
+                onChange={(e) => {
+                  handleChange(e);
+                  setFormData((prev) => ({ ...prev, lz_name: "" })); // Clear name when type changes
+                }}
+              >
                 <option value="LZ">LZ</option>
                 <option value="PZ">PZ</option>
               </select>
             </div>
-            <div className="input-group span-flex">
+
+            {/* AUTOCOMPLETE DROPDOWN */}
+            <div
+              className="input-group span-flex"
+              ref={dropdownRef}
+              style={{ position: "relative" }}
+            >
               <label>Name</label>
-              <input name="lz_name" value={formData.lz_name} onChange={handleChange} />
+              <input
+                name="lz_name"
+                value={formData.lz_name}
+                onChange={handleChange}
+                onFocus={() => setShowSuggestions(true)}
+                autoComplete="off"
+                placeholder={
+                  formData.lz_label === "LZ" ? "e.g. HAWK" : "e.g. OAK"
+                }
+              />
+              {showSuggestions && filteredSuggestions.length > 0 && (
+                <ul className="suggestions-dropdown">
+                  {filteredSuggestions.map(name => (
+                    <li key={name} onClick={() => handleSuggestionClick(name)}>
+                      {renderHighlightedText(name, formData.lz_name)}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 
@@ -127,19 +228,35 @@ const ExportModal = ({
           <div className="form-grid two-col-grid">
             <div className="input-group">
               <label>Objective</label>
-              <input name="objective" value={formData.objective} onChange={handleChange} />
+              <input
+                name="objective"
+                value={formData.objective}
+                onChange={handleChange}
+              />
             </div>
             <div className="input-group">
               <label>MGRS Grid</label>
-              <input name="mgrs_grid" value={formData.mgrs_grid} onChange={handleChange} />
+              <input
+                name="mgrs_grid"
+                value={formData.mgrs_grid}
+                onChange={handleChange}
+              />
             </div>
             <div className="input-group">
               <label>Lat Long</label>
-              <input name="lat_long" value={formData.lat_long} onChange={handleChange} />
+              <input
+                name="lat_long"
+                value={formData.lat_long}
+                onChange={handleChange}
+              />
             </div>
             <div className="input-group">
               <label>Elevation</label>
-              <input name="elevation" value={formData.elevation} onChange={handleChange} />
+              <input
+                name="elevation"
+                value={formData.elevation}
+                onChange={handleChange}
+              />
             </div>
           </div>
 
@@ -147,70 +264,104 @@ const ExportModal = ({
 
           {/* SECTION 3: TACTICAL GRID */}
           <div className="form-grid two-col-grid">
-            
             <div className="input-group">
               <label>Call Sign</label>
-              <input name="call_sign" value={formData.call_sign} onChange={handleChange} />
+              <input
+                name="call_sign"
+                value={formData.call_sign}
+                onChange={handleChange}
+              />
             </div>
             <div className="input-group">
               <label>Freq</label>
-              <input name="freq" value={formData.freq} onChange={handleChange} />
+              <input
+                name="freq"
+                value={formData.freq}
+                onChange={handleChange}
+              />
             </div>
 
             <div className="input-group span-2">
               <label>Formation</label>
-              <select name="formation" value={formData.formation} onChange={handleChange}>
+              <select
+                name="formation"
+                value={formData.formation}
+                onChange={handleChange}
+              >
                 <option value="STAG LEFT">STAG LEFT</option>
                 <option value="STAG RIGHT">STAG RIGHT</option>
                 <option value="TRAIL">TRAIL</option>
               </select>
             </div>
-            
+
             <div className="input-group">
               <label>Land Dir</label>
-              <input name="land_dir" value={formData.land_dir} onChange={handleChange} />
+              <input
+                name="land_dir"
+                value={formData.land_dir}
+                onChange={handleChange}
+              />
             </div>
             <div className="input-group">
               <label>T/O Dir</label>
-              <input name="takeoff_dir" value={formData.takeoff_dir} onChange={handleChange} />
+              <input
+                name="takeoff_dir"
+                value={formData.takeoff_dir}
+                onChange={handleChange}
+              />
             </div>
           </div>
 
           <div className="form-grid three-col-grid">
-             <div className="input-group">
-               <label>Go Around</label>
-               <select name="go_around" value={formData.go_around} onChange={handleChange}>
-                  <option value="LEFT">Left</option>
-                  <option value="RIGHT">Right</option>
-               </select>
-             </div>
-             <div className="input-group">
-               <label>Door</label>
-               <select name="door" value={formData.door} onChange={handleChange}>
-                  <option value="OPEN">Open</option>
-                  <option value="CLOSED">Closed</option>
-               </select>
-             </div>
-             <div className="input-group">
-               <label>Load</label>
-               <select name="load" value={formData.load} onChange={handleChange}>
-                  <option value="LEFT">Left</option>
-                  <option value="RIGHT">Right</option>
-               </select>
-             </div>
+            <div className="input-group">
+              <label>Go Around</label>
+              <select
+                name="go_around"
+                value={formData.go_around}
+                onChange={handleChange}
+              >
+                <option value="LEFT">Left</option>
+                <option value="RIGHT">Right</option>
+              </select>
             </div>
+            <div className="input-group">
+              <label>Door</label>
+              <select name="door" value={formData.door} onChange={handleChange}>
+                <option value="OPEN">Open</option>
+                <option value="CLOSED">Closed</option>
+              </select>
+            </div>
+            <div className="input-group">
+              <label>Load</label>
+              <select name="load" value={formData.load} onChange={handleChange}>
+                <option value="LEFT">Left</option>
+                <option value="RIGHT">Right</option>
+              </select>
+            </div>
+          </div>
 
-            <div className="form-grid two-col-grid">
-              <div className="input-group span-2">
-                <label>Remarks / Hazards</label>
-                <textarea rows="2" name="remarks" value={formData.remarks} onChange={handleChange} className="full-width" style={{resize: 'none'}}/>
-              </div>
+          <div className="form-grid two-col-grid">
+            <div className="input-group span-2">
+              <label>Remarks / Hazards</label>
+              <textarea
+                rows="2"
+                name="remarks"
+                value={formData.remarks}
+                onChange={handleChange}
+                className="full-width"
+                style={{ resize: "none" }}
+              />
             </div>
+          </div>
         </div>
 
         <div className="modal-footer">
-          <button className="cancel-btn" onClick={handleCloseModal}>Cancel</button>
-          <button className="export-btn" onClick={handleSubmit}>Export Package</button>
+          <button className="cancel-btn" onClick={handleCloseModal}>
+            Cancel
+          </button>
+          <button className="export-btn" onClick={handleSubmit}>
+            Export Package
+          </button>
         </div>
       </div>
     </Draggable>
