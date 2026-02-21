@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
-import { calculateBearing } from "./utils/Bearing";
+import { getDistanceMeters } from "./utils/Helpers";
 import ExportModal from './components/ExportModal';
 
 function App() {
@@ -27,6 +27,7 @@ function App() {
   const [latLong, setLatLong] = useState("");
   const [mapData, setMapData] = useState([]);
   const [flightData, setFlightData] = useState({});
+  const [proximityAlerts, setProximityAlerts] = useState([]);
 
   const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -85,6 +86,28 @@ function App() {
       fetchTerrainAnalysis(detectedLZ);
     }
   }, [detectedLZ]);
+
+  // Add this useEffect to watch your helicopters array
+useEffect(() => {
+  const alerts = [];
+  const minDistance = 59; // 60 meters
+
+  // Check every helo against every other helo
+  for (let i = 0; i < assets.length; i++) {
+    for (let j = i + 1; j < assets.length; j++) {
+      const dist = getDistanceMeters(assets[i].lat, assets[i].lon, assets[j].lat, assets[j].lon);
+      
+      if (dist < minDistance) {
+        alerts.push({
+          id: `${assets[i].id}-${assets[j].id}`,
+          message: `Separation Alert: Helicopters are only ${Math.round(dist)}m apart (Min: 60m).`
+        });
+      }
+    }
+  }
+  
+  setProximityAlerts(alerts);
+}, [assets]); // Runs every time a helicopter moves
 
   // --- ASSET MANAGEMENT FUNCTIONS ---
   const addSector = () => {
@@ -249,13 +272,40 @@ function App() {
       alert("Please search for a grid location first.");
       return;
     }
+
+    let finalLat = targetLocation[0];
+    let finalLon = targetLocation[1];
+    let isClear = false;
+    let attempts = 0;
+
+    // Roughly 10 meters in decimal degrees (longitude)
+    const offsetStep = 0.0001; 
+
+    // Only check collision against OTHER helicopters
+    const existingHelos = assets.filter(a => a.type === "helo");
+
+    // Push it East 10m at a time until it is 60m away from every other helo
+    while (!isClear && attempts < 50) {
+      isClear = true;
+      for (let helo of existingHelos) {
+        const dist = getDistanceMeters(finalLat, finalLon, helo.lat, helo.lon);
+        if (dist < 60) {
+          isClear = false;
+          finalLon += offsetStep; // Bump it East
+          break; // Start the check over with the new coordinates
+        }
+      }
+      attempts++;
+    }
+
     const newHelo = {
       id: Date.now(),
-      lat: targetLocation[0],
-      lon: targetLocation[1],
+      lat: finalLat,
+      lon: finalLon,
       rotation: 0,
       type: "helo",
     };
+    
     setAssets((prev) => [...prev, newHelo]);
   };
 
@@ -452,6 +502,14 @@ useEffect(() => {
           setExportBox={setExportBox}
           setIsExporting={setIsExporting}
         />
+
+        <div className="alert-queue">
+          {proximityAlerts.map(alert => (
+            <div key={alert.id} className="proximity-alert">
+              ⚠️ {alert.message}
+            </div>
+          ))}
+        </div>
       </div>
 
       <ExportModal 
@@ -468,6 +526,7 @@ useEffect(() => {
           latLong: latLong
         }}
         flightData={flightData}
+        proximityAlerts={proximityAlerts}
      />
 
       {loading && (
