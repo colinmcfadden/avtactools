@@ -271,7 +271,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
     }
   };
 
-  // --- 1. SETUP EFFECT ---
+  // --- 1. SETUP EFFECT Test ---
   useEffect(() => {
     const marker = L.marker([data.lat, data.lon], {
       icon: L.divIcon({
