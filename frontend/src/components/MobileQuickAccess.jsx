@@ -7,7 +7,12 @@ const MobileQuickAccess = ({
     addPZMarker, 
     addSector,
     addUnit,
-    addGoAround
+    addGoAround,
+    enableExportMode,
+    onDownloadClick,
+    exportBox,
+    isExporting,
+    exportProgress
 }) => {
   const [isUnitMenuOpen, setIsUnitMenuOpen] = useState(false);
   const [isGAMenuOpen, setIsGAMenuOpen] = useState(false);
@@ -46,6 +51,18 @@ const MobileQuickAccess = ({
   const gaLeftIcon = (
     <svg viewBox="0 0 100 100" width="24" height="24" style={{ overflow: "visible" }}>
       <path d="M90,50 Q60,50 40,80 L50,85 L20,95 L5,65 L15,70 Q30,20 90,20 Z" fill="#FFC107" stroke="black" strokeWidth="4" />
+    </svg>
+  );
+
+  const cropIcon = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px' }}>
+        <path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"></path><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"></path>
+    </svg>
+  );
+
+  const downloadIcon = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px' }}>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>
     </svg>
   );
 
@@ -138,6 +155,34 @@ const MobileQuickAccess = ({
             </button>
           </div>
         )}
+      </div> 
+
+      {/* --- NEW: Bottom Right Export Controls --- */}
+      <div className="mobile-export-container">
+        
+        {/* Progress Bar (Only shows when exporting) */}
+        {isExporting && (
+            <div className="mobile-progress-bg">
+                <div className="mobile-progress-fill" style={{ width: `${exportProgress}%` }}></div>
+            </div>
+        )}
+
+        <div className="mobile-export-buttons">
+            <button 
+                onClick={enableExportMode} 
+                className="mobile-pill-btn blue-pill"
+            >
+                {cropIcon} <span>Capture</span>
+            </button>
+
+            <button 
+                onClick={onDownloadClick} 
+                disabled={!exportBox || isExporting} 
+                className={`mobile-pill-btn green-pill ${!exportBox || isExporting ? 'disabled' : ''}`}
+            >
+                {downloadIcon} <span>{isExporting ? 'Processing...' : 'Export'}</span>
+            </button>
+        </div>
       </div>
     </div>
   );

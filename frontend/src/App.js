@@ -32,6 +32,7 @@ function App() {
   const [flightData, setFlightData] = useState({});
   const [proximityAlerts, setProximityAlerts] = useState([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState(false);
   const [gridInput, setGridInput] = useState("16S GD 6338 3202");
 
   const handleSearch = async () => {
@@ -430,14 +431,21 @@ useEffect(() => {
       
       setExportProgress(100);
         
-        // Give a tiny delay so the user sees the bar hit 100%
         setTimeout(() => {
             setIsExporting(false);
             setExportProgress(0);
             setIsExportModalOpen(false);
+            setExportSuccess(true);
+
+            setTimeout(() => {
+                setExportSuccess(false);
+            }, 4000);
         }, 500);
     })
-    .catch(err => console.error("Excel generation failed:", err));
+    .catch(err => {
+        console.error("Excel generation failed:", err);
+        alert("Failed to generate Excel card. Please try again.");
+    });
   };
 
   useEffect(() => {
@@ -520,6 +528,11 @@ useEffect(() => {
             addSector={addSector}
             addUnit={addUnit}
             addGoAround={addGoAround}
+            enableExportMode={enableExportMode}
+            onDownloadClick={() => setIsExporting(true)}
+            exportBox={exportBox}
+            isExporting={isExporting}
+            exportProgress={exportProgress}
         />
         <MapView
           targetLocation={targetLocation}
@@ -580,6 +593,12 @@ useEffect(() => {
         flightData={flightData}
         proximityAlerts={proximityAlerts}
      />
+
+     {exportSuccess && (
+        <div className="success-toast">
+          <span>✅ LZ/PZ Card successfully exported.</span>
+        </div>
+      )}
 
       {loading && (
         <div className="loading-overlay">
