@@ -5,8 +5,6 @@ import { UNIT_TYPES } from "./UnitIcons";
 import { convertToLatLongString } from "../utils/Helpers";
 
 const Controls = ({
-  setTargetLocation,
-  setDetectedLZ,
   addHelo,
   showHeatmap,
   setShowHeatmap,
@@ -25,11 +23,7 @@ const Controls = ({
   isExporting,
   setIsExporting,
   exportProgress,
-  setMapData,
-  setLatLong,
-  setGridElevation,
   mapData,
-  isMobileMenuOpen, 
   closeMobileMenu,
   gridInput,
   setGridInput,
@@ -37,9 +31,6 @@ const Controls = ({
 }) => {
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
-  const API_BASE_URL = process.env.REACT_APP_API_URL;
-
-  // Reusable SVG for PZ Button
   const pzButtonSvg = (
     <svg
       width="24"

@@ -860,7 +860,7 @@ body.export-mode-active .leaflet-control-container {
     .mobile-lifting .drag-lifter::after {
         content: '';
         position: absolute;
-        top: 100%; 
+        top: 50%; 
         left: 50%;
         transform: translateX(-50%);
         width: 2px;

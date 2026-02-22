@@ -518,6 +518,8 @@ useEffect(() => {
             addHelo={addHelo}
             addPZMarker={addPZMarker}
             addSector={addSector}
+            addUnit={addUnit}
+            addGoAround={addGoAround}
         />
         <MapView
           targetLocation={targetLocation}

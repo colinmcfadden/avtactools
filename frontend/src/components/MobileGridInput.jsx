@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatMGRS } from '../utils/Helpers';
 import './MobileGridInput.css';
 
 const MobileGridInput = ({ gridInput, setGridInput, handleSearch }) => {
@@ -9,7 +10,8 @@ const MobileGridInput = ({ gridInput, setGridInput, handleSearch }) => {
         className="top-search-input"
         placeholder="Enter MGRS Grid..."
         value={gridInput}
-        onChange={(e) => setGridInput(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onChange={(e) => setGridInput(formatMGRS(e.target.value))}
         autoComplete="off"
       />
       <button onClick={handleSearch} className="top-search-btn">

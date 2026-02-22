@@ -3,6 +3,20 @@
     display: none;
 }
 
+.qa-btn.active-qa-btn {
+    background-color: #3b82f6 !important;
+    border-color: #2563eb !important;
+}
+
+/* Optional: If you want the icon inside to turn white/pop more when blue */
+.qa-btn.active-qa-btn .qa-icon-img {
+    filter: brightness(0) invert(1); 
+}
+
+.flyout-btn {
+    margin-top: 5px;
+}
+
 /* --- Mobile/Tablet Breakpoint --- */
 @media (max-width: 850px) {
     .mobile-quick-access-container {

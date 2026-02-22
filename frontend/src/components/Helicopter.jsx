@@ -1,150 +1,103 @@
 import React, { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import { calculateAngle, calculateHandlePos, getDistanceMeters } from '../utils/Helpers';
+import { calculateAngle, getDistanceMeters } from '../utils/Helpers';
 
 const getHeloIcon = (rot, sizePx = 40) => {
-  // Normalize rotation for display (0-359)
   const displayRot = Math.round(((rot % 360) + 360) % 360);
+  const rotateIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
+
+  const boxWidth = Math.max(sizePx + 100, 140);
 
   return L.divIcon({
     className: "helo-div-icon",
     html: `
-            <div style="position: relative; display: flex; justify-content: center; align-items: center;">
-                <div class="heading-readout" style="
-                    position: absolute; 
-                    top: -15px; 
-                    background: rgba(0,0,0,0.3); 
-                    color: white; 
-                    padding: 2px 5px; 
-                    border-radius: 2px; 
-                    font-size: 9px; 
-                    font-family: monospace;
-                    pointer-events: none;
-                    white-space: nowrap;
-                ">
-                    ${displayRot}°
-                </div>
+        <div class="drag-lifter doghouse-interactive-wrapper" style="position: relative; width: 100%; height: 100%; pointer-events: none;">
+            
+            <div class="helo-interaction-group" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${boxWidth}px; height: ${sizePx + 40}px; pointer-events: auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.01); border-radius: 8px;">
                 
-                <div style="transform: rotate(${rot || 0}deg); display: flex;">
-                    <img src="/icons/helicopter.png" style="width: 100%; height: 100%; object-fit: contain;" />
+                <div style="position: absolute; left: 10px; top: 0; bottom: 0; display: flex; align-items: center; z-index: 10; pointer-events: none;">
+                    <div class="dh-controls" style="pointer-events: none;">
+                        <div class="dh-btn dh-rotate" title="Drag to Rotate" style="pointer-events: auto; width: 34px; height: 34px; min-width: 34px; min-height: 34px;">${rotateIcon}</div>
+                    </div>
                 </div>
-            </div>`,
-    iconSize: [sizePx, sizePx],
-    iconAnchor: [sizePx / 2, sizePx / 2],
+
+                <div class="helo-body-wrapper" style="position: relative; display: flex; justify-content: center; align-items: center; width: ${sizePx}px; height: ${sizePx}px; z-index: 20; cursor: grab;">
+                    <div class="heading-readout" data-type="heading" style="
+                        position: absolute; 
+                        top: -15px; 
+                        background: rgba(0,0,0,0.3); 
+                        color: white; 
+                        padding: 2px 5px; 
+                        border-radius: 2px; 
+                        font-size: 9px; 
+                        font-family: monospace;
+                        pointer-events: none;
+                        white-space: nowrap;
+                    ">
+                        ${displayRot}°
+                    </div>
+                    
+                    <div class="helo-sprite" style="transform: rotate(${rot || 0}deg); display: flex; width: 100%; height: 100%;">
+                        <img src="/icons/helicopter.png" style="width: 100%; height: 100%; object-fit: contain; pointer-events: none;" draggable="false" />
+                    </div>
+                </div>
+            </div>
+        </div>`,
+    iconSize: [boxWidth, boxWidth],
+    iconAnchor: [boxWidth / 2, boxWidth / 2],
   });
 };
-
-const rotateHandleIcon = L.divIcon({
-  className: "rotate-handle",
-  html: `<div style="
-        background: white; 
-        border: 2px solid #FF8C00; 
-        width: 14px; height: 14px; 
-        border-radius: 50%; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3); 
-        cursor: grab;
-    ">
-        <span style="font-size: 10px; color: #FF8C00; font-weight: bold;">↻</span>
-    </div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
-
 
 
 const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
   const map = useMap();
   const heloRef = useRef(null);
-  const handleRef = useRef(null);
   const linesLayerRef = useRef(null);
   const stateRef = useRef(asset);
+  
   const deleteAssetRef = useRef(deleteAsset);
   const allAssetsRef = useRef(allAssets);
+  const updateRef = useRef(updateAsset);
 
-  // Keep refs up to date without triggering re-renders
   useEffect(() => {
     stateRef.current = asset;
     deleteAssetRef.current = deleteAsset;
     allAssetsRef.current = allAssets;
-  }, [asset, deleteAsset, allAssets]);
+    updateRef.current = updateAsset;
+  }, [asset, deleteAsset, allAssets, updateAsset]);
 
   const calculateSizePx = (lat) => {
     const zoom = map.getZoom();
-    const rotorDiameterMeters = 16.357; // 53' 8" to meters
+    const rotorDiameterMeters = 16.357; 
     const metersPerPx = 156543.03392 * Math.cos((lat * Math.PI) / 180) / Math.pow(2, zoom);
     return Math.max(rotorDiameterMeters / metersPerPx, 15);
   };
 
-  // --- 1. SETUP & EVENTS (Runs ONLY ONCE per helicopter) ---
-  useEffect(() => {
-    // FIX 1: Calculate the size immediately 
-    const initialSize = calculateSizePx(asset.lat);
-
-    const helo = L.marker([asset.lat, asset.lon], {
-      // FIX 2: Pass initialSize to the icon generator
-      icon: getHeloIcon(asset.rotation || 0, initialSize), 
-      draggable: true,
-      zIndexOffset: 500,
-    }).addTo(map);
-
-    const handle = L.marker(
-      calculateHandlePos(asset.lat, asset.lon, asset.rotation || 0),
-      {
-        icon: rotateHandleIcon,
-        draggable: true,
-        zIndexOffset: 1000,
-        opacity: 0,
-      }
-    ).addTo(map);
-
-    const linesGroup = L.layerGroup().addTo(map);
-    linesLayerRef.current = linesGroup;
-
-    heloRef.current = helo;
-    handleRef.current = handle;
-
-    const handleZoom = () => {
-      const newSize = calculateSizePx(stateRef.current.lat);
-      helo.setIcon(getHeloIcon(stateRef.current.rotation, newSize));
-    };
-    map.on("zoomend", handleZoom);
-
-    helo.on("contextmenu", (e) => {
-      L.DomEvent.stopPropagation(e);
-      L.DomEvent.preventDefault(e);
-      if (window.confirm("Delete this helicopter?")) {
-        deleteAssetRef.current(asset.id); // Uses the ref so we don't need it in deps
-      }
-    });
-
-    // --- DYNAMIC PROXIMITY LINES ---
-    const drawLines = (currentLat, currentLon) => {
-      linesGroup.clearLayers(); // Erase old lines
-      
-      const otherHelos = allAssetsRef.current.filter(a => a.type === "helo" && a.id !== asset.id);
-      
-      otherHelos.forEach(other => {
-         const dist = getDistanceMeters(currentLat, currentLon, other.lat, other.lon);
-         const isViolation = dist < 59;
-         const midLat = (currentLat + other.lat) / 2;
-         const midLon = (currentLon + other.lon) / 2;
-         
-         const line = L.polyline([[currentLat, currentLon], [other.lat, other.lon]], {
+  const drawLines = (currentLat, currentLon) => {
+    if (!linesLayerRef.current) return;
+    linesLayerRef.current.clearLayers(); 
+    
+    const otherHelos = allAssetsRef.current.filter(a => a.type === "helo" && a.id !== asset.id);
+    
+    otherHelos.forEach(other => {
+        const dist = getDistanceMeters(currentLat, currentLon, other.lat, other.lon);
+        const isViolation = dist < 59;
+        const midLat = (currentLat + other.lat) / 2;
+        const midLon = (currentLon + other.lon) / 2;
+        
+        const line = L.polyline([[currentLat, currentLon], [other.lat, other.lon]], {
             color: isViolation ? "#dc2626" : "#9ca3af",
             dashArray: "6, 6",
             weight: 2,
             opacity: 0.8,
             interactive: false
-         });
-         
-         const badge = L.marker([midLat, midLon], {
+        });
+        
+        const badge = L.marker([midLat, midLon], {
             icon: L.divIcon({
-              className: "distance-badge-icon",
-              html: `<div style="
+                className: "distance-badge-icon",
+                html: `<div style="
                 background: ${isViolation ? '#dc2626' : '#374151'}; 
                 color: white; 
                 padding: 2px 6px; 
@@ -156,103 +109,220 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
                 width: max-content;
                 transform: translate(-50%, -50%);
                 box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-              ">${Math.round(dist)}m</div>`,
-              iconSize: [0, 0], 
+                ">${Math.round(dist)}m</div>`,
+                iconSize: [0, 0], 
             }),
             interactive: false
-         });
-         
-         linesGroup.addLayer(line);
-         linesGroup.addLayer(badge);
-      });
-    };
+        });
+        
+        linesLayerRef.current.addLayer(line);
+        linesLayerRef.current.addLayer(badge);
+    });
+  };
 
-    // --- HOVER LOGIC ---
-    let isHovering = false;
-    let isDragging = false;
+  const attachListeners = (markerInst) => {
+    const element = markerInst.getElement();
+    if (!element) return;
 
-    const show = () => { 
-      isHovering = true; 
-      handle.setOpacity(1); 
-      drawLines(stateRef.current.lat, stateRef.current.lon); // Draw lines on hover
-    };
-    
-    const hide = () => {
-      isHovering = false;
-      setTimeout(() => {
-        if (!isHovering && !isDragging && !handle.dragging?._draggable?._dragging) {
-          handle.setOpacity(0);
-          linesGroup.clearLayers(); // Erase lines when hover ends
+    const wrapper = element.querySelector('.doghouse-interactive-wrapper');
+    const interactionGroup = element.querySelector('.helo-interaction-group');
+    const bodyWrapper = element.querySelector('.helo-body-wrapper');
+
+    if (interactionGroup) {
+        L.DomEvent.on(interactionGroup, 'mouseleave', () => wrapper.classList.remove('show-controls'));
+    }
+
+    // --- Rotate Logic ---
+    const rotateBtn = element.querySelector('.dh-rotate');
+    if (rotateBtn) {
+      L.DomEvent.disableClickPropagation(rotateBtn);
+
+      let isRotating = false;
+
+      const startRotate = (e) => {
+        L.DomEvent.stop(e); 
+        if (isRotating) return; 
+        
+        isRotating = true;
+        rotateBtn.classList.add('active-rotate');
+        map.dragging.disable();
+
+        // FIX: Force the entire helicopter to float UP while rotating!
+        if (markerInst._icon) {
+            L.DomUtil.addClass(markerInst._icon, 'mobile-lifting');
         }
-      }, 50);
-    };
 
-    helo.on("mouseover", show);
-    helo.on("mouseout", hide);
-    handle.on("mouseover", show);
-    handle.on("mouseout", hide);
+        const onMove = (moveEvent) => {
+          const center = markerInst.getLatLng();
+          const mouse = moveEvent.latlng;
+          const angle = calculateAngle(
+            center.lat, center.lng, mouse.lat, mouse.lng
+          );
+          stateRef.current.rotation = angle;
 
-    // --- DRAG LOGIC ---
-    helo.on("dragstart", () => { isDragging = true; });
-    handle.on("dragstart", () => { isDragging = true; });
+          const sprite = element.querySelector('.helo-sprite');
+          if (sprite) sprite.style.transform = `rotate(${angle}deg)`;
+          
+          const headingInput = element.querySelector('[data-type="heading"]');
+          if (headingInput) headingInput.innerText = `${Math.round(((angle % 360) + 360) % 360)}°`;
+        };
 
-    helo.on("drag", (e) => {
-      const pos = e.target.getLatLng();
-      stateRef.current.lat = pos.lat;
-      stateRef.current.lon = pos.lng;
-      handle.setLatLng(calculateHandlePos(pos.lat, pos.lng, stateRef.current.rotation));
+        const onEnd = () => {
+          isRotating = false;
+          rotateBtn.classList.remove('active-rotate');
+          map.dragging.enable();
 
-      drawLines(pos.lat, pos.lng);
-    });
+          // FIX: Drop the helicopter back down when letting go
+          if (markerInst._icon) {
+              L.DomUtil.removeClass(markerInst._icon, 'mobile-lifting');
+          }
 
-    handle.on("drag", (e) => {
-      handle.setOpacity(1);
-      const mousePos = e.target.getLatLng();
-      const angle = calculateAngle(
-        stateRef.current.lat, stateRef.current.lon, mousePos.lat, mousePos.lng
-      );
-      stateRef.current.rotation = angle;
+          map.off("mousemove touchmove", onMove);
+          map.off("mouseup touchend", onEnd);
 
-      const currentSize = calculateSizePx(stateRef.current.lat);
-      helo.setIcon(getHeloIcon(angle, currentSize));
-      handle.setLatLng(calculateHandlePos(stateRef.current.lat, stateRef.current.lon, angle));
+          updateRef.current(asset.id, {
+            rotation: stateRef.current.rotation,
+          });
+        };
 
-      drawLines(stateRef.current.lat, stateRef.current.lon);
-    });
+        map.on("mousemove touchmove", onMove);
+        map.on("mouseup touchend", onEnd);
+      };
 
-    const saveToReact = () => {
-        isDragging = false;
-      updateAsset(asset.id, {
-        lat: stateRef.current.lat,
-        lon: stateRef.current.lon,
-        rotation: stateRef.current.rotation,
+      L.DomEvent.on(rotateBtn, 'mousedown touchstart', startRotate);
+    }
+
+    // --- SMART TOUCH COMBINED LOGIC (Drag, Tap, Long-Press) ---
+    if (bodyWrapper) {
+      L.DomEvent.disableClickPropagation(bodyWrapper);
+
+      let isMoving = false;
+      let dragThresholdMet = false;
+      let startX = 0, startY = 0;
+      let pressTimer;
+
+      const startInteraction = (e) => {
+        L.DomEvent.stop(e); 
+        if (isMoving) return; 
+
+        const touch = e.touches ? e.touches[0] : (e.originalEvent && e.originalEvent.touches ? e.originalEvent.touches[0] : e);
+        startX = touch.clientX || 0;
+        startY = touch.clientY || 0;
+        dragThresholdMet = false;
+
+        pressTimer = setTimeout(() => {
+          if (!dragThresholdMet) {
+            if (window.confirm("Delete this helicopter?")) {
+              deleteAssetRef.current(asset.id);
+            }
+          }
+        }, 750); 
+
+        map.dragging.disable();
+
+        const onMove = (moveEvent) => {
+          if (!dragThresholdMet) {
+            const currentTouch = moveEvent.originalEvent && moveEvent.originalEvent.touches ? moveEvent.originalEvent.touches[0] : moveEvent.originalEvent;
+            const dx = Math.abs((currentTouch.clientX || 0) - startX);
+            const dy = Math.abs((currentTouch.clientY || 0) - startY);
+            
+            if (dx > 5 || dy > 5) { 
+              dragThresholdMet = true;
+              clearTimeout(pressTimer); 
+              isMoving = true;
+              bodyWrapper.style.cursor = 'grabbing';
+              // Float up when moving!
+              if (markerInst._icon) L.DomUtil.addClass(markerInst._icon, 'mobile-lifting');
+            }
+          }
+
+          if (isMoving) {
+            markerInst.setLatLng(moveEvent.latlng);
+            drawLines(moveEvent.latlng.lat, moveEvent.latlng.lng);
+          }
+        };
+
+        const onEnd = () => {
+          clearTimeout(pressTimer);
+          map.dragging.enable();
+          bodyWrapper.style.cursor = 'grab';
+
+          map.off("mousemove touchmove", onMove);
+          map.off("mouseup touchend", onEnd);
+
+          if (isMoving) {
+            isMoving = false;
+            if (markerInst._icon) L.DomUtil.removeClass(markerInst._icon, 'mobile-lifting');
+            if (linesLayerRef.current) linesLayerRef.current.clearLayers();
+            const pos = markerInst.getLatLng();
+            updateRef.current(asset.id, { lat: pos.lat, lon: pos.lng });
+          } else {
+            wrapper.classList.toggle('show-controls');
+          }
+        };
+
+        map.on("mousemove touchmove", onMove);
+        map.on("mouseup touchend", onEnd);
+      };
+
+      L.DomEvent.on(bodyWrapper, 'mousedown touchstart', startInteraction);
+
+      L.DomEvent.on(bodyWrapper, 'contextmenu', (e) => {
+        L.DomEvent.stop(e);
+        if (window.confirm("Delete this helicopter?")) deleteAssetRef.current(asset.id);
       });
-      hide();
-    };
+    }
+  };
 
-    helo.on("dragend", saveToReact);
-    handle.on("dragend", saveToReact);
+  useEffect(() => {
+    const initialSize = calculateSizePx(asset.lat);
+
+    const helo = L.marker([asset.lat, asset.lon], {
+      icon: getHeloIcon(asset.rotation || 0, initialSize), 
+      draggable: false, 
+      zIndexOffset: 500,
+    }).addTo(map);
+
+    linesLayerRef.current = L.layerGroup().addTo(map);
+    heloRef.current = helo;
+
+    attachListeners(helo);
+    setTimeout(() => attachListeners(helo), 100);
+
+    const handleZoom = () => {
+      const newSize = calculateSizePx(stateRef.current.lat);
+      helo.setIcon(getHeloIcon(stateRef.current.rotation, newSize));
+      setTimeout(() => attachListeners(helo), 50);
+    };
+    map.on("zoomend", handleZoom);
+
+    const interactionGroup = helo.getElement()?.querySelector('.helo-interaction-group');
+    if (interactionGroup) {
+        L.DomEvent.on(interactionGroup, 'mouseenter', () => drawLines(stateRef.current.lat, stateRef.current.lon));
+        L.DomEvent.on(interactionGroup, 'mouseleave', () => {
+          setTimeout(() => {
+            if (linesLayerRef.current) linesLayerRef.current.clearLayers();
+          }, 50);
+        });
+    }
 
     return () => {
       map.off("zoomend", handleZoom); 
       helo.remove();
-      handle.remove();
-      linesGroup.clearLayers(); // Clear lines on cleanup
-      linesGroup.remove();
+      if (linesLayerRef.current) {
+          linesLayerRef.current.clearLayers();
+          linesLayerRef.current.remove();
+      }
     };
   }, [map, asset.id]);
 
-  // --- 2. SYNC EFFECT (Runs when React updates the asset from outside) ---
   useEffect(() => {
-    if (!heloRef.current || !handleRef.current) return;
-
-    // Recalculate scale in case latitude changed significantly
+    if (!heloRef.current) return;
     const currentSize = calculateSizePx(asset.lat);
     
-    // Smoothly update the existing markers without destroying them
     heloRef.current.setLatLng([asset.lat, asset.lon]);
     heloRef.current.setIcon(getHeloIcon(asset.rotation || 0, currentSize));
-    handleRef.current.setLatLng(calculateHandlePos(asset.lat, asset.lon, asset.rotation || 0));
+    setTimeout(() => attachListeners(heloRef.current), 50);
   }, [asset.lat, asset.lon, asset.rotation, map]);
 
   return null;

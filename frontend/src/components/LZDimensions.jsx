@@ -8,41 +8,54 @@ const toTurf = (latlng) => turf.point([latlng.lng, latlng.lat]);
 
 const getDistance = (p1, p2) => {
   if (!p1 || !p2) return "0 m";
-  // Updated to meters
   const dist = turf.distance(toTurf(p1), toTurf(p2), { units: "meters" });
   return Math.round(dist) + " m";
 };
 
-const createVertexIcon = () =>
-  L.divIcon({
+// Larger touch target and 4-way move icon, with floating logic removed
+const createVertexIcon = () => {
+  const moveIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="19 9 22 12 19 15"/><polyline points="9 19 12 22 15 19"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>`;
+  
+  return L.divIcon({
     className: "vertex-handle",
-    html: `<div style="background:white; border:2px solid #FF8C00; width:10px; height:10px; border-radius:50%; cursor:crosshair; box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>`,
-    iconSize: [10, 10],
-    iconAnchor: [5, 5],
+    html: `
+        <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: move;">
+            <div style="background: #FF8C00; border: 2px solid white; border-radius: 50%; width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">
+                ${moveIcon}
+            </div>
+        </div>
+    `,
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
   });
+};
 
 const createLabelIcon = (text) =>
   L.divIcon({
     className: "label-handle",
-    html: `<div style="
-        background: #FF8C00; 
-        color: white; 
-        padding: 1px 3px; 
-        border-radius: 3px; 
-        font-weight: bold; 
-        font-size: 9px; 
-        white-space: nowrap; 
-        border: 1px solid white; 
-        text-shadow: 0px 0px 1px black; 
-        font-family: 'Arial Narrow', sans-serif; 
-        box-shadow: 0 1px 3px rgba(0,0,0,0.3); 
-        text-align: center; 
-        display: inline-block; 
-        width: auto;
-        transform: translate(-50%, -50%);
-        pointer-events: none; 
-        user-select: none;">${text}</div>`,
+    html: `
+        <div style="position: relative; overflow: visible;">
+            <div style="
+                background: #FF8C00; 
+                color: white; 
+                padding: 2px 6px; 
+                border-radius: 4px; 
+                font-weight: bold; 
+                font-size: 11px; 
+                white-space: nowrap; 
+                border: 1px solid white; 
+                text-shadow: 0px 0px 1px black; 
+                font-family: 'Arial Narrow', sans-serif; 
+                box-shadow: 0 2px 4px rgba(0,0,0,0.4); 
+                text-align: center; 
+                display: inline-block; 
+                transform: translate(-50%, -50%);
+                pointer-events: auto; 
+                cursor: grab;
+                user-select: none;">${text}</div>
+        </div>`,
     iconSize: [0, 0],
+    iconAnchor: [0, 0],
   });
 
 const LZDimensions = ({ detectedLZ }) => {
@@ -55,8 +68,8 @@ const LZDimensions = ({ detectedLZ }) => {
   const layersRef = useRef({
     group: L.layerGroup(),
 
-    lenLine: L.polyline([], { color: "#FF8C00", weight: 1, dashArray: "5,5" }),
-    widLine: L.polyline([], { color: "#FF8C00", weight: 1, dashArray: "5,5" }),
+    lenLine: L.polyline([], { color: "#FF8C00", weight: 2, dashArray: "5,5" }),
+    widLine: L.polyline([], { color: "#FF8C00", weight: 2, dashArray: "5,5" }),
 
     corner: L.marker([0, 0], {
       icon: createVertexIcon(),
@@ -192,7 +205,7 @@ const LZDimensions = ({ detectedLZ }) => {
     const onDrag = (marker, callback, affectedGroups = []) => {
       marker.off("dragstart drag dragend");
       
-      let rafId = null; // Track animation frames
+      let rafId = null;
 
       marker.on("dragstart", () => {
         isDraggingRef.current = true;
@@ -205,11 +218,8 @@ const LZDimensions = ({ detectedLZ }) => {
       });
 
       marker.on("drag", (e) => {
-        // 1. Update the underlying data immediately
         callback(e.latlng);
 
-        // 2. Throttle the VISUAL update (the heavy part)
-        // This prevents the "jumping" and "lagging" by syncing with the screen refresh
         if (rafId) cancelAnimationFrame(rafId);
         rafId = requestAnimationFrame(() => {
           updateVisuals();

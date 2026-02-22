@@ -71,3 +71,47 @@ export const calculateDoghouseHandlePos = (lat, lon) => {
 
   return [lat + offset, lon];
 };
+
+export const formatMGRS = (val) => {
+  // Strip all non-alphanumeric characters and force uppercase
+  let clean = val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (!clean) return '';
+
+  // Match Grid Zone Designator (1 or 2 digits + 1 letter)
+  const gzdMatch = clean.match(/^(\d{1,2}[A-Z])/);
+  
+  if (gzdMatch) {
+    let gzd = gzdMatch[1];
+    clean = clean.substring(gzd.length);
+
+    // Match 100km Square (1 or 2 letters)
+    const sqMatch = clean.match(/^([A-Z]{1,2})/);
+    let sq = '';
+    let coords = '';
+
+    if (sqMatch) {
+      sq = sqMatch[1];
+      coords = clean.substring(sq.length).replace(/[^\d]/g, ''); // Coordinates can only be digits
+    } else {
+      // If they haven't finished typing the square yet
+      sq = clean.replace(/[^A-Z]/g, '');
+    }
+
+    // Rebuild the string with spaces
+    let res = gzd;
+    if (sq) res += ' ' + sq;
+    
+    if (coords) {
+      // Dynamically split the coordinates down the middle
+      const mid = Math.ceil(coords.length / 2);
+      res += ' ' + coords.substring(0, mid);
+      if (coords.length > 1) {
+        res += ' ' + coords.substring(mid);
+      }
+    }
+    return res;
+  }
+  
+  // Return what they have if it isn't a full Grid Zone yet
+  return clean;
+};
