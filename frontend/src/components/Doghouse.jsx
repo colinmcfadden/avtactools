@@ -63,22 +63,28 @@ const Doghouse = ({ data, updateDoghouse }) => {
       </div>`;
   };
 
+  // Helper to extract screen coordinates reliably from either mouse or touch
+  const getEventPoint = (e) => {
+    if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    if (e.changedTouches && e.changedTouches.length > 0) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+    return { x: e.clientX, y: e.clientY };
+  };
+
   const attachListeners = (markerInst) => {
     const element = markerInst.getElement();
     if (!element) return;
-
     const wrapper = element.querySelector('.doghouse-interactive-wrapper');
-    const bodyWrapper = element.querySelector('.doghouse-wrapper');
 
-    // --- 1. Mobile Tap Toggle & Stop Propagation ---
-    if (bodyWrapper) {
-        L.DomEvent.disableClickPropagation(bodyWrapper); // Stops map dragging when clicking the doghouse
-        bodyWrapper.onclick = (e) => {
-            if (!e.target.classList.contains('dh-input')) {
-                wrapper.classList.toggle('show-controls');
-            }
-        };
-    }
+    // --- 1. Fix Mobile Tap to Reveal Icons ---
+    markerInst.off('click'); 
+    markerInst.on('click', (e) => {
+        const isInput = e.originalEvent.target.classList.contains('dh-input');
+        const isBtn = e.originalEvent.target.closest('.dh-btn');
+        // Only toggle if they tapped the main body
+        if (!isInput && !isBtn && wrapper) {
+            wrapper.classList.toggle('show-controls');
+        }
+    });
 
     L.DomEvent.on(wrapper, 'mouseleave', () => {
         wrapper.classList.remove('show-controls');
@@ -145,10 +151,10 @@ const Doghouse = ({ data, updateDoghouse }) => {
       };
     });
 
-    // --- 3. Custom Rotation Logic ---
+    // --- 3. Custom Rotation Logic (Document-Level Tracking) ---
     const rotateBtn = element.querySelector('.dh-rotate');
     if (rotateBtn) {
-      L.DomEvent.disableClickPropagation(rotateBtn); // FIX: Ensures map doesn't drag
+      L.DomEvent.disableClickPropagation(rotateBtn);
 
       let isRotating = false;
 
@@ -160,12 +166,17 @@ const Doghouse = ({ data, updateDoghouse }) => {
         rotateBtn.classList.add('active-rotate');
         map.dragging.disable();
 
-        const onMove = (moveEvent) => {
+        const onRotateDrag = (moveEvent) => {
+          if (moveEvent.cancelable) moveEvent.preventDefault(); // Stop mobile browser scrolling
+          const { x, y } = getEventPoint(moveEvent);
+          if (x === undefined || y === undefined) return;
+
+          const mouseLatLng = map.containerPointToLatLng(map.mouseEventToContainerPoint({ clientX: x, clientY: y }));
           const center = markerInst.getLatLng();
-          const mouse = moveEvent.latlng;
+
           let newAngle = calculateBearing(
             center.lat * (Math.PI / 180), center.lng * (Math.PI / 180),
-            mouse.lat * (Math.PI / 180), mouse.lng * (Math.PI / 180)
+            mouseLatLng.lat * (Math.PI / 180), mouseLatLng.lng * (Math.PI / 180)
           );
           rotationRef.current = newAngle;
 
@@ -176,30 +187,36 @@ const Doghouse = ({ data, updateDoghouse }) => {
           if (headingInput) headingInput.innerText = Math.round(newAngle).toString().padStart(3, "0");
         };
 
-        const onEnd = () => {
+        const onRotateEnd = () => {
           isRotating = false;
           rotateBtn.classList.remove('active-rotate');
           map.dragging.enable();
 
-          map.off("mousemove touchmove", onMove);
-          map.off("mouseup touchend", onEnd);
+          // Unbind from document
+          document.removeEventListener("mousemove", onRotateDrag);
+          document.removeEventListener("touchmove", onRotateDrag);
+          document.removeEventListener("mouseup", onRotateEnd);
+          document.removeEventListener("touchend", onRotateEnd);
 
           updateRef.current(dataRef.current.id, {
             heading: `${Math.round(rotationRef.current).toString().padStart(3, "0")}°`,
           });
         };
 
-        map.on("mousemove touchmove", onMove);
-        map.on("mouseup touchend", onEnd);
+        // Bind to document to guarantee we track the finger even if it leaves the button
+        document.addEventListener("mousemove", onRotateDrag, { passive: false });
+        document.addEventListener("touchmove", onRotateDrag, { passive: false });
+        document.addEventListener("mouseup", onRotateEnd);
+        document.addEventListener("touchend", onRotateEnd);
       };
 
       L.DomEvent.on(rotateBtn, 'mousedown touchstart', startRotate);
     }
 
-    // --- 4. Custom Drag/Move Logic ---
+    // --- 4. Custom Drag/Move Logic (Document-Level Tracking) ---
     const moveBtn = element.querySelector('.dh-move');
     if (moveBtn) {
-      L.DomEvent.disableClickPropagation(moveBtn); // FIX: Ensures map doesn't drag
+      L.DomEvent.disableClickPropagation(moveBtn);
 
       let isMoving = false;
 
@@ -216,7 +233,13 @@ const Doghouse = ({ data, updateDoghouse }) => {
         }
 
         const onDrag = (moveEvent) => {
-          markerInst.setLatLng(moveEvent.latlng);
+          if (moveEvent.cancelable) moveEvent.preventDefault(); // Stop mobile browser scrolling
+          const { x, y } = getEventPoint(moveEvent);
+          if (x === undefined || y === undefined) return;
+
+          // Convert raw screen pixel to Map Coordinate
+          const latlng = map.containerPointToLatLng(map.mouseEventToContainerPoint({ clientX: x, clientY: y }));
+          markerInst.setLatLng(latlng);
         };
 
         const onDragEnd = () => {
@@ -228,15 +251,20 @@ const Doghouse = ({ data, updateDoghouse }) => {
               L.DomUtil.removeClass(markerInst._icon, 'mobile-lifting');
           }
 
-          map.off("mousemove touchmove", onDrag);
-          map.off("mouseup touchend", onDragEnd);
+          // Unbind from document
+          document.removeEventListener("mousemove", onDrag);
+          document.removeEventListener("touchmove", onDrag);
+          document.removeEventListener("mouseup", onDragEnd);
+          document.removeEventListener("touchend", onDragEnd);
 
           const pos = markerInst.getLatLng();
           updateRef.current(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
         };
 
-        map.on("mousemove touchmove", onDrag);
-        map.on("mouseup touchend", onDragEnd);
+        document.addEventListener("mousemove", onDrag, { passive: false });
+        document.addEventListener("touchmove", onDrag, { passive: false });
+        document.addEventListener("mouseup", onDragEnd);
+        document.addEventListener("touchend", onDragEnd);
       };
 
       L.DomEvent.on(moveBtn, 'mousedown touchstart', startMove);
