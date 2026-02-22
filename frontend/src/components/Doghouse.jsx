@@ -27,7 +27,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
     return `
       <div class="drag-lifter doghouse-interactive-wrapper" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none;">
         
-        <div class="dh-controls" style="position: absolute; width: 170px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
+        <div class="dh-controls" style="position: absolute; width: 140px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
             <div class="dh-btn dh-rotate" title="Drag to Rotate" style="pointer-events: auto;">
                 ${rotateIcon}
             </div>
@@ -121,8 +121,8 @@ const Doghouse = ({ data, updateDoghouse }) => {
             L.divIcon({
               className: "doghouse-container",
               html: getHtml({ ...currentData, heading: val }, newDeg),
-              iconSize: [200, 160],
-              iconAnchor: [100, 80],
+              iconSize: [160, 120],
+              iconAnchor: [80, 60],
             })
           );
 
@@ -271,14 +271,14 @@ const Doghouse = ({ data, updateDoghouse }) => {
     }
   };
 
-  // --- 1. SETUP EFFECT Test ---
+  // --- 1. SETUP EFFECT ---
   useEffect(() => {
     const marker = L.marker([data.lat, data.lon], {
       icon: L.divIcon({
         className: "doghouse-container",
         html: getHtml(data, rotationRef.current),
-        iconSize: [200, 160],
-        iconAnchor: [100, 80],
+        iconSize: [160, 120], 
+        iconAnchor: [80, 60],
       }),
       draggable: false, 
       zIndexOffset: 2000,
@@ -305,8 +305,8 @@ const Doghouse = ({ data, updateDoghouse }) => {
       L.divIcon({
         className: "doghouse-container",
         html: getHtml(data, incomingHeading),
-        iconSize: [200, 160],
-        iconAnchor: [100, 80]
+        iconSize: [160, 120],
+        iconAnchor: [80, 60],
       })
     );
     

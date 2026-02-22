@@ -316,22 +316,44 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
       processingRef.current = true;
       setExportProgress(10);
 
-      try {
-        // 2. Wait for tiles to settle
-        await new Promise((r) => setTimeout(r, 1000));
-        setExportProgress(30);
+      const mapContainer = map.getContainer();
 
-        const mapContainer = map.getContainer();
+      // --- NEW: SAVE ORIGINAL STYLES ---
+      // We need to memorize the exact mobile layout so we can restore it later
+      const origWidth = mapContainer.style.width;
+      const origHeight = mapContainer.style.height;
+      const origPosition = mapContainer.style.position;
+      const origTop = mapContainer.style.top;
+      const origLeft = mapContainer.style.left;
+      const origZIndex = mapContainer.style.zIndex;
+
+      try {
+        // --- NEW: FORCE DESKTOP DIMENSIONS ---
+        // Blow the map up to a desktop size behind the loading screen
+        mapContainer.style.width = '1200px';
+        mapContainer.style.height = '1000px';
+        mapContainer.style.position = 'absolute';
+        mapContainer.style.top = '0';
+        mapContainer.style.left = '0';
+        mapContainer.style.zIndex = '-1'; 
+
+        // Force Leaflet to recognize the new size and frame the export box perfectly
+        map.invalidateSize();
+        map.fitBounds(exportBox, { animate: false });
+
+        // 2. Wait for tiles to settle and load from MapBox
+        // Increased slightly to 1500ms to ensure all new outer tiles finish downloading
+        await new Promise((r) => setTimeout(r, 1500));
+        setExportProgress(30);
         
         // 3. Hide UI Elements via CSS Class
-        // We add a class to the container to hide controls/panels during the snapshot
         mapContainer.classList.add('hide-ui-for-export');
 
+        // 4. Capture the full 1200x1000 canvas
         const fullCanvas = await htmlToImage.toCanvas(mapContainer, {
            quality: 1.0,
            pixelRatio: 2, 
            skipAutoScale: true,
-           // Double safety filter
            filter: (node) => {
              return !node.classList?.contains('leaflet-control-container') && 
                     !node.classList?.contains('ff-panel');
@@ -340,8 +362,7 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
         setExportProgress(40);
 
         // 5. Calculate Crop Coordinates
-        // These points are relative to the map container's Top-Left (0,0)
-        // Since we captured the map container, these match perfectly.
+        // Because we just ran fitBounds(), the exportBox is perfectly inside our 1200x1000 container
         const p1 = map.latLngToContainerPoint(exportBox[0]); 
         const p2 = map.latLngToContainerPoint(exportBox[1]);
         
@@ -364,14 +385,12 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
         const ctx = cropCanvas.getContext('2d');
 
         // Draw only the Red Box area onto the new canvas
-        // source(x,y,w,h) -> dest(0,0,w,h)
         ctx.drawImage(fullCanvas, x, y, w, h, 0, 0, w, h);
 
         cropCanvas.toBlob((blob) => {
             setExportProgress(50);
             
             // Clean up UI
-            const mapContainer = map.getContainer();
             mapContainer.classList.remove('hide-ui-for-export');
             
             setTimeout(() => {
@@ -384,27 +403,29 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
 
         setExportProgress(60);
 
-        // 7. Download
-        //const link = document.createElement("a");
-        //link.download = `LZ_Diagram_${Date.now()}.jpg`;
-        //link.href = cropCanvas.toDataURL('image/jpeg', 1.0);
-        //document.body.appendChild(link);
-        //link.click();
-        //document.body.removeChild(link);
-
-        //setExportProgress(100);
-
       } catch (err) {
         console.error("Export Failed:", err);
         alert("Export failed: " + err.message);
       } finally {
-        // Cleanup: Show UI again
-        const mapContainer = map.getContainer();
+        // --- NEW: CLEANUP & RESTORE MOBILE LAYOUT ---
         mapContainer.classList.remove('hide-ui-for-export');
+        
+        mapContainer.style.width = origWidth || '100%';
+        mapContainer.style.height = origHeight || '100%';
+        mapContainer.style.position = origPosition || 'relative';
+        mapContainer.style.top = origTop || '';
+        mapContainer.style.left = origLeft || '';
+        mapContainer.style.zIndex = origZIndex || '';
+
+        // Tell Leaflet we shrunk back to mobile size
+        map.invalidateSize();
+        // Snap the user's view back to the target area so they aren't lost
+        map.fitBounds(exportBox, { animate: false });
         
         setTimeout(() => {
           processingRef.current = false;
-          onExportComplete(null);
+          // Only trigger onExportComplete(null) if it actually failed and we didn't pass a blob
+          if (isExporting) onExportComplete(null);
         }, 500);
       }
     };

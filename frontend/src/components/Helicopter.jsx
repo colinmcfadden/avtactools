@@ -49,7 +49,6 @@ const getHeloIcon = (rot, sizePx = 40) => {
   });
 };
 
-
 const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
   const map = useMap();
   const heloRef = useRef(null);
@@ -120,6 +119,13 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
     });
   };
 
+  // Helper to extract screen coordinates reliably from either mouse or touch
+  const getEventPoint = (e) => {
+    if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    if (e.changedTouches && e.changedTouches.length > 0) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+    return { x: e.clientX, y: e.clientY };
+  };
+
   const attachListeners = (markerInst) => {
     const element = markerInst.getElement();
     if (!element) return;
@@ -147,16 +153,19 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
         rotateBtn.classList.add('active-rotate');
         map.dragging.disable();
 
-        // FIX: Force the entire helicopter to float UP while rotating!
         if (markerInst._icon) {
             L.DomUtil.addClass(markerInst._icon, 'mobile-lifting');
         }
 
-        const onMove = (moveEvent) => {
+        const onRotateDrag = (moveEvent) => {
+          if (moveEvent.cancelable) moveEvent.preventDefault(); // Stop mobile browser scrolling
+          const { x, y } = getEventPoint(moveEvent);
+          if (x === undefined || y === undefined) return;
+
+          const mouseLatLng = map.containerPointToLatLng(map.mouseEventToContainerPoint({ clientX: x, clientY: y }));
           const center = markerInst.getLatLng();
-          const mouse = moveEvent.latlng;
           const angle = calculateAngle(
-            center.lat, center.lng, mouse.lat, mouse.lng
+            center.lat, center.lng, mouseLatLng.lat, mouseLatLng.lng
           );
           stateRef.current.rotation = angle;
 
@@ -167,26 +176,29 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
           if (headingInput) headingInput.innerText = `${Math.round(((angle % 360) + 360) % 360)}°`;
         };
 
-        const onEnd = () => {
+        const onRotateEnd = () => {
           isRotating = false;
           rotateBtn.classList.remove('active-rotate');
           map.dragging.enable();
 
-          // FIX: Drop the helicopter back down when letting go
           if (markerInst._icon) {
               L.DomUtil.removeClass(markerInst._icon, 'mobile-lifting');
           }
 
-          map.off("mousemove touchmove", onMove);
-          map.off("mouseup touchend", onEnd);
+          document.removeEventListener("mousemove", onRotateDrag);
+          document.removeEventListener("touchmove", onRotateDrag);
+          document.removeEventListener("mouseup", onRotateEnd);
+          document.removeEventListener("touchend", onRotateEnd);
 
           updateRef.current(asset.id, {
             rotation: stateRef.current.rotation,
           });
         };
 
-        map.on("mousemove touchmove", onMove);
-        map.on("mouseup touchend", onEnd);
+        document.addEventListener("mousemove", onRotateDrag, { passive: false });
+        document.addEventListener("touchmove", onRotateDrag, { passive: false });
+        document.addEventListener("mouseup", onRotateEnd);
+        document.addEventListener("touchend", onRotateEnd);
       };
 
       L.DomEvent.on(rotateBtn, 'mousedown touchstart', startRotate);
@@ -205,9 +217,9 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
         L.DomEvent.stop(e); 
         if (isMoving) return; 
 
-        const touch = e.touches ? e.touches[0] : (e.originalEvent && e.originalEvent.touches ? e.originalEvent.touches[0] : e);
-        startX = touch.clientX || 0;
-        startY = touch.clientY || 0;
+        const { x, y } = getEventPoint(e);
+        startX = x || 0;
+        startY = y || 0;
         dragThresholdMet = false;
 
         pressTimer = setTimeout(() => {
@@ -220,35 +232,42 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
 
         map.dragging.disable();
 
-        const onMove = (moveEvent) => {
+        const onDrag = (moveEvent) => {
           if (!dragThresholdMet) {
-            const currentTouch = moveEvent.originalEvent && moveEvent.originalEvent.touches ? moveEvent.originalEvent.touches[0] : moveEvent.originalEvent;
-            const dx = Math.abs((currentTouch.clientX || 0) - startX);
-            const dy = Math.abs((currentTouch.clientY || 0) - startY);
+            const currentPoint = getEventPoint(moveEvent);
+            const dx = Math.abs((currentPoint.x || 0) - startX);
+            const dy = Math.abs((currentPoint.y || 0) - startY);
             
             if (dx > 5 || dy > 5) { 
               dragThresholdMet = true;
               clearTimeout(pressTimer); 
               isMoving = true;
               bodyWrapper.style.cursor = 'grabbing';
-              // Float up when moving!
+              
               if (markerInst._icon) L.DomUtil.addClass(markerInst._icon, 'mobile-lifting');
             }
           }
 
           if (isMoving) {
-            markerInst.setLatLng(moveEvent.latlng);
-            drawLines(moveEvent.latlng.lat, moveEvent.latlng.lng);
+            if (moveEvent.cancelable) moveEvent.preventDefault();
+            const { x, y } = getEventPoint(moveEvent);
+            if (x === undefined || y === undefined) return;
+            
+            const latlng = map.containerPointToLatLng(map.mouseEventToContainerPoint({ clientX: x, clientY: y }));
+            markerInst.setLatLng(latlng);
+            drawLines(latlng.lat, latlng.lng);
           }
         };
 
-        const onEnd = () => {
+        const onDragEnd = () => {
           clearTimeout(pressTimer);
           map.dragging.enable();
           bodyWrapper.style.cursor = 'grab';
 
-          map.off("mousemove touchmove", onMove);
-          map.off("mouseup touchend", onEnd);
+          document.removeEventListener("mousemove", onDrag);
+          document.removeEventListener("touchmove", onDrag);
+          document.removeEventListener("mouseup", onDragEnd);
+          document.removeEventListener("touchend", onDragEnd);
 
           if (isMoving) {
             isMoving = false;
@@ -261,8 +280,10 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
           }
         };
 
-        map.on("mousemove touchmove", onMove);
-        map.on("mouseup touchend", onEnd);
+        document.addEventListener("mousemove", onDrag, { passive: false });
+        document.addEventListener("touchmove", onDrag, { passive: false });
+        document.addEventListener("mouseup", onDragEnd);
+        document.addEventListener("touchend", onDragEnd);
       };
 
       L.DomEvent.on(bodyWrapper, 'mousedown touchstart', startInteraction);
