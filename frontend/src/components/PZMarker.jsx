@@ -162,7 +162,7 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     // --- ANCHOR DRAG LOGIC ---
     anchor.on("dragstart", (e) => {
         if (e.target._icon) L.DomUtil.addClass(e.target._icon, 'mobile-lifting');
-        tip.setOpacity(0); // Hide tip so it doesn't get left behind visually
+        tip.setOpacity(0); 
     });
 
     anchor.on("drag", (e) => {
@@ -178,7 +178,7 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
 
     anchor.on("dragend", (e) => {
       if (e.target._icon) L.DomUtil.removeClass(e.target._icon, 'mobile-lifting');
-      if (isHovering) tip.setOpacity(1); // Bring tip back
+      if (isHovering) tip.setOpacity(1); 
       
       const newAnchor = e.target.getLatLng();
       const currentData = latestData.current;
@@ -204,9 +204,8 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
       ]);
       const tipPt = map.latLngToContainerPoint(newTipLatLng);
       
-      // FIX: The Magic Math! Pull the visual arrow tip UP 80px while dragging on mobile
       if (isDraggingTip && isMobile) {
-          tipPt.y -= 80; 
+          tipPt.y -= 80; // Pulls the visual arrow 80px above the thumb
       }
 
       const dx = tipPt.x - anchorPt.x;
@@ -219,8 +218,8 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     tip.on("dragstart", (e) => {
         isDraggingTip = true;
         tip.setOpacity(1);
-        if (e.target._icon) L.DomUtil.addClass(e.target._icon, 'mobile-lifting');
-        redrawTip(e.target.getLatLng()); // Instantly snap arrow up
+        // FIX: Removed the mobile-lifting CSS class so the handle stays perfectly under the finger
+        redrawTip(e.target.getLatLng()); 
     });
     
     tip.on("drag", (e) => {
@@ -229,12 +228,20 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
 
     tip.on("dragend", (e) => {
       isDraggingTip = false;
-      if (e.target._icon) L.DomUtil.removeClass(e.target._icon, 'mobile-lifting');
 
-      const newTip = e.target.getLatLng();
-      updatePZMarker(data.id, { tipLat: newTip.lat, tipLon: newTip.lng });
+      let finalTip = e.target.getLatLng();
+
+      // --- THE MAGIC: Permanently bake the 80px visual offset into the real data ---
+      if (isMobile) {
+        const pt = map.latLngToContainerPoint(finalTip);
+        pt.y -= 80; // Permanently shift the mathematical point 80px UP
+        finalTip = map.containerPointToLatLng(pt);
+        e.target.setLatLng(finalTip); // Instantly snap the invisible handle up to the new location
+      }
+
+      updatePZMarker(data.id, { tipLat: finalTip.lat, tipLon: finalTip.lng });
       
-      redrawTip(newTip); // Instantly snap arrow back down
+      redrawTip(finalTip); // Draw the final arrow using the new permanently offset coordinate
       if (!isHovering) tip.setOpacity(0);
     });
 
