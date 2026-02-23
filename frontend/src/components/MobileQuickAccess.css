@@ -3,6 +3,20 @@
     display: none;
 }
 
+.qa-btn.active-qa-btn {
+    background-color: #3b82f6 !important;
+    border-color: #2563eb !important;
+}
+
+/* Optional: If you want the icon inside to turn white/pop more when blue */
+.qa-btn.active-qa-btn .qa-icon-img {
+    filter: brightness(0) invert(1); 
+}
+
+.flyout-btn {
+    margin-top: 5px;
+}
+
 /* --- Mobile/Tablet Breakpoint --- */
 @media (max-width: 850px) {
     .mobile-quick-access-container {
@@ -46,4 +60,75 @@
         width: 28px;
         height: 28px;
     }
+}
+
+/* --- Mobile Export Controls (Bottom Right) --- */
+.mobile-export-container {
+    position: fixed;
+    bottom: 25px; /* Keeps it above mobile browser bars */
+    right: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 9999;
+    align-items: flex-end;
+}
+
+.mobile-export-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.mobile-pill-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border-radius: 30px; /* Makes them pill-shaped */
+    border: none;
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: white;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    cursor: pointer;
+    backdrop-filter: blur(5px);
+}
+
+.blue-pill {
+    background: rgba(59, 130, 246, 0.9);
+    border: 1px solid rgba(59, 130, 246, 0.5);
+}
+
+.blue-pill:active { background: #2563eb; }
+
+.green-pill {
+    background: rgba(16, 185, 129, 0.9);
+    border: 1px solid rgba(16, 185, 129, 0.5);
+}
+
+.green-pill:active:not(.disabled) { background: #059669; }
+
+.green-pill.disabled {
+    background: rgba(75, 85, 99, 0.9) !important;
+    color: #9ca3af;
+    border-color: rgba(75, 85, 99, 0.5);
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* --- Mobile Progress Bar --- */
+.mobile-progress-bg {
+    width: 100%;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+.mobile-progress-fill {
+    height: 100%;
+    background: #10b981;
+    transition: width 0.3s ease;
 }
