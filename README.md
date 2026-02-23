@@ -103,3 +103,70 @@ The backend requires a Docker container due to system dependencies (OpenCV) and 
 2. Upload sam_b.pt via the Files tab (Git LFS).
 3. Ensure your Dockerfile and README.md metadata are configured correctly (see Dockerfile in repo).
 4. The Space will build and provide a URL. Use this URL in your Frontend config.
+
+## 🚀 Development & Release Workflow
+
+This repository uses a modified Gitflow branching strategy paired with Automated Semantic Versioning. By following strict branch naming and commit message conventions, our releases, changelogs, and version numbers (for both the React frontend and Python backend) are 100% automated.
+
+### 🌿 1. Branching Strategy
+
+We maintain two primary branches:
+
+- ```main```: The production-ready state of the app. Never commit directly to ```main```.
+
+- ```develop```: The active integration branch. All feature branches merge here first.
+
+#### Temporary branches:
+
+- ```feature/your-feature-name```: Branched from develop. Used for new work.
+
+- ```release/vX.X.X```: Branched from develop. Used to prep a batch of features for production.
+
+- ```hotfix/issue-description```: Branched directly from main. Used only for emergency production fixes.
+
+💬 2. Commit Message Conventions
+Our automated release bot reads your commit messages to determine if it should bump the version number, and by how much. You must prefix your commits using the Conventional Commits standard:
+
+- ```fix```:  (Patch Release: ```v1.0.1```) -> Used for bug fixes.
+    - Example: ```fix: resolve mobile layout overlapping issue```
+
+- ```feat```:  (Minor Release: v1.1.0) -> Used for new, backwards-compatible features.
+    - Example: ```feat: add user authentication dashboard```
+
+- ```feat!:```  or ```fix!:```  (Major Release: ```v2.0.0```) -> The ```!``` denotes a BREAKING CHANGE.
+    - Example: ```feat!: migrate from REST to GraphQL API```
+
+- Other prefixes (```chore```:, ```docs```:, ```refactor:```, ```style:```) do not trigger a version bump, but keep the history clean.
+
+### 🛠️ 3. The Step-by-Step Developer Lifecycle
+
+***Phase 1: Building a Feature or Fix***
+1. Ensure your local develop branch is up to date.
+2. Create a new branch: ```git checkout -b feature/new-login-page```
+3. Write your code (Frontend, Backend, or both).
+4. Commit your work using the correct prefix: ```git commit -m "feat: add new login page UI"```
+5. Push your branch: ```git push origin feature/new-login-page```
+
+***Phase 2: Merging to Develop***
+1. Open a Pull Request (PR) in GitHub from ```feature/new-login-page``` into ```develop```.
+2. Vercel will automatically generate a Preview Deployment for this PR.
+3. Once reviewed and tested, squash/merge the PR into ```develop```.
+4. (No official version numbers change during this phase).
+
+***Phase 3: Preparing a Release***
+When ```develop``` has enough features/fixes to go to production:
+
+1. Cut a release branch from ```develop```: ```git checkout -b release/next-version```
+2. Open a Pull Request from ```release/next-version``` into ```main```.
+
+***Phase 4: Production & Automation***
+When the PR is merged into ```main```, the automation pipeline takes over:
+
+1. ***Vercel Build***: Vercel sees the merge to ```main``` and immediately starts building the production deployment.
+2. ***GitHub Actions***: The Semantic Release bot runs in the background. It analyzes all the ```feat:``` and ```fix:``` commits since the last release.
+3. ***Version Bump***: The bot automatically figures out the new version number (e.g., ```v1.2.0```).
+4. ***File Updates***: The bot reaches into ```./frontend``` and updates ```package.json```. It reaches into ```./backend``` and updates ```version.py```.
+5. ***Changelog***: The bot generates a beautiful ```CHANGELOG.md``` file detailing exactly what features and fixes are in this release.
+6. ***The Commit Back***: The bot commits these updated files directly to ```main``` with the message ```chore(release): 1.2.0 [skip ci]```.
+7. ***Skipping Double-Builds***: Vercel sees the ```[skip ci]``` flag on the bot's commit and correctly ignores it, preventing a redundant double-deployment.
+8. ***GitHub Release***: The bot publishes an official GitHub Release and creates a Git tag (```v1.2.0```).
