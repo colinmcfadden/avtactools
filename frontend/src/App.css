@@ -758,3 +758,216 @@ body.export-mode-active .leaflet-control-container {
 .suggestions-dropdown li:hover .text-highlight {
     color: #fcd34d; /* Slightly lighter amber on hover */
 }
+
+/* =========================================================
+   MOBILE RESPONSIVENESS (Hamburger Menu)
+   ========================================================= */
+
+/* Hamburger Button Settings */
+.mobile-hamburger-btn {
+    display: none; /* Hidden by default on desktop */
+}
+
+@media (max-width: 850px) {
+    .mobile-hamburger-btn {
+        display: flex; /* Show the hamburger */
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        top: 15px;
+        right: 15px; /* MOVED TO THE RIGHT */
+        width: 50px;
+        height: 50px;
+        z-index: 1000;
+        background: rgba(30, 30, 35, 0.95);
+        backdrop-filter: blur(5px);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px; /* Matches QA buttons */
+        font-weight: bold;
+        font-size: 1.5rem;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        padding: 0;
+    }
+}
+
+.close-menu-btn.mobile-only {
+    display: none;
+}
+
+/* Tablet / Phone Layout */
+@media (max-width: 850px) {
+    .mobile-hamburger-btn {
+        display: block; /* Show the hamburger */
+    }
+
+    /* Target the parent sidebar to slide in and out */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -100vw; /* Hidden offscreen to start */
+        width: 100vw !important; /* Force full width on mobile */
+        max-width: none !important;
+        height: 100vh;
+        z-index: 2000; /* Float high above Leaflet */
+        background: #1e1e23; /* Dark background so map doesn't peek through */
+        transition: left 0.3s ease-in-out;
+        overflow-y: auto;
+    }
+
+    /* Class added by App.js state */
+    .sidebar.mobile-open {
+        left: 0;
+    }
+
+    .sidebar-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-right: 20px;
+    }
+
+    .close-menu-btn.mobile-only {
+        display: block;
+        background: none;
+        border: none;
+        color: #9ca3af;
+        font-size: 2rem;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+    }
+
+    .close-menu-btn.mobile-only:hover {
+        color: white;
+    }
+}
+
+/* =========================================================
+   MOBILE DRAG FLOATING EFFECT (Pure CSS Solution)
+   ========================================================= */
+
+@media (max-width: 850px), (pointer: coarse) {
+
+    /* 1. Lift the inner wrapper (-80px) and scale it up slightly */
+    .mobile-lifting .drag-lifter {
+        transform: translateY(-80px) scale(1.1) !important;
+        transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    /* 2. Draw the Dashed Targeting Line from the bottom of the lifted box */
+    .mobile-lifting .drag-lifter::after {
+        content: '';
+        position: absolute;
+        top: 50%; 
+        left: 50%;
+        transform: translateX(-50%);
+        width: 2px;
+        height: 80px; /* Must match the 80px from translateY above */
+        background-image: linear-gradient(to bottom, rgba(239, 68, 68, 0.8) 50%, transparent 50%);
+        background-size: 100% 8px; 
+        pointer-events: none;
+        z-index: -1; 
+    }
+
+    /* 3. Force the entire marker above all other map elements while dragging */
+    .mobile-lifting {
+        z-index: 99999 !important;
+    }
+}
+
+/* =========================================================
+   DOGHOUSE CONTROLS (Rotate & Move)
+   ========================================================= */
+
+/* The buttons are hidden by default */
+.dh-controls {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    transform: scale(0.9);
+}
+
+/* Common styling for both buttons */
+.dh-btn {
+    width: 44px;
+    height: 44px;
+    background: rgba(30, 30, 35, 0.9);
+    border: 2px solid white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+    pointer-events: auto; /* Buttons are clickable when visible */
+}
+
+/* Change cursor when actively dragging the rotation */
+.dh-rotate:active {
+    cursor: grabbing;
+    background: #00b5e2; /* Turns blue when rotating */
+}
+
+/* Change cursor when actively moving */
+.dh-move:active {
+    cursor: grabbing;
+    background: #22c55e; /* Turns green when dragging */
+}
+
+/* --- DESKTOP BEHAVIOR --- */
+@media (hover: hover) {
+    /* Show controls when mouse hovers over the Doghouse wrapper */
+    .doghouse-interactive-wrapper:hover .dh-controls {
+        opacity: 1;
+        pointer-events: auto;
+        transform: scale(1);
+    }
+}
+
+/* --- MOBILE BEHAVIOR --- */
+/* Show controls when the JS tap listener adds the class */
+.doghouse-interactive-wrapper.show-controls .dh-controls {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
+}
+
+/* --- Success Toast Notification --- */
+.success-toast {
+  position: fixed;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(16, 185, 129, 0.95); /* Tactical Green */
+  backdrop-filter: blur(4px);
+  color: white;
+  padding: 14px 24px;
+  border-radius: 8px;
+  border: 1px solid #34d399;
+  font-weight: bold;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: max-content;
+  max-width: 90vw;
+  
+  /* Smooth drop-in animation */
+  animation: dropInToast 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes dropInToast {
+  0% {
+    top: -50px;
+    opacity: 0;
+  }
+  100% {
+    top: 30px;
+    opacity: 1;
+  }
+}

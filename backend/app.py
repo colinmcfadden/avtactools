@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
+from version import __version__
 
 # Import your Blueprints
 from routes.terrain_routes import terrain_bp
@@ -21,7 +22,7 @@ def health_check():
     return {
         "status": "online",
         "service": "AvTacTools Backend",
-        "version": "1.0"
+        "version": __version__
     }
 
 if __name__ == '__main__':
