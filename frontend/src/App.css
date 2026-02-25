@@ -85,6 +85,7 @@ body, html, .App {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
   z-index: 10;
   margin: 0 5px;
+  margin-top: 1em;
 }
 
 .ff-label {
@@ -790,7 +791,7 @@ body.export-mode-active .leaflet-control-container {
         box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         padding: 0;
     }
-}
+} 
 
 .close-menu-btn.mobile-only {
     display: none;
@@ -825,7 +826,7 @@ body.export-mode-active .leaflet-control-container {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding-right: 20px;
+        padding-right: 5px;
     }
 
     .close-menu-btn.mobile-only {
@@ -837,6 +838,8 @@ body.export-mode-active .leaflet-control-container {
         cursor: pointer;
         padding: 0;
         line-height: 1;
+        margin-left: auto;
+        padding: 10px;
     }
 
     .close-menu-btn.mobile-only:hover {
@@ -969,5 +972,48 @@ body.export-mode-active .leaflet-control-container {
   100% {
     top: 30px;
     opacity: 1;
+  }
+}
+
+.controls-footer {
+  display: flex;
+  align-items: center;        /* Vertically centers the logo and text */
+  justify-content: flex-start;
+  gap: 12px;                  /* Space between the logo and the text */
+  padding: 16px;        /* Adds space above the footer */
+  margin-top: auto;           /* Pushes the footer to the absolute bottom of the panel */
+  border-top: 1px solid rgba(255, 255, 255, 0.1); /* Subtle divider line */
+}
+
+/* Constrain the logo so it doesn't take over the screen */
+.footer-logo {
+  width: 50px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3)); /* Makes the patch pop slightly */
+}
+
+/* The automated version number */
+.footer-version {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #9ca3af;             /* A subdued gray so it doesn't distract */
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media (min-width: 640px) {
+  .controls-footer { gap: 12px; }
+  .footer-brand-text { gap: 8px; }
+  
+  .footer-logo {
+    width: 100px;
+  }
+  
+}
+
+/* --- 3. DESKTOP BREAKPOINT (Screens wider than 1024px) --- */
+@media (min-width: 1024px) {
+  .footer-logo {
+    width: 150px; /* Back to your original, largest size */
   }
 }

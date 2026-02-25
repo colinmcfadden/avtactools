@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import axios from "axios";
 import MissionSummary from "./MissionSummary";
 import { UNIT_TYPES } from "./UnitIcons";
-import { convertToLatLongString } from "../utils/Helpers";
+import packageJson from '../../package.json';
 
 const Controls = ({
   addHelo,
@@ -264,6 +263,14 @@ const Controls = ({
           )}
         </div>
         <div style={{ height: '100px' }}></div>
+      </div>
+      <div className="controls-footer">
+        <a href="/" className="footer-link" target="_blank" rel="noopener noreferrer">
+          <img src='/img/ezpz_logo-1.png' alt="EZ-PZ Logo" className="footer-logo" />
+        </a>
+        <div className="footer-brand-text">
+          <span className="footer-version">v{packageJson.version}</span>
+        </div>
       </div>
     </div>
   );
