@@ -476,9 +476,6 @@ useEffect(() => {
       </button>
       <div className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-header">
-          <h2 className="tactical-header">
-            EZ/PZ Card <span className="version-tag">1.0.0-alpha.1</span>
-          </h2>
           <button className="close-menu-btn mobile-only" onClick={() => setIsMobileMenuOpen(false)}>✕</button>
         </div>
         <Controls
