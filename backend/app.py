@@ -1,6 +1,9 @@
 from flask import Flask
 from flask_cors import CORS
-from version import __version__
+try:
+    from version import __version__
+except ImportError:
+    __version__ = "0.0.0-dev"
 
 # Import your Blueprints
 from routes.terrain_routes import terrain_bp
