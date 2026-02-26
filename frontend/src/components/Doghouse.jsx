@@ -108,7 +108,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
         span.style.backgroundColor = "transparent";
         map.dragging.enable();
 
-        const val = span.innerText.trim();
+        const val = (span.innerText || "").trim();
         const type = span.getAttribute("data-type");
         const currentData = dataRef.current; 
 
