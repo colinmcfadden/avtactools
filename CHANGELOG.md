@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/colinmcfadden/avtactools/compare/v1.0.1...v1.0.2) (2026-02-26)
+
+
+### Bug Fixes
+
+* attempt to fix trim issue on A co computers ([b155620](https://github.com/colinmcfadden/avtactools/commit/b1556209409f21526ea4c8c161415b3d59d34110))
+
 ## [1.0.1](https://github.com/colinmcfadden/avtactools/compare/v1.0.0...v1.0.1) (2026-02-25)
 
 
