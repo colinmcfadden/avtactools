@@ -20,7 +20,7 @@ const getPolygonArea = (coords) => {
   return Math.abs(area);
 };
 
-const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData }) => {
+const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams }) => {
   const [winds, setWinds] = useState({ speed: 0, dir: 0 });
   const [loadingWeather, setLoadingWeather] = useState(false);
 
@@ -80,7 +80,9 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData }) =>
             station: data.station_id,
             vis: data.vis_sm,
             dew: data.dewp_c,
+            notams: data.notams || []
           });
+          setActiveNotams(data.notams || []);
         }
       } catch (e) {
         console.error("Weather error", e);
@@ -163,7 +165,7 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData }) =>
             </>
         )}
       </div>
-
+        {console.log("NOTAMS", winds )}
     </div>
   );
 };

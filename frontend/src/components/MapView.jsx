@@ -11,7 +11,7 @@ import {
 import LZDimensions from "./LZDimensions";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Rectangle } from "react-leaflet";
+import { useMapEvents, Polyline, Rectangle } from "react-leaflet";
 import PZMarker from "./PZMarker";
 import UnitMarker from "./UnitMarker";
 import SectorMarker from "./SectorMarker";
@@ -42,6 +42,27 @@ function MapUpdater({ center }) {
       map.setView(center, 17);
     }
   }, [center, map]);
+  return null;
+}
+
+function MapInteractionHandler({ 
+  isDrawingLZ, setDrawingPoints, handleMapRightClick, setContextMenu 
+}) {
+  useMapEvents({
+    contextmenu: (e) => {
+      if (isDrawingLZ) return; // Don't interrupt drawing
+      // Stop the default browser right-click menu
+      e.originalEvent.preventDefault(); 
+      handleMapRightClick(e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
+    },
+    click: (e) => {
+      if (isDrawingLZ) {
+        setDrawingPoints(prev => [...prev, [e.latlng.lat, e.latlng.lng]]);
+      } else {
+        setContextMenu(null); // Click anywhere else to close the menu
+      }
+    }
+  });
   return null;
 }
 
@@ -471,6 +492,7 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
 
 const MapView = ({
   targetLocation,
+  mapData,
   detectedLZ,
   assets,
   updateAsset,
@@ -500,7 +522,15 @@ const MapView = ({
   onExportComplete,
   setExportProgress,
   setIsExporting,
-  setExportBox
+  setExportBox,
+  isDrawingLZ,
+  drawingPoints,
+  setDrawingPoints,
+  customLZ,
+  handleMapRightClick,
+  handleLZRightClick,
+  setContextMenu,
+  mapStyle
 }) => {
   const [activeDrag, setActiveDrag] = useState(null);
 
@@ -514,7 +544,6 @@ const MapView = ({
     if (deg < 13) return "orange"; // steep
     return "red"; // Approaching limits``
   };
-
 
   return (
     <MapContainer
@@ -532,7 +561,12 @@ const MapView = ({
 
       {/* Base Layer - using MapBox for Satellite Imagery */}
       <TileLayer
-        url="https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/512/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoiY21jZmFkZGVuOSIsImEiOiJjbWxvNGhhYWIwNmpmM2VvbTJ5YjJ3MmZxIn0.zxZ__KSBdP8KuLN0rzULlw"
+        key={mapStyle} // Forces Leaflet to refresh when the style changes
+        url={
+          mapStyle === "topo"
+            ? "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/512/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoiY21jZmFkZGVuOSIsImEiOiJjbWxvNGhhYWIwNmpmM2VvbTJ5YjJ3MmZxIn0.zxZ__KSBdP8KuLN0rzULlw"
+            : "https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/512/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoiY21jZmFkZGVuOSIsImEiOiJjbWxvNGhhYWIwNmpmM2VvbTJ5YjJ3MmZxIn0.zxZ__KSBdP8KuLN0rzULlw"
+        }
         attribution='&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a>'
         tileSize={512}
         zoomOffset={-1}
@@ -540,13 +574,44 @@ const MapView = ({
         crossOrigin="anonymous"
       />
 
+      <MapInteractionHandler 
+        isDrawingLZ={isDrawingLZ} 
+        setDrawingPoints={setDrawingPoints}
+        handleMapRightClick={handleMapRightClick}
+        setContextMenu={setContextMenu}
+      />
+
+      {/* Render the Active Drawing Line */}
+      {isDrawingLZ && drawingPoints.length > 0 && (
+        <Polyline 
+          positions={drawingPoints} 
+          pathOptions={{ color: '#FFC107', weight: 3, dashArray: '5, 5' }} 
+        />
+      )}
+
+      {/* Render the Completed Custom Polygon */}
+      {customLZ && (
+  <Polygon
+    positions={customLZ}
+    pathOptions={{ color: "#FFC107", weight: 3, fillColor: "#FFC107", fillOpacity: 0.2 }}
+    eventHandlers={{
+      contextmenu: (e) => {
+        L.DomEvent.stop(e); // Prevent the map from seeing this right-click
+        e.originalEvent.preventDefault();
+        // 👇 Add e.latlng.lat and e.latlng.lng here!
+        handleLZRightClick(e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
+      }
+    }}
+  />
+)}
+
       {/* Logic to Zoom when target changes */}
       <MapUpdater center={targetLocation} />
 
       {/* 1. The Grid Location (Green Star) */}
       {targetLocation && (
         <Marker position={targetLocation} icon={starIcon}>
-          <Popup>Target Grid Location</Popup>
+          <Popup>{mapData.mgrs}</Popup>
         </Marker>
       )}
 

@@ -1,3 +1,16 @@
+export const isPointInPolygon = (point, polygon) => {
+  if (!point || !polygon) return false;
+  const x = point[0], y = point[1]; // target lat/lon
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
 export const calculateBearing = (startLat, startLng, endLat, endLng) => {
   const toRad = (deg) => (deg * Math.PI) / 180;
   const toDeg = (rad) => (rad * 180) / Math.PI;
