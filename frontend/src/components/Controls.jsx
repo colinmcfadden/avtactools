@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import MissionSummary from "./MissionSummary";
 import { UNIT_TYPES } from "./UnitIcons";
 import packageJson from '../../package.json';
+import axios from "axios";
+import { convertToLatLongString } from "../utils/Helpers";
 
 const Controls = ({
   addHelo,
@@ -26,7 +28,16 @@ const Controls = ({
   closeMobileMenu,
   gridInput,
   setGridInput,
-  handleSearch
+  handleSearch,
+  setDetectedLZ,
+  setLatLong,
+  setGridElevation,
+  isDrawingLZ,
+  toggleDrawingMode,
+  mapStyle,
+  setMapStyle,
+  performTerrainAnalysis,
+  setActiveNotams
 }) => {
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
@@ -52,6 +63,8 @@ const Controls = ({
       />
     </svg>
   );
+
+   const API_BASE_URL = process.env.REACT_APP_API_URL;
 
   const maxSlope = terrainData?.heatmap
     ? Math.max(...terrainData.heatmap.map((tile) => tile.slope))
@@ -96,9 +109,22 @@ const Controls = ({
               terrainData={terrainData}
               targetLocation={targetLocation}
               mapData={mapData}
+              setActiveNotams={setActiveNotams}
             />
           </div>
 
+          {mapData && targetLocation && (
+            <div className="toggle-row">
+            <button
+              onClick={() => performTerrainAnalysis(targetLocation[0], targetLocation[1])}
+              className={`ff-action-btn ff-btn primary`}
+            >
+              Analyze the LZ
+            </button>
+          </div>
+        )}
+
+          
           <div className="toggle-row">
             <div className="toggle-item">
               <label className="switch">
@@ -124,6 +150,19 @@ const Controls = ({
               <span>LZ Box</span>
             </div>
           </div>
+          <div className="toggle-row">
+             <div className="toggle-item">
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={mapStyle === "topo"}
+                  onChange={(e) => setMapStyle(e.target.checked ? "topo" : "satellite")}
+                />
+                <span className="slider round"></span>
+              </label>
+              <span>Topo Map</span>
+            </div>
+            </div>
 
           {showHeatmap && terrainData && (
             <div className="ff-stat-block">
@@ -146,6 +185,20 @@ const Controls = ({
         <div className="ff-card ff-card-tools">
           <div className="ff-card-header">LZ/PZ Tools</div>
           <div className="tool-grid">
+            <button 
+  onClick={toggleDrawingMode} 
+  className={`ff-tool-btn ${isDrawingLZ ? 'active' : ''}`} 
+  title="Draw Custom LZ"
+  style={{ borderColor: isDrawingLZ ? '#FFC107' : '' }}
+>
+  <svg viewBox="0 0 24 24" fill="none" stroke={isDrawingLZ ? '#FFC107' : 'currentColor'} strokeWidth="2" width="24" height="24">
+    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+  </svg>
+  <span className="btn-label" style={{ color: isDrawingLZ ? '#FFC107' : '' }}>
+    {isDrawingLZ ? 'Finish LZ' : 'Draw LZ'}
+  </span>
+</button>
+
             <button onClick={handleAddHelo} className="ff-tool-btn" title="Add Helo">
               <img
                 src="/icons/helicopter.png"
@@ -175,7 +228,9 @@ const Controls = ({
               </svg>
               <span className="btn-label">Sector</span>
             </button>
+          </div>
 
+          <div className="tool-grid">
             <div className="relative-wrapper">
               <button
                 onClick={() => setShowUnitMenu(!showUnitMenu)}
@@ -203,8 +258,7 @@ const Controls = ({
                 </div>
               )}
             </div>
-          </div>
-          <div className="tool-grid">
+            
             <button className="ff-tool-btn" onClick={() => handleAddGoAround("left")}>
               <svg width="24" height="24" viewBox="0 0 100 100">
                 <path

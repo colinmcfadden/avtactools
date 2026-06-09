@@ -12,6 +12,128 @@ def get_distance(lat1, lon1, lat2, lon2):
     """
     return math.sqrt((lat2 - lat1)**2 + (lon2 - lon1)**2)
 
+def get_local_airport_notams(icao_id):
+    """
+    Ping the public FAA NOTAM Search backend.
+    searchType 0 = 'Location' search.
+    """
+    url = "https://notams.aim.faa.gov/notamSearch/search"
+    payload = {
+        "searchType": 0,
+        "designatorsForLocation": icao_id
+    }
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        # The FAA sometimes blocks default python requests agents, 
+        # so we spoof a standard browser just to be safe.
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" 
+    }
+    
+    try:
+        print(f"DEBUG: Fetching NOTAMs for {icao_id}")
+        resp = requests.post(url, data=payload, headers=headers, timeout=5)
+        
+        if resp.status_code != 200:
+            return "NOTAM fetch failed."
+            
+        data = resp.json()
+        notam_list = data.get('notamList', [])
+        
+        if not notam_list:
+            return "No active NOTAMs."
+            
+        # Extract the raw text from the top 3 NOTAMs
+        extracted_notams = []
+        for item in notam_list[:3]: 
+            # 'traditionalMessage' holds the classic raw NOTAM string
+            text = item.get('traditionalMessage', 'Notice text unavailable')
+            extracted_notams.append(text.strip())
+            
+        # Join them together with double line breaks for the Excel cell
+        return "\n\n".join(extracted_notams)
+        
+    except Exception as e:
+        print(f"NOTAM ERROR: {e}")
+        return "NOTAMs currently unavailable."
+    
+
+
+def get_radial_notams(lat, lon, radius_nm=10):
+    """
+    Ping the public FAA NOTAM Search backend using a Lat/Lon Radius.
+    Converts decimal degrees to Degrees, Minutes, Seconds.
+    """
+    # Math for Latitude DMS
+    lat_abs = abs(lat)
+    lat_deg = int(lat_abs)
+    lat_min = int((lat_abs - lat_deg) * 60)
+    lat_sec = int((lat_abs - lat_deg - lat_min / 60.0) * 3600.0)
+    lat_dir = "N" if lat >= 0 else "S"
+    
+    # Math for Longitude DMS
+    lon_abs = abs(lon)
+    lon_deg = int(lon_abs)
+    lon_min = int((lon_abs - lon_deg) * 60)
+    lon_sec = int((lon_abs - lon_deg - lon_min / 60.0) * 3600.0)
+    lon_dir = "E" if lon >= 0 else "W"
+
+    url = "https://notams.aim.faa.gov/notamSearch/search"
+    
+    # searchType 3 = Lat/Lon Radius Search
+    payload = {
+        "searchType": 3,
+        "latDegrees": lat_deg,
+        "latMinutes": lat_min,
+        "latSeconds": lat_sec,
+        "latitudeDirection": lat_dir,
+        "longDegrees": lon_deg,
+        "longMinutes": lon_min,
+        "longSeconds": lon_sec,
+        "longitudeDirection": lon_dir,
+        "radius": radius_nm,
+        "radiusSearchOnDesignator": "false"
+    }
+    
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" 
+    }
+    
+    try:
+        print(f"DEBUG: Fetching NOTAMs in a {radius_nm}nm radius of {lat_deg}°{lat_min}'{lat_dir} {lon_deg}°{lon_min}'{lon_dir}")
+        resp = requests.post(url, data=payload, headers=headers, timeout=5)
+        
+        if resp.status_code != 200:
+            return "NOTAM fetch failed."
+            
+        data = resp.json()
+        notam_list = data.get('notamList', [])
+        
+        if not notam_list:
+            return "No active NOTAMs in LZ area."
+            
+        grouped_notams = {}
+        
+        # We removed the [:3] limit, so this processes EVERY NOTAM
+        for item in notam_list: 
+            category = item.get('featureName', 'General Airspace')
+            text = item.get('traditionalMessage', '').strip()
+            
+            if not text:
+                continue
+                
+            if category not in grouped_notams:
+                grouped_notams[category] = []
+                
+            grouped_notams[category].append(text)
+            
+        return grouped_notams
+        
+    except Exception as e:
+        print(f"NOTAM ERROR: {e}")
+        return "NOTAMs currently unavailable."
+
+
 @weather_bp.route('/api/weather', methods=['GET'])
 def get_local_weather():
     """
@@ -124,6 +246,9 @@ def get_local_weather():
             except:
                 pass
 
+
+        active_notams = get_radial_notams(raw_lat, raw_lng, radius_nm=10)
+
         return jsonify({
             'station_id': station_id,
             'name': station_name,
@@ -136,7 +261,8 @@ def get_local_weather():
             'pressure': pressure,
             'flight_category': report.get('fltcat'),
             'raw_metar': report.get('rawOb'),
-            'distance_miles': round(min_dist * 69, 1)
+            'distance_miles': round(min_dist * 69, 1),
+            'notams': active_notams
         })
 
     except Exception as e:
