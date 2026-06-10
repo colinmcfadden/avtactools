@@ -1,8 +1,8 @@
-# LZ Card Caddy 🚁
+# EZ/PZ 🚁
 
 > **Current Status:** v1.0.0-ALPHA.1 (Public Beta)
 
-**LZ Card Caddy** is a modern geospatial intelligence tool designed for aviation mission planning. It combines interactive mapping with AI-powered terrain analysis to help crews identify, analyze, and mark Helicopter Landing Zones (HLZs) and Pickup Zones (PZs) with precision.
+**EZ/PZ** is a modern geospatial intelligence tool designed for aviation mission planning. It combines interactive mapping with AI-powered terrain analysis to help crews identify, analyze, and mark Helicopter Landing Zones (HLZs) and Pickup Zones (PZs) with precision.
 
 It leverages a responsive React frontend for the mission interface and a Python/Flask backend for heavy-duty geospatial processing and AI model inference.
 

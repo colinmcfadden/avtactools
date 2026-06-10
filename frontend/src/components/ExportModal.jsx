@@ -10,11 +10,16 @@ const ExportModal = ({
   mapData,
   flightData,
   proximityAlerts,
+  activeNotams
 }) => {
   const nodeRef = useRef(null);
   const dropdownRef = useRef(null);
   const [showWarning, setShowWarning] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const [showNotamMenu, setShowNotamMenu] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState({});
+  const [selectedNotams, setSelectedNotams] = useState([]);
 
   const [formData, setFormData] = useState({
     lz_label: "LZ",
@@ -25,15 +30,26 @@ const ExportModal = ({
     elevation: "",
     call_sign: "",
     freq: "",
-    formation: "STAG RIGHT",
+    ldg_formation: "STAG RIGHT",
+    to_formation: "STAG RIGHT",
     land_dir: "",
     go_around: "LEFT",
     takeoff_dir: "",
+    weapons_control: "HOLD",
+    weapons_status: "STOWED",
     door: "RIGHT",
     load: "LEFT",
-    weapons_status: "STOWED",
     remarks: "",
   });
+
+  const allAvailableNotams = useMemo(() => {
+    if (!activeNotams || typeof activeNotams !== "object") return [];
+    return Object.values(activeNotams).flat();
+  }, [activeNotams]);
+
+  const isAllSelected =
+    allAvailableNotams.length > 0 &&
+    selectedNotams.length === allAvailableNotams.length;
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -45,7 +61,6 @@ const ExportModal = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Pre-fill data when the modal opens or data changes
   useEffect(() => {
     if (isOpen) {
       setFormData((prev) => ({
@@ -59,6 +74,10 @@ const ExportModal = ({
         takeoff_dir: flightData.takeoff_hdg || "",
         go_around: flightData.goAround || "LEFT",
       }));
+      // Reset NOTAMs when modal opens
+      setShowNotamMenu(false);
+      setSelectedNotams([]);
+      setExpandedCategories({});
     }
   }, [isOpen, mapData, flightData]);
 
@@ -84,24 +103,18 @@ const ExportModal = ({
     return list
       .filter((item) => item.includes(query))
       .sort((a, b) => {
-        // Prioritize words that START with the query
         const aStarts = a.startsWith(query);
         const bStarts = b.startsWith(query);
-
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
-
-        // If both start with it, or neither do, sort alphabetically
         return a.localeCompare(b);
       });
   }, [formData.lz_label, formData.lz_name]);
 
   const handleSubmit = () => {
     if (proximityAlerts && proximityAlerts.length > 0) {
-      // If there are alerts, show the warning instead of exporting
       setShowWarning(true);
     } else {
-      // Otherwise, proceed normally
       onExport(formData);
     }
   };
@@ -115,15 +128,69 @@ const ExportModal = ({
     setShowWarning(false);
   };
 
-  // Ensure warning resets if they close the modal via the 'X' or Cancel button
   const handleCloseModal = () => {
     setShowWarning(false);
     onClose();
   };
 
+  // --- NOTAM CHECKBOX LOGIC ---
+  const handleToggleNotam = (notam) => {
+    if (selectedNotams.includes(notam)) {
+      // Remove it from the state and the remarks text box
+      setSelectedNotams((prev) => prev.filter((n) => n !== notam));
+      setFormData((prev) => ({
+        ...prev,
+        remarks: prev.remarks
+          .replace(`\n\n${notam}`, "")
+          .replace(notam, "")
+          .trim(),
+      }));
+    } else {
+      // Add it to the state and append to the remarks text box
+      setSelectedNotams((prev) => [...prev, notam]);
+      setFormData((prev) => ({
+        ...prev,
+        remarks: prev.remarks ? `${prev.remarks}\n\n${notam}` : notam,
+      }));
+    }
+  };
+
+  const handleToggleAllNotams = () => {
+    if (isAllSelected) {
+      // Deselect all
+      setSelectedNotams([]);
+      let newRemarks = formData.remarks;
+      allAvailableNotams.forEach((notam) => {
+        newRemarks = newRemarks
+          .replace(`\n\n${notam}`, "")
+          .replace(notam, "")
+          .trim();
+      });
+      setFormData((prev) => ({ ...prev, remarks: newRemarks }));
+    } else {
+      // Select all that aren't already selected
+      const newlySelected = allAvailableNotams.filter(
+        (n) => !selectedNotams.includes(n)
+      );
+      setSelectedNotams(allAvailableNotams);
+
+      let newRemarks = formData.remarks;
+      newlySelected.forEach((notam) => {
+        newRemarks = newRemarks ? `${newRemarks}\n\n${notam}` : notam;
+      });
+      setFormData((prev) => ({ ...prev, remarks: newRemarks }));
+    }
+  };
+
+  const toggleCategory = (category) => {
+    setExpandedCategories((prev) => ({
+      ...prev,
+      [category]: !prev[category],
+    }));
+  };
+
   const renderHighlightedText = (text, highlight) => {
     if (!highlight) return text;
-    // Split the text safely around the highlighted string, keeping the match
     const parts = text.split(new RegExp(`(${highlight})`, "gi"));
     return (
       <span>
@@ -134,7 +201,7 @@ const ExportModal = ({
             </span>
           ) : (
             part
-          ),
+          )
         )}
       </span>
     );
@@ -281,19 +348,6 @@ const ExportModal = ({
               />
             </div>
 
-            <div className="input-group span-2">
-              <label>Formation</label>
-              <select
-                name="formation"
-                value={formData.formation}
-                onChange={handleChange}
-              >
-                <option value="STAG LEFT">STAG LEFT</option>
-                <option value="STAG RIGHT">STAG RIGHT</option>
-                <option value="TRAIL">TRAIL</option>
-              </select>
-            </div>
-
             <div className="input-group">
               <label>Land Dir</label>
               <input
@@ -310,6 +364,92 @@ const ExportModal = ({
                 onChange={handleChange}
               />
             </div>
+
+            <div className="input-group">
+              <label>Landing Formation</label>
+              <select
+                name="ldg_formation"
+                value={formData.ldg_formation}
+                onChange={handleChange}
+              >
+                <option value="STAG LEFT">STAG LEFT</option>
+                <option value="STAG RIGHT">STAG RIGHT</option>
+                <option value="TRAIL">TRAIL</option>
+                <option value="ECHELON LEFT">ECHELON LEFT</option>
+                <option value="ECHELON RIGHT">ECHELON RIGHT</option>
+                <option value="VEE">VEE</option>
+                <option value="COMBAT CRUISE">COMBAT CRUISE</option>
+                <option value="CBT CRUISE L">COMBAT CRUISE LEFT</option>
+                <option value="CBT CRUISE R">COMBAT CRUISE RIGHT</option>
+                <option value="CBT TRAIL">COMBAT TRAIL</option>
+                <option value="CBT SPREAD">COMBAT SPREAD</option>
+              </select>
+            </div>
+
+            <div className="input-group">
+              <label>Takeoff Formation</label>
+              <select
+                name="to_formation"
+                value={formData.to_formation}
+                onChange={handleChange}
+              >
+                <option value="STAG LEFT">STAG LEFT</option>
+                <option value="STAG RIGHT">STAG RIGHT</option>
+                <option value="TRAIL">TRAIL</option>
+                <option value="ECHELON LEFT">ECHELON LEFT</option>
+                <option value="ECHELON RIGHT">ECHELON RIGHT</option>
+                <option value="VEE">VEE</option>
+                <option value="COMBAT CRUISE">COMBAT CRUISE</option>
+                <option value="CBT CRUISE L">COMBAT CRUISE LEFT</option>
+                <option value="CBT CRUISE R">COMBAT CRUISE RIGHT</option>
+                <option value="CBT TRAIL">COMBAT TRAIL</option>
+                <option value="CBT SPREAD">COMBAT SPREAD</option>
+              </select>
+            </div>
+
+            <div className="input-group span-2">
+              <label>Spacing</label>
+              <select
+                name="spacing"
+                value={formData.spacing}
+                onChange={handleChange}
+              >
+                <option value="N/A">N/A</option>
+                <option value="TIGHT">TIGHT</option>
+                <option value="CLOSE">CLOSE</option>
+                <option value="LOOSE">LOOSE</option>
+                <option value="EXT">EXTENDED</option>
+              </select>
+            </div>
+
+            <div className="input-group">
+              <label>Weapons Control Measure</label>
+              <select
+                name="weapons_control"
+                value={formData.weapons_control}
+                onChange={handleChange}
+              >
+                <option value="NONE">None</option>
+                <option value="HOLD">WEAPONS HOLD</option>
+                <option value="TIGHT">WEAPONS TIGHT</option>
+                <option value="FREE">WEAPONS FREE</option>
+              </select>
+            </div>
+            <div className="input-group">
+              <label>Weapons Status</label>
+              <select
+                name="weapons_status"
+                value={formData.weapons_status}
+                onChange={handleChange}
+              >
+                <option value="NONE">None</option>
+                <option value="ARMED">ARMED</option>
+                <option value="LOADED">LOADED</option>
+                <option value="STOWED">STOWED</option>
+                <option value="CLEARED">CLEARED</option>
+              </select>
+            </div>
+
           </div>
 
           <div className="form-grid three-col-grid">
@@ -344,15 +484,80 @@ const ExportModal = ({
             <div className="input-group span-2">
               <label>Remarks / Hazards</label>
               <textarea
-                rows="2"
+                rows="8" 
                 name="remarks"
                 value={formData.remarks}
                 onChange={handleChange}
                 className="full-width"
-                style={{ resize: "none" }}
+                style={{ resize: "vertical" }} 
               />
             </div>
           </div>
+          {/* --- NOTAM DROPDOWN --- */}
+          {activeNotams && typeof activeNotams === "object" && allAvailableNotams.length > 0 && (
+            <div>
+              <p style={{ fontSize: "0.7rem", color: "#bbb", textTransform: "uppercase" }}>NOTAMS within a 10nm radius are included below for reference. You may select/deselect important or relevant NOTAMS as needed, and they will be included in REMARKS.</p>
+            <div className="notam-section" style={{ marginTop: '10px', background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '4px' }}>
+              
+              {/* MASTER DROPDOWN TOGGLE */}
+              <div 
+                className="notam-header" 
+                onClick={() => setShowNotamMenu(!showNotamMenu)}
+                style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}
+              >
+                <span>Local NOTAMs ({allAvailableNotams.length})</span>
+                <span>{showNotamMenu ? '▲' : '▼'}</span>
+              </div>
+
+              {/* EXPANDED MENU */}
+              {showNotamMenu && (
+                <div className="notam-content" style={{ marginTop: '10px', fontSize: '12px' }}>
+                  
+                  {/* SELECT ALL */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontWeight: 'bold', borderBottom: '1px solid #475569', paddingBottom: '5px' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={isAllSelected} 
+                      onChange={handleToggleAllNotams} 
+                    />
+                    Select / Deselect All
+                  </label>
+
+                  {/* CATEGORIES */}
+                  {Object.entries(activeNotams).map(([category, notams]) => (
+                    <div key={category} style={{ marginBottom: '8px' }}>
+                      <div 
+                        onClick={() => toggleCategory(category)}
+                        style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '4px' }}
+                      >
+                        <span style={{ color: '#38bdf8' }}>{category} ({notams.length})</span>
+                        <span>{expandedCategories[category] ? '▲' : '▼'}</span>
+                      </div>
+
+                      {/* INDIVIDUAL NOTAMS */}
+                      {expandedCategories[category] && (
+                        <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {notams.map((notam, idx) => (
+                            <label key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
+                              <input 
+                                type="checkbox" 
+                                style={{ marginTop: '3px' }}
+                                checked={selectedNotams.includes(notam)}
+                                onChange={() => handleToggleNotam(notam)}
+                              />
+                              <span style={{ lineHeight: '1.4', opacity: 0.9 }}>{notam}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                </div>
+              )}
+            </div>
+            </div>
+          )}
         </div>
 
         <div className="modal-footer">

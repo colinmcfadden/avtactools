@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
-import { getDistanceMeters, convertToLatLongString } from "./utils/Helpers";
+import { getDistanceMeters, convertToLatLongString, isPointInPolygon } from "./utils/Helpers";
 import ExportModal from './components/ExportModal';
 import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
@@ -34,6 +34,80 @@ function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
   const [gridInput, setGridInput] = useState("16S GD 6338 3202");
+  const [isDrawingLZ, setIsDrawingLZ] = useState(false);
+  const [drawingPoints, setDrawingPoints] = useState([]);
+  const [customLZ, setCustomLZ] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, type, data }
+  const [clickedGrid, setClickedGrid] = useState("Loading...");
+  const [mapStyle, setMapStyle] = useState("satellite");
+  const [activeNotams, setActiveNotams] = useState("");
+
+  const handleMapRightClick = async (lat, lon, x, y) => {
+  setContextMenu({ x, y, type: 'map', lat, lon });
+  setClickedGrid("Calculating...");
+  try {
+    const res = await axios.post(`${API_BASE_URL}/convert-to-mgrs`, { lat, lon });
+    setClickedGrid(res.data.mgrs);
+  } catch (err) {
+    setClickedGrid(convertToLatLongString(lat, lon)); // Fallback to Lat/Lon if backend fails
+  }
+};
+
+const handleSetAsTarget = () => {
+    if (clickedGrid === "Calculating...") return;
+
+    const newTarget = [contextMenu.lat, contextMenu.lon];
+
+    // 1. Update the UI Text
+    setGridInput(clickedGrid); 
+    setMapData(prev => ({...prev, mgrs: clickedGrid}));
+    
+    // 2. Always clear the "Official" data when a target moves
+    // (So the user is forced to hit Analyze for the new center point)
+    setDetectedLZ(null);
+    setTerrainData(null);
+
+    // 3. SMART CLEAR: Only destroy the custom drawn LZ if the new target is OUTSIDE of it
+    if (customLZ && !isPointInPolygon(newTarget, customLZ)) {
+      setCustomLZ(null);
+      setDrawingPoints([]);
+    }
+    
+    // 4. Set the new target (This triggers your Doghouses)
+    setTargetLocation(newTarget);
+    
+    // 5. Close the menu
+    setContextMenu(null); 
+  };
+
+// 2. LZ Right-Click Handler
+const handleLZRightClick = async (lat, lon, x, y) => {
+  setContextMenu({ x, y, type: 'lz', lat, lon });
+    setClickedGrid("Calculating...");
+    try {
+      const res = await axios.post(`${API_BASE_URL}/convert-to-mgrs`, { lat, lon });
+      setClickedGrid(res.data.mgrs);
+    } catch (err) {
+      setClickedGrid(convertToLatLongString(lat, lon)); 
+    }
+};
+
+// 3. Drawing Controls
+const toggleDrawingMode = () => {
+  if (isDrawingLZ) {
+    // Finish drawing
+    if (drawingPoints.length > 2) {
+      setCustomLZ(drawingPoints);
+    }
+    setIsDrawingLZ(false);
+    setDrawingPoints([]);
+  } else {
+    // Start drawing
+    setCustomLZ(null);
+    setDrawingPoints([]);
+    setIsDrawingLZ(true);
+  }
+};
 
   const handleSearch = async () => {
     setLoading(true);
@@ -42,17 +116,54 @@ function App() {
       const res = await axios.post(`${API_BASE_URL}/convert-grid`, { grid: gridInput });
       const { lat, lon } = res.data;
       setTargetLocation([lat, lon]);
-      const analysis = await axios.post(`${API_BASE_URL}/analyze-field`, { lat, lon });
-      setDetectedLZ(analysis.data.suggested_lz);
-      setLatLong(convertToLatLongString(lat, lon));
-      if (analysis.data.elevation) {
-        setGridElevation(analysis.data.elevation); 
-      }
     } catch (err) {
       alert("Error finding grid: " + err.message);
     } finally {
       setLoading(false);
-      setIsMobileMenuOpen(false); // Closes menu if they searched from the sidebar!
+      setIsMobileMenuOpen(false); // Closes menu if they searched from the sidebar
+    }
+  };
+
+  const performTerrainAnalysis = async () => {
+    if (!targetLocation && !customLZ) return;
+    
+    setLoading(true);
+    setContextMenu(null); // Instantly hide the right-click menu
+    
+    try {
+      // Find our center point to check elevation
+      const centerLat = targetLocation ? targetLocation[0] : customLZ[0][0];
+      const centerLon = targetLocation ? targetLocation[1] : customLZ[0][1];
+
+      // 1. Fetch Elevation from the backend
+      const analysis = await axios.post(`${API_BASE_URL}/analyze-field`, { 
+        lat: centerLat, 
+        lon: centerLon 
+      });
+
+      // 2. Set Lat/Long String and Elevation for the UI
+      setLatLong(convertToLatLongString(centerLat, centerLon));
+      if (analysis.data.elevation) {
+        setGridElevation(analysis.data.elevation); 
+      }
+
+      // 3. Pipe the correct Polygon into the UI
+      if (customLZ && customLZ.length > 2) {
+        // --- CUSTOM DRAWN LZ ---
+        // Setting this triggers your useEffect, which calculates Area, Capacity, AND the Heatmap!
+        setDetectedLZ(customLZ); 
+        setCustomLZ(null); // Clear the custom LZ so it doesn't interfere with future edits
+      } else {
+        // --- AUTO-DETECT LZ ---
+        // Use the shape the backend found for us (This also triggers the useEffect)
+        setDetectedLZ(analysis.data.suggested_lz); 
+      }
+
+    } catch (err) {
+      alert("Error analyzing LZ: " + err.message);
+    } finally {
+      // Small delay to let the useEffect heatmap math finish before removing the loading screen
+      setTimeout(() => setLoading(false), 500); 
     }
   };
 
@@ -510,7 +621,13 @@ useEffect(() => {
         closeMobileMenu={() => setIsMobileMenuOpen(false)}
         gridInput={gridInput}               
         setGridInput={setGridInput}         
-        handleSearch={handleSearch}         
+        handleSearch={handleSearch}       
+        isDrawingLZ={isDrawingLZ}
+        toggleDrawingMode={toggleDrawingMode}  
+        mapStyle={mapStyle}
+        setMapStyle={setMapStyle}
+        performTerrainAnalysis={performTerrainAnalysis}
+        setActiveNotams={setActiveNotams}
         />
       </div>
       <div className="map-area">
@@ -533,6 +650,7 @@ useEffect(() => {
         />
         <MapView
           targetLocation={targetLocation}
+          mapData={mapData}
           detectedLZ={detectedLZ}
           assets={assets}
           updateAsset={updateAsset}
@@ -563,6 +681,14 @@ useEffect(() => {
           setExportProgress={setExportProgress}
           setExportBox={setExportBox}
           setIsExporting={setIsExporting}
+          isDrawingLZ={isDrawingLZ}
+          drawingPoints={drawingPoints}
+          setDrawingPoints={setDrawingPoints}
+          customLZ={customLZ}
+          handleMapRightClick={handleMapRightClick}
+          handleLZRightClick={handleLZRightClick}
+          setContextMenu={setContextMenu}
+          mapStyle={mapStyle}
         />
 
         <div className="alert-queue">
@@ -573,6 +699,73 @@ useEffect(() => {
           ))}
         </div>
       </div>
+
+      {/* GLOBAL CONTEXT MENU */}
+{contextMenu && (
+  <div 
+    style={{
+      position: 'fixed', left: contextMenu.x, top: contextMenu.y,
+      zIndex: 99999, background: '#1e293b', border: '1px solid #334155',
+      color: 'white', padding: '8px', borderRadius: '8px',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.5)', minWidth: '150px'
+    }}
+  >
+    {contextMenu.type === 'map' ? (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ padding: '4px', fontSize: '14px', fontWeight: 'bold', textAlign: 'center' }}>
+          {clickedGrid}
+        </div>
+        <button 
+          onClick={handleSetAsTarget}
+          disabled={clickedGrid === "Calculating..."}
+          style={{
+            width: '100%', padding: '6px', background: '#10b981', 
+            color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer',
+            opacity: clickedGrid === "Calculating..." ? 0.5 : 1
+          }}
+        >
+          Set as Target
+        </button>
+      </div>
+    ) : (
+      // --- THE NEW LZ CONTEXT MENU ---
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ padding: '4px', fontSize: '14px', fontWeight: 'bold', textAlign: 'center' }}>
+          {clickedGrid}
+        </div>
+        
+        <button 
+          onClick={handleSetAsTarget}
+          disabled={clickedGrid === "Calculating..."}
+          style={{
+            width: '100%', padding: '6px', background: '#10b981', 
+            color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer',
+            opacity: clickedGrid === "Calculating..." ? 0.5 : 1
+          }}
+        >
+          Set as Target
+        </button>
+
+        <hr style={{ borderColor: '#334155', margin: '2px 0' }} />
+
+        <button 
+          onClick={performTerrainAnalysis}
+          // The magic logic: Disabled if no target is set, OR if the target is outside the LZ
+          disabled={!targetLocation || !isPointInPolygon(targetLocation, customLZ)}
+          title={(!targetLocation || !isPointInPolygon(targetLocation, customLZ)) ? "You must set a target inside the LZ first" : ""}
+          style={{
+            width: '100%', padding: '8px', background: '#3b82f6', 
+            color: 'white', border: 'none', borderRadius: '4px', 
+            cursor: (!targetLocation || !isPointInPolygon(targetLocation, customLZ)) ? 'not-allowed' : 'pointer',
+            opacity: (!targetLocation || !isPointInPolygon(targetLocation, customLZ)) ? 0.4 : 1
+          }}
+        >
+          Analyze LZ
+        </button>
+      </div>
+    )}
+  </div>
+)}
 
       <ExportModal 
         isOpen={isExportModalOpen}
@@ -589,6 +782,7 @@ useEffect(() => {
         }}
         flightData={flightData}
         proximityAlerts={proximityAlerts}
+        activeNotams={activeNotams}
      />
 
      {exportSuccess && (

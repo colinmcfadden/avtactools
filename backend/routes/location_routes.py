@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 import pygeodesy
 from pygeodesy import mgrs
+from pygeodesy.ellipsoidalExact import LatLon
 
 location_bp = Blueprint('location', __name__)
 
@@ -32,3 +33,34 @@ def convert_grid():
     except Exception as e:
         print(f"Grid Error: {e}") # This will show in your terminal
         return jsonify({"status": "error", "message": str(e)}), 400
+    
+
+import mgrs # Make sure you have this imported at the top!
+
+@location_bp.route('/api/convert-to-mgrs', methods=['POST'])
+# If you don't use the /api prefix in your python app, just use '/convert-latlon'
+def convert_latlon():
+    data = request.json
+    
+    if not data or 'lat' not in data or 'lon' not in data:
+        return jsonify({"error": "Missing coordinates in request"}), 400
+        
+    try:
+        # 2. Force the incoming data to be decimal floats
+        lat = float(data.get('lat'))
+        lon = float(data.get('lon'))
+        
+        # 3. Create a strict PyGeodesy LatLon point
+        p = LatLon(lat, lon)
+        
+        # 4. Convert the point to MGRS and format it with spaces
+        mgrs_obj = p.toMgrs()
+        mgrs_string = mgrs_obj.toStr(sep=' ')
+        
+        return jsonify({"mgrs": mgrs_string}), 200
+        
+    except ValueError:
+        return jsonify({"error": "Coordinates must be valid numbers"}), 400
+    except Exception as e:
+        print(f"CRITICAL MGRS ERROR: {str(e)}") 
+        return jsonify({"error": f"MGRS conversion failed: {str(e)}"}), 500
