@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/colinmcfadden/avtactools/compare/v1.0.2...v1.1.0) (2026-06-10)
+
+
+### Features
+
+* update card values and formatting ([4f336a3](https://github.com/colinmcfadden/avtactools/commit/4f336a39da0cb7b8555e06632d0dd8bab8b996d6))
+
 ## [1.0.2](https://github.com/colinmcfadden/avtactools/compare/v1.0.1...v1.0.2) (2026-02-26)
 
 
