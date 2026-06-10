@@ -22,6 +22,16 @@ def generate_excel():
     wb = load_workbook(template_path)
     ws = wb.active  # Get the first sheet
 
+    wpn_status = str(data.get('weapons_status', '')).strip()
+    wpn_control = str(data.get('weapons_control', '')).strip()
+    wpn_control_valid_values = [val for val in (wpn_status, wpn_control) if val and val.lower() != "none"]
+
+    ldg_formation = str(data.get('ldg_formation', '')).strip()
+    to_formation = str(data.get('to_formation', '')).strip()
+    spacing = str(data.get('spacing', '')).strip()
+    ldg_formspacing_valid = [val for val in (ldg_formation, spacing) if val and val.lower() != "n/a"]
+    to_formspacing_valid = [val for val in (to_formation, spacing) if val and val.lower() != "n/a"]
+
     # 3. Fill in the Text Data (Mapping specific cells)
     ws['A1'] = data.get('lz_label')
     ws['B1'] = data.get('lz_name')
@@ -34,14 +44,14 @@ def generate_excel():
     # Bottom Data Block
     ws['A23'] = data.get('call_sign')
     ws['C23'] = data.get('freq')
-    ws['D23'] = data.get('formation')
+    ws['D23'] = "/".join(ldg_formspacing_valid)
     ws['E23'] = data.get('land_dir')
     ws['H23'] = data.get('go_around')
     ws['J23'] = data.get('takeoff_dir')
-    ws['J25'] = data.get('formation')
+    ws['J25'] = "/".join(to_formspacing_valid)
     ws['F24'] = data.get('door')
     ws['F25'] = data.get('load')
-    ws['D25'] = data.get('weapons_status')
+    ws['C25'] = "/".join(wpn_control_valid_values)
     ws['A26'] = data.get('remarks')
 
     ws['A28'] = data.get('lz_label')

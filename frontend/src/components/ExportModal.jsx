@@ -30,13 +30,15 @@ const ExportModal = ({
     elevation: "",
     call_sign: "",
     freq: "",
-    formation: "STAG RIGHT",
+    ldg_formation: "STAG RIGHT",
+    to_formation: "STAG RIGHT",
     land_dir: "",
     go_around: "LEFT",
     takeoff_dir: "",
+    weapons_control: "HOLD",
+    weapons_status: "STOWED",
     door: "RIGHT",
     load: "LEFT",
-    weapons_status: "STOWED",
     remarks: "",
   });
 
@@ -346,19 +348,6 @@ const ExportModal = ({
               />
             </div>
 
-            <div className="input-group span-2">
-              <label>Formation</label>
-              <select
-                name="formation"
-                value={formData.formation}
-                onChange={handleChange}
-              >
-                <option value="STAG LEFT">STAG LEFT</option>
-                <option value="STAG RIGHT">STAG RIGHT</option>
-                <option value="TRAIL">TRAIL</option>
-              </select>
-            </div>
-
             <div className="input-group">
               <label>Land Dir</label>
               <input
@@ -375,6 +364,92 @@ const ExportModal = ({
                 onChange={handleChange}
               />
             </div>
+
+            <div className="input-group">
+              <label>Landing Formation</label>
+              <select
+                name="ldg_formation"
+                value={formData.ldg_formation}
+                onChange={handleChange}
+              >
+                <option value="STAG LEFT">STAG LEFT</option>
+                <option value="STAG RIGHT">STAG RIGHT</option>
+                <option value="TRAIL">TRAIL</option>
+                <option value="ECHELON LEFT">ECHELON LEFT</option>
+                <option value="ECHELON RIGHT">ECHELON RIGHT</option>
+                <option value="VEE">VEE</option>
+                <option value="COMBAT CRUISE">COMBAT CRUISE</option>
+                <option value="CBT CRUISE L">COMBAT CRUISE LEFT</option>
+                <option value="CBT CRUISE R">COMBAT CRUISE RIGHT</option>
+                <option value="CBT TRAIL">COMBAT TRAIL</option>
+                <option value="CBT SPREAD">COMBAT SPREAD</option>
+              </select>
+            </div>
+
+            <div className="input-group">
+              <label>Takeoff Formation</label>
+              <select
+                name="to_formation"
+                value={formData.to_formation}
+                onChange={handleChange}
+              >
+                <option value="STAG LEFT">STAG LEFT</option>
+                <option value="STAG RIGHT">STAG RIGHT</option>
+                <option value="TRAIL">TRAIL</option>
+                <option value="ECHELON LEFT">ECHELON LEFT</option>
+                <option value="ECHELON RIGHT">ECHELON RIGHT</option>
+                <option value="VEE">VEE</option>
+                <option value="COMBAT CRUISE">COMBAT CRUISE</option>
+                <option value="CBT CRUISE L">COMBAT CRUISE LEFT</option>
+                <option value="CBT CRUISE R">COMBAT CRUISE RIGHT</option>
+                <option value="CBT TRAIL">COMBAT TRAIL</option>
+                <option value="CBT SPREAD">COMBAT SPREAD</option>
+              </select>
+            </div>
+
+            <div className="input-group span-2">
+              <label>Spacing</label>
+              <select
+                name="spacing"
+                value={formData.spacing}
+                onChange={handleChange}
+              >
+                <option value="N/A">N/A</option>
+                <option value="TIGHT">TIGHT</option>
+                <option value="CLOSE">CLOSE</option>
+                <option value="LOOSE">LOOSE</option>
+                <option value="EXT">EXTENDED</option>
+              </select>
+            </div>
+
+            <div className="input-group">
+              <label>Weapons Control Measure</label>
+              <select
+                name="weapons_control"
+                value={formData.weapons_control}
+                onChange={handleChange}
+              >
+                <option value="NONE">None</option>
+                <option value="HOLD">WEAPONS HOLD</option>
+                <option value="TIGHT">WEAPONS TIGHT</option>
+                <option value="FREE">WEAPONS FREE</option>
+              </select>
+            </div>
+            <div className="input-group">
+              <label>Weapons Status</label>
+              <select
+                name="weapons_status"
+                value={formData.weapons_status}
+                onChange={handleChange}
+              >
+                <option value="NONE">None</option>
+                <option value="ARMED">ARMED</option>
+                <option value="LOADED">LOADED</option>
+                <option value="STOWED">STOWED</option>
+                <option value="CLEARED">CLEARED</option>
+              </select>
+            </div>
+
           </div>
 
           <div className="form-grid three-col-grid">
