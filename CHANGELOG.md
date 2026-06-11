@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/colinmcfadden/avtactools/compare/v1.1.0...v1.1.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* refactor code into features instead of large components ([172727f](https://github.com/colinmcfadden/avtactools/commit/172727fb2934f909d7d50718d783e9f3baa06a3f))
+
 # [1.1.0](https://github.com/colinmcfadden/avtactools/compare/v1.0.2...v1.1.0) (2026-06-10)
 
 
