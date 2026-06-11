@@ -33,9 +33,7 @@ def convert_grid():
     except Exception as e:
         print(f"Grid Error: {e}") # This will show in your terminal
         return jsonify({"status": "error", "message": str(e)}), 400
-    
 
-import mgrs # Make sure you have this imported at the top!
 
 @location_bp.route('/api/convert-to-mgrs', methods=['POST'])
 # If you don't use the /api prefix in your python app, just use '/convert-latlon'

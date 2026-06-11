@@ -1,9 +1,7 @@
 import React, { useState } from "react";
 import MissionSummary from "./MissionSummary";
-import { UNIT_TYPES } from "./UnitIcons";
-import packageJson from '../../package.json';
-import axios from "axios";
-import { convertToLatLongString } from "../utils/Helpers";
+import { UNIT_TYPES } from "../feature/unit/UnitIcons";
+import packageJson from "../../package.json";
 
 const Controls = ({
   addHelo,
@@ -37,7 +35,9 @@ const Controls = ({
   mapStyle,
   setMapStyle,
   performTerrainAnalysis,
-  setActiveNotams
+  setActiveNotams,
+  winds,
+  loadingWeather,
 }) => {
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
@@ -64,7 +64,7 @@ const Controls = ({
     </svg>
   );
 
-   const API_BASE_URL = process.env.REACT_APP_API_URL;
+  const API_BASE_URL = process.env.REACT_APP_API_URL;
 
   const maxSlope = terrainData?.heatmap
     ? Math.max(...terrainData.heatmap.map((tile) => tile.slope))
@@ -75,12 +75,31 @@ const Controls = ({
     setIsExporting(true);
   };
 
-  const handleAddHelo = () => { addHelo(); closeMobileMenu(); };
-  const handleAddPZMarker = () => { addPZMarker(); closeMobileMenu(); };
-  const handleAddSector = () => { addSector(); closeMobileMenu(); };
-  const handleAddGoAround = (dir) => { addGoAround(dir); closeMobileMenu(); };
-  const handleAddUnit = (unit) => { addUnit(unit); setShowUnitMenu(false); closeMobileMenu(); };
-  const handleEnableExportMode = () => { enableExportMode(); closeMobileMenu(); };
+  const handleAddHelo = () => {
+    addHelo();
+    closeMobileMenu();
+  };
+  const handleAddPZMarker = () => {
+    addPZMarker();
+    closeMobileMenu();
+  };
+  const handleAddSector = () => {
+    addSector();
+    closeMobileMenu();
+  };
+  const handleAddGoAround = (dir) => {
+    addGoAround(dir);
+    closeMobileMenu();
+  };
+  const handleAddUnit = (unit) => {
+    addUnit(unit);
+    setShowUnitMenu(false);
+    closeMobileMenu();
+  };
+  const handleEnableExportMode = () => {
+    enableExportMode();
+    closeMobileMenu();
+  };
 
   return (
     <div className="ff-panel">
@@ -110,21 +129,24 @@ const Controls = ({
               targetLocation={targetLocation}
               mapData={mapData}
               setActiveNotams={setActiveNotams}
+              winds={winds}
+              loadingWeather={loadingWeather}
             />
           </div>
 
           {mapData && targetLocation && (
             <div className="toggle-row">
-            <button
-              onClick={() => performTerrainAnalysis(targetLocation[0], targetLocation[1])}
-              className={`ff-action-btn ff-btn primary`}
-            >
-              Analyze the LZ
-            </button>
-          </div>
-        )}
+              <button
+                onClick={() =>
+                  performTerrainAnalysis(targetLocation[0], targetLocation[1])
+                }
+                className={`ff-action-btn ff-btn primary`}
+              >
+                Analyze the LZ
+              </button>
+            </div>
+          )}
 
-          
           <div className="toggle-row">
             <div className="toggle-item">
               <label className="switch">
@@ -151,18 +173,20 @@ const Controls = ({
             </div>
           </div>
           <div className="toggle-row">
-             <div className="toggle-item">
+            <div className="toggle-item">
               <label className="switch">
                 <input
                   type="checkbox"
                   checked={mapStyle === "topo"}
-                  onChange={(e) => setMapStyle(e.target.checked ? "topo" : "satellite")}
+                  onChange={(e) =>
+                    setMapStyle(e.target.checked ? "topo" : "satellite")
+                  }
                 />
                 <span className="slider round"></span>
               </label>
               <span>Topo Map</span>
             </div>
-            </div>
+          </div>
 
           {showHeatmap && terrainData && (
             <div className="ff-stat-block">
@@ -185,21 +209,35 @@ const Controls = ({
         <div className="ff-card ff-card-tools">
           <div className="ff-card-header">LZ/PZ Tools</div>
           <div className="tool-grid">
-            <button 
-  onClick={toggleDrawingMode} 
-  className={`ff-tool-btn ${isDrawingLZ ? 'active' : ''}`} 
-  title="Draw Custom LZ"
-  style={{ borderColor: isDrawingLZ ? '#FFC107' : '' }}
->
-  <svg viewBox="0 0 24 24" fill="none" stroke={isDrawingLZ ? '#FFC107' : 'currentColor'} strokeWidth="2" width="24" height="24">
-    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
-  </svg>
-  <span className="btn-label" style={{ color: isDrawingLZ ? '#FFC107' : '' }}>
-    {isDrawingLZ ? 'Finish LZ' : 'Draw LZ'}
-  </span>
-</button>
+            <button
+              onClick={toggleDrawingMode}
+              className={`ff-tool-btn ${isDrawingLZ ? "active" : ""}`}
+              title="Draw Custom LZ"
+              style={{ borderColor: isDrawingLZ ? "#FFC107" : "" }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={isDrawingLZ ? "#FFC107" : "currentColor"}
+                strokeWidth="2"
+                width="24"
+                height="24"
+              >
+                <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+              </svg>
+              <span
+                className="btn-label"
+                style={{ color: isDrawingLZ ? "#FFC107" : "" }}
+              >
+                {isDrawingLZ ? "Finish LZ" : "Draw LZ"}
+              </span>
+            </button>
 
-            <button onClick={handleAddHelo} className="ff-tool-btn" title="Add Helo">
+            <button
+              onClick={handleAddHelo}
+              className="ff-tool-btn"
+              title="Add Helo"
+            >
               <img
                 src="/icons/helicopter.png"
                 alt="Helo"
@@ -217,7 +255,11 @@ const Controls = ({
               <span className="btn-label">PZ</span>
             </button>
 
-            <button onClick={handleAddSector} className="ff-tool-btn" title="Sector">
+            <button
+              onClick={handleAddSector}
+              className="ff-tool-btn"
+              title="Sector"
+            >
               <svg viewBox="0 0 50 50" width="24" height="24">
                 <polygon
                   points="25,5 45,40 5,40"
@@ -258,8 +300,11 @@ const Controls = ({
                 </div>
               )}
             </div>
-            
-            <button className="ff-tool-btn" onClick={() => handleAddGoAround("left")}>
+
+            <button
+              className="ff-tool-btn"
+              onClick={() => handleAddGoAround("left")}
+            >
               <svg width="24" height="24" viewBox="0 0 100 100">
                 <path
                   d="M90,50 Q60,50 40,80 L50,85 L20,95 L5,65 L15,70 Q30,20 90,20 Z"
@@ -292,10 +337,7 @@ const Controls = ({
         <div className="ff-card ff-card-export">
           <div className="ff-card-header">Export</div>
           <div className="export-controls">
-            <button
-              onClick={enableExportMode}
-              className={`ff-action-btn blue`}
-            >
+            <button onClick={enableExportMode} className={`ff-action-btn blue`}>
               Set Capture Area
             </button>
 
@@ -316,11 +358,20 @@ const Controls = ({
             </div>
           )}
         </div>
-        <div style={{ height: '100px' }}></div>
+        <div style={{ height: "100px" }}></div>
       </div>
       <div className="controls-footer">
-        <a href="/" className="footer-link" target="_blank" rel="noopener noreferrer">
-          <img src='/img/ezpz_logo-1.png' alt="EZ-PZ Logo" className="footer-logo" />
+        <a
+          href="/"
+          className="footer-link"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <img
+            src="/img/ezpz_logo-1.png"
+            alt="EZ-PZ Logo"
+            className="footer-logo"
+          />
         </a>
         <div className="footer-brand-text">
           <span className="footer-version">v{packageJson.version}</span>

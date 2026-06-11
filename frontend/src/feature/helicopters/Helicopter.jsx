@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import { calculateAngle, getDistanceMeters } from '../utils/Helpers';
+import { calculateAngle, getDistanceMeters } from '../../utils/Helpers';
 
 const getHeloIcon = (rot, sizePx = 40) => {
   const displayRot = Math.round(((rot % 360) + 360) % 360);

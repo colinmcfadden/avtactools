@@ -8,7 +8,6 @@ const SectorMarker = ({
   moveSector,
   deleteSector,
 }) => {
-  // 1. STATE & REFS
   const [isActive, setIsActive] = useState(false); // Controls visibility
   const isDragging = useRef(false); // Tracks if we are currently dragging
 
@@ -17,7 +16,7 @@ const SectorMarker = ({
   const centerRef = useRef(null);
   const cornerRefs = useRef([]);
 
-  // 2. HELPER: Calculate Centroid
+  // Calculate Centroid
   const getCentroid = (points) => {
     const lat = (points[0].lat + points[1].lat + points[2].lat) / 3;
     const lng = (points[0].lng + points[1].lng + points[2].lng) / 3;

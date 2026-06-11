@@ -7,13 +7,18 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "cd frontend && npm version ${nextRelease.version} --no-git-tag-version"
+        "prepareCmd": "cd frontend && npm version ${nextRelease.version} --no-git-tag-version && cd ../backend && echo '__version__ = \"${nextRelease.version}\"' > version.py"
       }
     ],
     [
       "@semantic-release/git",
       {
-        "assets": ["frontend/package.json", "frontend/package-lock.json", "CHANGELOG.md"],
+        "assets": [
+          "frontend/package.json",
+          "frontend/package-lock.json",
+          "backend/version.py",
+          "CHANGELOG.md"
+        ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ],

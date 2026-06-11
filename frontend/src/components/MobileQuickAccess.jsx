@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UNIT_TYPES } from './UnitIcons';
+import { UNIT_TYPES } from '../feature/unit/UnitIcons';
 import './MobileQuickAccess.css'; 
 
 const MobileQuickAccess = ({ 
