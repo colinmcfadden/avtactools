@@ -1,29 +1,9 @@
 import React, { useEffect, useState, useMemo } from "react";
+import { getPolygonArea } from "../utils/Helpers";
 
 const API_BASE_URL = process.env.REACT_APP_API_URL;
 
-// --- HELPER: Calculate Polygon Area ---
-const getPolygonArea = (coords) => {
-  if (!coords || coords.length < 3) return 0;
-  const R = 6378137; // Earth radius in meters
-  let area = 0;
-
-  for (let i = 0; i < coords.length; i++) {
-    const j = (i + 1) % coords.length;
-    const lat1 = coords[i][0] * (Math.PI / 180);
-    const lat2 = coords[j][0] * (Math.PI / 180);
-    const lon1 = coords[i][1] * (Math.PI / 180);
-    const lon2 = coords[j][1] * (Math.PI / 180);
-    area += (lon2 - lon1) * (2 + Math.sin(lat1) + Math.sin(lat2));
-  }
-  area = (area * R * R) / 2.0;
-  return Math.abs(area);
-};
-
-const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams }) => {
-  const [winds, setWinds] = useState({ speed: 0, dir: 0 });
-  const [loadingWeather, setLoadingWeather] = useState(false);
-
+const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather }) => {
   // 1. CALCULATE AREA & CAPACITY
   const stats = useMemo(() => {
     if (!detectedLZ) return { area: 0, heloCount: 0 };
@@ -44,7 +24,7 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
     return { area: Math.round(areaSqM), heloCount: Math.max(0, heloCount) };
   }, [detectedLZ]);
 
-  // 2. SLOPE ALERT LOGIC
+  // 2. SLOPES
   const slopeStatus = useMemo(() => {
     if (!terrainData || terrainData.length === 0)
       return { className: "status-safe", label: "NO DATA", max: 0 };
@@ -58,39 +38,6 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
     
     return { className: "status-safe", label: "LANDING", max: maxSlope };
   }, [terrainData]);
-
-  // 3. FETCH WEATHER
-  useEffect(() => {
-    if (!targetLocation) return;
-    const fetchWeather = async () => {
-      setLoadingWeather(true);
-      try {
-        const [lat, lon] = targetLocation;
-        const url = `${API_BASE_URL}/weather?lat=${lat}&lng=${lon}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed");
-        const data = await res.json();
-
-        if (data && !data.error) {
-          setWinds({
-            speed: data.wind_spd_kts,
-            dir: data.wind_dir,
-            temp: data.temp_c,
-            pressure: data.pressure,
-            station: data.station_id,
-            vis: data.vis_sm,
-            dew: data.dewp_c,
-            notams: data.notams || []
-          });
-          setActiveNotams(data.notams || []);
-        }
-      } catch (e) {
-        console.error("Weather error", e);
-      }
-      setLoadingWeather(false);
-    };
-    fetchWeather();
-  }, [targetLocation]);
 
   if (!detectedLZ) return null;
 
@@ -165,7 +112,6 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
             </>
         )}
       </div>
-        {console.log("NOTAMS", winds )}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Draggable from "react-draggable";
 import "./ExportModal.css";
-import { BIRD_NAMES, TREE_NAMES } from "../utils/LZDictionary";
+import { BIRD_NAMES, TREE_NAMES } from "../../utils/LZDictionary";
 
 const ExportModal = ({
   isOpen,
