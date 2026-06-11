@@ -15,7 +15,7 @@ export const calculateBearing = (startLat, startLng, endLat, endLng) => {
   const toRad = (deg) => (deg * Math.PI) / 180;
   const toDeg = (rad) => (rad * 180) / Math.PI;
 
-  const lat1 = toRad(startLat);
+  const lat1 = toRad(startLat); 
   const lat2 = toRad(endLat);
   const dLng = toRad(endLng - startLng);
 
@@ -127,4 +127,21 @@ export const formatMGRS = (val) => {
   
   // Return what they have if it isn't a full Grid Zone yet
   return clean;
+};
+
+export const getPolygonArea = (coords) => {
+  if (!coords || coords.length < 3) return 0;
+  const R = 6378137; // Earth radius in meters
+  let area = 0;
+
+  for (let i = 0; i < coords.length; i++) {
+    const j = (i + 1) % coords.length;
+    const lat1 = coords[i][0] * (Math.PI / 180);
+    const lat2 = coords[j][0] * (Math.PI / 180);
+    const lon1 = coords[i][1] * (Math.PI / 180);
+    const lon2 = coords[j][1] * (Math.PI / 180);
+    area += (lon2 - lon1) * (2 + Math.sin(lat1) + Math.sin(lat2));
+  }
+  area = (area * R * R) / 2.0;
+  return Math.abs(area);
 };

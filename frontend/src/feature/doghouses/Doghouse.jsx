@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
-import { calculateBearing } from '../utils/Helpers';
+import { calculateBearing } from '../../utils/Helpers';
 
 const Doghouse = ({ data, updateDoghouse }) => {
   const map = useMap();
