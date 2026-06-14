@@ -7,21 +7,28 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
   // 1. CALCULATE AREA & CAPACITY
   const stats = useMemo(() => {
     if (!detectedLZ) return { area: 0, heloCount: 0 };
-    const areaSqM = getPolygonArea(detectedLZ);
     
-    // UH-60 Capacity logic
-    const separationMeters = 60; // Minimum center-to-center distance
+    // 1. Get total area in SQUARE FEET 
+    const areaSqFt = getPolygonArea(detectedLZ);
+    
+    // 2. UH-60 Capacity logic (Converted to Feet)
+    const rotorDiameterFeet = 53.67;
+    const edgeClearanceFeet = 60;
+    
+    // Total center-to-center distance required per aircraft (~113.67 ft)
+    const separationFeet = rotorDiameterFeet + edgeClearanceFeet; 
   
-    // Each helicopter effectively requires a 60x60 meter box to guarantee 
-    // no other helicopter can encroach on its 60m radius.
-    const spotSize = separationMeters * separationMeters; // 3600 sq meters per helo
+    // Each helicopter effectively requires a 113.67 x 113.67 ft box (~12,921 sq ft)
+    // to guarantee no other helicopter can encroach on its 60ft blade clearance.
+    const spotSizeSqFt = separationFeet * separationFeet; 
 
-    // Note: For highly irregular polygon shapes, dividing total area by spot size 
-    // is an approximation. A 10m wide, 400m long strip has 4000 sq meters but holds 0 helos. 
-    // However, for standard open fields, this math is the aviation standard.
-    const heloCount = Math.floor(areaSqM / spotSize);
+    // Calculate how many of those boxes fit in the LZ
+    const heloCount = Math.floor(areaSqFt / spotSizeSqFt);
     
-    return { area: Math.round(areaSqM), heloCount: Math.max(0, heloCount) };
+    return { 
+        area: Math.round(areaSqFt), 
+        heloCount: Math.max(0, heloCount) 
+    };
   }, [detectedLZ]);
 
   // 2. SLOPES
