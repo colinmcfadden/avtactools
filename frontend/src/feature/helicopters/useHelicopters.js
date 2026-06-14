@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getDistanceMeters } from '../../utils/Helpers';
+import { getDistanceFeet } from '../../utils/Helpers';
 
 export const useHelicopters = (targetLocation) => {
   const [helicopters, setHelicopters] = useState([]);
@@ -21,7 +21,7 @@ export const useHelicopters = (targetLocation) => {
     while (!isClear && attempts < 50) {
       isClear = true;
       for (let helo of helicopters) {
-        const dist = getDistanceMeters(finalLat, finalLon, helo.lat, helo.lon);
+        const dist = getDistanceFeet(finalLat, finalLon, helo.lat, helo.lon);
         if (dist < 60) {
           isClear = false;
           finalLon += offsetStep; 
@@ -53,19 +53,30 @@ export const useHelicopters = (targetLocation) => {
   };
 
   // --- PROXIMITY ALERTS ---
-  // Moved here because it relies entirely on the helicopters array
   useEffect(() => {
     const alerts = [];
-    const minDistance = 59; // 60 meters
+    
+    const rotorDiameterFeet = 53.67; // 53 ft 8 in
+    const minClearanceFeet = 60;    // Define your minimum safe edge-to-edge distance here
 
     for (let i = 0; i < helicopters.length; i++) {
       for (let j = i + 1; j < helicopters.length; j++) {
-        const dist = getDistanceMeters(helicopters[i].lat, helicopters[i].lon, helicopters[j].lat, helicopters[j].lon);
         
-        if (dist < minDistance) {
+        // 1. Get center-to-center distance in feet
+        const centerDist = getDistanceFeet(helicopters[i].lat, helicopters[i].lon, helicopters[j].lat, helicopters[j].lon);
+        
+        // 2. Subtract the radius of BOTH helicopters (which equals one full diameter)
+        const edgeToEdgeDist = centerDist - rotorDiameterFeet;
+        
+        // 3. Check against your minimum clearance
+        if (edgeToEdgeDist < minClearanceFeet) {
+          
+          // Use Math.max to prevent it from saying "-15ft apart" if they crash/overlap
+          const displayDist = Math.max(0, Math.round(edgeToEdgeDist)); 
+          
           alerts.push({
             id: `${helicopters[i].id}-${helicopters[j].id}`,
-            message: `Separation Alert: Helicopters are only ${Math.round(dist)}m apart (Min: 60m).`
+            message: `Separation Alert: Rotor edges are only ${displayDist}ft apart (Min: ${minClearanceFeet}ft).`
           });
         }
       }

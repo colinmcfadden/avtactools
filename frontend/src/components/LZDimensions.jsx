@@ -7,9 +7,9 @@ import * as turf from "@turf/turf";
 const toTurf = (latlng) => turf.point([latlng.lng, latlng.lat]);
 
 const getDistance = (p1, p2) => {
-  if (!p1 || !p2) return "0 m";
-  const dist = turf.distance(toTurf(p1), toTurf(p2), { units: "meters" });
-  return Math.round(dist) + " m";
+  if (!p1 || !p2) return "0 ft";
+  const dist = turf.distance(toTurf(p1), toTurf(p2), { units: "feet" });
+  return Math.round(dist) + " ft";
 };
 
 // Larger touch target and 4-way move icon, with floating logic removed
@@ -91,12 +91,12 @@ const LZDimensions = ({ detectedLZ }) => {
     }),
 
     lenLabel: L.marker([0, 0], {
-      icon: createLabelIcon("0 m"),
+      icon: createLabelIcon("0 ft"),
       draggable: true,
       zIndexOffset: 2000,
     }),
     widLabel: L.marker([0, 0], {
-      icon: createLabelIcon("0 m"),
+      icon: createLabelIcon("0 ft"),
       draggable: true,
       zIndexOffset: 2000,
     }),

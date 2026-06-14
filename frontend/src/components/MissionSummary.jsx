@@ -51,7 +51,7 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
       </div>
       
       <div className="ms-tile span-2">
-        <div className="ms-label">Area (m²)</div>
+        <div className="ms-label">Area (ft²)</div>
         <div className="ms-value">{stats.area.toLocaleString()}</div>
       </div>
 

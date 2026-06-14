@@ -436,6 +436,20 @@ function App() {
               >
                 Analyze LZ
               </button>
+
+              <button 
+                onClick={() => {
+                  setCustomLZ(null);       
+                  setDrawingPoints([]);    
+                  setContextMenu(null);    
+                }}
+                style={{
+                  width: '100%', padding: '4px', opacity: 1, 
+                  color: 'red', border: 'none', borderRadius: '4px', cursor: 'pointer'
+                }}
+              >
+                ✕ Delete LZ
+              </button>
             </div>
           )}
         </div>
