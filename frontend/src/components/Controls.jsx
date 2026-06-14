@@ -38,6 +38,8 @@ const Controls = ({
   setActiveNotams,
   winds,
   loadingWeather,
+  showVFR,
+  setShowVFR
 }) => {
   const [showUnitMenu, setShowUnitMenu] = useState(false);
 
@@ -185,6 +187,20 @@ const Controls = ({
                 <span className="slider round"></span>
               </label>
               <span>Topo Map</span>
+            </div>
+
+            <div className="toggle-item">
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={showVFR}
+                  onChange={(e) =>
+                    setShowVFR(e.target.checked)
+                  }
+                />
+                <span className="slider round"></span>
+              </label>
+              <span>VFR Sect</span>
             </div>
           </div>
 

@@ -35,6 +35,7 @@ function App() {
   const [drawingPoints, setDrawingPoints] = useState([]);
   const [clickedGrid, setClickedGrid] = useState("Loading...");
   const [mapStyle, setMapStyle] = useState("satellite");
+  const [showVFR, setShowVFR] = useState(false);
 
   const { goAround, addGoAround, updateGoAround, deleteGoAround } =
     useGoAround(targetLocation);
@@ -249,6 +250,8 @@ function App() {
           setActiveNotams={setActiveNotams}
           winds={winds}
           loadingWeather={loadingWeather}
+          showVFR={showVFR}
+          setShowVFR={setShowVFR}
         />
       </div>
       <div className="map-area">
@@ -310,6 +313,7 @@ function App() {
           handleLZRightClick={handleLZRightClick}
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
+          showVFR={showVFR}
         />
 
         <div className="alert-queue">

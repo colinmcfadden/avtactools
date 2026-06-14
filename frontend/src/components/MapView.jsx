@@ -116,6 +116,7 @@ const MapView = ({
   handleLZRightClick,
   setContextMenu,
   mapStyle,
+  showVFR
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -155,6 +156,16 @@ const MapView = ({
         maxZoom={20}
         crossOrigin="anonymous"
       />
+
+      {showVFR && (
+          <TileLayer
+            url="https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}"
+            attribution='&copy; FAA'
+            maxNativeZoom={12} 
+            maxZoom={20}       
+            opacity={0.80}     
+          />
+      )}
 
       <MapInteractionHandler
         isDrawingLZ={isDrawingLZ}
