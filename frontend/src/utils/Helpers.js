@@ -161,7 +161,7 @@ export const formatMGRS = (val) => {
 
 export const getPolygonArea = (coords) => {
   if (!coords || coords.length < 3) return 0;
-  const R = 6378137; // Earth radius in meters
+  const R = 20902231; // Earth radius in feet
   let area = 0;
 
   for (let i = 0; i < coords.length; i++) {
