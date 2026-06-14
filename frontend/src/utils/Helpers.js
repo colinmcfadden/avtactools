@@ -48,8 +48,8 @@ export const convertToLatLongString = (lat, lng) => {
   return `${toDMS(lat, true)}  ${toDMS(lng, false)}`;
 };
 
-export const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Earth radius in meters
+export const getDistanceFeet = (lat1, lon1, lat2, lon2) => {
+  const R = 20902231; // Earth radius in feet
   const rad = Math.PI / 180;
   const dLat = (lat2 - lat1) * rad;
   const dLon = (lon2 - lon1) * rad;
@@ -59,7 +59,37 @@ export const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
             Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   
-  return R * c; // Distance in meters
+  return R * c; // Distance in feet
+};
+
+export const getRotorEdgeCoords = (lat1, lon1, lat2, lon2) => {
+  const centerDist = getDistanceFeet(lat1, lon1, lat2, lon2);
+  
+  if (centerDist <= 0) return { start: [lat1, lon1], end: [lat2, lon2], edgeDist: 0 };
+
+  const rotorRadiusFeet = 26.835; // UH-60 radius
+  
+  // What percentage of the total line is taken up by the rotor?
+  const fraction = rotorRadiusFeet / centerDist;
+
+  // If the helicopters are completely overlapping, don't invert the lines
+  if (fraction >= 0.5) return { start: [lat1, lon1], end: [lat2, lon2], edgeDist: 0 };
+
+  // Project point 1 outward towards point 2
+  const startLat = lat1 + fraction * (lat2 - lat1);
+  const startLon = lon1 + fraction * (lon2 - lon1);
+
+  // Project point 2 inward towards point 1
+  const endLat = lat2 - fraction * (lat2 - lat1);
+  const endLon = lon2 - fraction * (lon2 - lon1);
+
+  const edgeDist = centerDist - (rotorRadiusFeet * 2);
+
+  return {
+    start: [startLat, startLon],
+    end: [endLat, endLon],
+    edgeDist: edgeDist
+  };
 };
 
 export const calculateAngle = (centerLat, centerLon, mouseLat, mouseLon) => {
