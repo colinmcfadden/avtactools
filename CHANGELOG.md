@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/colinmcfadden/avtactools/compare/v1.1.2...v1.1.3) (2026-06-14)
+
+
+### Bug Fixes
+
+* fix capacity logic for feet ([f526518](https://github.com/colinmcfadden/avtactools/commit/f52651885cd0b5568cac742c0dd6d73dc3b2a4a9))
+
 ## [1.1.2](https://github.com/colinmcfadden/avtactools/compare/v1.1.1...v1.1.2) (2026-06-14)
 
 
