@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import { calculateAngle, getDistanceMeters } from '../../utils/Helpers';
+import { calculateAngle, getDistanceFeet, getRotorEdgeCoords } from '../../utils/Helpers';
 
 const getHeloIcon = (rot, sizePx = 40) => {
   const displayRot = Math.round(((rot % 360) + 360) % 360);
@@ -80,12 +80,21 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
     const otherHelos = allAssetsRef.current.filter(a => a.type === "helo" && a.id !== asset.id);
     
     otherHelos.forEach(other => {
-        const dist = getDistanceMeters(currentLat, currentLon, other.lat, other.lon);
-        const isViolation = dist < 59;
-        const midLat = (currentLat + other.lat) / 2;
-        const midLon = (currentLon + other.lon) / 2;
+        // 1. Get the snapped edge coordinates and true edge-to-edge distance
+        const { start, end, edgeDist } = getRotorEdgeCoords(
+            currentLat, currentLon, 
+            other.lat, other.lon
+        );
         
-        const line = L.polyline([[currentLat, currentLon], [other.lat, other.lon]], {
+        // 2. Violation is based strictly on the blade gap (less than 60 feet)
+        const isViolation = edgeDist < 60;
+        
+        // 3. Find the exact middle of our new, shorter line for the text badge
+        const midLat = (start[0] + end[0]) / 2;
+        const midLon = (start[1] + end[1]) / 2;
+        
+        // 4. Draw the line using the EDGE coordinates instead of the center masts
+        const line = L.polyline([start, end], {
             color: isViolation ? "#dc2626" : "#9ca3af",
             dashArray: "6, 6",
             weight: 2,
@@ -93,6 +102,7 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
             interactive: false
         });
         
+        // 5. Render the badge (Updated to 'ft' and guarded against negative numbers)
         const badge = L.marker([midLat, midLon], {
             icon: L.divIcon({
                 className: "distance-badge-icon",
@@ -108,7 +118,7 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
                 width: max-content;
                 transform: translate(-50%, -50%);
                 box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-                ">${Math.round(dist)}m</div>`,
+                ">${Math.max(0, Math.round(edgeDist))} ft</div>`,
                 iconSize: [0, 0], 
             }),
             interactive: false
@@ -117,7 +127,7 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
         linesLayerRef.current.addLayer(line);
         linesLayerRef.current.addLayer(badge);
     });
-  };
+};
 
   // Helper to extract screen coordinates reliably from either mouse or touch
   const getEventPoint = (e) => {
