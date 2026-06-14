@@ -59,6 +59,7 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
            quality: 1.0,
            pixelRatio: 2, 
            skipAutoScale: true,
+           skipFonts: true,
            filter: (node) => {
              return !node.classList?.contains('leaflet-control-container') && 
                     !node.classList?.contains('ff-panel');
