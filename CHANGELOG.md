@@ -1,3 +1,11 @@
+## [1.1.2](https://github.com/colinmcfadden/avtactools/compare/v1.1.1...v1.1.2) (2026-06-14)
+
+
+### Bug Fixes
+
+* change meters to feet ([f2f6f50](https://github.com/colinmcfadden/avtactools/commit/f2f6f5082150ec08dfb2e907e3c12248b74eb550))
+* potential firefox fix ([53ac55c](https://github.com/colinmcfadden/avtactools/commit/53ac55cfbc9d8af36e15a11ad179b56ab4f39ed0))
+
 ## [1.1.1](https://github.com/colinmcfadden/avtactools/compare/v1.1.0...v1.1.1) (2026-06-11)
 
 
