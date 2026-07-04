@@ -47,5 +47,5 @@ export const useSectorsOfFire = (targetLocation) => {
     setSectors((prev) => prev.filter((s) => s.id !== id));
   };
 
-  return { sectorsOfFire, addSectorOfFire, updateSectorOfFirePoint, moveSectorOfFire, deleteSectorOfFire };
+  return { sectorsOfFire, setSectors, addSectorOfFire, updateSectorOfFirePoint, moveSectorOfFire, deleteSectorOfFire };
 }

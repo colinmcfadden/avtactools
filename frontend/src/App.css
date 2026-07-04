@@ -797,6 +797,44 @@ body.export-mode-active .leaflet-control-container {
     display: none;
 }
 
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+}
+
+.user-menu {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.user-menu .user-name {
+    color: #e5e7eb;
+    font-size: 0.85rem;
+    font-weight: 600;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-menu .logout-btn {
+    background: none;
+    border: 1px solid #475569;
+    color: #9ca3af;
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.user-menu .logout-btn:hover {
+    color: white;
+    border-color: #94a3b8;
+}
+
 /* Tablet / Phone Layout */
 @media (max-width: 850px) {
     .mobile-hamburger-btn {

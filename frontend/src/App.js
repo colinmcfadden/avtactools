@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
@@ -16,6 +16,10 @@ import { useUnit } from "./feature/unit/useUnit";
 import { usePzMarker } from "./feature/pzMarker/usePzMarker";
 import { useTerrain } from "./feature/terrain/useTerrain";
 import { useExport } from "./feature/export/useExport";
+import { useAuth } from "./feature/auth/AuthContext";
+import UserMenu from "./feature/auth/UserMenu";
+import { useSavedMaps } from "./feature/savedMaps/useSavedMaps";
+import HistoryModal from "./feature/savedMaps/HistoryModal";
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null);
@@ -36,25 +40,38 @@ function App() {
   const [clickedGrid, setClickedGrid] = useState("Loading...");
   const [mapStyle, setMapStyle] = useState("satellite");
 
-  const { goAround, addGoAround, updateGoAround, deleteGoAround } =
+  const { goAround, setGoAround, addGoAround, updateGoAround, deleteGoAround } =
     useGoAround(targetLocation);
   const {
     sectorsOfFire,
+    setSectors,
     addSectorOfFire,
     updateSectorOfFirePoint,
     moveSectorOfFire,
     deleteSectorOfFire,
   } = useSectorsOfFire(targetLocation);
-  const { units, addUnit, updateUnitPosition, deleteUnit } =
+  const { units, setUnits, addUnit, updateUnitPosition, deleteUnit } =
     useUnit(targetLocation);
-  const { pzMarker, addPZMarker, updatePZMarker, deletePZMarker } =
+  const { pzMarker, setPzMarkers, addPZMarker, updatePZMarker, deletePZMarker } =
     usePzMarker(targetLocation);
   const { winds, activeNotams, setActiveNotams, loadingWeather, fetchWeather } =
     useWeather();
-  const { doghouses, updateDoghouse } = useDoghouses(
+  const { doghouses, setDoghouses, updateDoghouse } = useDoghouses(
     targetLocation,
     setFlightData,
   );
+
+  // Restoring a saved doghouse layout must happen AFTER useDoghouses' own
+  // targetLocation-triggered regeneration effect, or the regeneration clobbers
+  // it. Effects run in hook-registration order within this component, so this
+  // effect (declared after useDoghouses) always runs after that one.
+  const [pendingDoghouseRestore, setPendingDoghouseRestore] = useState(null);
+  useEffect(() => {
+    if (pendingDoghouseRestore) {
+      setDoghouses(pendingDoghouseRestore);
+      setPendingDoghouseRestore(null);
+    }
+  }, [pendingDoghouseRestore, setDoghouses]);
   const {
     helicopters,
     setHelicopters,
@@ -98,6 +115,62 @@ function App() {
     setCustomLZ,
     fetchWeather,
   );
+
+  const { user } = useAuth();
+  const { history, isLoadingHistory, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
+    useSavedMaps();
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  const handleOpenHistory = () => {
+    if (!user) {
+      alert("Please sign in with Google to save and load maps.");
+      return;
+    }
+    setIsHistoryModalOpen(true);
+  };
+
+  const serializeMapState = () => ({
+    targetLocation,
+    gridInput,
+    mapData,
+    mapStyle,
+    showLZOutline,
+    showHeatmap,
+    customLZ,
+    detectedLZ,
+    terrainData,
+    gridElevation,
+    latLong,
+    flightData,
+    helicopters,
+    pzMarker,
+    sectorsOfFire,
+    goAround,
+    units,
+    doghouses,
+  });
+
+  const applyMapState = (snapshot) => {
+    if (!snapshot) return;
+    setTargetLocation(snapshot.targetLocation ?? null);
+    setGridInput(snapshot.gridInput ?? "16S GC 28864 55349");
+    setMapData(snapshot.mapData ?? []);
+    setMapStyle(snapshot.mapStyle ?? "satellite");
+    setShowLZOutline(snapshot.showLZOutline ?? true);
+    setShowHeatmap(snapshot.showHeatmap ?? false);
+    setCustomLZ(snapshot.customLZ ?? null);
+    setDetectedLZ(snapshot.detectedLZ ?? null);
+    setTerrainData(snapshot.terrainData ?? null);
+    setGridElevation(snapshot.gridElevation ?? "");
+    setLatLong(snapshot.latLong ?? "");
+    setFlightData(snapshot.flightData ?? {});
+    setHelicopters(snapshot.helicopters ?? []);
+    setPzMarkers(snapshot.pzMarker ?? []);
+    setSectors(snapshot.sectorsOfFire ?? []);
+    setGoAround(snapshot.goAround ?? []);
+    setUnits(snapshot.units ?? []);
+    setPendingDoghouseRestore(snapshot.doghouses ?? []);
+  };
 
   const handleMapRightClick = async (lat, lon, x, y) => {
     setContextMenu({ x, y, type: "map", lat, lon });
@@ -201,6 +274,7 @@ function App() {
       </button>
       <div className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-header">
+          <UserMenu />
           <button
             className="close-menu-btn mobile-only"
             onClick={() => setIsMobileMenuOpen(false)}
@@ -209,6 +283,7 @@ function App() {
           </button>
         </div>
         <Controls
+          onOpenHistory={handleOpenHistory}
           setTargetLocation={setTargetLocation}
           setDetectedLZ={setDetectedLZ}
           setAssets={setHelicopters}
@@ -471,6 +546,20 @@ function App() {
         flightData={flightData}
         proximityAlerts={proximityAlerts}
         activeNotams={activeNotams}
+      />
+
+      <HistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        history={history}
+        isLoadingHistory={isLoadingHistory}
+        fetchHistory={fetchHistory}
+        saveMap={saveMap}
+        loadMap={loadMap}
+        updateMap={updateMap}
+        deleteMap={deleteMap}
+        buildSnapshot={serializeMapState}
+        applySnapshot={applyMapState}
       />
 
       {exportSuccess && (

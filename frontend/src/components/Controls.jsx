@@ -4,6 +4,7 @@ import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import packageJson from "../../package.json";
 
 const Controls = ({
+  onOpenHistory,
   addHelo,
   showHeatmap,
   setShowHeatmap,
@@ -358,6 +359,17 @@ const Controls = ({
             </div>
           )}
         </div>
+
+        {/* Saved Maps */}
+        <div className="ff-card">
+          <div className="ff-card-header">Saved Maps</div>
+          <div className="toggle-row">
+            <button onClick={onOpenHistory} className="ff-action-btn ff-btn primary">
+              Save / Load Map
+            </button>
+          </div>
+        </div>
+
         <div style={{ height: "100px" }}></div>
       </div>
       <div className="controls-footer">
