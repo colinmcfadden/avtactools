@@ -2,6 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
+from datetime import timedelta
 import os
 
 load_dotenv()
@@ -36,6 +37,8 @@ if database_url.startswith('postgres://'):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-me')
+# Default is 15 minutes, which silently invalidates sessions mid-use.
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)
 
 db.init_app(app)
 jwt = JWTManager(app)

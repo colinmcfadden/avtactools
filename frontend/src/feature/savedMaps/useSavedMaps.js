@@ -10,6 +10,11 @@ export const useSavedMaps = () => {
     try {
       const res = await api.get("/lz");
       setHistory(res.data);
+    } catch (err) {
+      // 401s are handled (alert + sign-out) by the api interceptor.
+      if (err.response?.status !== 401) {
+        alert("Couldn't load saved maps: " + err.message);
+      }
     } finally {
       setIsLoadingHistory(false);
     }
