@@ -35,8 +35,6 @@ const Controls = ({
   setGridElevation,
   isDrawingLZ,
   toggleDrawingMode,
-  mapStyle,
-  setMapStyle,
   performTerrainAnalysis,
   setActiveNotams,
   winds,
@@ -184,22 +182,6 @@ const Controls = ({
               <span>LZ Box</span>
             </div>
           </div>
-          <div className="toggle-row">
-            <div className="toggle-item">
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={mapStyle === "topo"}
-                  onChange={(e) =>
-                    setMapStyle(e.target.checked ? "topo" : "satellite")
-                  }
-                />
-                <span className="slider round"></span>
-              </label>
-              <span>Topo Map</span>
-            </div>
-          </div>
-
           {showHeatmap && terrainData && (
             <div className="ff-stat-block">
               <div className="stat-row">
@@ -405,7 +387,7 @@ const Controls = ({
             <button
               onClick={() => msnxInputRef.current?.click()}
               className="ff-tool-btn"
-              title="Upload a .msnx mission file"
+              title="Import a .msnx mission file"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -419,7 +401,7 @@ const Controls = ({
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              <span className="btn-label">Upload</span>
+              <span className="btn-label">Import MSNX</span>
             </button>
           </div>
           <input

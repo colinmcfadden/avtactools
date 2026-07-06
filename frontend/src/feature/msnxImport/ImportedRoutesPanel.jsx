@@ -17,7 +17,14 @@ const EyeIcon = ({ visible }) => (
   </svg>
 );
 
-const RouteRow = ({ route, onToggleVisibility, onRemove }) => (
+const SendIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <line x1="22" y1="2" x2="11" y2="13" />
+    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+  </svg>
+);
+
+const RouteRow = ({ route, onToggleVisibility, onRemove, onForeFlight }) => (
   <div
     style={{
       display: "flex",
@@ -51,6 +58,23 @@ const RouteRow = ({ route, onToggleVisibility, onRemove }) => (
       </span>
     </div>
     <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+      {onForeFlight && (
+        <button
+          onClick={() => onForeFlight(route)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#00b5e2",
+            cursor: "pointer",
+            padding: "0 4px",
+            display: "flex",
+            alignItems: "center",
+          }}
+          title="Send to ForeFlight"
+        >
+          <SendIcon />
+        </button>
+      )}
       <button
         onClick={() => onToggleVisibility(route.id)}
         style={{
@@ -94,6 +118,9 @@ const ImportedRoutesPanel = ({
   removeSketchRoute,
   toggleSketchVisibility,
   exportSketches,
+  onForeFlight,
+  onSaveMissionGroup,
+  onSaveSketches,
 }) => {
   const hasImported = routes && routes.length > 0;
   const hasSketched = sketchedRoutes.length > 0;
@@ -142,16 +169,29 @@ const ImportedRoutesPanel = ({
               route={route}
               onToggleVisibility={toggleVisibility}
               onRemove={removeRoute}
+              onForeFlight={onForeFlight}
             />
           ))}
 
-          <button
-            onClick={() => exportFile(group.fileId)}
-            className="ff-action-btn ff-btn primary"
-            style={{ alignSelf: "flex-start", fontSize: "0.8rem" }}
-          >
-            Export .msnx
-          </button>
+          <div style={{ display: "flex", gap: "6px" }}>
+            <button
+              onClick={() => exportFile(group.fileId)}
+              className="ff-action-btn ff-btn primary"
+              style={{ fontSize: "0.8rem" }}
+            >
+              Export .msnx
+            </button>
+            {onSaveMissionGroup && (
+              <button
+                onClick={() => onSaveMissionGroup(group)}
+                className="export-btn"
+                style={{ fontSize: "0.8rem" }}
+                title="Save this mission (with your edits) to your account"
+              >
+                Save
+              </button>
+            )}
+          </div>
         </div>
       ))}
 
@@ -165,16 +205,29 @@ const ImportedRoutesPanel = ({
               route={route}
               onToggleVisibility={toggleSketchVisibility}
               onRemove={removeSketchRoute}
+              onForeFlight={onForeFlight}
             />
           ))}
 
-          <button
-            onClick={exportSketches}
-            className="ff-action-btn ff-btn primary"
-            style={{ alignSelf: "flex-start", fontSize: "0.8rem" }}
-          >
-            Export .msnx
-          </button>
+          <div style={{ display: "flex", gap: "6px" }}>
+            <button
+              onClick={exportSketches}
+              className="ff-action-btn ff-btn primary"
+              style={{ fontSize: "0.8rem" }}
+            >
+              Export .msnx
+            </button>
+            {onSaveSketches && (
+              <button
+                onClick={onSaveSketches}
+                className="export-btn"
+                style={{ fontSize: "0.8rem" }}
+                title="Save sketched routes to your account"
+              >
+                Save
+              </button>
+            )}
+          </div>
         </div>
       )}
 

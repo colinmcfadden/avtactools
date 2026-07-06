@@ -404,8 +404,8 @@ export const downloadBlob = (blob, filename) => {
   URL.revokeObjectURL(url);
 };
 
-/** Serializes the mutated docs back into the retained zip and downloads it. */
-export async function exportMsnxFile(zip, docs, filename) {
+/** Serializes the mutated docs back into the retained zip as a .msnx Blob. */
+export async function buildMsnxBlob(zip, docs) {
   const noFolders = { createFolders: false };
   const missionDecl = '<?xml version="1.0" encoding="utf-8"?>';
 
@@ -426,10 +426,15 @@ export async function exportMsnxFile(zip, docs, filename) {
     noFolders,
   );
 
-  const blob = await zip.generateAsync({
+  return zip.generateAsync({
     type: "blob",
     compression: "DEFLATE",
     compressionOptions: { level: 6 },
   });
+}
+
+/** Serializes the mutated docs back into the retained zip and downloads it. */
+export async function exportMsnxFile(zip, docs, filename) {
+  const blob = await buildMsnxBlob(zip, docs);
   downloadBlob(blob, filename);
 }
