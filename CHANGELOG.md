@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/colinmcfadden/avtactools/compare/v1.1.3...v1.1.4) (2026-07-06)
+
+
+### Bug Fixes
+
+* add deleted file ([59b4795](https://github.com/colinmcfadden/avtactools/commit/59b4795758b5baaeb2fa4f9f00468528e958c430))
+
 ## [1.1.3](https://github.com/colinmcfadden/avtactools/compare/v1.1.2...v1.1.3) (2026-06-14)
 
 
