@@ -36,8 +36,6 @@ const Controls = ({
   setGridElevation,
   isDrawingLZ,
   toggleDrawingMode,
-  mapStyle,
-  setMapStyle,
   performTerrainAnalysis,
   setActiveNotams,
   winds,
@@ -185,22 +183,6 @@ const Controls = ({
               <span>LZ Box</span>
             </div>
           </div>
-          <div className="toggle-row">
-            <div className="toggle-item">
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={mapStyle === "topo"}
-                  onChange={(e) =>
-                    setMapStyle(e.target.checked ? "topo" : "satellite")
-                  }
-                />
-                <span className="slider round"></span>
-              </label>
-              <span>Topo Map</span>
-            </div>
-          </div>
-
           {showHeatmap && terrainData && (
             <div className="ff-stat-block">
               <div className="stat-row">

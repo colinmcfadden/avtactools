@@ -26,6 +26,7 @@ import RoutesPanel from "./feature/msnxImport/RoutesPanel";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import SavedRoutesModal from "./feature/msnxImport/SavedRoutesModal";
+import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import UnitBadge from "./components/UnitBadge";
 
 function App() {
@@ -510,8 +511,6 @@ function App() {
           handleSearch={handleSearch}
           isDrawingLZ={isDrawingLZ}
           toggleDrawingMode={toggleDrawingMode}
-          mapStyle={mapStyle}
-          setMapStyle={setMapStyle}
           performTerrainAnalysis={performTerrainAnalysis}
           setActiveNotams={setActiveNotams}
           winds={winds}
@@ -559,6 +558,7 @@ function App() {
           onSaveMissionGroup={handleSaveMissionGroup}
           onSaveSketches={handleSaveSketches}
         />
+        <MapStyleSwitcher mapStyle={mapStyle} setMapStyle={setMapStyle} />
         <MobileGridInput
           gridInput={gridInput}
           setGridInput={setGridInput}

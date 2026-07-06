@@ -21,6 +21,7 @@ import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import ExportHandler from "../feature/export/ExportHandler";
 import MsnxRouteLayer from "../feature/msnxImport/MsnxRouteLayer";
+import { getMapStyle } from "../feature/mapStyles/mapStyles";
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -133,6 +134,7 @@ const MapView = ({
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
+  const activeMapStyle = getMapStyle(mapStyle);
   // Helper to determine color based on slope degree
   const getSlopeColor = (deg) => {
     if (deg < 3) return "green"; // Very Flat / Ideal
@@ -155,18 +157,14 @@ const MapView = ({
       wheelPxPerZoomLevel={120}
       updateWhenZooming={false}
     >
-      {/* Base Layer - using MapBox for Satellite Imagery */}
+      {/* Base Layer - driven by the mapStyles registry */}
       <TileLayer
-        key={mapStyle} // Forces Leaflet to refresh when the style changes
-        url={
-          mapStyle === "topo"
-            ? "https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/512/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoiY21jZmFkZGVuOSIsImEiOiJjbWxvNGhhYWIwNmpmM2VvbTJ5YjJ3MmZxIn0.zxZ__KSBdP8KuLN0rzULlw"
-            : "https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/512/{z}/{x}/{y}@2x?access_token=pk.eyJ1IjoiY21jZmFkZGVuOSIsImEiOiJjbWxvNGhhYWIwNmpmM2VvbTJ5YjJ3MmZxIn0.zxZ__KSBdP8KuLN0rzULlw"
-        }
-        attribution='&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a>'
-        tileSize={512}
-        zoomOffset={-1}
-        maxZoom={20}
+        key={activeMapStyle.id} // Forces Leaflet to refresh when the style changes
+        url={activeMapStyle.url}
+        attribution={activeMapStyle.attribution}
+        tileSize={activeMapStyle.tileSize}
+        zoomOffset={activeMapStyle.zoomOffset}
+        maxZoom={activeMapStyle.maxZoom}
         crossOrigin="anonymous"
       />
 
