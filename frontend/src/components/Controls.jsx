@@ -5,6 +5,7 @@ import packageJson from "../../package.json";
 
 const Controls = ({
   onImportMsnx,
+  onOpenSavedRoutes,
   isSketching,
   toggleRouteSketch,
   addHelo,
@@ -420,6 +421,26 @@ const Controls = ({
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
               <span className="btn-label">Upload</span>
+            </button>
+
+            <button
+              onClick={onOpenSavedRoutes}
+              className="ff-tool-btn"
+              title="Load or manage routes saved to your account"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                width="24"
+                height="24"
+              >
+                <path d="M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25" />
+                <polyline points="8 17 12 21 16 17" />
+                <line x1="12" y1="12" x2="12" y2="21" />
+              </svg>
+              <span className="btn-label">Saved</span>
             </button>
           </div>
           <input

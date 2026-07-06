@@ -23,6 +23,9 @@ import HistoryModal from "./feature/savedMaps/HistoryModal";
 import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
 import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
 import RoutesPanel from "./feature/msnxImport/RoutesPanel";
+import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
+import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
+import SavedRoutesModal from "./feature/msnxImport/SavedRoutesModal";
 import UnitBadge from "./components/UnitBadge";
 
 function App() {
@@ -133,6 +136,7 @@ function App() {
     removeRoute,
     clearRoutes,
     exportFile,
+    serializeFile,
     toggleRouteVisibility,
   } = useMsnxImport();
 
@@ -143,6 +147,8 @@ function App() {
       alert("Error importing route: " + err.message);
     }
   };
+
+  const [foreFlightRoute, setForeFlightRoute] = useState(null);
 
   const {
     isSketching,
@@ -155,10 +161,82 @@ function App() {
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    loadSketchRoutes,
     removeSketchRoute,
     toggleSketchVisibility,
     exportSketches,
   } = useRouteSketch();
+
+  const {
+    savedRoutes,
+    isLoadingSaved,
+    fetchSavedRoutes,
+    saveSketch,
+    saveMission,
+    loadSavedRoute,
+    loadSavedRouteFile,
+    deleteSavedRoute,
+  } = useSavedRoutes();
+  const [isSavedRoutesModalOpen, setIsSavedRoutesModalOpen] = useState(false);
+
+  const handleOpenSavedRoutes = () => {
+    if (!user) {
+      alert("Saving and loading routes is only available to signed-in users.");
+      return;
+    }
+    setIsSavedRoutesModalOpen(true);
+  };
+
+  const handleSaveMissionGroup = async (group) => {
+    if (!user) {
+      alert("Saving routes is only available to signed-in users.");
+      return;
+    }
+    const defaultName = group.fileName.replace(/\.msnx$/i, "");
+    const name = window.prompt("Save mission as:", defaultName);
+    if (name === null) return;
+    try {
+      const serialized = await serializeFile(group.fileId);
+      if (!serialized) throw new Error("Mission file data is no longer loaded.");
+      await saveMission(
+        name.trim() || defaultName,
+        group.routes,
+        serialized.blob,
+        serialized.fileName,
+      );
+      alert("Mission saved.");
+    } catch (err) {
+      alert("Error saving mission: " + err.message);
+    }
+  };
+
+  const handleSaveSketches = async () => {
+    if (!user) {
+      alert("Saving routes is only available to signed-in users.");
+      return;
+    }
+    const defaultName = "SKETCHED ROUTES";
+    const name = window.prompt("Save sketched routes as:", defaultName);
+    if (name === null) return;
+    try {
+      await saveSketch(name.trim() || defaultName, sketchedRoutes);
+      alert("Routes saved.");
+    } catch (err) {
+      alert("Error saving routes: " + err.message);
+    }
+  };
+
+  const handleLoadSavedRoute = async (entry) => {
+    if (entry.kind === "mission") {
+      const file = await loadSavedRouteFile(entry.id, entry.file_name);
+      await importMsnxFile(file);
+    } else {
+      const record = await loadSavedRoute(entry.id);
+      const routes = record.route_data?.routes;
+      if (!routes?.length) throw new Error("This save contains no routes.");
+      loadSketchRoutes(routes);
+    }
+  };
 
   const toggleRouteSketch = () => {
     if (!isSketching) {
@@ -395,6 +473,7 @@ function App() {
         </div>
         <Controls
           onImportMsnx={handleImportMsnx}
+          onOpenSavedRoutes={handleOpenSavedRoutes}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
           setTargetLocation={setTargetLocation}
@@ -476,6 +555,9 @@ function App() {
           removeSketchRoute={removeSketchRoute}
           toggleSketchVisibility={toggleSketchVisibility}
           exportSketches={exportSketches}
+          onForeFlight={setForeFlightRoute}
+          onSaveMissionGroup={handleSaveMissionGroup}
+          onSaveSketches={handleSaveSketches}
         />
         <MobileGridInput
           gridInput={gridInput}
@@ -807,6 +889,21 @@ function App() {
         flightData={flightData}
         proximityAlerts={proximityAlerts}
         activeNotams={activeNotams}
+      />
+
+      <ForeFlightModal
+        route={foreFlightRoute}
+        onClose={() => setForeFlightRoute(null)}
+      />
+
+      <SavedRoutesModal
+        isOpen={isSavedRoutesModalOpen}
+        onClose={() => setIsSavedRoutesModalOpen(false)}
+        savedRoutes={savedRoutes}
+        isLoadingSaved={isLoadingSaved}
+        fetchSavedRoutes={fetchSavedRoutes}
+        onLoad={handleLoadSavedRoute}
+        onDelete={deleteSavedRoute}
       />
 
       <HistoryModal

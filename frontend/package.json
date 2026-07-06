@@ -16,6 +16,7 @@
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "leaflet-measure": "^3.1.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-draggable": "^4.5.0",
