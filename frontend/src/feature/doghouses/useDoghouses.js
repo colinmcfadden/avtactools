@@ -61,6 +61,7 @@ export const useDoghouses = (targetLocation, setFlightData) => {
 
   return {
     doghouses,
+    setDoghouses,
     updateDoghouse
   };
 };

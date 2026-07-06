@@ -31,5 +31,5 @@ export const useGoAround = (targetLocation) => {
   const deleteGoAround = (id) => {
     setGoAround((prev) => prev.filter((ga) => ga.id !== id));
   };
-  return { goAround, addGoAround, updateGoAround, deleteGoAround };
+  return { goAround, setGoAround, addGoAround, updateGoAround, deleteGoAround };
 };

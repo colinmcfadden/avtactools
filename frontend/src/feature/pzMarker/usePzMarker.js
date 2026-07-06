@@ -30,5 +30,5 @@ export const usePzMarker = (targetLocation) => {
     setPzMarkers((prev) => prev.filter((pz) => pz.id !== id));
   };
 
-    return { pzMarker, addPZMarker, updatePZMarker, deletePZMarker };
+    return { pzMarker, setPzMarkers, addPZMarker, updatePZMarker, deletePZMarker };
 }
