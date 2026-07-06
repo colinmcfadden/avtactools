@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/colinmcfadden/avtactools/compare/v1.1.4...v1.1.5) (2026-07-06)
+
+
+### Bug Fixes
+
+* login issues ([8fa1c74](https://github.com/colinmcfadden/avtactools/commit/8fa1c74a6ac3528f3c008c4149cf122004736051))
+
 ## [1.1.4](https://github.com/colinmcfadden/avtactools/compare/v1.1.3...v1.1.4) (2026-07-06)
 
 
