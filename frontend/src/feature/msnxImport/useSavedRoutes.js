@@ -27,18 +27,16 @@ export const useSavedRoutes = () => {
     }
   };
 
-  const saveSketch = async (name, routes) => {
+  const sketchForm = (name, routes) => {
     const form = new FormData();
     form.append("name", name);
-    form.append("kind", "sketch");
     form.append("route_data", JSON.stringify({ version: 1, routes }));
-    await api.post("/routes", form);
+    return form;
   };
 
-  const saveMission = async (name, routes, msnxBlob, fileName) => {
+  const missionForm = (name, routes, msnxBlob, fileName) => {
     const form = new FormData();
     form.append("name", name);
-    form.append("kind", "mission");
     form.append(
       "route_data",
       JSON.stringify({
@@ -47,7 +45,32 @@ export const useSavedRoutes = () => {
       }),
     );
     form.append("msnx", msnxBlob, fileName);
-    await api.post("/routes", form);
+    return form;
+  };
+
+  /** Both save functions return the created record (id, name, ...). */
+  const saveSketch = async (name, routes) => {
+    const form = sketchForm(name, routes);
+    form.append("kind", "sketch");
+    const res = await api.post("/routes", form);
+    return res.data;
+  };
+
+  const saveMission = async (name, routes, msnxBlob, fileName) => {
+    const form = missionForm(name, routes, msnxBlob, fileName);
+    form.append("kind", "mission");
+    const res = await api.post("/routes", form);
+    return res.data;
+  };
+
+  const updateSketch = async (id, routes) => {
+    const res = await api.put(`/routes/${id}`, sketchForm("", routes));
+    return res.data;
+  };
+
+  const updateMission = async (id, routes, msnxBlob, fileName) => {
+    const res = await api.put(`/routes/${id}`, missionForm("", routes, msnxBlob, fileName));
+    return res.data;
   };
 
   /** Full record including route_data (geometry for sketches). */
@@ -73,6 +96,8 @@ export const useSavedRoutes = () => {
     fetchSavedRoutes,
     saveSketch,
     saveMission,
+    updateSketch,
+    updateMission,
     loadSavedRoute,
     loadSavedRouteFile,
     deleteSavedRoute,

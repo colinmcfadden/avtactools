@@ -31,6 +31,7 @@ export const useMsnxImport = () => {
     }));
 
     setImportedRoutes((prev) => [...prev, ...newRoutes]);
+    return { fileId };
   };
 
   const toggleRouteVisibility = (routeId) => {

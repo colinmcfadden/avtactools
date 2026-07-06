@@ -25,7 +25,6 @@ import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
 import RoutesPanel from "./feature/msnxImport/RoutesPanel";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
-import SavedRoutesModal from "./feature/msnxImport/SavedRoutesModal";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import UnitBadge from "./components/UnitBadge";
 
@@ -174,38 +173,72 @@ function App() {
     fetchSavedRoutes,
     saveSketch,
     saveMission,
+    updateSketch,
+    updateMission,
     loadSavedRoute,
     loadSavedRouteFile,
     deleteSavedRoute,
   } = useSavedRoutes();
-  const [isSavedRoutesModalOpen, setIsSavedRoutesModalOpen] = useState(false);
 
-  const handleOpenSavedRoutes = () => {
-    if (!user) {
-      alert("Saving and loading routes is only available to signed-in users.");
-      return;
+  // Links what's on the map to its cloud save, so Save offers to overwrite
+  // that entry instead of always creating a new one. Keyed by msnx fileId,
+  // plus SKETCHES_KEY for the sketched-routes bundle. Set on save and on
+  // load; stale fileId keys are harmless since fileIds are never reused.
+  const SKETCHES_KEY = "sketches";
+  const [routeSaveLinks, setRouteSaveLinks] = useState({});
+  const linkRouteSave = (key, saved) =>
+    setRouteSaveLinks((prev) => ({
+      ...prev,
+      [key]: { id: saved.id, name: saved.name },
+    }));
+
+  // Once every sketch is removed, the next save is a different bundle — it
+  // shouldn't offer to overwrite the old one.
+  useEffect(() => {
+    if (sketchedRoutes.length === 0) {
+      setRouteSaveLinks((prev) => {
+        if (!prev[SKETCHES_KEY]) return prev;
+        const { [SKETCHES_KEY]: _dropped, ...rest } = prev;
+        return rest;
+      });
     }
-    setIsSavedRoutesModalOpen(true);
-  };
+  }, [sketchedRoutes.length]);
+
+  /** True when the user has a linked save and chose to overwrite it. */
+  const confirmOverwrite = (link, what) =>
+    Boolean(link) &&
+    window.confirm(
+      `Overwrite the saved ${what} "${link.name}"?\n(Cancel to save as a new entry instead)`,
+    );
 
   const handleSaveMissionGroup = async (group) => {
     if (!user) {
       alert("Saving routes is only available to signed-in users.");
       return;
     }
-    const defaultName = group.fileName.replace(/\.msnx$/i, "");
-    const name = window.prompt("Save mission as:", defaultName);
-    if (name === null) return;
     try {
+      const link = routeSaveLinks[group.fileId];
+      const overwrite = confirmOverwrite(link, "mission");
+
+      let name = null;
+      if (!overwrite) {
+        const defaultName = group.fileName.replace(/\.msnx$/i, "");
+        const input = window.prompt("Save mission as:", defaultName);
+        if (input === null) return;
+        name = input.trim() || defaultName;
+      }
+
       const serialized = await serializeFile(group.fileId);
       if (!serialized) throw new Error("Mission file data is no longer loaded.");
-      await saveMission(
-        name.trim() || defaultName,
-        group.routes,
-        serialized.blob,
-        serialized.fileName,
-      );
-      alert("Mission saved.");
+
+      if (overwrite) {
+        await updateMission(link.id, group.routes, serialized.blob, serialized.fileName);
+        alert(`Updated "${link.name}".`);
+      } else {
+        const saved = await saveMission(name, group.routes, serialized.blob, serialized.fileName);
+        linkRouteSave(group.fileId, saved);
+        alert("Mission saved.");
+      }
     } catch (err) {
       alert("Error saving mission: " + err.message);
     }
@@ -216,11 +249,19 @@ function App() {
       alert("Saving routes is only available to signed-in users.");
       return;
     }
-    const defaultName = "SKETCHED ROUTES";
-    const name = window.prompt("Save sketched routes as:", defaultName);
-    if (name === null) return;
     try {
-      await saveSketch(name.trim() || defaultName, sketchedRoutes);
+      const link = routeSaveLinks[SKETCHES_KEY];
+      if (confirmOverwrite(link, "routes")) {
+        await updateSketch(link.id, sketchedRoutes);
+        alert(`Updated "${link.name}".`);
+        return;
+      }
+
+      const defaultName = "SKETCHED ROUTES";
+      const input = window.prompt("Save sketched routes as:", defaultName);
+      if (input === null) return;
+      const saved = await saveSketch(input.trim() || defaultName, sketchedRoutes);
+      linkRouteSave(SKETCHES_KEY, saved);
       alert("Routes saved.");
     } catch (err) {
       alert("Error saving routes: " + err.message);
@@ -230,13 +271,22 @@ function App() {
   const handleLoadSavedRoute = async (entry) => {
     if (entry.kind === "mission") {
       const file = await loadSavedRouteFile(entry.id, entry.file_name);
-      await importMsnxFile(file);
+      const { fileId } = await importMsnxFile(file);
+      linkRouteSave(fileId, entry);
     } else {
       const record = await loadSavedRoute(entry.id);
       const routes = record.route_data?.routes;
       if (!routes?.length) throw new Error("This save contains no routes.");
       loadSketchRoutes(routes);
+      linkRouteSave(SKETCHES_KEY, entry);
     }
+  };
+
+  const handleDeleteSavedRoute = async (id) => {
+    await deleteSavedRoute(id);
+    setRouteSaveLinks((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([, link]) => link.id !== id)),
+    );
   };
 
   const toggleRouteSketch = () => {
@@ -314,7 +364,7 @@ function App() {
 
   const handleOpenHistory = () => {
     if (!user) {
-      alert("Saving and loading maps is only available to signed-in users.");
+      alert("Saving and loading maps and routes is only available to signed-in users.");
       return;
     }
     setIsHistoryModalOpen(true);
@@ -474,7 +524,6 @@ function App() {
         </div>
         <Controls
           onImportMsnx={handleImportMsnx}
-          onOpenSavedRoutes={handleOpenSavedRoutes}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
           setTargetLocation={setTargetLocation}
@@ -525,8 +574,8 @@ function App() {
             onClick={handleOpenHistory}
             title={
               user
-                ? "Save / load map"
-                : "Saving and loading maps is only available to signed-in users"
+                ? "Save / load maps & routes"
+                : "Saving and loading maps and routes is only available to signed-in users"
             }
           >
             <svg
@@ -896,16 +945,6 @@ function App() {
         onClose={() => setForeFlightRoute(null)}
       />
 
-      <SavedRoutesModal
-        isOpen={isSavedRoutesModalOpen}
-        onClose={() => setIsSavedRoutesModalOpen(false)}
-        savedRoutes={savedRoutes}
-        isLoadingSaved={isLoadingSaved}
-        fetchSavedRoutes={fetchSavedRoutes}
-        onLoad={handleLoadSavedRoute}
-        onDelete={deleteSavedRoute}
-      />
-
       <HistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
@@ -918,6 +957,11 @@ function App() {
         deleteMap={deleteMap}
         buildSnapshot={serializeMapState}
         applySnapshot={applyMapState}
+        savedRoutes={savedRoutes}
+        isLoadingSaved={isLoadingSaved}
+        fetchSavedRoutes={fetchSavedRoutes}
+        onLoadRoute={handleLoadSavedRoute}
+        onDeleteRoute={handleDeleteSavedRoute}
       />
 
       {exportSuccess && (

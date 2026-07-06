@@ -106,6 +106,37 @@ def get_saved_route_file(route_id):
     )
 
 
+@saved_routes_bp.route('/api/routes/<int:route_id>', methods=['PUT'])
+@jwt_required()
+def update_saved_route(route_id):
+    user_id = int(get_jwt_identity())
+    saved = SavedRoute.query.filter_by(id=route_id, user_id=user_id).first()
+
+    if not saved:
+        return jsonify({"error": "Not found"}), 404
+
+    # Same multipart shape as create; kind is fixed at creation. Fields are
+    # optional — only what's sent gets overwritten.
+    name = request.form.get('name')
+    if name:
+        saved.name = name
+
+    route_data_raw = request.form.get('route_data')
+    if route_data_raw:
+        try:
+            saved.route_data = json.loads(route_data_raw)
+        except ValueError:
+            return jsonify({"error": "route_data is not valid JSON"}), 400
+
+    upload = request.files.get('msnx')
+    if upload:
+        saved.msnx_file = upload.read()
+        saved.file_name = upload.filename
+
+    db.session.commit()
+    return jsonify(_summary(saved))
+
+
 @saved_routes_bp.route('/api/routes/<int:route_id>', methods=['DELETE'])
 @jwt_required()
 def delete_saved_route(route_id):
