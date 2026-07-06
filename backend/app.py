@@ -25,7 +25,15 @@ app = Flask(__name__)
 CORS(app)
 
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'ezpz.db')
+
+# Use a managed database when DATABASE_URL is set (e.g. Neon/Supabase Postgres
+# in production — the Space's own disk is ephemeral); fall back to a local
+# SQLite file for development. Some providers hand out postgres:// URLs, but
+# SQLAlchemy expects postgresql://.
+database_url = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'ezpz.db'))
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-me')
 
@@ -50,6 +58,14 @@ def health_check():
 
 with app.app_context():
     db.create_all()
+    # create_all doesn't alter existing tables; add columns introduced after
+    # a database was first created.
+    from sqlalchemy import text
+    try:
+        db.session.execute(text("ALTER TABLE user ADD COLUMN picture VARCHAR(500)"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()  # column already exists
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

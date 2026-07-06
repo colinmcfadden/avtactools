@@ -20,6 +20,10 @@ import { useAuth } from "./feature/auth/AuthContext";
 import UserMenu from "./feature/auth/UserMenu";
 import { useSavedMaps } from "./feature/savedMaps/useSavedMaps";
 import HistoryModal from "./feature/savedMaps/HistoryModal";
+import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
+import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
+import RoutesPanel from "./feature/msnxImport/RoutesPanel";
+import UnitBadge from "./components/UnitBadge";
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null);
@@ -121,9 +125,117 @@ function App() {
     useSavedMaps();
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
+  const {
+    importedRoutes,
+    importMsnxFile,
+    updatePointPosition,
+    insertPoint,
+    removeRoute,
+    clearRoutes,
+    exportFile,
+    toggleRouteVisibility,
+  } = useMsnxImport();
+
+  const handleImportMsnx = async (file) => {
+    try {
+      await importMsnxFile(file);
+    } catch (err) {
+      alert("Error importing route: " + err.message);
+    }
+  };
+
+  const {
+    isSketching,
+    draftPoints,
+    sketchedRoutes,
+    startSketch,
+    cancelSketch,
+    addDraftPoint,
+    finishSketch,
+    designateSketchPoint,
+    updateSketchPointPosition,
+    insertSketchPoint,
+    removeSketchRoute,
+    toggleSketchVisibility,
+    exportSketches,
+  } = useRouteSketch();
+
+  const toggleRouteSketch = () => {
+    if (!isSketching) {
+      startSketch();
+      return;
+    }
+    if (draftPoints.length < 2) {
+      cancelSketch();
+      return;
+    }
+    const defaultName = `ROUTE ${sketchedRoutes.length + 1}`;
+    const name = window.prompt("Route name:", defaultName);
+    if (name === null) return; // keep sketching
+    finishSketch(name.trim().toUpperCase() || defaultName);
+  };
+
+  const handleInsertPointContextMenu = (routeId, lat, lon, x, y) => {
+    setContextMenu({ x, y, type: "route-line", routeId, lat, lon });
+  };
+
+  const handleSketchPointContextMenu = (routeId, pointId, x, y) => {
+    setContextMenu({ x, y, type: "sketch-point", routeId, pointId });
+  };
+
+  const findSketchPoint = (routeId, pointId) =>
+    sketchedRoutes
+      .find((r) => r.id === routeId)
+      ?.points.find((p) => p.id === pointId);
+
+  const handleDesignatePoint = (kind, ptType) => {
+    const { routeId, pointId } = contextMenu;
+    if (kind === "amps") {
+      const current = findSketchPoint(routeId, pointId);
+      const defaultName =
+        current?.name || (ptType === "target" ? ".LZ" : ptType === "ip" ? ".RP" : ".CP");
+      const name = window.prompt("Point name:", defaultName);
+      if (name === null) return;
+      designateSketchPoint(routeId, pointId, {
+        kind: "amps",
+        ptType,
+        name: name.trim().toUpperCase() || defaultName,
+      });
+    } else {
+      designateSketchPoint(routeId, pointId, { kind: "shaping" });
+    }
+    setContextMenu(null);
+  };
+
+  const handleRenameSketchPoint = () => {
+    const { routeId, pointId } = contextMenu;
+    const current = findSketchPoint(routeId, pointId);
+    const name = window.prompt("Point name:", current?.name || ".CP");
+    if (name === null) return;
+    designateSketchPoint(routeId, pointId, {
+      kind: "amps",
+      ptType: current?.ptType ?? "turn",
+      name: name.trim().toUpperCase() || current?.name,
+    });
+    setContextMenu(null);
+  };
+
+  const handleInsertPointConfirm = () => {
+    try {
+      if (contextMenu.routeId.startsWith("sketch-")) {
+        insertSketchPoint(contextMenu.routeId, contextMenu.lat, contextMenu.lon);
+      } else {
+        insertPoint(contextMenu.routeId, contextMenu.lat, contextMenu.lon);
+      }
+    } catch (err) {
+      alert("Error inserting point: " + err.message);
+    }
+    setContextMenu(null);
+  };
+
   const handleOpenHistory = () => {
     if (!user) {
-      alert("Please sign in with Google to save and load maps.");
+      alert("Saving and loading maps is only available to signed-in users.");
       return;
     }
     setIsHistoryModalOpen(true);
@@ -274,7 +386,6 @@ function App() {
       </button>
       <div className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-header">
-          <UserMenu />
           <button
             className="close-menu-btn mobile-only"
             onClick={() => setIsMobileMenuOpen(false)}
@@ -283,7 +394,9 @@ function App() {
           </button>
         </div>
         <Controls
-          onOpenHistory={handleOpenHistory}
+          onImportMsnx={handleImportMsnx}
+          isSketching={isSketching}
+          toggleRouteSketch={toggleRouteSketch}
           setTargetLocation={setTargetLocation}
           setDetectedLZ={setDetectedLZ}
           setAssets={setHelicopters}
@@ -327,6 +440,43 @@ function App() {
         />
       </div>
       <div className="map-area">
+        <UnitBadge />
+        <div className="floating-topright">
+          <button
+            className={`floating-save-btn ${user ? "" : "disabled"}`}
+            onClick={handleOpenHistory}
+            title={
+              user
+                ? "Save / load map"
+                : "Saving and loading maps is only available to signed-in users"
+            }
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              width="22"
+              height="22"
+            >
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+          </button>
+          <UserMenu />
+        </div>
+        <RoutesPanel
+          routes={importedRoutes}
+          removeRoute={removeRoute}
+          clearRoutes={clearRoutes}
+          exportFile={exportFile}
+          toggleVisibility={toggleRouteVisibility}
+          sketchedRoutes={sketchedRoutes}
+          removeSketchRoute={removeSketchRoute}
+          toggleSketchVisibility={toggleSketchVisibility}
+          exportSketches={exportSketches}
+        />
         <MobileGridInput
           gridInput={gridInput}
           setGridInput={setGridInput}
@@ -345,6 +495,15 @@ function App() {
           exportProgress={exportProgress}
         />
         <MapView
+          importedRoutes={importedRoutes}
+          onUpdateMsnxPointPosition={updatePointPosition}
+          onInsertMsnxPoint={handleInsertPointContextMenu}
+          sketchedRoutes={sketchedRoutes}
+          onUpdateSketchPointPosition={updateSketchPointPosition}
+          onSketchPointContextMenu={handleSketchPointContextMenu}
+          isSketchingRoute={isSketching}
+          addDraftPoint={addDraftPoint}
+          draftPoints={draftPoints}
           targetLocation={targetLocation}
           mapData={mapData}
           detectedLZ={detectedLZ}
@@ -444,7 +603,7 @@ function App() {
                 Set as Target
               </button>
             </div>
-          ) : (
+          ) : contextMenu.type === "lz" ? (
             // --- THE NEW LZ CONTEXT MENU ---
             <div
               style={{ display: "flex", flexDirection: "column", gap: "8px" }}
@@ -524,6 +683,108 @@ function App() {
                 }}
               >
                 ✕ Delete LZ
+              </button>
+            </div>
+          ) : contextMenu.type === "route-line" ? (
+            // --- ROUTE LINE CONTEXT MENU ---
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+            >
+              <button
+                onClick={handleInsertPointConfirm}
+                style={{
+                  width: "100%",
+                  padding: "6px",
+                  background: "#10b981",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Insert Point Here
+              </button>
+              <button
+                onClick={() => setContextMenu(null)}
+                style={{
+                  width: "100%",
+                  padding: "4px",
+                  opacity: 1,
+                  color: "#9ca3af",
+                  background: "none",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            // --- SKETCHED POINT DESIGNATION MENU ---
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+            >
+              <div
+                style={{
+                  padding: "2px 4px",
+                  fontSize: "12px",
+                  color: "#94a3b8",
+                  textAlign: "center",
+                }}
+              >
+                Designate point as:
+              </div>
+              {[
+                { label: "● Checkpoint (Turn)", kind: "amps", ptType: "turn" },
+                { label: "■ RP / IP", kind: "amps", ptType: "ip" },
+                { label: "▲ LZ / PZ (Target)", kind: "amps", ptType: "target" },
+                { label: "· Shaping point", kind: "shaping", ptType: null },
+              ].map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => handleDesignatePoint(opt.kind, opt.ptType)}
+                  style={{
+                    width: "100%",
+                    padding: "6px",
+                    background: opt.kind === "amps" ? "#3b82f6" : "#475569",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <button
+                onClick={handleRenameSketchPoint}
+                style={{
+                  width: "100%",
+                  padding: "6px",
+                  background: "#10b981",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Rename
+              </button>
+              <button
+                onClick={() => setContextMenu(null)}
+                style={{
+                  width: "100%",
+                  padding: "4px",
+                  color: "#9ca3af",
+                  background: "none",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
               </button>
             </div>
           )}

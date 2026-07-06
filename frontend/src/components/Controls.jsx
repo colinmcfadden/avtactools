@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import MissionSummary from "./MissionSummary";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import packageJson from "../../package.json";
 
 const Controls = ({
-  onOpenHistory,
+  onImportMsnx,
+  isSketching,
+  toggleRouteSketch,
   addHelo,
   showHeatmap,
   setShowHeatmap,
@@ -41,6 +43,15 @@ const Controls = ({
   loadingWeather,
 }) => {
   const [showUnitMenu, setShowUnitMenu] = useState(false);
+  const msnxInputRef = useRef(null);
+
+  const handleMsnxFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      onImportMsnx(file);
+    }
+    e.target.value = "";
+  };
 
   const pzButtonSvg = (
     <svg
@@ -360,14 +371,64 @@ const Controls = ({
           )}
         </div>
 
-        {/* Saved Maps */}
+        {/* Routes */}
         <div className="ff-card">
-          <div className="ff-card-header">Saved Maps</div>
-          <div className="toggle-row">
-            <button onClick={onOpenHistory} className="ff-action-btn ff-btn primary">
-              Save / Load Map
+          <div className="ff-card-header">Routes (.msnx)</div>
+          <div className="tool-grid">
+            <button
+              onClick={toggleRouteSketch}
+              className={`ff-tool-btn ${isSketching ? "active" : ""}`}
+              title="Sketch a route (click the map to add points)"
+              style={{ borderColor: isSketching ? "#64D2FF" : "" }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={isSketching ? "#64D2FF" : "currentColor"}
+                strokeWidth="2"
+                width="24"
+                height="24"
+              >
+                <circle cx="4" cy="20" r="2" />
+                <circle cx="12" cy="9" r="2" />
+                <circle cx="20" cy="15" r="2" />
+                <path d="M5.5 18.5 L10.5 10.5 M13.7 10 L18.3 14" />
+              </svg>
+              <span
+                className="btn-label"
+                style={{ color: isSketching ? "#64D2FF" : "" }}
+              >
+                {isSketching ? "End Route" : "Route"}
+              </span>
+            </button>
+
+            <button
+              onClick={() => msnxInputRef.current?.click()}
+              className="ff-tool-btn"
+              title="Upload a .msnx mission file"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                width="24"
+                height="24"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              <span className="btn-label">Upload</span>
             </button>
           </div>
+          <input
+            ref={msnxInputRef}
+            type="file"
+            accept=".msnx"
+            style={{ display: "none" }}
+            onChange={handleMsnxFileChange}
+          />
         </div>
 
         <div style={{ height: "100px" }}></div>

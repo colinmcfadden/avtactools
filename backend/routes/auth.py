@@ -20,11 +20,15 @@ def google_auth():
         email = idinfo['email']
         name = idinfo.get('name', 'Pilot')
         google_id = idinfo['sub']
+        picture = idinfo.get('picture')
 
         user = User.query.filter_by(google_id=google_id).first()
         if not user:
-            user = User(email=email, name=name, google_id=google_id)
+            user = User(email=email, name=name, google_id=google_id, picture=picture)
             db.session.add(user)
+            db.session.commit()
+        elif picture and user.picture != picture:
+            user.picture = picture
             db.session.commit()
 
         access_token = create_access_token(identity=str(user.id))
@@ -32,7 +36,7 @@ def google_auth():
         return jsonify({
             "status": "success",
             "access_token": access_token,
-            "user": {"id": user.id, "email": user.email, "name": user.name}
+            "user": {"id": user.id, "email": user.email, "name": user.name, "picture": user.picture}
         })
 
     except ValueError:
@@ -47,4 +51,4 @@ def me():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    return jsonify({"id": user.id, "email": user.email, "name": user.name})
+    return jsonify({"id": user.id, "email": user.email, "name": user.name, "picture": user.picture})

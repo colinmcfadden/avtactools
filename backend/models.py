@@ -9,6 +9,7 @@ class User(db.Model):
     google_id = db.Column(db.String(100), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     name = db.Column(db.String(120), nullable=False)
+    picture = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # This creates a relationship so you can easily get all LZs for a user (e.g., user.saved_lzs)

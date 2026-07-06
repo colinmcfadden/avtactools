@@ -801,38 +801,211 @@ body.export-mode-active .leaflet-control-container {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 12px;
 }
 
-.user-menu {
+/* Floating cluster over the map (top-right): save/load + auth */
+.floating-topright {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1100;
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.floating-auth {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(30, 30, 35, 0.92);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-.user-menu .user-name {
+.floating-save-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    background: rgba(30, 30, 35, 0.92);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    color: #e5e7eb;
+    cursor: pointer;
+}
+
+.floating-save-btn:hover {
+    color: white;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.floating-save-btn.disabled {
+    color: #6b7280;
+    cursor: not-allowed;
+}
+
+.floating-save-btn.disabled:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.floating-auth .user-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    flex-shrink: 0;
+}
+
+.floating-auth .user-avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #3b82f6;
+    color: white;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.floating-auth .user-name {
     color: #e5e7eb;
     font-size: 0.85rem;
     font-weight: 600;
-    max-width: 120px;
+    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.user-menu .logout-btn {
+.floating-auth .logout-btn {
     background: none;
     border: 1px solid #475569;
     color: #9ca3af;
     font-size: 0.75rem;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
+    flex-shrink: 0;
 }
 
-.user-menu .logout-btn:hover {
+.floating-auth .logout-btn:hover {
     color: white;
     border-color: #94a3b8;
+}
+
+/* Unit badge next to the map zoom controls */
+.unit-badge {
+    position: absolute;
+    top: 12px;
+    left: 56px;
+    z-index: 1100;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+    transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.unit-badge img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.unit-badge:hover {
+    transform: scale(1.15);
+    filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.75));
+}
+
+.unit-badge.spinning {
+    animation: unit-badge-spin 0.9s ease-in-out;
+}
+
+@keyframes unit-badge-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Falcon flyby easter egg */
+.falcon-flyby {
+    position: fixed;
+    top: 16vh;
+    left: 0;
+    z-index: 99999;
+    pointer-events: none;
+    font-size: 30vh;
+    line-height: 1;
+    animation: falcon-fly 2.6s cubic-bezier(0.3, 0, 0.7, 1) forwards;
+}
+
+@keyframes falcon-fly {
+    0% {
+        transform: translateX(-45vw) translateY(6vh) scaleX(-1) rotate(5deg);
+    }
+    45% {
+        transform: translateX(30vw) translateY(16vh) scaleX(-1) rotate(-8deg);
+    }
+    100% {
+        transform: translateX(115vw) translateY(-4vh) scaleX(-1) rotate(4deg);
+    }
+}
+
+/* Floating routes panel over the map */
+.floating-routes-panel {
+    position: absolute;
+    top: 100px;
+    left: 12px;
+    z-index: 1100;
+    width: 260px;
+    background: rgba(30, 30, 35, 0.92);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    color: #e0e0e0;
+    overflow: hidden;
+}
+
+.floating-routes-panel .routes-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.25);
+    cursor: move;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    user-select: none;
+}
+
+.floating-routes-panel .collapse-btn {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.floating-routes-panel .collapse-btn:hover {
+    color: white;
+}
+
+.floating-routes-panel .routes-panel-body {
+    padding: 8px 10px 10px;
+    max-height: 55vh;
+    overflow-y: auto;
 }
 
 /* Tablet / Phone Layout */
