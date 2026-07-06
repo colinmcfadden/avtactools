@@ -11,17 +11,21 @@ export const AuthProvider = ({ children }) => {
     const token = localStorage.getItem("auth_token");
     if (!token) {
       setIsLoading(false);
-      return;
+    } else {
+      api
+        .get("/auth/me")
+        .then((res) => setUser(res.data))
+        .catch(() => {
+          localStorage.removeItem("auth_token");
+          setUser(null);
+        })
+        .finally(() => setIsLoading(false));
     }
 
-    api
-      .get("/auth/me")
-      .then((res) => setUser(res.data))
-      .catch(() => {
-        localStorage.removeItem("auth_token");
-        setUser(null);
-      })
-      .finally(() => setIsLoading(false));
+    // Fired by the api interceptor when a stored token stops being accepted.
+    const onExpired = () => setUser(null);
+    window.addEventListener("auth-expired", onExpired);
+    return () => window.removeEventListener("auth-expired", onExpired);
   }, []);
 
   const login = async (credential) => {

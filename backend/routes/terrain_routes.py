@@ -116,8 +116,11 @@ def analyze_field():
 
     # 3. Run SAM AI with the specific point
     try:
-        # We prompt with the calculated [prompt_x, prompt_y]
-        results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4)
+        # We prompt with the calculated [prompt_x, prompt_y].
+        # imgsz=512: the source tile is only 256px, so the default 1024
+        # inference size just upscales it 4x and runs the encoder at 1024^2 —
+        # ~3.3GB of memory (OOM-kills a 2GB machine) for no added detail.
+        results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4, imgsz=512)
         
         if results[0].masks is not None:
             # Get the mask with the highest score (usually the first one)

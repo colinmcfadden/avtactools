@@ -51,6 +51,7 @@
   "devDependencies": {
     "autoprefixer": "^10.4.24",
     "cross-env": "^10.1.0",
+    "playwright": "^1.61.1",
     "postcss": "^8.5.6"
   }
 }
