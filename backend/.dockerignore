@@ -1,0 +1,26 @@
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local virtual environments
+venv/
+env/
+.venv/
+
+# Environment Variables (CRITICAL: Keeps your secrets out of the image)
+.env
+.env.*
+
+# IDEs and Editors
+.vscode/
+.idea/
+
+# Git version control
+.git/
+.gitignore
+
+# Deployment configurations (Not needed inside the container)
+Dockerfile
+fly.toml
+.dockerignore

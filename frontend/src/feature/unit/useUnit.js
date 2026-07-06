@@ -28,5 +28,5 @@ export const useUnit = (targetLocation) => {
     setUnits((prev) => prev.filter((u) => u.id !== id));
   };
 
-  return { units, addUnit, updateUnitPosition, deleteUnit };
+  return { units, setUnits, addUnit, updateUnitPosition, deleteUnit };
 }

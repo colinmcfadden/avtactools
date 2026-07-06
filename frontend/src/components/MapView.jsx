@@ -20,6 +20,7 @@ import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import ExportHandler from "../feature/export/ExportHandler";
+import MsnxRouteLayer from "../feature/msnxImport/MsnxRouteLayer";
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -51,10 +52,12 @@ function MapInteractionHandler({
   setDrawingPoints,
   handleMapRightClick,
   setContextMenu,
+  isSketchingRoute,
+  addDraftPoint,
 }) {
   useMapEvents({
     contextmenu: (e) => {
-      if (isDrawingLZ) return; // Don't interrupt drawing
+      if (isDrawingLZ || isSketchingRoute) return; // Don't interrupt drawing
       // Stop the default browser right-click menu
       e.originalEvent.preventDefault();
       handleMapRightClick(
@@ -67,6 +70,8 @@ function MapInteractionHandler({
     click: (e) => {
       if (isDrawingLZ) {
         setDrawingPoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
+      } else if (isSketchingRoute) {
+        addDraftPoint(e.latlng.lat, e.latlng.lng);
       } else {
         setContextMenu(null); // Click anywhere else to close the menu
       }
@@ -76,6 +81,15 @@ function MapInteractionHandler({
 }
 
 const MapView = ({
+  importedRoutes,
+  onUpdateMsnxPointPosition,
+  onInsertMsnxPoint,
+  sketchedRoutes,
+  onUpdateSketchPointPosition,
+  onSketchPointContextMenu,
+  isSketchingRoute,
+  addDraftPoint,
+  draftPoints,
   targetLocation,
   mapData,
   detectedLZ,
@@ -161,7 +175,17 @@ const MapView = ({
         setDrawingPoints={setDrawingPoints}
         handleMapRightClick={handleMapRightClick}
         setContextMenu={setContextMenu}
+        isSketchingRoute={isSketchingRoute}
+        addDraftPoint={addDraftPoint}
       />
+
+      {/* In-progress route sketch */}
+      {isSketchingRoute && draftPoints.length > 0 && (
+        <Polyline
+          positions={draftPoints.map((p) => [p.lat, p.lon])}
+          pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
+        />
+      )}
 
       {/* Render the Active Drawing Line */}
       {isDrawingLZ && drawingPoints.length > 0 && (
@@ -199,6 +223,19 @@ const MapView = ({
 
       {/* Logic to Zoom when target changes */}
       <MapUpdater center={targetLocation} />
+
+      <MsnxRouteLayer
+        routes={importedRoutes}
+        onUpdatePosition={onUpdateMsnxPointPosition}
+        onInsertPoint={onInsertMsnxPoint}
+      />
+
+      <MsnxRouteLayer
+        routes={sketchedRoutes}
+        onUpdatePosition={onUpdateSketchPointPosition}
+        onInsertPoint={onInsertMsnxPoint}
+        onPointContextMenu={onSketchPointContextMenu}
+      />
 
       {/* 1. The Grid Location (Green Star) */}
       {targetLocation && (
