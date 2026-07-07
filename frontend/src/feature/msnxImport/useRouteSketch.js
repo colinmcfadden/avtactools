@@ -131,6 +131,21 @@ export const useRouteSketch = () => {
     );
   };
 
+  /**
+   * Restores saved sketch routes. Route ids are regenerated so loading the
+   * same save twice can't collide (point ids are UUIDs and stay as saved);
+   * the "sketch-" prefix matters — App routes context-menu actions on it.
+   */
+  const loadSketchRoutes = (routes) => {
+    const restored = routes.map((route) => ({
+      ...route,
+      id: generateId("sketch"),
+      color: route.color || nextRouteColor(),
+      visible: true,
+    }));
+    setSketchedRoutes((prev) => [...prev, ...restored]);
+  };
+
   const removeSketchRoute = (routeId) => {
     setSketchedRoutes((prev) => prev.filter((route) => route.id !== routeId));
   };
@@ -163,6 +178,7 @@ export const useRouteSketch = () => {
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    loadSketchRoutes,
     removeSketchRoute,
     toggleSketchVisibility,
     exportSketches,

@@ -101,12 +101,42 @@
 
 /* A grid for the top row (small type, wide name) */
 .header-grid {
-    grid-template-columns: 1fr 3fr;
+    grid-template-columns: 5fr 1fr;
 }
 
 /* Utility to make an item span 2 columns */
 .span-2 {
     grid-column: span 2;
+}
+
+/* --- Modal Tabs (e.g. Saved Maps | Routes) --- */
+.modal-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.modal-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #999;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+.modal-tab:hover {
+    color: #ddd;
+}
+
+.modal-tab.active {
+    color: var(--ff-accent, #00b5e2);
+    border-bottom-color: var(--ff-accent, #00b5e2);
 }
 
 /* Subtle dividers between sections */

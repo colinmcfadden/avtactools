@@ -479,7 +479,7 @@ export async function buildSketchMsnxZip(templateData, sketchedRoutes, missionNa
 }
 
 /** Fetches the bundled template, builds the sketch .msnx, and downloads it. */
-export async function buildSketchMsnx(sketchedRoutes, filename = "SKETCHED_ROUTES.msnx") {
+export async function buildSketchMsnx(sketchedRoutes, filename = sketchedRoutes.map(route => route.name).join("_") + ".msnx") {
   const res = await fetch(TEMPLATE_URL);
   if (!res.ok) {
     throw new Error("Couldn't load the mission template (msnx_template.msnx).");
