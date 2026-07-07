@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/colinmcfadden/avtactools/compare/v1.2.0...v1.3.0) (2026-07-07)
+
+
+### Features
+
+* add vfr sectional to maps ([f146cc8](https://github.com/colinmcfadden/avtactools/commit/f146cc8e6432006705c280443ba6be6e3016c5da))
+
 # [1.2.0](https://github.com/colinmcfadden/avtactools/compare/v1.1.5...v1.2.0) (2026-07-07)
 
 
