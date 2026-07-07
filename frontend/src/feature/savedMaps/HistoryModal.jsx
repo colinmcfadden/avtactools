@@ -134,7 +134,7 @@ const HistoryModal = ({
             <>
               <div className="form-divider">Save Current Map</div>
               <div className="form-grid header-grid">
-                <div className="input-group span-flex">
+                <div className="input-group span-flex ">
                   <label>Name</label>
                   <input
                     value={saveName}
