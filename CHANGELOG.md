@@ -1,3 +1,12 @@
+# [1.2.0](https://github.com/colinmcfadden/avtactools/compare/v1.1.5...v1.2.0) (2026-07-07)
+
+
+### Features
+
+* combine route and lzpz save menus in to one menu ([6e3be62](https://github.com/colinmcfadden/avtactools/commit/6e3be62d2ca670e9deb73399dabfa6dd961a48bf))
+* edit imported routes, export to ff, save routes ([ea420e7](https://github.com/colinmcfadden/avtactools/commit/ea420e7d63ffdaf8918b90ee6ed45b479c125d61))
+* move topo map toggle to an actual layer selector ([5127285](https://github.com/colinmcfadden/avtactools/commit/5127285952ae3f80604d60b4f4c5a40ca5daadd8))
+
 ## [1.1.5](https://github.com/colinmcfadden/avtactools/compare/v1.1.4...v1.1.5) (2026-07-06)
 
 
