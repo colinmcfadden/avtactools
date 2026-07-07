@@ -161,11 +161,8 @@ const MapView = ({
       <TileLayer
         key={activeMapStyle.id} // Forces Leaflet to refresh when the style changes
         url={activeMapStyle.url}
-        attribution={activeMapStyle.attribution}
-        tileSize={activeMapStyle.tileSize}
-        zoomOffset={activeMapStyle.zoomOffset}
-        maxZoom={activeMapStyle.maxZoom}
         crossOrigin="anonymous"
+        {...activeMapStyle.options}
       />
 
       <MapInteractionHandler
