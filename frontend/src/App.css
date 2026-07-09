@@ -965,7 +965,7 @@ body.export-mode-active .leaflet-control-container {
     top: 100px;
     left: 12px;
     z-index: 1100;
-    width: 260px;
+    width: 720px;
     background: rgba(30, 30, 35, 0.92);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.12);

@@ -20,7 +20,10 @@ import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import ExportHandler from "../feature/export/ExportHandler";
-import MsnxRouteLayer from "../feature/msnxImport/MsnxRouteLayer";
+import MsnxRouteLayer, {
+  buildIcon as buildSketchPointIcon,
+} from "../feature/msnxImport/MsnxRouteLayer";
+import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
 
 // Fix for default Leaflet marker icons in React
@@ -55,10 +58,23 @@ function MapInteractionHandler({
   setContextMenu,
   isSketchingRoute,
   addDraftPoint,
+  onDraftPointContextMenu,
 }) {
   useMapEvents({
     contextmenu: (e) => {
-      if (isDrawingLZ || isSketchingRoute) return; // Don't interrupt drawing
+      if (isDrawingLZ) return; // Don't interrupt drawing
+      if (isSketchingRoute) {
+        // Right-click while drawing a route: designate a point (target / IP /
+        // checkpoint) at this location instead of the normal map menu.
+        e.originalEvent.preventDefault();
+        onDraftPointContextMenu(
+          e.latlng.lat,
+          e.latlng.lng,
+          e.originalEvent.clientX,
+          e.originalEvent.clientY,
+        );
+        return;
+      }
       // Stop the default browser right-click menu
       e.originalEvent.preventDefault();
       handleMapRightClick(
@@ -90,6 +106,7 @@ const MapView = ({
   onSketchPointContextMenu,
   isSketchingRoute,
   addDraftPoint,
+  onDraftPointContextMenu,
   draftPoints,
   targetLocation,
   mapData,
@@ -131,6 +148,7 @@ const MapView = ({
   handleLZRightClick,
   setContextMenu,
   mapStyle,
+  localPointSets,
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -172,14 +190,34 @@ const MapView = ({
         setContextMenu={setContextMenu}
         isSketchingRoute={isSketchingRoute}
         addDraftPoint={addDraftPoint}
+        onDraftPointContextMenu={onDraftPointContextMenu}
       />
 
       {/* In-progress route sketch */}
       {isSketchingRoute && draftPoints.length > 0 && (
-        <Polyline
-          positions={draftPoints.map((p) => [p.lat, p.lon])}
-          pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
-        />
+        <>
+          <Polyline
+            positions={draftPoints.map((p) => [p.lat, p.lon])}
+            pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
+          />
+          {draftPoints.map(
+            (p, i) =>
+              p.designation && (
+                <Marker
+                  key={`draft-${i}`}
+                  position={[p.lat, p.lon]}
+                  icon={buildSketchPointIcon(
+                    { kind: "amps", ptType: p.designation.ptType },
+                    "#64D2FF",
+                  )}
+                >
+                  <Tooltip permanent direction="top" offset={[0, -12]}>
+                    {(p.designation.name || "").replace(/^\./, "")}
+                  </Tooltip>
+                </Marker>
+              ),
+          )}
+        </>
       )}
 
       {/* Render the Active Drawing Line */}
@@ -231,6 +269,8 @@ const MapView = ({
         onInsertPoint={onInsertMsnxPoint}
         onPointContextMenu={onSketchPointContextMenu}
       />
+
+      <LocalPointsLayer pointSets={localPointSets} />
 
       {/* 1. The Grid Location (Green Star) */}
       {targetLocation && (

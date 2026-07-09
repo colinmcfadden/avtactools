@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import RoutePlanSection from "./RoutePlanSection";
 
 const EyeIcon = ({ visible }) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -24,7 +25,7 @@ const SendIcon = () => (
   </svg>
 );
 
-const RouteRow = ({ route, onToggleVisibility, onRemove, onForeFlight }) => (
+const RouteRow = ({ route, onToggleVisibility, onRemove, onForeFlight, expanded, onToggleExpand }) => (
   <div
     style={{
       display: "flex",
@@ -37,6 +38,23 @@ const RouteRow = ({ route, onToggleVisibility, onRemove, onForeFlight }) => (
     }}
   >
     <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+      {onToggleExpand && (
+        <button
+          onClick={onToggleExpand}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#9ca3af",
+            cursor: "pointer",
+            padding: 0,
+            fontSize: "0.7rem",
+            flexShrink: 0,
+          }}
+          title={expanded ? "Hide route points" : "Show route points"}
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
+      )}
       <span
         style={{
           width: "12px",
@@ -108,6 +126,12 @@ const RouteRow = ({ route, onToggleVisibility, onRemove, onForeFlight }) => (
   </div>
 );
 
+const planBox = {
+  padding: "6px 8px",
+  background: "rgba(255,255,255,0.02)",
+  borderRadius: "6px",
+};
+
 const ImportedRoutesPanel = ({
   routes,
   removeRoute,
@@ -121,7 +145,23 @@ const ImportedRoutesPanel = ({
   onForeFlight,
   onSaveMissionGroup,
   onSaveSketches,
+  localPointNames,
+  // Two parallel plan-editing bundles (same shape) — one operating on imported
+  // (mission-file) routes, one on sketched routes. Each has updateRoutePlan,
+  // updatePointPlanOverride, setPointClock, updatePointName,
+  // refreshRouteElevations, applyForecastWinds.
+  importedPlan = {},
+  sketchedPlan = {},
 }) => {
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const toggleExpanded = (id) =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   const hasImported = routes && routes.length > 0;
   const hasSketched = sketchedRoutes.length > 0;
   if (!hasImported && !hasSketched) return null;
@@ -164,13 +204,25 @@ const ImportedRoutesPanel = ({
           </div>
 
           {group.routes.map((route) => (
-            <RouteRow
-              key={route.id}
-              route={route}
-              onToggleVisibility={toggleVisibility}
-              onRemove={removeRoute}
-              onForeFlight={onForeFlight}
-            />
+            <React.Fragment key={route.id}>
+              <RouteRow
+                route={route}
+                onToggleVisibility={toggleVisibility}
+                onRemove={removeRoute}
+                onForeFlight={onForeFlight}
+                expanded={expandedIds.has(route.id)}
+                onToggleExpand={() => toggleExpanded(route.id)}
+              />
+              {expandedIds.has(route.id) && (
+                <div style={planBox}>
+                  <RoutePlanSection
+                    route={route}
+                    localPointNames={localPointNames}
+                    {...importedPlan}
+                  />
+                </div>
+              )}
+            </React.Fragment>
           ))}
 
           <div style={{ display: "flex", gap: "6px" }}>
@@ -200,13 +252,25 @@ const ImportedRoutesPanel = ({
           <div style={groupHeaderStyle}>Sketched Routes</div>
 
           {sketchedRoutes.map((route) => (
-            <RouteRow
-              key={route.id}
-              route={route}
-              onToggleVisibility={toggleSketchVisibility}
-              onRemove={removeSketchRoute}
-              onForeFlight={onForeFlight}
-            />
+            <React.Fragment key={route.id}>
+              <RouteRow
+                route={route}
+                onToggleVisibility={toggleSketchVisibility}
+                onRemove={removeSketchRoute}
+                onForeFlight={onForeFlight}
+                expanded={expandedIds.has(route.id)}
+                onToggleExpand={() => toggleExpanded(route.id)}
+              />
+              {expandedIds.has(route.id) && (
+                <div style={planBox}>
+                  <RoutePlanSection
+                    route={route}
+                    localPointNames={localPointNames}
+                    {...sketchedPlan}
+                  />
+                </div>
+              )}
+            </React.Fragment>
           ))}
 
           <div style={{ display: "flex", gap: "6px" }}>

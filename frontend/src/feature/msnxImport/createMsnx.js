@@ -9,6 +9,16 @@ import {
   serializeXmlPart,
   downloadBlob,
 } from "./mutateMsnx.js";
+import { computeRoutePlan, defaultRoutePlan } from "./routeCalc.js";
+import {
+  FT_TO_M,
+  formatAmpsAirspeed,
+  formatAmpsWind,
+  formatAmpsPlanAltitude,
+  formatAmpsCmdAlt,
+  formatAmpsElevation,
+  formatAmpsClockTime,
+} from "./ampsFormats.js";
 
 const TEMPLATE_URL = "/msnx_template.msnx";
 
@@ -245,6 +255,12 @@ export async function buildSketchMsnxZip(templateData, sketchedRoutes, missionNa
   for (const sketch of sketchedRoutes) {
     const { ampsPoints, legShaping } = partitionSketch(sketch);
 
+    // Planned performance data (airspeeds, altitudes, winds, TOT-anchored
+    // clock times) computed the same way the panel displays it. planResult
+    // points/legs are index-aligned with ampsPoints (same shaping filter).
+    const plan = { ...defaultRoutePlan(), ...(sketch.plan || {}) };
+    const planResult = computeRoutePlan(sketch, plan, sketch.elevations || {});
+
     const routeId = crypto.randomUUID();
     const segmentId = crypto.randomUUID();
     const ampsIds = ampsPoints.map(() => crypto.randomUUID());
@@ -260,7 +276,7 @@ export async function buildSketchMsnxZip(templateData, sketchedRoutes, missionNa
       firstIds = { routeId, segmentId, pointId: ampsIds[0] };
     }
 
-    const ampsName = (p, i) => p.name || `.CP${i}`;
+    const ampsName = (p, i) => p.name || `.ACP${i}`;
 
     // --- points.xml: AMPS points ---
     ampsPoints.forEach((point, i) => {
@@ -276,10 +292,34 @@ export async function buildSketchMsnxZip(templateData, sketchedRoutes, missionNa
       );
       const coordValueEl = findCoordinateValueEl(clone);
       if (coordValueEl) coordValueEl.textContent = formatCoordinate(point.lat, point.lon);
+      setItemValue(clone, "PtNum", i + 1);
+      setItemValue(clone, "DtdID", ampsName(point, i));
       setItemValue(clone, "PtNameFix", ampsName(point, i));
+      setItemValue(clone, "PtDesc", ampsName(point, i));
       setItemValue(clone, "PtType", PT_TYPE_VALUES[point.ptType] || PT_TYPE_VALUES.turn);
       setItemValue(clone, "PtDbLookup", "");
       setItemValue(clone, "PtDesc", "");
+
+      // Planned altitude / elevation / clock time. AMPS recomputes the
+      // derived values on Calc, but honors these as the plan inputs.
+      const planPoint = planResult.points[i];
+      if (planPoint) {
+        setItemValue(
+          clone,
+          "PlanAltitudeValue",
+          formatAmpsPlanAltitude(planPoint.value, planPoint.ref),
+        );
+        if (planPoint.mslFt != null) {
+          setItemValue(clone, "CmdAlt", formatAmpsCmdAlt(planPoint.mslFt));
+          setItemValue(clone, "CmdAltValid", "True");
+        }
+        if (planPoint.groundFt != null) {
+          setItemValue(clone, "Elevation", formatAmpsElevation(planPoint.groundFt));
+        }
+        if (planPoint.clockTime) {
+          setItemValue(clone, "CmdClockTime", formatAmpsClockTime(planPoint.clockTime));
+        }
+      }
       pointsRoot.appendChild(clone);
     });
 
@@ -306,6 +346,19 @@ export async function buildSketchMsnxZip(templateData, sketchedRoutes, missionNa
       setDirectChildText(clone, "startpt", ampsIds[i]);
       setDirectChildText(clone, "endpt", ampsIds[i + 1]);
       regenerateCommandIds(clone);
+
+      // Planned leg airspeed and winds (the CmdStdLeg inputs AMPS plans with).
+      // Both are the "to" values of the leg's arrival point.
+      const planLeg = planResult.legs[i];
+      if (planLeg) {
+        setItemValue(clone, "AirspeedValue", formatAmpsAirspeed(planLeg.airspeed));
+        const wind = formatAmpsWind(
+          planLeg.wind?.dirTrue ?? 0,
+          planLeg.wind?.speedKts ?? 0,
+        );
+        setItemValue(clone, "CruiseWind", wind);
+        setItemValue(clone, "ClimbDescentWind", wind);
+      }
 
       const shaping = legShaping[i];
       const trackpointset = findDirectChild(findDirectChild(clone, "commandbase"), "trackpointset");
@@ -395,7 +448,11 @@ export async function buildSketchMsnxZip(templateData, sketchedRoutes, missionNa
       };
 
       ampsPoints.forEach((point, i) => {
-        appendRtept(rteptAmpsProto, point, ampsIds[i], ampsName(point, i), ampsCmdIds[i]);
+        // Ground elevation (m) in the gpx when the plan calc fetched one.
+        const groundFt = planResult.points[i]?.groundFt;
+        const pointWithEle =
+          groundFt != null ? { ...point, ele: groundFt * FT_TO_M } : point;
+        appendRtept(rteptAmpsProto, pointWithEle, ampsIds[i], ampsName(point, i), ampsCmdIds[i]);
         if (i < legShaping.length) {
           legShaping[i].forEach((sp, j) => {
             appendRtept(rteptCalcProto, sp, calcIdsPerLeg[i][j], `.Serpentine ${j + 1}`, null);

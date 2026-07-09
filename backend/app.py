@@ -22,6 +22,7 @@ from routes.export_routes import export_bp
 from routes.auth import auth_bp
 from routes.lz_routes import lz_bp
 from routes.saved_routes import saved_routes_bp
+from routes.point_sets import point_sets_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -52,6 +53,7 @@ app.register_blueprint(weather_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(lz_bp)
 app.register_blueprint(saved_routes_bp)
+app.register_blueprint(point_sets_bp)
 
 @app.route('/')
 def health_check():
