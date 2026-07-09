@@ -27,6 +27,7 @@ import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import UnitBadge from "./components/UnitBadge";
+import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null);
@@ -138,6 +139,14 @@ function App() {
     exportFile,
     serializeFile,
     toggleRouteVisibility,
+    // Imported-route plan handlers (aliased — useRouteSketch exports the same
+    // names for sketched routes).
+    updateRoutePlan: updateImportedRoutePlan,
+    updatePointPlanOverride: updateImportedPointOverride,
+    setPointClock: setImportedPointClock,
+    updatePointName: updateImportedPointName,
+    refreshRouteElevations: refreshImportedElevations,
+    applyForecastWinds: applyImportedForecastWinds,
   } = useMsnxImport();
 
   const handleImportMsnx = async (file) => {
@@ -165,7 +174,15 @@ function App() {
     removeSketchRoute,
     toggleSketchVisibility,
     exportSketches,
+    updateRoutePlan,
+    updatePointPlanOverride,
+    setSketchPointClock,
+    updateSketchPointName,
+    refreshRouteElevations,
+    applyForecastWinds,
   } = useRouteSketch();
+
+  const localPoints = useLocalPoints();
 
   const {
     savedRoutes,
@@ -310,6 +327,23 @@ function App() {
 
   const handleSketchPointContextMenu = (routeId, pointId, x, y) => {
     setContextMenu({ x, y, type: "sketch-point", routeId, pointId });
+  };
+
+  // Right-click while drawing a route: add a designated point right there.
+  const handleDraftPointContextMenu = (lat, lon, x, y) => {
+    setContextMenu({ x, y, type: "draft-point", lat, lon });
+  };
+
+  const handleAddDesignatedDraftPoint = (ptType) => {
+    const { lat, lon } = contextMenu;
+    const defaults = { target: ".LZ", ip: ".RP", turn: ".CP" };
+    const name = window.prompt("Point name:", defaults[ptType] || ".CP");
+    if (name === null) return;
+    addDraftPoint(lat, lon, {
+      ptType,
+      name: name.trim().toUpperCase() || defaults[ptType],
+    });
+    setContextMenu(null);
   };
 
   const findSketchPoint = (routeId, pointId) =>
@@ -606,6 +640,25 @@ function App() {
           onForeFlight={setForeFlightRoute}
           onSaveMissionGroup={handleSaveMissionGroup}
           onSaveSketches={handleSaveSketches}
+          localPointNames={localPoints.pointSets.flatMap((set) =>
+            set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon })),
+          )}
+          sketchedPlan={{
+            updateRoutePlan,
+            updatePointPlanOverride,
+            setPointClock: setSketchPointClock,
+            updatePointName: updateSketchPointName,
+            refreshRouteElevations,
+            applyForecastWinds,
+          }}
+          importedPlan={{
+            updateRoutePlan: updateImportedRoutePlan,
+            updatePointPlanOverride: updateImportedPointOverride,
+            setPointClock: setImportedPointClock,
+            updatePointName: updateImportedPointName,
+            refreshRouteElevations: refreshImportedElevations,
+            applyForecastWinds: applyImportedForecastWinds,
+          }}
         />
         <MapStyleSwitcher mapStyle={mapStyle} setMapStyle={setMapStyle} />
         <MobileGridInput
@@ -634,6 +687,7 @@ function App() {
           onSketchPointContextMenu={handleSketchPointContextMenu}
           isSketchingRoute={isSketching}
           addDraftPoint={addDraftPoint}
+          onDraftPointContextMenu={handleDraftPointContextMenu}
           draftPoints={draftPoints}
           targetLocation={targetLocation}
           mapData={mapData}
@@ -675,6 +729,7 @@ function App() {
           handleLZRightClick={handleLZRightClick}
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
+          localPointSets={localPoints.pointSets}
         />
 
         <div className="alert-queue">
@@ -814,6 +869,76 @@ function App() {
                 }}
               >
                 ✕ Delete LZ
+              </button>
+            </div>
+          ) : contextMenu.type === "draft-point" ? (
+            // --- DRAW-MODE POINT DESIGNATION MENU ---
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+            >
+              <div
+                style={{
+                  padding: "2px 4px",
+                  fontSize: "12px",
+                  color: "#94a3b8",
+                  textAlign: "center",
+                }}
+              >
+                Add point here as:
+              </div>
+              {[
+                { label: "● Checkpoint (Turn)", ptType: "turn" },
+                { label: "■ RP / IP", ptType: "ip" },
+                { label: "▲ LZ / PZ (Target)", ptType: "target" },
+              ].map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => handleAddDesignatedDraftPoint(opt.ptType)}
+                  style={{
+                    width: "100%",
+                    padding: "6px",
+                    background: "#3b82f6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  addDraftPoint(contextMenu.lat, contextMenu.lon);
+                  setContextMenu(null);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "6px",
+                  background: "#475569",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                · Shaping point
+              </button>
+              <button
+                onClick={() => setContextMenu(null)}
+                style={{
+                  width: "100%",
+                  padding: "4px",
+                  color: "#9ca3af",
+                  background: "none",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
               </button>
             </div>
           ) : contextMenu.type === "route-line" ? (
@@ -962,6 +1087,7 @@ function App() {
         fetchSavedRoutes={fetchSavedRoutes}
         onLoadRoute={handleLoadSavedRoute}
         onDeleteRoute={handleDeleteSavedRoute}
+        localPoints={localPoints}
       />
 
       {exportSuccess && (

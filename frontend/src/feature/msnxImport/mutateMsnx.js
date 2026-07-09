@@ -1,4 +1,13 @@
 import { MISSION_PATHS } from "./parseMsnx.js";
+import { computeRoutePlan, defaultRoutePlan } from "./routeCalc.js";
+import {
+  formatAmpsAirspeed,
+  formatAmpsWind,
+  formatAmpsPlanAltitude,
+  formatAmpsCmdAlt,
+  formatAmpsElevation,
+  formatAmpsClockTime,
+} from "./ampsFormats.js";
 
 export const GPX_NS = "http://www.topografix.com/GPX/1/1";
 export const MSNX_NS = "http://www.xplan.com/MSNX/v1.0";
@@ -391,6 +400,68 @@ export function insertPointOnRoute(docs, route, lat, lon) {
       role: "waypoint",
     },
   };
+}
+
+/** Renames an existing point in points.xml (PtNameFix) and mission.gpx. */
+export function updatePointName(docs, pointId, name) {
+  const pointEl = findPointById(docs.points, pointId);
+  if (pointEl) {
+    setItemValue(pointEl, "PtNameFix", name);
+    setItemValue(pointEl, "PtDesc", name);
+  }
+  const rtept = findGpxRteptByPointId(docs.gpx, pointId);
+  if (rtept) {
+    const nameEl = rtept.getElementsByTagName("name")[0];
+    if (nameEl) nameEl.textContent = name;
+  }
+}
+
+/**
+ * Writes an imported route's (edited) inline plan back into its mission docs:
+ * per-point planned altitude / elevation / clock into points.xml, and per-leg
+ * airspeed / wind into legs.xml (assigned to the leg arriving at each point).
+ * Mirrors how the sketch exporter emits these values so a re-exported mission
+ * carries the user's planning edits; AMPS recomputes the derived data on Calc.
+ */
+export function applyPlanToMsnxDocs(docs, route) {
+  if (!route?.plan) return;
+  const plan = { ...defaultRoutePlan(), ...route.plan };
+  const result = computeRoutePlan(route, plan, route.elevations || {});
+
+  for (const rp of result.points) {
+    const pointEl = findPointById(docs.points, rp.id);
+    if (!pointEl) continue;
+    setItemValue(pointEl, "PlanAltitudeValue", formatAmpsPlanAltitude(rp.value, rp.ref));
+    if (rp.mslFt != null) {
+      setItemValue(pointEl, "CmdAlt", formatAmpsCmdAlt(rp.mslFt));
+      setItemValue(pointEl, "CmdAltValid", "True");
+    }
+    if (rp.groundFt != null) {
+      setItemValue(pointEl, "Elevation", formatAmpsElevation(rp.groundFt));
+    }
+    if (rp.clockTime) {
+      setItemValue(pointEl, "CmdClockTime", formatAmpsClockTime(rp.clockTime));
+    }
+  }
+
+  let legs;
+  try {
+    ({ legs } = getSegmentLegs(docs, route));
+  } catch {
+    return; // no segment/leg data — points were still updated above
+  }
+  const legByEnd = new Map();
+  for (const leg of legs) {
+    if (leg.endId && leg.legEl) legByEnd.set(leg.endId, leg.legEl);
+  }
+  for (const leg of result.legs) {
+    const legEl = legByEnd.get(leg.toId);
+    if (!legEl) continue;
+    setItemValue(legEl, "AirspeedValue", formatAmpsAirspeed(leg.airspeed));
+    const wind = formatAmpsWind(leg.wind?.dirTrue ?? 0, leg.wind?.speedKts ?? 0);
+    setItemValue(legEl, "CruiseWind", wind);
+    setItemValue(legEl, "ClimbDescentWind", wind);
+  }
 }
 
 export const downloadBlob = (blob, filename) => {

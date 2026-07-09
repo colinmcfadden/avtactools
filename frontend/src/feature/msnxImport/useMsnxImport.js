@@ -2,11 +2,15 @@ import { useRef, useState } from "react";
 import { parseMsnxFile } from "./parseMsnx";
 import {
   updatePointCoordinate,
+  updatePointName as updatePointNameInDocs,
   insertPointOnRoute,
   exportMsnxFile,
   buildMsnxBlob,
+  applyPlanToMsnxDocs,
 } from "./mutateMsnx";
 import { nextRouteColor } from "./colorPalette";
+import { defaultRoutePlan, fetchPointElevationsFt } from "./routeCalc";
+import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
 
 const generateId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -28,6 +32,10 @@ export const useMsnxImport = () => {
       color: nextRouteColor(),
       visible: true,
       points: route.points,
+      // Planned performance data read from the mission file, so imported
+      // routes drive the same inline plan editor as sketched ones.
+      plan: route.plan,
+      elevations: route.elevations || {},
     }));
 
     setImportedRoutes((prev) => [...prev, ...newRoutes]);
@@ -116,6 +124,99 @@ export const useMsnxImport = () => {
     );
   };
 
+  // --- inline plan editing (mirrors useRouteSketch, for imported routes) ---
+  // Plan edits live in React state and are written back into the mission docs
+  // at export/serialize time via applyPlanToMsnxDocs; coordinate/name edits
+  // mutate the docs immediately (like the drag handler above).
+
+  const updateRoutePlan = (routeId, patch) => {
+    setImportedRoutes((prev) =>
+      prev.map((route) =>
+        route.id === routeId
+          ? { ...route, plan: { ...defaultRoutePlan(), ...route.plan, ...patch } }
+          : route,
+      ),
+    );
+  };
+
+  const updatePointPlanOverride = (routeId, pointId, patch) => {
+    setImportedRoutes((prev) =>
+      prev.map((route) => {
+        if (route.id !== routeId) return route;
+        const plan = { ...defaultRoutePlan(), ...route.plan };
+        const perPoint = { ...plan.perPoint };
+        if (patch === null) delete perPoint[pointId];
+        else perPoint[pointId] = { ...perPoint[pointId], ...patch };
+        return { ...route, plan: { ...plan, perPoint } };
+      }),
+    );
+  };
+
+  /** Sets/clears a point's clock (TOT); only one point anchors at a time. */
+  const setPointClock = (routeId, pointId, clock) => {
+    setImportedRoutes((prev) =>
+      prev.map((route) => {
+        if (route.id !== routeId) return route;
+        const plan = { ...defaultRoutePlan(), ...route.plan };
+        const perPoint = {};
+        for (const [id, over] of Object.entries(plan.perPoint || {})) {
+          const { clock: _clock, ...rest } = over;
+          if (Object.keys(rest).length) perPoint[id] = rest;
+        }
+        if (clock) perPoint[pointId] = { ...perPoint[pointId], clock };
+        return { ...route, plan: { ...plan, perPoint } };
+      }),
+    );
+  };
+
+  /** Renames a point (and snaps to a local point's coords when provided), writing to the docs. */
+  const updatePointName = (routeId, pointId, name, coords) => {
+    const route = importedRoutes.find((r) => r.id === routeId);
+    const fileEntry = route && filesRef.current.get(route.fileId);
+    if (fileEntry) {
+      updatePointNameInDocs(fileEntry.docs, pointId, name);
+      if (coords) updatePointCoordinate(fileEntry.docs, pointId, coords.lat, coords.lon);
+    }
+    setImportedRoutes((prev) =>
+      prev.map((r) => {
+        if (r.id !== routeId) return r;
+        return {
+          ...r,
+          points: r.points.map((p) =>
+            p.id === pointId
+              ? { ...p, name, ...(coords ? { lat: coords.lat, lon: coords.lon } : {}) }
+              : p,
+          ),
+        };
+      }),
+    );
+  };
+
+  const refreshRouteElevations = async (routeId) => {
+    const route = importedRoutes.find((r) => r.id === routeId);
+    if (!route) return;
+    const elevations = await fetchPointElevationsFt(route);
+    setImportedRoutes((prev) =>
+      prev.map((r) =>
+        r.id === routeId ? { ...r, elevations: { ...r.elevations, ...elevations } } : r,
+      ),
+    );
+    return elevations;
+  };
+
+  const applyForecastWinds = async (routeId) => {
+    const route = importedRoutes.find((r) => r.id === routeId);
+    if (!route) return { error: "Route not found." };
+    const { winds, amps, error } = await fetchForecastWinds(route);
+    if (error) return { error };
+    setImportedRoutes((prev) =>
+      prev.map((r) =>
+        r.id === routeId ? { ...r, plan: mergeWindsIntoPlan(r.plan, amps, winds) } : r,
+      ),
+    );
+    return { winds };
+  };
+
   const removeRoute = (id) => {
     setImportedRoutes((prev) => prev.filter((route) => route.id !== id));
   };
@@ -125,10 +226,20 @@ export const useMsnxImport = () => {
     filesRef.current.clear();
   };
 
+  /** Writes every route in a file's current plan back into its mission docs. */
+  const applyPlansForFile = (fileId) => {
+    const fileEntry = filesRef.current.get(fileId);
+    if (!fileEntry) return;
+    for (const route of importedRoutes) {
+      if (route.fileId === fileId) applyPlanToMsnxDocs(fileEntry.docs, route);
+    }
+  };
+
   const exportFile = async (fileId) => {
     const fileEntry = filesRef.current.get(fileId);
     if (!fileEntry) return;
 
+    applyPlansForFile(fileId);
     const filename = fileEntry.originalName.replace(/\.msnx$/i, "") + "_edited.msnx";
     await exportMsnxFile(fileEntry.zip, fileEntry.docs, filename);
   };
@@ -137,6 +248,7 @@ export const useMsnxImport = () => {
   const serializeFile = async (fileId) => {
     const fileEntry = filesRef.current.get(fileId);
     if (!fileEntry) return null;
+    applyPlansForFile(fileId);
     const blob = await buildMsnxBlob(fileEntry.zip, fileEntry.docs);
     return { blob, fileName: fileEntry.originalName };
   };
@@ -151,5 +263,11 @@ export const useMsnxImport = () => {
     exportFile,
     serializeFile,
     toggleRouteVisibility,
+    updateRoutePlan,
+    updatePointPlanOverride,
+    setPointClock,
+    updatePointName,
+    refreshRouteElevations,
+    applyForecastWinds,
   };
 };

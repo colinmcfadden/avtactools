@@ -48,7 +48,7 @@ const shapeIcon = (shape, color) => {
   });
 };
 
-const buildIcon = (point, color) => {
+export const buildIcon = (point, color) => {
   // Sketched points carry a designation; mirror AMPS iconography:
   // Turn = circle, IP/RP = square, Target = triangle, shaping = small dot.
   if (point.kind) {
