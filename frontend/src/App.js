@@ -28,6 +28,9 @@ import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import UnitBadge from "./components/UnitBadge";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
+import { useThreats } from "./feature/threats/useThreats";
+import ThreatDialog from "./feature/threats/ThreatDialog";
+import ThreatExportModal from "./feature/threats/ThreatExportModal";
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null);
@@ -183,6 +186,22 @@ function App() {
   } = useRouteSketch();
 
   const localPoints = useLocalPoints();
+  const {
+    threats,
+    editingThreat,
+    beginAddThreat,
+    beginEditThreat,
+    cancelEdit: cancelThreatEdit,
+    saveThreat,
+    removeThreat,
+    toggleVisibility: toggleThreatVisibility,
+    moveThreat,
+    importThsFile,
+    exportThsFile,
+    exportKmzFile,
+  } = useThreats();
+  const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]);
+  const [showThreatExport, setShowThreatExport] = useState(false);
 
   const {
     savedRoutes,
@@ -323,6 +342,33 @@ function App() {
 
   const handleInsertPointContextMenu = (routeId, lat, lon, x, y) => {
     setContextMenu({ x, y, type: "route-line", routeId, lat, lon });
+  };
+
+  // Threats export to a companion .ths downloaded alongside the .msnx (AMPS
+  // reads the two as a mission + its threat overlay). Threats are never saved.
+  const maybeExportThreats = async (baseName) => {
+    if (threats.length === 0) return;
+    try {
+      await exportThsFile(baseName);
+    } catch (err) {
+      alert("The mission exported, but the threats (.ths) export failed: " + err.message);
+    }
+  };
+
+  const handleExportSketchesWithThreats = async () => {
+    await exportSketches();
+    await maybeExportThreats(sketchedRoutes.map((r) => r.name).join("_") || "mission");
+  };
+
+  const handleExportMissionFileWithThreats = async (fileId) => {
+    await exportFile(fileId);
+    const group = importedRoutes.find((r) => r.fileId === fileId);
+    await maybeExportThreats((group?.fileName || "mission").replace(/\.msnx$/i, ""));
+  };
+
+  const handleAddThreatHere = () => {
+    beginAddThreat(contextMenu.lat, contextMenu.lon);
+    setContextMenu(null);
   };
 
   const handleSketchPointContextMenu = (routeId, pointId, x, y) => {
@@ -631,12 +677,21 @@ function App() {
           routes={importedRoutes}
           removeRoute={removeRoute}
           clearRoutes={clearRoutes}
-          exportFile={exportFile}
+          exportFile={handleExportMissionFileWithThreats}
           toggleVisibility={toggleRouteVisibility}
           sketchedRoutes={sketchedRoutes}
           removeSketchRoute={removeSketchRoute}
           toggleSketchVisibility={toggleSketchVisibility}
-          exportSketches={exportSketches}
+          exportSketches={handleExportSketchesWithThreats}
+          threats={{
+            threats,
+            onImportThs: importThsFile,
+            onAddThreat: () => beginAddThreat(mapCenter[0], mapCenter[1]),
+            onEdit: beginEditThreat,
+            onRemove: removeThreat,
+            onToggleVisibility: toggleThreatVisibility,
+            onExportKmz: () => setShowThreatExport(true),
+          }}
           onForeFlight={setForeFlightRoute}
           onSaveMissionGroup={handleSaveMissionGroup}
           onSaveSketches={handleSaveSketches}
@@ -730,6 +785,10 @@ function App() {
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
           localPointSets={localPoints.pointSets}
+          threats={threats}
+          onThreatMove={moveThreat}
+          onThreatEdit={beginEditThreat}
+          onMapMove={setMapCenter}
         />
 
         <div className="alert-queue">
@@ -787,6 +846,20 @@ function App() {
                 }}
               >
                 Set as Target
+              </button>
+              <button
+                onClick={handleAddThreatHere}
+                style={{
+                  width: "100%",
+                  padding: "6px",
+                  background: "#ef4444",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Add Threat Here
               </button>
             </div>
           ) : contextMenu.type === "lz" ? (
@@ -1069,6 +1142,22 @@ function App() {
         route={foreFlightRoute}
         onClose={() => setForeFlightRoute(null)}
       />
+
+      {editingThreat && (
+        <ThreatDialog
+          editing={editingThreat}
+          onSave={saveThreat}
+          onCancel={cancelThreatEdit}
+        />
+      )}
+
+      {showThreatExport && (
+        <ThreatExportModal
+          threats={threats}
+          onDownload={() => exportKmzFile("threats")}
+          onClose={() => setShowThreatExport(false)}
+        />
+      )}
 
       <HistoryModal
         isOpen={isHistoryModalOpen}

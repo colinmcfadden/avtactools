@@ -24,7 +24,12 @@ const asFakeFile = (filePath) => {
   };
 };
 
-test("parses the North Georgia sample .LPS", async () => {
+// The sample .LPS is an untracked local fixture; skip the real-file test when
+// it isn't present so the suite stays green in a clean checkout.
+const sampleExists = fs.existsSync(LPS_PATH);
+const testWithSample = sampleExists ? test : test.skip;
+
+testWithSample("parses the North Georgia sample .LPS", async () => {
   const set = await parseLpsFile(asFakeFile(LPS_PATH));
 
   expect(set.name).toBe("NORTH GEORGIA POINTS");
