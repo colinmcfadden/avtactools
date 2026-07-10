@@ -24,6 +24,7 @@ import MsnxRouteLayer, {
   buildIcon as buildSketchPointIcon,
 } from "../feature/msnxImport/MsnxRouteLayer";
 import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
+import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
 
 // Fix for default Leaflet marker icons in React
@@ -59,8 +60,15 @@ function MapInteractionHandler({
   isSketchingRoute,
   addDraftPoint,
   onDraftPointContextMenu,
+  onMapMove,
 }) {
-  useMapEvents({
+  const map = useMapEvents({
+    moveend: () => {
+      if (onMapMove) {
+        const c = map.getCenter();
+        onMapMove([c.lat, c.lng]);
+      }
+    },
     contextmenu: (e) => {
       if (isDrawingLZ) return; // Don't interrupt drawing
       if (isSketchingRoute) {
@@ -149,6 +157,10 @@ const MapView = ({
   setContextMenu,
   mapStyle,
   localPointSets,
+  threats,
+  onThreatMove,
+  onThreatEdit,
+  onMapMove,
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -191,6 +203,7 @@ const MapView = ({
         isSketchingRoute={isSketchingRoute}
         addDraftPoint={addDraftPoint}
         onDraftPointContextMenu={onDraftPointContextMenu}
+        onMapMove={onMapMove}
       />
 
       {/* In-progress route sketch */}
@@ -271,6 +284,8 @@ const MapView = ({
       />
 
       <LocalPointsLayer pointSets={localPointSets} />
+
+      <ThreatLayer threats={threats} onMove={onThreatMove} onEdit={onThreatEdit} />
 
       {/* 1. The Grid Location (Green Star) */}
       {targetLocation && (
