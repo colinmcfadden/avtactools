@@ -30,6 +30,7 @@ import UnitBadge from "./components/UnitBadge";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
 import ThreatDialog from "./feature/threats/ThreatDialog";
+import ThreatExportModal from "./feature/threats/ThreatExportModal";
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null);
@@ -197,8 +198,10 @@ function App() {
     moveThreat,
     importThsFile,
     exportThsFile,
+    exportKmzFile,
   } = useThreats();
   const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]);
+  const [showThreatExport, setShowThreatExport] = useState(false);
 
   const {
     savedRoutes,
@@ -687,6 +690,7 @@ function App() {
             onEdit: beginEditThreat,
             onRemove: removeThreat,
             onToggleVisibility: toggleThreatVisibility,
+            onExportKmz: () => setShowThreatExport(true),
           }}
           onForeFlight={setForeFlightRoute}
           onSaveMissionGroup={handleSaveMissionGroup}
@@ -1144,6 +1148,14 @@ function App() {
           editing={editingThreat}
           onSave={saveThreat}
           onCancel={cancelThreatEdit}
+        />
+      )}
+
+      {showThreatExport && (
+        <ThreatExportModal
+          threats={threats}
+          onDownload={() => exportKmzFile("threats")}
+          onClose={() => setShowThreatExport(false)}
         />
       )}
 

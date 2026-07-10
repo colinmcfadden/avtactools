@@ -99,6 +99,21 @@ export const useThreats = () => {
     downloadBlob(res.data, name);
   };
 
+  /**
+   * Builds a KMZ overlay (vector marker + range rings + terrain-mask polygons)
+   * and downloads it — the format ForeFlight, ATAK, and Aero App all import.
+   */
+  const exportKmzFile = async (baseName) => {
+    if (threats.length === 0) return;
+    const name = `${(baseName || "threats").replace(/\.(msnx|kmz)$/i, "")}_threats.kmz`;
+    const res = await api.post(
+      "/threats-kmz",
+      { fileName: name, threats: threats.map(threatToPayload) },
+      { responseType: "blob" },
+    );
+    downloadBlob(res.data, name);
+  };
+
   /** Imports threats from an uploaded .ths and computes each one's mask. */
   const importThsFile = async (file) => {
     const parsed = await parseThsFile(file);
@@ -120,5 +135,6 @@ export const useThreats = () => {
     fetchMask,
     importThsFile,
     exportThsFile,
+    exportKmzFile,
   };
 };

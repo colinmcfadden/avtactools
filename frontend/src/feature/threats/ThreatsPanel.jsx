@@ -39,6 +39,7 @@ const ThreatsPanel = ({
   onEdit,
   onRemove,
   onToggleVisibility,
+  onExportKmz,
 }) => {
   const fileRef = useRef(null);
 
@@ -84,6 +85,17 @@ const ThreatsPanel = ({
           </button>
         </div>
       </div>
+
+      {threats.length > 0 && onExportKmz && (
+        <button
+          className="export-btn"
+          style={{ fontSize: "0.72rem" }}
+          onClick={onExportKmz}
+          title="Export a KMZ overlay (marker, range rings, terrain mask) for ForeFlight, ATAK, or Aero App"
+        >
+          Export for ForeFlight / ATAK / Aero App
+        </button>
+      )}
 
       {threats.length === 0 && (
         <div style={{ fontSize: "0.72rem", opacity: 0.55 }}>
