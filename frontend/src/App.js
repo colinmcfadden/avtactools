@@ -834,8 +834,11 @@ function App() {
         <div
           style={{
             position: "fixed",
-            left: contextMenu.x,
-            top: contextMenu.y,
+            // Clamp to the viewport so the menu never spills off a screen edge
+            // (especially on phones, where a tap near the right/bottom would
+            // otherwise push it out of view).
+            left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 178)),
+            top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 340)),
             zIndex: 99999,
             background: "#1e293b",
             border: "1px solid #334155",
@@ -844,6 +847,9 @@ function App() {
             borderRadius: "8px",
             boxShadow: "0 4px 6px rgba(0,0,0,0.5)",
             minWidth: "150px",
+            maxWidth: "calc(100vw - 16px)",
+            maxHeight: "80vh",
+            overflowY: "auto",
           }}
         >
           {contextMenu.type === "map" ? (
