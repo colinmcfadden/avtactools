@@ -595,6 +595,33 @@ function App() {
       </button>
       <div className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-header">
+          {/* On mobile the account + save controls live here (hidden on
+              desktop, where they float over the map instead). */}
+          <div className="mobile-account-row">
+            <button
+              className={`floating-save-btn ${user ? "" : "disabled"}`}
+              onClick={handleOpenHistory}
+              title={
+                user
+                  ? "Save / load maps & routes"
+                  : "Saving and loading is only available to signed-in users"
+              }
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                width="22"
+                height="22"
+              >
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+            </button>
+            <UserMenu />
+          </div>
           <button
             className="close-menu-btn mobile-only"
             onClick={() => setIsMobileMenuOpen(false)}
@@ -732,6 +759,8 @@ function App() {
           exportBox={exportBox}
           isExporting={isExporting}
           exportProgress={exportProgress}
+          isSketching={isSketching}
+          toggleRouteSketch={toggleRouteSketch}
         />
         <MapView
           importedRoutes={importedRoutes}

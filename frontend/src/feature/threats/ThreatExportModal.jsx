@@ -59,7 +59,7 @@ const ThreatExportModal = ({ threats, onDownload, onClose }) => {
 
   return (
     <Draggable nodeRef={nodeRef} handle=".modal-header">
-      <div ref={nodeRef} className="export-modal-container glass-panel" style={{ width: "380px" }}>
+      <div ref={nodeRef} className="export-modal-container glass-panel" style={{ width: "min(380px, 94vw)" }}>
         <div className="modal-header">
           <h3>Export Threats</h3>
           <button className="close-btn" onClick={onClose}>

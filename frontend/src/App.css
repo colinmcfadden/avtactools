@@ -797,6 +797,12 @@ body.export-mode-active .leaflet-control-container {
     display: none;
 }
 
+/* Account + save cluster shown inside the mobile menu (the on-map floating
+   version is hidden on mobile to keep the top bar clear). */
+.mobile-account-row {
+    display: none;
+}
+
 .sidebar-header {
     display: flex;
     justify-content: space-between;
@@ -1055,6 +1061,25 @@ body.export-mode-active .leaflet-control-container {
 
     .close-menu-btn.mobile-only:hover {
         color: white;
+    }
+
+    /* On mobile the save/auth cluster lives in the menu, not floating over the
+       crowded top bar (where it overlapped the hamburger + search). */
+    .floating-topright {
+        display: none;
+    }
+
+    .mobile-account-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    /* Keep the routes/threats panel from sliding under the right-hand quick
+       buttons on narrow screens. */
+    .floating-routes-panel {
+        left: 10px;
+        width: min(320px, calc(100vw - 96px));
     }
 }
 

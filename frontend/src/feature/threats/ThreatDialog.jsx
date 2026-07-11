@@ -53,7 +53,7 @@ const ThreatDialog = ({ editing, onSave, onCancel }) => {
       <div
         ref={nodeRef}
         className="export-modal-container glass-panel"
-        style={{ width: "440px", maxHeight: "82vh", overflowY: "auto" }}
+        style={{ width: "min(440px, 94vw)", maxHeight: "82vh", overflowY: "auto" }}
       >
         <div className="modal-header">
           <h3>{editing.isNew ? "Add Threat" : "Edit Threat"}</h3>
