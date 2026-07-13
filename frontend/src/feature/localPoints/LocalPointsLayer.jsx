@@ -1,5 +1,5 @@
 import React from "react";
-import { Marker, Tooltip, Popup } from "react-leaflet";
+import { Marker, Tooltip, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 
 // .LPS icon files aren't shipped with the app, so map the common AMPS icon
@@ -20,8 +20,14 @@ const localPointIcon = (point, color) => {
 };
 
 /** Renders every visible local point set. Hidden sets render nothing. */
-const LocalPointsLayer = ({ pointSets }) => {
+const LocalPointsLayer = ({ pointSets, onAddToRoute }) => {
+  const map = useMap();
   if (!pointSets || pointSets.length === 0) return null;
+
+  const handleAdd = (point) => {
+    onAddToRoute?.(point);
+    map.closePopup();
+  };
 
   return (
     <>
@@ -37,7 +43,33 @@ const LocalPointsLayer = ({ pointSets }) => {
               {point.name}
             </Tooltip>
             <Popup>
-              <strong>{point.name}</strong>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <strong>{point.name}</strong>
+                {onAddToRoute && (
+                  <button
+                    onClick={() => handleAdd(point)}
+                    title="Add to route (snap the route line to this point)"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "20px",
+                      height: "20px",
+                      padding: 0,
+                      borderRadius: "50%",
+                      border: "none",
+                      background: "#10b981",
+                      color: "white",
+                      fontSize: "15px",
+                      fontWeight: "bold",
+                      lineHeight: 1,
+                      cursor: "pointer",
+                    }}
+                  >
+                    +
+                  </button>
+                )}
+              </span>
               {point.description && (
                 <>
                   <br />

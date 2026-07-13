@@ -41,8 +41,18 @@ export const useRouteSketch = () => {
     // AMPS model: only designated points ("amps") become real route points;
     // everything else exports as serpentine shaping geometry on the leg
     // between them. Points designated during drawing keep their type/name;
-    // first and last are auto-designated — legs need endpoints.
+    // otherwise the standard attack profile is applied automatically — the
+    // first two points become Target then IP, and the last two become RP
+    // (IP) then Target. Everything in the middle is shaping.
     const lastIndex = draftPoints.length - 1;
+    const autoDesignation = (i) => {
+      if (i === 0) return { ptType: "target", name: ".TGT" };
+      if (i === lastIndex) return { ptType: "target", name: ".TGT" };
+      if (i === 1) return { ptType: "ip", name: ".SP" };
+      if (i === lastIndex - 1) return { ptType: "ip", name: ".RP" };
+      return null;
+    };
+
     const route = {
       id: generateId("sketch"),
       name,
@@ -51,29 +61,28 @@ export const useRouteSketch = () => {
       plan: defaultRoutePlan(),
       elevations: {},
       points: draftPoints.map((p, i) => {
-        const isEndpoint = i === 0 || i === lastIndex;
-        if (p.designation) {
-          return {
-            id: crypto.randomUUID(),
-            lat: p.lat,
-            lon: p.lon,
-            ele: null,
-            kind: "amps",
-            ptType: p.designation.ptType || "turn",
-            name: p.designation.name || (i === 0 ? ".SP" : `.CP${i}`),
-            role: i === 0 ? "start" : "waypoint",
-          };
-        }
-        return {
+        const base = {
           id: crypto.randomUUID(),
           lat: p.lat,
           lon: p.lon,
           ele: null,
-          kind: isEndpoint ? "amps" : "shaping",
-          ptType: isEndpoint ? "turn" : null,
-          name: isEndpoint ? (i === 0 ? ".SP" : `.CP${lastIndex}`) : "",
           role: i === 0 ? "start" : "waypoint",
         };
+        // A designation set during drawing (right-click menu, or "+" from a
+        // local point) always wins.
+        if (p.designation) {
+          return {
+            ...base,
+            kind: "amps",
+            ptType: p.designation.ptType || "turn",
+            name: p.designation.name || (i === 0 ? ".SP" : `.CP${i}`),
+          };
+        }
+        const auto = autoDesignation(i);
+        if (auto) {
+          return { ...base, kind: "amps", ptType: auto.ptType, name: auto.name };
+        }
+        return { ...base, kind: "shaping", ptType: null, name: "" };
       }),
     };
 
@@ -148,6 +157,32 @@ export const useRouteSketch = () => {
           role: "waypoint",
         });
         return { ...route, points };
+      }),
+    );
+  };
+
+  /** Appends a designated AMPS point to the end of a route (used to snap the
+   *  route line onto a named local point). */
+  const appendSketchPoint = (routeId, lat, lon, { name = "", ptType = "turn" } = {}) => {
+    setSketchedRoutes((prev) =>
+      prev.map((route) => {
+        if (route.id !== routeId) return route;
+        return {
+          ...route,
+          points: [
+            ...route.points,
+            {
+              id: crypto.randomUUID(),
+              lat,
+              lon,
+              ele: null,
+              kind: "amps",
+              ptType,
+              name,
+              role: "waypoint",
+            },
+          ],
+        };
       }),
     );
   };
@@ -311,6 +346,7 @@ export const useRouteSketch = () => {
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    appendSketchPoint,
     loadSketchRoutes,
     removeSketchRoute,
     toggleSketchVisibility,
