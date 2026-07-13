@@ -173,6 +173,7 @@ function App() {
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    appendSketchPoint,
     loadSketchRoutes,
     removeSketchRoute,
     toggleSketchVisibility,
@@ -379,6 +380,23 @@ function App() {
   // Right-click while drawing a route: add a designated point right there.
   const handleDraftPointContextMenu = (lat, lon, x, y) => {
     setContextMenu({ x, y, type: "draft-point", lat, lon });
+  };
+
+  // "+" on a local point's popup: snap the active route's line to that point.
+  // While drawing, it extends the draft; otherwise it appends to the most
+  // recent sketched route.
+  const handleAddLocalPointToRoute = (localPoint) => {
+    const name = (localPoint.name || "POINT").toUpperCase();
+    if (isSketching) {
+      addDraftPoint(localPoint.lat, localPoint.lon, { ptType: "turn", name });
+    } else if (sketchedRoutes.length > 0) {
+      const target = sketchedRoutes[sketchedRoutes.length - 1];
+      appendSketchPoint(target.id, localPoint.lat, localPoint.lon, { name, ptType: "turn" });
+    } else {
+      alert(
+        'Start a route first (Route button), then use "+" on a local point to snap the line to it.',
+      );
+    }
   };
 
   const handleAddDesignatedDraftPoint = (ptType) => {
@@ -815,6 +833,7 @@ function App() {
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
           localPointSets={localPoints.pointSets}
+          onAddLocalPointToRoute={handleAddLocalPointToRoute}
           threats={threats}
           onThreatMove={moveThreat}
           onThreatEdit={beginEditThreat}

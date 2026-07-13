@@ -157,6 +157,7 @@ const MapView = ({
   setContextMenu,
   mapStyle,
   localPointSets,
+  onAddLocalPointToRoute,
   threats,
   onThreatMove,
   onThreatEdit,
@@ -165,6 +166,10 @@ const MapView = ({
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
   const activeMapStyle = getMapStyle(mapStyle);
+  // Visible local points that a dragged route point can snap onto.
+  const localSnapPoints = (localPointSets || [])
+    .filter((set) => set.visible !== false)
+    .flatMap((set) => set.points);
   // Helper to determine color based on slope degree
   const getSlopeColor = (deg) => {
     if (deg < 3) return "green"; // Very Flat / Ideal
@@ -274,6 +279,7 @@ const MapView = ({
         routes={importedRoutes}
         onUpdatePosition={onUpdateMsnxPointPosition}
         onInsertPoint={onInsertMsnxPoint}
+        snapPoints={localSnapPoints}
       />
 
       <MsnxRouteLayer
@@ -281,9 +287,10 @@ const MapView = ({
         onUpdatePosition={onUpdateSketchPointPosition}
         onInsertPoint={onInsertMsnxPoint}
         onPointContextMenu={onSketchPointContextMenu}
+        snapPoints={localSnapPoints}
       />
 
-      <LocalPointsLayer pointSets={localPointSets} />
+      <LocalPointsLayer pointSets={localPointSets} onAddToRoute={onAddLocalPointToRoute} />
 
       <ThreatLayer threats={threats} onMove={onThreatMove} onEdit={onThreatEdit} />
 
