@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Draggable from "react-draggable";
 import "../export/ExportModal.css";
 import SavedRoutesList from "../msnxImport/SavedRoutesList";
+import LocalPointsPanel from "../localPoints/LocalPointsPanel";
 
 const formatTimestamp = (iso) => {
   const date = new Date(iso);
@@ -25,6 +26,7 @@ const HistoryModal = ({
   fetchSavedRoutes,
   onLoadRoute,
   onDeleteRoute,
+  localPoints,
 }) => {
   const nodeRef = useRef(null);
   const [activeTab, setActiveTab] = useState("maps");
@@ -118,10 +120,18 @@ const HistoryModal = ({
           >
             Routes
           </button>
+          <button
+            className={`modal-tab ${activeTab === "points" ? "active" : ""}`}
+            onClick={() => setActiveTab("points")}
+          >
+            Local Points
+          </button>
         </div>
 
         <div className="modal-body">
-          {activeTab === "routes" ? (
+          {activeTab === "points" ? (
+            <LocalPointsPanel {...localPoints} />
+          ) : activeTab === "routes" ? (
             <SavedRoutesList
               savedRoutes={savedRoutes}
               isLoadingSaved={isLoadingSaved}

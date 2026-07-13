@@ -27,6 +27,10 @@ import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import UnitBadge from "./components/UnitBadge";
+import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
+import { useThreats } from "./feature/threats/useThreats";
+import ThreatDialog from "./feature/threats/ThreatDialog";
+import ThreatExportModal from "./feature/threats/ThreatExportModal";
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null);
@@ -138,6 +142,14 @@ function App() {
     exportFile,
     serializeFile,
     toggleRouteVisibility,
+    // Imported-route plan handlers (aliased — useRouteSketch exports the same
+    // names for sketched routes).
+    updateRoutePlan: updateImportedRoutePlan,
+    updatePointPlanOverride: updateImportedPointOverride,
+    setPointClock: setImportedPointClock,
+    updatePointName: updateImportedPointName,
+    refreshRouteElevations: refreshImportedElevations,
+    applyForecastWinds: applyImportedForecastWinds,
   } = useMsnxImport();
 
   const handleImportMsnx = async (file) => {
@@ -161,11 +173,36 @@ function App() {
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    appendSketchPoint,
     loadSketchRoutes,
     removeSketchRoute,
     toggleSketchVisibility,
     exportSketches,
+    updateRoutePlan,
+    updatePointPlanOverride,
+    setSketchPointClock,
+    updateSketchPointName,
+    refreshRouteElevations,
+    applyForecastWinds,
   } = useRouteSketch();
+
+  const localPoints = useLocalPoints();
+  const {
+    threats,
+    editingThreat,
+    beginAddThreat,
+    beginEditThreat,
+    cancelEdit: cancelThreatEdit,
+    saveThreat,
+    removeThreat,
+    toggleVisibility: toggleThreatVisibility,
+    moveThreat,
+    importThsFile,
+    exportThsFile,
+    exportKmzFile,
+  } = useThreats();
+  const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]);
+  const [showThreatExport, setShowThreatExport] = useState(false);
 
   const {
     savedRoutes,
@@ -308,8 +345,70 @@ function App() {
     setContextMenu({ x, y, type: "route-line", routeId, lat, lon });
   };
 
+  // Threats export to a companion .ths downloaded alongside the .msnx (AMPS
+  // reads the two as a mission + its threat overlay). Threats are never saved.
+  const maybeExportThreats = async (baseName) => {
+    if (threats.length === 0) return;
+    try {
+      // Companion file travels with the mission, e.g. "GOAT SUCKER_threats.ths".
+      await exportThsFile(`${(baseName || "mission").replace(/\.msnx$/i, "")}_threats`);
+    } catch (err) {
+      alert("The mission exported, but the threats (.ths) export failed: " + err.message);
+    }
+  };
+
+  const handleExportSketchesWithThreats = async () => {
+    await exportSketches();
+    await maybeExportThreats(sketchedRoutes.map((r) => r.name).join("_") || "mission");
+  };
+
+  const handleExportMissionFileWithThreats = async (fileId) => {
+    await exportFile(fileId);
+    const group = importedRoutes.find((r) => r.fileId === fileId);
+    await maybeExportThreats((group?.fileName || "mission").replace(/\.msnx$/i, ""));
+  };
+
+  const handleAddThreatHere = () => {
+    beginAddThreat(contextMenu.lat, contextMenu.lon);
+    setContextMenu(null);
+  };
+
   const handleSketchPointContextMenu = (routeId, pointId, x, y) => {
     setContextMenu({ x, y, type: "sketch-point", routeId, pointId });
+  };
+
+  // Right-click while drawing a route: add a designated point right there.
+  const handleDraftPointContextMenu = (lat, lon, x, y) => {
+    setContextMenu({ x, y, type: "draft-point", lat, lon });
+  };
+
+  // "+" on a local point's popup: snap the active route's line to that point.
+  // While drawing, it extends the draft; otherwise it appends to the most
+  // recent sketched route.
+  const handleAddLocalPointToRoute = (localPoint) => {
+    const name = (localPoint.name || "POINT").toUpperCase();
+    if (isSketching) {
+      addDraftPoint(localPoint.lat, localPoint.lon, { ptType: "turn", name });
+    } else if (sketchedRoutes.length > 0) {
+      const target = sketchedRoutes[sketchedRoutes.length - 1];
+      appendSketchPoint(target.id, localPoint.lat, localPoint.lon, { name, ptType: "turn" });
+    } else {
+      alert(
+        'Start a route first (Route button), then use "+" on a local point to snap the line to it.',
+      );
+    }
+  };
+
+  const handleAddDesignatedDraftPoint = (ptType) => {
+    const { lat, lon } = contextMenu;
+    const defaults = { target: ".LZ", ip: ".RP", turn: ".CP" };
+    const name = window.prompt("Point name:", defaults[ptType] || ".CP");
+    if (name === null) return;
+    addDraftPoint(lat, lon, {
+      ptType,
+      name: name.trim().toUpperCase() || defaults[ptType],
+    });
+    setContextMenu(null);
   };
 
   const findSketchPoint = (routeId, pointId) =>
@@ -515,6 +614,33 @@ function App() {
       </button>
       <div className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-header">
+          {/* On mobile the account + save controls live here (hidden on
+              desktop, where they float over the map instead). */}
+          <div className="mobile-account-row">
+            <button
+              className={`floating-save-btn ${user ? "" : "disabled"}`}
+              onClick={handleOpenHistory}
+              title={
+                user
+                  ? "Save / load maps & routes"
+                  : "Saving and loading is only available to signed-in users"
+              }
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                width="22"
+                height="22"
+              >
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+            </button>
+            <UserMenu />
+          </div>
           <button
             className="close-menu-btn mobile-only"
             onClick={() => setIsMobileMenuOpen(false)}
@@ -597,15 +723,43 @@ function App() {
           routes={importedRoutes}
           removeRoute={removeRoute}
           clearRoutes={clearRoutes}
-          exportFile={exportFile}
+          exportFile={handleExportMissionFileWithThreats}
           toggleVisibility={toggleRouteVisibility}
           sketchedRoutes={sketchedRoutes}
           removeSketchRoute={removeSketchRoute}
           toggleSketchVisibility={toggleSketchVisibility}
-          exportSketches={exportSketches}
+          exportSketches={handleExportSketchesWithThreats}
+          threats={{
+            threats,
+            onImportThs: importThsFile,
+            onAddThreat: () => beginAddThreat(mapCenter[0], mapCenter[1]),
+            onEdit: beginEditThreat,
+            onRemove: removeThreat,
+            onToggleVisibility: toggleThreatVisibility,
+            onExportKmz: () => setShowThreatExport(true),
+          }}
           onForeFlight={setForeFlightRoute}
           onSaveMissionGroup={handleSaveMissionGroup}
           onSaveSketches={handleSaveSketches}
+          localPointNames={localPoints.pointSets.flatMap((set) =>
+            set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon })),
+          )}
+          sketchedPlan={{
+            updateRoutePlan,
+            updatePointPlanOverride,
+            setPointClock: setSketchPointClock,
+            updatePointName: updateSketchPointName,
+            refreshRouteElevations,
+            applyForecastWinds,
+          }}
+          importedPlan={{
+            updateRoutePlan: updateImportedRoutePlan,
+            updatePointPlanOverride: updateImportedPointOverride,
+            setPointClock: setImportedPointClock,
+            updatePointName: updateImportedPointName,
+            refreshRouteElevations: refreshImportedElevations,
+            applyForecastWinds: applyImportedForecastWinds,
+          }}
         />
         <MapStyleSwitcher mapStyle={mapStyle} setMapStyle={setMapStyle} />
         <MobileGridInput
@@ -624,6 +778,8 @@ function App() {
           exportBox={exportBox}
           isExporting={isExporting}
           exportProgress={exportProgress}
+          isSketching={isSketching}
+          toggleRouteSketch={toggleRouteSketch}
         />
         <MapView
           importedRoutes={importedRoutes}
@@ -634,6 +790,7 @@ function App() {
           onSketchPointContextMenu={handleSketchPointContextMenu}
           isSketchingRoute={isSketching}
           addDraftPoint={addDraftPoint}
+          onDraftPointContextMenu={handleDraftPointContextMenu}
           draftPoints={draftPoints}
           targetLocation={targetLocation}
           mapData={mapData}
@@ -675,6 +832,12 @@ function App() {
           handleLZRightClick={handleLZRightClick}
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
+          localPointSets={localPoints.pointSets}
+          onAddLocalPointToRoute={handleAddLocalPointToRoute}
+          threats={threats}
+          onThreatMove={moveThreat}
+          onThreatEdit={beginEditThreat}
+          onMapMove={setMapCenter}
         />
 
         <div className="alert-queue">
@@ -691,8 +854,11 @@ function App() {
         <div
           style={{
             position: "fixed",
-            left: contextMenu.x,
-            top: contextMenu.y,
+            // Clamp to the viewport so the menu never spills off a screen edge
+            // (especially on phones, where a tap near the right/bottom would
+            // otherwise push it out of view).
+            left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 178)),
+            top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 340)),
             zIndex: 99999,
             background: "#1e293b",
             border: "1px solid #334155",
@@ -701,6 +867,9 @@ function App() {
             borderRadius: "8px",
             boxShadow: "0 4px 6px rgba(0,0,0,0.5)",
             minWidth: "150px",
+            maxWidth: "calc(100vw - 16px)",
+            maxHeight: "80vh",
+            overflowY: "auto",
           }}
         >
           {contextMenu.type === "map" ? (
@@ -732,6 +901,20 @@ function App() {
                 }}
               >
                 Set as Target
+              </button>
+              <button
+                onClick={handleAddThreatHere}
+                style={{
+                  width: "100%",
+                  padding: "6px",
+                  background: "#ef4444",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Add Threat Here
               </button>
             </div>
           ) : contextMenu.type === "lz" ? (
@@ -814,6 +997,76 @@ function App() {
                 }}
               >
                 ✕ Delete LZ
+              </button>
+            </div>
+          ) : contextMenu.type === "draft-point" ? (
+            // --- DRAW-MODE POINT DESIGNATION MENU ---
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+            >
+              <div
+                style={{
+                  padding: "2px 4px",
+                  fontSize: "12px",
+                  color: "#94a3b8",
+                  textAlign: "center",
+                }}
+              >
+                Add point here as:
+              </div>
+              {[
+                { label: "● Checkpoint (Turn)", ptType: "turn" },
+                { label: "■ RP / IP", ptType: "ip" },
+                { label: "▲ LZ / PZ (Target)", ptType: "target" },
+              ].map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => handleAddDesignatedDraftPoint(opt.ptType)}
+                  style={{
+                    width: "100%",
+                    padding: "6px",
+                    background: "#3b82f6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  addDraftPoint(contextMenu.lat, contextMenu.lon);
+                  setContextMenu(null);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "6px",
+                  background: "#475569",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                · Shaping point
+              </button>
+              <button
+                onClick={() => setContextMenu(null)}
+                style={{
+                  width: "100%",
+                  padding: "4px",
+                  color: "#9ca3af",
+                  background: "none",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
               </button>
             </div>
           ) : contextMenu.type === "route-line" ? (
@@ -945,6 +1198,23 @@ function App() {
         onClose={() => setForeFlightRoute(null)}
       />
 
+      {editingThreat && (
+        <ThreatDialog
+          editing={editingThreat}
+          onSave={saveThreat}
+          onCancel={cancelThreatEdit}
+        />
+      )}
+
+      {showThreatExport && (
+        <ThreatExportModal
+          threats={threats}
+          onDownload={() => exportKmzFile("threats")}
+          onDownloadThs={() => exportThsFile("threats")}
+          onClose={() => setShowThreatExport(false)}
+        />
+      )}
+
       <HistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
@@ -962,6 +1232,7 @@ function App() {
         fetchSavedRoutes={fetchSavedRoutes}
         onLoadRoute={handleLoadSavedRoute}
         onDeleteRoute={handleDeleteSavedRoute}
+        localPoints={localPoints}
       />
 
       {exportSuccess && (

@@ -20,7 +20,11 @@ import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import ExportHandler from "../feature/export/ExportHandler";
-import MsnxRouteLayer from "../feature/msnxImport/MsnxRouteLayer";
+import MsnxRouteLayer, {
+  buildIcon as buildSketchPointIcon,
+} from "../feature/msnxImport/MsnxRouteLayer";
+import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
+import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
 
 // Fix for default Leaflet marker icons in React
@@ -55,10 +59,30 @@ function MapInteractionHandler({
   setContextMenu,
   isSketchingRoute,
   addDraftPoint,
+  onDraftPointContextMenu,
+  onMapMove,
 }) {
-  useMapEvents({
+  const map = useMapEvents({
+    moveend: () => {
+      if (onMapMove) {
+        const c = map.getCenter();
+        onMapMove([c.lat, c.lng]);
+      }
+    },
     contextmenu: (e) => {
-      if (isDrawingLZ || isSketchingRoute) return; // Don't interrupt drawing
+      if (isDrawingLZ) return; // Don't interrupt drawing
+      if (isSketchingRoute) {
+        // Right-click while drawing a route: designate a point (target / IP /
+        // checkpoint) at this location instead of the normal map menu.
+        e.originalEvent.preventDefault();
+        onDraftPointContextMenu(
+          e.latlng.lat,
+          e.latlng.lng,
+          e.originalEvent.clientX,
+          e.originalEvent.clientY,
+        );
+        return;
+      }
       // Stop the default browser right-click menu
       e.originalEvent.preventDefault();
       handleMapRightClick(
@@ -90,6 +114,7 @@ const MapView = ({
   onSketchPointContextMenu,
   isSketchingRoute,
   addDraftPoint,
+  onDraftPointContextMenu,
   draftPoints,
   targetLocation,
   mapData,
@@ -131,10 +156,20 @@ const MapView = ({
   handleLZRightClick,
   setContextMenu,
   mapStyle,
+  localPointSets,
+  onAddLocalPointToRoute,
+  threats,
+  onThreatMove,
+  onThreatEdit,
+  onMapMove,
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
   const activeMapStyle = getMapStyle(mapStyle);
+  // Visible local points that a dragged route point can snap onto.
+  const localSnapPoints = (localPointSets || [])
+    .filter((set) => set.visible !== false)
+    .flatMap((set) => set.points);
   // Helper to determine color based on slope degree
   const getSlopeColor = (deg) => {
     if (deg < 3) return "green"; // Very Flat / Ideal
@@ -172,14 +207,35 @@ const MapView = ({
         setContextMenu={setContextMenu}
         isSketchingRoute={isSketchingRoute}
         addDraftPoint={addDraftPoint}
+        onDraftPointContextMenu={onDraftPointContextMenu}
+        onMapMove={onMapMove}
       />
 
       {/* In-progress route sketch */}
       {isSketchingRoute && draftPoints.length > 0 && (
-        <Polyline
-          positions={draftPoints.map((p) => [p.lat, p.lon])}
-          pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
-        />
+        <>
+          <Polyline
+            positions={draftPoints.map((p) => [p.lat, p.lon])}
+            pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
+          />
+          {draftPoints.map(
+            (p, i) =>
+              p.designation && (
+                <Marker
+                  key={`draft-${i}`}
+                  position={[p.lat, p.lon]}
+                  icon={buildSketchPointIcon(
+                    { kind: "amps", ptType: p.designation.ptType },
+                    "#64D2FF",
+                  )}
+                >
+                  <Tooltip permanent direction="top" offset={[0, -12]}>
+                    {(p.designation.name || "").replace(/^\./, "")}
+                  </Tooltip>
+                </Marker>
+              ),
+          )}
+        </>
       )}
 
       {/* Render the Active Drawing Line */}
@@ -223,6 +279,7 @@ const MapView = ({
         routes={importedRoutes}
         onUpdatePosition={onUpdateMsnxPointPosition}
         onInsertPoint={onInsertMsnxPoint}
+        snapPoints={localSnapPoints}
       />
 
       <MsnxRouteLayer
@@ -230,7 +287,12 @@ const MapView = ({
         onUpdatePosition={onUpdateSketchPointPosition}
         onInsertPoint={onInsertMsnxPoint}
         onPointContextMenu={onSketchPointContextMenu}
+        snapPoints={localSnapPoints}
       />
+
+      <LocalPointsLayer pointSets={localPointSets} onAddToRoute={onAddLocalPointToRoute} />
+
+      <ThreatLayer threats={threats} onMove={onThreatMove} onEdit={onThreatEdit} />
 
       {/* 1. The Grid Location (Green Star) */}
       {targetLocation && (

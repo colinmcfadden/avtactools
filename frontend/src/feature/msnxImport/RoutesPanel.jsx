@@ -1,17 +1,19 @@
 import React, { useRef, useState } from "react";
 import Draggable from "react-draggable";
 import ImportedRoutesPanel from "./ImportedRoutesPanel";
+import ThreatsPanel from "../threats/ThreatsPanel";
 
 /**
- * Draggable, collapsible container for the route list, floating over the map.
- * Hidden entirely until at least one route (imported or sketched) exists.
+ * Draggable, collapsible container for the route + threat lists, floating over
+ * the map. Hidden until at least one route or threat exists.
  */
 const RoutesPanel = (props) => {
   const nodeRef = useRef(null);
   const [collapsed, setCollapsed] = useState(false);
 
   const routeCount = (props.routes?.length || 0) + (props.sketchedRoutes?.length || 0);
-  if (routeCount === 0) return null;
+  const threatCount = props.threats?.threats?.length || 0;
+  if (routeCount === 0 && threatCount === 0) return null;
 
   return (
     <Draggable
@@ -24,6 +26,7 @@ const RoutesPanel = (props) => {
         <div className="routes-panel-header">
           <span>
             Routes ({routeCount})
+            {threatCount > 0 ? ` · Threats (${threatCount})` : ""}
           </span>
           <button
             className="collapse-btn"
@@ -34,8 +37,9 @@ const RoutesPanel = (props) => {
           </button>
         </div>
         {!collapsed && (
-          <div className="routes-panel-body">
-            <ImportedRoutesPanel {...props} />
+          <div className="routes-panel-body" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {routeCount > 0 && <ImportedRoutesPanel {...props} />}
+            {props.threats && <ThreatsPanel {...props.threats} />}
           </div>
         )}
       </div>

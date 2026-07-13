@@ -2,9 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { UNIT_TYPES } from '../feature/unit/UnitIcons';
 import './MobileQuickAccess.css'; 
 
-const MobileQuickAccess = ({ 
-    addHelo, 
-    addPZMarker, 
+const MobileQuickAccess = ({
+    addHelo,
+    addPZMarker,
     addSector,
     addUnit,
     addGoAround,
@@ -12,7 +12,9 @@ const MobileQuickAccess = ({
     onDownloadClick,
     exportBox,
     isExporting,
-    exportProgress
+    exportProgress,
+    isSketching,
+    toggleRouteSketch
 }) => {
   const [isUnitMenuOpen, setIsUnitMenuOpen] = useState(false);
   const [isGAMenuOpen, setIsGAMenuOpen] = useState(false);
@@ -78,6 +80,27 @@ const MobileQuickAccess = ({
 
   return (
     <div className="mobile-quick-access-container">
+      {/* Route Sketch Button (toggles draw mode) */}
+      <button
+        onClick={toggleRouteSketch}
+        className={`qa-btn ${isSketching ? 'active-qa-btn' : ''}`}
+        title={isSketching ? 'End Route' : 'Sketch Route'}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={isSketching ? '#ffffff' : '#64D2FF'}
+          strokeWidth="2"
+          width="24"
+          height="24"
+        >
+          <circle cx="4" cy="20" r="2" />
+          <circle cx="12" cy="9" r="2" />
+          <circle cx="20" cy="15" r="2" />
+          <path d="M5.5 18.5 L10.5 10.5 M13.7 10 L18.3 14" />
+        </svg>
+      </button>
+
       {/* Helo Button */}
       <button onClick={addHelo} className="qa-btn" title="Add Helo">
         <img src="/icons/helicopter.png" alt="Helo" className="qa-icon-img" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />

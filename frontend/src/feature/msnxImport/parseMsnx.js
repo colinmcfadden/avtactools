@@ -1,4 +1,12 @@
 import JSZip from "jszip";
+import { defaultRoutePlan } from "./routeCalc";
+import {
+  FT_PER_M,
+  parseAmpsAirspeed,
+  parseAmpsWind,
+  parseAmpsMeters,
+  parseAmpsClock,
+} from "./ampsParse";
 
 const RELEASE_POINT_PATTERN = /^RP\d*$/i;
 const TARGET_PATTERN = /^(LZ|PZ)/i;
@@ -87,6 +95,107 @@ const parseXml = (text, label) => {
   return doc;
 };
 
+const findById = (doc, tagName, id) => {
+  for (const el of doc.getElementsByTagName(tagName)) {
+    if (getDirectChild(el, "id")?.textContent === id) return el;
+  }
+  return null;
+};
+
+/**
+ * Reconstructs the inline plan (per-point altitudes/clock, per-leg airspeed/
+ * wind as "to" values on the arriving point) and ground elevations from an
+ * imported mission's points.xml / legs.xml / segments.xml. This is what lets
+ * an imported route drive the same inline plan editor a sketched route does.
+ */
+const buildRoutePlanFromDocs = (docs, route) => {
+  const plan = defaultRoutePlan();
+  plan.perPoint = {};
+  const elevations = {};
+  const ampsPoints = route.points.filter((p) => p.kind !== "shaping" && p.id);
+
+  // --- per-point altitude / ground elevation / clock (TOT) ---
+  const pointById = new Map();
+  for (const el of docs.points.getElementsByTagName("point")) {
+    const idEl = getDirectChild(el, "id");
+    if (idEl) pointById.set(idEl.textContent, el);
+  }
+
+  let firstAlt = null;
+  const clockByPoint = new Map();
+  for (const p of ampsPoints) {
+    const el = pointById.get(p.id);
+    if (!el) continue;
+
+    const groundM = parseAmpsMeters(getItemValue(el, "Elevation"));
+    if (groundM != null) elevations[p.id] = Math.round(groundM * FT_PER_M);
+
+    // CmdAlt is the planned altitude, in meters MSL.
+    const mslM = parseAmpsMeters(getItemValue(el, "CmdAlt"));
+    if (mslM != null) {
+      const mslFt = Math.round(mslM * FT_PER_M);
+      plan.perPoint[p.id] = {
+        ...plan.perPoint[p.id],
+        altitude: { value: mslFt, ref: "msl" },
+      };
+      if (!firstAlt) firstAlt = { value: mslFt, ref: "msl" };
+    }
+
+    const clock = parseAmpsClock(getItemValue(el, "CmdClockTime"));
+    if (clock) clockByPoint.set(p.id, clock);
+  }
+  if (firstAlt) plan.altitude = firstAlt;
+
+  // TOT/clock detection: with no time-on-target AMPS leaves every point sharing
+  // one midnight placeholder (ManualTiming). A real timing plan — including one
+  // this app exported — gives the points distinct clock times, so treat that as
+  // an anchored plan and pin it to the first point (the rolling times AMPS/this
+  // app recompute reproduce the rest identically regardless of which point holds
+  // the anchor).
+  const distinctClocks = new Set(
+    [...clockByPoint.values()].map((c) => `${c.date}T${c.time}`),
+  );
+  if (distinctClocks.size >= 2) {
+    const anchorId = ampsPoints.find((p) => clockByPoint.has(p.id))?.id;
+    if (anchorId) {
+      const anchor = clockByPoint.get(anchorId);
+      plan.perPoint[anchorId] = { ...plan.perPoint[anchorId], clock: anchor.time };
+      plan.date = anchor.date;
+    }
+  }
+
+  // --- per-leg airspeed / wind, assigned to the leg's arrival point ---
+  const segmentEl = findById(docs.segments, "segment", route.segmentId);
+  const legsListEl = segmentEl && getDirectChild(segmentEl, "legs");
+  const legIds = legsListEl
+    ? Array.from(legsListEl.children).filter((c) => c.tagName === "id").map((c) => c.textContent)
+    : [];
+
+  let firstSpd = null;
+  let firstWind = null;
+  for (const legId of legIds) {
+    const legEl = findById(docs.legs, "leg", legId);
+    if (!legEl) continue;
+    const endId = getDirectChild(legEl, "endpt")?.textContent;
+    if (!endId) continue;
+
+    const airspeed = parseAmpsAirspeed(getItemValue(legEl, "AirspeedValue"));
+    if (airspeed) {
+      plan.perPoint[endId] = { ...plan.perPoint[endId], airspeed };
+      if (!firstSpd) firstSpd = airspeed;
+    }
+    const wind = parseAmpsWind(getItemValue(legEl, "CruiseWind"));
+    if (wind) {
+      plan.perPoint[endId] = { ...plan.perPoint[endId], wind };
+      if (!firstWind) firstWind = wind;
+    }
+  }
+  if (firstSpd) plan.airspeed = firstSpd;
+  if (firstWind) plan.wind = firstWind;
+
+  return { plan, elevations };
+};
+
 export async function parseMsnxFile(file) {
   let zip;
   try {
@@ -157,7 +266,13 @@ export async function parseMsnxFile(file) {
       };
     });
 
-    return { name, segmentId, points };
+    const route = { name, segmentId, points };
+    // Read the mission's planned performance data into the same plan shape the
+    // sketched routes use, so imported routes get the inline editor too.
+    const { plan, elevations } = buildRoutePlanFromDocs(docs, route);
+    route.plan = plan;
+    route.elevations = elevations;
+    return route;
   });
 
   return { zip, docs, routes };

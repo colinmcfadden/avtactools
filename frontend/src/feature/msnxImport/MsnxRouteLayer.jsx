@@ -1,6 +1,26 @@
 import React from "react";
-import { Marker, Polyline, Tooltip, Popup } from "react-leaflet";
+import { Marker, Polyline, Tooltip, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
+
+// Snap radius, in screen pixels, for dragging a route point onto a local point.
+const SNAP_PX = 18;
+
+/** Nearest local point within SNAP_PX of a dropped location, or null. */
+const snapToLocalPoint = (map, lat, lng, snapPoints) => {
+  if (!map || !snapPoints || snapPoints.length === 0) return null;
+  const drop = map.latLngToContainerPoint([lat, lng]);
+  let best = null;
+  let bestDist = SNAP_PX;
+  for (const p of snapPoints) {
+    if (p.lat == null || p.lon == null) continue;
+    const d = drop.distanceTo(map.latLngToContainerPoint([p.lat, p.lon]));
+    if (d <= bestDist) {
+      bestDist = d;
+      best = p;
+    }
+  }
+  return best;
+};
 
 const ROLE_LABELS = {
   start: "START",
@@ -48,7 +68,7 @@ const shapeIcon = (shape, color) => {
   });
 };
 
-const buildIcon = (point, color) => {
+export const buildIcon = (point, color) => {
   // Sketched points carry a designation; mirror AMPS iconography:
   // Turn = circle, IP/RP = square, Target = triangle, shaping = small dot.
   if (point.kind) {
@@ -71,7 +91,14 @@ const pointDescription = (point) => {
   return ROLE_LABELS[point.role];
 };
 
-const MsnxRouteLayer = ({ routes, onUpdatePosition, onInsertPoint, onPointContextMenu }) => {
+const MsnxRouteLayer = ({
+  routes,
+  onUpdatePosition,
+  onInsertPoint,
+  onPointContextMenu,
+  snapPoints,
+}) => {
+  const map = useMap();
   if (!routes || routes.length === 0) return null;
 
   return (
@@ -105,7 +132,16 @@ const MsnxRouteLayer = ({ routes, onUpdatePosition, onInsertPoint, onPointContex
                 point.name.replace(/^\./, "") || ROLE_LABELS[point.role] || "POINT";
               const eventHandlers = {
                 dragend: (e) => {
-                  const { lat, lng } = e.target.getLatLng();
+                  const marker = e.target;
+                  let { lat, lng } = marker.getLatLng();
+                  // Magnetize onto a nearby local point so the route line
+                  // snaps to its exact coordinates.
+                  const snap = snapToLocalPoint(map, lat, lng, snapPoints);
+                  if (snap) {
+                    lat = snap.lat;
+                    lng = snap.lon;
+                    marker.setLatLng([lat, lng]);
+                  }
                   onUpdatePosition(route.id, point.id, lat, lng);
                 },
               };
