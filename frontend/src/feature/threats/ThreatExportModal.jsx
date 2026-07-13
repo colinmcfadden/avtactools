@@ -18,14 +18,15 @@ const base64Url = (str) => {
 const QR_URL_LIMIT = 2200;
 
 /**
- * Export dialog for threats — offers a direct KMZ download or a QR code that
- * points at a device-side download of the same KMZ (for loading into
- * ForeFlight / ATAK / Aero App on an iPad or phone).
+ * Export dialog for threats — offers a KMZ download (ForeFlight / ATAK / Aero
+ * App), a .ths download (AMPS), or a QR code pointing at a device-side KMZ
+ * download for loading into an EFB app on an iPad or phone.
  */
-const ThreatExportModal = ({ threats, onDownload, onClose }) => {
+const ThreatExportModal = ({ threats, onDownload, onDownloadThs, onClose }) => {
   const nodeRef = useRef(null);
   const canvasRef = useRef(null);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingThs, setDownloadingThs] = useState(false);
   const [qrError, setQrError] = useState(null);
 
   const fileName = "threats.kmz";
@@ -57,6 +58,17 @@ const ThreatExportModal = ({ threats, onDownload, onClose }) => {
     }
   };
 
+  const handleDownloadThs = async () => {
+    setDownloadingThs(true);
+    try {
+      await onDownloadThs();
+    } catch (err) {
+      alert("Error exporting .ths: " + err.message);
+    } finally {
+      setDownloadingThs(false);
+    }
+  };
+
   return (
     <Draggable nodeRef={nodeRef} handle=".modal-header">
       <div ref={nodeRef} className="export-modal-container glass-panel" style={{ width: "min(380px, 94vw)" }}>
@@ -69,19 +81,31 @@ const ThreatExportModal = ({ threats, onDownload, onClose }) => {
 
         <div className="modal-body">
           <p style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: 0 }}>
-            KMZ overlay ({threats.length} threat{threats.length === 1 ? "" : "s"}) for
-            ForeFlight, ATAK, or Aero App.
+            Export {threats.length} threat{threats.length === 1 ? "" : "s"} — KMZ for
+            ForeFlight / ATAK / Aero App, or .ths for AMPS.
           </p>
 
           <div className="form-divider">Download</div>
-          <button className="export-btn" onClick={handleDownload} disabled={downloading}>
-            {downloading ? "Building KMZ…" : "Download .kmz"}
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <button className="export-btn" onClick={handleDownload} disabled={downloading}>
+              {downloading ? "Building KMZ…" : "Download .kmz (ForeFlight / ATAK / Aero App)"}
+            </button>
+            {onDownloadThs && (
+              <button
+                className="export-btn"
+                onClick={handleDownloadThs}
+                disabled={downloadingThs}
+                style={{ background: "#00b5e2" }}
+              >
+                {downloadingThs ? "Building .ths…" : "Download .ths (AMPS)"}
+              </button>
+            )}
+          </div>
           <p style={{ fontSize: "0.7rem", opacity: 0.6 }}>
-            Open the file on the device and share it to ForeFlight / ATAK / Aero App.
+            Open the file on the device and share it to the target app.
           </p>
 
-          <div className="form-divider">QR code (scan on the device)</div>
+          <div className="form-divider">QR code — KMZ (scan on the device)</div>
           <div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
             {tooBig ? (
               <p style={{ color: "#f59e0b", maxWidth: "320px", fontSize: "0.8rem" }}>

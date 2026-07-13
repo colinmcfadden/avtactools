@@ -33,7 +33,7 @@ const LocalPointsLayer = ({ pointSets }) => {
             position={[point.lat, point.lon]}
             icon={localPointIcon(point, set.color)}
           >
-            <Tooltip direction="top" offset={[0, -8]}>
+            <Tooltip direction="top" offset={[0, -8]} permanent>
               {point.name}
             </Tooltip>
             <Popup>
