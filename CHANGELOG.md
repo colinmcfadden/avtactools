@@ -1,3 +1,20 @@
+# [1.4.0](https://github.com/colinmcfadden/avtactools/compare/v1.3.0...v1.4.0) (2026-07-13)
+
+
+### Bug Fixes
+
+* fix mobile ui issues ([c6eb510](https://github.com/colinmcfadden/avtactools/commit/c6eb510793f9dbb4cce2efe76c13fbdbbde88732))
+* more mobile dialogue fixes ([e0aff82](https://github.com/colinmcfadden/avtactools/commit/e0aff8262e5d6eed4b81abe429468f5e5b891f14))
+
+
+### Features
+
+* add editing of imported msnx routes; save local points ([cc2100c](https://github.com/colinmcfadden/avtactools/commit/cc2100c11a8b08a132b067d42dd0c1794d7ce642))
+* add threats to mission planning ([a5b9123](https://github.com/colinmcfadden/avtactools/commit/a5b9123ec0adff5a25e37463b57ea150c4240b5b))
+* add ths export and make tooltips permanent on local points ([1b52bce](https://github.com/colinmcfadden/avtactools/commit/1b52bce1148b21fc7243aac6adec28518fe07c2f))
+* download threat kmz ([ca00d17](https://github.com/colinmcfadden/avtactools/commit/ca00d1732a6f4ae6fa0ce035c905267020359d0a))
+* use local points as route points and correct checkpoint types ([75b842e](https://github.com/colinmcfadden/avtactools/commit/75b842e28be435fbb269c005a5e6808b7df6b25d))
+
 # [1.3.0](https://github.com/colinmcfadden/avtactools/compare/v1.2.0...v1.3.0) (2026-07-07)
 
 
