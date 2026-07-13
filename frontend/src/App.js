@@ -349,7 +349,8 @@ function App() {
   const maybeExportThreats = async (baseName) => {
     if (threats.length === 0) return;
     try {
-      await exportThsFile(baseName);
+      // Companion file travels with the mission, e.g. "GOAT SUCKER_threats.ths".
+      await exportThsFile(`${(baseName || "mission").replace(/\.msnx$/i, "")}_threats`);
     } catch (err) {
       alert("The mission exported, but the threats (.ths) export failed: " + err.message);
     }
@@ -1190,6 +1191,7 @@ function App() {
         <ThreatExportModal
           threats={threats}
           onDownload={() => exportKmzFile("threats")}
+          onDownloadThs={() => exportThsFile("threats")}
           onClose={() => setShowThreatExport(false)}
         />
       )}

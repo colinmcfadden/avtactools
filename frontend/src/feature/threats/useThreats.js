@@ -90,7 +90,7 @@ export const useThreats = () => {
    */
   const exportThsFile = async (baseName) => {
     if (threats.length === 0) return;
-    const name = `${(baseName || "mission").replace(/\.msnx$/i, "")}_threats.ths`;
+    const name = `${(baseName || "threats").replace(/\.(msnx|ths)$/i, "")}.ths`;
     const res = await api.post(
       "/threats-ths",
       { fileName: name, threats: threats.map(threatToPayload) },
@@ -105,7 +105,7 @@ export const useThreats = () => {
    */
   const exportKmzFile = async (baseName) => {
     if (threats.length === 0) return;
-    const name = `${(baseName || "threats").replace(/\.(msnx|kmz)$/i, "")}_threats.kmz`;
+    const name = `${(baseName || "threats").replace(/\.(msnx|kmz)$/i, "")}.kmz`;
     const res = await api.post(
       "/threats-kmz",
       { fileName: name, threats: threats.map(threatToPayload) },
