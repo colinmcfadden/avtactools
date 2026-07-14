@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UNIT_TYPES } from '../feature/unit/UnitIcons';
-import './MobileQuickAccess.css'; 
+import { symbolDataUri } from '../feature/symbols/milsym';
+import './MobileQuickAccess.css';
 
 const MobileQuickAccess = ({
     addHelo,
@@ -14,7 +15,8 @@ const MobileQuickAccess = ({
     isExporting,
     exportProgress,
     isSketching,
-    toggleRouteSketch
+    toggleRouteSketch,
+    onOpenUnitBuilder
 }) => {
   const [isUnitMenuOpen, setIsUnitMenuOpen] = useState(false);
   const [isGAMenuOpen, setIsGAMenuOpen] = useState(false);
@@ -131,16 +133,29 @@ const MobileQuickAccess = ({
         {/* The Flyout Tray */}
         {isUnitMenuOpen && (
           <div className="unit-flyout-menu">
+            <button
+              className="qa-btn flyout-btn"
+              title="Build MIL-STD symbol"
+              onClick={() => {
+                onOpenUnitBuilder?.();
+                setIsUnitMenuOpen(false);
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#00b5e2" strokeWidth="2">
+                <rect x="4" y="6" width="16" height="12" rx="2" />
+                <path d="M12 9v6M9 12h6" />
+              </svg>
+            </button>
             {UNIT_TYPES.map((unit) => (
-              <button 
-                key={unit.id} 
-                className="qa-btn flyout-btn" 
-                title={`Add ${unit.name}`}
+              <button
+                key={unit.id}
+                className="qa-btn flyout-btn"
+                title={`Add ${unit.label}`}
                 onClick={() => {
                         handleUnitClick(unit);
                       }}
               >
-                <img src={unit.path} alt={unit.name} className="qa-icon-img" style={{ width: '24px', height: '24px' }} />
+                <img src={symbolDataUri(unit.sidc, { size: 24 })} alt={unit.label} className="qa-icon-img" style={{ width: '24px', height: '24px' }} />
               </button>
             ))}
           </div>

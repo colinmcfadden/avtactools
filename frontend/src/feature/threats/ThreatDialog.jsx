@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import Draggable from "react-draggable";
 import { RADAR_TYPES } from "./threatModel";
+import { symbolDataUri } from "../symbols/milsym";
+import { THREAT_PRESETS } from "../symbols/presets";
 import "../export/ExportModal.css";
 
 const num = (v, fallback = 0) => {
@@ -63,6 +65,48 @@ const ThreatDialog = ({ editing, onSave, onCancel }) => {
         </div>
 
         <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {/* symbol preview + common-threat picker */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              padding: "8px",
+              background: "rgba(255,255,255,0.04)",
+              borderRadius: "6px",
+            }}
+          >
+            {symbolDataUri(draft.milstdId, { size: 34 }) ? (
+              <img
+                src={symbolDataUri(draft.milstdId, { size: 34 })}
+                alt="symbol"
+                style={{ width: "44px", height: "44px", objectFit: "contain", flexShrink: 0 }}
+              />
+            ) : (
+              <span style={{ fontSize: "0.7rem", opacity: 0.6, width: "44px", textAlign: "center" }}>
+                no symbol
+              </span>
+            )}
+            <div style={{ flex: 1 }}>
+              <label style={label}>Common threat</label>
+              <select
+                style={input}
+                value={THREAT_PRESETS.find((p) => p.sidc === draft.milstdId)?.id || ""}
+                onChange={(e) => {
+                  const p = THREAT_PRESETS.find((x) => x.id === e.target.value);
+                  if (p) set({ milstdId: p.sidc });
+                }}
+              >
+                <option value="">Custom / manual…</option>
+                {THREAT_PRESETS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {/* identity */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
             <div>
@@ -70,11 +114,11 @@ const ThreatDialog = ({ editing, onSave, onCancel }) => {
               <input style={input} value={draft.name} onChange={(e) => set({ name: e.target.value })} />
             </div>
             <div>
-              <label style={label}>MIL-STD symbol ID</label>
+              <label style={label}>MIL-STD symbol ID (SIDC)</label>
               <input
                 style={input}
                 value={draft.milstdId}
-                onChange={(e) => set({ milstdId: e.target.value })}
+                onChange={(e) => set({ milstdId: e.target.value.toUpperCase() })}
               />
             </div>
             <div>

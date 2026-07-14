@@ -1,8 +1,9 @@
-// A simple config file pointing to your assets
+// Quick-add unit presets, now as MIL-STD-2525C SIDCs (rendered via milsymbol).
+// The unit builder covers everything else; these are one-tap common choices.
 export const UNIT_TYPES = [
-    { id: 'infantry',       label: 'Infantry',            path: '/icons/tactical/infantry.svg' },
-    { id: 'light_infantry', label: 'Light Infantry',      path: '/icons/tactical/l-infantry.svg' },
-    { id: 'air_assault',    label: 'Air Assault Infantry',         path: '/icons/tactical/aas-infantry.svg' },
-    { id: 'airborne',       label: 'Airborne Infantry',            path: '/icons/tactical/air-infantry.svg' },
-    { id: 'mountain',       label: 'Mountain Infantry',            path: '/icons/tactical/mtn-infantry.svg' },
+  { id: "infantry", label: "Infantry", sidc: "SFGPUCI--------" },
+  { id: "light_infantry", label: "Light Infantry", sidc: "SFGPUCIL-------" },
+  { id: "air_assault", label: "Air Assault Infantry", sidc: "SFGPUCIS-------" },
+  { id: "airborne", label: "Airborne Infantry", sidc: "SFGPUCIA-------" },
+  { id: "mountain", label: "Mountain Infantry", sidc: "SFGPUCIO-------" },
 ];
