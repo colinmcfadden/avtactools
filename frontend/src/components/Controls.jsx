@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import MissionSummary from "./MissionSummary";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
+import { symbolDataUri } from "../feature/symbols/milsym";
 import packageJson from "../../package.json";
 
 const Controls = ({
@@ -16,6 +17,7 @@ const Controls = ({
   detectedLZ,
   addPZMarker,
   addUnit,
+  onOpenUnitBuilder,
   setLoading,
   showLZOutline,
   setShowLZOutline,
@@ -278,6 +280,16 @@ const Controls = ({
 
               {showUnitMenu && (
                 <div className="ff-dropdown">
+                  <div
+                    onClick={() => {
+                      onOpenUnitBuilder?.();
+                      setShowUnitMenu(false);
+                    }}
+                    className="dropdown-item"
+                    style={{ fontWeight: 600, color: "var(--ff-accent, #00b5e2)" }}
+                  >
+                    <span>Build MIL-STD symbol…</span>
+                  </div>
                   {UNIT_TYPES.map((unit) => (
                     <div
                       key={unit.id}
@@ -287,7 +299,7 @@ const Controls = ({
                       }}
                       className="dropdown-item"
                     >
-                      <img src={unit.path} alt={unit.label} />
+                      <img src={symbolDataUri(unit.sidc, { size: 22 })} alt={unit.label} />
                       <span>{unit.label}</span>
                     </div>
                   ))}

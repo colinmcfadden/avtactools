@@ -135,6 +135,7 @@ const MapView = ({
   units,
   updateUnitPosition,
   deleteUnit,
+  onEditUnit,
   showLZOutline,
   sectors,
   updateSectorPoint,
@@ -364,6 +365,7 @@ const MapView = ({
             data={unit}
             updateUnitPosition={updateUnitPosition}
             deleteUnit={deleteUnit}
+            onEdit={onEditUnit}
           />
         ))}
 

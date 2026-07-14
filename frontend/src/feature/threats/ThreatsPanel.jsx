@@ -1,5 +1,6 @@
 import React, { useRef } from "react";
 import { RADAR_TYPES } from "./threatModel";
+import { symbolDataUri } from "../symbols/milsym";
 
 const EyeIcon = ({ visible }) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -129,7 +130,15 @@ const ThreatsPanel = ({
                 gap: "6px",
               }}
             >
-              <span style={{ color: threat.color }}>◆</span>
+              {symbolDataUri(threat.milstdId, { size: 22 }) ? (
+                <img
+                  src={symbolDataUri(threat.milstdId, { size: 22 })}
+                  alt=""
+                  style={{ width: "22px", height: "22px", objectFit: "contain", flexShrink: 0 }}
+                />
+              ) : (
+                <span style={{ color: threat.color }}>◆</span>
+              )}
               {threat.name}
             </div>
             <div style={{ fontSize: "0.68rem", opacity: 0.6 }}>

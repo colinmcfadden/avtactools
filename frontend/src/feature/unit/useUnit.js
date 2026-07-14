@@ -11,7 +11,11 @@ export const useUnit = (targetLocation) => {
     const newUnit = {
       id: `unit-${Date.now()}`,
       type: unitConfig.id,
-      path: unitConfig.path,
+      path: unitConfig.path, // legacy image presets
+      // MIL-STD-2525 symbol (from the unit builder), with optional labels.
+      sidc: unitConfig.sidc,
+      uniqueDesignation: unitConfig.uniqueDesignation,
+      higherFormation: unitConfig.higherFormation,
       lat: targetLocation[0] + offset,
       lon: targetLocation[1] + offset,
     };
@@ -24,9 +28,14 @@ export const useUnit = (targetLocation) => {
     );
   };
 
+  /** Patches a unit's symbol/labels in place (from the unit builder in edit mode). */
+  const updateUnit = (id, patch) => {
+    setUnits((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+  };
+
   const deleteUnit = (id) => {
     setUnits((prev) => prev.filter((u) => u.id !== id));
   };
 
-  return { units, setUnits, addUnit, updateUnitPosition, deleteUnit };
+  return { units, setUnits, addUnit, updateUnit, updateUnitPosition, deleteUnit };
 }
