@@ -31,6 +31,7 @@ import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
 import ThreatDialog from "./feature/threats/ThreatDialog";
 import ThreatExportModal from "./feature/threats/ThreatExportModal";
+import UnitBuilder from "./feature/unit/UnitBuilder";
 
 function App() {
   const [targetLocation, setTargetLocation] = useState(null);
@@ -61,8 +62,9 @@ function App() {
     moveSectorOfFire,
     deleteSectorOfFire,
   } = useSectorsOfFire(targetLocation);
-  const { units, setUnits, addUnit, updateUnitPosition, deleteUnit } =
+  const { units, setUnits, addUnit, updateUnit, updateUnitPosition, deleteUnit } =
     useUnit(targetLocation);
+  const [editingUnit, setEditingUnit] = useState(null);
   const { pzMarker, setPzMarkers, addPZMarker, updatePZMarker, deletePZMarker } =
     usePzMarker(targetLocation);
   const { winds, activeNotams, setActiveNotams, loadingWeather, fetchWeather } =
@@ -203,6 +205,7 @@ function App() {
   } = useThreats();
   const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]);
   const [showThreatExport, setShowThreatExport] = useState(false);
+  const [showUnitBuilder, setShowUnitBuilder] = useState(false);
 
   const {
     savedRoutes,
@@ -663,6 +666,7 @@ function App() {
           detectedLZ={detectedLZ}
           addPZMarker={addPZMarker}
           addUnit={addUnit}
+          onOpenUnitBuilder={() => setShowUnitBuilder(true)}
           setLoading={setLoading}
           showLZOutline={showLZOutline}
           setShowLZOutline={setShowLZOutline}
@@ -772,6 +776,7 @@ function App() {
           addPZMarker={addPZMarker}
           addSector={addSectorOfFire}
           addUnit={addUnit}
+          onOpenUnitBuilder={() => setShowUnitBuilder(true)}
           addGoAround={addGoAround}
           enableExportMode={enableExportMode}
           onDownloadClick={() => setIsExporting(true)}
@@ -809,6 +814,7 @@ function App() {
           deletePZMarker={deletePZMarker}
           pzMarkers={pzMarker}
           units={units}
+          onEditUnit={setEditingUnit}
           updateUnitPosition={updateUnitPosition}
           showLZOutline={showLZOutline}
           deleteUnit={deleteUnit}
@@ -1212,6 +1218,19 @@ function App() {
           onDownload={() => exportKmzFile("threats")}
           onDownloadThs={() => exportThsFile("threats")}
           onClose={() => setShowThreatExport(false)}
+        />
+      )}
+
+      {showUnitBuilder && (
+        <UnitBuilder onSubmit={addUnit} onClose={() => setShowUnitBuilder(false)} />
+      )}
+
+      {editingUnit && (
+        <UnitBuilder
+          initial={editingUnit}
+          onSubmit={(data) => updateUnit(editingUnit.id, data)}
+          onDelete={() => deleteUnit(editingUnit.id)}
+          onClose={() => setEditingUnit(null)}
         />
       )}
 

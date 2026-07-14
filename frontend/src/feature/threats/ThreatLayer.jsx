@@ -2,15 +2,21 @@ import React from "react";
 import { Marker, Circle, ImageOverlay, Tooltip, Popup } from "react-leaflet";
 import L from "leaflet";
 import { NMI_TO_M, RADAR_TYPES } from "./threatModel";
+import { symbolDivIcon } from "../symbols/milsym";
 
-// Simple hostile-threat glyph (red diamond with a dot) — no external icon deps.
-const threatIcon = (color) =>
+// Fallback glyph (red diamond) when a threat has no renderable MIL-STD symbol.
+const fallbackIcon = (color) =>
   L.divIcon({
     className: "threat-icon",
     html: `<div style="width:16px;height:16px;background:${color};border:2px solid white;transform:rotate(45deg);box-shadow:0 0 4px rgba(0,0,0,0.8);"></div>`,
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
+
+// The MIL-STD-2525 symbol from the threat's SIDC, falling back to the diamond.
+// The name is shown by the marker's tooltip, so it isn't repeated as a label.
+const threatIcon = (threat) =>
+  symbolDivIcon(threat.milstdId, { size: 32 }) || fallbackIcon(threat.color);
 
 const ringColor = (type) => (type === RADAR_TYPES.engagement ? "#ef4444" : "#fbbf24");
 
@@ -66,7 +72,7 @@ const ThreatLayer = ({ threats, onMove, onEdit }) => {
 
             <Marker
               position={[threat.lat, threat.lon]}
-              icon={threatIcon(threat.color)}
+              icon={threatIcon(threat)}
               draggable
               eventHandlers={{
                 dragend: (e) => {
