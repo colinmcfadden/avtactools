@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/colinmcfadden/avtactools/compare/v1.4.0...v1.5.0) (2026-07-14)
+
+
+### Features
+
+* add units generated with symbol.army library ([8180963](https://github.com/colinmcfadden/avtactools/commit/8180963a2e26651d84b64d74b4b06072f3e3ed43))
+
 # [1.4.0](https://github.com/colinmcfadden/avtactools/compare/v1.3.0...v1.4.0) (2026-07-13)
 
 
