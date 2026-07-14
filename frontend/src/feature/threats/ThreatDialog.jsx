@@ -189,7 +189,7 @@ const ThreatDialog = ({ editing, onSave, onCancel }) => {
                         type="color"
                         value={band.color}
                         onChange={(e) => setBand(ri, bi, { color: e.target.value })}
-                        style={{ width: "28px", height: "24px", border: "none", background: "none" }}
+                        style={{ width: "50px", height: "50px", border: "none", background: "none" }}
                         title="Band color"
                       />
                       <input
