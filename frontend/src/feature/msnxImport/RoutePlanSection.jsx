@@ -100,6 +100,7 @@ const RoutePlanSection = ({
       pointId,
       name,
       match ? { lat: match.lat, lon: match.lon } : undefined,
+      match && typeof match.elevationFt === "number" ? match.elevationFt : undefined,
     );
   };
 

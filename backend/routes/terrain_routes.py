@@ -5,6 +5,8 @@ import requests
 import cv2
 from ultralytics import SAM
 import math
+import traceback
+from concurrent.futures import ThreadPoolExecutor
 
 terrain_bp = Blueprint('terrain', __name__)
 
@@ -195,3 +197,90 @@ def terrain_analysis():
             })
 
     return jsonify({"status": "success", "heatmap": heatmap})
+
+# --- Terrain elevations (open AWS Terrarium DEM, same source as threat masks) ---
+
+_TERRARIUM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+_DEM_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+_M_TO_FT = 3.28084
+_ELEV_ZOOM = 13  # ~19 m/px; over the US this taps 3DEP/NED, ~bare-earth
+
+
+def _decode_terrarium(png_bytes):
+    """Terrarium RGB -> metres: elevation = R*256 + G + B/256 - 32768."""
+    arr = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        return None
+    b = arr[:, :, 0].astype(np.float32)
+    g = arr[:, :, 1].astype(np.float32)
+    r = arr[:, :, 2].astype(np.float32)
+    return (r * 256.0 + g + b / 256.0) - 32768.0
+
+
+def _sample_elevations_ft(points, zoom=_ELEV_ZOOM):
+    """
+    Ground elevation (feet) for each point, sampled from Terrarium DEM tiles.
+    Each needed tile is fetched once and decoded, then points are sampled with
+    nearest-pixel. No rate limit, and consistent with the threat terrain masks.
+    """
+    tiles = {}
+    keys = []
+    for p in points:
+        t = mercantile.tile(p['lon'], p['lat'], zoom)
+        key = (t.x, t.y)
+        tiles[key] = t
+        keys.append(key)
+
+    def grab(item):
+        key, t = item
+        try:
+            resp = requests.get(_TERRARIUM_URL.format(z=zoom, x=t.x, y=t.y),
+                                headers=_DEM_HEADERS, timeout=15)
+            return key, (_decode_terrarium(resp.content) if resp.status_code == 200 else None)
+        except requests.exceptions.RequestException:
+            return key, None
+
+    dem_cache = {}
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for key, dem in pool.map(grab, tiles.items()):
+            dem_cache[key] = dem
+
+    out = []
+    for p, key in zip(points, keys):
+        dem = dem_cache.get(key)
+        if dem is None:
+            out.append(None)
+            continue
+        b = mercantile.bounds(tiles[key])
+        px = min(255, max(0, int((p['lon'] - b.west) / (b.east - b.west) * 256)))
+        py = min(255, max(0, int((b.north - p['lat']) / (b.north - b.south) * 256)))
+        out.append(round(float(dem[py, px]) * _M_TO_FT))
+    return out
+
+
+@terrain_bp.route('/api/elevations', methods=['POST'])
+def get_elevations():
+    """
+    Batch ground elevations (feet) for a route's points, sampled server-side
+    from the open Terrarium DEM. Proxied through the backend so the browser
+    doesn't hit an elevation API cross-origin (CORS), which previously left every
+    exported point at the mission template's default elevation.
+
+    Body: { points: [{lat, lon}, ...] }
+    Returns: { elevationsFt: [ft | null, ...] }  (index-aligned with points)
+    """
+    data = request.get_json(silent=True) or {}
+    points = data.get('points', [])
+    if not points:
+        return jsonify({'elevationsFt': []})
+
+    try:
+        pts = [{'lat': float(p['lat']), 'lon': float(p['lon'])} for p in points]
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': 'Invalid points'}), 400
+
+    try:
+        return jsonify({'elevationsFt': _sample_elevations_ft(pts)})
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'elevationsFt': [None] * len(pts)})

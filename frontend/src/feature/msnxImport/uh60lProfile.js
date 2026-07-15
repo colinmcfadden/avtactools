@@ -11,7 +11,7 @@ export const UH60L_PROFILE = {
   // Standard Aircraft Preferences.xml: AirspeedValue "raw 100 Indicated Knot",
   // max "193 I".
   defaultAirspeedKts: 100,
-  defaultAirspeedType: "indicated",
+  defaultAirspeedType: "ground",
   maxIndicatedKts: 193,
   // Standard Aircraft Preferences.xml: PlanAltitudeValue "50 A" (feet AGL),
   // plan altitude limits -2000..20000 ft MSL.

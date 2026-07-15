@@ -76,6 +76,7 @@ export const useRouteSketch = () => {
             kind: "amps",
             ptType: p.designation.ptType || "turn",
             name: p.designation.name || (i === 0 ? ".SP" : `.CP${i}`),
+            chartElevationFt: p.designation.chartElevationFt,
           };
         }
         const auto = autoDesignation(i);
@@ -126,13 +127,18 @@ export const useRouteSketch = () => {
     );
   };
 
-  const updateSketchPointPosition = (routeId, pointId, lat, lon) => {
+  // `chartElevationFt` is set when a drag snaps onto a local point (its charted
+  // elevation) and cleared (undefined) on any normal drag, so the point reverts
+  // to the DEM elevation when moved off a known point.
+  const updateSketchPointPosition = (routeId, pointId, lat, lon, chartElevationFt) => {
     setSketchedRoutes((prev) =>
       prev.map((route) => {
         if (route.id !== routeId) return route;
         return {
           ...route,
-          points: route.points.map((p) => (p.id === pointId ? { ...p, lat, lon } : p)),
+          points: route.points.map((p) =>
+            p.id === pointId ? { ...p, lat, lon, chartElevationFt } : p,
+          ),
         };
       }),
     );
@@ -162,8 +168,13 @@ export const useRouteSketch = () => {
   };
 
   /** Appends a designated AMPS point to the end of a route (used to snap the
-   *  route line onto a named local point). */
-  const appendSketchPoint = (routeId, lat, lon, { name = "", ptType = "turn" } = {}) => {
+   *  route line onto a named local point, carrying its charted elevation). */
+  const appendSketchPoint = (
+    routeId,
+    lat,
+    lon,
+    { name = "", ptType = "turn", chartElevationFt } = {},
+  ) => {
     setSketchedRoutes((prev) =>
       prev.map((route) => {
         if (route.id !== routeId) return route;
@@ -180,6 +191,7 @@ export const useRouteSketch = () => {
               ptType,
               name,
               role: "waypoint",
+              chartElevationFt,
             },
           ],
         };
@@ -256,8 +268,9 @@ export const useRouteSketch = () => {
     );
   };
 
-  /** Renames a sketch point, optionally snapping it to a known local point's coords. */
-  const updateSketchPointName = (routeId, pointId, name, coords) => {
+  /** Renames a sketch point, optionally snapping it to a known local point's
+   *  coords + charted elevation. */
+  const updateSketchPointName = (routeId, pointId, name, coords, chartElevationFt) => {
     setSketchedRoutes((prev) =>
       prev.map((route) => {
         if (route.id !== routeId) return route;
@@ -268,7 +281,9 @@ export const useRouteSketch = () => {
               ? {
                   ...p,
                   name,
-                  ...(coords ? { lat: coords.lat, lon: coords.lon } : {}),
+                  ...(coords
+                    ? { lat: coords.lat, lon: coords.lon, chartElevationFt }
+                    : {}),
                 }
               : p,
           ),

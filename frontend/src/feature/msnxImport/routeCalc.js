@@ -146,10 +146,11 @@ export const computeRoutePlan = (route, plan, elevationsFt = {}) => {
     return { points: [], legs: [], totals: null, warnings: ["Route needs at least two route points."] };
   }
 
-  // Point altitudes (per-point override, else route default).
+  // Point altitudes (per-point override, else route default). A charted
+  // elevation (from a snapped local point) is authoritative over the DEM.
   const pointAlts = amps.map((p) => {
     const alt = plan.perPoint?.[p.id]?.altitude || plan.altitude;
-    const groundFt = elevationsFt[p.id] ?? null;
+    const groundFt = p.chartElevationFt ?? elevationsFt[p.id] ?? null;
     let mslFt = null;
     let aglFt = null;
     if (alt.ref === "msl") {
@@ -301,28 +302,28 @@ export const computeRoutePlan = (route, plan, elevationsFt = {}) => {
 };
 
 /**
- * Ground elevations (ft) for a route's AMPS points from the Open Topo Data
- * SRTM API (the same source the backend's terrain analysis uses). Returns
- * { [pointId]: elevationFt }; resolves to {} on failure so planning degrades
- * gracefully instead of blocking.
+ * Ground elevations (ft) for a route's AMPS points. Fetched through this app's
+ * backend (/api/elevations) rather than the public elevation API directly —
+ * the browser can't reach that API cross-origin (CORS), which previously left
+ * every point without a ground elevation and every exported AMPS point stuck at
+ * the mission template's default. Returns { [pointId]: elevationFt }; resolves
+ * to {} on failure so planning degrades gracefully instead of blocking.
  */
 export const fetchPointElevationsFt = async (route) => {
   const amps = planPoints(route);
   if (amps.length === 0) return {};
-  const locations = amps
-    .map((p) => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`)
-    .join("|");
   try {
-    const res = await fetch(
-      `https://api.opentopodata.org/v1/srtm30m?locations=${locations}`,
-    );
+    const res = await fetch(`${process.env.REACT_APP_API_URL}/elevations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ points: amps.map((p) => ({ lat: p.lat, lon: p.lon })) }),
+    });
     if (!res.ok) return {};
     const data = await res.json();
-    const results = data?.results || [];
+    const feet = data?.elevationsFt || [];
     const map = {};
     amps.forEach((p, i) => {
-      const elevM = results[i]?.elevation;
-      if (typeof elevM === "number") map[p.id] = Math.round(elevM * M_TO_FT);
+      if (typeof feet[i] === "number") map[p.id] = feet[i];
     });
     return map;
   } catch {

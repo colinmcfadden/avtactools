@@ -390,11 +390,19 @@ function App() {
   // recent sketched route.
   const handleAddLocalPointToRoute = (localPoint) => {
     const name = (localPoint.name || "POINT").toUpperCase();
+    // Carry the local point's charted elevation so the route uses it instead of
+    // the DEM at that point.
+    const chartElevationFt =
+      typeof localPoint.elevationFt === "number" ? localPoint.elevationFt : undefined;
     if (isSketching) {
-      addDraftPoint(localPoint.lat, localPoint.lon, { ptType: "turn", name });
+      addDraftPoint(localPoint.lat, localPoint.lon, { ptType: "turn", name, chartElevationFt });
     } else if (sketchedRoutes.length > 0) {
       const target = sketchedRoutes[sketchedRoutes.length - 1];
-      appendSketchPoint(target.id, localPoint.lat, localPoint.lon, { name, ptType: "turn" });
+      appendSketchPoint(target.id, localPoint.lat, localPoint.lon, {
+        name,
+        ptType: "turn",
+        chartElevationFt,
+      });
     } else {
       alert(
         'Start a route first (Route button), then use "+" on a local point to snap the line to it.',
@@ -746,7 +754,12 @@ function App() {
           onSaveMissionGroup={handleSaveMissionGroup}
           onSaveSketches={handleSaveSketches}
           localPointNames={localPoints.pointSets.flatMap((set) =>
-            set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon })),
+            set.points.map((p) => ({
+              name: p.name,
+              lat: p.lat,
+              lon: p.lon,
+              elevationFt: p.elevationFt,
+            })),
           )}
           sketchedPlan={{
             updateRoutePlan,
