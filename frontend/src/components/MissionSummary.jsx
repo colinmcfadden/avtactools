@@ -33,13 +33,25 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
 
   // 2. SLOPES
   const slopeStatus = useMemo(() => {
-    if (!terrainData || terrainData.length === 0)
+    if (!terrainData?.stats)
       return { className: "status-safe", label: "NO DATA", max: 0 };
 
-    const maxSlope = Math.max(...terrainData.map((c) => c.slope));
+    const maxSlope = terrainData.stats.maxDeg;
+    const directional = terrainData.directional;
 
-    if (maxSlope > 13)
-      return { className: "status-danger", label: "NO GO", max: maxSlope };
+    if (directional) {
+      const exceedsUh60Limit =
+        directional.noseHighMaxDeg >= 6 ||
+        directional.noseLowMaxDeg >= 15 ||
+        directional.crossSlopeMaxDeg >= 15;
+      if (exceedsUh60Limit)
+        return { className: "status-danger", label: "LIMIT EXCEEDED", max: maxSlope };
+    }
+
+    // A general slope magnitude is useful context, but the UH-60 limits are
+    // directional. Require a landing heading before treating it as a limit call.
+    if (!directional && maxSlope >= 15)
+      return { className: "status-warning", label: "HEADING REQUIRED", max: maxSlope };
     if (maxSlope > 10)
       return { className: "status-warning", label: "CAUTION", max: maxSlope };
     
@@ -73,7 +85,7 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
       {/* --- ROW 2: SLOPE ALERT (Span 6 / Full) --- */}
       <div className={`ms-tile span-6 ${slopeStatus.className} slope-alert-tile`}>
         <div className="slope-header">
-            <span>MAX SLOPE</span>
+            <span>MAX TERRAIN SLOPE</span>
         </div>
         <div className="slope-main-text">{slopeStatus.max.toFixed(1)}°</div>
       </div>

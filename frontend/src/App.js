@@ -489,7 +489,9 @@ function App() {
     showHeatmap,
     customLZ,
     detectedLZ,
-    terrainData,
+    // Raster overlays are regenerated from the LZ when a saved map is loaded;
+    // never persist their base64 PNG payload in map history.
+    terrainData: null,
     gridElevation,
     latLong,
     flightData,

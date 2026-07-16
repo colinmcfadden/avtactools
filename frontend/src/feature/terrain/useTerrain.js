@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { convertToLatLongString } from "../../utils/Helpers";
 
@@ -17,7 +17,7 @@ export const useTerrain = (
 ) => {
   const [elevation, setElevation] = useState(null);
   const [slope, setSlope] = useState(null);
-  const [terrainData, setTerrainData] = useState([]);
+  const [terrainData, setTerrainData] = useState(null);
 
   const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -65,7 +65,7 @@ export const useTerrain = (
     }
   };
 
-  const fetchTerrainAnalysis = async (polygon) => {
+  const fetchTerrainAnalysis = useCallback(async (polygon) => {
     try {
       const response = await fetch(`${API_BASE_URL}/terrain-analysis`, {
         method: "POST",
@@ -74,18 +74,20 @@ export const useTerrain = (
       });
       const data = await response.json();
       if (data.status === "success") {
-        setTerrainData(data.heatmap);
+        setTerrainData(data);
+      } else {
+        throw new Error(data.error || "Terrain analysis failed");
       }
     } catch (err) {
       console.error("Terrain API Error:", err);
     }
-  };
+  }, [API_BASE_URL]);
 
   useEffect(() => {
     if (detectedLZ && detectedLZ.length > 0) {
       fetchTerrainAnalysis(detectedLZ);
     }
-  }, [detectedLZ]);
+  }, [detectedLZ, fetchTerrainAnalysis]);
 
   return {
     performTerrainAnalysis,

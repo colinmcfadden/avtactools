@@ -3,6 +3,7 @@ import {
   MapContainer,
   TileLayer,
   Marker,
+  ImageOverlay,
   Popup,
   Polygon,
   useMap,
@@ -11,7 +12,7 @@ import {
 import LZDimensions from "./LZDimensions";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useMapEvents, Polyline, Rectangle } from "react-leaflet";
+import { useMapEvents, Polyline } from "react-leaflet";
 import PZMarker from "../feature/pzMarker/PZMarker";
 import UnitMarker from "../feature/unit/UnitMarker";
 import SectorMarker from "../feature/sectorsOfFire/SectorMarker";
@@ -171,15 +172,6 @@ const MapView = ({
   const localSnapPoints = (localPointSets || [])
     .filter((set) => set.visible !== false)
     .flatMap((set) => set.points);
-  // Helper to determine color based on slope degree
-  const getSlopeColor = (deg) => {
-    if (deg < 3) return "green"; // Very Flat / Ideal
-    if (deg < 6) return "blue"; // Flat / Safe
-    if (deg < 10) return "yellow"; // Moderate
-    if (deg < 13) return "orange"; // steep
-    return "red"; // Approaching limits`
-  };
-
   return (
     <MapContainer
       id="map-to-export"
@@ -318,23 +310,15 @@ const MapView = ({
 
       {detectedLZ && <LZDimensions detectedLZ={detectedLZ} />}
 
-      {showHeatmap &&
-        terrainData &&
-        terrainData.map((cell, idx) => (
-          <Rectangle
-            key={`slope-${idx}`}
-            bounds={cell.bounds}
-            pathOptions={{
-              color: "transparent",
-              fillColor: getSlopeColor(cell.slope),
-              fillOpacity: 0.5,
-              weight: 0,
-            }}
-          >
-            {/* Optional: Hover to see exact degree */}
-            <Tooltip sticky>Slope: {cell.slope.toFixed(1)}°</Tooltip>
-          </Rectangle>
-        ))}
+      {showHeatmap && terrainData?.overlay && terrainData?.bounds && (
+        <ImageOverlay
+          url={terrainData.overlay}
+          bounds={terrainData.bounds}
+          opacity={1}
+          interactive={false}
+          zIndex={250}
+        />
+      )}
 
       {doghouses.map((dh) => (
         <Doghouse key={dh.id} data={dh} updateDoghouse={updateDoghouse} />

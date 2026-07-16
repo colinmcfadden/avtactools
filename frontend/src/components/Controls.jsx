@@ -78,9 +78,7 @@ const Controls = ({
 
   const API_BASE_URL = process.env.REACT_APP_API_URL;
 
-  const maxSlope = terrainData?.heatmap
-    ? Math.max(...terrainData.heatmap.map((tile) => tile.slope))
-    : 0;
+  const maxSlope = terrainData?.stats?.maxDeg ?? 0;
 
   // Simple handler to trigger the MapView logic
   const onDownloadClick = () => {
@@ -184,18 +182,22 @@ const Controls = ({
               <span>LZ Box</span>
             </div>
           </div>
-          {showHeatmap && terrainData && (
+          {terrainData?.stats && (
             <div className="ff-stat-block">
               <div className="stat-row">
-                <span>Max Slope</span>
+                <span>Max / P95 slope</span>
                 <span
                   style={{
-                    color: maxSlope > 10 ? "#ef4444" : "#22c55e",
+                    color: maxSlope >= 15 ? "#ef4444" : maxSlope > 10 ? "#f59e0b" : "#22c55e",
                     fontWeight: "bold",
                   }}
                 >
-                  {maxSlope.toFixed(1)}°
+                  {maxSlope.toFixed(1)}° / {terrainData.stats.p95Deg.toFixed(1)}°
                 </span>
+              </div>
+              <div className="stat-row">
+                <span>Terrain source</span>
+                <span>{terrainData.source} · {terrainData.resolutionM} m</span>
               </div>
             </div>
           )}

@@ -21,52 +21,20 @@ import sqlite3
 import shutil
 import tempfile
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import cv2
-import requests
-import mercantile
 from flask import Blueprint, request, jsonify, send_file
+
+from terrain_provider import load_terrarium_radius
 
 threat_bp = Blueprint('threat', __name__)
 
-TERRARIUM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
 FT_TO_M = 0.3048
 NMI_TO_M = 1852.0
 EARTH_RADIUS_M = 6371000.0
 REFRACTION_K = 0.13  # standard atmospheric refraction coefficient
 TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'threat_template.ths')
-
-
-# --- DEM mosaic -----------------------------------------------------------
-
-def _pick_zoom(lat, radius_m, target_radius_px=800):
-    """Highest terrarium zoom that keeps the viewshed radius within ~target px."""
-    span = 156543.03 * math.cos(math.radians(lat))
-    z = math.floor(math.log2(target_radius_px * span / radius_m)) if radius_m > 0 else 12
-    return int(max(9, min(13, z)))
-
-
-def _global_px(lat, lon, z):
-    """Web-mercator global pixel coordinate (256 px tiles) for a lat/lon."""
-    n = 2 ** z
-    x = (lon + 180.0) / 360.0 * n * 256.0
-    sin_lat = math.sin(math.radians(lat))
-    y = (0.5 - math.log((1 + sin_lat) / (1 - sin_lat)) / (4 * math.pi)) * n * 256.0
-    return x, y
-
-
-def _decode_terrarium(png_bytes):
-    """Terrarium RGB -> metres. elevation = R*256 + G + B/256 - 32768."""
-    arr = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_COLOR)
-    if arr is None:
-        return None
-    b = arr[:, :, 0].astype(np.float32)
-    g = arr[:, :, 1].astype(np.float32)
-    r = arr[:, :, 2].astype(np.float32)
-    return (r * 256.0 + g + b / 256.0) - 32768.0
 
 
 def _prep_dem(dem):
@@ -89,62 +57,11 @@ def _prep_dem(dem):
 
 
 def fetch_dem(lat, lon, radius_m):
-    """
-    Mosaics terrarium tiles covering a radius_m box around (lat, lon).
-    Returns (dem_metres 2D array, meta) where meta carries the geographic bounds,
-    the radar's pixel position, and metres-per-pixel.
-    """
-    z = _pick_zoom(lat, radius_m)
-    dlat = radius_m / 111320.0
-    dlon = radius_m / (111320.0 * math.cos(math.radians(lat)))
-    west, east = lon - dlon, lon + dlon
-    south, north = lat - dlat, lat + dlat
-
-    tiles = list(mercantile.tiles(west, south, east, north, z))
-    if not tiles:
+    """Shared Terrarium mosaic used by both threat masking and slope analysis."""
+    dem, meta = load_terrarium_radius(lat, lon, radius_m)
+    if dem is None:
         return None, None
-    xs = [t.x for t in tiles]
-    ys = [t.y for t in tiles]
-    min_x, max_x, min_y, max_y = min(xs), max(xs), min(ys), max(ys)
-    cols = (max_x - min_x + 1) * 256
-    rows = (max_y - min_y + 1) * 256
-    dem = np.zeros((rows, cols), np.float32)
-
-    def grab(t):
-        try:
-            resp = requests.get(TERRARIUM_URL.format(z=z, x=t.x, y=t.y), headers=HEADERS, timeout=12)
-            if resp.status_code != 200:
-                return t, None
-            return t, _decode_terrarium(resp.content)
-        except requests.exceptions.RequestException:
-            return t, None
-
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        for t, tile_dem in pool.map(grab, tiles):
-            if tile_dem is None:
-                continue
-            r0 = (t.y - min_y) * 256
-            c0 = (t.x - min_x) * 256
-            dem[r0:r0 + 256, c0:c0 + 256] = tile_dem
-
-    dem = _prep_dem(dem)
-
-    origin_x = min_x * 256
-    origin_y = min_y * 256
-    gx, gy = _global_px(lat, lon, z)
-    radar_col = gx - origin_x
-    radar_row = gy - origin_y
-    mpp = 156543.03 * math.cos(math.radians(lat)) / (2 ** z)
-
-    # Geographic bounds of the mosaic, from its corner tiles.
-    nw = mercantile.bounds(mercantile.Tile(min_x, min_y, z))
-    se = mercantile.bounds(mercantile.Tile(max_x, max_y, z))
-    meta = {
-        'z': z, 'mpp': mpp,
-        'radar_row': radar_row, 'radar_col': radar_col,
-        'north': nw.north, 'west': nw.west, 'south': se.south, 'east': se.east,
-    }
-    return dem, meta
+    return _prep_dem(dem.copy()), meta
 
 
 # --- Viewshed -------------------------------------------------------------
