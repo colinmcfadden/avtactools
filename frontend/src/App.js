@@ -44,6 +44,17 @@ const resolveStateUpdate = (nextValue, currentValue) =>
 
 const getSavedMapId = (result) => result?.id ?? result?.data?.id ?? null;
 
+const EMPTY_LZ_GRAPHICS = Object.freeze({
+  doghouses: Object.freeze([]),
+  helicopters: Object.freeze([]),
+  pzMarkers: Object.freeze([]),
+  sectorsOfFire: Object.freeze([]),
+  goArounds: Object.freeze([]),
+  units: Object.freeze([]),
+  measurements: Object.freeze([]),
+  exportBox: null,
+});
+
 function App() {
   const [contextMenu, setContextMenu] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -243,7 +254,7 @@ function App() {
     [setView],
   );
 
-  const activeGraphics = activeDiagram?.graphics ?? {};
+  const activeGraphics = activeDiagram?.graphics ?? EMPTY_LZ_GRAPHICS;
   const { goAround, addGoAround, updateGoAround, deleteGoAround } =
     useGoAround(targetLocation, {
       goAround: activeGraphics.goArounds ?? [],
@@ -1224,6 +1235,7 @@ function App() {
       {/* GLOBAL CONTEXT MENU */}
       {contextMenu && (
         <div
+          className="ctx-menu"
           style={{
             position: "fixed",
             // Clamp to the viewport so the menu never spills off a screen edge
@@ -1232,99 +1244,41 @@ function App() {
             left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 178)),
             top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 340)),
             zIndex: 99999,
-            background: "#1e293b",
-            border: "1px solid #334155",
-            color: "white",
-            padding: "8px",
-            borderRadius: "8px",
-            boxShadow: "0 4px 6px rgba(0,0,0,0.5)",
-            minWidth: "150px",
-            maxWidth: "calc(100vw - 16px)",
-            maxHeight: "80vh",
-            overflowY: "auto",
           }}
         >
           {contextMenu.type === "map" ? (
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              <div
-                style={{
-                  padding: "4px",
-                  fontSize: "14px",
-                  fontWeight: "bold",
-                  textAlign: "center",
-                }}
-              >
-                {clickedGrid}
-              </div>
+            <>
+              <div className="ctx-title">{clickedGrid}</div>
               <button
+                className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
                 disabled={clickedGrid === "Calculating..."}
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  background: "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  opacity: clickedGrid === "Calculating..." ? 0.5 : 1,
-                }}
               >
                 Set as Target
               </button>
               <button
+                className="ctx-btn ctx-btn--danger"
                 onClick={handleAddThreatHere}
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  background: "#ef4444",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
               >
                 Add Threat Here
               </button>
-            </div>
+            </>
           ) : contextMenu.type === "lz" ? (
-            // --- THE NEW LZ CONTEXT MENU ---
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              <div
-                style={{
-                  padding: "4px",
-                  fontSize: "14px",
-                  fontWeight: "bold",
-                  textAlign: "center",
-                }}
-              >
-                {clickedGrid}
-              </div>
-
+            // --- THE LZ CONTEXT MENU ---
+            <>
+              <div className="ctx-title">{clickedGrid}</div>
               <button
+                className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
                 disabled={clickedGrid === "Calculating..."}
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  background: "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  opacity: clickedGrid === "Calculating..." ? 0.5 : 1,
-                }}
               >
                 Set as Target
               </button>
 
-              <hr style={{ borderColor: "#334155", margin: "2px 0" }} />
+              <hr className="ctx-divider" />
 
               <button
+                className="ctx-btn ctx-btn--primary"
                 onClick={performTerrainAnalysis}
                 disabled={!canAnalyze}
                 title={
@@ -1332,51 +1286,25 @@ function App() {
                     ? "Set a target on the map before analyzing the LZ/PZ."
                     : ""
                 }
-                style={{
-                  width: "100%",
-                  padding: "8px",
-                  background: "#3b82f6",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor:
-                    !canAnalyze ? "not-allowed" : "pointer",
-                  opacity:
-                    !canAnalyze ? 0.4 : 1,
-                }}
               >
                 Analyze LZ
               </button>
 
-              <button 
+              <button
+                className="ctx-btn ctx-btn--danger"
                 onClick={() => {
-                  setCustomLZ(null);       
-                  setDrawingPoints([]);    
-                  setContextMenu(null);    
-                }}
-                style={{
-                  width: '100%', padding: '4px', opacity: 1, 
-                  color: 'red', border: 'none', borderRadius: '4px', cursor: 'pointer'
+                  setCustomLZ(null);
+                  setDrawingPoints([]);
+                  setContextMenu(null);
                 }}
               >
                 ✕ Delete LZ
               </button>
-            </div>
+            </>
           ) : contextMenu.type === "draft-point" ? (
             // --- DRAW-MODE POINT DESIGNATION MENU ---
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-            >
-              <div
-                style={{
-                  padding: "2px 4px",
-                  fontSize: "12px",
-                  color: "#94a3b8",
-                  textAlign: "center",
-                }}
-              >
-                Add point here as:
-              </div>
+            <>
+              <div className="ctx-label">Add point here as:</div>
               {[
                 { label: "● Checkpoint (Turn)", ptType: "turn" },
                 { label: "■ RP / IP", ptType: "ip" },
@@ -1384,104 +1312,48 @@ function App() {
               ].map((opt) => (
                 <button
                   key={opt.label}
+                  className="ctx-btn ctx-btn--primary"
                   onClick={() => handleAddDesignatedDraftPoint(opt.ptType)}
-                  style={{
-                    width: "100%",
-                    padding: "6px",
-                    background: "#3b82f6",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
                 >
                   {opt.label}
                 </button>
               ))}
               <button
+                className="ctx-btn"
                 onClick={() => {
                   addDraftPoint(contextMenu.lat, contextMenu.lon);
                   setContextMenu(null);
-                }}
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  background: "#475569",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  textAlign: "left",
                 }}
               >
                 · Shaping point
               </button>
               <button
+                className="ctx-btn ctx-btn--ghost"
                 onClick={() => setContextMenu(null)}
-                style={{
-                  width: "100%",
-                  padding: "4px",
-                  color: "#9ca3af",
-                  background: "none",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
               >
                 Cancel
               </button>
-            </div>
+            </>
           ) : contextMenu.type === "route-line" ? (
             // --- ROUTE LINE CONTEXT MENU ---
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
+            <>
               <button
+                className="ctx-btn ctx-btn--success"
                 onClick={handleInsertPointConfirm}
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  background: "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
               >
                 Insert Point Here
               </button>
               <button
+                className="ctx-btn ctx-btn--ghost"
                 onClick={() => setContextMenu(null)}
-                style={{
-                  width: "100%",
-                  padding: "4px",
-                  opacity: 1,
-                  color: "#9ca3af",
-                  background: "none",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
               >
                 Cancel
               </button>
-            </div>
+            </>
           ) : (
             // --- SKETCHED POINT DESIGNATION MENU ---
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-            >
-              <div
-                style={{
-                  padding: "2px 4px",
-                  fontSize: "12px",
-                  color: "#94a3b8",
-                  textAlign: "center",
-                }}
-              >
-                Designate point as:
-              </div>
+            <>
+              <div className="ctx-label">Designate point as:</div>
               {[
                 { label: "● Checkpoint (Turn)", kind: "amps", ptType: "turn" },
                 { label: "■ RP / IP", kind: "amps", ptType: "ip" },
@@ -1490,50 +1362,27 @@ function App() {
               ].map((opt) => (
                 <button
                   key={opt.label}
+                  className={
+                    opt.kind === "amps" ? "ctx-btn ctx-btn--primary" : "ctx-btn"
+                  }
                   onClick={() => handleDesignatePoint(opt.kind, opt.ptType)}
-                  style={{
-                    width: "100%",
-                    padding: "6px",
-                    background: opt.kind === "amps" ? "#3b82f6" : "#475569",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer",
-                    textAlign: "left",
-                  }}
                 >
                   {opt.label}
                 </button>
               ))}
               <button
+                className="ctx-btn ctx-btn--success"
                 onClick={handleRenameSketchPoint}
-                style={{
-                  width: "100%",
-                  padding: "6px",
-                  background: "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
               >
                 Rename
               </button>
               <button
+                className="ctx-btn ctx-btn--ghost"
                 onClick={() => setContextMenu(null)}
-                style={{
-                  width: "100%",
-                  padding: "4px",
-                  color: "#9ca3af",
-                  background: "none",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
               >
                 Cancel
               </button>
-            </div>
+            </>
           )}
         </div>
       )}

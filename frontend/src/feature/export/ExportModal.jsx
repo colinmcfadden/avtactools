@@ -50,6 +50,13 @@ const ExportModal = ({
   const isAllSelected =
     allAvailableNotams.length > 0 &&
     selectedNotams.length === allAvailableNotams.length;
+  const mgrsGrid = mapData?.mgrs ?? "";
+  const latLong = mapData?.latLong ?? "";
+  const elevation = mapData?.elevation;
+  const elevationText = elevation === "" || elevation == null ? "" : `${elevation}' MSL`;
+  const landingHeading = flightData?.landing_hdg ?? "";
+  const takeoffHeading = flightData?.takeoff_hdg ?? "";
+  const goAroundDirection = flightData?.goAround ?? "LEFT";
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -63,23 +70,37 @@ const ExportModal = ({
 
   useEffect(() => {
     if (isOpen) {
-      setFormData((prev) => ({
-        ...prev,
-        mgrs_grid: mapData.mgrs
-          ? mapData.mgrs.replace(/^(.{3})(.{2})(.{4})(.{4})$/, "$1 $2 $3 $4")
+      setFormData((prev) => {
+        const nextValues = {
+          mgrs_grid: mgrsGrid
+          ? mgrsGrid.replace(/^(.{3})(.{2})(.{4})(.{4})$/, "$1 $2 $3 $4")
           : "",
-        lat_long: mapData.latLong || "",
-        elevation: mapData.elevation + "' MSL" || "",
-        land_dir: flightData.landing_hdg || "",
-        takeoff_dir: flightData.takeoff_hdg || "",
-        go_around: flightData.goAround || "LEFT",
-      }));
+          lat_long: latLong,
+          elevation: elevationText,
+          land_dir: landingHeading,
+          takeoff_dir: takeoffHeading,
+          go_around: goAroundDirection,
+        };
+        const unchanged = Object.entries(nextValues).every(
+          ([key, value]) => prev[key] === value,
+        );
+
+        return unchanged ? prev : { ...prev, ...nextValues };
+      });
       // Reset NOTAMs when modal opens
       setShowNotamMenu(false);
       setSelectedNotams([]);
       setExpandedCategories({});
     }
-  }, [isOpen, mapData, flightData]);
+  }, [
+    isOpen,
+    mgrsGrid,
+    latLong,
+    elevationText,
+    landingHeading,
+    takeoffHeading,
+    goAroundDirection,
+  ]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

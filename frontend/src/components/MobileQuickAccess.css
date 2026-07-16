@@ -5,7 +5,7 @@
 
 .qa-btn.active-qa-btn {
     background-color: #3b82f6 !important;
-    border-color: #2563eb !important;
+    border-color: #4d95c4 !important;
 }
 
 /* Optional: If you want the icon inside to turn white/pop more when blue */
@@ -38,9 +38,9 @@
     .qa-btn {
         width: 50px;
         height: 50px;
-        background: rgba(30, 30, 35, 0.9); 
+        background: var(--glass); 
         backdrop-filter: blur(4px);
-        border: 1px solid rgba(255, 255, 255, 0.15);
+        border: 1px solid var(--hairline-strong);
         border-radius: 8px;
         display: flex;
         align-items: center;
@@ -53,7 +53,7 @@
 
     .qa-btn:active {
         transform: scale(0.95);
-        background: rgba(50, 50, 55, 1);
+        background: var(--surface-3);
     }
 
     .qa-icon-img {
@@ -102,18 +102,18 @@
 }
 
 .blue-pill {
-    background: rgba(59, 130, 246, 0.9);
-    border: 1px solid rgba(59, 130, 246, 0.5);
+    background: rgba(61, 132, 179, 0.95);
+    border: 1px solid var(--hairline-strong);
 }
 
-.blue-pill:active { background: #2563eb; }
+.blue-pill:active { background: #4d95c4; }
 
 .green-pill {
-    background: rgba(16, 185, 129, 0.9);
-    border: 1px solid rgba(16, 185, 129, 0.5);
+    background: rgba(53, 129, 95, 0.95);
+    border: 1px solid var(--hairline-strong);
 }
 
-.green-pill:active:not(.disabled) { background: #059669; }
+.green-pill:active:not(.disabled) { background: #3f9670; }
 
 .green-pill.disabled {
     background: rgba(75, 85, 99, 0.9) !important;

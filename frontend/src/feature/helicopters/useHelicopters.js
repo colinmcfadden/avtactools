@@ -117,7 +117,17 @@ export const useHelicopters = (targetLocation, options = {}) => {
       }
     }
 
-    setProximityAlerts(alerts);
+    setProximityAlerts((previous) => {
+      const unchanged =
+        previous.length === alerts.length &&
+        previous.every(
+          (alert, index) =>
+            alert.id === alerts[index].id &&
+            alert.message === alerts[index].message,
+        );
+
+      return unchanged ? previous : alerts;
+    });
   }, [helicopterList]);
 
   return {
