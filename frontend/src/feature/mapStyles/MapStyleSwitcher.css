@@ -17,7 +17,7 @@
     border-radius: 10px;
     overflow: hidden;
     cursor: pointer;
-    background: #1e1e23;
+    background: var(--surface-2);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
     flex-shrink: 0;
 }
@@ -56,9 +56,9 @@
     display: flex;
     gap: 8px;
     padding: 8px;
-    background: rgba(30, 30, 35, 0.9);
+    background: var(--glass);
     backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid var(--hairline-strong);
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
     /* Scrolls horizontally once enough styles are registered. */
@@ -75,7 +75,7 @@
     border-radius: 8px;
     overflow: hidden;
     cursor: pointer;
-    background: #1e1e23;
+    background: var(--surface-2);
     flex-shrink: 0;
 }
 
