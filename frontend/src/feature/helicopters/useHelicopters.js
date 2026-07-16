@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
 import { getDistanceFeet } from '../../utils/Helpers';
+import {
+  UH60_MIN_CENTER_SPACING_FEET,
+  UH60_ROTOR_TIP_CLEARANCE_FEET,
+} from '../../utils/helicopterCapacity';
 
 export const useHelicopters = (targetLocation) => {
   const [helicopters, setHelicopters] = useState([]);
@@ -22,7 +26,7 @@ export const useHelicopters = (targetLocation) => {
       isClear = true;
       for (let helo of helicopters) {
         const dist = getDistanceFeet(finalLat, finalLon, helo.lat, helo.lon);
-        if (dist < 60) {
+        if (dist < UH60_MIN_CENTER_SPACING_FEET) {
           isClear = false;
           finalLon += offsetStep; 
           break; 
@@ -56,9 +60,6 @@ export const useHelicopters = (targetLocation) => {
   useEffect(() => {
     const alerts = [];
     
-    const rotorDiameterFeet = 53.67; // 53 ft 8 in
-    const minClearanceFeet = 60;    // Define your minimum safe edge-to-edge distance here
-
     for (let i = 0; i < helicopters.length; i++) {
       for (let j = i + 1; j < helicopters.length; j++) {
         
@@ -66,17 +67,17 @@ export const useHelicopters = (targetLocation) => {
         const centerDist = getDistanceFeet(helicopters[i].lat, helicopters[i].lon, helicopters[j].lat, helicopters[j].lon);
         
         // 2. Subtract the radius of BOTH helicopters (which equals one full diameter)
-        const edgeToEdgeDist = centerDist - rotorDiameterFeet;
+        const edgeToEdgeDist = centerDist - (UH60_MIN_CENTER_SPACING_FEET - UH60_ROTOR_TIP_CLEARANCE_FEET);
         
         // 3. Check against your minimum clearance
-        if (edgeToEdgeDist < minClearanceFeet) {
+        if (edgeToEdgeDist < UH60_ROTOR_TIP_CLEARANCE_FEET) {
           
           // Use Math.max to prevent it from saying "-15ft apart" if they crash/overlap
           const displayDist = Math.max(0, Math.round(edgeToEdgeDist)); 
           
           alerts.push({
             id: `${helicopters[i].id}-${helicopters[j].id}`,
-            message: `Separation Alert: Rotor edges are only ${displayDist}ft apart (Min: ${minClearanceFeet}ft).`
+            message: `Separation Alert: Rotor edges are only ${displayDist} ft apart (Min: ${Math.round(UH60_ROTOR_TIP_CLEARANCE_FEET)} ft / 60 m).`
           });
         }
       }

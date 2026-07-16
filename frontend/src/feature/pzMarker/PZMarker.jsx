@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
+import { mapObjectControlMarkup } from "../../utils/mapObjectControls";
 
 const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
   const map = useMap();
@@ -86,15 +87,8 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
         <div class="drag-lifter" style="position: relative; overflow: visible; width: 0; height: 0;">
             <img src="${arrowImageSrc}" style="position: absolute; top: -1000px; left: -1000px; width: 2000px; height: 2000px; pointer-events: none; display: block;" />
             
-            <div style="position: absolute; top: -22px; left: -22px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: move; pointer-events: auto;">
-                <svg width="24" height="24" viewBox="0 0 24 24" style="overflow: visible; pointer-events: none;">
-                    <defs>
-                        <filter id="redGlow" x="-50%" y="-50%" width="300%" height="300%">
-                             <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="red" flood-opacity="1.0"/>
-                        </filter>
-                    </defs>
-                    <circle cx="12" cy="12" r="8" fill="none" stroke="red" stroke-width="2" filter="url(#redGlow)"/>
-                </svg>
+            <div style="position: absolute; top: -17px; left: -17px; pointer-events: auto;">
+                ${mapObjectControlMarkup({ type: "move", title: "Drag to move PZ marker", tone: "danger", className: "pz-move-control" })}
             </div>
         </div>`;
   };
@@ -125,13 +119,9 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     const tip = L.marker([safeTipLat, safeTipLon], {
       icon: L.divIcon({
         className: "pz-tip-wrapper",
-        html: `
-            <div class="drag-lifter" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: crosshair;">
-                <div style="background: white; border: 2px solid #0056b3; width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>
-            </div>
-        `,
-        iconSize: [44, 44],
-        iconAnchor: [22, 22],
+        html: `<div class="drag-lifter pz-tip-control">${mapObjectControlMarkup({ type: "rotate", title: "Drag to set PZ orientation and reach", className: "pz-rotate-control" })}</div>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
       }),
       draggable: true,
       zIndexOffset: 3100,
@@ -158,6 +148,10 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     anchor.on("mouseout", hideHandle);
     tip.on("mouseover", showHandle);
     tip.on("mouseout", hideHandle);
+    anchor.on("click", () => {
+      isHovering = !isHovering;
+      tip.setOpacity(isHovering ? 1 : 0);
+    });
 
     // --- ANCHOR DRAG LOGIC ---
     anchor.on("dragstart", (e) => {
@@ -192,10 +186,7 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
       });
     });
 
-    // --- TIP DRAG LOGIC WITH MAGIC MATH ---
-    let isDraggingTip = false;
-    const isMobile = window.matchMedia("(max-width: 850px), (pointer: coarse)").matches;
-
+    // --- TIP DRAG LOGIC ---
     const redrawTip = (newTipLatLng) => {
       const currentData = latestData.current;
       const anchorPt = map.latLngToContainerPoint([
@@ -204,10 +195,6 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
       ]);
       const tipPt = map.latLngToContainerPoint(newTipLatLng);
       
-      if (isDraggingTip && isMobile) {
-          tipPt.y -= 80; // Pulls the visual arrow 80px above the thumb
-      }
-
       const dx = tipPt.x - anchorPt.x;
       const dy = tipPt.y - anchorPt.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -216,7 +203,6 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     };
 
     tip.on("dragstart", (e) => {
-        isDraggingTip = true;
         tip.setOpacity(1);
         // FIX: Removed the mobile-lifting CSS class so the handle stays perfectly under the finger
         redrawTip(e.target.getLatLng()); 
@@ -227,21 +213,11 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     });
 
     tip.on("dragend", (e) => {
-      isDraggingTip = false;
-
-      let finalTip = e.target.getLatLng();
-
-      // --- THE MAGIC: Permanently bake the 80px visual offset into the real data ---
-      if (isMobile) {
-        const pt = map.latLngToContainerPoint(finalTip);
-        pt.y -= 80; // Permanently shift the mathematical point 80px UP
-        finalTip = map.containerPointToLatLng(pt);
-        e.target.setLatLng(finalTip); // Instantly snap the invisible handle up to the new location
-      }
+      const finalTip = e.target.getLatLng();
 
       updatePZMarker(data.id, { tipLat: finalTip.lat, tipLon: finalTip.lng });
       
-      redrawTip(finalTip); // Draw the final arrow using the new permanently offset coordinate
+      redrawTip(finalTip);
       if (!isHovering) tip.setOpacity(0);
     });
 

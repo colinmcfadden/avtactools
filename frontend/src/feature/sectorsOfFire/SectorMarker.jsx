@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Polygon, Marker } from "react-leaflet";
 import L from "leaflet";
+import { createMapObjectHandleIcon } from "../../utils/mapObjectControls";
 
 const SectorMarker = ({
   data,
@@ -121,27 +122,20 @@ const SectorMarker = ({
   });
 
   // 4. ICONS
-  const cornerIcon = L.divIcon({
+  const cornerIcon = createMapObjectHandleIcon({
+    type: "resize",
+    title: "Drag to reshape sector",
+    tone: "violet",
+    size: 26,
     className: "sector-corner",
-    html: `<div style="background: #9370DB; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; cursor: crosshair;"></div>`,
-    iconSize: [12, 12],
-    iconAnchor: [6, 6],
   });
 
-  const moveIcon = L.divIcon({
+  const moveIcon = createMapObjectHandleIcon({
+    type: "move",
+    title: "Drag to move sector",
+    tone: "violet",
+    size: 32,
     className: "sector-move",
-    html: `<div style="background: white; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #9370DB; display: flex; align-items: center; justify-content: center; cursor: move; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9370DB" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="5 9 2 12 5 15"></polyline>
-                    <polyline points="9 5 12 2 15 5"></polyline>
-                    <polyline points="19 9 22 12 19 15"></polyline>
-                    <polyline points="9 19 12 22 15 19"></polyline>
-                    <line x1="2" y1="12" x2="22" y2="12"></line>
-                    <line x1="12" y1="2" x2="12" y2="22"></line>
-                </svg>
-               </div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
   });
 
   return (
@@ -159,6 +153,10 @@ const SectorMarker = ({
         eventHandlers={{
           mouseover: onMouseEnter,
           mouseout: onMouseLeave,
+          click: (e) => {
+            L.DomEvent.stopPropagation(e);
+            setIsActive((active) => !active);
+          },
           contextmenu: (e) => {
             L.DomEvent.stopPropagation(e);
             if (window.confirm("Delete Sector of Fire?")) deleteSector(data.id);

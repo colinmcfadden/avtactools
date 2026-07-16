@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import * as turf from "@turf/turf";
+import { createMapObjectHandleIcon } from "../utils/mapObjectControls";
 
 // --- HELPERS ---
 const toTurf = (latlng) => turf.point([latlng.lng, latlng.lat]);
@@ -12,23 +13,14 @@ const getDistance = (p1, p2) => {
   return Math.round(dist) + " ft";
 };
 
-// Larger touch target and 4-way move icon, with floating logic removed
-const createVertexIcon = () => {
-  const moveIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="19 9 22 12 19 15"/><polyline points="9 19 12 22 15 19"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>`;
-  
-  return L.divIcon({
+const createVertexIcon = () =>
+  createMapObjectHandleIcon({
+    type: "move",
+    title: "Drag to adjust LZ measurement",
+    tone: "amber",
+    size: 34,
     className: "vertex-handle",
-    html: `
-        <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: move;">
-            <div style="background: #FF8C00; border: 2px solid white; border-radius: 50%; width: 28px; height: 28px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">
-                ${moveIcon}
-            </div>
-        </div>
-    `,
-    iconSize: [44, 44],
-    iconAnchor: [22, 22],
   });
-};
 
 const createLabelIcon = (text) =>
   L.divIcon({

@@ -2,6 +2,7 @@ import React, { useRef, useMemo } from "react";
 import { Marker } from "react-leaflet";
 import L from "leaflet";
 import { symbolParts } from "../symbols/milsym";
+import { mapObjectControlMarkup } from "../../utils/mapObjectControls";
 
 const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
   const markerRef = useRef(null);
@@ -22,7 +23,11 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
     if (parts) {
       return L.divIcon({
         className: "unit-div-icon",
-        html: `<div class="drag-lifter" style="width:${parts.size.width}px;height:${parts.size.height}px;display:flex;align-items:center;justify-content:center;">${parts.svg}</div>`,
+        html: `
+          <div class="drag-lifter map-object-shell unit-object-shell" style="position:relative;width:${parts.size.width}px;height:${parts.size.height}px;display:flex;align-items:center;justify-content:center;">
+            ${parts.svg}
+            <div class="unit-object-controls">${mapObjectControlMarkup({ type: "move", title: "Drag to move unit", size: 28 })}</div>
+          </div>`,
         iconSize: [parts.size.width, parts.size.height],
         iconAnchor: [parts.anchor.x, parts.anchor.y],
       });
@@ -31,8 +36,9 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
     return L.divIcon({
       className: "unit-div-icon",
       html: `
-            <div class="drag-lifter" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+            <div class="drag-lifter map-object-shell unit-object-shell" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
                 <img src="${data.path}" style="width: 50px; height: 30px; object-fit: contain; pointer-events: none;" draggable="false" />
+                <div class="unit-object-controls">${mapObjectControlMarkup({ type: "move", title: "Drag to move unit", size: 28 })}</div>
             </div>
         `,
       iconSize: [50, 30],
@@ -62,6 +68,7 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
       },
       click(e) {
         L.DomEvent.stopPropagation(e);
+        if (e.originalEvent.target.closest(".map-object-control")) return;
         onEdit?.(data); // open the symbol editor
       },
       contextmenu(e) {

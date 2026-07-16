@@ -76,8 +76,6 @@ const Controls = ({
     </svg>
   );
 
-  const API_BASE_URL = process.env.REACT_APP_API_URL;
-
   const maxSlope = terrainData?.stats?.maxDeg ?? 0;
 
   // Simple handler to trigger the MapView logic
@@ -113,6 +111,14 @@ const Controls = ({
 
   return (
     <div className="ff-panel">
+      <div className="ops-header">
+        <div className="ops-ident">
+          <span className="ops-eyebrow">EZ-PZ</span>
+          <strong>TACTICAL AVIATION</strong>
+          <span className="ops-subtitle">LANDING ZONE PLANNER</span>
+        </div>
+        <span className="ops-status">PLAN</span>
+      </div>
       {/* Search Header */}
       <div className="ff-section search-section">
         <label className="ff-label">MGRS Target</label>
@@ -145,7 +151,7 @@ const Controls = ({
           </div>
 
           {mapData && targetLocation && (
-            <div className="toggle-row">
+            <div className="analysis-action-row">
               <button
                 onClick={() =>
                   performTerrainAnalysis(targetLocation[0], targetLocation[1])
@@ -427,7 +433,6 @@ const Controls = ({
           />
         </div>
 
-        <div style={{ height: "100px" }}></div>
       </div>
       <div className="controls-footer">
         <a

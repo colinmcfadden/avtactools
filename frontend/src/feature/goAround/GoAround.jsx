@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
+import { mapObjectControlMarkup } from "../../utils/mapObjectControls";
 
 const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
   const map = useMap();
@@ -32,17 +33,14 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
     const isRight = ga.direction === "right";
     const path = isRight ? rightArrowPath : leftArrowPath;
 
-    const rotateIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
-
     return `
       <div class="drag-lifter doghouse-interactive-wrapper" style="position: relative; width: 100%; height: 100%; pointer-events: none;">
         
         <div class="ga-interaction-group" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 160px; height: 120px; pointer-events: auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.01); border-radius: 8px;">
             
-            <div style="position: absolute; left: -15px; top: 0; bottom: 0; display: flex; align-items: center; z-index: 10; pointer-events: none;">
-                <div class="dh-controls" style="pointer-events: none;">
-                    <div class="dh-btn dh-rotate" title="Drag to Rotate" style="pointer-events: auto; width: 34px; height: 34px; min-width: 34px; min-height: 34px;">${rotateIcon}</div>
-                </div>
+            <div class="map-object-controls dh-controls" style="position: absolute; left: -12px; right: -12px; top: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none;">
+                ${mapObjectControlMarkup({ type: "rotate", title: "Drag to rotate go-around", className: "dh-btn dh-rotate" })}
+                ${mapObjectControlMarkup({ type: "move", title: "Drag to move go-around", className: "dh-btn dh-move" })}
             </div>
 
             <div class="ga-body-wrapper" style="
@@ -85,6 +83,7 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
     const wrapper = element.querySelector('.doghouse-interactive-wrapper');
     const interactionGroup = element.querySelector('.ga-interaction-group');
     const bodyWrapper = element.querySelector('.ga-body-wrapper');
+    const moveBtn = element.querySelector('.dh-move');
 
     if (interactionGroup) {
         L.DomEvent.on(interactionGroup, 'mouseleave', () => wrapper.classList.remove('show-controls'));
@@ -172,7 +171,6 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
       let isMoving = false;
       let dragThresholdMet = false;
       let startX = 0, startY = 0;
-      let pressTimer;
 
       const startInteraction = (e) => {
         L.DomEvent.stop(e); 
@@ -182,14 +180,6 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
         startX = x || 0;
         startY = y || 0;
         dragThresholdMet = false;
-
-        pressTimer = setTimeout(() => {
-          if (!dragThresholdMet) {
-            if (window.confirm("Delete Go Around?")) {
-              deleteRef.current(dataRef.current.id);
-            }
-          }
-        }, 750); 
 
         map.dragging.disable();
 
@@ -201,7 +191,6 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
             
             if (dx > 5 || dy > 5) { 
               dragThresholdMet = true;
-              clearTimeout(pressTimer); 
               isMoving = true;
               bodyWrapper.style.cursor = 'grabbing';
               
@@ -220,7 +209,6 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
         };
 
         const onDragEnd = () => {
-          clearTimeout(pressTimer);
           map.dragging.enable();
           bodyWrapper.style.cursor = 'grab';
 
@@ -246,7 +234,15 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
         document.addEventListener("touchend", onDragEnd);
       };
 
-      L.DomEvent.on(bodyWrapper, 'mousedown touchstart', startInteraction);
+      if (moveBtn) {
+        L.DomEvent.disableClickPropagation(moveBtn);
+        L.DomEvent.on(moveBtn, 'mousedown touchstart', startInteraction);
+      }
+
+      L.DomEvent.on(bodyWrapper, 'click', (e) => {
+        L.DomEvent.stop(e);
+        wrapper.classList.toggle('show-controls');
+      });
 
       L.DomEvent.on(bodyWrapper, 'contextmenu', (e) => {
         L.DomEvent.preventDefault(e); 

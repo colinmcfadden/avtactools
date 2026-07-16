@@ -1,3 +1,5 @@
+import { UH60_ROTOR_RADIUS_FEET } from './helicopterCapacity';
+
 export const isPointInPolygon = (point, polygon) => {
   if (!point || !polygon) return false;
   const x = point[0], y = point[1]; // target lat/lon
@@ -67,7 +69,7 @@ export const getRotorEdgeCoords = (lat1, lon1, lat2, lon2) => {
   
   if (centerDist <= 0) return { start: [lat1, lon1], end: [lat2, lon2], edgeDist: 0 };
 
-  const rotorRadiusFeet = 26.835; // UH-60 radius
+  const rotorRadiusFeet = UH60_ROTOR_RADIUS_FEET;
   
   // What percentage of the total line is taken up by the rotor?
   const fraction = rotorRadiusFeet / centerDist;

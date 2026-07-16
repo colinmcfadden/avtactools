@@ -1,7 +1,10 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useMemo } from "react";
 import { getPolygonArea } from "../utils/Helpers";
-
-const API_BASE_URL = process.env.REACT_APP_API_URL;
+import {
+  calculateUH60Capacity,
+  UH60_MIN_CENTER_SPACING_METERS,
+  UH60_ROTOR_TIP_CLEARANCE_METERS,
+} from "../utils/helicopterCapacity";
 
 const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather }) => {
   // 1. CALCULATE AREA & CAPACITY
@@ -11,19 +14,9 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
     // 1. Get total area in SQUARE FEET 
     const areaSqFt = getPolygonArea(detectedLZ);
     
-    // 2. UH-60 Capacity logic (Converted to Feet)
-    const rotorDiameterFeet = 53.67;
-    const edgeClearanceFeet = 60;
-    
-    // Total center-to-center distance required per aircraft (~113.67 ft)
-    const separationFeet = rotorDiameterFeet + edgeClearanceFeet; 
-  
-    // Each helicopter effectively requires a 113.67 x 113.67 ft box (~12,921 sq ft)
-    // to guarantee no other helicopter can encroach on its 60ft blade clearance.
-    const spotSizeSqFt = separationFeet * separationFeet; 
-
-    // Calculate how many of those boxes fit in the LZ
-    const heloCount = Math.floor(areaSqFt / spotSizeSqFt);
+    // A 60 m rotor-tip-to-rotor-tip buffer requires 76.357 m between UH-60
+    // centers. Capacity is intentionally a conservative square-grid estimate.
+    const heloCount = calculateUH60Capacity(areaSqFt);
     
     return { 
         area: Math.round(areaSqFt), 
@@ -65,7 +58,12 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
       
       {/* --- ROW 1: CAPACITY & AREA (Span 3 each) --- */}
       <div className="ms-tile span-2">
-        <div className="ms-label">Capacity</div>
+        <div
+          className="ms-label"
+          title={`${UH60_ROTOR_TIP_CLEARANCE_METERS} m rotor-tip clearance / ${UH60_MIN_CENTER_SPACING_METERS.toFixed(1)} m center spacing`}
+        >
+          Capacity
+        </div>
         <div className="ms-value highlight">{stats.heloCount}</div>
       </div>
       

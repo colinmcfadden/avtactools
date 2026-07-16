@@ -1255,3 +1255,706 @@ body.export-mode-active .leaflet-control-container {
     width: 150px; /* Back to your original, largest size */
   }
 }
+
+/* =========================================================
+   COMMAND DECK VISUAL SYSTEM
+   A restrained tactical/aviation treatment: clear hierarchy, compact density,
+   and a consistent state language across the map, panels, and modals.
+   ========================================================= */
+:root {
+  --ff-bg-dark: #07111d;
+  --ff-panel-bg: #0d1c2f;
+  --ff-panel-bg-rgb: 13, 28, 47;
+  --ff-border: #263d59;
+  --ff-text-main: #edf4fb;
+  --ff-text-muted: #8ca1b7;
+  --ff-accent: #45bbed;
+  --ff-accent-hover: #77d1f4;
+  --ff-success: #3ac690;
+  --ff-warning: #f3ad2e;
+  --ff-danger: #e56363;
+  --deck-shadow: 0 14px 30px rgba(1, 8, 18, 0.34);
+}
+
+body,
+html,
+.App {
+  background: #07111d;
+}
+
+.app-container {
+  background: #07111d;
+}
+
+.sidebar {
+  width: 320px;
+  min-width: 320px;
+  background:
+    linear-gradient(180deg, rgba(14, 32, 53, 0.98), rgba(7, 17, 29, 0.99)),
+    #07111d;
+  border-right: 1px solid rgba(105, 154, 194, 0.22);
+  box-shadow: 10px 0 30px rgba(0, 0, 0, 0.24);
+}
+
+.ff-panel {
+  min-height: 100%;
+  background:
+    linear-gradient(135deg, rgba(69, 187, 237, 0.035) 0%, transparent 30%),
+    linear-gradient(180deg, rgba(8, 20, 35, 0.76), rgba(7, 17, 29, 0.98));
+}
+
+.ops-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 12px 0;
+  padding: 11px 13px;
+  border: 1px solid rgba(103, 167, 208, 0.28);
+  border-radius: 9px;
+  background:
+    linear-gradient(105deg, rgba(32, 89, 124, 0.26), rgba(13, 28, 47, 0.82)),
+    #0d1c2f;
+  box-shadow: var(--deck-shadow);
+}
+
+.ops-ident {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 7px;
+  align-items: baseline;
+  line-height: 1;
+}
+
+.ops-eyebrow {
+  grid-row: span 2;
+  align-self: center;
+  color: var(--ff-accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.ops-ident strong {
+  color: #f4f9fd;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.095em;
+}
+
+.ops-subtitle {
+  color: var(--ff-text-muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.ops-status {
+  padding: 5px 7px;
+  border: 1px solid rgba(69, 187, 237, 0.45);
+  border-radius: 5px;
+  color: #a9e5fb;
+  background: rgba(69, 187, 237, 0.09);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+}
+
+.search-section {
+  margin: 8px 12px 0;
+  padding: 10px;
+  border-color: rgba(98, 145, 184, 0.3);
+  border-radius: 9px;
+  background: rgba(9, 23, 40, 0.82);
+  box-shadow: none;
+}
+
+.ff-label,
+.ff-card-header,
+.ms-label {
+  font-weight: 750;
+  letter-spacing: 0.085em;
+}
+
+.ff-label {
+  color: #97acc3;
+  font-size: 9px;
+}
+
+.ff-input-group {
+  gap: 7px;
+}
+
+.ff-input {
+  min-width: 0;
+  border-color: #29435f;
+  border-radius: 6px;
+  background: #081728;
+  color: #eef7ff;
+  padding: 9px 10px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+.ff-input:focus {
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 3px rgba(69, 187, 237, 0.13);
+}
+
+.ff-scroll-content {
+  padding: 10px 12px 12px;
+  scrollbar-color: #35516d transparent;
+}
+
+.ff-card {
+  margin-bottom: 9px;
+  padding: 10px;
+  border-color: rgba(90, 133, 170, 0.26);
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, rgba(66, 126, 165, 0.055), transparent 36%),
+    rgba(10, 25, 43, 0.9);
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(14px);
+}
+
+.ff-card-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  padding: 0 0 7px;
+  border-bottom-color: rgba(117, 158, 191, 0.17);
+  color: #72c9ee;
+  font-size: 9px;
+}
+
+.ff-card-header::before {
+  width: 3px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--ff-accent);
+  box-shadow: 0 0 11px rgba(69, 187, 237, 0.45);
+  content: "";
+}
+
+.mission-grid {
+  gap: 6px;
+}
+
+.ms-tile {
+  min-height: 56px;
+  border-color: rgba(100, 142, 177, 0.25);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #14273e, #0d1c2f);
+}
+
+.ms-label {
+  color: #8ea7c0;
+  font-size: 8px;
+  letter-spacing: 0.065em;
+}
+
+.ms-value {
+  color: #f4f9fd;
+  font-size: 15px;
+}
+
+.ms-unit,
+.station-id {
+  color: #6fc9ed;
+}
+
+.slope-alert-tile {
+  min-height: 60px;
+  border: 1px solid rgba(243, 173, 46, 0.42);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.status-safe {
+  background: linear-gradient(135deg, #176448, #24936d);
+}
+
+.status-warning {
+  background: linear-gradient(135deg, #bc7616, #e59f24);
+}
+
+.status-danger {
+  background: linear-gradient(135deg, #8f3440, #ca5960);
+}
+
+.slope-header,
+.slope-main-text {
+  color: #07111d;
+}
+
+.slope-header {
+  font-size: 9px;
+  letter-spacing: 0.065em;
+}
+
+.slope-main-text {
+  font-size: 23px;
+}
+
+.analysis-action-row {
+  margin-top: 8px;
+}
+
+.analysis-action-row .ff-action-btn {
+  width: 100%;
+}
+
+.ff-btn,
+.ff-action-btn,
+.floating-save-btn {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.ff-btn:active,
+.ff-action-btn:active,
+.ff-tool-btn:active,
+.floating-save-btn:active {
+  transform: translateY(1px);
+}
+
+.ff-btn.primary,
+.ff-action-btn.blue {
+  border-color: rgba(143, 220, 248, 0.56);
+  background: linear-gradient(180deg, #4dc2ef, #2799ce);
+  box-shadow: 0 5px 13px rgba(12, 105, 151, 0.28);
+  color: #04111d;
+}
+
+.ff-btn.primary:hover,
+.ff-action-btn.blue:hover {
+  border-color: #cef2ff;
+  background: linear-gradient(180deg, #79d1f2, #35abe0);
+}
+
+.ff-action-btn.green {
+  border-color: rgba(82, 211, 158, 0.48);
+  background: linear-gradient(180deg, #2e9d75, #1d7359);
+  box-shadow: 0 5px 13px rgba(20, 91, 65, 0.28);
+}
+
+.ff-action-btn.green:hover {
+  background: linear-gradient(180deg, #3cb98a, #258566);
+}
+
+.ff-action-btn.disabled {
+  border-color: rgba(119, 145, 166, 0.18);
+  background: #1d3146;
+  color: #7890a8;
+  opacity: 1;
+}
+
+.toggle-row {
+  gap: 6px;
+  justify-content: stretch;
+  margin-top: 8px;
+  padding: 6px;
+  border: 1px solid rgba(89, 130, 164, 0.19);
+  border-radius: 7px;
+  background: rgba(4, 14, 26, 0.45);
+}
+
+.toggle-item {
+  flex: 1;
+  gap: 6px;
+  color: #b6c8da;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.switch {
+  width: 32px;
+  height: 18px;
+}
+
+.slider {
+  background: #314a63;
+}
+
+.slider:before {
+  width: 12px;
+  height: 12px;
+}
+
+input:checked + .slider {
+  background: #32a9db;
+}
+
+input:checked + .slider:before {
+  transform: translateX(14px);
+}
+
+.ff-stat-block {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top-color: rgba(109, 151, 185, 0.19);
+}
+
+.stat-row {
+  margin: 0;
+  color: #9eb3c8;
+  font-size: 10px;
+}
+
+.stat-row span:last-child {
+  max-width: 54%;
+  color: #d7e9f5;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  text-align: right;
+}
+
+.tool-grid {
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ff-tool-btn {
+  min-height: 63px;
+  aspect-ratio: auto;
+  border-color: #29435f;
+  border-radius: 7px;
+  background: linear-gradient(145deg, #10243b, #0a182a);
+  color: #d9eaf6;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.ff-tool-btn:hover,
+.ff-tool-btn.active {
+  border-color: #55c6f0 !important;
+  background: linear-gradient(145deg, #183b59, #0e2740);
+  box-shadow: 0 0 0 1px rgba(69, 187, 237, 0.14), inset 0 1px rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.ff-tool-btn .btn-label {
+  color: #acc2d6;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.035em;
+}
+
+.ff-dropdown {
+  border-color: #3e6e91;
+  border-radius: 8px;
+  background: #0c1d31;
+  box-shadow: var(--deck-shadow);
+}
+
+.dropdown-item {
+  border-bottom-color: rgba(103, 144, 177, 0.16);
+  color: #dcecf8;
+  font-size: 12px;
+}
+
+.dropdown-item:hover {
+  background: #1a5477;
+}
+
+.floating-topright {
+  top: 14px;
+  right: 14px;
+  gap: 7px;
+}
+
+.floating-save-btn,
+.floating-auth {
+  border-color: rgba(111, 161, 201, 0.31);
+  border-radius: 8px;
+  background: rgba(8, 23, 39, 0.88);
+  box-shadow: var(--deck-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.floating-save-btn {
+  min-width: 40px;
+  padding: 8px 10px;
+  color: #bfeafa;
+}
+
+.floating-save-btn:hover {
+  border-color: #6ed0f2;
+  color: #e8f8ff;
+}
+
+.floating-auth {
+  padding: 7px 10px;
+}
+
+.unit-badge {
+  top: 13px;
+  left: 62px;
+  width: 44px;
+  height: 44px;
+}
+
+.floating-routes-panel,
+.export-modal-container.glass-panel {
+  border-color: rgba(104, 161, 201, 0.32);
+  border-radius: 10px;
+  background: rgba(8, 23, 39, 0.94);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.48);
+}
+
+.floating-routes-panel .routes-panel-header {
+  border-bottom: 1px solid rgba(109, 155, 188, 0.18);
+  background: rgba(58, 119, 157, 0.13);
+  color: #d9effa;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.proximity-alert {
+  border: 1px solid rgba(255, 166, 166, 0.42);
+  border-left: 4px solid #f27878;
+  border-radius: 8px;
+  background: rgba(103, 37, 47, 0.94);
+  box-shadow: var(--deck-shadow);
+  font-size: 12px;
+}
+
+.controls-footer {
+  min-height: 50px;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top-color: rgba(112, 157, 190, 0.18);
+  background: rgba(3, 12, 22, 0.32);
+}
+
+.footer-logo {
+  width: 36px;
+  opacity: 0.78;
+  filter: grayscale(0.25) drop-shadow(0 3px 7px rgba(0, 0, 0, 0.38));
+}
+
+.footer-version {
+  color: #718aa1;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 9px;
+}
+
+.leaflet-control-zoom a,
+.leaflet-bar a {
+  border-bottom-color: rgba(78, 126, 163, 0.42) !important;
+  background: rgba(8, 23, 39, 0.9) !important;
+  color: #d9effa !important;
+}
+
+.leaflet-control-zoom a:hover,
+.leaflet-bar a:hover {
+  background: #1b4d6f !important;
+  color: #ffffff !important;
+}
+
+@media (min-width: 1024px) {
+  .footer-logo {
+    width: 36px;
+  }
+}
+
+@media (max-width: 850px) {
+  .ops-header {
+    margin: 12px 12px 0;
+  }
+
+  .sidebar {
+    min-width: 0;
+  }
+}
+
+/* =========================================================
+   MAP OBJECT CONTROLS
+   Shared affordances for aviation planning objects. Blue indicates movement
+   or heading control; violet is shape editing; amber is LZ measurement.
+   ========================================================= */
+.map-object-shell,
+.doghouse-interactive-wrapper {
+  --object-control-color: #65cff5;
+}
+
+.map-object-controls,
+.dh-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  pointer-events: none !important;
+  transform: scale(0.9);
+  transform-origin: center;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.map-object-control {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--object-control-color, #65cff5) 72%, white 12%);
+  border-radius: 50%;
+  background: rgba(7, 22, 38, 0.95);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.48), inset 0 1px rgba(255, 255, 255, 0.08);
+  color: var(--object-control-color, #65cff5);
+  cursor: grab;
+  pointer-events: auto !important;
+  touch-action: none;
+}
+
+.map-object-control:active,
+.map-object-control.active-move,
+.map-object-control.active-rotate {
+  cursor: grabbing;
+  background: var(--object-control-color, #65cff5);
+  color: #06111d;
+  transform: scale(0.94);
+}
+
+.map-object-control svg {
+  width: 17px;
+  height: 17px;
+  pointer-events: none;
+}
+
+.map-object-control--blue {
+  --object-control-color: #65cff5;
+}
+
+.map-object-control--violet {
+  --object-control-color: #b494ff;
+}
+
+.map-object-control--amber {
+  --object-control-color: #ffc35a;
+}
+
+.map-object-control--danger {
+  --object-control-color: #f57d7d;
+}
+
+.doghouse-interactive-wrapper:hover .map-object-controls,
+.doghouse-interactive-wrapper.show-controls .map-object-controls,
+.map-object-shell:hover .unit-object-controls {
+  opacity: 1;
+  pointer-events: auto !important;
+  transform: scale(1);
+}
+
+.dh-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dh-btn:hover {
+  border-color: inherit;
+  background: rgba(7, 22, 38, 0.95);
+}
+
+.map-object-control.dh-btn {
+  border: 1px solid color-mix(in srgb, var(--object-control-color, #65cff5) 72%, white 12%);
+  background: rgba(7, 22, 38, 0.95);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.48), inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.unit-object-controls {
+  position: absolute;
+  top: -12px;
+  right: -14px;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.9);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.unit-object-controls .map-object-control {
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.unit-object-controls .map-object-control svg {
+  width: 14px;
+  height: 14px;
+}
+
+.pz-tip-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pz-container:hover .pz-move-control,
+.pz-tip-wrapper:hover .pz-rotate-control {
+  box-shadow: 0 0 0 3px rgba(101, 207, 245, 0.15), 0 5px 12px rgba(0, 0, 0, 0.48);
+}
+
+.map-object-handle-icon .map-object-control {
+  cursor: grab;
+}
+
+.map-object-handle-icon .map-object-control--resize {
+  background: rgba(24, 15, 43, 0.96);
+}
+
+.sector-corner .map-object-control svg {
+  width: 13px;
+  height: 13px;
+}
+
+.vertex-handle .map-object-control {
+  box-shadow: 0 0 0 3px rgba(255, 195, 90, 0.12), 0 5px 12px rgba(0, 0, 0, 0.48);
+}
+
+.heading-readout {
+  border: 1px solid rgba(101, 207, 245, 0.38);
+  border-radius: 4px;
+  background: rgba(7, 22, 38, 0.9) !important;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  color: #dff6ff !important;
+}
+
+@media (max-width: 850px), (pointer: coarse) {
+  .map-object-controls {
+    gap: 10px;
+  }
+
+  .map-object-control,
+  .dh-btn {
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  .map-object-control svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .unit-object-controls {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
+  }
+}

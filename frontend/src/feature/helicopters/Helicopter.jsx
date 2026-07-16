@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
-import { calculateAngle, getDistanceFeet, getRotorEdgeCoords } from '../../utils/Helpers';
+import { calculateAngle, getRotorEdgeCoords } from '../../utils/Helpers';
+import { UH60_ROTOR_TIP_CLEARANCE_FEET } from '../../utils/helicopterCapacity';
+import { mapObjectControlMarkup } from '../../utils/mapObjectControls';
 
 const getHeloIcon = (rot, sizePx = 40) => {
   const displayRot = Math.round(((rot % 360) + 360) % 360);
-  const rotateIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
-
   const boxWidth = Math.max(sizePx + 100, 140);
 
   return L.divIcon({
@@ -16,10 +16,9 @@ const getHeloIcon = (rot, sizePx = 40) => {
             
             <div class="helo-interaction-group" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${boxWidth}px; height: ${sizePx + 40}px; pointer-events: auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.01); border-radius: 8px;">
                 
-                <div style="position: absolute; left: 10px; top: 0; bottom: 0; display: flex; align-items: center; z-index: 10; pointer-events: none;">
-                    <div class="dh-controls" style="pointer-events: none;">
-                        <div class="dh-btn dh-rotate" title="Drag to Rotate" style="pointer-events: auto; width: 34px; height: 34px; min-width: 34px; min-height: 34px;">${rotateIcon}</div>
-                    </div>
+                <div class="map-object-controls dh-controls" style="position: absolute; left: 6px; right: 6px; top: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none;">
+                    ${mapObjectControlMarkup({ type: "rotate", title: "Drag to rotate helicopter", className: "dh-btn dh-rotate" })}
+                    ${mapObjectControlMarkup({ type: "move", title: "Drag to move helicopter", className: "dh-btn dh-move" })}
                 </div>
 
                 <div class="helo-body-wrapper" style="position: relative; display: flex; justify-content: center; align-items: center; width: ${sizePx}px; height: ${sizePx}px; z-index: 20; cursor: grab;">
@@ -86,8 +85,8 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
             other.lat, other.lon
         );
         
-        // 2. Violation is based strictly on the blade gap (less than 60 feet)
-        const isViolation = edgeDist < 60;
+        // A violation occurs when rotor-tip paths are less than 60 m apart.
+        const isViolation = edgeDist < UH60_ROTOR_TIP_CLEARANCE_FEET;
         
         // 3. Find the exact middle of our new, shorter line for the text badge
         const midLat = (start[0] + end[0]) / 2;
@@ -143,6 +142,7 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
     const wrapper = element.querySelector('.doghouse-interactive-wrapper');
     const interactionGroup = element.querySelector('.helo-interaction-group');
     const bodyWrapper = element.querySelector('.helo-body-wrapper');
+    const moveBtn = element.querySelector('.dh-move');
 
     if (interactionGroup) {
         L.DomEvent.on(interactionGroup, 'mouseleave', () => wrapper.classList.remove('show-controls'));
@@ -221,7 +221,6 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
       let isMoving = false;
       let dragThresholdMet = false;
       let startX = 0, startY = 0;
-      let pressTimer;
 
       const startInteraction = (e) => {
         L.DomEvent.stop(e); 
@@ -231,14 +230,6 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
         startX = x || 0;
         startY = y || 0;
         dragThresholdMet = false;
-
-        pressTimer = setTimeout(() => {
-          if (!dragThresholdMet) {
-            if (window.confirm("Delete this helicopter?")) {
-              deleteAssetRef.current(asset.id);
-            }
-          }
-        }, 750); 
 
         map.dragging.disable();
 
@@ -250,7 +241,6 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
             
             if (dx > 5 || dy > 5) { 
               dragThresholdMet = true;
-              clearTimeout(pressTimer); 
               isMoving = true;
               bodyWrapper.style.cursor = 'grabbing';
               
@@ -270,7 +260,6 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
         };
 
         const onDragEnd = () => {
-          clearTimeout(pressTimer);
           map.dragging.enable();
           bodyWrapper.style.cursor = 'grab';
 
@@ -296,7 +285,15 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
         document.addEventListener("touchend", onDragEnd);
       };
 
-      L.DomEvent.on(bodyWrapper, 'mousedown touchstart', startInteraction);
+      if (moveBtn) {
+        L.DomEvent.disableClickPropagation(moveBtn);
+        L.DomEvent.on(moveBtn, 'mousedown touchstart', startInteraction);
+      }
+
+      L.DomEvent.on(bodyWrapper, 'click', (e) => {
+        L.DomEvent.stop(e);
+        wrapper.classList.toggle('show-controls');
+      });
 
       L.DomEvent.on(bodyWrapper, 'contextmenu', (e) => {
         L.DomEvent.stop(e);
