@@ -1,3 +1,13 @@
+## [1.5.1](https://github.com/colinmcfadden/avtactools/compare/v1.5.0...v1.5.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* ensure consistent move/drag controls and correct capacity issues ([37bf10a](https://github.com/colinmcfadden/avtactools/commit/37bf10ac37a4ac62e80f9e2c278c294139835c24))
+* fix elevations endpoint ([fc9815d](https://github.com/colinmcfadden/avtactools/commit/fc9815d2526252f235c124f429f6b760a0a8c1c8))
+* fix slope analysis tool for accuracy ([c537424](https://github.com/colinmcfadden/avtactools/commit/c5374240147914d21053a93b947842cd450e4eac))
+* lzpz sessions update ([3fc5deb](https://github.com/colinmcfadden/avtactools/commit/3fc5debb40ac25ee0a8edf754753c36a9d240767))
+
 # [1.5.0](https://github.com/colinmcfadden/avtactools/compare/v1.4.0...v1.5.0) (2026-07-14)
 
 
