@@ -12,9 +12,9 @@
         left: 112px; /* Clears Leaflet zoom controls + the unit badge */
         right: 75px; /* Leaves room for the Hamburger Menu */
         z-index: 1000;
-        background: rgba(30, 30, 35, 0.95);
+        background: var(--glass);
         backdrop-filter: blur(5px);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid var(--hairline-strong);
         border-radius: 8px;
         padding: 5px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.5);
@@ -41,7 +41,7 @@
     }
 
     .top-search-btn {
-        background: #3b82f6; /* Blue button */
+        background: #3d84b3; /* Blue button */
         color: white;
         border: none;
         border-radius: 6px;
@@ -54,7 +54,7 @@
     }
 
     .top-search-btn:active {
-        background: #2563eb;
+        background: #4d95c4;
     }
 }
 

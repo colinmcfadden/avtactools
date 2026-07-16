@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 /**
  * Optional controlled-state shape:
@@ -55,16 +55,17 @@ export const useExport = (targetLocation, options = {}) => {
     setExportBox(null);
   };
 
-  const handleExportComplete = (blob) => {
+  const handleExportComplete = useCallback((blob) => {
     setExportProgress(60);
     if (blob) {
       setCapturedMapBlob(blob);
+      setIsExporting(false);
       setIsExportModalOpen(true);
     } else {
-      setIsExporting(true);
+      setIsExporting(false);
       setExportProgress(0);
     }
-  };
+  }, []);
 
   const handleFinalExport = (formData) => {
     if (!capturedMapBlob) return;
@@ -89,7 +90,12 @@ export const useExport = (targetLocation, options = {}) => {
       method: "POST",
       body: apiPayload,
     })
-      .then((response) => response.blob())
+      .then(async (response) => {
+        if (response.ok) return response.blob();
+
+        const message = await response.text();
+        throw new Error(message || `Excel export failed (${response.status})`);
+      })
       .then((blob) => {
         const excelUrl = URL.createObjectURL(blob);
         const excelLink = document.createElement("a");

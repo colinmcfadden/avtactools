@@ -10,7 +10,7 @@
     max-width: 550px; /* <-- INCREASED FROM 500px */
     max-height: 90vh; 
     
-    background: rgba(30, 30, 35, 0.95);
+    background: var(--glass);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
@@ -184,7 +184,7 @@
 .input-group select:focus,
 .input-group textarea:focus {
     outline: none;
-    border-color: #3b82f6; /* A nice blue focus color */
+    border-color: #3d84b3; /* A nice blue focus color */
     background: rgba(0, 0, 0, 0.5);
 }
 
@@ -223,10 +223,10 @@
 .cancel-btn:hover { background: rgba(255,255,255,0.05); color: white; }
 
 .export-btn {
-    background: #3b82f6; /* Match focus color */
+    background: #3d84b3; /* Match focus color */
     color: white;
 }
-.export-btn:hover { background: #2563eb; }
+.export-btn:hover { background: #4d95c4; }
 
 /* =========================================================
    MOBILE: touch-friendly, zoom-proof dialogs
@@ -280,22 +280,20 @@
     }
 }
 
-/* Command-deck dialog treatment: matches the map controls without sacrificing
-   the dense form layout needed for mission-card generation. */
+/* Neutral avionics dialog treatment: matches the map controls without
+   sacrificing the dense form layout needed for mission-card generation. */
 .export-modal-container {
-    background:
-        linear-gradient(135deg, rgba(58, 128, 172, 0.08), transparent 32%),
-        rgba(8, 23, 39, 0.97);
-    border-color: rgba(104, 161, 201, 0.38);
+    background: var(--glass, rgba(19, 22, 28, 0.96));
+    border-color: var(--hairline-strong, rgba(255, 255, 255, 0.16));
     border-radius: 10px;
     box-shadow: 0 22px 56px rgba(0, 0, 0, 0.56);
-    color: #e6f0f8;
+    color: var(--ff-text-main, #e7eaee);
 }
 
 .modal-header,
 .modal-footer {
-    border-color: rgba(106, 156, 192, 0.2);
-    background: rgba(3, 14, 26, 0.42);
+    border-color: var(--hairline, rgba(255, 255, 255, 0.08));
+    background: rgba(0, 0, 0, 0.24);
 }
 
 .modal-header {
@@ -303,7 +301,7 @@
 }
 
 .modal-header h3 {
-    color: #dff3fc;
+    color: var(--ff-text-main, #e7eaee);
     font-size: 0.9rem;
     font-weight: 750;
     letter-spacing: 0.09em;
@@ -311,11 +309,11 @@
 }
 
 .close-btn {
-    color: #8fa9bf;
+    color: var(--ff-text-muted, #97a0ab);
 }
 
 .close-btn:hover {
-    color: #72d0f3;
+    color: var(--ff-accent-hover, #7cbde0);
 }
 
 .modal-body {
@@ -330,15 +328,15 @@
 .form-divider {
     margin: 14px 0 10px;
     padding-bottom: 6px;
-    border-bottom-color: rgba(106, 156, 192, 0.2);
-    color: #73cbed;
+    border-bottom-color: var(--hairline, rgba(255, 255, 255, 0.08));
+    color: var(--ff-text-muted, #97a0ab);
     font-size: 0.64rem;
     font-weight: 750;
     letter-spacing: 0.1em;
 }
 
 .input-group label {
-    color: #98b0c6;
+    color: var(--ff-text-muted, #97a0ab);
     font-size: 0.58rem;
     font-weight: 750;
     letter-spacing: 0.08em;
@@ -347,19 +345,19 @@
 .input-group input,
 .input-group select,
 .input-group textarea {
-    border-color: #294862;
+    border-color: var(--ff-border, #2b313b);
     border-radius: 6px;
-    background: rgba(3, 15, 28, 0.72);
-    color: #edf7ff;
+    background: rgba(0, 0, 0, 0.32);
+    color: var(--ff-text-main, #e7eaee);
     font-size: 0.82rem;
 }
 
 .input-group input:focus,
 .input-group select:focus,
 .input-group textarea:focus {
-    border-color: #54c9f1;
-    background: rgba(4, 21, 38, 0.95);
-    box-shadow: 0 0 0 3px rgba(69, 187, 237, 0.13);
+    border-color: var(--ff-accent, #5aa7d4);
+    background: rgba(0, 0, 0, 0.45);
+    box-shadow: 0 0 0 3px rgba(90, 167, 212, 0.14);
 }
 
 .modal-footer {
@@ -377,31 +375,31 @@
 }
 
 .cancel-btn {
-    border-color: rgba(125, 163, 193, 0.36);
-    color: #b6cadb;
+    border-color: var(--hairline-strong, rgba(255, 255, 255, 0.16));
+    color: var(--ff-text-muted, #97a0ab);
 }
 
 .cancel-btn:hover {
-    border-color: #70c9ee;
-    background: rgba(65, 148, 192, 0.12);
-    color: #effaff;
+    border-color: var(--ff-accent, #5aa7d4);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--ff-text-main, #e7eaee);
 }
 
 .export-btn {
-    border: 1px solid rgba(145, 223, 249, 0.5);
-    background: linear-gradient(180deg, #4dc2ef, #2799ce);
-    color: #04111d;
-    box-shadow: 0 5px 13px rgba(12, 105, 151, 0.25);
+    border: 1px solid transparent;
+    background: #3d84b3;
+    color: #f4f8fb;
+    box-shadow: none;
 }
 
 .export-btn:hover {
-    background: linear-gradient(180deg, #79d1f2, #35abe0);
+    background: #4d95c4;
 }
 
 .export-modal-container :focus-visible,
 .ff-tool-btn:focus-visible,
 .ff-btn:focus-visible,
 .ff-action-btn:focus-visible {
-    outline: 2px solid #8be1fa;
+    outline: 2px solid var(--ff-accent, #5aa7d4);
     outline-offset: 2px;
 }

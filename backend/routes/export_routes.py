@@ -10,6 +10,17 @@ from export_service import generate_custom_package
 
 export_bp = Blueprint('export_bp', __name__)
 
+
+def set_cell_value(ws, coordinate, value):
+    """Write through a merged range by targeting its writable top-left cell."""
+    for merged_range in ws.merged_cells.ranges:
+        if coordinate in merged_range:
+            ws.cell(merged_range.min_row, merged_range.min_col).value = value
+            return
+
+    ws[coordinate] = value
+
+
 @export_bp.route('/api/generate-excel', methods=['POST'])
 def generate_excel():
     # 1. Get Data and Image from the request
@@ -33,29 +44,29 @@ def generate_excel():
     to_formspacing_valid = [val for val in (to_formation, spacing) if val and val.lower() != "n/a"]
 
     # 3. Fill in the Text Data (Mapping specific cells)
-    ws['A1'] = data.get('lz_label')
-    ws['B1'] = data.get('lz_name')
+    set_cell_value(ws, 'A1', data.get('lz_label'))
+    set_cell_value(ws, 'B1', data.get('lz_name'))
 
-    ws['D2'] = data.get('objective')
-    ws['D3'] = data.get('mgrs_grid')
-    ws['D4'] = data.get('lat_long')
-    ws['D5'] = data.get('elevation')
+    set_cell_value(ws, 'D2', data.get('objective'))
+    set_cell_value(ws, 'D3', data.get('mgrs_grid'))
+    set_cell_value(ws, 'D4', data.get('lat_long'))
+    set_cell_value(ws, 'D5', data.get('elevation'))
     
     # Bottom Data Block
-    ws['A23'] = data.get('call_sign')
-    ws['C23'] = data.get('freq')
-    ws['D23'] = "/".join(ldg_formspacing_valid)
-    ws['E23'] = data.get('land_dir')
-    ws['H23'] = data.get('go_around')
-    ws['J23'] = data.get('takeoff_dir')
-    ws['J25'] = "/".join(to_formspacing_valid)
-    ws['F24'] = data.get('door')
-    ws['F25'] = data.get('load')
-    ws['C25'] = "/".join(wpn_control_valid_values)
-    ws['A26'] = data.get('remarks')
+    set_cell_value(ws, 'A23', data.get('call_sign'))
+    set_cell_value(ws, 'C23', data.get('freq'))
+    set_cell_value(ws, 'D23', "/".join(ldg_formspacing_valid))
+    set_cell_value(ws, 'E23', data.get('land_dir'))
+    set_cell_value(ws, 'H23', data.get('go_around'))
+    set_cell_value(ws, 'J23', data.get('takeoff_dir'))
+    set_cell_value(ws, 'J25', "/".join(to_formspacing_valid))
+    set_cell_value(ws, 'F24', data.get('door'))
+    set_cell_value(ws, 'F25', data.get('load'))
+    set_cell_value(ws, 'C25', "/".join(wpn_control_valid_values))
+    set_cell_value(ws, 'A26', data.get('remarks'))
 
-    ws['A28'] = data.get('lz_label')
-    ws['B28'] = data.get('lz_name')
+    set_cell_value(ws, 'A28', data.get('lz_label'))
+    set_cell_value(ws, 'B28', data.get('lz_name'))
 
     # 4. Insert the Map Image
     # Need to process the image stream to make it Excel-compatible
