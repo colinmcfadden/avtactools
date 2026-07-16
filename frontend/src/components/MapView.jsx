@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -42,14 +42,26 @@ const starIcon = new L.Icon({
   iconSize: [15, 15],
 });
 
-// auto-zoom to new location
-function MapUpdater({ center }) {
+// Zoom only when the user selects a new LZ/PZ target. `targetLocation` is
+// derived from workspace state and is recreated on normal renders, so using
+// the array itself as an effect dependency would otherwise lock the map back
+// to zoom 17 after every analysis or graphic edit.
+function MapUpdater({ center, targetId }) {
   const map = useMap();
+  const lastTargetKeyRef = useRef(null);
+  const latitude = center?.[0];
+  const longitude = center?.[1];
+
   useEffect(() => {
-    if (center) {
-      map.setView(center, 17);
-    }
-  }, [center, map]);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    const targetKey = `${targetId ?? "target"}:${latitude.toFixed(7)},${longitude.toFixed(7)}`;
+    if (lastTargetKeyRef.current === targetKey) return;
+
+    lastTargetKeyRef.current = targetKey;
+    map.setView([latitude, longitude], 17);
+  }, [latitude, longitude, map, targetId]);
+
   return null;
 }
 
@@ -117,6 +129,7 @@ const MapView = ({
   addDraftPoint,
   onDraftPointContextMenu,
   draftPoints,
+  activeDiagramId,
   targetLocation,
   mapData,
   detectedLZ,
@@ -266,7 +279,7 @@ const MapView = ({
       )}
 
       {/* Logic to Zoom when target changes */}
-      <MapUpdater center={targetLocation} />
+      <MapUpdater center={targetLocation} targetId={activeDiagramId} />
 
       <MsnxRouteLayer
         routes={importedRoutes}
@@ -308,7 +321,12 @@ const MapView = ({
         />
       )}
 
-      {detectedLZ && <LZDimensions detectedLZ={detectedLZ} />}
+      {detectedLZ && (
+        <LZDimensions
+          key={`lz-dimensions-${activeDiagramId ?? "none"}`}
+          detectedLZ={detectedLZ}
+        />
+      )}
 
       {showHeatmap && terrainData?.overlay && terrainData?.bounds && (
         <ImageOverlay
@@ -321,12 +339,16 @@ const MapView = ({
       )}
 
       {doghouses.map((dh) => (
-        <Doghouse key={dh.id} data={dh} updateDoghouse={updateDoghouse} />
+        <Doghouse
+          key={`${activeDiagramId ?? "lz"}-doghouse-${dh.id}`}
+          data={dh}
+          updateDoghouse={updateDoghouse}
+        />
       ))}
 
       {goArounds.map((ga) => (
         <GoAroundMarker
-          key={ga.id}
+          key={`${activeDiagramId ?? "lz"}-go-around-${ga.id}`}
           data={ga}
           updateGoAround={updateGoAround}
           deleteGoAround={deleteGoAround}
@@ -335,7 +357,7 @@ const MapView = ({
 
       {pzMarkers.map((pz) => (
         <PZMarker
-          key={pz.id}
+          key={`${activeDiagramId ?? "lz"}-pz-${pz.id}`}
           data={pz}
           updatePZMarker={updatePZMarker}
           deletePZMarker={deletePZMarker}
@@ -345,7 +367,7 @@ const MapView = ({
       {units &&
         units.map((unit) => (
           <UnitMarker
-            key={unit.id}
+            key={`${activeDiagramId ?? "lz"}-unit-${unit.id}`}
             data={unit}
             updateUnitPosition={updateUnitPosition}
             deleteUnit={deleteUnit}
@@ -355,7 +377,7 @@ const MapView = ({
 
       {assets.map((asset, index) => (
         <Helicopter
-          key={asset.id}
+          key={`${activeDiagramId ?? "lz"}-helo-${asset.id}`}
           asset={asset}
           allAssets={assets}
           updateAsset={updateAsset}
@@ -365,7 +387,7 @@ const MapView = ({
 
       {sectors.map((sector) => (
         <SectorMarker
-          key={sector.id}
+          key={`${activeDiagramId ?? "lz"}-sector-${sector.id}`}
           data={sector}
           updateSectorPoint={updateSectorPoint}
           moveSector={moveSector}

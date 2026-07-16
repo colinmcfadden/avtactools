@@ -1392,7 +1392,7 @@ html,
   color: #eef7ff;
   padding: 9px 10px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.025em;
 }
@@ -1902,6 +1902,52 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.pz-anchor-control {
+  position: absolute;
+  top: -17px;
+  left: -17px;
+  width: 34px;
+  height: 34px;
+  pointer-events: none;
+}
+
+.pz-base-circle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  background: #d83f45;
+  border: 2px solid #ffb1aa;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(94, 13, 19, 0.48), 0 1px 5px rgba(0, 0, 0, 0.58);
+  pointer-events: auto;
+}
+
+.pz-move-control-wrap {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.82);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.pz-container:hover .pz-move-control-wrap {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.pz-move-control-wrap .pz-move-control {
+  pointer-events: none !important;
+}
+
+.pz-container:hover .pz-move-control-wrap .pz-move-control {
+  pointer-events: auto !important;
 }
 
 .pz-container:hover .pz-move-control,

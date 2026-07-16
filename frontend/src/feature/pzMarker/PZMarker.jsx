@@ -87,8 +87,11 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
         <div class="drag-lifter" style="position: relative; overflow: visible; width: 0; height: 0;">
             <img src="${arrowImageSrc}" style="position: absolute; top: -1000px; left: -1000px; width: 2000px; height: 2000px; pointer-events: none; display: block;" />
             
-            <div style="position: absolute; top: -17px; left: -17px; pointer-events: auto;">
-                ${mapObjectControlMarkup({ type: "move", title: "Drag to move PZ marker", tone: "danger", className: "pz-move-control" })}
+            <div class="pz-anchor-control">
+                <span class="pz-base-circle"></span>
+                <div class="pz-move-control-wrap">
+                    ${mapObjectControlMarkup({ type: "drag", title: "Drag to move PZ marker", tone: "danger", className: "pz-move-control" })}
+                </div>
             </div>
         </div>`;
   };

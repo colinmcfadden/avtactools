@@ -1,34 +1,64 @@
 import { useState } from "react";
 
-export const usePzMarker = (targetLocation) => {
-    const [pzMarker, setPzMarkers] = useState([]);
+/**
+ * Optional controlled-state shape:
+ *   { pzMarker: PzMarker[], setPzMarkers: React.Dispatch<React.SetStateAction<PzMarker[]>> }
+ * `pzMarkers` and `setPzMarker` are also accepted as aliases.
+ */
+export const usePzMarker = (targetLocation, options = {}) => {
+  const [internalPzMarkers, setInternalPzMarkers] = useState([]);
+  const controlledPzMarkers = options?.pzMarker ?? options?.pzMarkers;
+  const controlledSetPzMarkers = options?.setPzMarkers ?? options?.setPzMarker;
+  const isControlled =
+    controlledPzMarkers !== undefined &&
+    typeof controlledSetPzMarkers === "function";
+  const pzMarker = isControlled ? controlledPzMarkers : internalPzMarkers;
+  const setPzMarkers = isControlled ? controlledSetPzMarkers : setInternalPzMarkers;
+  const pzMarkerList = Array.isArray(pzMarker) ? pzMarker : [];
 
-    const addPZMarker = () => {
+  const addPZMarker = () => {
     if (!targetLocation) {
       alert("Please search for a location first.");
       return;
     }
+
     const startLat = parseFloat(targetLocation[0]);
     const startLon = parseFloat(targetLocation[1]);
-    const newPZ = {
+    const newPzMarker = {
       id: `pz-${Date.now()}`,
       lat: startLat,
       lon: startLon,
       tipLat: startLat,
       tipLon: startLon - 0.002,
     };
-    setPzMarkers((prev) => [...prev, newPZ]);
+
+    setPzMarkers((previous) => [
+      ...(Array.isArray(previous) ? previous : []),
+      newPzMarker,
+    ]);
   };
 
   const updatePZMarker = (id, newProps) => {
-    setPzMarkers((prev) =>
-      prev.map((pz) => (pz.id === id ? { ...pz, ...newProps } : pz)),
+    setPzMarkers((previous) =>
+      (Array.isArray(previous) ? previous : []).map((marker) =>
+        marker.id === id ? { ...marker, ...newProps } : marker,
+      ),
     );
   };
 
   const deletePZMarker = (id) => {
-    setPzMarkers((prev) => prev.filter((pz) => pz.id !== id));
+    setPzMarkers((previous) =>
+      (Array.isArray(previous) ? previous : []).filter(
+        (marker) => marker.id !== id,
+      ),
+    );
   };
 
-    return { pzMarker, setPzMarkers, addPZMarker, updatePZMarker, deletePZMarker };
-}
+  return {
+    pzMarker: pzMarkerList,
+    setPzMarkers,
+    addPZMarker,
+    updatePZMarker,
+    deletePZMarker,
+  };
+};

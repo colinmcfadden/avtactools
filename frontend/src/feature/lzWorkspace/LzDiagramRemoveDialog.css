@@ -1,0 +1,135 @@
+.lz-remove-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 8, 15, 0.7);
+  backdrop-filter: blur(3px);
+}
+
+.lz-remove-dialog {
+  width: min(440px, 100%);
+  overflow: hidden;
+  color: #e8eff5;
+  background: linear-gradient(155deg, #132942, #0b1b2f);
+  border: 1px solid rgba(232, 157, 104, 0.64);
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.56), inset 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.lz-remove-dialog__header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 15px 17px 13px;
+  background: rgba(93, 55, 31, 0.3);
+  border-bottom: 1px solid rgba(225, 156, 98, 0.3);
+}
+
+.lz-remove-dialog__icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: #ffc06b;
+  border: 1px solid rgba(255, 194, 103, 0.52);
+  border-radius: 50%;
+  background: rgba(130, 81, 39, 0.28);
+}
+
+.lz-remove-dialog__icon svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.lz-remove-dialog__header p,
+.lz-remove-dialog__header h2 {
+  margin: 0;
+}
+
+.lz-remove-dialog__header p {
+  color: #f5c57d;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+}
+
+.lz-remove-dialog__header h2 {
+  margin-top: 3px;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.lz-remove-dialog__body {
+  padding: 15px 17px 5px;
+  color: #c8d6e2;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.lz-remove-dialog__body p {
+  margin: 0 0 10px;
+}
+
+.lz-remove-dialog__body strong {
+  color: #f3f7fa;
+}
+
+.lz-remove-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 13px 17px 16px;
+}
+
+.lz-remove-dialog__actions button {
+  min-height: 32px;
+  padding: 7px 10px;
+  color: #c8d8e4;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+  background: rgba(35, 59, 81, 0.76);
+  border: 1px solid rgba(130, 165, 193, 0.46);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.lz-remove-dialog__actions button:hover:not(:disabled),
+.lz-remove-dialog__actions button:focus-visible:not(:disabled) {
+  color: #ffffff;
+  border-color: #93d3f3;
+  outline: none;
+}
+
+.lz-remove-dialog__actions .lz-remove-dialog__discard {
+  color: #ffd0ca;
+  background: rgba(117, 50, 54, 0.58);
+  border-color: rgba(239, 122, 114, 0.55);
+}
+
+.lz-remove-dialog__actions .lz-remove-dialog__save {
+  color: #edfbff;
+  background: rgba(28, 104, 139, 0.84);
+  border-color: #7fd5fb;
+}
+
+.lz-remove-dialog__actions button:disabled {
+  opacity: 0.56;
+  cursor: wait;
+}
+
+@media (max-width: 540px) {
+  .lz-remove-dialog__actions button {
+    flex: 1 1 100%;
+  }
+}

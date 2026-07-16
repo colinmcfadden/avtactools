@@ -1,12 +1,26 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
-export const useSectorsOfFire = (targetLocation) => {
-    const [sectorsOfFire, setSectors] = useState([]); 
+/**
+ * Optional controlled-state shape:
+ *   { sectorsOfFire: Sector[], setSectors: React.Dispatch<React.SetStateAction<Sector[]>> }
+ */
+export const useSectorsOfFire = (targetLocation, options = {}) => {
+  const [internalSectors, setInternalSectors] = useState([]);
+  const controlledSectors = options?.sectorsOfFire;
+  const controlledSetSectors = options?.setSectors;
+  const isControlled =
+    controlledSectors !== undefined && typeof controlledSetSectors === "function";
+  const sectorsOfFire = isControlled ? controlledSectors : internalSectors;
+  const setSectors = isControlled ? controlledSetSectors : setInternalSectors;
+  const sectorList = Array.isArray(sectorsOfFire) ? sectorsOfFire : [];
 
-    const addSectorOfFire = () => {
+  const addSectorOfFire = () => {
     if (!targetLocation) return;
-    const centerLat = targetLocation[0];
-    const centerLon = targetLocation[1];
+
+    const centerLat = Number(targetLocation[0]);
+    const centerLon = Number(targetLocation[1]);
+    if (!Number.isFinite(centerLat) || !Number.isFinite(centerLon)) return;
+
     const offset = 0.001;
     const newSector = {
       id: `sec-${Date.now()}`,
@@ -16,36 +30,51 @@ export const useSectorsOfFire = (targetLocation) => {
         { lat: centerLat - offset, lng: centerLon - offset },
       ],
     };
-    setSectors((prev) => [...prev, newSector]);
+
+    setSectors((previous) => [
+      ...(Array.isArray(previous) ? previous : []),
+      newSector,
+    ]);
   };
 
   const updateSectorOfFirePoint = (id, pointIndex, newLat, newLng) => {
-    setSectors((prev) =>
-      prev.map((sec) => {
-        if (sec.id !== id) return sec;
-        const newPoints = [...sec.points];
-        newPoints[pointIndex] = { lat: newLat, lng: newLng };
-        return { ...sec, points: newPoints };
+    setSectors((previous) =>
+      (Array.isArray(previous) ? previous : []).map((sector) => {
+        if (sector.id !== id) return sector;
+        const points = [...sector.points];
+        points[pointIndex] = { lat: newLat, lng: newLng };
+        return { ...sector, points };
       }),
     );
   };
 
   const moveSectorOfFire = (id, dLat, dLon) => {
-    setSectors((prev) =>
-      prev.map((sec) => {
-        if (sec.id !== id) return sec;
-        const newPoints = sec.points.map((p) => ({
-          lat: p.lat + dLat,
-          lng: p.lng + dLon,
+    setSectors((previous) =>
+      (Array.isArray(previous) ? previous : []).map((sector) => {
+        if (sector.id !== id) return sector;
+        const points = sector.points.map((point) => ({
+          lat: point.lat + dLat,
+          lng: point.lng + dLon,
         }));
-        return { ...sec, points: newPoints };
+        return { ...sector, points };
       }),
     );
   };
 
   const deleteSectorOfFire = (id) => {
-    setSectors((prev) => prev.filter((s) => s.id !== id));
+    setSectors((previous) =>
+      (Array.isArray(previous) ? previous : []).filter(
+        (sector) => sector.id !== id,
+      ),
+    );
   };
 
-  return { sectorsOfFire, setSectors, addSectorOfFire, updateSectorOfFirePoint, moveSectorOfFire, deleteSectorOfFire };
-}
+  return {
+    sectorsOfFire: sectorList,
+    setSectors,
+    addSectorOfFire,
+    updateSectorOfFirePoint,
+    moveSectorOfFire,
+    deleteSectorOfFire,
+  };
+};

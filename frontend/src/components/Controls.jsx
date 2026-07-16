@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import MissionSummary from "./MissionSummary";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import { symbolDataUri } from "../feature/symbols/milsym";
@@ -41,9 +41,55 @@ const Controls = ({
   setActiveNotams,
   winds,
   loadingWeather,
+  // Diagram lifecycle controls. They intentionally default to the legacy
+  // behavior so Controls can still be used outside the diagram workspace.
+  canAnalyze: canAnalyzeProp,
+  canDrawBoundary: canDrawBoundaryProp,
+  canUseDiagramTools: canUseDiagramToolsProp,
+  canSaveDiagram: canSaveDiagramProp,
+  diagramStatus,
+  diagramReadinessText,
+  readinessText,
 }) => {
   const [showUnitMenu, setShowUnitMenu] = useState(false);
   const msnxInputRef = useRef(null);
+
+  const hasLifecycleProps =
+    canAnalyzeProp !== undefined ||
+    canDrawBoundaryProp !== undefined ||
+    canUseDiagramToolsProp !== undefined ||
+    canSaveDiagramProp !== undefined ||
+    Boolean(diagramStatus) ||
+    Boolean(diagramReadinessText) ||
+    Boolean(readinessText);
+  const legacyCanAnalyze = Boolean(mapData && targetLocation);
+  const canAnalyze = canAnalyzeProp ?? legacyCanAnalyze;
+  const canDrawBoundary = canDrawBoundaryProp ?? true;
+  const canUseDiagramTools = canUseDiagramToolsProp ?? true;
+  const canSaveDiagram = canSaveDiagramProp ?? canUseDiagramTools;
+  const canExport = canUseDiagramTools && canSaveDiagram;
+  const readinessMessage =
+    diagramReadinessText ??
+    readinessText ??
+    (hasLifecycleProps && !targetLocation
+      ? "Set a target on the map to begin an LZ/PZ diagram."
+      : hasLifecycleProps && !canDrawBoundary
+        ? "Set a target on the map before drawing an LZ boundary."
+      : hasLifecycleProps && !canUseDiagramTools
+        ? "Analyze the LZ to unlock planning tools."
+        : null);
+  const analysisEnabled = Boolean(targetLocation) && canAnalyze;
+  const showAnalyzeAction = hasLifecycleProps || legacyCanAnalyze;
+  const diagramStatusLabel =
+    typeof diagramStatus === "string" && diagramStatus.length > 0
+      ? diagramStatus.replace(/[-_]/g, " ").toUpperCase()
+      : "PLAN";
+
+  useEffect(() => {
+    if (!canUseDiagramTools) {
+      setShowUnitMenu(false);
+    }
+  }, [canUseDiagramTools]);
 
   const handleMsnxFileChange = (e) => {
     const file = e.target.files[0];
@@ -80,45 +126,48 @@ const Controls = ({
 
   // Simple handler to trigger the MapView logic
   const onDownloadClick = () => {
+    if (!canExport || isExporting) return;
     setIsExporting(true);
   };
 
   const handleAddHelo = () => {
+    if (!canUseDiagramTools) return;
     addHelo();
-    closeMobileMenu();
+    closeMobileMenu?.();
   };
   const handleAddPZMarker = () => {
+    if (!canUseDiagramTools) return;
     addPZMarker();
-    closeMobileMenu();
+    closeMobileMenu?.();
   };
   const handleAddSector = () => {
+    if (!canUseDiagramTools) return;
     addSector();
-    closeMobileMenu();
+    closeMobileMenu?.();
   };
   const handleAddGoAround = (dir) => {
+    if (!canUseDiagramTools) return;
     addGoAround(dir);
-    closeMobileMenu();
+    closeMobileMenu?.();
   };
   const handleAddUnit = (unit) => {
+    if (!canUseDiagramTools) return;
     addUnit(unit);
     setShowUnitMenu(false);
-    closeMobileMenu();
+    closeMobileMenu?.();
   };
   const handleEnableExportMode = () => {
+    if (!canExport) return;
     enableExportMode();
-    closeMobileMenu();
+    closeMobileMenu?.();
+  };
+  const handleToggleDrawingMode = () => {
+    if (!canDrawBoundary) return;
+    toggleDrawingMode();
   };
 
   return (
     <div className="ff-panel">
-      <div className="ops-header">
-        <div className="ops-ident">
-          <span className="ops-eyebrow">EZ-PZ</span>
-          <strong>TACTICAL AVIATION</strong>
-          <span className="ops-subtitle">LANDING ZONE PLANNER</span>
-        </div>
-        <span className="ops-status">PLAN</span>
-      </div>
       {/* Search Header */}
       <div className="ff-section search-section">
         <label className="ff-label">MGRS Target</label>
@@ -150,16 +199,38 @@ const Controls = ({
             />
           </div>
 
-          {mapData && targetLocation && (
+          {showAnalyzeAction && (
             <div className="analysis-action-row">
               <button
-                onClick={() =>
-                  performTerrainAnalysis(targetLocation[0], targetLocation[1])
+                onClick={() => {
+                  if (!analysisEnabled) return;
+                  performTerrainAnalysis(targetLocation[0], targetLocation[1]);
+                }}
+                disabled={!analysisEnabled}
+                title={
+                  !analysisEnabled
+                    ? readinessMessage || "Set a target on the map before analyzing the LZ."
+                    : "Analyze the active LZ/PZ diagram"
                 }
-                className={`ff-action-btn ff-btn primary`}
+                className={`ff-action-btn ff-btn primary ${!analysisEnabled ? "disabled" : ""}`}
               >
                 Analyze the LZ
               </button>
+            </div>
+          )}
+
+          {readinessMessage && (
+            <div
+              className="ff-readiness-text"
+              role="status"
+              style={{
+                color: "#9fb0c8",
+                fontSize: "0.76rem",
+                lineHeight: 1.35,
+                marginTop: "0.65rem",
+              }}
+            >
+              {readinessMessage}
             </div>
           )}
 
@@ -214,9 +285,14 @@ const Controls = ({
           <div className="ff-card-header">LZ/PZ Tools</div>
           <div className="tool-grid">
             <button
-              onClick={toggleDrawingMode}
+              onClick={handleToggleDrawingMode}
+              disabled={!canDrawBoundary}
               className={`ff-tool-btn ${isDrawingLZ ? "active" : ""}`}
-              title="Draw Custom LZ"
+              title={
+                canDrawBoundary
+                  ? "Draw Custom LZ"
+                  : readinessMessage || "Set a target on the map before drawing an LZ boundary."
+              }
               style={{ borderColor: isDrawingLZ ? "#FFC107" : "" }}
             >
               <svg
@@ -239,8 +315,9 @@ const Controls = ({
 
             <button
               onClick={handleAddHelo}
+              disabled={!canUseDiagramTools}
               className="ff-tool-btn"
-              title="Add Helo"
+              title={canUseDiagramTools ? "Add Helo" : readinessMessage}
             >
               <img
                 src="/icons/helicopter.png"
@@ -252,8 +329,9 @@ const Controls = ({
 
             <button
               onClick={handleAddPZMarker}
+              disabled={!canUseDiagramTools}
               className="ff-tool-btn"
-              title="PZ/Pickup"
+              title={canUseDiagramTools ? "PZ/Pickup" : readinessMessage}
             >
               {pzButtonSvg}
               <span className="btn-label">PZ</span>
@@ -261,8 +339,9 @@ const Controls = ({
 
             <button
               onClick={handleAddSector}
+              disabled={!canUseDiagramTools}
               className="ff-tool-btn"
-              title="Sector"
+              title={canUseDiagramTools ? "Sector" : readinessMessage}
             >
               <svg viewBox="0 0 50 50" width="24" height="24">
                 <polygon
@@ -279,8 +358,13 @@ const Controls = ({
           <div className="tool-grid">
             <div className="relative-wrapper">
               <button
-                onClick={() => setShowUnitMenu(!showUnitMenu)}
+                onClick={() => {
+                  if (!canUseDiagramTools) return;
+                  setShowUnitMenu(!showUnitMenu);
+                }}
+                disabled={!canUseDiagramTools}
                 className={`ff-tool-btn ${showUnitMenu ? "active" : ""}`}
+                title={canUseDiagramTools ? "Add Unit" : readinessMessage}
               >
                 <span style={{ fontSize: "20px" }}>+</span>
                 <span className="btn-label">Unit</span>
@@ -290,6 +374,7 @@ const Controls = ({
                 <div className="ff-dropdown">
                   <div
                     onClick={() => {
+                      if (!canUseDiagramTools) return;
                       onOpenUnitBuilder?.();
                       setShowUnitMenu(false);
                     }}
@@ -302,6 +387,7 @@ const Controls = ({
                     <div
                       key={unit.id}
                       onClick={() => {
+                        if (!canUseDiagramTools) return;
                         handleAddUnit(unit);
                         setShowUnitMenu(false);
                       }}
@@ -318,6 +404,8 @@ const Controls = ({
             <button
               className="ff-tool-btn"
               onClick={() => handleAddGoAround("left")}
+              disabled={!canUseDiagramTools}
+              title={canUseDiagramTools ? "Add left go-around" : readinessMessage}
             >
               <svg width="24" height="24" viewBox="0 0 100 100">
                 <path
@@ -333,6 +421,8 @@ const Controls = ({
             <button
               className="ff-tool-btn"
               onClick={() => handleAddGoAround("right")}
+              disabled={!canUseDiagramTools}
+              title={canUseDiagramTools ? "Add right go-around" : readinessMessage}
             >
               <svg width="24" height="24" viewBox="0 0 100 100">
                 <path
@@ -351,14 +441,26 @@ const Controls = ({
         <div className="ff-card ff-card-export">
           <div className="ff-card-header">Export</div>
           <div className="export-controls">
-            <button onClick={enableExportMode} className={`ff-action-btn blue`}>
+            <button
+              onClick={handleEnableExportMode}
+              disabled={!canExport}
+              title={canExport ? "Set the capture area" : readinessMessage}
+              className={`ff-action-btn blue ${!canExport ? "disabled" : ""}`}
+            >
               Set Capture Area
             </button>
 
             <button
               onClick={onDownloadClick}
-              disabled={!exportBox || isExporting}
-              className={`ff-action-btn green ${!exportBox || isExporting ? "disabled" : ""}`}
+              disabled={!canExport || !exportBox || isExporting}
+              title={
+                !canExport
+                  ? readinessMessage
+                  : !exportBox
+                    ? "Set a capture area before exporting."
+                    : "Export LZ card"
+              }
+              className={`ff-action-btn green ${!canExport || !exportBox || isExporting ? "disabled" : ""}`}
             >
               {isExporting ? `Processing...` : "Export LZ Card"}
             </button>
