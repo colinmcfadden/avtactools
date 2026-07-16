@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
-import { convertToLatLongString, isPointInPolygon } from "./utils/Helpers";
+import { convertToLatLongString } from "./utils/Helpers";
 import ExportModal from "./feature/export/ExportModal";
 import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
 import axios from "axios";
-import { useDoghouses } from "./feature/doghouses/useDoghouses";
+import {
+  createDefaultDoghouses,
+  useDoghouses,
+} from "./feature/doghouses/useDoghouses";
 import { useHelicopters } from "./feature/helicopters/useHelicopters";
 import { useSectorsOfFire } from "./feature/sectorsOfFire/useSectorsOfFire";
 import { useGoAround } from "./feature/goAround/useGoAround";
@@ -32,19 +35,18 @@ import { useThreats } from "./feature/threats/useThreats";
 import ThreatDialog from "./feature/threats/ThreatDialog";
 import ThreatExportModal from "./feature/threats/ThreatExportModal";
 import UnitBuilder from "./feature/unit/UnitBuilder";
+import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
+import ActiveLzWindow from "./feature/lzWorkspace/ActiveLzWindow";
+import LzDiagramRemoveDialog from "./feature/lzWorkspace/LzDiagramRemoveDialog";
+
+const resolveStateUpdate = (nextValue, currentValue) =>
+  typeof nextValue === "function" ? nextValue(currentValue) : nextValue;
+
+const getSavedMapId = (result) => result?.id ?? result?.data?.id ?? null;
 
 function App() {
-  const [targetLocation, setTargetLocation] = useState(null);
-  const [detectedLZ, setDetectedLZ] = useState(null);
-  const [gridElevation, setGridElevation] = useState("");
-  const [latLong, setLatLong] = useState("");
-  const [customLZ, setCustomLZ] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
-  const [showHeatmap, setShowHeatmap] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showLZOutline, setShowLZOutline] = useState(true);
-  const [mapData, setMapData] = useState([]);
-  const [flightData, setFlightData] = useState({});
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [gridInput, setGridInput] = useState("16S GC 28864 55349");
   const [isDrawingLZ, setIsDrawingLZ] = useState(false);
@@ -52,50 +54,240 @@ function App() {
   const [clickedGrid, setClickedGrid] = useState("Loading...");
   const [mapStyle, setMapStyle] = useState("satellite");
 
-  const { goAround, setGoAround, addGoAround, updateGoAround, deleteGoAround } =
-    useGoAround(targetLocation);
+  const lzWorkspace = useLzWorkspace();
+  const {
+    activeDiagram,
+    activeDiagramId,
+    diagrams,
+    hasActiveTarget,
+    canAnalyze,
+    canEditGraphics,
+    startDiagram,
+    setActiveDiagram,
+    setAnalysisDraft,
+    setRuntimeTerrainData,
+    completeAnalysis,
+    resetAnalysis,
+    setGraphicCollection,
+    setGraphics,
+    setFlightData: setDiagramFlightData,
+    setView,
+    markSaved,
+    clearSaved,
+    removeDiagram,
+    serializeActiveDiagram,
+    importLegacySnapshot,
+  } = lzWorkspace;
+  const workspaceRef = useRef(lzWorkspace.workspace);
+  const pendingSaveDiagramIdRef = useRef(null);
+
+  useEffect(() => {
+    workspaceRef.current = lzWorkspace.workspace;
+  }, [lzWorkspace.workspace]);
+
+  const targetLocation = activeDiagram?.target
+    ? [activeDiagram.target.lat, activeDiagram.target.lon]
+    : null;
+  const detectedLZ = activeDiagram?.analysis?.detectedLZ ?? null;
+  const customLZ = activeDiagram?.analysis?.customLZ ?? null;
+  const terrainData = activeDiagram?.analysis?.terrainData ?? null;
+  const gridElevation = activeDiagram?.analysis?.gridElevation ?? "";
+  const latLong = activeDiagram?.analysis?.latLong ?? "";
+  const flightData = activeDiagram?.flightData ?? {};
+  const mapData = activeDiagram?.mapData ?? { mgrs: gridInput };
+  const showHeatmap = activeDiagram?.view?.showHeatmap ?? false;
+  const showLZOutline = activeDiagram?.view?.showLZOutline ?? true;
+  const diagramStatus = activeDiagram?.status ?? "no_target";
+  const diagramReadinessText = !hasActiveTarget
+    ? "Set a target on the map to initialize an LZ/PZ diagram."
+    : !canEditGraphics
+      ? "Target set. Analyze the LZ to unlock planning graphics, export, and save." : "";
+
+  const updateActiveAnalysis = useCallback(
+    (key, nextValue) => {
+      const diagram = workspaceRef.current?.diagramsById?.[
+        workspaceRef.current?.activeDiagramId
+      ];
+      if (!diagram?.target) return;
+      setAnalysisDraft(
+        {
+          [key]: resolveStateUpdate(nextValue, diagram.analysis?.[key]),
+        },
+        diagram.id,
+      );
+    },
+    [setAnalysisDraft],
+  );
+
+  const setCustomLZ = useCallback(
+    (nextValue) => updateActiveAnalysis("customLZ", nextValue),
+    [updateActiveAnalysis],
+  );
+  const setDetectedLZ = useCallback(
+    (nextValue) => updateActiveAnalysis("detectedLZ", nextValue),
+    [updateActiveAnalysis],
+  );
+  const setGridElevation = useCallback(
+    (nextValue) => updateActiveAnalysis("gridElevation", nextValue),
+    [updateActiveAnalysis],
+  );
+  const setLatLong = useCallback(
+    (nextValue) => updateActiveAnalysis("latLong", nextValue),
+    [updateActiveAnalysis],
+  );
+  const setFlightData = useCallback(
+    (nextValue) => {
+      const diagram = workspaceRef.current?.diagramsById?.[
+        workspaceRef.current?.activeDiagramId
+      ];
+      if (!diagram) return;
+      setDiagramFlightData(
+        resolveStateUpdate(nextValue, diagram.flightData ?? {}),
+        diagram.id,
+      );
+    },
+    [setDiagramFlightData],
+  );
+
+  const setActiveGraphicCollection = useCallback(
+    (collection, nextValue) => {
+      const diagram = workspaceRef.current?.diagramsById?.[
+        workspaceRef.current?.activeDiagramId
+      ];
+      if (!diagram) return;
+      setGraphicCollection(
+        collection,
+        resolveStateUpdate(nextValue, diagram.graphics?.[collection] ?? []),
+        diagram.id,
+      );
+    },
+    [setGraphicCollection],
+  );
+
+  const setDoghouses = useCallback(
+    (nextValue) => setActiveGraphicCollection("doghouses", nextValue),
+    [setActiveGraphicCollection],
+  );
+  const setHelicopters = useCallback(
+    (nextValue) => setActiveGraphicCollection("helicopters", nextValue),
+    [setActiveGraphicCollection],
+  );
+  const setPzMarkers = useCallback(
+    (nextValue) => setActiveGraphicCollection("pzMarkers", nextValue),
+    [setActiveGraphicCollection],
+  );
+  const setSectors = useCallback(
+    (nextValue) => setActiveGraphicCollection("sectorsOfFire", nextValue),
+    [setActiveGraphicCollection],
+  );
+  const setGoAround = useCallback(
+    (nextValue) => setActiveGraphicCollection("goArounds", nextValue),
+    [setActiveGraphicCollection],
+  );
+  const setUnits = useCallback(
+    (nextValue) => setActiveGraphicCollection("units", nextValue),
+    [setActiveGraphicCollection],
+  );
+  const setExportBox = useCallback(
+    (nextValue) => {
+      const diagram = workspaceRef.current?.diagramsById?.[
+        workspaceRef.current?.activeDiagramId
+      ];
+      if (!diagram) return;
+      setGraphics(
+        {
+          exportBox: resolveStateUpdate(
+            nextValue,
+            diagram.graphics?.exportBox ?? null,
+          ),
+        },
+        diagram.id,
+      );
+    },
+    [setGraphics],
+  );
+  const setShowHeatmap = useCallback(
+    (nextValue) => {
+      const diagram = workspaceRef.current?.diagramsById?.[
+        workspaceRef.current?.activeDiagramId
+      ];
+      if (!diagram) return;
+      setView(
+        {
+          showHeatmap: resolveStateUpdate(
+            nextValue,
+            diagram.view?.showHeatmap ?? false,
+          ),
+        },
+        diagram.id,
+      );
+    },
+    [setView],
+  );
+  const setShowLZOutline = useCallback(
+    (nextValue) => {
+      const diagram = workspaceRef.current?.diagramsById?.[
+        workspaceRef.current?.activeDiagramId
+      ];
+      if (!diagram) return;
+      setView(
+        {
+          showLZOutline: resolveStateUpdate(
+            nextValue,
+            diagram.view?.showLZOutline ?? true,
+          ),
+        },
+        diagram.id,
+      );
+    },
+    [setView],
+  );
+
+  const activeGraphics = activeDiagram?.graphics ?? {};
+  const { goAround, addGoAround, updateGoAround, deleteGoAround } =
+    useGoAround(targetLocation, {
+      goAround: activeGraphics.goArounds ?? [],
+      setGoAround,
+    });
   const {
     sectorsOfFire,
-    setSectors,
     addSectorOfFire,
     updateSectorOfFirePoint,
     moveSectorOfFire,
     deleteSectorOfFire,
-  } = useSectorsOfFire(targetLocation);
-  const { units, setUnits, addUnit, updateUnit, updateUnitPosition, deleteUnit } =
-    useUnit(targetLocation);
+  } = useSectorsOfFire(targetLocation, {
+    sectorsOfFire: activeGraphics.sectorsOfFire ?? [],
+    setSectors,
+  });
+  const { units, addUnit, updateUnit, updateUnitPosition, deleteUnit } =
+    useUnit(targetLocation, {
+      units: activeGraphics.units ?? [],
+      setUnits,
+    });
   const [editingUnit, setEditingUnit] = useState(null);
-  const { pzMarker, setPzMarkers, addPZMarker, updatePZMarker, deletePZMarker } =
-    usePzMarker(targetLocation);
+  const { pzMarker, addPZMarker, updatePZMarker, deletePZMarker } =
+    usePzMarker(targetLocation, {
+      pzMarker: activeGraphics.pzMarkers ?? [],
+      setPzMarkers,
+    });
   const { winds, activeNotams, setActiveNotams, loadingWeather, fetchWeather } =
     useWeather();
-  const { doghouses, setDoghouses, updateDoghouse } = useDoghouses(
-    targetLocation,
-    setFlightData,
-  );
-
-  // Restoring a saved doghouse layout must happen AFTER useDoghouses' own
-  // targetLocation-triggered regeneration effect, or the regeneration clobbers
-  // it. Effects run in hook-registration order within this component, so this
-  // effect (declared after useDoghouses) always runs after that one.
-  const [pendingDoghouseRestore, setPendingDoghouseRestore] = useState(null);
-  useEffect(() => {
-    if (pendingDoghouseRestore) {
-      setDoghouses(pendingDoghouseRestore);
-      setPendingDoghouseRestore(null);
-    }
-  }, [pendingDoghouseRestore, setDoghouses]);
+  const { doghouses, updateDoghouse } = useDoghouses(targetLocation, setFlightData, {
+    doghouses: activeGraphics.doghouses ?? [],
+    setDoghouses,
+  });
   const {
     helicopters,
-    setHelicopters,
     addHelo,
     updateHelicopter,
     deleteHelicopter,
     proximityAlerts,
-  } = useHelicopters(targetLocation);
+  } = useHelicopters(targetLocation, {
+    helicopters: activeGraphics.helicopters ?? [],
+    setHelicopters,
+  });
   const {
     exportBox,
-    setExportBox,
     isExporting,
     setIsExporting,
     exportProgress,
@@ -108,13 +300,45 @@ function App() {
     deleteExportBox,
     handleExportComplete,
     handleFinalExport,
-  } = useExport(targetLocation);
+  } = useExport(targetLocation, {
+    exportBox: activeGraphics.exportBox ?? null,
+    setExportBox,
+  });
+
+  const handleTerrainData = useCallback(
+    (nextTerrainData, diagramId) => {
+      const diagram = workspaceRef.current?.diagramsById?.[diagramId];
+      if (!diagram?.target) return;
+      setRuntimeTerrainData(nextTerrainData, diagramId);
+    },
+    [setRuntimeTerrainData],
+  );
+
+  const handleAnalysisComplete = useCallback(
+    (analysis, diagramId) => {
+      const diagram = workspaceRef.current?.diagramsById?.[diagramId];
+      if (!diagram?.target) return;
+
+      completeAnalysis(analysis, diagramId);
+
+      // Defaults belong to this diagram alone and are created once, after
+      // analysis has established the LZ/PZ. They are never regenerated when a
+      // later target starts a separate diagram.
+      if (!diagram.graphics?.doghouses?.length) {
+        setGraphicCollection(
+          "doghouses",
+          createDefaultDoghouses(
+            [diagram.target.lat, diagram.target.lon],
+            diagramId,
+          ),
+          diagramId,
+        );
+      }
+    },
+    [completeAnalysis, setGraphicCollection],
+  );
   const {
     performTerrainAnalysis,
-    terrainData,
-    setTerrainData,
-    elevation,
-    slope,
   } = useTerrain(
     targetLocation,
     setLoading,
@@ -127,12 +351,21 @@ function App() {
     setDetectedLZ,
     setCustomLZ,
     fetchWeather,
+    {
+      analysisDiagramId: activeDiagramId,
+      terrainData,
+      onAnalysisComplete: handleAnalysisComplete,
+      onTerrainData: handleTerrainData,
+    },
   );
 
   const { user } = useAuth();
   const { history, isLoadingHistory, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isLayerSaveInProgress, setIsLayerSaveInProgress] = useState(false);
+  const [removeConfirmationDiagramId, setRemoveConfirmationDiagramId] = useState(null);
+  const [pendingRemovalDiagramId, setPendingRemovalDiagramId] = useState(null);
 
   const {
     importedRoutes,
@@ -390,11 +623,19 @@ function App() {
   // recent sketched route.
   const handleAddLocalPointToRoute = (localPoint) => {
     const name = (localPoint.name || "POINT").toUpperCase();
+    // Carry the local point's charted elevation so the route uses it instead of
+    // the DEM at that point.
+    const chartElevationFt =
+      typeof localPoint.elevationFt === "number" ? localPoint.elevationFt : undefined;
     if (isSketching) {
-      addDraftPoint(localPoint.lat, localPoint.lon, { ptType: "turn", name });
+      addDraftPoint(localPoint.lat, localPoint.lon, { ptType: "turn", name, chartElevationFt });
     } else if (sketchedRoutes.length > 0) {
       const target = sketchedRoutes[sketchedRoutes.length - 1];
-      appendSketchPoint(target.id, localPoint.lat, localPoint.lon, { name, ptType: "turn" });
+      appendSketchPoint(target.id, localPoint.lat, localPoint.lon, {
+        name,
+        ptType: "turn",
+        chartElevationFt,
+      });
     } else {
       alert(
         'Start a route first (Route button), then use "+" on a local point to snap the line to it.',
@@ -472,48 +713,161 @@ function App() {
     setIsHistoryModalOpen(true);
   };
 
-  const serializeMapState = () => ({
-    targetLocation,
-    gridInput,
-    mapData,
-    mapStyle,
-    showLZOutline,
-    showHeatmap,
-    customLZ,
-    detectedLZ,
-    terrainData,
-    gridElevation,
-    latLong,
-    flightData,
-    helicopters,
-    pzMarker,
-    sectorsOfFire,
-    goAround,
-    units,
-    doghouses,
-  });
+  const updateSavedActiveDiagram = useCallback(
+    async ({ removeAfterSave = false } = {}) => {
+      const diagramId = activeDiagramId;
+      const diagram = workspaceRef.current?.diagramsById?.[diagramId];
+      if (!diagram?.savedId) return false;
 
-  const applyMapState = (snapshot) => {
-    if (!snapshot) return;
-    setTargetLocation(snapshot.targetLocation ?? null);
-    setGridInput(snapshot.gridInput ?? "16S GC 28864 55349");
-    setMapData(snapshot.mapData ?? []);
-    setMapStyle(snapshot.mapStyle ?? "satellite");
-    setShowLZOutline(snapshot.showLZOutline ?? true);
-    setShowHeatmap(snapshot.showHeatmap ?? false);
-    setCustomLZ(snapshot.customLZ ?? null);
-    setDetectedLZ(snapshot.detectedLZ ?? null);
-    setTerrainData(snapshot.terrainData ?? null);
-    setGridElevation(snapshot.gridElevation ?? "");
-    setLatLong(snapshot.latLong ?? "");
-    setFlightData(snapshot.flightData ?? {});
-    setHelicopters(snapshot.helicopters ?? []);
-    setPzMarkers(snapshot.pzMarker ?? []);
-    setSectors(snapshot.sectorsOfFire ?? []);
-    setGoAround(snapshot.goAround ?? []);
-    setUnits(snapshot.units ?? []);
-    setPendingDoghouseRestore(snapshot.doghouses ?? []);
+      setIsLayerSaveInProgress(true);
+      try {
+        const result = await updateMap(diagram.savedId, serializeActiveDiagram());
+        await fetchHistory();
+        markSaved(
+          {
+            savedId: getSavedMapId(result) ?? diagram.savedId,
+            name: diagram.name,
+          },
+          diagram.id,
+        );
+        if (removeAfterSave) removeDiagram(diagram.id);
+        return true;
+      } catch (err) {
+        alert("Error saving LZ/PZ diagram: " + err.message);
+        return false;
+      } finally {
+        setIsLayerSaveInProgress(false);
+      }
+    },
+    [
+      activeDiagramId,
+      fetchHistory,
+      markSaved,
+      removeDiagram,
+      serializeActiveDiagram,
+      updateMap,
+    ],
+  );
+
+  const handleLayerSave = useCallback(() => {
+    if (!activeDiagram) return;
+    if (!user) {
+      alert("Saving and loading maps and routes is only available to signed-in users.");
+      return;
+    }
+    if (!activeDiagram.savedId) {
+      setIsHistoryModalOpen(true);
+      return;
+    }
+    if (!activeDiagram.dirty) return;
+    void updateSavedActiveDiagram();
+  }, [activeDiagram, updateSavedActiveDiagram, user]);
+
+  const handleLayerRemove = useCallback(() => {
+    if (!activeDiagram) return;
+
+    if (!activeDiagram.savedId || activeDiagram.dirty) {
+      setRemoveConfirmationDiagramId(activeDiagram.id);
+      return;
+    }
+
+    removeDiagram(activeDiagram.id);
+  }, [activeDiagram, removeDiagram]);
+
+  const pendingRemovalDiagram = diagrams.find(
+    (diagram) => diagram.id === removeConfirmationDiagramId,
+  );
+
+  const handleDiscardDiagram = useCallback(() => {
+    if (!removeConfirmationDiagramId) return;
+    removeDiagram(removeConfirmationDiagramId);
+    setRemoveConfirmationDiagramId(null);
+  }, [removeConfirmationDiagramId, removeDiagram]);
+
+  const handleSaveFirstAndRemove = useCallback(() => {
+    const diagram = workspaceRef.current?.diagramsById?.[removeConfirmationDiagramId];
+    if (!diagram) {
+      setRemoveConfirmationDiagramId(null);
+      return;
+    }
+    if (!user) {
+      alert("Saving and loading maps and routes is only available to signed-in users.");
+      return;
+    }
+
+    setRemoveConfirmationDiagramId(null);
+    if (diagram.savedId) {
+      void updateSavedActiveDiagram({ removeAfterSave: true });
+      return;
+    }
+
+    setPendingRemovalDiagramId(diagram.id);
+    setIsHistoryModalOpen(true);
+  }, [removeConfirmationDiagramId, updateSavedActiveDiagram, user]);
+
+  const startDiagramAtTarget = useCallback(
+    (target, mgrs) => {
+      const normalizedMgrs = (mgrs || "").trim();
+      const diagramId = startDiagram(target, {
+        mgrs: normalizedMgrs,
+        mapData: { mgrs: normalizedMgrs },
+      });
+      if (!diagramId) return null;
+
+      // A new target deliberately starts a new active diagram. Existing work
+      // remains in the workspace, untouched, until the user switches back or
+      // saves it. Nothing is copied or regenerated from the previous target.
+      setGridInput(normalizedMgrs || gridInput);
+      setDrawingPoints([]);
+      setIsDrawingLZ(false);
+      setEditingUnit(null);
+      setContextMenu(null);
+      return diagramId;
+    },
+    [gridInput, startDiagram],
+  );
+
+  const handleSelectDiagram = useCallback(
+    (diagramId) => {
+      if (!diagramId) return;
+      const nextDiagram = workspaceRef.current?.diagramsById?.[diagramId];
+      setActiveDiagram(diagramId);
+      if (nextDiagram?.target?.mgrs) setGridInput(nextDiagram.target.mgrs);
+      setDrawingPoints([]);
+      setIsDrawingLZ(false);
+      setEditingUnit(null);
+      setContextMenu(null);
+    },
+    [setActiveDiagram],
+  );
+
+  const serializeMapState = () => {
+    pendingSaveDiagramIdRef.current = activeDiagramId;
+    return serializeActiveDiagram();
   };
+
+  const applyMapState = useCallback(
+    (snapshot, historyEntry) => {
+      if (!snapshot) return;
+
+      const savedId = historyEntry?.id ?? snapshot?.savedId ?? null;
+      const name = historyEntry?.name ?? snapshot?.name ?? "";
+      const loadedId = importLegacySnapshot(snapshot, { savedId, name });
+      const loadedMgrs =
+        snapshot?.target?.mgrs ??
+        snapshot?.mapData?.mgrs ??
+        snapshot?.gridInput ??
+        "";
+      if (loadedMgrs) setGridInput(loadedMgrs);
+      if (snapshot?.mapStyle) setMapStyle(snapshot.mapStyle);
+      setDrawingPoints([]);
+      setIsDrawingLZ(false);
+      setEditingUnit(null);
+      setContextMenu(null);
+      return loadedId;
+    },
+    [importLegacySnapshot],
+  );
 
   const handleMapRightClick = async (lat, lon, x, y) => {
     setContextMenu({ x, y, type: "map", lat, lon });
@@ -530,30 +884,8 @@ function App() {
   };
 
   const handleSetAsTarget = () => {
-    if (clickedGrid === "Calculating...") return;
-
-    const newTarget = [contextMenu.lat, contextMenu.lon];
-
-    // 1. Update the UI Text
-    setGridInput(clickedGrid);
-    setMapData((prev) => ({ ...prev, mgrs: clickedGrid }));
-
-    // 2. Always clear the "Official" data when a target moves
-    // (So the user is forced to hit Analyze for the new center point)
-    setDetectedLZ(null);
-    setTerrainData(null);
-
-    // 3. SMART CLEAR: Only destroy the custom drawn LZ if the new target is OUTSIDE of it
-    if (customLZ && !isPointInPolygon(newTarget, customLZ)) {
-      setCustomLZ(null);
-      setDrawingPoints([]);
-    }
-
-    // 4. Set the new target (This triggers your Doghouses)
-    setTargetLocation(newTarget);
-
-    // 5. Close the menu
-    setContextMenu(null);
+    if (clickedGrid === "Calculating..." || !contextMenu) return;
+    startDiagramAtTarget([contextMenu.lat, contextMenu.lon], clickedGrid);
   };
 
   // 2. LZ Right-Click Handler
@@ -573,6 +905,11 @@ function App() {
 
   // 3. Drawing Controls
   const toggleDrawingMode = () => {
+    if (!hasActiveTarget) {
+      alert("Set a target on the map before drawing an LZ/PZ boundary.");
+      return;
+    }
+
     if (isDrawingLZ) {
       // Finish drawing
       if (drawingPoints.length > 2) {
@@ -582,6 +919,11 @@ function App() {
       setDrawingPoints([]);
     } else {
       // Start drawing
+      // Changing an already analyzed boundary makes the existing analysis
+      // stale. Keep its graphics, but require analysis again before edits.
+      if (activeDiagram?.status === "analyzed") {
+        resetAnalysis(activeDiagram.id);
+      }
       setCustomLZ(null);
       setDrawingPoints([]);
       setIsDrawingLZ(true);
@@ -590,13 +932,12 @@ function App() {
 
   const handleSearch = async () => {
     setLoading(true);
-    setMapData((prev) => ({ ...prev, mgrs: gridInput }));
     try {
       const res = await axios.post(`${API_BASE_URL}/convert-grid`, {
         grid: gridInput,
       });
       const { lat, lon } = res.data;
-      setTargetLocation([lat, lon]);
+      startDiagramAtTarget([lat, lon], gridInput);
     } catch (err) {
       alert("Error finding grid: " + err.message);
     } finally {
@@ -655,9 +996,6 @@ function App() {
           onImportMsnx={handleImportMsnx}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
-          setTargetLocation={setTargetLocation}
-          setDetectedLZ={setDetectedLZ}
-          setAssets={setHelicopters}
           addHelo={addHelo}
           setShowHeatmap={setShowHeatmap}
           terrainData={terrainData}
@@ -677,10 +1015,10 @@ function App() {
           setExportProgress={setExportProgress}
           isExporting={isExporting}
           exportProgress={exportProgress}
-          setMapData={setMapData}
           setLatLong={setLatLong}
           setGridElevation={setGridElevation}
           mapData={{
+            ...mapData,
             elevation: gridElevation,
           }}
           isMobileMenuOpen={isMobileMenuOpen}
@@ -694,6 +1032,12 @@ function App() {
           setActiveNotams={setActiveNotams}
           winds={winds}
           loadingWeather={loadingWeather}
+          canAnalyze={canAnalyze}
+          canDrawBoundary={hasActiveTarget}
+          canUseDiagramTools={canEditGraphics}
+          canSaveDiagram={canEditGraphics}
+          diagramStatus={diagramStatus}
+          diagramReadinessText={diagramReadinessText}
         />
       </div>
       <div className="map-area">
@@ -746,7 +1090,12 @@ function App() {
           onSaveMissionGroup={handleSaveMissionGroup}
           onSaveSketches={handleSaveSketches}
           localPointNames={localPoints.pointSets.flatMap((set) =>
-            set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon })),
+            set.points.map((p) => ({
+              name: p.name,
+              lat: p.lat,
+              lon: p.lon,
+              elevationFt: p.elevationFt,
+            })),
           )}
           sketchedPlan={{
             updateRoutePlan,
@@ -785,6 +1134,11 @@ function App() {
           exportProgress={exportProgress}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
+          canAnalyze={canAnalyze}
+          canUseDiagramTools={canEditGraphics}
+          canSaveDiagram={canEditGraphics}
+          diagramStatus={diagramStatus}
+          diagramReadinessText={diagramReadinessText}
         />
         <MapView
           importedRoutes={importedRoutes}
@@ -797,6 +1151,7 @@ function App() {
           addDraftPoint={addDraftPoint}
           onDraftPointContextMenu={handleDraftPointContextMenu}
           draftPoints={draftPoints}
+          activeDiagramId={activeDiagramId}
           targetLocation={targetLocation}
           mapData={mapData}
           detectedLZ={detectedLZ}
@@ -844,6 +1199,17 @@ function App() {
           onThreatMove={moveThreat}
           onThreatEdit={beginEditThreat}
           onMapMove={setMapCenter}
+        />
+
+        <ActiveLzWindow
+          diagrams={diagrams}
+          activeDiagramId={activeDiagramId}
+          onSelect={handleSelectDiagram}
+          onSave={handleLayerSave}
+          onRemove={handleLayerRemove}
+          canSaveActive={canEditGraphics}
+          isSaving={isLayerSaveInProgress}
+          initialPosition={{ x: 16, y: 86 }}
         />
 
         <div className="alert-queue">
@@ -960,13 +1326,10 @@ function App() {
 
               <button
                 onClick={performTerrainAnalysis}
-                // The magic logic: Disabled if no target is set, OR if the target is outside the LZ
-                disabled={
-                  !targetLocation || !isPointInPolygon(targetLocation, customLZ)
-                }
+                disabled={!canAnalyze}
                 title={
-                  !targetLocation || !isPointInPolygon(targetLocation, customLZ)
-                    ? "You must set a target inside the LZ first"
+                  !canAnalyze
+                    ? "Set a target on the map before analyzing the LZ/PZ."
                     : ""
                 }
                 style={{
@@ -977,15 +1340,9 @@ function App() {
                   border: "none",
                   borderRadius: "4px",
                   cursor:
-                    !targetLocation ||
-                    !isPointInPolygon(targetLocation, customLZ)
-                      ? "not-allowed"
-                      : "pointer",
+                    !canAnalyze ? "not-allowed" : "pointer",
                   opacity:
-                    !targetLocation ||
-                    !isPointInPolygon(targetLocation, customLZ)
-                      ? 0.4
-                      : 1,
+                    !canAnalyze ? 0.4 : 1,
                 }}
               >
                 Analyze LZ
@@ -1234,9 +1591,20 @@ function App() {
         />
       )}
 
+      <LzDiagramRemoveDialog
+        diagram={pendingRemovalDiagram}
+        isSaving={isLayerSaveInProgress}
+        onCancel={() => setRemoveConfirmationDiagramId(null)}
+        onDiscard={handleDiscardDiagram}
+        onSaveFirst={handleSaveFirstAndRemove}
+      />
+
       <HistoryModal
         isOpen={isHistoryModalOpen}
-        onClose={() => setIsHistoryModalOpen(false)}
+        onClose={() => {
+          setIsHistoryModalOpen(false);
+          setPendingRemovalDiagramId(null);
+        }}
         history={history}
         isLoadingHistory={isLoadingHistory}
         fetchHistory={fetchHistory}
@@ -1246,6 +1614,38 @@ function App() {
         deleteMap={deleteMap}
         buildSnapshot={serializeMapState}
         applySnapshot={applyMapState}
+        activeMapId={activeDiagram?.savedId ?? null}
+        activeName={activeDiagram?.name ?? ""}
+        canSave={canEditGraphics}
+        saveDisabledReason={
+          !hasActiveTarget
+            ? "Set a target on the map and analyze the LZ/PZ before saving."
+            : "Analyze the active LZ/PZ before saving it."
+        }
+        onSaved={({ id, name }) => {
+          const diagramId = pendingSaveDiagramIdRef.current ?? activeDiagramId;
+          const diagram = workspaceRef.current?.diagramsById?.[diagramId];
+          if (!diagram) return;
+          markSaved(
+            {
+              ...(id != null ? { savedId: id } : {}),
+              name,
+            },
+            diagram.id,
+          );
+          if (pendingRemovalDiagramId === diagram.id) {
+            removeDiagram(diagram.id);
+            setPendingRemovalDiagramId(null);
+          }
+          pendingSaveDiagramIdRef.current = null;
+        }}
+        onLoaded={applyMapState}
+        onDeleted={({ id }) => {
+          const deletedDiagram = Object.values(
+            workspaceRef.current?.diagramsById ?? {},
+          ).find((diagram) => String(diagram.savedId) === String(id));
+          if (deletedDiagram) clearSaved(deletedDiagram.id);
+        }}
         savedRoutes={savedRoutes}
         isLoadingSaved={isLoadingSaved}
         fetchSavedRoutes={fetchSavedRoutes}

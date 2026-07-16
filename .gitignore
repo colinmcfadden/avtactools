@@ -51,3 +51,7 @@ flask.log
 LZ_Export_*
 LZ_Diagram_*
 LZ_Map_Layer_*
+
+# Approved local terrain data must remain outside source control.
+/backend/terrain-data/
+/backend/dted/

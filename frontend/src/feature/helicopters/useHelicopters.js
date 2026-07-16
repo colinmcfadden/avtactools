@@ -1,9 +1,30 @@
-import { useState, useEffect } from 'react';
-import { getDistanceFeet } from '../../utils/Helpers';
+import { useEffect, useMemo, useState } from "react";
+import { getDistanceFeet } from "../../utils/Helpers";
+import {
+  UH60_MIN_CENTER_SPACING_FEET,
+  UH60_ROTOR_TIP_CLEARANCE_FEET,
+} from "../../utils/helicopterCapacity";
 
-export const useHelicopters = (targetLocation) => {
-  const [helicopters, setHelicopters] = useState([]);
+/**
+ * Optional controlled-state shape:
+ *   { helicopters: Helicopter[], setHelicopters: React.Dispatch<React.SetStateAction<Helicopter[]>> }
+ */
+export const useHelicopters = (targetLocation, options = {}) => {
+  const [internalHelicopters, setInternalHelicopters] = useState([]);
   const [proximityAlerts, setProximityAlerts] = useState([]);
+  const controlledHelicopters = options?.helicopters;
+  const controlledSetHelicopters = options?.setHelicopters;
+  const isControlled =
+    controlledHelicopters !== undefined &&
+    typeof controlledSetHelicopters === "function";
+  const helicopters = isControlled ? controlledHelicopters : internalHelicopters;
+  const setHelicopters = isControlled
+    ? controlledSetHelicopters
+    : setInternalHelicopters;
+  const helicopterList = useMemo(
+    () => (Array.isArray(helicopters) ? helicopters : []),
+    [helicopters],
+  );
 
   const addHelo = () => {
     if (!targetLocation) {
@@ -15,20 +36,24 @@ export const useHelicopters = (targetLocation) => {
     let finalLon = targetLocation[1];
     let isClear = false;
     let attempts = 0;
-    const offsetStep = 0.0001; 
+    const offsetStep = 0.0001;
 
-    // Auto-spacing logic
     while (!isClear && attempts < 50) {
       isClear = true;
-      for (let helo of helicopters) {
-        const dist = getDistanceFeet(finalLat, finalLon, helo.lat, helo.lon);
-        if (dist < 60) {
+      for (const helicopter of helicopterList) {
+        const distance = getDistanceFeet(
+          finalLat,
+          finalLon,
+          helicopter.lat,
+          helicopter.lon,
+        );
+        if (distance < UH60_MIN_CENTER_SPACING_FEET) {
           isClear = false;
-          finalLon += offsetStep; 
-          break; 
+          finalLon += offsetStep;
+          break;
         }
       }
-      attempts++;
+      attempts += 1;
     }
 
     const newHelo = {
@@ -38,59 +63,69 @@ export const useHelicopters = (targetLocation) => {
       rotation: 0,
       type: "helo",
     };
-    
-    setHelicopters((prev) => [...prev, newHelo]);
+
+    setHelicopters((previous) => [
+      ...(Array.isArray(previous) ? previous : []),
+      newHelo,
+    ]);
   };
 
   const updateHelicopter = (id, newProps) => {
-    setHelicopters((prev) =>
-      prev.map((helo) => (helo.id === id ? { ...helo, ...newProps } : helo))
+    setHelicopters((previous) =>
+      (Array.isArray(previous) ? previous : []).map((helicopter) =>
+        helicopter.id === id ? { ...helicopter, ...newProps } : helicopter,
+      ),
     );
   };
 
   const deleteHelicopter = (id) => {
-    setHelicopters((prev) => prev.filter((helo) => helo.id !== id));
+    setHelicopters((previous) =>
+      (Array.isArray(previous) ? previous : []).filter(
+        (helicopter) => helicopter.id !== id,
+      ),
+    );
   };
 
-  // --- PROXIMITY ALERTS ---
   useEffect(() => {
     const alerts = [];
-    
-    const rotorDiameterFeet = 53.67; // 53 ft 8 in
-    const minClearanceFeet = 60;    // Define your minimum safe edge-to-edge distance here
 
-    for (let i = 0; i < helicopters.length; i++) {
-      for (let j = i + 1; j < helicopters.length; j++) {
-        
-        // 1. Get center-to-center distance in feet
-        const centerDist = getDistanceFeet(helicopters[i].lat, helicopters[i].lon, helicopters[j].lat, helicopters[j].lon);
-        
-        // 2. Subtract the radius of BOTH helicopters (which equals one full diameter)
-        const edgeToEdgeDist = centerDist - rotorDiameterFeet;
-        
-        // 3. Check against your minimum clearance
-        if (edgeToEdgeDist < minClearanceFeet) {
-          
-          // Use Math.max to prevent it from saying "-15ft apart" if they crash/overlap
-          const displayDist = Math.max(0, Math.round(edgeToEdgeDist)); 
-          
+    for (let index = 0; index < helicopterList.length; index += 1) {
+      for (
+        let comparisonIndex = index + 1;
+        comparisonIndex < helicopterList.length;
+        comparisonIndex += 1
+      ) {
+        const firstHelicopter = helicopterList[index];
+        const secondHelicopter = helicopterList[comparisonIndex];
+        const centerDistance = getDistanceFeet(
+          firstHelicopter.lat,
+          firstHelicopter.lon,
+          secondHelicopter.lat,
+          secondHelicopter.lon,
+        );
+        const edgeToEdgeDistance =
+          centerDistance -
+          (UH60_MIN_CENTER_SPACING_FEET - UH60_ROTOR_TIP_CLEARANCE_FEET);
+
+        if (edgeToEdgeDistance < UH60_ROTOR_TIP_CLEARANCE_FEET) {
+          const displayDistance = Math.max(0, Math.round(edgeToEdgeDistance));
           alerts.push({
-            id: `${helicopters[i].id}-${helicopters[j].id}`,
-            message: `Separation Alert: Rotor edges are only ${displayDist}ft apart (Min: ${minClearanceFeet}ft).`
+            id: `${firstHelicopter.id}-${secondHelicopter.id}`,
+            message: `Separation Alert: Rotor edges are only ${displayDistance} ft apart (Min: ${Math.round(UH60_ROTOR_TIP_CLEARANCE_FEET)} ft / 60 m).`,
           });
         }
       }
     }
-    
+
     setProximityAlerts(alerts);
-  }, [helicopters]);
+  }, [helicopterList]);
 
   return {
-    helicopters,
+    helicopters: helicopterList,
     setHelicopters,
     addHelo,
     updateHelicopter,
     deleteHelicopter,
-    proximityAlerts
+    proximityAlerts,
   };
 };

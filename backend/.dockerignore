@@ -24,3 +24,7 @@ env/
 Dockerfile
 fly.toml
 .dockerignore
+
+# Approved local terrain data is mounted read-only at runtime, never baked in.
+terrain-data/
+dted/

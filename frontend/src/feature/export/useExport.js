@@ -1,14 +1,29 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-export const useExport = (targetLocation) => {
-  const [exportBox, setExportBox] = useState(null);
+/**
+ * Optional controlled-state shape:
+ *   { exportBox: ExportBounds | null, setExportBox: React.Dispatch<React.SetStateAction<ExportBounds | null>> }
+ * Capture/modal/progress runtime state intentionally remains internal to this hook.
+ */
+export const useExport = (targetLocation, options = {}) => {
+  const [internalExportBox, setInternalExportBox] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [capturedMapBlob, setCapturedMapBlob] = useState(null);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const controlledExportBox = options?.exportBox;
+  const controlledSetExportBox = options?.setExportBox;
+  const isExportBoxControlled =
+    controlledExportBox !== undefined &&
+    typeof controlledSetExportBox === "function";
+  const exportBox = isExportBoxControlled
+    ? controlledExportBox
+    : internalExportBox;
+  const setExportBox = isExportBoxControlled
+    ? controlledSetExportBox
+    : setInternalExportBox;
 
-  // Map Capture Box Logic
   const enableExportMode = () => {
     if (!targetLocation) {
       alert("Please find a location first.");
@@ -17,21 +32,22 @@ export const useExport = (targetLocation) => {
 
     const centerLat = parseFloat(targetLocation[0]);
     const centerLon = parseFloat(targetLocation[1]);
+    if (!Number.isFinite(centerLat) || !Number.isFinite(centerLon)) return;
 
-    const dLat = 0.0025; 
+    const dLat = 0.0025;
     const aspectRatio = 663 / 555;
     const latRadians = centerLat * (Math.PI / 180);
     const dLng = (dLat * aspectRatio) / Math.cos(latRadians);
-
     const redBounds = [
-      [centerLat - dLat, centerLon - dLng], 
-      [centerLat + dLat, centerLon + dLng], 
+      [centerLat - dLat, centerLon - dLng],
+      [centerLat + dLat, centerLon + dLng],
     ];
 
     setExportBox(redBounds);
   };
 
   const updateExportBox = (id, newBounds) => {
+    void id;
     setExportBox(newBounds);
   };
 
@@ -39,71 +55,66 @@ export const useExport = (targetLocation) => {
     setExportBox(null);
   };
 
-  // Handling the Screenshot Blob
   const handleExportComplete = (blob) => {
     setExportProgress(60);
     if (blob) {
       setCapturedMapBlob(blob);
       setIsExportModalOpen(true);
     } else {
-        setIsExporting(true);
-        setExportProgress(0);
+      setIsExporting(true);
+      setExportProgress(0);
     }
   };
 
-  // Final API Call
   const handleFinalExport = (formData) => {
     if (!capturedMapBlob) return;
 
     setExportProgress(70);
 
-    // Download the Image
-    const imgUrl = URL.createObjectURL(capturedMapBlob);
-    const link = document.createElement('a');
-    link.href = imgUrl;
-    link.download = `LZ_${formData.lz_name}_Map.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const imageUrl = URL.createObjectURL(capturedMapBlob);
+    const imageLink = document.createElement("a");
+    imageLink.href = imageUrl;
+    imageLink.download = `LZ_${formData.lz_name}_Map.jpg`;
+    document.body.appendChild(imageLink);
+    imageLink.click();
+    document.body.removeChild(imageLink);
 
-    // Generate Excel
     const apiPayload = new FormData();
-    Object.keys(formData).forEach(key => {
+    Object.keys(formData).forEach((key) => {
       apiPayload.append(key, formData[key]);
     });
     apiPayload.append("map_image", capturedMapBlob, "map_capture.jpg");
 
     fetch(`${process.env.REACT_APP_API_URL}/generate-excel`, {
       method: "POST",
-      body: apiPayload
+      body: apiPayload,
     })
-    .then(response => response.blob())
-    .then(blob => {
-      // Download the Excel File
-      const excelUrl = URL.createObjectURL(blob);
-      const excelLink = document.createElement('a');
-      excelLink.href = excelUrl;
-      excelLink.download = `LZ_${formData.lz_name}_Card.xlsx`;
-      document.body.appendChild(excelLink);
-      excelLink.click();
-      
-      setExportProgress(100);
-        
-        setTimeout(() => {
-            setIsExporting(false);
-            setExportProgress(0);
-            setIsExportModalOpen(false);
-            setExportSuccess(true);
+      .then((response) => response.blob())
+      .then((blob) => {
+        const excelUrl = URL.createObjectURL(blob);
+        const excelLink = document.createElement("a");
+        excelLink.href = excelUrl;
+        excelLink.download = `LZ_${formData.lz_name}_Card.xlsx`;
+        document.body.appendChild(excelLink);
+        excelLink.click();
+        document.body.removeChild(excelLink);
 
-            setTimeout(() => {
-                setExportSuccess(false);
-            }, 4000);
+        setExportProgress(100);
+        setTimeout(() => {
+          setIsExporting(false);
+          setExportProgress(0);
+          setIsExportModalOpen(false);
+          setExportSuccess(true);
+
+          setTimeout(() => {
+            setExportSuccess(false);
+          }, 4000);
         }, 500);
-    })
-    .catch(err => {
-        console.error("Excel generation failed:", err);
+      })
+      .catch((error) => {
+        console.error("Excel generation failed:", error);
         alert("Failed to generate Excel card. Please try again.");
-    });
+      });
   };
 
   return {
@@ -120,6 +131,6 @@ export const useExport = (targetLocation) => {
     updateExportBox,
     deleteExportBox,
     handleExportComplete,
-    handleFinalExport
+    handleFinalExport,
   };
 };

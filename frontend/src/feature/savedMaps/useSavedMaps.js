@@ -21,7 +21,8 @@ export const useSavedMaps = () => {
   };
 
   const saveMap = async (name, snapshot) => {
-    await api.post("/lz", { name, lz_data: snapshot });
+    const response = await api.post("/lz", { name, lz_data: snapshot });
+    return response.data;
   };
 
   const loadMap = async (id) => {
@@ -30,7 +31,8 @@ export const useSavedMaps = () => {
   };
 
   const updateMap = async (id, snapshot) => {
-    await api.put(`/lz/${id}`, { lz_data: snapshot });
+    const response = await api.put(`/lz/${id}`, { lz_data: snapshot });
+    return response.data;
   };
 
   const deleteMap = async (id) => {

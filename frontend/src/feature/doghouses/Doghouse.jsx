@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import L from "leaflet";
 import { useMap } from "react-leaflet";
 import { calculateBearing } from '../../utils/Helpers';
+import { mapObjectControlMarkup } from '../../utils/mapObjectControls';
 
 const Doghouse = ({ data, updateDoghouse }) => {
   const map = useMap();
@@ -21,19 +22,12 @@ const Doghouse = ({ data, updateDoghouse }) => {
     const time = (dh.time || "00+00").split("+");
     const airspeed = dh.airspeed ? dh.airspeed.split(" ")[0] : "90";
 
-    const rotateIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`;
-    const moveIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 24px; height: 24px;"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="19 9 22 12 19 15"/><polyline points="9 19 12 22 15 19"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>`;
-
     return `
       <div class="drag-lifter doghouse-interactive-wrapper" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none;">
         
-        <div class="dh-controls" style="position: absolute; width: 140px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
-            <div class="dh-btn dh-rotate" title="Drag to Rotate" style="pointer-events: auto;">
-                ${rotateIcon}
-            </div>
-            <div class="dh-btn dh-move" title="Drag to Move" style="pointer-events: auto;">
-                ${moveIcon}
-            </div>
+        <div class="map-object-controls dh-controls" style="position: absolute; width: 140px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
+            ${mapObjectControlMarkup({ type: "rotate", title: "Drag to rotate doghouse", className: "dh-btn dh-rotate" })}
+            ${mapObjectControlMarkup({ type: "move", title: "Drag to move doghouse", className: "dh-btn dh-move" })}
         </div>
 
         <div class="doghouse-wrapper" style="pointer-events: auto; width: 60px; transform: rotate(${rotation}deg); transform-origin: center center; position: absolute; z-index: 20;">

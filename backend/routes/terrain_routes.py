@@ -4,7 +4,10 @@ import mercantile
 import requests
 import cv2
 from ultralytics import SAM
-import math
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+
+from terrain_provider import build_slope_analysis
 
 terrain_bp = Blueprint('terrain', __name__)
 
@@ -153,45 +156,108 @@ def analyze_field():
 
 @terrain_bp.route('/api/terrain-analysis', methods=['POST'])
 def terrain_analysis():
-    data = request.json
-    polygon = data.get('polygon') # [[lat, lon], ...]
-    
-    # 1. Create a bounding box grid for the polygon
-    lats = [p[0] for p in polygon]
-    lons = [p[1] for p in polygon]
-    
-    # Sampling density (adjust for performance)
-    steps = 10 
-    lat_grid = np.linspace(min(lats), max(lats), steps)
-    lon_grid = np.linspace(min(lons), max(lons), steps)
+    """Return a continuous, polygon-clipped terrain slope raster."""
+    data = request.get_json(silent=True) or {}
+    polygon = data.get('polygon')
+    if not isinstance(polygon, list) or len(polygon) < 3:
+        return jsonify({"error": "polygon must contain at least three [lat, lon] points"}), 400
 
-    # 2. Fetch Elevation via OpenTopoData (SRTM 30m dataset)
-    # Note: For production, batch these requests
-    loc_string = "|".join([f"{lat},{lon}" for lat in lat_grid for lon in lon_grid])
-    url = f"https://api.opentopodata.org/v1/srtm30m?locations={loc_string}"
-    
-    res = requests.get(url).json()
-    elevs = res.get('results', [])
+    try:
+        heading = data.get('landingHeading')
+        heading = None if heading in (None, "") else float(heading)
+        analysis = build_slope_analysis(polygon, landing_heading_deg=heading)
+        return jsonify({"status": "success", **analysis})
+    except (TypeError, ValueError) as error:
+        return jsonify({"error": f"Invalid terrain request: {error}"}), 400
+    except RuntimeError as error:
+        return jsonify({"error": str(error)}), 502
+    except Exception as error:  # noqa: BLE001
+        traceback.print_exc()
+        return jsonify({"error": str(error)}), 500
 
-    # 3. Process into a Heatmap Grid
-    heatmap = []
-    # (Simplified slope logic: compare neighbors in the grid)
-    for i in range(len(lat_grid) - 1):
-        for j in range(len(lon_grid) - 1):
-            # Get 4 corners of a grid cell
-            z1 = elevs[i * steps + j]['elevation']
-            z2 = elevs[i * steps + (j+1)]['elevation']
-            z3 = elevs[(i+1) * steps + j]['elevation']
-            
-            # Simple average slope calculation (rise/run)
-            # Distance approx: 1 deg lat ~ 111km
-            rise = abs(z1 - z2) 
-            run = 30 # SRTM 30m resolution
-            slope_deg = math.degrees(math.atan(rise / run))
-            
-            heatmap.append({
-                "bounds": [[lat_grid[i], lon_grid[j]], [lat_grid[i+1], lon_grid[j+1]]],
-                "slope": slope_deg
-            })
+# --- Terrain elevations (open AWS Terrarium DEM, same source as threat masks) ---
 
-    return jsonify({"status": "success", "heatmap": heatmap})
+_TERRARIUM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+_DEM_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+_M_TO_FT = 3.28084
+_ELEV_ZOOM = 13  # ~19 m/px; over the US this taps 3DEP/NED, ~bare-earth
+
+
+def _decode_terrarium(png_bytes):
+    """Terrarium RGB -> metres: elevation = R*256 + G + B/256 - 32768."""
+    arr = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        return None
+    b = arr[:, :, 0].astype(np.float32)
+    g = arr[:, :, 1].astype(np.float32)
+    r = arr[:, :, 2].astype(np.float32)
+    return (r * 256.0 + g + b / 256.0) - 32768.0
+
+
+def _sample_elevations_ft(points, zoom=_ELEV_ZOOM):
+    """
+    Ground elevation (feet) for each point, sampled from Terrarium DEM tiles.
+    Each needed tile is fetched once and decoded, then points are sampled with
+    nearest-pixel. No rate limit, and consistent with the threat terrain masks.
+    """
+    tiles = {}
+    keys = []
+    for p in points:
+        t = mercantile.tile(p['lon'], p['lat'], zoom)
+        key = (t.x, t.y)
+        tiles[key] = t
+        keys.append(key)
+
+    def grab(item):
+        key, t = item
+        try:
+            resp = requests.get(_TERRARIUM_URL.format(z=zoom, x=t.x, y=t.y),
+                                headers=_DEM_HEADERS, timeout=15)
+            return key, (_decode_terrarium(resp.content) if resp.status_code == 200 else None)
+        except requests.exceptions.RequestException:
+            return key, None
+
+    dem_cache = {}
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for key, dem in pool.map(grab, tiles.items()):
+            dem_cache[key] = dem
+
+    out = []
+    for p, key in zip(points, keys):
+        dem = dem_cache.get(key)
+        if dem is None:
+            out.append(None)
+            continue
+        b = mercantile.bounds(tiles[key])
+        px = min(255, max(0, int((p['lon'] - b.west) / (b.east - b.west) * 256)))
+        py = min(255, max(0, int((b.north - p['lat']) / (b.north - b.south) * 256)))
+        out.append(round(float(dem[py, px]) * _M_TO_FT))
+    return out
+
+
+@terrain_bp.route('/api/elevations', methods=['POST'])
+def get_elevations():
+    """
+    Batch ground elevations (feet) for a route's points, sampled server-side
+    from the open Terrarium DEM. Proxied through the backend so the browser
+    doesn't hit an elevation API cross-origin (CORS), which previously left every
+    exported point at the mission template's default elevation.
+
+    Body: { points: [{lat, lon}, ...] }
+    Returns: { elevationsFt: [ft | null, ...] }  (index-aligned with points)
+    """
+    data = request.get_json(silent=True) or {}
+    points = data.get('points', [])
+    if not points:
+        return jsonify({'elevationsFt': []})
+
+    try:
+        pts = [{'lat': float(p['lat']), 'lon': float(p['lon'])} for p in points]
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': 'Invalid points'}), 400
+
+    try:
+        return jsonify({'elevationsFt': _sample_elevations_ft(pts)})
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'elevationsFt': [None] * len(pts)})

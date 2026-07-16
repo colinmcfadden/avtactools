@@ -134,15 +134,17 @@ const MsnxRouteLayer = ({
                 dragend: (e) => {
                   const marker = e.target;
                   let { lat, lng } = marker.getLatLng();
-                  // Magnetize onto a nearby local point so the route line
-                  // snaps to its exact coordinates.
+                  // Magnetize onto a nearby local point so the route line snaps
+                  // to its exact coordinates and adopts its charted elevation.
                   const snap = snapToLocalPoint(map, lat, lng, snapPoints);
+                  let chartElevationFt;
                   if (snap) {
                     lat = snap.lat;
                     lng = snap.lon;
                     marker.setLatLng([lat, lng]);
+                    if (typeof snap.elevationFt === "number") chartElevationFt = snap.elevationFt;
                   }
-                  onUpdatePosition(route.id, point.id, lat, lng);
+                  onUpdatePosition(route.id, point.id, lat, lng, chartElevationFt);
                 },
               };
               if (onPointContextMenu) {

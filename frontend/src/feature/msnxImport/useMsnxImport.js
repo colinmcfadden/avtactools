@@ -56,7 +56,7 @@ export const useMsnxImport = () => {
   // one runs twice — for insertPoint the second run threw "Couldn't find the
   // connecting leg" because the first run had already split that leg.
 
-  const updatePointPosition = (routeId, pointId, lat, lon) => {
+  const updatePointPosition = (routeId, pointId, lat, lon, chartElevationFt) => {
     const sourceRoute = importedRoutes.find((r) => r.id === routeId);
     const draggedPoint = sourceRoute?.points.find((p) => p.id === pointId);
     if (!sourceRoute || !draggedPoint) return;
@@ -96,7 +96,9 @@ export const useMsnxImport = () => {
 
         return {
           ...route,
-          points: route.points.map((p) => (idsToUpdate.has(p.id) ? { ...p, lat, lon } : p)),
+          points: route.points.map((p) =>
+            idsToUpdate.has(p.id) ? { ...p, lat, lon, chartElevationFt } : p,
+          ),
         };
       }),
     );
@@ -169,8 +171,8 @@ export const useMsnxImport = () => {
     );
   };
 
-  /** Renames a point (and snaps to a local point's coords when provided), writing to the docs. */
-  const updatePointName = (routeId, pointId, name, coords) => {
+  /** Renames a point (and snaps to a local point's coords + charted elevation when provided), writing to the docs. */
+  const updatePointName = (routeId, pointId, name, coords, chartElevationFt) => {
     const route = importedRoutes.find((r) => r.id === routeId);
     const fileEntry = route && filesRef.current.get(route.fileId);
     if (fileEntry) {
@@ -184,7 +186,13 @@ export const useMsnxImport = () => {
           ...r,
           points: r.points.map((p) =>
             p.id === pointId
-              ? { ...p, name, ...(coords ? { lat: coords.lat, lon: coords.lon } : {}) }
+              ? {
+                  ...p,
+                  name,
+                  ...(coords
+                    ? { lat: coords.lat, lon: coords.lon, chartElevationFt }
+                    : {}),
+                }
               : p,
           ),
         };

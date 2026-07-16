@@ -1,7 +1,10 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useMemo } from "react";
 import { getPolygonArea } from "../utils/Helpers";
-
-const API_BASE_URL = process.env.REACT_APP_API_URL;
+import {
+  calculateUH60Capacity,
+  UH60_MIN_CENTER_SPACING_METERS,
+  UH60_ROTOR_TIP_CLEARANCE_METERS,
+} from "../utils/helicopterCapacity";
 
 const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather }) => {
   // 1. CALCULATE AREA & CAPACITY
@@ -11,19 +14,9 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
     // 1. Get total area in SQUARE FEET 
     const areaSqFt = getPolygonArea(detectedLZ);
     
-    // 2. UH-60 Capacity logic (Converted to Feet)
-    const rotorDiameterFeet = 53.67;
-    const edgeClearanceFeet = 60;
-    
-    // Total center-to-center distance required per aircraft (~113.67 ft)
-    const separationFeet = rotorDiameterFeet + edgeClearanceFeet; 
-  
-    // Each helicopter effectively requires a 113.67 x 113.67 ft box (~12,921 sq ft)
-    // to guarantee no other helicopter can encroach on its 60ft blade clearance.
-    const spotSizeSqFt = separationFeet * separationFeet; 
-
-    // Calculate how many of those boxes fit in the LZ
-    const heloCount = Math.floor(areaSqFt / spotSizeSqFt);
+    // A 60 m rotor-tip-to-rotor-tip buffer requires 76.357 m between UH-60
+    // centers. Capacity is intentionally a conservative square-grid estimate.
+    const heloCount = calculateUH60Capacity(areaSqFt);
     
     return { 
         area: Math.round(areaSqFt), 
@@ -33,13 +26,25 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
 
   // 2. SLOPES
   const slopeStatus = useMemo(() => {
-    if (!terrainData || terrainData.length === 0)
+    if (!terrainData?.stats)
       return { className: "status-safe", label: "NO DATA", max: 0 };
 
-    const maxSlope = Math.max(...terrainData.map((c) => c.slope));
+    const maxSlope = terrainData.stats.maxDeg;
+    const directional = terrainData.directional;
 
-    if (maxSlope > 13)
-      return { className: "status-danger", label: "NO GO", max: maxSlope };
+    if (directional) {
+      const exceedsUh60Limit =
+        directional.noseHighMaxDeg >= 6 ||
+        directional.noseLowMaxDeg >= 15 ||
+        directional.crossSlopeMaxDeg >= 15;
+      if (exceedsUh60Limit)
+        return { className: "status-danger", label: "LIMIT EXCEEDED", max: maxSlope };
+    }
+
+    // A general slope magnitude is useful context, but the UH-60 limits are
+    // directional. Require a landing heading before treating it as a limit call.
+    if (!directional && maxSlope >= 15)
+      return { className: "status-warning", label: "HEADING REQUIRED", max: maxSlope };
     if (maxSlope > 10)
       return { className: "status-warning", label: "CAUTION", max: maxSlope };
     
@@ -53,7 +58,12 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
       
       {/* --- ROW 1: CAPACITY & AREA (Span 3 each) --- */}
       <div className="ms-tile span-2">
-        <div className="ms-label">Capacity</div>
+        <div
+          className="ms-label"
+          title={`${UH60_ROTOR_TIP_CLEARANCE_METERS} m rotor-tip clearance / ${UH60_MIN_CENTER_SPACING_METERS.toFixed(1)} m center spacing`}
+        >
+          Capacity
+        </div>
         <div className="ms-value highlight">{stats.heloCount}</div>
       </div>
       
@@ -73,7 +83,7 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
       {/* --- ROW 2: SLOPE ALERT (Span 6 / Full) --- */}
       <div className={`ms-tile span-6 ${slopeStatus.className} slope-alert-tile`}>
         <div className="slope-header">
-            <span>MAX SLOPE</span>
+            <span>MAX TERRAIN SLOPE</span>
         </div>
         <div className="slope-main-text">{slopeStatus.max.toFixed(1)}°</div>
       </div>

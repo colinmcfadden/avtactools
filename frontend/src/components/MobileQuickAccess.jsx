@@ -16,10 +16,37 @@ const MobileQuickAccess = ({
     exportProgress,
     isSketching,
     toggleRouteSketch,
-    onOpenUnitBuilder
+    onOpenUnitBuilder,
+    // Optional diagram lifecycle contract. Defaults retain the previous
+    // always-available mobile quick-access behavior for legacy callers.
+    canAnalyze: canAnalyzeProp,
+    canUseDiagramTools: canUseDiagramToolsProp,
+    canSaveDiagram: canSaveDiagramProp,
+    diagramStatus,
+    diagramReadinessText,
+    readinessText,
 }) => {
   const [isUnitMenuOpen, setIsUnitMenuOpen] = useState(false);
   const [isGAMenuOpen, setIsGAMenuOpen] = useState(false);
+
+  const hasLifecycleProps =
+    canAnalyzeProp !== undefined ||
+    canUseDiagramToolsProp !== undefined ||
+    canSaveDiagramProp !== undefined ||
+    Boolean(diagramStatus) ||
+    Boolean(diagramReadinessText) ||
+    Boolean(readinessText);
+  const canUseDiagramTools = canUseDiagramToolsProp ?? true;
+  const canSaveDiagram = canSaveDiagramProp ?? canUseDiagramTools;
+  const canExport = canUseDiagramTools && canSaveDiagram;
+  const readinessMessage =
+    diagramReadinessText ??
+    readinessText ??
+    (hasLifecycleProps && !canUseDiagramTools
+      ? canAnalyzeProp === false
+        ? "Set a target and analyze the LZ to unlock planning tools."
+        : "Analyze the LZ to unlock planning tools."
+      : null);
 
   const menuRef = useRef(null);
   const gaMenuRef = useRef(null);
@@ -37,6 +64,13 @@ const MobileQuickAccess = ({
       document.removeEventListener("touchstart", handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (!canUseDiagramTools) {
+      setIsUnitMenuOpen(false);
+      setIsGAMenuOpen(false);
+    }
+  }, [canUseDiagramTools]);
 
   // Reusable SVG for PZ Button
   const pzButtonSvg = (
@@ -71,17 +105,34 @@ const MobileQuickAccess = ({
   );
 
   const handleUnitClick = (path) => {
+    if (!canUseDiagramTools) return;
     addUnit(path); 
     setIsUnitMenuOpen(false); 
   };
 
   const handleGAClick = (direction) => {
+    if (!canUseDiagramTools) return;
     addGoAround(direction); // Passes "left" or "right" to your spawn function
     setIsGAMenuOpen(false);
   };
 
+  const handleExportMode = () => {
+    if (!canExport) return;
+    enableExportMode();
+  };
+
+  const handleDownload = () => {
+    if (!canExport || !exportBox || isExporting) return;
+    onDownloadClick();
+  };
+
   return (
     <div className="mobile-quick-access-container">
+      {readinessMessage && (
+        <div className="mobile-diagram-readiness" role="status">
+          {readinessMessage}
+        </div>
+      )}
       {/* Route Sketch Button (toggles draw mode) */}
       <button
         onClick={toggleRouteSketch}
@@ -104,17 +155,32 @@ const MobileQuickAccess = ({
       </button>
 
       {/* Helo Button */}
-      <button onClick={addHelo} className="qa-btn" title="Add Helo">
+      <button
+        onClick={() => canUseDiagramTools && addHelo()}
+        disabled={!canUseDiagramTools}
+        className="qa-btn"
+        title={canUseDiagramTools ? "Add Helo" : readinessMessage}
+      >
         <img src="/icons/helicopter.png" alt="Helo" className="qa-icon-img" style={{ width: '24px', height: '24px', objectFit: 'contain' }} />
       </button>
 
       {/* PZ Button */}
-      <button onClick={addPZMarker} className="qa-btn" title="Add PZ">
+      <button
+        onClick={() => canUseDiagramTools && addPZMarker()}
+        disabled={!canUseDiagramTools}
+        className="qa-btn"
+        title={canUseDiagramTools ? "Add PZ" : readinessMessage}
+      >
         {pzButtonSvg}
       </button>
 
       {/* Sector Button */}
-      <button onClick={addSector} className="qa-btn" title="Add Sector">
+      <button
+        onClick={() => canUseDiagramTools && addSector()}
+        disabled={!canUseDiagramTools}
+        className="qa-btn"
+        title={canUseDiagramTools ? "Add Sector" : readinessMessage}
+      >
         <svg viewBox="0 0 50 50" width="24" height="24">
           <polygon points="25,5 45,40 5,40" fill="rgba(147, 112, 219, 0.5)" stroke="#9370DB" strokeWidth="3" />
         </svg>
@@ -123,9 +189,13 @@ const MobileQuickAccess = ({
       {/* Unit Button with Pop-out Menu */}
       <div className="unit-menu-wrapper" ref={menuRef}>
         <button 
-            onClick={() => setIsUnitMenuOpen(!isUnitMenuOpen)} 
+            onClick={() => {
+              if (!canUseDiagramTools) return;
+              setIsUnitMenuOpen(!isUnitMenuOpen);
+            }}
+            disabled={!canUseDiagramTools}
             className={`qa-btn ${isUnitMenuOpen ? 'active-qa-btn' : ''}`} 
-            title="Add Unit"
+            title={canUseDiagramTools ? "Add Unit" : readinessMessage}
         >
           <img src="/icons/tactical/infantry.svg" alt="Units" className="qa-icon-img" style={{ width: '24px', height: '24px' }} />
         </button>
@@ -137,6 +207,7 @@ const MobileQuickAccess = ({
               className="qa-btn flyout-btn"
               title="Build MIL-STD symbol"
               onClick={() => {
+                if (!canUseDiagramTools) return;
                 onOpenUnitBuilder?.();
                 setIsUnitMenuOpen(false);
               }}
@@ -166,11 +237,13 @@ const MobileQuickAccess = ({
       <div className="unit-menu-wrapper" ref={gaMenuRef}>
         <button 
             onClick={() => {
+                if (!canUseDiagramTools) return;
                 setIsGAMenuOpen(!isGAMenuOpen);
                 setIsUnitMenuOpen(false); // Close the other menu if open
             }} 
+            disabled={!canUseDiagramTools}
             className={`qa-btn ${isGAMenuOpen ? 'active-qa-btn' : ''}`} 
-            title="Add Go Around"
+            title={canUseDiagramTools ? "Add Go Around" : readinessMessage}
         >
           {gaRightIcon}
         </button>
@@ -180,6 +253,7 @@ const MobileQuickAccess = ({
             <button 
                 className="qa-btn flyout-btn" 
                 title="Go Around Left"
+                disabled={!canUseDiagramTools}
                 onClick={() => handleGAClick("left")}
             >
               {gaLeftIcon}
@@ -187,6 +261,7 @@ const MobileQuickAccess = ({
             <button 
                 className="qa-btn flyout-btn" 
                 title="Go Around Right"
+                disabled={!canUseDiagramTools}
                 onClick={() => handleGAClick("right")}
             >
               {gaRightIcon}
@@ -207,16 +282,19 @@ const MobileQuickAccess = ({
 
         <div className="mobile-export-buttons">
             <button 
-                onClick={enableExportMode} 
-                className="mobile-pill-btn blue-pill"
+                onClick={handleExportMode}
+                disabled={!canExport}
+                title={canExport ? "Set the capture area" : readinessMessage}
+                className={`mobile-pill-btn blue-pill ${!canExport ? 'disabled' : ''}`}
             >
                 {cropIcon} <span>Capture</span>
             </button>
 
             <button 
-                onClick={onDownloadClick} 
-                disabled={!exportBox || isExporting} 
-                className={`mobile-pill-btn green-pill ${!exportBox || isExporting ? 'disabled' : ''}`}
+                onClick={handleDownload}
+                disabled={!canExport || !exportBox || isExporting}
+                title={!canExport ? readinessMessage : !exportBox ? "Set a capture area before exporting." : "Export LZ card"}
+                className={`mobile-pill-btn green-pill ${!canExport || !exportBox || isExporting ? 'disabled' : ''}`}
             >
                 {downloadIcon} <span>{isExporting ? 'Processing...' : 'Export'}</span>
             </button>

@@ -279,3 +279,129 @@
         flex: 1 1 40%;
     }
 }
+
+/* Command-deck dialog treatment: matches the map controls without sacrificing
+   the dense form layout needed for mission-card generation. */
+.export-modal-container {
+    background:
+        linear-gradient(135deg, rgba(58, 128, 172, 0.08), transparent 32%),
+        rgba(8, 23, 39, 0.97);
+    border-color: rgba(104, 161, 201, 0.38);
+    border-radius: 10px;
+    box-shadow: 0 22px 56px rgba(0, 0, 0, 0.56);
+    color: #e6f0f8;
+}
+
+.modal-header,
+.modal-footer {
+    border-color: rgba(106, 156, 192, 0.2);
+    background: rgba(3, 14, 26, 0.42);
+}
+
+.modal-header {
+    padding: 13px 18px;
+}
+
+.modal-header h3 {
+    color: #dff3fc;
+    font-size: 0.9rem;
+    font-weight: 750;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.close-btn {
+    color: #8fa9bf;
+}
+
+.close-btn:hover {
+    color: #72d0f3;
+}
+
+.modal-body {
+    padding: 16px 18px;
+}
+
+.form-grid {
+    gap: 11px;
+    margin-bottom: 11px;
+}
+
+.form-divider {
+    margin: 14px 0 10px;
+    padding-bottom: 6px;
+    border-bottom-color: rgba(106, 156, 192, 0.2);
+    color: #73cbed;
+    font-size: 0.64rem;
+    font-weight: 750;
+    letter-spacing: 0.1em;
+}
+
+.input-group label {
+    color: #98b0c6;
+    font-size: 0.58rem;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+}
+
+.input-group input,
+.input-group select,
+.input-group textarea {
+    border-color: #294862;
+    border-radius: 6px;
+    background: rgba(3, 15, 28, 0.72);
+    color: #edf7ff;
+    font-size: 0.82rem;
+}
+
+.input-group input:focus,
+.input-group select:focus,
+.input-group textarea:focus {
+    border-color: #54c9f1;
+    background: rgba(4, 21, 38, 0.95);
+    box-shadow: 0 0 0 3px rgba(69, 187, 237, 0.13);
+}
+
+.modal-footer {
+    padding: 12px 18px;
+}
+
+.cancel-btn,
+.export-btn {
+    min-height: 36px;
+    border-radius: 6px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.065em;
+    text-transform: uppercase;
+}
+
+.cancel-btn {
+    border-color: rgba(125, 163, 193, 0.36);
+    color: #b6cadb;
+}
+
+.cancel-btn:hover {
+    border-color: #70c9ee;
+    background: rgba(65, 148, 192, 0.12);
+    color: #effaff;
+}
+
+.export-btn {
+    border: 1px solid rgba(145, 223, 249, 0.5);
+    background: linear-gradient(180deg, #4dc2ef, #2799ce);
+    color: #04111d;
+    box-shadow: 0 5px 13px rgba(12, 105, 151, 0.25);
+}
+
+.export-btn:hover {
+    background: linear-gradient(180deg, #79d1f2, #35abe0);
+}
+
+.export-modal-container :focus-visible,
+.ff-tool-btn:focus-visible,
+.ff-btn:focus-visible,
+.ff-action-btn:focus-visible {
+    outline: 2px solid #8be1fa;
+    outline-offset: 2px;
+}

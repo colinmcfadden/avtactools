@@ -9,6 +9,11 @@ const formatTimestamp = (iso) => {
   return date.toLocaleString();
 };
 
+const sameMapId = (left, right) =>
+  left != null && right != null && String(left) === String(right);
+
+const getSavedMapId = (result) => result?.id ?? result?.data?.id ?? null;
+
 const HistoryModal = ({
   isOpen,
   onClose,
@@ -21,6 +26,15 @@ const HistoryModal = ({
   deleteMap,
   buildSnapshot,
   applySnapshot,
+  // When supplied (including null), this makes the modal controlled by the
+  // active LZ/PZ workspace rather than by the last history item it loaded.
+  activeMapId,
+  activeName = "",
+  canSave = true,
+  saveDisabledReason = "",
+  onSaved,
+  onLoaded,
+  onDeleted,
   savedRoutes,
   isLoadingSaved,
   fetchSavedRoutes,
@@ -34,6 +48,10 @@ const HistoryModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [loadedMapId, setLoadedMapId] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const hasActiveMapControl = activeMapId !== undefined;
+  const currentMapId = hasActiveMapControl ? activeMapId : loadedMapId;
+  const activeHistoryEntry = history.find((entry) => sameMapId(entry.id, currentMapId));
+  const activeDisplayName = activeName || activeHistoryEntry?.name || "";
 
   useEffect(() => {
     if (isOpen) {
@@ -42,21 +60,48 @@ const HistoryModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  useEffect(() => {
+    if (isOpen && hasActiveMapControl && activeMapId == null) {
+      setSaveName(activeName);
+    }
+  }, [activeMapId, activeName, hasActiveMapControl, isOpen]);
+
   if (!isOpen) return null;
 
+  const ensureCanSave = () => {
+    if (canSave) return true;
+    alert(saveDisabledReason || "Set a target and complete LZ analysis before saving.");
+    return false;
+  };
+
+  const getActiveSnapshot = () => {
+    if (typeof buildSnapshot !== "function") {
+      throw new Error("No active LZ/PZ diagram is available to save.");
+    }
+    const snapshot = buildSnapshot();
+    if (!snapshot) {
+      throw new Error("No active LZ/PZ diagram is available to save.");
+    }
+    return snapshot;
+  };
+
   const handleSave = async () => {
+    if (!ensureCanSave()) return;
     const name = saveName.trim();
     if (!name) {
-      alert("Please enter a name for this saved map.");
+      alert("Please enter a name for this LZ/PZ diagram.");
       return;
     }
     setIsSaving(true);
     try {
-      await saveMap(name, buildSnapshot());
+      const result = await saveMap(name, getActiveSnapshot());
+      const id = getSavedMapId(result);
+      if (id != null) setLoadedMapId(id);
       setSaveName("");
       await fetchHistory();
+      await onSaved?.({ id, name, isUpdate: false, result });
     } catch (err) {
-      alert("Error saving map: " + err.message);
+      alert("Error saving LZ/PZ diagram: " + err.message);
     } finally {
       setIsSaving(false);
     }
@@ -65,21 +110,35 @@ const HistoryModal = ({
   const handleLoad = async (id) => {
     try {
       const snapshot = await loadMap(id);
-      applySnapshot(snapshot);
+      const entry = history.find((item) => sameMapId(item.id, id));
+      if (onLoaded) {
+        await onLoaded(snapshot, entry);
+      } else if (applySnapshot) {
+        applySnapshot(snapshot);
+      } else {
+        throw new Error("No handler is configured to open this LZ/PZ diagram.");
+      }
       setLoadedMapId(id);
       onClose();
     } catch (err) {
-      alert("Error loading map: " + err.message);
+      alert("Error loading LZ/PZ diagram: " + err.message);
     }
   };
 
   const handleUpdate = async (id) => {
+    if (!ensureCanSave()) return;
     setIsUpdating(true);
     try {
-      await updateMap(id, buildSnapshot());
+      const result = await updateMap(id, getActiveSnapshot());
       await fetchHistory();
+      await onSaved?.({
+        id,
+        name: activeDisplayName,
+        isUpdate: true,
+        result,
+      });
     } catch (err) {
-      alert("Error saving map: " + err.message);
+      alert("Error saving LZ/PZ diagram: " + err.message);
     } finally {
       setIsUpdating(false);
     }
@@ -89,13 +148,18 @@ const HistoryModal = ({
     if (!window.confirm("Delete this saved map?")) return;
     try {
       await deleteMap(id);
-      if (id === loadedMapId) {
+      if (sameMapId(id, loadedMapId)) {
         setLoadedMapId(null);
       }
+      await onDeleted?.({ id });
     } catch (err) {
-      alert("Error deleting map: " + err.message);
+      alert("Error deleting LZ/PZ diagram: " + err.message);
     }
   };
+
+  const isUpdatingActiveMap = hasActiveMapControl && currentMapId != null;
+  const saveActionDisabled = !canSave || isSaving || (isUpdatingActiveMap && isUpdating);
+  const saveActionTitle = !canSave ? saveDisabledReason || "Set a target and complete LZ analysis before saving." : undefined;
 
   return (
     <Draggable nodeRef={nodeRef} handle=".modal-header">
@@ -142,13 +206,21 @@ const HistoryModal = ({
             />
           ) : (
             <>
-              <div className="form-divider">Save Current Map</div>
+              <div className="form-divider">
+                {isUpdatingActiveMap ? "Update Active LZ/PZ" : "Save Active LZ/PZ"}
+              </div>
+              {!canSave && (
+                <p style={{ margin: "0 0 10px", fontSize: "0.8rem", opacity: 0.75 }}>
+                  {saveDisabledReason || "Set a target and complete LZ analysis before saving."}
+                </p>
+              )}
               <div className="form-grid header-grid">
                 <div className="input-group span-flex ">
-                  <label>Name</label>
+                  <label>{isUpdatingActiveMap ? "Active diagram" : "Name"}</label>
                   <input
-                    value={saveName}
+                    value={isUpdatingActiveMap ? activeDisplayName : saveName}
                     onChange={(e) => setSaveName(e.target.value)}
+                    disabled={isUpdatingActiveMap || !canSave || isSaving}
                     placeholder="e.g. HAWK LZ Setup"
                   />
                 </div>
@@ -156,10 +228,19 @@ const HistoryModal = ({
                   <label>&nbsp;</label>
                   <button
                     className="export-btn"
-                    onClick={handleSave}
-                    disabled={isSaving}
+                    onClick={
+                      isUpdatingActiveMap
+                        ? () => handleUpdate(currentMapId)
+                        : handleSave
+                    }
+                    disabled={saveActionDisabled}
+                    title={saveActionTitle}
                   >
-                    {isSaving ? "Saving..." : "Save"}
+                    {isSaving || (isUpdatingActiveMap && isUpdating)
+                      ? "Saving..."
+                      : isUpdatingActiveMap
+                        ? "Update"
+                        : "Save"}
                   </button>
                 </div>
               </div>
@@ -183,7 +264,7 @@ const HistoryModal = ({
                       background: "rgba(255,255,255,0.05)",
                       borderRadius: "6px",
                       border:
-                        entry.id === loadedMapId
+                        sameMapId(entry.id, currentMapId)
                           ? "1px solid rgba(59, 130, 246, 0.6)"
                           : "1px solid transparent",
                     }}
@@ -191,7 +272,7 @@ const HistoryModal = ({
                     <div>
                       <div style={{ fontWeight: 600 }}>
                         {entry.name}
-                        {entry.id === loadedMapId && (
+                        {sameMapId(entry.id, currentMapId) && (
                           <span
                             style={{
                               marginLeft: "6px",
@@ -200,7 +281,7 @@ const HistoryModal = ({
                               color: "#60a5fa",
                             }}
                           >
-                            (loaded)
+                            {hasActiveMapControl ? "(active)" : "(loaded)"}
                           </span>
                         )}
                       </div>
@@ -213,13 +294,14 @@ const HistoryModal = ({
                         className="export-btn"
                         onClick={() => handleLoad(entry.id)}
                       >
-                        Load
+                        Open
                       </button>
-                      {entry.id === loadedMapId && (
+                      {!hasActiveMapControl && sameMapId(entry.id, currentMapId) && (
                         <button
                           className="export-btn"
                           onClick={() => handleUpdate(entry.id)}
-                          disabled={isUpdating}
+                          disabled={!canSave || isUpdating}
+                          title={saveActionTitle}
                         >
                           {isUpdating ? "Saving..." : "Save"}
                         </button>

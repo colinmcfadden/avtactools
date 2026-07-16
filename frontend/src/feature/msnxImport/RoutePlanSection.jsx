@@ -100,6 +100,7 @@ const RoutePlanSection = ({
       pointId,
       name,
       match ? { lat: match.lat, lon: match.lon } : undefined,
+      match && typeof match.elevationFt === "number" ? match.elevationFt : undefined,
     );
   };
 
@@ -370,11 +371,12 @@ const RoutePlanSection = ({
                       rp.legCourseTrueDeg != null
                         ? String(Math.round(rp.legCourseTrueDeg)).padStart(3, "0")
                         : "---"
-                    }°T · ${rp.legGsKts != null ? Math.round(rp.legGsKts) : "--"}kt`}
+                    }°T · ${rp.legGsKts != null ? Math.round(rp.legGsKts) : "--"}kt
+                     · ${rp.mslFt != null ? `${Math.round(rp.mslFt)}' MSL   ` : ""}`
+                    }
               </span>
               <span>
-                {rp.mslFt != null ? `${Math.round(rp.mslFt)}'M ` : ""}
-                +{formatDuration(rp.elapsedSec)}
+                {formatDuration(rp.elapsedSec)}
               </span>
             </div>
           </div>
