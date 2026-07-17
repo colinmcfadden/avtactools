@@ -269,6 +269,7 @@ export const computeRoutePlan = (route, plan, elevationsFt = {}) => {
     const legTo = i > 0 ? legs[i - 1] : null;
     return {
       id: p.id,
+      uiId: p.uiId ?? p.id ?? `route-plan-point-${i}`,
       name: p.name,
       ptType: p.ptType,
       lat: p.lat,

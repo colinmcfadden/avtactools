@@ -236,7 +236,7 @@ export async function parseMsnxFile(file) {
 
   const pointInfo = buildPointInfoMap(docs.points);
 
-  const routes = rteElements.map((rte) => {
+  const routes = rteElements.map((rte, routeIndex) => {
     const name = getChildText(rte, "name") || "Unnamed Route";
     const segmentEl = rte.getElementsByTagName("msnx:segment")[0];
     const segmentId = segmentEl?.getAttribute("msnx:id") || null;
@@ -254,6 +254,10 @@ export async function parseMsnxFile(file) {
 
       return {
         id,
+        // `id` is the AMPS/XML identifier and is legitimately absent on some
+        // legacy or geometry-only GPX points. Keep a separate, stable identity
+        // for React so multiple anonymous points do not all render as `null`.
+        uiId: id ?? `msnx-point-${segmentId ?? routeIndex}-${index}`,
         lat,
         lon,
         ele: eleText ? parseFloat(eleText) : null,

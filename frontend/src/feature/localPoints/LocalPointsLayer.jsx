@@ -33,9 +33,9 @@ const LocalPointsLayer = ({ pointSets, onAddToRoute }) => {
     <>
       {pointSets.map((set) => {
         if (set.visible === false) return null;
-        return set.points.map((point) => (
+        return set.points.map((point, pointIndex) => (
           <Marker
-            key={point.id}
+            key={point.id ?? `${set.id}-point-${pointIndex}`}
             position={[point.lat, point.lon]}
             icon={localPointIcon(point, set.color)}
           >
