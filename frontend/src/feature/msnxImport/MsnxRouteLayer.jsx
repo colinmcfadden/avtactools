@@ -126,7 +126,7 @@ const MsnxRouteLayer = ({
                 },
               }}
             />
-            {route.points.map((point) => {
+            {route.points.map((point, pointIndex) => {
               const showLabel = point.kind ? point.kind === "amps" : point.role !== "waypoint";
               const label =
                 point.name.replace(/^\./, "") || ROLE_LABELS[point.role] || "POINT";
@@ -161,7 +161,7 @@ const MsnxRouteLayer = ({
               }
               return (
                 <Marker
-                  key={point.id}
+                  key={point.uiId ?? point.id ?? `${route.id}-point-${pointIndex}`}
                   position={[point.lat, point.lon]}
                   icon={buildIcon(point, route.color)}
                   draggable
