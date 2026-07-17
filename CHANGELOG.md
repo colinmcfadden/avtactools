@@ -1,3 +1,12 @@
+## [1.5.2](https://github.com/colinmcfadden/avtactools/compare/v1.5.1...v1.5.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* hide serpentine routes and threat ui fix ([5f8afb2](https://github.com/colinmcfadden/avtactools/commit/5f8afb2079bf825c9b149630c7e8b3aa95d2eb1c))
+* resolve export issues and tailor design ([40eb9ca](https://github.com/colinmcfadden/avtactools/commit/40eb9ca9e7e2016a28ecbf87c3a01c8cbd406382))
+* stabilize route errors in console ([06426fd](https://github.com/colinmcfadden/avtactools/commit/06426fdd3135356d4ba2ca3746aa99ed63efd52d))
+
 ## [1.5.1](https://github.com/colinmcfadden/avtactools/compare/v1.5.0...v1.5.1) (2026-07-16)
 
 
