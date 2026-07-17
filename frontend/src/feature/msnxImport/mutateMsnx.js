@@ -199,17 +199,6 @@ const findLegBetweenPoints = (legs, legsListEl, pointAId, pointCId) => {
   return { legEl: null, legIdEl: null, legsListEl };
 };
 
-const findTrackCoordinateValueEl = (trackpointEl) => {
-  for (const item of trackpointEl.getElementsByTagName("item")) {
-    const keyEl = findDirectChild(item, "key");
-    if (keyEl && keyEl.textContent === "TrackPtCoordinate") {
-      const attributeEl = findDirectChild(item, "attribute");
-      return attributeEl && findDirectChild(attributeEl, "value");
-    }
-  }
-  return null;
-};
-
 /** Patches lat/lon for an existing point in both mission.gpx and points.xml. */
 export function updatePointCoordinate(docs, pointId, lat, lon) {
   const rtept = findGpxRteptByPointId(docs.gpx, pointId);
@@ -234,14 +223,12 @@ export function updatePointCoordinate(docs, pointId, lat, lon) {
   // trackpointset — the authoritative geometry AMPS calculates from. Keep it
   // in sync when a serpentine point is dragged (matched by its old
   // coordinate string; trackpoints have their own ids).
-  if (oldCoord && oldCoord !== newCoord && docs.legs) {
-    for (const trackpointEl of docs.legs.getElementsByTagName("trackpoint")) {
-      const valueEl = findTrackCoordinateValueEl(trackpointEl);
-      if (valueEl && valueEl.textContent === oldCoord) {
-        valueEl.textContent = newCoord;
-        break;
-      }
-    }
+  //
+  // Queued rather than applied directly: reading `docs.legs` here would parse
+  // the whole (often tens-of-MB) legs document on every drag. The swap is
+  // replayed if and when that DOM is ever built.
+  if (oldCoord && oldCoord !== newCoord) {
+    docs.queueTrackpointSwap?.(oldCoord, newCoord);
   }
 }
 
