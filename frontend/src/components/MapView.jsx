@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -181,10 +181,15 @@ const MapView = ({
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
   const activeMapStyle = getMapStyle(mapStyle);
-  // Visible local points that a dragged route point can snap onto.
-  const localSnapPoints = (localPointSets || [])
-    .filter((set) => set.visible !== false)
-    .flatMap((set) => set.points);
+  // Visible local points that a dragged route point can snap onto. Memoized so
+  // the route layers aren't handed a fresh array on every unrelated re-render.
+  const localSnapPoints = useMemo(
+    () =>
+      (localPointSets || [])
+        .filter((set) => set.visible !== false)
+        .flatMap((set) => set.points),
+    [localPointSets],
+  );
   return (
     <MapContainer
       id="map-to-export"

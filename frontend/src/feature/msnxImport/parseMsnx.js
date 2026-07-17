@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { defaultRoutePlan } from "./routeCalc";
+import { createMissionDocs, extractLegPlanData } from "./msnxDocs";
 import {
   FT_PER_M,
   parseAmpsAirspeed,
@@ -83,18 +84,6 @@ const buildPointInfoMap = (pointsDoc) => {
   return map;
 };
 
-const parseXml = (text, label) => {
-  // Strip the BOM and any leading XML declaration(s). The declaration is
-  // optional, and files exported by earlier builds of this app carried a
-  // doubled declaration (invalid XML) — stripping keeps those importable.
-  const sanitized = text.replace(/^﻿?(?:\s*<\?xml[^>]*\?>)+\s*/, "");
-  const doc = new DOMParser().parseFromString(sanitized, "application/xml");
-  if (doc.querySelector("parsererror")) {
-    throw new Error(`Failed to parse ${label} in this mission file.`);
-  }
-  return doc;
-};
-
 const findById = (doc, tagName, id) => {
   for (const el of doc.getElementsByTagName(tagName)) {
     if (getDirectChild(el, "id")?.textContent === id) return el;
@@ -108,18 +97,11 @@ const findById = (doc, tagName, id) => {
  * imported mission's points.xml / legs.xml / segments.xml. This is what lets
  * an imported route drive the same inline plan editor a sketched route does.
  */
-const buildRoutePlanFromDocs = (docs, route) => {
+const buildRoutePlanFromDocs = (docs, route, pointById, legPlan) => {
   const plan = defaultRoutePlan();
   plan.perPoint = {};
   const elevations = {};
   const ampsPoints = route.points.filter((p) => p.kind !== "shaping" && p.id);
-
-  // --- per-point altitude / ground elevation / clock (TOT) ---
-  const pointById = new Map();
-  for (const el of docs.points.getElementsByTagName("point")) {
-    const idEl = getDirectChild(el, "id");
-    if (idEl) pointById.set(idEl.textContent, el);
-  }
 
   let firstAlt = null;
   const clockByPoint = new Map();
@@ -174,17 +156,16 @@ const buildRoutePlanFromDocs = (docs, route) => {
   let firstSpd = null;
   let firstWind = null;
   for (const legId of legIds) {
-    const legEl = findById(docs.legs, "leg", legId);
-    if (!legEl) continue;
-    const endId = getDirectChild(legEl, "endpt")?.textContent;
+    const leg = legPlan.get(legId);
+    const endId = leg?.endpt;
     if (!endId) continue;
 
-    const airspeed = parseAmpsAirspeed(getItemValue(legEl, "AirspeedValue"));
+    const airspeed = parseAmpsAirspeed(leg.airspeed);
     if (airspeed) {
       plan.perPoint[endId] = { ...plan.perPoint[endId], airspeed };
       if (!firstSpd) firstSpd = airspeed;
     }
-    const wind = parseAmpsWind(getItemValue(legEl, "CruiseWind"));
+    const wind = parseAmpsWind(leg.wind);
     if (wind) {
       plan.perPoint[endId] = { ...plan.perPoint[endId], wind };
       if (!firstWind) firstWind = wind;
@@ -222,12 +203,11 @@ export async function parseMsnxFile(file) {
     entries.segments.async("string"),
   ]);
 
-  const docs = {
-    gpx: parseXml(gpxText, "mission.gpx"),
-    points: parseXml(pointsText, "points.xml"),
-    legs: parseXml(legsText, "legs.xml"),
-    segments: parseXml(segmentsText, "segments.xml"),
-  };
+  // legs.xml is the bulk of a real mission (tens of MB of calc data this app
+  // never reads). Pull the few plan values out of its text and leave the DOM
+  // unbuilt until an edit or export actually needs it.
+  const legPlan = extractLegPlanData(legsText);
+  const docs = createMissionDocs({ gpxText, pointsText, segmentsText, legsText });
 
   const rteElements = Array.from(docs.gpx.getElementsByTagName("rte"));
   if (rteElements.length === 0) {
@@ -235,6 +215,13 @@ export async function parseMsnxFile(file) {
   }
 
   const pointInfo = buildPointInfoMap(docs.points);
+
+  // Index points.xml once for every route, rather than re-walking it per route.
+  const pointById = new Map();
+  for (const el of docs.points.getElementsByTagName("point")) {
+    const idEl = getDirectChild(el, "id");
+    if (idEl) pointById.set(idEl.textContent, el);
+  }
 
   const routes = rteElements.map((rte, routeIndex) => {
     const name = getChildText(rte, "name") || "Unnamed Route";
@@ -264,7 +251,13 @@ export async function parseMsnxFile(file) {
         name: pointName,
         // Authoritative designation from points.xml when available; the
         // name-based role remains as a fallback for rendering older data.
-        kind: info.kind ?? null,
+        //
+        // AMPS emits calculated serpentine geometry two different ways: as real
+        // points flagged CalcPtSerpentine/IsCalcPt (classified above), or — on
+        // some routes — as bare "<route>.rtptN.trkN" rtepts carrying no
+        // <extensions> at all. Those have no AMPS point behind them, so they
+        // are shaping geometry too, not plannable route points.
+        kind: info.kind ?? (id ? null : "shaping"),
         ptType: info.ptType ?? null,
         role: classifyPoint(pointName, index),
       };
@@ -273,7 +266,7 @@ export async function parseMsnxFile(file) {
     const route = { name, segmentId, points };
     // Read the mission's planned performance data into the same plan shape the
     // sketched routes use, so imported routes get the inline editor too.
-    const { plan, elevations } = buildRoutePlanFromDocs(docs, route);
+    const { plan, elevations } = buildRoutePlanFromDocs(docs, route, pointById, legPlan);
     route.plan = plan;
     route.elevations = elevations;
     return route;

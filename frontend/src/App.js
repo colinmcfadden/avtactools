@@ -588,9 +588,11 @@ function App() {
     finishSketch(name.trim().toUpperCase() || defaultName);
   };
 
-  const handleInsertPointContextMenu = (routeId, lat, lon, x, y) => {
+  // Stable identities: these are handed to the memoized route layers, which
+  // render a marker per route point (hundreds, for a real AMPS mission).
+  const handleInsertPointContextMenu = useCallback((routeId, lat, lon, x, y) => {
     setContextMenu({ x, y, type: "route-line", routeId, lat, lon });
-  };
+  }, []);
 
   // Threats export to a companion .ths downloaded alongside the .msnx (AMPS
   // reads the two as a mission + its threat overlay). Threats are never saved.
@@ -620,9 +622,9 @@ function App() {
     setContextMenu(null);
   };
 
-  const handleSketchPointContextMenu = (routeId, pointId, x, y) => {
+  const handleSketchPointContextMenu = useCallback((routeId, pointId, x, y) => {
     setContextMenu({ x, y, type: "sketch-point", routeId, pointId });
-  };
+  }, []);
 
   // Right-click while drawing a route: add a designated point right there.
   const handleDraftPointContextMenu = (lat, lon, x, y) => {

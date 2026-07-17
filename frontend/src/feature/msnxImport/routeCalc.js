@@ -126,9 +126,16 @@ const parseClockToDate = (dateStr, timeStr) => {
   return base;
 };
 
-/** AMPS-point list for planning: shaping points only shape leg geometry. */
+/**
+ * AMPS-point list for planning: shaping points only shape leg geometry.
+ *
+ * A point with no AMPS id is excluded as well. Per-point plan overrides are
+ * keyed by point id, so an id-less point cannot hold or export one — every such
+ * row would read and write the same `perPoint[undefined]` entry and move
+ * together. Matches the filter used when reading a plan out of a mission file.
+ */
 export const planPoints = (route) =>
-  route.points.filter((p) => p.kind !== "shaping");
+  route.points.filter((p) => p.kind !== "shaping" && p.id);
 
 /**
  * Computes the full plan for a sketched route.

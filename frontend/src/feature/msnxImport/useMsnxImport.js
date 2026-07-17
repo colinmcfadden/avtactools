@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { parseMsnxFile } from "./parseMsnx";
 import {
   updatePointCoordinate,
@@ -56,7 +56,7 @@ export const useMsnxImport = () => {
   // one runs twice — for insertPoint the second run threw "Couldn't find the
   // connecting leg" because the first run had already split that leg.
 
-  const updatePointPosition = (routeId, pointId, lat, lon, chartElevationFt) => {
+  const updatePointPosition = useCallback((routeId, pointId, lat, lon, chartElevationFt) => {
     const sourceRoute = importedRoutes.find((r) => r.id === routeId);
     const draggedPoint = sourceRoute?.points.find((p) => p.id === pointId);
     if (!sourceRoute || !draggedPoint) return;
@@ -102,9 +102,9 @@ export const useMsnxImport = () => {
         };
       }),
     );
-  };
+  }, [importedRoutes]);
 
-  const insertPoint = (routeId, lat, lon) => {
+  const insertPoint = useCallback((routeId, lat, lon) => {
     const route = importedRoutes.find((r) => r.id === routeId);
     if (!route) return;
     const fileEntry = filesRef.current.get(route.fileId);
@@ -124,7 +124,7 @@ export const useMsnxImport = () => {
         return { ...r, points };
       }),
     );
-  };
+  }, [importedRoutes]);
 
   // --- inline plan editing (mirrors useRouteSketch, for imported routes) ---
   // Plan edits live in React state and are written back into the mission docs
