@@ -216,7 +216,7 @@ const RoutePlanSection = ({
         const spdOver = effSpd(rp.id);
         const windOver = effWind(rp.id);
         return (
-          <div key={rp.id} style={rowBox}>
+          <div key={rp.uiId ?? rp.id ?? `${route.id}-plan-point-${i}`} style={rowBox}>
             {/* name + clock */}
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <span style={{ flexShrink: 0 }}>{PT_GLYPHS[rp.ptType] || "●"}</span>

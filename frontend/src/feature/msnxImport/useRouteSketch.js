@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { nextRouteColor } from "./colorPalette";
 import { findNearestAdjacentIndex } from "./mutateMsnx";
 import { buildSketchMsnx } from "./createMsnx";
@@ -130,7 +130,7 @@ export const useRouteSketch = () => {
   // `chartElevationFt` is set when a drag snaps onto a local point (its charted
   // elevation) and cleared (undefined) on any normal drag, so the point reverts
   // to the DEM elevation when moved off a known point.
-  const updateSketchPointPosition = (routeId, pointId, lat, lon, chartElevationFt) => {
+  const updateSketchPointPosition = useCallback((routeId, pointId, lat, lon, chartElevationFt) => {
     setSketchedRoutes((prev) =>
       prev.map((route) => {
         if (route.id !== routeId) return route;
@@ -142,7 +142,7 @@ export const useRouteSketch = () => {
         };
       }),
     );
-  };
+  }, []);
 
   const insertSketchPoint = (routeId, lat, lon) => {
     setSketchedRoutes((prev) =>

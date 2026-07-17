@@ -357,15 +357,20 @@ input:checked + .slider:before {
 .relative-wrapper { position: relative; }
 
 .ff-dropdown {
-  position: fixed;
-  right: 0;
-  width: 220px; /* Wider to prevent text cutting */
+  position: absolute;
+  left: calc(100% + 6px);
+  right: auto;
+  bottom: 0;
+  width: 210px;
+  max-height: min(320px, 60vh);
+  box-sizing: border-box;
   background: var(--ff-panel-bg);
   border: 1px solid var(--ff-accent);
   border-radius: 6px;
   box-shadow: 5px 5px 25px rgba(0,0,0,0.8);
   z-index: 10000; /* Must be higher than Leaflet's 1000 */
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .dropdown-item {

@@ -1,6 +1,14 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Marker, Polyline, Tooltip, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
+
+/**
+ * Icons are pure functions of (designation, colour), so a real mission's
+ * hundreds of points only ever need a handful of distinct ones. Cache them:
+ * handing Leaflet a new divIcon identity per render makes it replace every
+ * marker's DOM element, which is what made large imported routes stutter.
+ */
+const iconCache = new Map();
 
 // Snap radius, in screen pixels, for dragging a route point onto a local point.
 const SNAP_PX = 18;
@@ -68,7 +76,7 @@ const shapeIcon = (shape, color) => {
   });
 };
 
-export const buildIcon = (point, color) => {
+const createIcon = (point, color) => {
   // Sketched points carry a designation; mirror AMPS iconography:
   // Turn = circle, IP/RP = square, Target = triangle, shaping = small dot.
   if (point.kind) {
@@ -83,6 +91,16 @@ export const buildIcon = (point, color) => {
   if (point.role === "start") return shapeIcon("circle", color);
   if (point.role === "release") return shapeIcon("triangle", color);
   return shapeIcon("diamond", color);
+};
+
+export const buildIcon = (point, color) => {
+  const key = `${point.kind ?? ""}|${point.ptType ?? ""}|${point.role ?? ""}|${color}`;
+  let icon = iconCache.get(key);
+  if (!icon) {
+    icon = createIcon(point, color);
+    iconCache.set(key, icon);
+  }
+  return icon;
 };
 
 const pointDescription = (point) => {
@@ -126,7 +144,7 @@ const MsnxRouteLayer = ({
                 },
               }}
             />
-            {route.points.map((point) => {
+            {route.points.map((point, pointIndex) => {
               const showLabel = point.kind ? point.kind === "amps" : point.role !== "waypoint";
               const label =
                 point.name.replace(/^\./, "") || ROLE_LABELS[point.role] || "POINT";
@@ -161,10 +179,16 @@ const MsnxRouteLayer = ({
               }
               return (
                 <Marker
-                  key={point.id}
+                  key={point.uiId ?? point.id ?? `${route.id}-point-${pointIndex}`}
                   position={[point.lat, point.lon]}
                   icon={buildIcon(point, route.color)}
-                  draggable
+                  // Some AMPS routes emit their serpentine track as bare GPX
+                  // rtepts with no point definition behind them. There is
+                  // nothing in points.xml to write a new position back to, so a
+                  // drag would only move the marker until the next re-import —
+                  // don't offer it. Points that do have an AMPS id (including
+                  // real CalcPtSerpentine shaping points) stay draggable.
+                  draggable={Boolean(point.id)}
                   eventHandlers={eventHandlers}
                 >
                   {showLabel && (
@@ -195,4 +219,12 @@ const MsnxRouteLayer = ({
   );
 };
 
-export default MsnxRouteLayer;
+/**
+ * Memoized: a real imported mission renders a marker per route point (531 in a
+ * 4-route AMPS file), so re-rendering this subtree on unrelated App state
+ * changes — a context menu opening, a weather refresh — meant Leaflet
+ * re-seating every one of those markers. All props are stable identities
+ * (routes/snapPoints from state, handlers via useCallback), so the default
+ * shallow compare keeps the layer still until the routes themselves change.
+ */
+export default React.memo(MsnxRouteLayer);
