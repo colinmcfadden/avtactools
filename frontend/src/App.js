@@ -6,6 +6,8 @@ import { convertToLatLongString } from "./utils/Helpers";
 import ExportModal from "./feature/export/ExportModal";
 import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
+import SidebarCollapseToggle from "./components/SidebarCollapseToggle";
+import { useIsMobile } from "./feature/auth/useIsMobile";
 import axios from "axios";
 import {
   createDefaultDoghouses,
@@ -44,6 +46,13 @@ const resolveStateUpdate = (nextValue, currentValue) =>
 
 const getSavedMapId = (result) => result?.id ?? result?.data?.id ?? null;
 
+// The desktop control panel toggles between its full width and a narrow icon
+// rail. The rail is wide enough for the tool icons; the MGRS Target input pops
+// out on demand while collapsed so it's still typeable.
+const SIDEBAR_RAIL = 76;
+const SIDEBAR_DEFAULT = 320;
+const SIDEBAR_COLLAPSED_KEY = "avtac.sidebarCollapsed";
+
 const EMPTY_LZ_GRAPHICS = Object.freeze({
   doghouses: Object.freeze([]),
   helicopters: Object.freeze([]),
@@ -64,6 +73,19 @@ function App() {
   const [drawingPoints, setDrawingPoints] = useState([]);
   const [clickedGrid, setClickedGrid] = useState("Loading...");
   const [mapStyle, setMapStyle] = useState("satellite");
+
+  // Resizable/collapsible desktop control panel. Width persists across sessions;
+  // below the compact threshold the panel renders as an icon rail. On mobile the
+  // sidebar is a full-screen overlay, so width/compact don't apply there.
+  const isMobile = useIsMobile();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1",
+  );
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? "1" : "0");
+  }, [sidebarCollapsed]);
+  const sidebarCompact = !isMobile && sidebarCollapsed;
+  const sidebarWidth = sidebarCollapsed ? SIDEBAR_RAIL : SIDEBAR_DEFAULT;
 
   const lzWorkspace = useLzWorkspace();
   const {
@@ -969,7 +991,12 @@ function App() {
       >
         ☰
       </button>
-      <div className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""}`}>
+      <div
+        className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""} ${
+          sidebarCompact ? "sidebar-compact" : ""
+        }`}
+        style={isMobile ? undefined : { width: sidebarWidth, minWidth: sidebarWidth }}
+      >
         <div className="sidebar-header">
           {/* On mobile the account + save controls live here (hidden on
               desktop, where they float over the map instead). */}
@@ -1051,8 +1078,16 @@ function App() {
           canSaveDiagram={canEditGraphics}
           diagramStatus={diagramStatus}
           diagramReadinessText={diagramReadinessText}
+          compact={sidebarCompact}
         />
       </div>
+      {!isMobile && (
+        <SidebarCollapseToggle
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed((v) => !v)}
+          width={sidebarWidth}
+        />
+      )}
       <div className="map-area">
         <UnitBadge />
         <div className="floating-topright">

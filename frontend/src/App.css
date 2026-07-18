@@ -2208,3 +2208,132 @@ select:focus-visible {
   outline: 2px solid var(--ff-accent);
   outline-offset: 1px;
 }
+
+/* =========================================================
+   COLLAPSIBLE CONTROL PANEL (desktop)
+   A chevron on the sidebar seam toggles between the full panel and a narrow
+   icon rail. In the rail, the MGRS Target input pops out over the map so it
+   stays typeable. Mobile keeps its full-screen overlay (toggle hidden).
+   ========================================================= */
+.sidebar-collapse-toggle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 46px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1500;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 7px;
+  background: var(--surface-3);
+  color: var(--ff-text-muted);
+  cursor: pointer;
+  box-shadow: var(--deck-shadow);
+  transition: left 0.2s ease, color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.sidebar-collapse-toggle:hover {
+  color: var(--ff-text-main);
+  border-color: var(--ff-accent);
+  background: var(--surface-2);
+}
+
+/* Panel width animates when toggled. */
+@media (min-width: 851px) {
+  .sidebar {
+    transition: width 0.2s ease, min-width 0.2s ease;
+  }
+}
+
+@media (max-width: 850px) {
+  .sidebar-collapse-toggle {
+    display: none;
+  }
+}
+
+/* MGRS popout: floats over the map (fixed, so the panel's clip can't hide it). */
+.mgrs-popout {
+  position: fixed;
+  z-index: 3000;
+  width: 232px;
+  padding: 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 9px;
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--deck-shadow);
+}
+
+.mgrs-popout .ff-label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.mgrs-rail-btn.active {
+  border-color: var(--ff-accent) !important;
+  background: var(--surface-3);
+}
+
+/* ---- Compact icon-rail mode ---- */
+.ff-panel.compact .ff-scroll-content {
+  padding: 8px 6px 10px;
+}
+
+/* The collapsed MGRS trigger sits at the top of the rail. */
+.search-section-rail {
+  margin: 8px 6px 0;
+}
+.ff-panel.compact .search-section-rail .ff-tool-btn {
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+  padding: 8px;
+}
+
+/* Detail cards collapse away; the tool + route icon rails remain. */
+.ff-panel.compact .ff-card-analysis,
+.ff-panel.compact .ff-card-export {
+  display: none;
+}
+.ff-panel.compact .ff-card {
+  padding: 7px 5px;
+}
+/* Keep the header's accent bar as a group divider, drop its text. */
+.ff-panel.compact .ff-card-header {
+  height: 3px;
+  margin-bottom: 8px;
+  padding: 0;
+  border-bottom: none;
+  font-size: 0;
+  overflow: hidden;
+}
+.ff-panel.compact .ff-card-header::before {
+  width: 100%;
+  height: 3px;
+}
+.ff-panel.compact .btn-label {
+  display: none;
+}
+.ff-panel.compact .tool-grid {
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+.ff-panel.compact .ff-tool-btn {
+  min-height: 0;
+  aspect-ratio: 1 / 1;
+  padding: 8px;
+}
+
+.ff-panel.compact .controls-footer {
+  justify-content: center;
+  padding: 8px 4px;
+}
+.ff-panel.compact .footer-version {
+  display: none;
+}
+.ff-panel.compact .footer-logo {
+  width: 26px;
+}

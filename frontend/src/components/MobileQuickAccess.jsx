@@ -128,11 +128,10 @@ const MobileQuickAccess = ({
 
   return (
     <div className="mobile-quick-access-container">
-      {readinessMessage && (
-        <div className="mobile-diagram-readiness" role="status">
-          {readinessMessage}
-        </div>
-      )}
+      {/* The readiness hint ("Set a target…") is intentionally NOT rendered here.
+          On mobile it pushed this vertical icon rail toward mid-screen; the same
+          message still shows inside the control panel once it's opened. The text
+          is retained as button titles below so disabled buttons stay explained. */}
       {/* Route Sketch Button (toggles draw mode) */}
       <button
         onClick={toggleRouteSketch}

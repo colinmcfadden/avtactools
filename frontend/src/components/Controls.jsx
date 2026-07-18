@@ -50,9 +50,33 @@ const Controls = ({
   diagramStatus,
   diagramReadinessText,
   readinessText,
+  // When the desktop panel is dragged narrow it renders as an icon rail: labels
+  // and detail cards hide, tools stack vertically, MGRS input stays usable.
+  compact = false,
 }) => {
   const [showUnitMenu, setShowUnitMenu] = useState(false);
   const msnxInputRef = useRef(null);
+
+  // Collapsed rail: the MGRS input is too narrow to use inline, so a search
+  // icon pops out a floating (fixed-position, escaping the panel's clip) input.
+  const [showMgrsPopout, setShowMgrsPopout] = useState(false);
+  const [mgrsPopoutPos, setMgrsPopoutPos] = useState({ top: 64, left: 84 });
+  const mgrsBtnRef = useRef(null);
+  const mgrsPopoutRef = useRef(null);
+
+  const toggleMgrsPopout = () => {
+    setShowMgrsPopout((open) => {
+      if (!open) {
+        const r = mgrsBtnRef.current?.getBoundingClientRect();
+        if (r) setMgrsPopoutPos({ top: r.top, left: r.right + 8 });
+      }
+      return !open;
+    });
+  };
+  const submitMgrs = () => {
+    handleSearch();
+    setShowMgrsPopout(false);
+  };
 
   const hasLifecycleProps =
     canAnalyzeProp !== undefined ||
@@ -90,6 +114,34 @@ const Controls = ({
       setShowUnitMenu(false);
     }
   }, [canUseDiagramTools]);
+
+  // Expanding the panel dismisses the MGRS popout (the inline input returns).
+  useEffect(() => {
+    if (!compact) setShowMgrsPopout(false);
+  }, [compact]);
+
+  // Dismiss the popout on an outside click/tap or Escape.
+  useEffect(() => {
+    if (!showMgrsPopout) return;
+    const onDown = (e) => {
+      if (
+        mgrsPopoutRef.current?.contains(e.target) ||
+        mgrsBtnRef.current?.contains(e.target)
+      ) {
+        return;
+      }
+      setShowMgrsPopout(false);
+    };
+    const onKey = (e) => e.key === "Escape" && setShowMgrsPopout(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showMgrsPopout]);
 
   const handleMsnxFileChange = (e) => {
     const file = e.target.files[0];
@@ -167,25 +219,67 @@ const Controls = ({
   };
 
   return (
-    <div className="ff-panel">
-      {/* Search Header */}
-      <div className="ff-section search-section">
-        <label className="ff-label">MGRS Target</label>
-        <div className="ff-input-group">
-          <input
-            className="ff-input"
-            value={gridInput}
-            onChange={(e) => setGridInput(e.target.value)}
-          />
-          <button onClick={handleSearch} className="ff-btn primary">
-            GO
+    <div className={`ff-panel ${compact ? "compact" : ""}`}>
+      {/* Search Header. Expanded: inline MGRS input. Collapsed: a search icon
+          that pops the input out over the map so it stays typeable. */}
+      {compact ? (
+        <div className="search-section-rail">
+          <button
+            ref={mgrsBtnRef}
+            type="button"
+            onClick={toggleMgrsPopout}
+            className={`ff-tool-btn mgrs-rail-btn ${showMgrsPopout ? "active" : ""}`}
+            title="MGRS Target"
+            aria-label="Enter MGRS target"
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
           </button>
+          {showMgrsPopout && (
+            <div
+              ref={mgrsPopoutRef}
+              className="mgrs-popout"
+              style={{ top: mgrsPopoutPos.top, left: mgrsPopoutPos.left }}
+            >
+              <label className="ff-label">MGRS Target</label>
+              <div className="ff-input-group">
+                <input
+                  className="ff-input"
+                  autoFocus
+                  value={gridInput}
+                  onChange={(e) => setGridInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitMgrs();
+                  }}
+                />
+                <button onClick={submitMgrs} className="ff-btn primary">
+                  GO
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      ) : (
+        <div className="ff-section search-section">
+          <label className="ff-label">MGRS Target</label>
+          <div className="ff-input-group">
+            <input
+              className="ff-input"
+              value={gridInput}
+              onChange={(e) => setGridInput(e.target.value)}
+            />
+            <button onClick={handleSearch} className="ff-btn primary">
+              GO
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="ff-scroll-content">
         {/* Terrain & Mission Data Tile */}
-        <div className="ff-card">
+        <div className="ff-card ff-card-analysis">
           <div className="ff-card-header">LZ/PZ Analysis</div>
           <div className="mission-data-grid">
             <MissionSummary
@@ -476,7 +570,7 @@ const Controls = ({
         </div>
 
         {/* Routes */}
-        <div className="ff-card">
+        <div className="ff-card ff-card-routes">
           <div className="ff-card-header">Routes (.msnx)</div>
           <div className="tool-grid">
             <button
