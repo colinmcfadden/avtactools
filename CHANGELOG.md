@@ -1,3 +1,11 @@
+## [1.5.3](https://github.com/colinmcfadden/avtactools/compare/v1.5.2...v1.5.3) (2026-07-18)
+
+
+### Bug Fixes
+
+* login duplicate error resolved ([a3b0854](https://github.com/colinmcfadden/avtactools/commit/a3b08549cd6ea555299eef654345473c8d343ddc))
+* mobile ui updates ([8101379](https://github.com/colinmcfadden/avtactools/commit/81013798db4228e929501b839a363b1dedd3127d))
+
 ## [1.5.2](https://github.com/colinmcfadden/avtactools/compare/v1.5.1...v1.5.2) (2026-07-17)
 
 
