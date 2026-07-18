@@ -1,11 +1,19 @@
 import React from "react";
 import { useAuth } from "./AuthContext";
+import { useIsMobile } from "./useIsMobile";
 import GoogleLoginButton from "./GoogleLoginButton";
 
-const UserMenu = () => {
+const UserMenu = ({ variant = "desktop" }) => {
   const { user, isLoading, logout } = useAuth();
+  const isMobile = useIsMobile();
 
   if (isLoading) return null;
+
+  // A desktop and a mobile UserMenu are both always in the tree (CSS shows one
+  // per breakpoint). Mount only the one matching the active layout, so a
+  // logged-out visitor renders a single <GoogleLogin>; two would make Google's
+  // library warn that initialize() was called multiple times.
+  if (variant === "mobile" ? !isMobile : isMobile) return null;
 
   return (
     <div className="floating-auth">

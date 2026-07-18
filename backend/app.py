@@ -39,6 +39,21 @@ if database_url.startswith('postgres://'):
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Managed Postgres (Neon/Supabase) and the Fly VM both drop idle connections —
+# Neon autosuspends its compute after a few minutes. Without validation, the
+# pool hands out a dead socket on the next request and the query raises
+# OperationalError ("server closed the connection unexpectedly"), which surfaces
+# to the browser as an intermittent 500 on the first call after an idle period
+# (typically GET /auth/me on page load). pool_pre_ping runs a cheap liveness
+# check and transparently reconnects; pool_recycle proactively retires
+# connections before the server's own idle timeout can. Only meaningful for a
+# real connection pool, so scope it to Postgres and leave SQLite dev untouched.
+if database_url.startswith('postgresql://'):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+        'pool_recycle': 280,
+    }
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-me')
 # Default is 15 minutes, which silently invalidates sessions mid-use.
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)

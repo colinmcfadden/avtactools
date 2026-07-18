@@ -996,7 +996,7 @@ function App() {
                 <polyline points="7 3 7 8 15 8" />
               </svg>
             </button>
-            <UserMenu />
+            <UserMenu variant="mobile" />
           </div>
           <button
             className="close-menu-btn mobile-only"
@@ -1078,7 +1078,7 @@ function App() {
               <polyline points="7 3 7 8 15 8" />
             </svg>
           </button>
-          <UserMenu />
+          <UserMenu variant="desktop" />
         </div>
         <RoutesPanel
           routes={importedRoutes}
