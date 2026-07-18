@@ -1,6 +1,8 @@
 .map-style-switcher {
     position: absolute;
-    bottom: 28px;
+    /* Keep clear of the iOS/iPadOS home indicator + Safari toolbar so the
+       switcher isn't clipped at the bottom of the screen. */
+    bottom: calc(28px + env(safe-area-inset-bottom, 0px));
     left: 12px;
     z-index: 1000;
     display: flex;
