@@ -1,0 +1,60 @@
+{% extends "admin/base.html" %}
+{% block title %}Sign in{% endblock %}
+
+{% block content %}
+<div style="max-width: 380px; margin: 6vh auto 0;">
+  <div class="card">
+    <h2>Admin sign-in</h2>
+    <p class="muted" style="margin-top:-6px;font-size:12px;">Authorized administrators only.</p>
+
+    {% if error %}<div class="flash flash-error">{{ error }}</div>{% endif %}
+    <div id="g-error" class="flash flash-error" style="display:none;"></div>
+
+    {% if google_client_id %}
+      <div id="g_id_onload"
+           data-client_id="{{ google_client_id }}"
+           data-callback="onAdminGoogle"
+           data-auto_prompt="false"></div>
+      <div class="g_id_signin" data-type="standard" data-theme="filled_black"
+           data-shape="rectangular" data-text="signin_with" data-width="332"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--muted);font-size:11px;">
+        <span style="flex:1;height:1px;background:var(--hairline);"></span>OR<span style="flex:1;height:1px;background:var(--hairline);"></span>
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('admin.login') }}" style="display:flex;flex-direction:column;gap:10px;">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input class="input" type="email" name="email" placeholder="Email" autocomplete="username" required>
+      <input class="input" type="password" name="password" placeholder="Password" autocomplete="current-password" required>
+      <button class="btn btn-primary" type="submit" style="justify-content:center;">Sign in</button>
+    </form>
+  </div>
+</div>
+
+{% if google_client_id %}
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script>
+  function onAdminGoogle(response) {
+    fetch("{{ url_for('admin.login_google') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF": "{{ csrf_token() }}" },
+      body: JSON.stringify({ credential: response.credential }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) { window.location = d.redirect; }
+        else {
+          const el = document.getElementById("g-error");
+          el.textContent = d.error || "Sign-in failed.";
+          el.style.display = "block";
+        }
+      })
+      .catch(() => {
+        const el = document.getElementById("g-error");
+        el.textContent = "Sign-in failed. Try again.";
+        el.style.display = "block";
+      });
+  }
+</script>
+{% endif %}
+{% endblock %}

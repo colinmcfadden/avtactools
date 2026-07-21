@@ -23,6 +23,7 @@ from email_service import (
     send_welcome_email,
 )
 from models import AccountToken, LocalCredential, User, db
+from entitlements import account_active, is_admin, is_super_admin, resolve_features
 
 
 auth_bp = Blueprint('auth', __name__)
@@ -156,6 +157,10 @@ def _serialize_user(user):
         ),
         "account_status": credential.status if credential else "active",
         "has_password": credential is not None,
+        "role": user.role or "user",
+        "is_admin": is_admin(user),
+        "is_active": account_active(user),
+        "features": resolve_features(user),
     }
 
 
@@ -196,6 +201,22 @@ def _find_valid_token(raw_token, purpose):
 
 
 def _auth_success(user):
+    # The configured super-admin is always an active admin; enforce it on every
+    # sign-in so the account can't be locked out via the database or dashboard.
+    if is_super_admin(user):
+        changed = False
+        if user.role != 'admin':
+            user.role = 'admin'
+            changed = True
+        if user.is_active is not True:
+            user.is_active = True
+            changed = True
+        if changed:
+            db.session.commit()
+    elif not account_active(user):
+        # Suspended by an admin — refuse to mint a token for any auth method.
+        return _error("This account is not available.", 403, "account_unavailable")
+
     credential = user.local_credential
     return jsonify({
         "status": "success",
@@ -542,4 +563,6 @@ def me():
         return _error("User not found.", 404)
     if user.local_credential and user.local_credential.status == 'suspended':
         return _error("This account is not available.", 403)
+    if not account_active(user):
+        return _error("This account is not available.", 403, "account_unavailable")
     return jsonify(_serialize_user(user))

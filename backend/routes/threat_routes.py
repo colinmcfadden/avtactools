@@ -29,6 +29,7 @@ from flask_jwt_extended import jwt_required, verify_jwt_in_request
 
 from terrain_provider import load_terrarium_radius
 from threat_download_store import ThreatDownloadStore
+from entitlements import require_feature
 
 threat_bp = Blueprint('threat', __name__)
 
@@ -166,6 +167,7 @@ def render_mask_png(dem, meta, radar_elev_m, bands, max_r_px):
 
 @threat_bp.route('/api/threat-mask', methods=['POST'])
 @jwt_required()
+@require_feature('threats')
 def threat_mask():
     """
     Body: { lat, lon, radars: [ {
@@ -368,6 +370,7 @@ def _no_store(response):
 
 @threat_bp.route('/api/threats-kmz-link', methods=['POST'])
 @jwt_required()
+@require_feature('threats')
 def create_threats_kmz_link():
     """Create a short-lived public KMZ link for a QR code.
 
@@ -535,6 +538,7 @@ def build_ths_bytes(threats):
 
 @threat_bp.route('/api/threats-ths', methods=['POST'])
 @jwt_required()
+@require_feature('threats')
 def threats_ths():
     """Body: { threats: [...], fileName? }. Returns the .ths file for download."""
     try:

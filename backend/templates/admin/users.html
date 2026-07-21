@@ -1,0 +1,65 @@
+{% extends "admin/base.html" %}
+{% block title %}Users{% endblock %}
+
+{% block topbar %}
+<form method="get" action="{{ url_for('admin.users') }}" class="row">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Search email or name" style="width:220px;">
+  <button class="btn btn-sm" type="submit">Search</button>
+</form>
+<form method="post" action="{{ url_for('admin.logout') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button class="btn btn-sm" type="submit">Log out</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="row" style="justify-content:space-between;margin-bottom:14px;">
+  <h1 style="font-size:20px;margin:0;">Users <span class="muted" style="font-size:14px;">({{ total }})</span></h1>
+</div>
+
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th>User</th><th>Role</th><th>Access</th><th>Auth</th><th>Verified</th><th>Joined</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      {% set is_google = u.google_id and not u.google_id.startswith('local:') %}
+      {% set verified = (u.local_credential and u.local_credential.email_verified_at) or is_google %}
+      <tr onclick="location='{{ url_for('admin.user_detail', uid=u.id) }}'" style="cursor:pointer;">
+        <td>
+          <div><a href="{{ url_for('admin.user_detail', uid=u.id) }}">{{ u.name }}</a></div>
+          <div class="muted mono" style="font-size:12px;">{{ u.email }}</div>
+        </td>
+        <td>
+          {% if is_super_admin(u) %}<span class="badge badge-super">SUPER-ADMIN</span>
+          {% elif is_admin(u) %}<span class="badge badge-admin">ADMIN</span>
+          {% else %}<span class="badge">user</span>{% endif %}
+        </td>
+        <td>
+          {% if account_active(u) %}<span class="badge badge-ok">active</span>
+          {% else %}<span class="badge badge-off">suspended</span>{% endif %}
+        </td>
+        <td class="muted" style="font-size:12px;">
+          {% if is_google %}Google{% endif %}{% if is_google and u.local_credential %} · {% endif %}{% if u.local_credential %}Password{% endif %}
+        </td>
+        <td>{% if verified %}<span class="muted">yes</span>{% else %}<span class="badge badge-off">no</span>{% endif %}</td>
+        <td class="muted" style="font-size:12px;">{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">No users found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if pages > 1 %}
+<div class="row" style="justify-content:center;margin-top:16px;">
+  {% if page > 1 %}<a class="btn btn-sm" href="{{ url_for('admin.users', q=q, page=page-1) }}">← Prev</a>{% endif %}
+  <span class="muted" style="font-size:12px;">Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a class="btn btn-sm" href="{{ url_for('admin.users', q=q, page=page+1) }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
