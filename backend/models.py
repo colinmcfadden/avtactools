@@ -16,6 +16,15 @@ class User(db.Model):
     picture = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Admin access control. `role` gates the admin dashboard; `is_active` gates
+    # sign-in for every auth method (Google + password); `features` holds
+    # per-user entitlement overrides ({key: bool}; missing key => enabled).
+    # See entitlements.py. Columns are added to existing databases by the
+    # idempotent ALTERs in app.py.
+    role = db.Column(db.String(20), nullable=False, default='user')
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    features = db.Column(db.JSON, nullable=True)
+
     # This creates a relationship so you can easily get all LZs for a user (e.g., user.saved_lzs)
     saved_lzs = db.relationship('SavedLZ', backref='author', lazy=True)
     saved_routes = db.relationship('SavedRoute', backref='author', lazy=True)

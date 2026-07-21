@@ -39,7 +39,9 @@ const RoutesPanel = (props) => {
         {!collapsed && (
           <div className="routes-panel-body" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             {routeCount > 0 && <ImportedRoutesPanel {...props} />}
-            {props.threats && <ThreatsPanel {...props.threats} />}
+            {props.features?.threats !== false && props.threats && (
+              <ThreatsPanel {...props.threats} />
+            )}
           </div>
         )}
       </div>

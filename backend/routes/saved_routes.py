@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from models import db, SavedRoute
+from entitlements import require_feature
 
 saved_routes_bp = Blueprint('saved_routes', __name__)
 
@@ -34,6 +35,7 @@ def list_saved_routes():
 
 @saved_routes_bp.route('/api/routes', methods=['POST'])
 @jwt_required()
+@require_feature('cloud_save')
 def create_saved_route():
     user_id = int(get_jwt_identity())
 
@@ -108,6 +110,7 @@ def get_saved_route_file(route_id):
 
 @saved_routes_bp.route('/api/routes/<int:route_id>', methods=['PUT'])
 @jwt_required()
+@require_feature('cloud_save')
 def update_saved_route(route_id):
     user_id = int(get_jwt_identity())
     saved = SavedRoute.query.filter_by(id=route_id, user_id=user_id).first()

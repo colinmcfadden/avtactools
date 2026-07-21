@@ -18,6 +18,7 @@ from flask import Blueprint, request, jsonify, send_file, url_for, current_app, 
 from flask_jwt_extended import jwt_required
 
 from route_share_store import RouteShareStore
+from entitlements import require_feature
 
 route_share_bp = Blueprint('route_share', __name__)
 
@@ -39,6 +40,7 @@ def _no_store(response):
 
 @route_share_bp.route('/api/route-share', methods=['POST'])
 @jwt_required()
+@require_feature('exports')
 def create_route_share():
     body = request.get_json(silent=True) or {}
     name = body.get('name')

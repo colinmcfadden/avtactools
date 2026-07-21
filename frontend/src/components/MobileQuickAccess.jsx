@@ -25,7 +25,9 @@ const MobileQuickAccess = ({
     diagramStatus,
     diagramReadinessText,
     readinessText,
+    features = {},
 }) => {
+  const can = (key) => features[key] !== false;
   const [isUnitMenuOpen, setIsUnitMenuOpen] = useState(false);
   const [isGAMenuOpen, setIsGAMenuOpen] = useState(false);
 
@@ -133,6 +135,7 @@ const MobileQuickAccess = ({
           message still shows inside the control panel once it's opened. The text
           is retained as button titles below so disabled buttons stay explained. */}
       {/* Route Sketch Button (toggles draw mode) */}
+      {can("routes") && (
       <button
         onClick={toggleRouteSketch}
         className={`qa-btn ${isSketching ? 'active-qa-btn' : ''}`}
@@ -152,7 +155,9 @@ const MobileQuickAccess = ({
           <path d="M5.5 18.5 L10.5 10.5 M13.7 10 L18.3 14" />
         </svg>
       </button>
+      )}
 
+      {can("lz_pz_tools") && (<>
       {/* Helo Button */}
       <button
         onClick={() => canUseDiagramTools && addHelo()}
@@ -267,9 +272,11 @@ const MobileQuickAccess = ({
             </button>
           </div>
         )}
-      </div> 
+      </div>
+      </>)}
 
       {/* --- NEW: Bottom Right Export Controls --- */}
+      {can("exports") && (
       <div className="mobile-export-container">
         
         {/* Progress Bar (Only shows when exporting) */}
@@ -299,6 +306,7 @@ const MobileQuickAccess = ({
             </button>
         </div>
       </div>
+      )}
     </div>
   );
 };

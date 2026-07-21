@@ -1,0 +1,146 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ u.name }}{% endblock %}
+
+{% block topbar %}
+<a class="btn btn-sm" href="{{ url_for('admin.users') }}">← All users</a>
+<form method="post" action="{{ url_for('admin.logout') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button class="btn btn-sm" type="submit">Log out</button>
+</form>
+{% endblock %}
+
+{% block content %}
+{% set is_google = u.google_id and not u.google_id.startswith('local:') %}
+{% set verified = (u.local_credential and u.local_credential.email_verified_at) or is_google %}
+{% set locked = is_super_admin(u) %}
+
+<div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+  <div>
+    <h1 style="font-size:22px;margin:0;">{{ u.name }}</h1>
+    <div class="muted mono">{{ u.email }}</div>
+  </div>
+  <div class="row">
+    {% if is_super_admin(u) %}<span class="badge badge-super">SUPER-ADMIN</span>
+    {% elif is_admin(u) %}<span class="badge badge-admin">ADMIN</span>
+    {% else %}<span class="badge">user</span>{% endif %}
+    {% if account_active(u) %}<span class="badge badge-ok">active</span>
+    {% else %}<span class="badge badge-off">suspended</span>{% endif %}
+  </div>
+</div>
+
+<!-- Account info -->
+<div class="card">
+  <h2>Account</h2>
+  <div class="grid2">
+    <div class="muted">User ID</div><div class="mono">{{ u.id }}</div>
+    <div class="muted">Auth method</div>
+    <div>{% if is_google %}Google{% endif %}{% if is_google and u.local_credential %} + {% endif %}{% if u.local_credential %}Password{% endif %}{% if not is_google and not u.local_credential %}—{% endif %}</div>
+    <div class="muted">Email verified</div><div>{{ 'Yes' if verified else 'No' }}</div>
+    <div class="muted">Joined</div><div>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '—' }}</div>
+    <div class="muted">Last login</div>
+    <div>{{ u.local_credential.last_login_at.strftime('%Y-%m-%d %H:%M') if u.local_credential and u.local_credential.last_login_at else '—' }}</div>
+    <div class="muted">Saved content</div>
+    <div>{{ counts.routes }} routes · {{ counts.lzs }} LZs · {{ counts.point_sets }} point sets</div>
+  </div>
+  <form method="post" action="{{ url_for('admin.edit_user', uid=u.id) }}" class="row" style="margin-top:14px;">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input class="input" type="text" name="name" value="{{ u.name }}" maxlength="120" style="width:260px;">
+    <button class="btn btn-sm" type="submit">Save name</button>
+  </form>
+</div>
+
+<!-- Role + access -->
+<div class="row" style="align-items:stretch;">
+  <div class="card" style="flex:1;min-width:260px;">
+    <h2>Role</h2>
+    {% if locked %}
+      <p class="muted">The super-admin role is fixed by <span class="mono">SUPER_ADMIN_EMAIL</span> and can't be changed here.</p>
+    {% else %}
+    <form method="post" action="{{ url_for('admin.set_role', uid=u.id) }}" class="row">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <select class="input" name="role">
+        <option value="user" {{ 'selected' if u.role != 'admin' }}>user</option>
+        <option value="admin" {{ 'selected' if u.role == 'admin' }}>admin</option>
+      </select>
+      <button class="btn btn-sm" type="submit">Update role</button>
+    </form>
+    <p class="muted" style="font-size:12px;margin-bottom:0;">Admins can access this dashboard and always have every feature.</p>
+    {% endif %}
+  </div>
+
+  <div class="card" style="flex:1;min-width:260px;">
+    <h2>Access</h2>
+    {% if locked %}
+      <p class="muted">The super-admin can't be suspended.</p>
+    {% else %}
+    <form method="post" action="{{ url_for('admin.set_active', uid=u.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      {% if account_active(u) %}
+        <input type="hidden" name="active" value="0">
+        <button class="btn btn-danger" type="submit">Suspend access</button>
+        <p class="muted" style="font-size:12px;">Immediately blocks sign-in for every method and revokes active sessions.</p>
+      {% else %}
+        <input type="hidden" name="active" value="1">
+        <button class="btn btn-primary btn-sm" type="submit">Reactivate access</button>
+        <p class="muted" style="font-size:12px;">This account is currently suspended.</p>
+      {% endif %}
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Feature entitlements -->
+<div class="card">
+  <h2>Feature access</h2>
+  {% if is_admin(u) %}
+    <p class="muted">Admins always have every feature — nothing to restrict.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('admin.set_features', uid=u.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <div class="feature-list">
+      {% for key, label, desc in FEATURES %}
+      <label class="feature-item">
+        <input type="checkbox" name="feature" value="{{ key }}" {{ 'checked' if features[key] }}>
+        <span><strong>{{ label }}</strong><small>{{ desc }}</small></span>
+      </label>
+      {% endfor %}
+    </div>
+    <button class="btn btn-primary btn-sm" type="submit">Save features</button>
+    <p class="muted" style="font-size:12px;">Unchecked features are hidden in the app and blocked on the server.</p>
+  </form>
+  {% endif %}
+</div>
+
+<!-- Account actions -->
+{% if u.local_credential %}
+<div class="card">
+  <h2>Account actions</h2>
+  <div class="row">
+    {% if not verified %}
+    <form method="post" action="{{ url_for('admin.resend_verification', uid=u.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button class="btn btn-sm" type="submit">Resend verification email</button>
+    </form>
+    {% endif %}
+    <form method="post" action="{{ url_for('admin.reset_password', uid=u.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button class="btn btn-sm" type="submit">Send password-reset email</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<!-- Danger zone -->
+{% if not locked %}
+<div class="card danger-zone">
+  <h2 style="color:var(--danger);">Delete user</h2>
+  <p class="muted" style="margin-top:-6px;">Permanently deletes the account and all saved routes, LZs, and point sets. This can't be undone.</p>
+  <form method="post" action="{{ url_for('admin.delete_user', uid=u.id) }}"
+        onsubmit="return confirm('Permanently delete {{ u.email }} and all their saved content?');" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input class="input" type="text" name="confirm_email" placeholder="Type {{ u.email }} to confirm" style="width:300px;" autocomplete="off">
+    <button class="btn btn-danger" type="submit">Delete permanently</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

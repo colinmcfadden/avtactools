@@ -53,7 +53,10 @@ const Controls = ({
   // When the desktop panel is dragged narrow it renders as an icon rail: labels
   // and detail cards hide, tools stack vertically, MGRS input stays usable.
   compact = false,
+  // Per-user feature entitlements ({key: bool}); a missing key means enabled.
+  features = {},
 }) => {
+  const can = (key) => features[key] !== false;
   const [showUnitMenu, setShowUnitMenu] = useState(false);
   const msnxInputRef = useRef(null);
 
@@ -279,6 +282,7 @@ const Controls = ({
 
       <div className="ff-scroll-content">
         {/* Terrain & Mission Data Tile */}
+        {can("lz_pz_tools") && (
         <div className="ff-card ff-card-analysis">
           <div className="ff-card-header">LZ/PZ Analysis</div>
           <div className="mission-data-grid">
@@ -373,8 +377,10 @@ const Controls = ({
             </div>
           )}
         </div>
+        )}
 
         {/* Tools Grid */}
+        {can("lz_pz_tools") && (
         <div className="ff-card ff-card-tools">
           <div className="ff-card-header">LZ/PZ Tools</div>
           <div className="tool-grid">
@@ -530,8 +536,10 @@ const Controls = ({
             </button>
           </div>
         </div>
+        )}
 
         {/* Export Controls */}
+        {can("exports") && (
         <div className="ff-card ff-card-export">
           <div className="ff-card-header">Export</div>
           <div className="export-controls">
@@ -568,11 +576,14 @@ const Controls = ({
             </div>
           )}
         </div>
+        )}
 
         {/* Routes */}
+        {(can("routes") || can("msnx_import")) && (
         <div className="ff-card ff-card-routes">
           <div className="ff-card-header">Routes (.msnx)</div>
           <div className="tool-grid">
+            {can("routes") && (
             <button
               onClick={toggleRouteSketch}
               className={`ff-tool-btn ${isSketching ? "active" : ""}`}
@@ -599,7 +610,9 @@ const Controls = ({
                 {isSketching ? "End Route" : "Route"}
               </span>
             </button>
+            )}
 
+            {can("msnx_import") && (
             <button
               onClick={() => msnxInputRef.current?.click()}
               className="ff-tool-btn"
@@ -619,6 +632,7 @@ const Controls = ({
               </svg>
               <span className="btn-label">Import MSNX</span>
             </button>
+            )}
           </div>
           <input
             ref={msnxInputRef}
@@ -628,6 +642,7 @@ const Controls = ({
             onChange={handleMsnxFileChange}
           />
         </div>
+        )}
 
       </div>
       <div className="controls-footer">
