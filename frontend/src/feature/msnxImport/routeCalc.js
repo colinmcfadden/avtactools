@@ -1,4 +1,5 @@
 import { UH60L_PROFILE } from "./uh60lProfile";
+import api from "../auth/api";
 
 /**
  * Route planning math: leg distances/courses along the sketched geometry,
@@ -321,13 +322,10 @@ export const fetchPointElevationsFt = async (route) => {
   const amps = planPoints(route);
   if (amps.length === 0) return {};
   try {
-    const res = await fetch(`${process.env.REACT_APP_API_URL}/elevations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ points: amps.map((p) => ({ lat: p.lat, lon: p.lon })) }),
+    const res = await api.post("/elevations", {
+      points: amps.map((p) => ({ lat: p.lat, lon: p.lon })),
     });
-    if (!res.ok) return {};
-    const data = await res.json();
+    const data = res.data;
     const feet = data?.elevationsFt || [];
     const map = {};
     amps.forEach((p, i) => {

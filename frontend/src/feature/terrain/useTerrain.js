@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import axios from "axios";
 import { convertToLatLongString } from "../../utils/Helpers";
+import api from "../auth/api";
 
 export const useTerrain = (
   targetLocation,
@@ -38,8 +38,6 @@ export const useTerrain = (
   useEffect(() => {
     terrainDataRef.current = terrainData;
   }, [terrainData]);
-
-  const API_BASE_URL = process.env.REACT_APP_API_URL;
 
   const setTerrainData = useCallback(
     (nextValue, diagramId = analysisDiagramId) => {
@@ -79,7 +77,7 @@ export const useTerrain = (
       fetchWeather?.(centerLat, centerLon);
 
       // 1. Fetch Elevation from the backend
-      const analysis = await axios.post(`${API_BASE_URL}/analyze-field`, {
+      const analysis = await api.post("/analyze-field", {
         lat: centerLat,
         lon: centerLon,
       });
@@ -117,12 +115,8 @@ export const useTerrain = (
 
   const fetchTerrainAnalysis = useCallback(async (polygon, diagramId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/terrain-analysis`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ polygon }),
-      });
-      const data = await response.json();
+      const response = await api.post("/terrain-analysis", { polygon });
+      const data = response.data;
       if (data.status === "success") {
         setTerrainData(data, diagramId);
       } else {
@@ -131,7 +125,7 @@ export const useTerrain = (
     } catch (err) {
       console.error("Terrain API Error:", err);
     }
-  }, [API_BASE_URL, setTerrainData]);
+  }, [setTerrainData]);
 
   useEffect(() => {
     if (detectedLZ && detectedLZ.length > 0) {

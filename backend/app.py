@@ -12,7 +12,8 @@ try:
 except ImportError:
     __version__ = "0.0.0-dev"
 
-from models import db
+from models import User, db
+from security_config import resolve_jwt_secret, validate_email_configuration
 
 # Import your Blueprints
 from routes.terrain_routes import terrain_bp
@@ -24,9 +25,22 @@ from routes.lz_routes import lz_bp
 from routes.saved_routes import saved_routes_bp
 from routes.point_sets import point_sets_bp
 from routes.threat_routes import threat_bp
+from routes.route_share_routes import route_share_bp
 
 app = Flask(__name__)
-CORS(app)
+cors_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        'CORS_ORIGINS', 'http://localhost:3000'
+    ).split(',')
+    if origin.strip()
+]
+CORS(
+    app,
+    resources={r'/api/*': {'origins': cors_origins}},
+    allow_headers=['Authorization', 'Content-Type'],
+    methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+)
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -54,12 +68,34 @@ if database_url.startswith('postgresql://'):
         'pool_pre_ping': True,
         'pool_recycle': 280,
     }
-app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-me')
-# Default is 15 minutes, which silently invalidates sessions mid-use.
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=30)
+app.config['JWT_SECRET_KEY'] = resolve_jwt_secret(os.environ)
+validate_email_configuration(os.environ)
+# A one-day session balances an operational planning workflow with reasonable
+# exposure if a bearer token is lost. Password resets revoke older tokens via
+# the per-account session-version claim below.
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 
 db.init_app(app)
 jwt = JWTManager(app)
+
+
+@jwt.token_in_blocklist_loader
+def token_is_revoked(_jwt_header, jwt_payload):
+    """Reject deleted/suspended users and JWTs predating a password reset."""
+
+    try:
+        user = db.session.get(User, int(jwt_payload.get('sub')))
+    except (TypeError, ValueError):
+        return True
+    if user is None:
+        return True
+    credential = user.local_credential
+    if credential is not None and credential.status == 'suspended':
+        return True
+    expected_version = credential.session_version if credential else 0
+    # Tokens issued before session versioning had no ``sv`` claim and could
+    # otherwise retain the old 30-day lifetime after deployment.
+    return 'sv' not in jwt_payload or jwt_payload.get('sv') != expected_version
 
 # Register Blueprints
 app.register_blueprint(export_bp)
@@ -71,6 +107,7 @@ app.register_blueprint(lz_bp)
 app.register_blueprint(saved_routes_bp)
 app.register_blueprint(point_sets_bp)
 app.register_blueprint(threat_bp)
+app.register_blueprint(route_share_bp)
 
 @app.route('/')
 def health_check():
@@ -87,6 +124,14 @@ with app.app_context():
     from sqlalchemy import text
     try:
         db.session.execute(text("ALTER TABLE user ADD COLUMN picture VARCHAR(500)"))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()  # column already exists
+    try:
+        db.session.execute(text(
+            "ALTER TABLE local_credential "
+            "ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0"
+        ))
         db.session.commit()
     except Exception:
         db.session.rollback()  # column already exists

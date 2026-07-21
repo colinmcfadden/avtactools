@@ -8,7 +8,7 @@ import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
 import SidebarCollapseToggle from "./components/SidebarCollapseToggle";
 import { useIsMobile } from "./feature/auth/useIsMobile";
-import axios from "axios";
+import api from "./feature/auth/api";
 import {
   createDefaultDoghouses,
   useDoghouses,
@@ -908,7 +908,7 @@ function App() {
     setContextMenu({ x, y, type: "map", lat, lon });
     setClickedGrid("Calculating...");
     try {
-      const res = await axios.post(`${API_BASE_URL}/convert-to-mgrs`, {
+      const res = await api.post("/convert-to-mgrs", {
         lat,
         lon,
       });
@@ -928,7 +928,7 @@ function App() {
     setContextMenu({ x, y, type: "lz", lat, lon });
     setClickedGrid("Calculating...");
     try {
-      const res = await axios.post(`${API_BASE_URL}/convert-to-mgrs`, {
+      const res = await api.post("/convert-to-mgrs", {
         lat,
         lon,
       });
@@ -968,7 +968,7 @@ function App() {
   const handleSearch = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`${API_BASE_URL}/convert-grid`, {
+      const res = await api.post("/convert-grid", {
         grid: gridInput,
       });
       const { lat, lon } = res.data;
@@ -980,8 +980,6 @@ function App() {
       setIsMobileMenuOpen(false); // Closes menu if they searched from the sidebar
     }
   };
-
-  const API_BASE_URL = process.env.REACT_APP_API_URL;
 
   return (
     <div className="app-container">
@@ -995,7 +993,6 @@ function App() {
         className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""} ${
           sidebarCompact ? "sidebar-compact" : ""
         }`}
-        style={isMobile ? undefined : { width: sidebarWidth, minWidth: sidebarWidth }}
       >
         <div className="sidebar-header">
           {/* On mobile the account + save controls live here (hidden on

@@ -5,6 +5,7 @@ import io
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as ExcelImage
 from io import BytesIO
+from flask_jwt_extended import jwt_required
 
 from export_service import generate_custom_package
 
@@ -22,6 +23,7 @@ def set_cell_value(ws, coordinate, value):
 
 
 @export_bp.route('/api/generate-excel', methods=['POST'])
+@jwt_required()
 def generate_excel():
     # 1. Get Data and Image from the request
     # (Assuming you send data as form-data: 'json_data' and 'map_image')
@@ -93,6 +95,7 @@ def generate_excel():
     )
 
 @export_bp.route('/api/export-package', methods=['POST'])
+@jwt_required()
 def export_package():
     data = request.json
     

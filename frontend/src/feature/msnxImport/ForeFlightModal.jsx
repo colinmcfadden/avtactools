@@ -1,33 +1,79 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Draggable from "react-draggable";
 import QRCode from "qrcode";
 import "../export/ExportModal.css";
-import { buildForeFlightRouteString, buildForeFlightUrl, downloadFpl } from "./foreflight";
+import api from "../auth/api";
+import {
+  buildForeFlightRouteString,
+  buildForeFlightUrl,
+  buildGpxXml,
+  buildFplXml,
+  downloadFpl,
+  downloadGpx,
+} from "./foreflight";
+
+const QR_OPTS = { width: 320, margin: 2, errorCorrectionLevel: "M" };
 
 const ForeFlightModal = ({ route, onClose }) => {
   const nodeRef = useRef(null);
   const canvasRef = useRef(null);
-  const [qrError, setQrError] = useState(null);
+  const reqRef = useRef(0);
   const [copied, setCopied] = useState(false);
+  // loading | deeplink | share | error
+  const [qrStatus, setQrStatus] = useState("loading");
+  const [statusMsg, setStatusMsg] = useState("");
 
   const routeString = route ? buildForeFlightRouteString(route) : "";
-  const url = route ? buildForeFlightUrl(route) : "";
+
+  // Fallback for routes too large for the deep link: stash the GPX + FPL on a
+  // short-lived server link and encode that URL instead. Scanning it opens a
+  // page to download the files and import them into ForeFlight.
+  const drawShareQr = useCallback(async (r, reqId) => {
+    try {
+      const res = await api.post("/route-share", {
+        name: r.name,
+        gpx: buildGpxXml(r),
+        fpl: buildFplXml(r),
+      });
+      if (reqId !== reqRef.current) return;
+      const sharePath = res.data?.sharePath;
+      if (typeof sharePath !== "string") throw new Error("No share link returned");
+
+      const apiBase = new URL(api.defaults.baseURL || "/", window.location.origin);
+      const shareUrl = new URL(sharePath, apiBase.origin).toString();
+      await QRCode.toCanvas(canvasRef.current, shareUrl, QR_OPTS);
+      if (reqId !== reqRef.current) return;
+      setQrStatus("share");
+      setStatusMsg("");
+    } catch (err) {
+      if (reqId !== reqRef.current) return;
+      const unauth = err?.response?.status === 401;
+      setQrStatus("error");
+      setStatusMsg(
+        unauth
+          ? "This route has too many points for a direct QR code. Sign in to generate a scannable download link — or use the file downloads below."
+          : "This route has too many points for a direct QR code. Use the file downloads below to import it into ForeFlight.",
+      );
+    }
+  }, []);
 
   useEffect(() => {
     if (!route || !canvasRef.current) return;
-    setQrError(null);
-    QRCode.toCanvas(canvasRef.current, url, {
-      width: 340,
-      margin: 2,
-      errorCorrectionLevel: "M",
-    }).catch((err) => {
-      // Overflows QR capacity for very long routes (many shaping points).
-      setQrError(
-        "This route has too many points to fit in a QR code — use the .fpl download or the route text below instead.",
-      );
-      console.error("QR generation failed:", err);
-    });
-  }, [route, url]);
+    const reqId = ++reqRef.current;
+    setQrStatus("loading");
+    setStatusMsg("");
+    // First choice: the on-the-spot deep link that opens ForeFlight directly.
+    QRCode.toCanvas(canvasRef.current, buildForeFlightUrl(route), QR_OPTS)
+      .then(() => {
+        if (reqId === reqRef.current) setQrStatus("deeplink");
+      })
+      .catch(() => {
+        if (reqId === reqRef.current) drawShareQr(route, reqId);
+      });
+    return () => {
+      reqRef.current += 1;
+    };
+  }, [route, drawShareQr]);
 
   if (!route) return null;
 
@@ -41,6 +87,15 @@ const ForeFlightModal = ({ route, onClose }) => {
     }
   };
 
+  const caption =
+    qrStatus === "deeplink"
+      ? "Scan with the iPad camera — it will offer to open the route directly in ForeFlight."
+      : qrStatus === "share"
+        ? "This route is large, so the QR opens a page to download the route file (GPX or .fpl), then share it into ForeFlight. Link expires in 30 min."
+        : qrStatus === "loading"
+          ? "Generating QR code…"
+          : "";
+
   return (
     <Draggable nodeRef={nodeRef} handle=".modal-header">
       <div ref={nodeRef} className="export-modal-container glass-panel">
@@ -52,30 +107,52 @@ const ForeFlightModal = ({ route, onClose }) => {
         </div>
 
         <div className="modal-body">
-          <p style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: 0 }}>
-            Scan with the iPad camera — it will offer to open the route in
-            ForeFlight.
+          <p style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: 0, minHeight: "2.4em" }}>
+            {caption}
           </p>
 
           <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
-            {qrError ? (
-              <p style={{ color: "#f59e0b", maxWidth: "340px" }}>{qrError}</p>
-            ) : (
-              <canvas
-                ref={canvasRef}
-                style={{ borderRadius: "8px", background: "white" }}
-              />
+            {qrStatus === "error" && (
+              <p style={{ color: "#d5a03f", maxWidth: "320px", textAlign: "center" }}>
+                {statusMsg}
+              </p>
             )}
+            <canvas
+              ref={canvasRef}
+              style={{
+                borderRadius: "8px",
+                background: "white",
+                display: qrStatus === "error" ? "none" : "block",
+              }}
+            />
           </div>
 
+          <div className="form-divider">Route files (import into ForeFlight)</div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              className="export-btn"
+              style={{ flex: 1 }}
+              onClick={() => downloadGpx(route)}
+            >
+              Download GPX
+            </button>
+            <button
+              className="cancel-btn"
+              style={{ flex: 1 }}
+              onClick={() => downloadFpl(route)}
+            >
+              Download .fpl
+            </button>
+          </div>
+          <p style={{ fontSize: "0.7rem", opacity: 0.6, lineHeight: 1.5 }}>
+            On the iPad: open the file (Files app), then <b>Share → ForeFlight</b>.
+            The route appears under <b>Flights</b> and its points under{" "}
+            <b>User Waypoints</b>. GPX is the most reliable; .fpl is Garmin
+            flight-plan format.
+          </p>
+
           <div className="form-divider">Route text (paste into ForeFlight search)</div>
-          <div
-            style={{
-              display: "flex",
-              gap: "8px",
-              alignItems: "flex-start",
-            }}
-          >
+          <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
             <code
               style={{
                 flex: 1,
@@ -94,15 +171,6 @@ const ForeFlightModal = ({ route, onClose }) => {
               {copied ? "Copied!" : "Copy"}
             </button>
           </div>
-
-          <div className="form-divider">File</div>
-          <button className="export-btn" onClick={() => downloadFpl(route)}>
-            Download .fpl (Garmin flight plan)
-          </button>
-          <p style={{ fontSize: "0.7rem", opacity: 0.6 }}>
-            Open the .fpl on the iPad (Files, Drive, or email attachment) and
-            share it to ForeFlight to import the route with named waypoints.
-          </p>
         </div>
 
         <div className="modal-footer">
@@ -116,4 +184,3 @@ const ForeFlightModal = ({ route, onClose }) => {
 };
 
 export default ForeFlightModal;
-

@@ -1,9 +1,13 @@
 import { downloadBlob } from "./mutateMsnx.js";
 
 /**
- * TODO: Determine whether including all points (inlcuding serpetnine) causes issues
- * with the QR code export. If so, so include actual AMPS points instead of all
- * serpentine/shaping points.
+ * Points to hand ForeFlight: ALL route points, including the serpentine/shaping
+ * geometry, so the exported path matches what's actually flown — not just the
+ * designated turn/IP/target waypoints.
+ *
+ * Including every point means a dense route can exceed the QR code's capacity
+ * for the direct deep link; when it does, the modal falls back to a hosted
+ * download link (GPX/FPL), which carries the full point set with no size limit.
  */
 export const foreflightPoints = (route) =>
   route.points;
@@ -92,4 +96,37 @@ export const downloadFpl = (route) => {
   const xml = buildFplXml(route);
   const safeName = route.name.replace(/[^\w-]+/g, "_") || "route";
   downloadBlob(new Blob([xml], { type: "application/xml" }), `${safeName}.fpl`);
+};
+
+/**
+ * GPX 1.1 route — the most widely-recognized ForeFlight import for a route of
+ * user waypoints. A single <rte> with named <rtept>s imports as one route
+ * (rather than scattering loose user waypoints).
+ */
+export const buildGpxXml = (route) => {
+  const points = foreflightPoints(route);
+  const ids = buildIdentifiers(points);
+
+  const rtepts = points
+    .map(
+      (p, i) => `    <rtept lat="${p.lat.toFixed(6)}" lon="${p.lon.toFixed(6)}">
+      <name>${xmlEscape(ids[i])}</name>
+    </rtept>`,
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="AV Tac Tools" xmlns="http://www.topografix.com/GPX/1/1">
+  <rte>
+    <name>${xmlEscape(route.name.toUpperCase().slice(0, 25))}</name>
+${rtepts}
+  </rte>
+</gpx>
+`;
+};
+
+export const downloadGpx = (route) => {
+  const xml = buildGpxXml(route);
+  const safeName = route.name.replace(/[^\w-]+/g, "_") || "route";
+  downloadBlob(new Blob([xml], { type: "application/gpx+xml" }), `${safeName}.gpx`);
 };

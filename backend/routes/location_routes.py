@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
 import pygeodesy
 from pygeodesy import mgrs
 from pygeodesy.ellipsoidalExact import LatLon
@@ -6,6 +7,7 @@ from pygeodesy.ellipsoidalExact import LatLon
 location_bp = Blueprint('location', __name__)
 
 @location_bp.route('/api/convert-grid', methods=['POST'])
+@jwt_required()
 def convert_grid():
     """Converts Military Grid (MGRS) to Lat/Lon using PyGeodesy"""
     data = request.json
@@ -37,6 +39,7 @@ def convert_grid():
 
 @location_bp.route('/api/convert-to-mgrs', methods=['POST'])
 # If you don't use the /api prefix in your python app, just use '/convert-latlon'
+@jwt_required()
 def convert_latlon():
     data = request.json
     
