@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import api from '../auth/api';
 
 export const useWeather = () => {
   const [winds, setWinds] = useState({ 
@@ -14,11 +15,8 @@ export const useWeather = () => {
     setActiveNotams("Fetching NOTAMs...");
 
     try {
-      const url = `${process.env.REACT_APP_API_URL}/weather?lat=${lat}&lng=${lon}`;
-      const res = await fetch(url);
-      
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
+      const res = await api.get('/weather', { params: { lat, lng: lon } });
+      const data = res.data;
 
       if (data && !data.error) {
         setWinds({

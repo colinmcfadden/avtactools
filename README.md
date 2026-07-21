@@ -56,7 +56,7 @@ npm install
 
 # Set up Environment Variables
 # Create a .env file and add your backend URL
-echo "REACT_APP_API_URL=http://localhost:7860" > .env
+echo "REACT_APP_API_URL=http://127.0.0.1:5000/api" > .env
 
 # Start the development server
 npm start
@@ -82,10 +82,13 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Run the Flask API
-python src/app.py
+python app.py
 ```
 
-The API should now be running at http://localhost:7860
+The API should now be running at http://localhost:5000
+
+Account registration, transactional email, local development, and Fly/Vercel
+security configuration are documented in [AUTHENTICATION.md](AUTHENTICATION.md).
 
 # 📦 Deployment
 

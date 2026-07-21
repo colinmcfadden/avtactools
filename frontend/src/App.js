@@ -8,7 +8,7 @@ import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
 import SidebarCollapseToggle from "./components/SidebarCollapseToggle";
 import { useIsMobile } from "./feature/auth/useIsMobile";
-import axios from "axios";
+import api from "./feature/auth/api";
 import {
   createDefaultDoghouses,
   useDoghouses,
@@ -393,6 +393,17 @@ function App() {
   );
 
   const { user } = useAuth();
+  // Per-user feature entitlements from /auth/me. A missing map or key defaults
+  // to enabled, so nothing is hidden while loading or for unrestricted users.
+  const uf = user?.features || null;
+  const feat = {
+    lz_pz_tools: !uf || uf.lz_pz_tools !== false,
+    routes: !uf || uf.routes !== false,
+    msnx_import: !uf || uf.msnx_import !== false,
+    threats: !uf || uf.threats !== false,
+    cloud_save: !uf || uf.cloud_save !== false,
+    exports: !uf || uf.exports !== false,
+  };
   const { history, isLoadingHistory, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
@@ -908,7 +919,7 @@ function App() {
     setContextMenu({ x, y, type: "map", lat, lon });
     setClickedGrid("Calculating...");
     try {
-      const res = await axios.post(`${API_BASE_URL}/convert-to-mgrs`, {
+      const res = await api.post("/convert-to-mgrs", {
         lat,
         lon,
       });
@@ -928,7 +939,7 @@ function App() {
     setContextMenu({ x, y, type: "lz", lat, lon });
     setClickedGrid("Calculating...");
     try {
-      const res = await axios.post(`${API_BASE_URL}/convert-to-mgrs`, {
+      const res = await api.post("/convert-to-mgrs", {
         lat,
         lon,
       });
@@ -968,7 +979,7 @@ function App() {
   const handleSearch = async () => {
     setLoading(true);
     try {
-      const res = await axios.post(`${API_BASE_URL}/convert-grid`, {
+      const res = await api.post("/convert-grid", {
         grid: gridInput,
       });
       const { lat, lon } = res.data;
@@ -980,8 +991,6 @@ function App() {
       setIsMobileMenuOpen(false); // Closes menu if they searched from the sidebar
     }
   };
-
-  const API_BASE_URL = process.env.REACT_APP_API_URL;
 
   return (
     <div className="app-container">
@@ -995,12 +1004,12 @@ function App() {
         className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""} ${
           sidebarCompact ? "sidebar-compact" : ""
         }`}
-        style={isMobile ? undefined : { width: sidebarWidth, minWidth: sidebarWidth }}
       >
         <div className="sidebar-header">
           {/* On mobile the account + save controls live here (hidden on
               desktop, where they float over the map instead). */}
           <div className="mobile-account-row">
+            {feat.cloud_save && (
             <button
               className={`floating-save-btn ${user ? "" : "disabled"}`}
               onClick={handleOpenHistory}
@@ -1023,6 +1032,7 @@ function App() {
                 <polyline points="7 3 7 8 15 8" />
               </svg>
             </button>
+            )}
             <UserMenu variant="mobile" />
           </div>
           <button
@@ -1033,6 +1043,7 @@ function App() {
           </button>
         </div>
         <Controls
+          features={feat}
           onImportMsnx={handleImportMsnx}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
@@ -1091,6 +1102,7 @@ function App() {
       <div className="map-area">
         <UnitBadge />
         <div className="floating-topright">
+          {feat.cloud_save && (
           <button
             className={`floating-save-btn ${user ? "" : "disabled"}`}
             onClick={handleOpenHistory}
@@ -1113,9 +1125,11 @@ function App() {
               <polyline points="7 3 7 8 15 8" />
             </svg>
           </button>
+          )}
           <UserMenu variant="desktop" />
         </div>
         <RoutesPanel
+          features={feat}
           routes={importedRoutes}
           removeRoute={removeRoute}
           clearRoutes={clearRoutes}
@@ -1169,6 +1183,7 @@ function App() {
           handleSearch={handleSearch}
         />
         <MobileQuickAccess
+          features={feat}
           addHelo={addHelo}
           addPZMarker={addPZMarker}
           addSector={addSectorOfFire}

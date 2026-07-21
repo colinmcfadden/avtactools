@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
 import numpy as np
 import mercantile
 import requests
@@ -68,6 +69,7 @@ def find_field_contour(image):
 # --- ROUTES ---
 
 @terrain_bp.route('/api/analyze-field', methods=['POST'])
+@jwt_required()
 def analyze_field():
     data = request.json
     try:
@@ -155,6 +157,7 @@ def analyze_field():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @terrain_bp.route('/api/terrain-analysis', methods=['POST'])
+@jwt_required()
 def terrain_analysis():
     """Return a continuous, polygon-clipped terrain slope raster."""
     data = request.get_json(silent=True) or {}
@@ -236,6 +239,7 @@ def _sample_elevations_ft(points, zoom=_ELEV_ZOOM):
 
 
 @terrain_bp.route('/api/elevations', methods=['POST'])
+@jwt_required()
 def get_elevations():
     """
     Batch ground elevations (feet) for a route's points, sampled server-side

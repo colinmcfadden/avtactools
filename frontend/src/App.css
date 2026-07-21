@@ -1307,6 +1307,16 @@ html,
   box-shadow: 8px 0 24px rgba(0, 0, 0, 0.28);
 }
 
+/* Collapsed icon rail. Width lives in CSS (not an inline style) so the compact
+   selector's higher specificity beats the base .sidebar width/min-width without
+   an inline-vs-cascade fight; the explicit min-width also lets the flex item
+   shrink past its default 320px content minimum. Keep 76px in sync with
+   SIDEBAR_RAIL in App.js. */
+.sidebar.sidebar-compact {
+  width: 76px;
+  min-width: 76px;
+}
+
 .ff-panel {
   min-height: 100%;
   background: transparent;

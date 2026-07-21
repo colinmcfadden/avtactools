@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from models import db, SavedLZ
+from entitlements import require_feature
 
 lz_bp = Blueprint('lz', __name__)
 
@@ -28,6 +29,7 @@ def list_saved_lzs():
 
 @lz_bp.route('/api/lz', methods=['POST'])
 @jwt_required()
+@require_feature('cloud_save')
 def create_saved_lz():
     user_id = int(get_jwt_identity())
     data = request.json or {}
@@ -69,6 +71,7 @@ def get_saved_lz(lz_id):
 
 @lz_bp.route('/api/lz/<int:lz_id>', methods=['PUT'])
 @jwt_required()
+@require_feature('cloud_save')
 def update_saved_lz(lz_id):
     user_id = int(get_jwt_identity())
     saved = SavedLZ.query.filter_by(id=lz_id, user_id=user_id).first()

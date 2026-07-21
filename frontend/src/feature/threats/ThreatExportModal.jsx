@@ -1,51 +1,95 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Draggable from "react-draggable";
 import QRCode from "qrcode";
+import api from "../auth/api";
 import { threatToPayload } from "./threatModel";
 import "../export/ExportModal.css";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL;
-
-// base64url encode a UTF-8 string (QR-friendly, URL-safe).
-const base64Url = (str) => {
-  const bytes = new TextEncoder().encode(str);
-  let bin = "";
-  bytes.forEach((b) => (bin += String.fromCharCode(b)));
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-};
-
-// QR codes top out around ~2.9 KB; keep a margin so the code stays scannable.
-const QR_URL_LIMIT = 2200;
-
 /**
  * Export dialog for threats — offers a KMZ download (ForeFlight / ATAK / Aero
- * App), a .ths download (AMPS), or a QR code pointing at a device-side KMZ
- * download for loading into an EFB app on an iPad or phone.
+ * App), a .ths download (AMPS), or a short-lived QR download link for loading
+ * the KMZ into an EFB app on an iPad or phone.
  */
 const ThreatExportModal = ({ threats, onDownload, onDownloadThs, onClose }) => {
   const nodeRef = useRef(null);
   const canvasRef = useRef(null);
+  const qrRequestRef = useRef(0);
   const [downloading, setDownloading] = useState(false);
   const [downloadingThs, setDownloadingThs] = useState(false);
+  const [qrLoading, setQrLoading] = useState(true);
+  const [qrLink, setQrLink] = useState(null);
   const [qrError, setQrError] = useState(null);
+  const [qrExpired, setQrExpired] = useState(false);
 
   const fileName = "threats.kmz";
-  const payload = JSON.stringify({
+  const qrPayload = useMemo(() => ({
     fileName,
     threats: threats.map(threatToPayload),
-  });
-  const qrUrl = `${API_BASE_URL}/threats-kmz?data=${base64Url(payload)}`;
-  const tooBig = qrUrl.length > QR_URL_LIMIT;
+  }), [threats]);
+
+  const requestQrLink = useCallback(async () => {
+    const requestId = ++qrRequestRef.current;
+    setQrLoading(true);
+    setQrLink(null);
+    setQrError(null);
+    setQrExpired(false);
+    try {
+      const response = await api.post("/threats-kmz-link", qrPayload);
+      if (requestId !== qrRequestRef.current) return;
+      if (typeof response.data?.downloadPath !== "string") {
+        throw new Error("The server did not return a download link");
+      }
+
+      const apiBase = new URL(api.defaults.baseURL || "/", window.location.origin);
+      const downloadUrl = new URL(response.data.downloadPath, apiBase.origin).toString();
+      const expiresInSeconds = Number(response.data.expiresInSeconds) || 600;
+      setQrLink({
+        url: downloadUrl,
+        expiresAt: Date.now() + expiresInSeconds * 1000,
+        expiresInSeconds,
+        maxDownloads: Number(response.data.maxDownloads) || 1,
+      });
+    } catch (err) {
+      if (requestId !== qrRequestRef.current) return;
+      setQrError(
+        err.response?.data?.error ||
+          "Couldn't create a secure QR download link. Please try again.",
+      );
+    } finally {
+      if (requestId === qrRequestRef.current) setQrLoading(false);
+    }
+  }, [qrPayload]);
 
   useEffect(() => {
-    if (!canvasRef.current || tooBig) return;
-    setQrError(null);
-    QRCode.toCanvas(canvasRef.current, qrUrl, { width: 320, margin: 2, errorCorrectionLevel: "M" })
+    requestQrLink();
+    return () => {
+      qrRequestRef.current += 1;
+    };
+  }, [requestQrLink]);
+
+  useEffect(() => {
+    if (!canvasRef.current || !qrLink || qrExpired) return;
+    QRCode.toCanvas(canvasRef.current, qrLink.url, {
+      width: 320,
+      margin: 2,
+      errorCorrectionLevel: "M",
+    })
       .catch((err) => {
-        setQrError("Couldn't build a QR code for this many threats — use Download instead.");
+        setQrError("Couldn't render the QR code. Please generate a new link.");
         console.error("Threat QR generation failed:", err);
       });
-  }, [qrUrl, tooBig]);
+  }, [qrLink, qrExpired]);
+
+  useEffect(() => {
+    if (!qrLink) return undefined;
+    const remainingMs = qrLink.expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      setQrExpired(true);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setQrExpired(true), remainingMs);
+    return () => window.clearTimeout(timer);
+  }, [qrLink]);
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -107,20 +151,35 @@ const ThreatExportModal = ({ threats, onDownload, onDownloadThs, onClose }) => {
 
           <div className="form-divider">QR code — KMZ (scan on the device)</div>
           <div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
-            {tooBig ? (
-              <p style={{ color: "#f59e0b", maxWidth: "320px", fontSize: "0.8rem" }}>
-                Too many threats to fit in a QR code — use the Download button instead.
+            {qrLoading ? (
+              <p style={{ maxWidth: "320px", fontSize: "0.8rem", opacity: 0.75 }}>
+                Creating a secure, short-lived download link…
               </p>
+            ) : qrExpired ? (
+              <div style={{ maxWidth: "320px", textAlign: "center" }}>
+                <p style={{ color: "#f59e0b", fontSize: "0.8rem" }}>
+                  This QR download link has expired.
+                </p>
+                <button className="export-btn" onClick={requestQrLink}>
+                  Generate a new QR code
+                </button>
+              </div>
             ) : qrError ? (
-              <p style={{ color: "#f59e0b", maxWidth: "320px", fontSize: "0.8rem" }}>{qrError}</p>
+              <div style={{ maxWidth: "320px", textAlign: "center" }}>
+                <p style={{ color: "#f59e0b", fontSize: "0.8rem" }}>{qrError}</p>
+                <button className="export-btn" onClick={requestQrLink}>
+                  Try again
+                </button>
+              </div>
             ) : (
               <canvas ref={canvasRef} style={{ borderRadius: "8px", background: "white" }} />
             )}
           </div>
-          {!tooBig && !qrError && (
+          {qrLink && !qrLoading && !qrError && !qrExpired && (
             <p style={{ fontSize: "0.7rem", opacity: 0.6 }}>
               Scan with the device camera — it opens a browser download of the .kmz to
-              share into your EFB app.
+              share into your EFB app. The link expires in {Math.round(qrLink.expiresInSeconds / 60)}
+              {" "}minutes and permits up to {qrLink.maxDownloads} downloads.
             </p>
           )}
         </div>

@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required
 import requests
 import math
 import time
@@ -105,6 +106,7 @@ def get_radial_notams(lat, lon, radius_nm=10):
 
 
 @weather_bp.route('/api/weather', methods=['GET'])
+@jwt_required()
 def get_local_weather():
     try:
         # 1. Parse Coordinates
@@ -304,6 +306,7 @@ def _select_taf_fcst(taf, target_epoch):
 
 
 @weather_bp.route('/api/route-winds', methods=['POST'])
+@jwt_required()
 def get_route_winds():
     """
     Per-point winds for route planning. Body: { points: [{id, lat, lon, time?}] }

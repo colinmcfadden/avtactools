@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import api from "../auth/api";
 
 /**
  * Optional controlled-state shape:
@@ -86,17 +87,10 @@ export const useExport = (targetLocation, options = {}) => {
     });
     apiPayload.append("map_image", capturedMapBlob, "map_capture.jpg");
 
-    fetch(`${process.env.REACT_APP_API_URL}/generate-excel`, {
-      method: "POST",
-      body: apiPayload,
-    })
-      .then(async (response) => {
-        if (response.ok) return response.blob();
-
-        const message = await response.text();
-        throw new Error(message || `Excel export failed (${response.status})`);
-      })
-      .then((blob) => {
+    api
+      .post("/generate-excel", apiPayload, { responseType: "blob" })
+      .then((response) => {
+        const blob = response.data;
         const excelUrl = URL.createObjectURL(blob);
         const excelLink = document.createElement("a");
         excelLink.href = excelUrl;

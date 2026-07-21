@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from models import db, SavedPointSet
+from entitlements import require_feature
 
 point_sets_bp = Blueprint('point_sets', __name__)
 
@@ -30,6 +31,7 @@ def list_point_sets():
 
 @point_sets_bp.route('/api/pointsets', methods=['POST'])
 @jwt_required()
+@require_feature('cloud_save')
 def create_point_set():
     user_id = int(get_jwt_identity())
     body = request.get_json(silent=True) or {}
@@ -60,6 +62,7 @@ def get_point_set(set_id):
 
 @point_sets_bp.route('/api/pointsets/<int:set_id>', methods=['PUT'])
 @jwt_required()
+@require_feature('cloud_save')
 def update_point_set(set_id):
     user_id = int(get_jwt_identity())
     saved = SavedPointSet.query.filter_by(id=set_id, user_id=user_id).first()
