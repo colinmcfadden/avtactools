@@ -1,0 +1,128 @@
+{% extends "admin/base.html" %}
+{% block title %}Aircraft profiles{% endblock %}
+
+{% block topbar %}
+<a class="btn btn-sm btn-primary" href="{{ url_for('admin.aircraft_new') }}">+ New profile</a>
+<form method="post" action="{{ url_for('admin.logout') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button class="btn btn-sm" type="submit">Log out</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+  <div>
+    <h1 style="font-size:22px;margin:0;">Aircraft profiles</h1>
+    <div class="muted">Master list every user can select from, plus profiles users built themselves.</div>
+  </div>
+</div>
+
+<div class="card" style="padding:0;overflow-x:auto;">
+  <h2 style="padding:18px 18px 0;">Master list <span class="muted" style="text-transform:none;letter-spacing:0;">({{ master|length }})</span></h2>
+  {% if master %}
+  <table style="margin-top:10px;">
+    <thead>
+      <tr>
+        <th style="padding-left:18px;">Aircraft</th>
+        <th>Rotor</th>
+        <th>Clearance</th>
+        <th>Spacing</th>
+        <th>Cruise</th>
+        <th>Perf source</th>
+        <th>AMPS</th>
+        <th style="padding-right:18px;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in master %}
+      <tr>
+        <td style="padding-left:18px;">
+          <a href="{{ url_for('admin.aircraft_detail', pid=p.id) }}"><strong>{{ p.designation }}</strong></a>
+          <div class="muted" style="font-size:12px;">{{ p.name }}</div>
+        </td>
+        <td class="mono" style="font-size:12px;">{{ '%.2f'|format(p.rotor_diameter_m) }} m</td>
+        <td class="mono" style="font-size:12px;">{{ '%.0f'|format(p.rotor_tip_clearance_m) }} m</td>
+        {# Center spacing is always derived, never stored, so the two can't drift. #}
+        <td class="mono" style="font-size:12px;">{{ '%.1f'|format(p.rotor_diameter_m + p.rotor_tip_clearance_m) }} m</td>
+        <td class="mono" style="font-size:12px;">{{ '%.0f'|format(p.default_airspeed_kts) }} kt</td>
+        <td>
+          {% if p.perf_source == 'vidx' %}<span class="badge badge-ok">vidx</span>
+          {% elif p.perf_source == 'published' %}<span class="badge">published</span>
+          {% else %}<span class="badge">custom</span>{% endif %}
+        </td>
+        <td>
+          {% if p.has_template %}<span class="badge badge-ok">{{ p.template_kind }}</span>
+          {% else %}<span class="muted" style="font-size:12px;">—</span>{% endif %}
+        </td>
+        <td style="padding-right:18px;">
+          {% if p.is_active %}<span class="badge badge-ok">active</span>
+          {% else %}<span class="badge badge-off">retired</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="muted" style="padding:0 18px 18px;">No master profiles yet.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>How these are used</h2>
+  <div class="muted" style="font-size:13px;">
+    <p style="margin-top:0;">
+      <strong>Spacing</strong> is derived as rotor diameter + tip clearance and drives the
+      map footprint and separation alerts. Every profile seeds at the 60 m tip clearance the
+      app has always used for the UH-60 — set the real per-platform figure on each profile.
+    </p>
+    <p>
+      <strong>Perf source</strong> says where the speed/fuel block came from.
+      <span class="mono">vidx</span> was extracted from a real AMPS vehicle installation;
+      <span class="mono">published</span> is a seeded starting point from public specs and
+      should be verified before anyone plans fuel against it.
+    </p>
+    <p style="margin-bottom:0;">
+      <strong>AMPS</strong> shows whether a real package is attached. Without one, MSNX export
+      for that profile still produces a UH-60L mission file and warns the user — an airframe
+      can't be synthesised without files AMPS produced.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="padding:0;overflow-x:auto;">
+  <h2 style="padding:18px 18px 0;">User-created profiles <span class="muted" style="text-transform:none;letter-spacing:0;">({{ custom|length }})</span></h2>
+  {% if custom %}
+  <table style="margin-top:10px;">
+    <thead>
+      <tr>
+        <th style="padding-left:18px;">Aircraft</th>
+        <th>Owner</th>
+        <th>Rotor</th>
+        <th>Spacing</th>
+        <th style="padding-right:18px;">Updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in custom %}
+      <tr>
+        <td style="padding-left:18px;">
+          <a href="{{ url_for('admin.aircraft_detail', pid=p.id) }}"><strong>{{ p.designation }}</strong></a>
+          <div class="muted" style="font-size:12px;">{{ p.name }}</div>
+        </td>
+        <td>
+          {% set owner = owners.get(p.user_id) %}
+          {% if owner %}<a href="{{ url_for('admin.user_detail', uid=owner.id) }}">{{ owner.email }}</a>
+          {% else %}<span class="muted">user #{{ p.user_id }}</span>{% endif %}
+        </td>
+        <td class="mono" style="font-size:12px;">{{ '%.2f'|format(p.rotor_diameter_m) }} m</td>
+        <td class="mono" style="font-size:12px;">{{ '%.1f'|format(p.rotor_diameter_m + p.rotor_tip_clearance_m) }} m</td>
+        <td class="mono muted" style="font-size:12px;padding-right:18px;">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="muted" style="padding:0 18px 18px;">No users have built their own profile yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

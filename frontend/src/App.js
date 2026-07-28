@@ -26,6 +26,9 @@ import UserMenu from "./feature/auth/UserMenu";
 import { useSavedMaps } from "./feature/savedMaps/useSavedMaps";
 import HistoryModal from "./feature/savedMaps/HistoryModal";
 import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
+import { useAircraftProfiles } from "./feature/aircraft/useAircraftProfiles";
+import AircraftProfileModal from "./feature/aircraft/AircraftProfileModal";
+import { matchProfileToAircraft } from "./feature/aircraft/aircraftProfiles";
 import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
 import RoutesPanel from "./feature/msnxImport/RoutesPanel";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
@@ -305,6 +308,19 @@ function App() {
     });
   const { winds, activeNotams, setActiveNotams, loadingWeather, fetchWeather } =
     useWeather();
+  // Aircraft profiles drive map icons, separation alerts, LZ capacity, and
+  // route-planning defaults. Declared before the consumers below.
+  const {
+    profiles: aircraftProfiles,
+    masterProfiles,
+    customProfiles,
+    activeProfile,
+    selectProfile,
+    createProfile,
+    updateProfile,
+    deleteProfile,
+  } = useAircraftProfiles();
+  const [isAircraftModalOpen, setIsAircraftModalOpen] = useState(false);
   const { doghouses, updateDoghouse } = useDoghouses(targetLocation, setFlightData, {
     doghouses: activeGraphics.doghouses ?? [],
     setDoghouses,
@@ -318,6 +334,8 @@ function App() {
   } = useHelicopters(targetLocation, {
     helicopters: activeGraphics.helicopters ?? [],
     setHelicopters,
+    profiles: aircraftProfiles,
+    activeProfile,
   });
   const {
     exportBox,
@@ -403,6 +421,7 @@ function App() {
     threats: !uf || uf.threats !== false,
     cloud_save: !uf || uf.cloud_save !== false,
     exports: !uf || uf.exports !== false,
+    aircraft_profiles: !uf || uf.aircraft_profiles !== false,
   };
   const { history, isLoadingHistory, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
@@ -433,7 +452,12 @@ function App() {
 
   const handleImportMsnx = async (file) => {
     try {
-      await importMsnxFile(file);
+      const result = await importMsnxFile(file);
+      // Follow the airframe the mission was actually planned for, so icons,
+      // separation, and plan defaults match the file rather than whatever was
+      // selected before. Unrecognised airframes leave the selection alone.
+      const matched = matchProfileToAircraft(aircraftProfiles, result?.aircraft);
+      if (matched) selectProfile(matched.slug);
     } catch (err) {
       alert("Error importing route: " + err.message);
     }
@@ -463,7 +487,7 @@ function App() {
     updateSketchPointName,
     refreshRouteElevations,
     applyForecastWinds,
-  } = useRouteSketch();
+  } = useRouteSketch({ aircraftProfile: activeProfile });
 
   const localPoints = useLocalPoints();
   const {
@@ -1044,6 +1068,10 @@ function App() {
         </div>
         <Controls
           features={feat}
+          aircraftProfiles={aircraftProfiles}
+          activeAircraftProfile={activeProfile}
+          onSelectAircraft={selectProfile}
+          onManageAircraft={() => setIsAircraftModalOpen(true)}
           onImportMsnx={handleImportMsnx}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
@@ -1221,6 +1249,8 @@ function App() {
           assets={helicopters}
           updateAsset={updateHelicopter}
           deleteAsset={deleteHelicopter}
+          aircraftProfiles={aircraftProfiles}
+          activeAircraftProfile={activeProfile}
           showHeatmap={showHeatmap}
           terrainData={terrainData}
           doghouses={doghouses}
@@ -1481,6 +1511,17 @@ function App() {
 
       {showUnitBuilder && (
         <UnitBuilder onSubmit={addUnit} onClose={() => setShowUnitBuilder(false)} />
+      )}
+
+      {isAircraftModalOpen && (
+        <AircraftProfileModal
+          masterProfiles={masterProfiles}
+          customProfiles={customProfiles}
+          onCreate={createProfile}
+          onUpdate={updateProfile}
+          onDelete={deleteProfile}
+          onClose={() => setIsAircraftModalOpen(false)}
+        />
       )}
 
       {editingUnit && (

@@ -22,10 +22,17 @@ from werkzeug.security import check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent
+from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile
 from entitlements import (
     FEATURES, FEATURE_KEYS, resolve_features,
     is_admin, is_super_admin, account_active, affiliation_ok,
+)
+from amps_package import inspect_amps_package
+from aircraft_seed import ICON_CHOICES
+from routes.aircraft_routes import (
+    AIRSPEED_TYPES, ALTITUDE_REFS,
+    _NUMERIC_FIELDS as AIRCRAFT_NUMERIC_FIELDS,
+    _slugify as _aircraft_slug,
 )
 from auth_rate_limit import check_rate_limits
 from email_service import send_verification_email, send_password_reset_email
@@ -84,6 +91,8 @@ def _inject():
         'is_super_admin': is_super_admin,
         'account_active': account_active,
         'affiliation_ok': affiliation_ok,
+        'current_admin': _current_admin(),
+        'ICON_CHOICES': ICON_CHOICES,
     }
 
 
@@ -181,7 +190,7 @@ def users():
     )
     pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
     return render_template(
-        'admin/users.html',
+        'admin/users.html', nav_section='users',
         users=rows, q=q, page=page, pages=pages, total=total,
     )
 
@@ -209,7 +218,7 @@ def user_detail(uid):
     logins = login_q.offset((lp - 1) * LOGINS_PER_PAGE).limit(LOGINS_PER_PAGE).all()
     login_pages = max(1, (login_total + LOGINS_PER_PAGE - 1) // LOGINS_PER_PAGE)
     return render_template(
-        'admin/user_detail.html',
+        'admin/user_detail.html', nav_section='users',
         u=user, counts=counts, features=resolve_features(user),
         logins=logins, lp=lp, login_pages=login_pages, login_total=login_total,
     )
@@ -343,3 +352,299 @@ def delete_user(uid):
     db.session.commit()
     flash('User deleted.', 'ok')
     return redirect(url_for('admin.users'))
+
+
+# --- aircraft profiles ------------------------------------------------------
+
+# Uploaded AMPS packages. The UH-60L vidx alone is ~640 KB and a saved mission
+# runs a few MB, so allow headroom while still refusing anything absurd.
+MAX_TEMPLATE_BYTES = 32 * 1024 * 1024
+
+
+def _aircraft_form_errors(profile, form):
+    """Copy the admin form onto ``profile``; return a list of problems."""
+    errors = []
+
+    name = (form.get('name') or '').strip()
+    designation = (form.get('designation') or '').strip()
+    if not name:
+        errors.append('Name is required.')
+    if not designation:
+        errors.append('Designation is required.')
+    profile.name = name[:120]
+    profile.designation = designation[:40]
+    profile.icon_key = (form.get('icon_key') or 'generic').strip()[:40] or 'generic'
+
+    description = (form.get('amps_vehicle_description') or '').strip()
+    profile.amps_vehicle_description = description[:200] or None
+
+    airspeed_type = (form.get('default_airspeed_type') or 'ground').strip().lower()
+    if airspeed_type not in AIRSPEED_TYPES:
+        errors.append('Invalid airspeed type.')
+    else:
+        profile.default_airspeed_type = airspeed_type
+
+    altitude_ref = (form.get('default_altitude_ref') or 'agl').strip().lower()
+    if altitude_ref not in ALTITUDE_REFS:
+        errors.append('Invalid altitude reference.')
+    else:
+        profile.default_altitude_ref = altitude_ref
+
+    perf_source = (form.get('perf_source') or 'custom').strip().lower()
+    profile.perf_source = perf_source if perf_source in ('vidx', 'published', 'custom') else 'custom'
+
+    for field, (low, high) in AIRCRAFT_NUMERIC_FIELDS.items():
+        raw = form.get(field)
+        if raw is None or str(raw).strip() == '':
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            errors.append(f'{field.replace("_", " ")} must be a number.')
+            continue
+        if not (low <= value <= high):
+            errors.append(f'{field.replace("_", " ")} must be between {low} and {high}.')
+            continue
+        setattr(profile, field, value)
+
+    try:
+        profile.sort_order = int(form.get('sort_order') or profile.sort_order or 100)
+    except (TypeError, ValueError):
+        errors.append('Sort order must be a whole number.')
+
+    profile.is_active = form.get('is_active') == 'on'
+
+    if (
+        profile.min_altitude_ft_msl is not None
+        and profile.max_altitude_ft_msl is not None
+        and profile.min_altitude_ft_msl > profile.max_altitude_ft_msl
+    ):
+        errors.append('Minimum altitude cannot exceed maximum altitude.')
+
+    return errors
+
+
+@admin_bp.route('/aircraft')
+@admin_required
+def aircraft():
+    master = (
+        AircraftProfile.query.filter(AircraftProfile.user_id.is_(None))
+        .order_by(AircraftProfile.sort_order, AircraftProfile.name)
+        .all()
+    )
+    custom = (
+        AircraftProfile.query.filter(AircraftProfile.user_id.isnot(None))
+        .order_by(AircraftProfile.updated_at.desc())
+        .limit(100)
+        .all()
+    )
+    owners = {}
+    if custom:
+        owner_ids = {p.user_id for p in custom}
+        owners = {u.id: u for u in User.query.filter(User.id.in_(owner_ids)).all()}
+    return render_template(
+        'admin/aircraft.html', nav_section='aircraft',
+        master=master, custom=custom, owners=owners,
+    )
+
+
+@admin_bp.route('/aircraft/new')
+@admin_required
+def aircraft_new():
+    # An unsaved instance so the form template renders one code path for both
+    # create and edit.
+    blank = AircraftProfile(
+        slug='', name='', designation='', icon_key='generic',
+        rotor_diameter_m=16.357, rotor_tip_clearance_m=60.0,
+        default_airspeed_kts=100, default_airspeed_type='ground',
+        max_indicated_kts=193, default_altitude_ft=50, default_altitude_ref='agl',
+        min_altitude_ft_msl=-2000, max_altitude_ft_msl=20000,
+        default_fuel_flow_lb_hr=960, default_gross_weight_lb=16000,
+        perf_source='custom', is_active=True, sort_order=100,
+    )
+    return render_template('admin/aircraft_form.html', nav_section='aircraft', p=blank, creating=True, owner=None)
+
+
+@admin_bp.route('/aircraft/<int:pid>')
+@admin_required
+def aircraft_detail(pid):
+    profile = db.session.get(AircraftProfile, pid)
+    if not profile:
+        abort(404)
+    owner = db.session.get(User, profile.user_id) if profile.user_id else None
+    return render_template(
+        'admin/aircraft_form.html', nav_section='aircraft', p=profile, creating=False, owner=owner,
+    )
+
+
+@admin_bp.route('/aircraft/create', methods=['POST'])
+@admin_required
+def aircraft_create():
+    _check_csrf()
+    profile = AircraftProfile(user_id=None)
+    errors = _aircraft_form_errors(profile, request.form)
+
+    slug = _aircraft_slug(request.form.get('slug') or profile.designation or profile.name)
+    if not slug:
+        errors.append('Slug is required.')
+    elif AircraftProfile.query.filter(
+        AircraftProfile.user_id.is_(None), AircraftProfile.slug == slug
+    ).first():
+        errors.append(f'A master profile with the slug "{slug}" already exists.')
+    profile.slug = slug
+
+    if errors:
+        for message in errors:
+            flash(message, 'error')
+        return redirect(url_for('admin.aircraft_new'))
+
+    db.session.add(profile)
+    db.session.commit()
+    flash(f'Created {profile.name}.', 'ok')
+    return redirect(url_for('admin.aircraft_detail', pid=profile.id))
+
+
+@admin_bp.route('/aircraft/<int:pid>/save', methods=['POST'])
+@admin_required
+def aircraft_save(pid):
+    _check_csrf()
+    profile = db.session.get(AircraftProfile, pid)
+    if not profile:
+        abort(404)
+
+    errors = _aircraft_form_errors(profile, request.form)
+    if errors:
+        db.session.rollback()
+        for message in errors:
+            flash(message, 'error')
+    else:
+        db.session.commit()
+        flash('Saved.', 'ok')
+    return redirect(url_for('admin.aircraft_detail', pid=pid))
+
+
+@admin_bp.route('/aircraft/<int:pid>/template', methods=['POST'])
+@admin_required
+def aircraft_template(pid):
+    """Attach or clear the AMPS package that makes export use this airframe."""
+    _check_csrf()
+    profile = db.session.get(AircraftProfile, pid)
+    if not profile:
+        abort(404)
+
+    if request.form.get('clear') == '1':
+        profile.template_file = None
+        profile.template_name = None
+        profile.template_kind = None
+        db.session.commit()
+        flash('Template removed. Exports for this profile fall back to the UH-60L package.', 'ok')
+        return redirect(url_for('admin.aircraft_detail', pid=pid))
+
+    upload = request.files.get('template')
+    if not upload or not upload.filename:
+        flash('Choose a .msnx or .vidx file to upload.', 'error')
+        return redirect(url_for('admin.aircraft_detail', pid=pid))
+
+    filename = os.path.basename(upload.filename)
+    extension = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    if extension not in ('msnx', 'vidx'):
+        flash('Unsupported file type. Upload a .msnx mission or a .vidx vehicle installation.', 'error')
+        return redirect(url_for('admin.aircraft_detail', pid=pid))
+
+    data = upload.read(MAX_TEMPLATE_BYTES + 1)
+    if len(data) > MAX_TEMPLATE_BYTES:
+        flash(f'File is too large (limit {MAX_TEMPLATE_BYTES // (1024 * 1024)} MB).', 'error')
+        return redirect(url_for('admin.aircraft_detail', pid=pid))
+    if not data:
+        flash('That file is empty.', 'error')
+        return redirect(url_for('admin.aircraft_detail', pid=pid))
+
+    # Both formats are OPC zips. Reject anything else now rather than letting
+    # the browser-side exporter choke on a corrupt package later.
+    detected = inspect_amps_package(data, extension)
+    if detected.get('error'):
+        flash(detected['error'], 'error')
+        return redirect(url_for('admin.aircraft_detail', pid=pid))
+
+    profile.template_file = data
+    profile.template_name = filename[:120]
+    profile.template_kind = extension
+    # A saved mission states exactly what AMPS calls this airframe; adopt it
+    # unless an admin already typed one in.
+    if detected.get('vehicle_description') and not profile.amps_vehicle_description:
+        profile.amps_vehicle_description = detected['vehicle_description'][:200]
+    db.session.commit()
+
+    note = ''
+    if detected.get('vehicle_description'):
+        note = f' Detected airframe: {detected["vehicle_description"]}.'
+    flash(f'Attached {filename}.{note}', 'ok')
+    return redirect(url_for('admin.aircraft_detail', pid=pid))
+
+
+@admin_bp.route('/aircraft/<int:pid>/delete', methods=['POST'])
+@admin_required
+def aircraft_delete(pid):
+    _check_csrf()
+    profile = db.session.get(AircraftProfile, pid)
+    if not profile:
+        abort(404)
+    if (request.form.get('confirm_slug') or '').strip() != profile.slug:
+        flash("Deletion cancelled: the confirmation slug didn't match.", 'error')
+        return redirect(url_for('admin.aircraft_detail', pid=pid))
+
+    label = profile.name
+    was_master = profile.is_system
+    db.session.delete(profile)
+    db.session.commit()
+    # A deleted seed slug comes back on the next boot; say so rather than
+    # letting it look like a bug.
+    hint = ''
+    if was_master:
+        hint = ' Seeded profiles reappear on restart. Retire instead of deleting to keep one hidden.'
+    flash(f'Deleted {label}.{hint}', 'ok')
+    return redirect(url_for('admin.aircraft'))
+
+
+@admin_bp.route('/aircraft/<int:pid>/promote', methods=['POST'])
+@admin_required
+def aircraft_promote(pid):
+    """Copy a user's custom profile into the master list."""
+    _check_csrf()
+    source = db.session.get(AircraftProfile, pid)
+    if not source or source.is_system:
+        abort(404)
+
+    base = _aircraft_slug(source.designation or source.name) or f'custom-{source.id}'
+    slug, suffix = base, 2
+    while AircraftProfile.query.filter(
+        AircraftProfile.user_id.is_(None), AircraftProfile.slug == slug
+    ).first():
+        slug, suffix = f'{base}-{suffix}', suffix + 1
+
+    copy = AircraftProfile(
+        user_id=None, slug=slug, name=source.name, designation=source.designation,
+        icon_key=source.icon_key,
+        rotor_diameter_m=source.rotor_diameter_m,
+        rotor_tip_clearance_m=source.rotor_tip_clearance_m,
+        default_airspeed_kts=source.default_airspeed_kts,
+        default_airspeed_type=source.default_airspeed_type,
+        max_indicated_kts=source.max_indicated_kts,
+        default_altitude_ft=source.default_altitude_ft,
+        default_altitude_ref=source.default_altitude_ref,
+        min_altitude_ft_msl=source.min_altitude_ft_msl,
+        max_altitude_ft_msl=source.max_altitude_ft_msl,
+        default_fuel_flow_lb_hr=source.default_fuel_flow_lb_hr,
+        default_gross_weight_lb=source.default_gross_weight_lb,
+        amps_vehicle_description=source.amps_vehicle_description,
+        perf_source=source.perf_source,
+        is_active=True,
+        sort_order=500,
+    )
+    db.session.add(copy)
+    db.session.commit()
+    flash(
+        f'Promoted "{source.name}" to the master list. Review its values before relying on them.',
+        'ok',
+    )
+    return redirect(url_for('admin.aircraft_detail', pid=copy.id))

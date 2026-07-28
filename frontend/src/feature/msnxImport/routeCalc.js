@@ -1,4 +1,4 @@
-import { UH60L_PROFILE } from "./uh60lProfile";
+import { FALLBACK_PROFILE, normalizeProfile } from "../aircraft/aircraftProfiles";
 import api from "../auth/api";
 
 /**
@@ -66,20 +66,29 @@ export const solveWindTriangle = (tasKts, courseDeg, windFromDeg, windKts) => {
   };
 };
 
-export const defaultRoutePlan = () => ({
-  aircraft: UH60L_PROFILE.name,
+/**
+ * A fresh plan seeded from an aircraft profile. Called without one — from
+ * older code paths or a route restored before profiles existed — it falls back
+ * to the UH-60L values the planner has always used.
+ */
+export const defaultRoutePlan = (aircraftProfile) => {
+  const profile = normalizeProfile(aircraftProfile || FALLBACK_PROFILE);
+  return {
+  aircraft: profile.name,
+  // Slug rather than id so a saved route resolves after a database change.
+  aircraftProfile: profile.slug,
   // Route-level defaults; each point can override its own "to" values.
   airspeed: {
-    value: UH60L_PROFILE.defaultAirspeedKts,
-    type: UH60L_PROFILE.defaultAirspeedType,
+    value: profile.default_airspeed_kts,
+    type: profile.default_airspeed_type,
   },
   altitude: {
-    value: UH60L_PROFILE.defaultAltitudeFt,
-    ref: UH60L_PROFILE.defaultAltitudeRef,
+    value: profile.default_altitude_ft,
+    ref: profile.default_altitude_ref,
   },
   wind: { dirTrue: 0, speedKts: 0 },
   tempC: 15,
-  fuelFlowLbHr: UH60L_PROFILE.defaultFuelFlowLbHr,
+  fuelFlowLbHr: profile.default_fuel_flow_lb_hr,
   // Date (YYYY-MM-DD) that all clock times fall on; defaults to today.
   date: "",
   // Per-AMPS-point "to" values (apply to the leg arriving at the point) plus
@@ -89,7 +98,8 @@ export const defaultRoutePlan = () => ({
   // Exactly one point may carry a clock at a time — it anchors every other
   // point's clock time via the rolling elapsed times.
   perPoint: {},
-});
+  };
+};
 
 /**
  * Backfills plan defaults on routes restored from older saves and migrates

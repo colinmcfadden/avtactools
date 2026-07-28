@@ -6,7 +6,7 @@ import {
   formatClock,
   formatDuration,
 } from "./routeCalc";
-import { AIRSPEED_TYPES, UH60L_PROFILE } from "./uh60lProfile";
+import { AIRSPEED_TYPES, FALLBACK_PROFILE } from "../aircraft/aircraftProfiles";
 
 const num = (value, fallback = 0) => {
   const parsed = parseFloat(value);
@@ -411,7 +411,7 @@ const RoutePlanSection = ({
       </div>
 
       <div style={{ fontSize: "0.62rem", opacity: 0.5 }}>
-        {UH60L_PROFILE.name} · speeds/altitudes/winds are "to" each point and export to AMPS
+        {plan.aircraft || FALLBACK_PROFILE.name} · speeds/altitudes/winds are "to" each point and export to AMPS
       </div>
 
       {result.warnings.map((warning) => (
