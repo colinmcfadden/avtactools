@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/colinmcfadden/avtactools/compare/v1.5.3...v1.6.0) (2026-07-28)
+
+
+### Features
+
+* aircaft profiles added to app and admin ([2be9c72](https://github.com/colinmcfadden/avtactools/commit/2be9c72c5123eaa3c05dce1cf5748f74e3164fd4))
+
 ## [1.5.3](https://github.com/colinmcfadden/avtactools/compare/v1.5.2...v1.5.3) (2026-07-18)
 
 
