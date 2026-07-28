@@ -64,33 +64,44 @@ export const getDistanceFeet = (lat1, lon1, lat2, lon2) => {
   return R * c; // Distance in feet
 };
 
-export const getRotorEdgeCoords = (lat1, lon1, lat2, lon2) => {
+/**
+ * Rotor-tip-to-rotor-tip line between two aircraft.
+ *
+ * Each end is pulled in by *that* aircraft's own rotor radius, so a Chinook
+ * beside a Little Bird is measured correctly from each one's tip path. Radii
+ * default to the UH-60's when a caller has no profile, matching the behaviour
+ * from before aircraft profiles existed.
+ */
+export const getRotorEdgeCoords = (
+  lat1,
+  lon1,
+  lat2,
+  lon2,
+  radius1Feet = UH60_ROTOR_RADIUS_FEET,
+  radius2Feet = radius1Feet,
+) => {
   const centerDist = getDistanceFeet(lat1, lon1, lat2, lon2);
-  
+
   if (centerDist <= 0) return { start: [lat1, lon1], end: [lat2, lon2], edgeDist: 0 };
 
-  const rotorRadiusFeet = UH60_ROTOR_RADIUS_FEET;
-  
-  // What percentage of the total line is taken up by the rotor?
-  const fraction = rotorRadiusFeet / centerDist;
+  const fraction1 = radius1Feet / centerDist;
+  const fraction2 = radius2Feet / centerDist;
 
-  // If the helicopters are completely overlapping, don't invert the lines
-  if (fraction >= 0.5) return { start: [lat1, lon1], end: [lat2, lon2], edgeDist: 0 };
+  // Overlapping discs: don't invert the line, just report no gap.
+  if (fraction1 + fraction2 >= 1) {
+    return { start: [lat1, lon1], end: [lat2, lon2], edgeDist: 0 };
+  }
 
-  // Project point 1 outward towards point 2
-  const startLat = lat1 + fraction * (lat2 - lat1);
-  const startLon = lon1 + fraction * (lon2 - lon1);
-
-  // Project point 2 inward towards point 1
-  const endLat = lat2 - fraction * (lat2 - lat1);
-  const endLon = lon2 - fraction * (lon2 - lon1);
-
-  const edgeDist = centerDist - (rotorRadiusFeet * 2);
+  // Project each end inward along the line by its own radius.
+  const startLat = lat1 + fraction1 * (lat2 - lat1);
+  const startLon = lon1 + fraction1 * (lon2 - lon1);
+  const endLat = lat2 - fraction2 * (lat2 - lat1);
+  const endLon = lon2 - fraction2 * (lon2 - lon1);
 
   return {
     start: [startLat, startLon],
     end: [endLat, endLon],
-    edgeDist: edgeDist
+    edgeDist: centerDist - (radius1Feet + radius2Feet),
   };
 };
 

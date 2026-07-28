@@ -1,0 +1,248 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ 'New profile' if creating else p.designation }}{% endblock %}
+
+{% block topbar %}
+<a class="btn btn-sm" href="{{ url_for('admin.aircraft') }}">← All aircraft</a>
+<form method="post" action="{{ url_for('admin.logout') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button class="btn btn-sm" type="submit">Log out</button>
+</form>
+{% endblock %}
+
+{% block content %}
+{% set action = url_for('admin.aircraft_create') if creating else url_for('admin.aircraft_save', pid=p.id) %}
+
+<div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+  <div>
+    <h1 style="font-size:22px;margin:0;">{{ 'New aircraft profile' if creating else p.name }}</h1>
+    <div class="muted mono">{{ p.slug or 'slug generated from designation' }}</div>
+  </div>
+  <div class="row">
+    {% if not creating %}
+      {% if owner %}<span class="badge">user profile</span>
+      {% else %}<span class="badge badge-admin">master</span>{% endif %}
+      {% if p.is_active %}<span class="badge badge-ok">active</span>
+      {% else %}<span class="badge badge-off">retired</span>{% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if owner %}
+<div class="card">
+  <h2>Owner</h2>
+  <p class="muted" style="margin:0;">
+    Built by <a href="{{ url_for('admin.user_detail', uid=owner.id) }}">{{ owner.email }}</a> for their own use.
+    Editing here changes it for them. Promote it to add a copy to the master list everyone sees.
+  </p>
+  <form method="post" action="{{ url_for('admin.aircraft_promote', pid=p.id) }}" style="margin-top:12px;">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button class="btn btn-sm" type="submit">Promote to master list</button>
+  </form>
+</div>
+{% endif %}
+
+<form method="post" action="{{ action }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+  <div class="card">
+    <h2>Identity</h2>
+    <div class="grid3">
+      <div class="field">
+        <label for="f-designation">Designation</label>
+        <input class="input" id="f-designation" name="designation" value="{{ p.designation }}" maxlength="40" required placeholder="UH-60L">
+        <small>Short label shown on the map and in pickers.</small>
+      </div>
+      <div class="field">
+        <label for="f-name">Name</label>
+        <input class="input" id="f-name" name="name" value="{{ p.name }}" maxlength="120" required placeholder="UH-60L Black Hawk">
+      </div>
+      <div class="field">
+        <label for="f-icon">Map icon</label>
+        <select class="input" id="f-icon" name="icon_key">
+          {% for key, label in ICON_CHOICES %}
+          <option value="{{ key }}" {{ 'selected' if (p.icon_key or 'generic') == key }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if creating %}
+      <div class="field">
+        <label for="f-slug">Slug</label>
+        <input class="input" id="f-slug" name="slug" maxlength="60" placeholder="auto from designation">
+        <small>Stable id. Leave blank to generate.</small>
+      </div>
+      {% endif %}
+      <div class="field">
+        <label for="f-sort">Sort order</label>
+        <input class="input" id="f-sort" name="sort_order" type="number" value="{{ p.sort_order }}" step="10">
+        <small>Lower sorts first in the picker.</small>
+      </div>
+      <div class="field">
+        <label>Availability</label>
+        <label class="row" style="gap:8px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text);font-weight:400;">
+          <input type="checkbox" name="is_active" {{ 'checked' if p.is_active }}>
+          Selectable by users
+        </label>
+        <small>Retiring hides it from pickers without deleting it.</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Footprint &amp; separation</h2>
+    <div class="grid3">
+      <div class="field">
+        <label for="f-rotor">Rotor diameter (m)</label>
+        <input class="input" id="f-rotor" name="rotor_diameter_m" type="number" step="0.01" min="1" max="60" value="{{ p.rotor_diameter_m }}">
+        <small>Tandem rotors: use the overall fore-to-aft span.</small>
+      </div>
+      <div class="field">
+        <label for="f-clear">Tip clearance (m)</label>
+        <input class="input" id="f-clear" name="rotor_tip_clearance_m" type="number" step="1" min="0" max="1000" value="{{ p.rotor_tip_clearance_m }}">
+        <small>Required clear space between rotor-tip paths.</small>
+      </div>
+      <div class="field">
+        <label>Center spacing</label>
+        <div class="input mono" style="display:flex;align-items:center;background:var(--surface-1);color:var(--muted);">
+          {{ '%.2f'|format((p.rotor_diameter_m or 0) + (p.rotor_tip_clearance_m or 0)) }} m
+        </div>
+        <small>Derived — diameter + clearance. Drives alerts and LZ capacity.</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Route planning defaults</h2>
+    <div class="grid3">
+      <div class="field">
+        <label for="f-spd">Cruise airspeed (kt)</label>
+        <input class="input" id="f-spd" name="default_airspeed_kts" type="number" step="1" value="{{ p.default_airspeed_kts }}">
+      </div>
+      <div class="field">
+        <label for="f-spdtype">Airspeed reference</label>
+        <select class="input" id="f-spdtype" name="default_airspeed_type">
+          <option value="ground" {{ 'selected' if p.default_airspeed_type == 'ground' }}>GS (Ground)</option>
+          <option value="indicated" {{ 'selected' if p.default_airspeed_type == 'indicated' }}>KIAS (Indicated)</option>
+          <option value="true" {{ 'selected' if p.default_airspeed_type == 'true' }}>KTAS (True)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-vne">Max indicated (kt)</label>
+        <input class="input" id="f-vne" name="max_indicated_kts" type="number" step="1" value="{{ p.max_indicated_kts }}">
+      </div>
+      <div class="field">
+        <label for="f-alt">Default altitude (ft)</label>
+        <input class="input" id="f-alt" name="default_altitude_ft" type="number" step="10" value="{{ p.default_altitude_ft }}">
+      </div>
+      <div class="field">
+        <label for="f-altref">Altitude reference</label>
+        <select class="input" id="f-altref" name="default_altitude_ref">
+          <option value="agl" {{ 'selected' if p.default_altitude_ref == 'agl' }}>AGL</option>
+          <option value="msl" {{ 'selected' if p.default_altitude_ref == 'msl' }}>MSL</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-fuel">Fuel flow (lb/hr)</label>
+        <input class="input" id="f-fuel" name="default_fuel_flow_lb_hr" type="number" step="10" value="{{ p.default_fuel_flow_lb_hr }}">
+      </div>
+      <div class="field">
+        <label for="f-gw">Gross weight (lb)</label>
+        <input class="input" id="f-gw" name="default_gross_weight_lb" type="number" step="100" value="{{ p.default_gross_weight_lb }}">
+      </div>
+      <div class="field">
+        <label for="f-altmin">Min altitude (ft MSL)</label>
+        <input class="input" id="f-altmin" name="min_altitude_ft_msl" type="number" step="100" value="{{ p.min_altitude_ft_msl }}">
+      </div>
+      <div class="field">
+        <label for="f-altmax">Max altitude (ft MSL)</label>
+        <input class="input" id="f-altmax" name="max_altitude_ft_msl" type="number" step="100" value="{{ p.max_altitude_ft_msl }}">
+      </div>
+      <div class="field">
+        <label for="f-perfsrc">Performance source</label>
+        <select class="input" id="f-perfsrc" name="perf_source">
+          <option value="vidx" {{ 'selected' if p.perf_source == 'vidx' }}>vidx — from a real AMPS installation</option>
+          <option value="published" {{ 'selected' if p.perf_source == 'published' }}>published — public specs, unverified</option>
+          <option value="custom" {{ 'selected' if p.perf_source == 'custom' }}>custom — entered by hand</option>
+        </select>
+        <small>Shown to users so nobody plans fuel off an unverified number.</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>AMPS binding</h2>
+    <div class="field" style="max-width:640px;">
+      <label for="f-veh">Vehicle description</label>
+      <input class="input mono" id="f-veh" name="amps_vehicle_description" value="{{ p.amps_vehicle_description or '' }}"
+             maxlength="200" placeholder="Air:Rotary Wing:H60:9856:Default:1.0014:UH-60L" style="font-size:12px;">
+      <small>
+        The string AMPS writes into <span class="mono">mission/vehicles.xml</span>. Used to recognise
+        this airframe when a user imports a .msnx. Filled in automatically when you upload a mission below.
+      </small>
+    </div>
+  </div>
+
+  <div class="row">
+    <button class="btn btn-primary" type="submit">{{ 'Create profile' if creating else 'Save changes' }}</button>
+    <a class="btn" href="{{ url_for('admin.aircraft') }}">Cancel</a>
+  </div>
+</form>
+
+{% if not creating %}
+<div class="card" style="margin-top:16px;">
+  <h2>AMPS package</h2>
+  {% if p.has_template %}
+    <div class="grid2">
+      <div class="muted">Attached</div>
+      <div class="mono">{{ p.template_name }} <span class="badge badge-ok">{{ p.template_kind }}</span></div>
+      <div class="muted">Effect on export</div>
+      <div>
+        {% if p.template_kind == 'msnx' %}
+          Exports for this profile are built on this mission, so AMPS opens them as the right airframe.
+        {% else %}
+          Exports transplant this vehicle installation into the standard template.
+        {% endif %}
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('admin.aircraft_template', pid=p.id) }}" style="margin-top:12px;">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="clear" value="1">
+      <button class="btn btn-sm btn-danger" type="submit">Remove package</button>
+    </form>
+  {% else %}
+    <p class="muted" style="margin-top:0;">
+      Nothing attached. MSNX export for this profile still writes this profile's planning values,
+      but the file opens in AMPS as a <strong>UH-60L</strong> and the user is warned. An airframe
+      can't be synthesised — the bytes have to come from AMPS.
+    </p>
+    <p class="muted" style="font-size:12px;">
+      <strong>Preferred:</strong> in AMPS, create an empty mission on this airframe and save it as
+      <span class="mono">.msnx</span>, then upload it here. The whole package is internally consistent,
+      so export just builds on it. A bare <span class="mono">.vidx</span> also works — it gets
+      transplanted into the standard template, which is more moving parts.
+    </p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('admin.aircraft_template', pid=p.id) }}"
+        enctype="multipart/form-data" class="row" style="margin-top:12px;">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input class="input" type="file" name="template" accept=".msnx,.vidx" style="padding:6px 10px;height:auto;">
+    <button class="btn btn-sm" type="submit">{{ 'Replace' if p.has_template else 'Upload' }} package</button>
+  </form>
+</div>
+
+<div class="card danger-zone">
+  <h2 style="color:var(--danger);">Delete profile</h2>
+  <p class="muted" style="margin-top:-6px;">
+    Removes it from every picker. Saved maps referencing it fall back to the default aircraft.
+    {% if p.is_system %}Retiring is usually better — a seeded slug comes back on the next restart.{% endif %}
+  </p>
+  <form method="post" action="{{ url_for('admin.aircraft_delete', pid=p.id) }}"
+        onsubmit="return confirm('Delete {{ p.name }}?');" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input class="input mono" type="text" name="confirm_slug" placeholder="Type {{ p.slug }} to confirm"
+           style="width:280px;" autocomplete="off">
+    <button class="btn btn-danger" type="submit">Delete permanently</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

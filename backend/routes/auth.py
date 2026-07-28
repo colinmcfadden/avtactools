@@ -21,9 +21,16 @@ from email_service import (
     send_password_reset_email,
     send_verification_email,
     send_welcome_email,
+    send_mil_verification_email,
 )
-from models import AccountToken, LocalCredential, User, db
-from entitlements import account_active, is_admin, is_super_admin, resolve_features
+from models import AccountToken, LocalCredential, LoginEvent, User, db
+from entitlements import (
+    account_active,
+    affiliation_ok,
+    is_admin,
+    is_super_admin,
+    resolve_features,
+)
 
 
 auth_bp = Blueprint('auth', __name__)
@@ -32,7 +39,12 @@ PASSWORD_MIN_LENGTH = 15
 PASSWORD_MAX_LENGTH = 128
 VERIFY_PURPOSE = 'verify_email'
 RESET_PURPOSE = 'password_reset'
+MIL_VERIFY_PURPOSE = 'mil_verify'
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+# Any .mil address (all DoD services), e.g. army.mil, mail.mil, us.army.mil.
+MIL_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.mil$", re.IGNORECASE)
+# Unambiguous code alphabet (no 0/O/1/I) for a typable cross-device code.
+_MIL_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 COMMON_WEAK_PASSWORDS = frozenset({
     '123456789012345',
     'adminadminadminadmin',
@@ -61,6 +73,21 @@ GENERIC_RESET_MESSAGE = (
 
 def _now():
     return datetime.utcnow()
+
+
+def _client_ip():
+    peer = request.remote_addr or 'unknown'
+    if os.environ.get('FLY_APP_NAME'):
+        fly_peer = request.headers.get('Fly-Client-IP', '').strip()
+        try:
+            peer = str(ipaddress.ip_address(fly_peer))
+        except ValueError:
+            pass
+    return peer
+
+
+def _generate_mil_code():
+    return ''.join(secrets.choice(_MIL_CODE_ALPHABET) for _ in range(8))
 
 
 def _payload():
@@ -105,6 +132,8 @@ def _rate_limit(scope, email=None):
         'forgot': ((10, 3600), (5, 3600)),
         'google': ((30, 600), None),
         'reset': ((20, 3600), None),
+        'mil_request': ((10, 3600), None),
+        'mil_verify': ((20, 600), None),
     }
     ip_rule, email_rule = limits[scope]
     # Fly injects Fly-Client-IP at its trusted edge. Only honor it when this
@@ -161,6 +190,9 @@ def _serialize_user(user):
         "is_admin": is_admin(user),
         "is_active": account_active(user),
         "features": resolve_features(user),
+        "mil_email": user.mil_email,
+        "affiliation_verified": user.mil_verified_at is not None,
+        "access_ok": affiliation_ok(user),
     }
 
 
@@ -200,7 +232,7 @@ def _find_valid_token(raw_token, purpose):
     ).first()
 
 
-def _auth_success(user):
+def _auth_success(user, method='password'):
     # The configured super-admin is always an active admin; enforce it on every
     # sign-in so the account can't be locked out via the database or dashboard.
     if is_super_admin(user):
@@ -216,6 +248,18 @@ def _auth_success(user):
     elif not account_active(user):
         # Suspended by an admin — refuse to mint a token for any auth method.
         return _error("This account is not available.", 403, "account_unavailable")
+
+    # Record the successful sign-in for the admin per-user login history.
+    try:
+        db.session.add(LoginEvent(
+            user_id=user.id,
+            method=method,
+            ip=_client_ip(),
+            user_agent=(request.headers.get('User-Agent') or '')[:400] or None,
+        ))
+        db.session.commit()
+    except Exception:  # noqa: BLE001 — history is best-effort, never blocks login
+        db.session.rollback()
 
     credential = user.local_credential
     return jsonify({
@@ -542,7 +586,7 @@ def google_auth():
         if created_google_user or activated_pending_google:
             send_welcome_email(user)
             send_new_account_notification(user)
-        return _auth_success(user)
+        return _auth_success(user, 'google')
     except ValueError:
         db.session.rollback()
         return _error("Invalid Google token.", 401, "invalid_google_token")
@@ -553,6 +597,80 @@ def google_auth():
         db.session.rollback()
         current_app.logger.exception("Google authentication failed")
         return _error("Google authentication is temporarily unavailable.", 503)
+
+
+@auth_bp.route('/api/auth/mil/request', methods=['POST'])
+@jwt_required()
+def mil_request():
+    """Email a short affiliation-verification code to the caller's .mil address."""
+    user = db.session.get(User, int(get_jwt_identity()))
+    if not user:
+        return _error("User not found.", 404)
+    limited = _rate_limit('mil_request')
+    if limited:
+        return limited
+
+    email = _normalize_email(_payload().get('email'))
+    if len(email) > 120 or not MIL_EMAIL_PATTERN.fullmatch(email):
+        return _error("Enter a valid .mil email address.")
+
+    # A .mil address can clear only one account.
+    taken = User.query.filter(
+        func.lower(User.mil_email) == email,
+        User.mil_verified_at.isnot(None),
+        User.id != user.id,
+    ).first()
+    if taken:
+        return _error("That .mil address is already verified on another account.", 409)
+
+    user.mil_email = email  # pending until the code is confirmed
+    code = _generate_mil_code()
+    _invalidate_tokens(user.id, MIL_VERIFY_PURPOSE)
+    db.session.add(AccountToken(
+        user_id=user.id,
+        purpose=MIL_VERIFY_PURPOSE,
+        token_hash=_token_hash(code),
+        expires_at=_now() + timedelta(minutes=30),
+    ))
+    db.session.commit()
+    send_mil_verification_email(email, code, user.name)
+    return jsonify({
+        "status": "success",
+        "message": "A verification code was sent to your .mil address.",
+    }), 202
+
+
+@auth_bp.route('/api/auth/mil/verify', methods=['POST'])
+@jwt_required()
+def mil_verify():
+    """Confirm the emailed code and mark the account military-affiliation verified."""
+    user = db.session.get(User, int(get_jwt_identity()))
+    if not user:
+        return _error("User not found.", 404)
+    limited = _rate_limit('mil_verify')
+    if limited:
+        return limited
+
+    code = str(_payload().get('code') or '').strip().upper()
+    token = _find_valid_token(code, MIL_VERIFY_PURPOSE)
+    if token is None or token.user_id != user.id:
+        return _error("That code is invalid or has expired.", 400, "invalid_code")
+
+    if user.mil_email:
+        taken = User.query.filter(
+            func.lower(User.mil_email) == user.mil_email.lower(),
+            User.mil_verified_at.isnot(None),
+            User.id != user.id,
+        ).first()
+        if taken:
+            return _error("That .mil address is already verified on another account.", 409)
+
+    now = _now()
+    user.mil_verified_at = now
+    token.used_at = now
+    _invalidate_tokens(user.id, MIL_VERIFY_PURPOSE, now)
+    db.session.commit()
+    return jsonify({"status": "success", "user": _serialize_user(user)})
 
 
 @auth_bp.route('/api/auth/me', methods=['GET'])

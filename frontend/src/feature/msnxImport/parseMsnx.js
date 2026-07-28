@@ -19,6 +19,33 @@ export const MISSION_PATHS = {
   segments: "mission/segments.xml",
 };
 
+// Optional: present in real AMPS missions, absent from hand-built fixtures, so
+// it is read separately from the required MISSION_PATHS above.
+const VEHICLES_PATH = "mission/vehicles.xml";
+
+// e.g. "Air:Rotary Wing:H60:9856:Default:1.0014:UH-60L" — the trailing field is
+// the airframe designation.
+const VEHICLE_DESCRIPTION = /<vehicledescription>([\s\S]*?)<\/vehicledescription>/i;
+
+/**
+ * The airframe this mission was planned for, as AMPS records it.
+ *
+ * Returns `{ description, designation }`, or null when the file carries no
+ * vehicle data. Read from raw text rather than a parsed DOM because
+ * vehicles.xml runs to hundreds of KB and this is the only field we need.
+ */
+export const readMissionAircraft = (vehiclesText) => {
+  if (!vehiclesText) return null;
+  const match = VEHICLE_DESCRIPTION.exec(vehiclesText);
+  const description = match?.[1]?.trim();
+  if (!description) return null;
+  const parts = description.split(":");
+  return {
+    description,
+    designation: (parts[parts.length - 1] || "").trim() || null,
+  };
+};
+
 const getChildText = (el, tagName) => {
   for (const child of el.children) {
     if (child.tagName === tagName) return child.textContent?.trim() ?? "";
@@ -196,12 +223,16 @@ export async function parseMsnxFile(file) {
     entries[key] = entry;
   }
 
-  const [gpxText, pointsText, legsText, segmentsText] = await Promise.all([
+  const vehiclesEntry = zip.file(VEHICLES_PATH);
+  const [gpxText, pointsText, legsText, segmentsText, vehiclesText] = await Promise.all([
     entries.gpx.async("string"),
     entries.points.async("string"),
     entries.legs.async("string"),
     entries.segments.async("string"),
+    vehiclesEntry ? vehiclesEntry.async("string") : Promise.resolve(""),
   ]);
+
+  const aircraft = readMissionAircraft(vehiclesText);
 
   // legs.xml is the bulk of a real mission (tens of MB of calc data this app
   // never reads). Pull the few plan values out of its text and leave the DOM
@@ -272,5 +303,5 @@ export async function parseMsnxFile(file) {
     return route;
   });
 
-  return { zip, docs, routes };
+  return { zip, docs, routes, aircraft };
 }

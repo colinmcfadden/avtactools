@@ -1,10 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import MissionSummary from "./MissionSummary";
+import AircraftPicker from "../feature/aircraft/AircraftPicker";
+import "../feature/aircraft/aircraft.css";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import { symbolDataUri } from "../feature/symbols/milsym";
 import packageJson from "../../package.json";
 
 const Controls = ({
+  aircraftProfiles,
+  activeAircraftProfile,
+  onSelectAircraft,
+  onManageAircraft,
   onImportMsnx,
   isSketching,
   toggleRouteSketch,
@@ -281,12 +287,25 @@ const Controls = ({
       )}
 
       <div className="ff-scroll-content">
+        {/* Mission aircraft — drives icons, separation, capacity, and plan defaults */}
+        <div className="ff-card">
+          <div className="ff-card-header">Aircraft</div>
+          <AircraftPicker
+            profiles={aircraftProfiles}
+            activeProfile={activeAircraftProfile}
+            onSelect={onSelectAircraft}
+            onManage={onManageAircraft}
+            canManage={can("aircraft_profiles")}
+          />
+        </div>
+
         {/* Terrain & Mission Data Tile */}
         {can("lz_pz_tools") && (
         <div className="ff-card ff-card-analysis">
           <div className="ff-card-header">LZ/PZ Analysis</div>
           <div className="mission-data-grid">
             <MissionSummary
+              aircraftProfile={activeAircraftProfile}
               detectedLZ={detectedLZ}
               terrainData={terrainData}
               targetLocation={targetLocation}
