@@ -129,6 +129,36 @@ def send_password_reset_email(user, raw_token):
     )
 
 
+def send_mil_verification_email(mil_email, code, name=None):
+    """Send a short affiliation-verification code to a .mil address.
+
+    A code (not a link) is used deliberately: DoD mail is often read on a device
+    or network that can't reach the app, so the user reads the code there and
+    types it into the planner on whatever device they're signed in on.
+    """
+    safe_name = html.escape(name or "there")
+    safe_code = html.escape(code)
+    return send_email(
+        mil_email,
+        "Your EZ-PZ military verification code",
+        (
+            f"Hello {name or 'there'},\n\n"
+            f"Enter this code in EZ-PZ to verify your military affiliation:\n\n"
+            f"    {code}\n\n"
+            "The code expires in 30 minutes. If you did not request it, ignore "
+            "this message."
+        ),
+        (
+            f"<p>Hello {safe_name},</p>"
+            "<p>Enter this code in EZ-PZ to verify your military affiliation:</p>"
+            f'<p style="font-size:24px;font-weight:700;letter-spacing:3px;'
+            f'font-family:monospace">{safe_code}</p>'
+            "<p>The code expires in 30 minutes. If you did not request it, you "
+            "can ignore this message.</p>"
+        ),
+    )
+
+
 def send_welcome_email(user):
     safe_name = html.escape(user.name or "there")
     return send_email(

@@ -25,6 +25,14 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     features = db.Column(db.JSON, nullable=True)
 
+    # Military affiliation. A user proves DoD affiliation by verifying control of
+    # a .mil address (mil_verified_at set), or an admin approves them manually
+    # (access_approved). New users default to unapproved; the ALTER grandfathers
+    # everyone who existed before the gate was introduced. See entitlements.py.
+    mil_email = db.Column(db.String(120), nullable=True)
+    mil_verified_at = db.Column(db.DateTime, nullable=True)
+    access_approved = db.Column(db.Boolean, nullable=False, default=False)
+
     # This creates a relationship so you can easily get all LZs for a user (e.g., user.saved_lzs)
     saved_lzs = db.relationship('SavedLZ', backref='author', lazy=True)
     saved_routes = db.relationship('SavedRoute', backref='author', lazy=True)
@@ -93,6 +101,24 @@ class AccountToken(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     user = db.relationship('User', back_populates='account_tokens')
+
+
+class LoginEvent(db.Model):
+    """A successful sign-in, for the admin per-user login history."""
+
+    __tablename__ = 'login_event'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey('user.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True,
+    )
+    method = db.Column(db.String(20), nullable=False, default='password')  # google | password
+    ip = db.Column(db.String(64), nullable=True)
+    user_agent = db.Column(db.String(400), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
 class SavedRoute(db.Model):

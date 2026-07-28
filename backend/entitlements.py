@@ -39,6 +39,22 @@ def is_admin(user):
     return user is not None and (getattr(user, "role", "user") == "admin" or is_super_admin(user))
 
 
+def affiliation_ok(user):
+    """True if the user has cleared the military-affiliation gate.
+
+    Cleared by verifying a .mil address (mil_verified_at), by an admin approving
+    them (access_approved — also how pre-gate accounts are grandfathered), or by
+    being an admin/super-admin (trusted).
+    """
+    if user is None:
+        return False
+    if is_admin(user):
+        return True
+    if getattr(user, 'mil_verified_at', None) is not None:
+        return True
+    return bool(getattr(user, 'access_approved', False))
+
+
 def account_active(user):
     if user is None:
         return False

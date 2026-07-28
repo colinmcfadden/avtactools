@@ -116,6 +116,17 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   }, []);
 
+  const requestMilCode = useCallback(async (email) => {
+    const res = await api.post("/auth/mil/request", { email });
+    return res.data;
+  }, []);
+
+  const verifyMil = useCallback(async (code) => {
+    const res = await api.post("/auth/mil/verify", { code });
+    if (res.data?.user) setUser(res.data.user);
+    return res.data;
+  }, []);
+
   const dismissAuthNotice = useCallback(() => setAuthNotice(""), []);
 
   const clearSession = useCallback((notice = "") => {
@@ -140,6 +151,8 @@ export const AuthProvider = ({ children }) => {
       resendVerification,
       requestPasswordReset,
       resetPassword,
+      requestMilCode,
+      verifyMil,
       dismissAuthNotice,
       clearSession,
       logout,
@@ -155,6 +168,8 @@ export const AuthProvider = ({ children }) => {
       resendVerification,
       requestPasswordReset,
       resetPassword,
+      requestMilCode,
+      verifyMil,
       dismissAuthNotice,
       clearSession,
       logout,

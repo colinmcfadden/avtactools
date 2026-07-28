@@ -1,6 +1,6 @@
-from flask import Flask, redirect, request
+from flask import Flask, redirect, request, jsonify
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager
+from flask_jwt_extended import JWTManager, verify_jwt_in_request, get_jwt_identity
 from dotenv import load_dotenv
 from datetime import timedelta
 import os
@@ -13,7 +13,7 @@ except ImportError:
     __version__ = "0.0.0-dev"
 
 from models import User, db
-from entitlements import account_active
+from entitlements import account_active, affiliation_ok
 from security_config import resolve_jwt_secret, validate_email_configuration
 
 # Import your Blueprints
@@ -114,6 +114,39 @@ def token_is_revoked(_jwt_header, jwt_payload):
     # otherwise retain the old 30-day lifetime after deployment.
     return 'sv' not in jwt_payload or jwt_payload.get('sv') != expected_version
 
+
+@app.before_request
+def enforce_affiliation_gate():
+    """Server-side military-affiliation gate.
+
+    The frontend hides the app until a user clears the gate, but a signed-in
+    user could otherwise call the API directly with their token. Refuse every
+    ``/api/*`` request from an unverified, unapproved user — except the auth
+    flows they still need (login, register, Google, /me, and .mil verification
+    itself), which all live under ``/api/auth/``.
+    """
+    path = request.path
+    if not path.startswith('/api/') or path.startswith('/api/auth/'):
+        return None
+    try:
+        verify_jwt_in_request(optional=True)
+        identity = get_jwt_identity()
+    except Exception:  # noqa: BLE001 — bad/expired token: let the view's own guard answer
+        return None
+    if identity is None:
+        return None  # anonymous request to a public endpoint — unchanged
+    try:
+        user = db.session.get(User, int(identity))
+    except (TypeError, ValueError):
+        return None
+    if user is not None and not affiliation_ok(user):
+        return jsonify({
+            "error": "Military affiliation verification is required to use this feature.",
+            "code": "affiliation_required",
+        }), 403
+    return None
+
+
 # Register Blueprints
 app.register_blueprint(export_bp)
 app.register_blueprint(terrain_bp)
@@ -166,6 +199,11 @@ with app.app_context():
         'ALTER TABLE "user" ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT \'user\'',
         'ALTER TABLE "user" ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE',
         'ALTER TABLE "user" ADD COLUMN features JSON',
+        'ALTER TABLE "user" ADD COLUMN mil_email VARCHAR(120)',
+        'ALTER TABLE "user" ADD COLUMN mil_verified_at TIMESTAMP',
+        # DEFAULT TRUE grandfathers everyone who existed before the affiliation
+        # gate; new accounts insert access_approved=False via the model default.
+        'ALTER TABLE "user" ADD COLUMN access_approved BOOLEAN NOT NULL DEFAULT TRUE',
     ):
         try:
             db.session.execute(text(_ddl))
