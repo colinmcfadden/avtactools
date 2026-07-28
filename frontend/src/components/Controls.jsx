@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import MissionSummary from "./MissionSummary";
 import AircraftPicker from "../feature/aircraft/AircraftPicker";
+import CoordinateHint from "./CoordinateHint";
 import "../feature/aircraft/aircraft.css";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import { symbolDataUri } from "../feature/symbols/milsym";
@@ -257,6 +258,7 @@ const Controls = ({
                 <input
                   className="ff-input"
                   autoFocus
+                  placeholder="MGRS grid or lat/long"
                   value={gridInput}
                   onChange={(e) => setGridInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -267,6 +269,7 @@ const Controls = ({
                   GO
                 </button>
               </div>
+              <CoordinateHint value={gridInput} />
             </div>
           )}
         </div>
@@ -276,6 +279,7 @@ const Controls = ({
           <div className="ff-input-group">
             <input
               className="ff-input"
+              placeholder="MGRS grid or lat/long"
               value={gridInput}
               onChange={(e) => setGridInput(e.target.value)}
             />
@@ -283,6 +287,7 @@ const Controls = ({
               GO
             </button>
           </div>
+          <CoordinateHint value={gridInput} />
         </div>
       )}
 

@@ -29,6 +29,7 @@ import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
 import { useAircraftProfiles } from "./feature/aircraft/useAircraftProfiles";
 import AircraftProfileModal from "./feature/aircraft/AircraftProfileModal";
 import { matchProfileToAircraft } from "./feature/aircraft/aircraftProfiles";
+import { parseCoordinate } from "./utils/coordParse";
 import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
 import RoutesPanel from "./feature/msnxImport/RoutesPanel";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
@@ -1003,13 +1004,31 @@ function App() {
   const handleSearch = async () => {
     setLoading(true);
     try {
+      // The target field takes a grid or a pasted lat/long in any common
+      // notation. A coordinate already gives us the position, so it only needs
+      // converting to MGRS for display; a grid needs the conversion the other
+      // way. parseCoordinate refuses anything that is a valid grid, so an MGRS
+      // entry can never be diverted down the coordinate path.
+      const coordinate = parseCoordinate(gridInput);
+      if (coordinate) {
+        const { lat, lon } = coordinate;
+        const res = await api.post("/convert-to-mgrs", { lat, lon });
+        const mgrs = res.data?.mgrs;
+        if (!mgrs) throw new Error("The server didn't return a grid for that position.");
+        // startDiagramAtTarget rewrites the field with the grid, so the user
+        // sees their coordinate resolve into the MGRS the rest of the app uses.
+        startDiagramAtTarget([lat, lon], mgrs);
+        return;
+      }
+
       const res = await api.post("/convert-grid", {
         grid: gridInput,
       });
       const { lat, lon } = res.data;
       startDiagramAtTarget([lat, lon], gridInput);
     } catch (err) {
-      alert("Error finding grid: " + err.message);
+      const detail = err.response?.data?.message || err.response?.data?.error || err.message;
+      alert("Error finding grid: " + detail);
     } finally {
       setLoading(false);
       setIsMobileMenuOpen(false); // Closes menu if they searched from the sidebar
