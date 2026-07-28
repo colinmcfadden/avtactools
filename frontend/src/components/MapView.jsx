@@ -134,6 +134,8 @@ const MapView = ({
   mapData,
   detectedLZ,
   assets,
+  aircraftProfiles,
+  activeAircraftProfile,
   updateAsset,
   deleteAsset,
   terrainData,
@@ -387,6 +389,8 @@ const MapView = ({
           allAssets={assets}
           updateAsset={updateAsset}
           deleteAsset={deleteAsset}
+          profiles={aircraftProfiles}
+          activeProfile={activeAircraftProfile}
         />
       ))}
 

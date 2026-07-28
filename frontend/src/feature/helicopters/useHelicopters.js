@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { getDistanceFeet } from "../../utils/Helpers";
 import {
-  UH60_MIN_CENTER_SPACING_FEET,
-  UH60_ROTOR_TIP_CLEARANCE_FEET,
-} from "../../utils/helicopterCapacity";
+  FALLBACK_PROFILE,
+  edgeGapFt,
+  pairSeparation,
+  profileForAsset,
+} from "../aircraft/aircraftProfiles";
 
 /**
+ * Placed aircraft and their separation alerts.
+ *
+ * Each aircraft stores the profile it was placed with (`profileId`, a slug), so
+ * a mixed serial — Black Hawks with a Chinook — is measured correctly: the gap
+ * uses each aircraft's own rotor radius, and the requirement is the stricter of
+ * the two platforms' tip clearances.
+ *
  * Optional controlled-state shape:
  *   { helicopters: Helicopter[], setHelicopters: React.Dispatch<React.SetStateAction<Helicopter[]>> }
  */
@@ -14,6 +23,8 @@ export const useHelicopters = (targetLocation, options = {}) => {
   const [proximityAlerts, setProximityAlerts] = useState([]);
   const controlledHelicopters = options?.helicopters;
   const controlledSetHelicopters = options?.setHelicopters;
+  const profiles = options?.profiles;
+  const activeProfile = options?.activeProfile || FALLBACK_PROFILE;
   const isControlled =
     controlledHelicopters !== undefined &&
     typeof controlledSetHelicopters === "function";
@@ -24,6 +35,15 @@ export const useHelicopters = (targetLocation, options = {}) => {
   const helicopterList = useMemo(
     () => (Array.isArray(helicopters) ? helicopters : []),
     [helicopters],
+  );
+  const profileList = useMemo(
+    () => (Array.isArray(profiles) ? profiles : []),
+    [profiles],
+  );
+
+  const resolveProfile = useMemo(
+    () => (helicopter) => profileForAsset(helicopter, profileList, activeProfile),
+    [profileList, activeProfile],
   );
 
   const addHelo = () => {
@@ -38,6 +58,8 @@ export const useHelicopters = (targetLocation, options = {}) => {
     let attempts = 0;
     const offsetStep = 0.0001;
 
+    // Nudge the new aircraft clear of anything already down, respecting the
+    // separation each existing pair actually requires.
     while (!isClear && attempts < 50) {
       isClear = true;
       for (const helicopter of helicopterList) {
@@ -47,7 +69,11 @@ export const useHelicopters = (targetLocation, options = {}) => {
           helicopter.lat,
           helicopter.lon,
         );
-        if (distance < UH60_MIN_CENTER_SPACING_FEET) {
+        const { minCenterDistanceFt } = pairSeparation(
+          activeProfile,
+          resolveProfile(helicopter),
+        );
+        if (distance < minCenterDistanceFt) {
           isClear = false;
           finalLon += offsetStep;
           break;
@@ -62,6 +88,9 @@ export const useHelicopters = (targetLocation, options = {}) => {
       lon: finalLon,
       rotation: 0,
       type: "helo",
+      // Recorded by slug so the aircraft keeps its identity across databases
+      // and after the master list is renumbered.
+      profileId: activeProfile?.slug || FALLBACK_PROFILE.slug,
     };
 
     setHelicopters((previous) => [
@@ -97,21 +126,31 @@ export const useHelicopters = (targetLocation, options = {}) => {
       ) {
         const firstHelicopter = helicopterList[index];
         const secondHelicopter = helicopterList[comparisonIndex];
+        const firstProfile = resolveProfile(firstHelicopter);
+        const secondProfile = resolveProfile(secondHelicopter);
         const centerDistance = getDistanceFeet(
           firstHelicopter.lat,
           firstHelicopter.lon,
           secondHelicopter.lat,
           secondHelicopter.lon,
         );
-        const edgeToEdgeDistance =
-          centerDistance -
-          (UH60_MIN_CENTER_SPACING_FEET - UH60_ROTOR_TIP_CLEARANCE_FEET);
+        const gap = edgeGapFt(centerDistance, firstProfile, secondProfile);
+        const { requiredClearanceFt } = pairSeparation(firstProfile, secondProfile);
 
-        if (edgeToEdgeDistance < UH60_ROTOR_TIP_CLEARANCE_FEET) {
-          const displayDistance = Math.max(0, Math.round(edgeToEdgeDistance));
+        if (gap < requiredClearanceFt) {
+          const displayDistance = Math.max(0, Math.round(gap));
+          // Name the platforms when they differ so it's obvious which
+          // requirement is driving the alert.
+          const pair =
+            firstProfile.slug === secondProfile.slug
+              ? firstProfile.designation
+              : `${firstProfile.designation}/${secondProfile.designation}`;
           alerts.push({
             id: `${firstHelicopter.id}-${secondHelicopter.id}`,
-            message: `Separation Alert: Rotor edges are only ${displayDistance} ft apart (Min: ${Math.round(UH60_ROTOR_TIP_CLEARANCE_FEET)} ft / 60 m).`,
+            message:
+              `Separation Alert (${pair}): Rotor edges are only ${displayDistance} ft apart ` +
+              `(Min: ${Math.round(requiredClearanceFt)} ft / ` +
+              `${Math.round(Math.max(firstProfile.rotor_tip_clearance_m, secondProfile.rotor_tip_clearance_m))} m).`,
           });
         }
       }
@@ -128,7 +167,7 @@ export const useHelicopters = (targetLocation, options = {}) => {
 
       return unchanged ? previous : alerts;
     });
-  }, [helicopterList]);
+  }, [helicopterList, resolveProfile]);
 
   return {
     helicopters: helicopterList,

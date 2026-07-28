@@ -19,7 +19,7 @@ export const useMsnxImport = () => {
   const filesRef = useRef(new Map()); // fileId -> { zip, docs, originalName }
 
   const importMsnxFile = async (file) => {
-    const { zip, docs, routes } = await parseMsnxFile(file);
+    const { zip, docs, routes, aircraft } = await parseMsnxFile(file);
     const fileId = generateId("msnxfile");
     filesRef.current.set(fileId, { zip, docs, originalName: file.name });
 
@@ -39,7 +39,9 @@ export const useMsnxImport = () => {
     }));
 
     setImportedRoutes((prev) => [...prev, ...newRoutes]);
-    return { fileId };
+    // The airframe AMPS recorded in the mission, so the caller can switch the
+    // active aircraft to match what was actually planned.
+    return { fileId, aircraft };
   };
 
   const toggleRouteVisibility = (routeId) => {

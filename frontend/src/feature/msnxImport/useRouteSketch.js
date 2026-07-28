@@ -7,7 +7,7 @@ import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
 
 const generateId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-export const useRouteSketch = () => {
+export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   const [isSketching, setIsSketching] = useState(false);
   const [draftPoints, setDraftPoints] = useState([]);
   const [sketchedRoutes, setSketchedRoutes] = useState([]);
@@ -58,7 +58,7 @@ export const useRouteSketch = () => {
       name,
       color: nextRouteColor(),
       visible: true,
-      plan: defaultRoutePlan(),
+      plan: defaultRoutePlan(aircraftProfile),
       elevations: {},
       points: draftPoints.map((p, i) => {
         const base = {
@@ -344,7 +344,10 @@ export const useRouteSketch = () => {
   const exportSketches = async () => {
     if (sketchedRoutes.length === 0) return;
     try {
-      await buildSketchMsnx(sketchedRoutes);
+      const result = await buildSketchMsnx(sketchedRoutes, undefined, aircraftProfile);
+      // The file already downloaded; tell the user only when AMPS will open it
+      // as a different airframe than the one they planned with.
+      if (result?.warning) alert(result.warning);
     } catch (err) {
       alert("Error exporting routes: " + err.message);
     }

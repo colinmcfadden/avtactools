@@ -2,10 +2,16 @@ import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import { calculateAngle, getRotorEdgeCoords } from '../../utils/Helpers';
-import { UH60_ROTOR_TIP_CLEARANCE_FEET } from '../../utils/helicopterCapacity';
 import { mapObjectControlMarkup } from '../../utils/mapObjectControls';
+import { aircraftSvg } from '../aircraft/aircraftIcons';
+import {
+  FALLBACK_PROFILE,
+  pairSeparation,
+  profileForAsset,
+  rotorRadiusFt,
+} from '../aircraft/aircraftProfiles';
 
-const getHeloIcon = (rot, sizePx = 40) => {
+const getHeloIcon = (rot, sizePx = 40, iconKey = 'uh60') => {
   const displayRot = Math.round(((rot % 360) + 360) % 360);
   const boxWidth = Math.max(sizePx + 100, 140);
 
@@ -38,7 +44,7 @@ const getHeloIcon = (rot, sizePx = 40) => {
                     </div>
                     
                     <div class="helo-sprite" style="transform: rotate(${rot || 0}deg); display: flex; width: 100%; height: 100%;">
-                        <img src="/icons/helicopter.png" style="width: 100%; height: 100%; object-fit: contain; pointer-events: none;" draggable="false" />
+                        ${aircraftSvg(iconKey, sizePx)}
                     </div>
                 </div>
             </div>
@@ -48,26 +54,46 @@ const getHeloIcon = (rot, sizePx = 40) => {
   });
 };
 
-const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
+const Helicopter = ({
+  asset,
+  updateAsset,
+  deleteAsset,
+  allAssets,
+  profiles,
+  activeProfile,
+}) => {
   const map = useMap();
   const heloRef = useRef(null);
   const linesLayerRef = useRef(null);
   const stateRef = useRef(asset);
-  
+
   const deleteAssetRef = useRef(deleteAsset);
   const allAssetsRef = useRef(allAssets);
   const updateRef = useRef(updateAsset);
+  // Profile lookups happen inside imperative Leaflet handlers, so keep them on
+  // a ref rather than closing over a stale render's props.
+  const profilesRef = useRef(profiles);
+  const activeProfileRef = useRef(activeProfile);
+
+  const profile = profileForAsset(asset, profiles, activeProfile) || FALLBACK_PROFILE;
+  const profileRef = useRef(profile);
 
   useEffect(() => {
     stateRef.current = asset;
     deleteAssetRef.current = deleteAsset;
     allAssetsRef.current = allAssets;
     updateRef.current = updateAsset;
-  }, [asset, deleteAsset, allAssets, updateAsset]);
+    profilesRef.current = profiles;
+    activeProfileRef.current = activeProfile;
+    profileRef.current = profile;
+  }, [asset, deleteAsset, allAssets, updateAsset, profiles, activeProfile, profile]);
 
+  // The sprite is drawn at the aircraft's true rotor diameter, so a Chinook
+  // reads as visibly larger than a Little Bird at the same zoom.
   const calculateSizePx = (lat) => {
     const zoom = map.getZoom();
-    const rotorDiameterMeters = 16.357; 
+    const rotorDiameterMeters =
+      profileRef.current?.rotor_diameter_m || FALLBACK_PROFILE.rotor_diameter_m;
     const metersPerPx = 156543.03392 * Math.cos((lat * Math.PI) / 180) / Math.pow(2, zoom);
     return Math.max(rotorDiameterMeters / metersPerPx, 15);
   };
@@ -77,16 +103,25 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
     linesLayerRef.current.clearLayers(); 
     
     const otherHelos = allAssetsRef.current.filter(a => a.type === "helo" && a.id !== asset.id);
-    
+    const selfProfile = profileRef.current;
+
     otherHelos.forEach(other => {
-        // 1. Get the snapped edge coordinates and true edge-to-edge distance
-        const { start, end, edgeDist } = getRotorEdgeCoords(
-            currentLat, currentLon, 
-            other.lat, other.lon
+        const otherProfile = profileForAsset(
+            other, profilesRef.current, activeProfileRef.current,
         );
-        
-        // A violation occurs when rotor-tip paths are less than 60 m apart.
-        const isViolation = edgeDist < UH60_ROTOR_TIP_CLEARANCE_FEET;
+
+        // 1. Snap each end in by its own aircraft's rotor radius, so mixed
+        //    formations measure tip-to-tip rather than assuming one airframe.
+        const { start, end, edgeDist } = getRotorEdgeCoords(
+            currentLat, currentLon,
+            other.lat, other.lon,
+            rotorRadiusFt(selfProfile), rotorRadiusFt(otherProfile),
+        );
+
+        // A violation is judged against the stricter of the two platforms'
+        // tip-clearance requirements.
+        const { requiredClearanceFt } = pairSeparation(selfProfile, otherProfile);
+        const isViolation = edgeDist < requiredClearanceFt;
         
         // 3. Find the exact middle of our new, shorter line for the text badge
         const midLat = (start[0] + end[0]) / 2;
@@ -306,7 +341,7 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
     const initialSize = calculateSizePx(asset.lat);
 
     const helo = L.marker([asset.lat, asset.lon], {
-      icon: getHeloIcon(asset.rotation || 0, initialSize), 
+      icon: getHeloIcon(asset.rotation || 0, initialSize, profileRef.current?.icon_key),
       draggable: false, 
       zIndexOffset: 500,
     }).addTo(map);
@@ -319,7 +354,7 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
 
     const handleZoom = () => {
       const newSize = calculateSizePx(stateRef.current.lat);
-      helo.setIcon(getHeloIcon(stateRef.current.rotation, newSize));
+      helo.setIcon(getHeloIcon(stateRef.current.rotation, newSize, profileRef.current?.icon_key));
       setTimeout(() => attachListeners(helo), 50);
     };
     map.on("zoomend", handleZoom);
@@ -349,9 +384,9 @@ const Helicopter = ({ asset, updateAsset, deleteAsset, allAssets }) => {
     const currentSize = calculateSizePx(asset.lat);
     
     heloRef.current.setLatLng([asset.lat, asset.lon]);
-    heloRef.current.setIcon(getHeloIcon(asset.rotation || 0, currentSize));
+    heloRef.current.setIcon(getHeloIcon(asset.rotation || 0, currentSize, profile.icon_key));
     setTimeout(() => attachListeners(heloRef.current), 50);
-  }, [asset.lat, asset.lon, asset.rotation, map]);
+  }, [asset.lat, asset.lon, asset.rotation, map, profile.icon_key, profile.rotor_diameter_m]);
 
   return null;
 };

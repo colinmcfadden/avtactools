@@ -1,28 +1,31 @@
 import React, { useMemo } from "react";
 import { getPolygonArea } from "../utils/Helpers";
 import {
-  calculateUH60Capacity,
-  UH60_MIN_CENTER_SPACING_METERS,
-  UH60_ROTOR_TIP_CLEARANCE_METERS,
-} from "../utils/helicopterCapacity";
+  FALLBACK_PROFILE,
+  capacityForArea,
+  centerSpacingM,
+  tipClearanceM,
+} from "../feature/aircraft/aircraftProfiles";
 
-const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather }) => {
+const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather, aircraftProfile }) => {
+  const profile = aircraftProfile || FALLBACK_PROFILE;
+
   // 1. CALCULATE AREA & CAPACITY
   const stats = useMemo(() => {
     if (!detectedLZ) return { area: 0, heloCount: 0 };
-    
-    // 1. Get total area in SQUARE FEET 
+
+    // 1. Get total area in SQUARE FEET
     const areaSqFt = getPolygonArea(detectedLZ);
-    
-    // A 60 m rotor-tip-to-rotor-tip buffer requires 76.357 m between UH-60
-    // centers. Capacity is intentionally a conservative square-grid estimate.
-    const heloCount = calculateUH60Capacity(areaSqFt);
-    
-    return { 
-        area: Math.round(areaSqFt), 
-        heloCount: Math.max(0, heloCount) 
+
+    // Capacity is a conservative square-grid estimate using the selected
+    // aircraft's own spacing, so a Chinook LZ holds fewer than a Black Hawk one.
+    const heloCount = capacityForArea(areaSqFt, profile);
+
+    return {
+        area: Math.round(areaSqFt),
+        heloCount: Math.max(0, heloCount)
     };
-  }, [detectedLZ]);
+  }, [detectedLZ, profile]);
 
   // 2. SLOPES
   const slopeStatus = useMemo(() => {
@@ -60,9 +63,9 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
       <div className="ms-tile span-2">
         <div
           className="ms-label"
-          title={`${UH60_ROTOR_TIP_CLEARANCE_METERS} m rotor-tip clearance / ${UH60_MIN_CENTER_SPACING_METERS.toFixed(1)} m center spacing`}
+          title={`${profile.designation}: ${tipClearanceM(profile).toFixed(0)} m rotor-tip clearance / ${centerSpacingM(profile).toFixed(1)} m center spacing`}
         >
-          Capacity
+          Capacity · {profile.designation}
         </div>
         <div className="ms-value highlight">{stats.heloCount}</div>
       </div>

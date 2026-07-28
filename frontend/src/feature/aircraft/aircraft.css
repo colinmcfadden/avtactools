@@ -1,0 +1,221 @@
+/* Aircraft profile picker (control panel) and the profile manager modal. */
+
+.aircraft-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aircraft-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aircraft-picker__glyph {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.aircraft-picker-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 0.8rem;
+}
+
+.aircraft-picker-select:focus {
+  outline: none;
+  border-color: #5aa7d4;
+}
+
+/* Native option lists render on the OS surface, so they need explicit colors. */
+.aircraft-picker-select option {
+  background: #1a1e25;
+  color: #e7eaee;
+}
+
+.aircraft-picker__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding-left: 2px;
+  font-size: 0.68rem;
+  opacity: 0.72;
+}
+
+.aircraft-picker__warn {
+  color: #d5a03f;
+  opacity: 1;
+}
+
+.aircraft-picker__manage {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #7cbde0;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.aircraft-picker__manage:hover {
+  color: #a9d3ec;
+}
+
+/* --- profile manager modal ------------------------------------------------ */
+
+.ac-hint {
+  margin: 0 0 12px;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  opacity: 0.72;
+}
+
+.ac-hint--tight {
+  margin-bottom: 8px;
+}
+
+.ac-error {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(214, 107, 100, 0.45);
+  border-radius: 6px;
+  background: rgba(214, 107, 100, 0.1);
+  color: #e4aaa5;
+  font-size: 0.76rem;
+}
+
+.ac-section-label {
+  margin: 14px 0 8px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.ac-empty {
+  margin: 0 0 8px;
+  font-size: 0.76rem;
+  opacity: 0.5;
+}
+
+.ac-list {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ac-list__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ac-list__glyph {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+}
+
+.ac-list__text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.ac-list__text strong {
+  font-size: 0.82rem;
+}
+
+.ac-list__text small {
+  font-size: 0.68rem;
+  opacity: 0.62;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ac-list__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.ac-list__actions button {
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+.ac-list__actions button:hover {
+  border-color: #5aa7d4;
+}
+
+.ac-list__actions .ac-danger {
+  color: #e39a95;
+  border-color: rgba(214, 107, 100, 0.4);
+}
+
+.ac-list__actions .ac-danger:hover {
+  border-color: #d66b64;
+  background: rgba(214, 107, 100, 0.1);
+}
+
+.ac-icon-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ac-icon-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.ac-icon-choice:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.ac-icon-choice.on {
+  border-color: #5aa7d4;
+  background: rgba(90, 167, 212, 0.14);
+}

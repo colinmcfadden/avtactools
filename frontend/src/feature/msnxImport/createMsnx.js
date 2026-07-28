@@ -10,6 +10,7 @@ import {
   downloadBlob,
 } from "./mutateMsnx.js";
 import { computeRoutePlan, defaultRoutePlan } from "./routeCalc.js";
+import { resolveExportTemplate } from "./aircraftTemplate.js";
 import {
   FT_TO_M,
   formatAmpsAirspeed,
@@ -19,8 +20,6 @@ import {
   formatAmpsElevation,
   formatAmpsClockTime,
 } from "./ampsFormats.js";
-
-const TEMPLATE_URL = "/msnx_template.msnx";
 
 const TEMPLATE_PATHS = {
   ...MISSION_PATHS,
@@ -535,14 +534,22 @@ export async function buildSketchMsnxZip(templateData, sketchedRoutes, missionNa
   return zip;
 }
 
-/** Fetches the bundled template, builds the sketch .msnx, and downloads it. */
-export async function buildSketchMsnx(sketchedRoutes, filename = sketchedRoutes.map(route => route.name).join("_") + ".msnx") {
-  const res = await fetch(TEMPLATE_URL);
-  if (!res.ok) {
-    throw new Error("Couldn't load the mission template (msnx_template.msnx).");
-  }
+/**
+ * Builds the sketch .msnx on the right airframe's package and downloads it.
+ *
+ * Resolves the template from the aircraft profile: a package the admin
+ * attached when there is one, the bundled UH-60L otherwise. Returns the
+ * airframe warning (or null) so the caller can surface it — an export that
+ * silently opens as the wrong aircraft in AMPS is worse than one that says so.
+ */
+export async function buildSketchMsnx(
+  sketchedRoutes,
+  filename = sketchedRoutes.map(route => route.name).join("_") + ".msnx",
+  aircraftProfile = null,
+) {
+  const template = await resolveExportTemplate(aircraftProfile);
   const zip = await buildSketchMsnxZip(
-    await res.arrayBuffer(),
+    template.data,
     sketchedRoutes,
     filename.replace(/\.msnx$/i, ""),
   );
@@ -553,4 +560,5 @@ export async function buildSketchMsnx(sketchedRoutes, filename = sketchedRoutes.
     compressionOptions: { level: 6 },
   });
   downloadBlob(blob, filename);
+  return { airframe: template.airframe, exact: template.exact, warning: template.warning };
 }

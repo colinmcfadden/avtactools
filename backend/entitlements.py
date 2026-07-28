@@ -19,6 +19,11 @@ FEATURES = (
     ("threats", "Threats", "Threat planning and masks"),
     ("cloud_save", "Cloud save", "Save/load LZs, routes, and point sets"),
     ("exports", "Exports", "Export LZ cards, MSNX, ForeFlight, KMZ, .ths"),
+    (
+        "aircraft_profiles",
+        "Aircraft profiles",
+        "Create and manage custom aircraft profiles (the master list stays available)",
+    ),
 )
 
 FEATURE_KEYS = tuple(key for key, _label, _desc in FEATURES)
