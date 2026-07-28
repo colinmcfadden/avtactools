@@ -89,6 +89,39 @@
   </div>
 </div>
 
+<!-- Military affiliation -->
+<div class="card">
+  <h2>Military affiliation</h2>
+  {% if is_admin(u) %}
+    <p class="muted">Admins are trusted and bypass the affiliation gate.</p>
+  {% else %}
+    <div class="grid2">
+      <div class="muted">Status</div>
+      <div>
+        {% if u.mil_verified_at %}<span class="badge badge-ok">.mil verified</span>
+        {% elif u.access_approved %}<span class="badge badge-ok">admin-approved</span>
+        {% else %}<span class="badge badge-off">pending</span>{% endif %}
+      </div>
+      <div class="muted">.mil email</div>
+      <div class="mono">{{ u.mil_email or '—' }}{% if u.mil_email and not u.mil_verified_at %} <span class="muted">(unverified)</span>{% endif %}</div>
+      <div class="muted">Verified at</div>
+      <div>{{ u.mil_verified_at.strftime('%Y-%m-%d %H:%M') if u.mil_verified_at else '—' }}</div>
+    </div>
+    <form method="post" action="{{ url_for('admin.set_access_approval', uid=u.id) }}" style="margin-top:12px;">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      {% if u.access_approved %}
+        <input type="hidden" name="approved" value="0">
+        <button class="btn btn-sm" type="submit">Revoke manual approval</button>
+        <p class="muted" style="font-size:12px;">If they haven't verified a .mil address, they'll be gated again.</p>
+      {% else %}
+        <input type="hidden" name="approved" value="1">
+        <button class="btn btn-primary btn-sm" type="submit">Approve access (fallback)</button>
+        <p class="muted" style="font-size:12px;">Manually clears the gate for users who can't receive a .mil code.</p>
+      {% endif %}
+    </form>
+  {% endif %}
+</div>
+
 <!-- Feature entitlements -->
 <div class="card">
   <h2>Feature access</h2>
@@ -108,6 +141,34 @@
     <button class="btn btn-primary btn-sm" type="submit">Save features</button>
     <p class="muted" style="font-size:12px;">Unchecked features are hidden in the app and blocked on the server.</p>
   </form>
+  {% endif %}
+</div>
+
+<!-- Login history -->
+<div class="card" style="padding:0;overflow-x:auto;">
+  <h2 style="padding:18px 18px 0;">Login history <span class="muted" style="text-transform:none;letter-spacing:0;">({{ login_total }})</span></h2>
+  {% if logins %}
+    <table style="margin-top:10px;">
+      <thead><tr><th style="padding-left:18px;">When (UTC)</th><th>Method</th><th style="padding-right:18px;">IP address</th></tr></thead>
+      <tbody>
+        {% for e in logins %}
+        <tr>
+          <td class="mono" style="font-size:12px;padding-left:18px;">{{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') if e.created_at else '—' }}</td>
+          <td><span class="badge">{{ e.method }}</span></td>
+          <td class="mono muted" style="font-size:12px;padding-right:18px;">{{ e.ip or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if login_pages > 1 %}
+    <div class="row" style="justify-content:center;padding:12px;">
+      {% if lp > 1 %}<a class="btn btn-sm" href="{{ url_for('admin.user_detail', uid=u.id, lp=lp-1) }}">← Newer</a>{% endif %}
+      <span class="muted" style="font-size:12px;">Page {{ lp }} of {{ login_pages }}</span>
+      {% if lp < login_pages %}<a class="btn btn-sm" href="{{ url_for('admin.user_detail', uid=u.id, lp=lp+1) }}">Older →</a>{% endif %}
+    </div>
+    {% endif %}
+  {% else %}
+    <p class="muted" style="padding:0 18px 18px;">No logins recorded yet.</p>
   {% endif %}
 </div>
 

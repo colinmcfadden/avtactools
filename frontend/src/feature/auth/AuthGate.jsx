@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { useAuth } from "./AuthContext";
 import AuthScreen from "./AuthScreen";
+import AffiliationScreen from "./AffiliationScreen";
 import "./AuthScreen.css";
 
 const clearAuthQuery = () => {
@@ -46,6 +47,10 @@ const AuthGate = ({ children }) => {
   // account). Never silently discard their one-time token.
   if (tokenAuthAction) return <AuthScreen notice={authNotice} />;
   if (!user) return <AuthScreen notice={authNotice} />;
+  // Signed in but hasn't cleared the military-affiliation gate. `=== false` so a
+  // response without the field (e.g. mid-deploy) fails open rather than locking
+  // everyone out.
+  if (user.access_ok === false) return <AffiliationScreen />;
   return children;
 };
 

@@ -22,10 +22,10 @@ from werkzeug.security import check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-from models import db, User, SavedRoute, SavedLZ, SavedPointSet
+from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent
 from entitlements import (
     FEATURES, FEATURE_KEYS, resolve_features,
-    is_admin, is_super_admin, account_active,
+    is_admin, is_super_admin, account_active, affiliation_ok,
 )
 from auth_rate_limit import check_rate_limits
 from email_service import send_verification_email, send_password_reset_email
@@ -83,6 +83,7 @@ def _inject():
         'is_admin': is_admin,
         'is_super_admin': is_super_admin,
         'account_active': account_active,
+        'affiliation_ok': affiliation_ok,
     }
 
 
@@ -185,6 +186,9 @@ def users():
     )
 
 
+LOGINS_PER_PAGE = 15
+
+
 @admin_bp.route('/users/<int:uid>')
 @admin_required
 def user_detail(uid):
@@ -196,9 +200,18 @@ def user_detail(uid):
         'lzs': SavedLZ.query.filter_by(user_id=uid).count(),
         'point_sets': SavedPointSet.query.filter_by(user_id=uid).count(),
     }
+    try:
+        lp = max(1, int(request.args.get('lp', 1)))
+    except (TypeError, ValueError):
+        lp = 1
+    login_q = LoginEvent.query.filter_by(user_id=uid).order_by(LoginEvent.created_at.desc())
+    login_total = login_q.count()
+    logins = login_q.offset((lp - 1) * LOGINS_PER_PAGE).limit(LOGINS_PER_PAGE).all()
+    login_pages = max(1, (login_total + LOGINS_PER_PAGE - 1) // LOGINS_PER_PAGE)
     return render_template(
         'admin/user_detail.html',
         u=user, counts=counts, features=resolve_features(user),
+        logins=logins, lp=lp, login_pages=login_pages, login_total=login_total,
     )
 
 
@@ -220,6 +233,17 @@ def set_active(uid):
         user.is_active = request.form.get('active') == '1'
         db.session.commit()
         flash('Access ' + ('restored.' if user.is_active else 'suspended.'), 'ok')
+    return redirect(url_for('admin.user_detail', uid=uid))
+
+
+@admin_bp.route('/users/<int:uid>/access-approval', methods=['POST'])
+@admin_required
+def set_access_approval(uid):
+    _check_csrf()
+    user = _load_target(uid)
+    user.access_approved = request.form.get('approved') == '1'
+    db.session.commit()
+    flash('Affiliation access ' + ('approved.' if user.access_approved else 'revoked.'), 'ok')
     return redirect(url_for('admin.user_detail', uid=uid))
 
 
@@ -314,6 +338,7 @@ def delete_user(uid):
     SavedRoute.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
+    LoginEvent.query.filter_by(user_id=uid).delete()
     db.session.delete(user)  # cascades local_credential + account_tokens
     db.session.commit()
     flash('User deleted.', 'ok')
