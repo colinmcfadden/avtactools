@@ -90,6 +90,43 @@ def geoid_offset(lon: float, lat: float, *, transformer=None) -> float:
     return height
 
 
+def _close_gaps(grid: np.ndarray, *, passes: int = 24) -> np.ndarray:
+    """Fill cells with no DEM data by spreading the nearest real elevation.
+
+    The obvious fill is sea level, and it is badly wrong. A coarse tile spans
+    hundreds of kilometres and our DEMs cover a few states, so most of its
+    cells have no data: filling them with zero cut a trough 1200 m deep and
+    thousands of cells wide through the middle distance. Cesium cannot skirt a
+    seam that size, so the globe tore open and the sky showed through it.
+
+    Spreading the nearest known height keeps the surface continuous instead.
+    The result is wrong in the far field — a plateau where there is really
+    ocean or another state — but it is smooth, and nothing at that distance is
+    being measured. Anything still unreached after the dilation passes takes
+    the tile mean, which only happens on tiles with a sliver of coverage.
+    """
+    filled = grid.copy()
+    for _ in range(passes):
+        missing = np.isnan(filled)
+        if not missing.any():
+            return filled
+        # Average of whichever of the four neighbours are already known.
+        total = np.zeros_like(filled)
+        count = np.zeros_like(filled)
+        for axis, shift in ((0, 1), (0, -1), (1, 1), (1, -1)):
+            neighbour = np.roll(filled, shift, axis=axis)
+            known = ~np.isnan(neighbour)
+            total[known] += neighbour[known]
+            count[known] += 1
+        spreadable = missing & (count > 0)
+        filled[spreadable] = total[spreadable] / count[spreadable]
+
+    remaining = np.isnan(filled)
+    if remaining.any():
+        filled[remaining] = np.nanmean(grid)
+    return filled
+
+
 def _sources_for(bounds_latlon):
     """Local DEM files intersecting a tile, highest resolution first."""
     south, west, north, east = bounds_latlon
@@ -141,9 +178,7 @@ def sample_tile(level: int, x: int, y: int, *, samples: int = TILE_SAMPLES):
     if not filled or np.isnan(destination).all():
         return None
 
-    # A partially covered tile keeps its known heights; the rest goes to sea
-    # level, which is what Cesium assumes for a tile it has no data for.
-    destination = np.nan_to_num(destination, nan=0.0)
+    destination = _close_gaps(destination)
 
     try:
         destination += geoid_offset((west + east) / 2.0, (south + north) / 2.0)

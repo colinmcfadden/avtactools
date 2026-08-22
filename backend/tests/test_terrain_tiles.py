@@ -78,6 +78,51 @@ class EncodingTests(unittest.TestCase):
         self.assertEqual(high, -32768)
 
 
+class GapFillingTests(unittest.TestCase):
+    """Cells with no DEM must not be invented as sea level.
+
+    A coarse tile spans hundreds of kilometres while the DEMs cover a few
+    states, so most of its cells have no data. Filling those with zero cut a
+    trough over 1200 m deep through the middle distance; Cesium cannot skirt a
+    seam that size, so the globe tore open and the sky showed through it.
+    """
+
+    def test_a_gap_takes_the_surrounding_elevation_not_sea_level(self):
+        grid = np.full((9, 9), 600.0, dtype=np.float32)
+        grid[3:6, 3:6] = np.nan
+        filled = terrain_tiles._close_gaps(grid)
+        self.assertFalse(np.isnan(filled).any())
+        self.assertAlmostEqual(float(filled[4, 4]), 600.0, places=3)
+
+    def test_no_cell_is_left_near_sea_level_beside_high_ground(self):
+        """The specific failure: a 600 m plateau with a 0 m hole in it."""
+        grid = np.full((9, 9), 600.0, dtype=np.float32)
+        grid[2:7, 2:7] = np.nan
+        filled = terrain_tiles._close_gaps(grid)
+        self.assertGreater(float(filled.min()), 500.0)
+
+    def test_mostly_empty_tiles_are_still_closed(self):
+        """Coarse tiles are the ones that were worst: a sliver of coverage."""
+        grid = np.full((17, 17), np.nan, dtype=np.float32)
+        grid[0, 0] = 450.0
+        filled = terrain_tiles._close_gaps(grid)
+        self.assertFalse(np.isnan(filled).any())
+        self.assertGreater(float(filled.min()), 400.0)
+
+    def test_a_fully_covered_tile_is_untouched(self):
+        """Near the landing point nothing should change at all."""
+        grid = np.arange(81, dtype=np.float32).reshape(9, 9) + 400.0
+        filled = terrain_tiles._close_gaps(grid)
+        np.testing.assert_array_equal(filled, grid)
+
+    def test_real_relief_survives_the_fill(self):
+        """Filling must not flatten the terrain it is patching around."""
+        grid = np.tile(np.linspace(400.0, 900.0, 9, dtype=np.float32), (9, 1))
+        grid[4, 4] = np.nan
+        filled = terrain_tiles._close_gaps(grid)
+        self.assertAlmostEqual(float(filled.max() - filled.min()), 500.0, places=2)
+
+
 class SamplingTests(unittest.TestCase):
     def test_a_tile_with_no_local_dem_is_none_rather_than_an_error(self):
         """Cesium asks across the whole globe; the DEMs cover part of one country."""
