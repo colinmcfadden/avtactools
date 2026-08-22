@@ -1,0 +1,133 @@
+import React, { useEffect, useRef, useState } from "react";
+import { loadCesium } from "./cesiumSetup";
+// Cesium's own stylesheet sizes .cesium-widget to fill its container. Without
+// it the widget has no dimensions and the canvas falls back to its 300x150
+// default, so the scene renders into a postage stamp regardless of layout.
+import "cesium/Build/Cesium/Widgets/widgets.css";
+import "./viewer3d.css";
+
+// Classified 3DEP returns, coloured so ground reads as terrain and canopy as
+// canopy. These are ASPRS classification codes carried through from the source
+// tiles, so the scene distinguishes obstruction from ground without extra data.
+const CLASSIFICATION_STYLE = {
+  color: {
+    // Cesium's styling language uses ${...} inside ordinary strings, which
+    // ESLint reads as a template literal written with the wrong quotes.
+    /* eslint-disable no-template-curly-in-string */
+    conditions: [
+      ["${Classification} === 2", "color('#8a7f6a')"], // ground
+      ["${Classification} === 3", "color('#6f8f52')"], // low vegetation
+      ["${Classification} === 4", "color('#4f7d3c')"], // medium vegetation
+      ["${Classification} === 5", "color('#2f6b32')"], // high vegetation
+      ["true", "color('#8895a0')"],
+    ],
+    /* eslint-enable no-template-curly-in-string */
+  },
+  pointSize: 2.0,
+};
+
+/**
+ * A 3D view of one LiDAR point cloud tileset.
+ *
+ * The tileset is generated per area of interest by backend/lidar and holds
+ * classified 3DEP returns already reprojected into WGS84 geocentric metres,
+ * which is the frame Cesium renders in. Nothing is transformed here — if the
+ * heights are wrong they were wrong when the tiles were built.
+ */
+const Viewer3D = ({ tilesetUrl, onReady }) => {
+  const containerRef = useRef(null);
+  const [status, setStatus] = useState({ state: "loading", detail: "" });
+
+  useEffect(() => {
+    let cancelled = false;
+    let viewer = null;
+    let resizeObserver = null;
+
+    loadCesium()
+      .then(async (Cesium) => {
+        if (cancelled || !containerRef.current) return;
+
+        viewer = new Cesium.Viewer(containerRef.current, {
+          // The default widgets assume a globe browser. This view is a single
+          // site, so anything that only makes sense at planetary scale is off.
+          baseLayerPicker: false,
+          geocoder: false,
+          homeButton: false,
+          sceneModePicker: false,
+          navigationHelpButton: false,
+          animation: false,
+          timeline: false,
+          fullscreenButton: false,
+          infoBox: false,
+          selectionIndicator: false,
+        });
+
+        // No terrain is loaded yet, so the default ellipsoid globe would just
+        // occlude points that sit below it. Hidden until Stage 4 adds terrain.
+        viewer.scene.globe.show = false;
+        viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#05080d");
+
+        const tileset = await Cesium.Cesium3DTileset.fromUrl(tilesetUrl, {
+          // Points have no surface, so screen-space error is the only lever on
+          // how much detail streams in. The default is tuned for buildings.
+          maximumScreenSpaceError: 8,
+        });
+        if (cancelled) return;
+
+        viewer.scene.primitives.add(tileset);
+        tileset.style = new Cesium.Cesium3DTileStyle(CLASSIFICATION_STYLE);
+
+        // Ready means the tileset is in the scene, not that the camera has
+        // finished moving. zoomTo resolves only when its flight completes, and
+        // a flight needs the render loop — which is paused in a hidden or
+        // backgrounded tab, leaving the view stuck on "Loading" forever.
+        // Cesium sizes its canvas when the widget is created and then only on
+        // window resize. A container that changes size for any other reason —
+        // a panel opening, a flex reflow — leaves the canvas stale, so track
+        // the element itself.
+        resizeObserver = new ResizeObserver(() => {
+          if (!viewer.isDestroyed()) viewer.resize();
+        });
+        resizeObserver.observe(containerRef.current);
+
+        setStatus({ state: "ready", detail: "" });
+        onReady?.({ viewer, tileset, Cesium });
+
+        viewer.zoomTo(tileset).catch(() => {
+          /* the camera can fail to settle without a render loop; the tileset
+             is already loaded and visible once frames resume */
+        });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStatus({ state: "error", detail: error?.message || String(error) });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      resizeObserver?.disconnect();
+      // Cesium holds a WebGL context and a worker pool. Without an explicit
+      // destroy they outlive unmount and the next viewer fails to get a context.
+      if (viewer && !viewer.isDestroyed()) viewer.destroy();
+    };
+  }, [tilesetUrl, onReady]);
+
+  return (
+    <div className="viewer3d">
+      <div ref={containerRef} className="viewer3d__canvas" />
+      {status.state !== "ready" && (
+        <div
+          className={`viewer3d__status${
+            status.state === "error" ? " viewer3d__error" : ""
+          }`}
+        >
+          <strong>{status.state === "error" ? "3D view failed" : "Loading"}</strong>
+          {status.state === "error" ? status.detail : "Preparing point cloud…"}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Viewer3D;
