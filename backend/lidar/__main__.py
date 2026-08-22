@@ -90,9 +90,16 @@ def main(argv=None) -> int:
                              "0,1,2 or their obstructions are discarded")
     parser.add_argument("--color-by", default=pipeline.COLOR_BY_CLASSIFICATION,
                         choices=[pipeline.COLOR_BY_CLASSIFICATION,
-                                 pipeline.COLOR_BY_HEIGHT, "none"],
-                        help="height reads obstruction height directly and "
-                             "works on an unclassified survey")
+                                 pipeline.COLOR_BY_HEIGHT,
+                                 pipeline.COLOR_BY_IMAGERY, "none"],
+                        help="imagery samples real colour from --imagery and "
+                             "looks photographic; height reads obstruction "
+                             "height directly and works on an unclassified "
+                             "survey")
+    parser.add_argument("--imagery", default=None,
+                        help="GDAL-readable aerial imagery for --color-by "
+                             "imagery; a GDAL_WMS service description points "
+                             "at tile servers without downloading anything")
     parser.add_argument("--spacing", type=float, default=DISPLAY_SPACING_M,
                         help="thin to roughly one point per this many metres; "
                              "0 keeps full density for measurement")
@@ -155,6 +162,7 @@ def main(argv=None) -> int:
             source, args.out, bbox=bbox, source_srs=source_srs,
             thin_spacing_m=args.spacing or None,
             classes=classes, color_by=color_by,
+            imagery_raster=args.imagery,
         )
     except TileBuildError as error:
         print(f"\nfailed: {error}", file=sys.stderr)

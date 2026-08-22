@@ -37,7 +37,7 @@ def build_pointcloud_tiles(source, output_dir: Path, *, bbox,
                            source_srs: str, thin_spacing_m=DISPLAY_SPACING_M,
                            classes=pipeline.OBSTRUCTION_CLASSES,
                            color_by=pipeline.COLOR_BY_CLASSIFICATION,
-                           runner=None) -> Path:
+                           imagery_raster=None, runner=None) -> Path:
     """Produce a 3D Tiles point cloud, returning the path to its tileset.json.
 
     ``source`` may be a local file, a remote EPT/COPC URL, or a list of local
@@ -58,7 +58,8 @@ def build_pointcloud_tiles(source, output_dir: Path, *, bbox,
         stages = pipeline.build(source, str(reprojected), bbox=bbox,
                                 source_srs=source_srs, classes=classes,
                                 thin_spacing_m=thin_spacing_m,
-                                color_by=color_by)
+                                color_by=color_by,
+                                imagery_raster=imagery_raster)
         pipeline_file = scratch / "pipeline.json"
         pipeline_file.write_text(pipeline.to_json(stages))
 

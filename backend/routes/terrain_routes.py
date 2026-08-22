@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from flask_jwt_extended import jwt_required
 import numpy as np
 import mercantile
@@ -8,6 +8,7 @@ from ultralytics import SAM
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
+import terrain_tiles
 from terrain_provider import build_slope_analysis
 
 terrain_bp = Blueprint('terrain', __name__)
@@ -265,3 +266,38 @@ def get_elevations():
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         return jsonify({'error': str(e), 'elevationsFt': [None] * len(pts)})
+
+
+@terrain_bp.route('/api/terrain/heightmap/<int:level>/<int:x>/<int:y>', methods=['GET'])
+@jwt_required()
+def terrain_heightmap(level, x, y):
+    """Elevations for one terrain tile, as little-endian Int16 metres.
+
+    Feeds Cesium's CustomHeightmapTerrainProvider in the 3D view. A tile
+    outside the mounted DEM coverage answers 204, which the provider reads as
+    "no data here" and renders flat — the DEMs cover part of one country and
+    Cesium asks across the whole globe.
+
+    Heights are ellipsoidal, matching the frame the LiDAR tiles are built in.
+    """
+    if level > terrain_tiles.MAX_LEVEL:
+        # Past this the tile is finer than the 1/3 arc-second source, so there
+        # is nothing further to serve and Cesium should stop subdividing.
+        return ('', 204)
+
+    try:
+        heights = terrain_tiles.sample_tile(level, x, y)
+    except terrain_tiles.TerrainTileError as error:
+        return jsonify({'error': str(error)}), 400
+
+    if heights is None:
+        return ('', 204)
+
+    response = make_response(terrain_tiles.encode(heights))
+    response.headers['Content-Type'] = 'application/octet-stream'
+    response.headers['X-Terrain-Samples'] = str(terrain_tiles.TILE_SAMPLES)
+    # The DEMs change only when new ones are mounted, and the response is
+    # derived purely from level/x/y. Private because it is behind a token.
+    response.cache_control.private = True
+    response.cache_control.max_age = 7 * 24 * 3600
+    return response

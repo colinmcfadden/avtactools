@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { loadCesium } from "./cesiumSetup";
 import { tilesetResource } from "./tilesetResource";
+import { MAPBOX_IMAGERY } from "../mapStyles/mapStyles";
+import { createTerrainProvider } from "./terrainProvider";
 // Cesium's own stylesheet sizes .cesium-widget to fill its container. Without
 // it the widget has no dimensions and the canvas falls back to its 300x150
 // default, so the scene renders into a postage stamp regardless of layout.
@@ -24,7 +26,8 @@ import "./viewer3d.css";
  * which is the frame Cesium renders in. Nothing is transformed here — if the
  * heights are wrong they were wrong when the tiles were built.
  */
-const Viewer3D = ({ tilesetUrl, requiresAuth = true, onReady }) => {
+const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
+                   onReady }) => {
   const containerRef = useRef(null);
   const [status, setStatus] = useState({ state: "loading", detail: "" });
 
@@ -52,10 +55,30 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, onReady }) => {
           selectionIndicator: false,
         });
 
-        // No terrain is loaded yet, so the default ellipsoid globe would just
-        // occlude points that sit below it. Hidden until Stage 4 adds terrain.
-        viewer.scene.globe.show = false;
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#05080d");
+
+        // The ground surface, drawn from the same Mapbox satellite imagery the
+        // 2D map uses. Without this the scene is points in a void, which is
+        // what made earlier builds unrecognisable as a place regardless of how
+        // the points themselves were coloured.
+        viewer.imageryLayers.removeAll();
+        viewer.imageryLayers.addImageryProvider(
+          new Cesium.UrlTemplateImageryProvider({
+            url: MAPBOX_IMAGERY.template,
+            credit: MAPBOX_IMAGERY.attribution,
+            tileWidth: MAPBOX_IMAGERY.tileWidth,
+            tileHeight: MAPBOX_IMAGERY.tileHeight,
+            maximumLevel: MAPBOX_IMAGERY.maximumLevel,
+          }),
+        );
+
+        if (showTerrain) {
+          const terrain = createTerrainProvider(Cesium);
+          if (terrain) viewer.scene.terrainProvider = terrain;
+        }
+        // Points sit on the surface, so any depth test against it drops the
+        // ground returns into the terrain and makes the cloud look eaten.
+        viewer.scene.globe.depthTestAgainstTerrain = false;
 
         // A Resource rather than a bare URL: Cesium fetches this tileset's
         // child tiles itself, and only a Resource carries the bearer token
@@ -117,7 +140,7 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, onReady }) => {
       // destroy they outlive unmount and the next viewer fails to get a context.
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
     };
-  }, [tilesetUrl, requiresAuth, onReady]);
+  }, [tilesetUrl, requiresAuth, showTerrain, onReady]);
 
   return (
     <div className="viewer3d">

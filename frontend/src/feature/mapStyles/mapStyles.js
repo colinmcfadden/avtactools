@@ -28,6 +28,24 @@ const MAPBOX_TILE_OPTIONS = {
  * - `preview` (optional): {z,x,y} of the switcher-thumbnail tile, for
  *   servers whose zoom range doesn't include the default preview tile.
  */
+/**
+ * Raw XYZ template for one style, for consumers that are not Leaflet.
+ *
+ * The 3D view drapes the same imagery over terrain, and Cesium wants a plain
+ * URL template rather than a TileLayer. Exported here so both views read from
+ * one definition — a base map that only exists in 2D is a base map that will
+ * drift out of step with the one crews actually navigate against.
+ */
+export const imageryTemplate = (styleId = "satellite-v9") => mapboxTiles(styleId);
+
+export const MAPBOX_IMAGERY = {
+  template: mapboxTiles("satellite-v9"),
+  attribution: MAPBOX_ATTRIBUTION,
+  tileWidth: 512,
+  tileHeight: 512,
+  maximumLevel: 20,
+};
+
 export const MAP_STYLES = [
   {
     id: "satellite",

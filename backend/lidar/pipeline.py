@@ -74,6 +74,12 @@ def classification_limits(classes) -> str:
     return ",".join(f"Classification[{c}:{c}]" for c in sorted(classes))
 
 
+# LAS defines RGB as a 16-bit field. 8-bit values stored there read as
+# near-black to any reader that treats the field correctly; 257 maps 0->0 and
+# 255->65535 exactly.
+RGB_SCALE = 257
+
+
 def to_16_bit(channel: int) -> int:
     """An 8-bit channel widened to the 16-bit field LAS actually defines.
 
@@ -83,7 +89,7 @@ def to_16_bit(channel: int) -> int:
     down to 0 and the whole cloud renders black. Multiplying by 257 maps 0 to 0
     and 255 to 65535 exactly.
     """
-    return channel * 257
+    return channel * RGB_SCALE
 
 
 def _paint(rgb, where: str) -> list:
@@ -138,12 +144,35 @@ def height_above_ground() -> dict:
 
 COLOR_BY_CLASSIFICATION = "classification"
 COLOR_BY_HEIGHT = "height"
-COLOR_MODES = (COLOR_BY_CLASSIFICATION, COLOR_BY_HEIGHT, None)
+COLOR_BY_IMAGERY = "imagery"
+COLOR_MODES = (COLOR_BY_CLASSIFICATION, COLOR_BY_HEIGHT, COLOR_BY_IMAGERY, None)
+
+
+def imagery_colorization(raster: str) -> dict:
+    """Sample real colour per point from an aerial image.
+
+    This is what makes a point cloud read as a photograph of a place rather
+    than a diagram of one: trees come out the colour of those trees, a gravel
+    pad the colour of that pad. A synthetic palette can only ever say what
+    class a point is, which is a weaker claim than what it looks like.
+
+    ``raster`` is anything GDAL can open, including a GDAL_WMS service
+    description pointing at the same satellite tiles the 2D map uses, so no
+    imagery has to be downloaded ahead of time.
+    """
+    return {"type": "filters.colorization", "raster": raster,
+            # band:scale per channel. LAS RGB is 16-bit and the imagery is
+            # 8-bit, so each channel is widened by the same 257 the synthetic
+            # palettes use — otherwise every point renders near-black.
+            "dimensions": (f"Red:1:{RGB_SCALE}, "
+                           f"Green:2:{RGB_SCALE}, "
+                           f"Blue:3:{RGB_SCALE}")}
 
 
 def build(source, destination: str, *, bbox=None, source_srs: str,
           classes=OBSTRUCTION_CLASSES, thin_spacing_m: float | None = None,
-          color_by: str | None = COLOR_BY_CLASSIFICATION) -> list:
+          color_by: str | None = COLOR_BY_CLASSIFICATION,
+          imagery_raster: str | None = None) -> list:
     """Pipeline stages for one area of interest.
 
     ``source`` may be a local file, an EPT/COPC URL, or a list of local tiles.
@@ -210,6 +239,13 @@ def build(source, destination: str, *, bbox=None, source_srs: str,
         stages.append(classification_colorization(classes))
     elif color_by == COLOR_BY_HEIGHT:
         stages.append(height_colorization())
+    elif color_by == COLOR_BY_IMAGERY:
+        if not imagery_raster:
+            raise ValueError("colour by imagery needs an imagery_raster")
+        # Before reprojection, while the points are still in the source's own
+        # projected frame — GDAL has to line the raster up with them, and ECEF
+        # is not a frame imagery is published in.
+        stages.append(imagery_colorization(imagery_raster))
 
     # The vertical half of this is the whole reason crs.py exists.
     stages.append({"type": "filters.reprojection",
