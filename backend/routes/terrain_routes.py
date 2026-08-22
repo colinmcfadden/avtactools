@@ -281,9 +281,10 @@ def terrain_heightmap(level, x, y):
     Heights are ellipsoidal, matching the frame the LiDAR tiles are built in.
     """
     if level > terrain_tiles.MAX_LEVEL:
-        # Past this the tile is finer than the 1/3 arc-second source, so there
-        # is nothing further to serve and Cesium should stop subdividing.
-        return ('', 204)
+        # A sanity bound only — Cesium stops subdividing well before this.
+        # Refusing a level Cesium actually wants leaves that tile flat, which
+        # puts a hole in the globe rather than capping detail.
+        return jsonify({'error': 'Level out of range.'}), 400
 
     try:
         heights = terrain_tiles.sample_tile(level, x, y)

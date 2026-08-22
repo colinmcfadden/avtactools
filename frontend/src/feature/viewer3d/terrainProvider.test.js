@@ -67,10 +67,24 @@ describe("fetchHeightmap", () => {
     expectFlat(await fetchHeightmap(13, 1, 1, { fetchImpl }));
   });
 
-  it("does not ask past the level where the source runs out of detail", async () => {
+  it("asks for every level Cesium is likely to want", async () => {
+    // The bug this guards: the bound was 14, and returning flat above it put
+    // the surface at ellipsoid height — some 600 m below real ground — which
+    // tore a hole in the globe as soon as the camera zoomed in.
+    const fetchImpl = jest.fn().mockResolvedValue(ok(tileBytes(600)));
+    for (const level of [14, 16, 18, 20]) {
+      const heights = await fetchHeightmap(level, 1, 1, { fetchImpl });
+      expect(hasElevation(heights)).toBe(true);
+      expect(heights[0]).toBe(600);
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it("stops only past the sanity bound, which Cesium never reaches", async () => {
     const fetchImpl = jest.fn();
     expectFlat(await fetchHeightmap(TERRAIN_MAX_LEVEL + 1, 1, 1, { fetchImpl }));
     expect(fetchImpl).not.toHaveBeenCalled();
+    expect(TERRAIN_MAX_LEVEL).toBeGreaterThanOrEqual(20);
   });
 
   it("never resolves to null for any failure mode", async () => {

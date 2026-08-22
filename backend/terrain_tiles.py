@@ -41,9 +41,21 @@ ROOT_TILES_Y = 1
 # neighbouring tile, so a power-of-two-plus-one avoids a seam.
 TILE_SAMPLES = 65
 
-# 1/3 arc-second is about 10 m. Past the level where a tile is finer than the
-# source there is no more detail to serve, and Cesium will happily keep asking.
-MAX_LEVEL = 14
+# A sanity bound, not a detail limit.
+#
+# This was 14, on the reasoning that a tile finer than the 1/3 arc-second
+# source carries no new detail so there was no point serving one. That is true
+# about detail and wrong about mechanism: refusing a tile does not stop Cesium
+# subdividing, it just leaves that tile with no elevation. Zooming in far
+# enough dropped the surface to the ellipsoid — some 600 m below the real
+# ground in north Georgia — and tore a hole in the globe exactly where the
+# camera was pointed.
+#
+# Oversampling costs nothing and stays smooth: a 16 m tile at level 20 samples
+# in 16 ms and interpolates the DEM cleanly. The bound below exists only so a
+# runaway client cannot ask for arbitrarily deep tiles; Cesium stops long
+# before it, because geometric error halves each level.
+MAX_LEVEL = 22
 
 WGS84 = "EPSG:4326"
 GEOID = "EPSG:5703"

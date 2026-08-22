@@ -123,6 +123,26 @@ class GapFillingTests(unittest.TestCase):
         self.assertAlmostEqual(float(filled.max() - filled.min()), 500.0, places=2)
 
 
+class LevelBoundTests(unittest.TestCase):
+    """The level cap must not withhold elevation Cesium is actually asking for.
+
+    Refusing a tile does not stop Cesium subdividing; it leaves that tile at
+    ellipsoid height. With the cap at 14, zooming in far enough dropped the
+    surface some 600 m below the real ground in north Georgia and tore a hole
+    in the globe under the camera.
+    """
+
+    def test_the_bound_is_past_anything_cesium_will_ask_for(self):
+        # An LZ view reaches level 18-20; a tile there is tens of metres.
+        self.assertGreaterEqual(terrain_tiles.MAX_LEVEL, 20)
+
+    def test_a_tile_far_finer_than_the_source_still_has_bounds(self):
+        west, south, east, north = terrain_tiles.tile_bounds(20, 262143, 393216)
+        self.assertLess(east - west, 0.001)
+        self.assertGreater(east, west)
+        self.assertGreater(north, south)
+
+
 class SamplingTests(unittest.TestCase):
     def test_a_tile_with_no_local_dem_is_none_rather_than_an_error(self):
         """Cesium asks across the whole globe; the DEMs cover part of one country."""

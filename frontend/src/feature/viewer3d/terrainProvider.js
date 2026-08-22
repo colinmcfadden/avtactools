@@ -19,8 +19,15 @@ import { absoluteTilesetUrl } from "./tilesetResource";
 // front and cannot renegotiate per tile.
 export const TERRAIN_SAMPLES = 65;
 
-// Matches terrain_tiles.MAX_LEVEL: past this a tile is finer than the source.
-export const TERRAIN_MAX_LEVEL = 14;
+// Matches terrain_tiles.MAX_LEVEL. A sanity bound against a runaway client,
+// not a detail limit — Cesium stops subdividing long before it.
+//
+// This was 14, and returning flat above it was the bug: refusing a tile does
+// not stop Cesium asking, it leaves that tile at ellipsoid height. Zooming in
+// far enough dropped the surface 600 m below the real ground and tore a hole
+// in the globe. The DEM oversamples cleanly, so every level Cesium wants gets
+// real elevation.
+export const TERRAIN_MAX_LEVEL = 22;
 
 const HEIGHTMAP_PATH = "/terrain/heightmap";
 
