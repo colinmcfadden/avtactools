@@ -26,6 +26,39 @@ const CAMERA_HEADING_DEG = -30;
 const CAMERA_PITCH_DEG = -35;
 const CAMERA_RANGE_FACTOR = 2.2;
 
+/** What the scene actually contains, for diagnosing a render from outside it. */
+const report = (viewer, tileset) => {
+  const scene = viewer.scene;
+  const layers = scene.imageryLayers;
+  const camera = scene.camera;
+  const carto = camera.positionCartographic;
+  const globe = scene.globe;
+  return {
+    imageryLayers: layers.length,
+    imageryReady: Array.from({ length: layers.length }, (_unused, index) => {
+      const provider = layers.get(index).imageryProvider;
+      return {
+        url: String(provider?.url || "").slice(0, 60),
+        ready: provider?.ready !== false,
+        errors: provider?.errorEvent?.numberOfListeners ?? null,
+      };
+    }),
+    globeShown: globe?.show,
+    globeBaseColor: globe?.baseColor?.toCssColorString?.(),
+    terrainProvider: scene.terrainProvider?.constructor?.name,
+    terrainTilesLoaded: globe?.tilesLoaded,
+    cameraHeightM: carto ? Math.round(carto.height) : null,
+    cameraPitchDeg: Math.round((camera.pitch * 180) / Math.PI),
+    tilesetPointsLoaded: tileset?.pointCloudShading ? tileset.totalMemoryUsageInBytes : null,
+    tilesLoaded: tileset?.tilesLoaded,
+    statistics: tileset ? {
+      visited: tileset.statistics?.visited,
+      selected: tileset.statistics?.selected,
+      numberOfPointsSelected: tileset.statistics?.numberOfPointsSelected,
+    } : null,
+  };
+};
+
 /**
  * A 3D view of one LiDAR point cloud tileset.
  *
@@ -113,14 +146,18 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
         const shading = tileset.pointCloudShading;
         shading.attenuation = true;
         shading.eyeDomeLighting = true;
-        shading.eyeDomeLightingStrength = 1.0;
-        shading.eyeDomeLightingRadius = 1.0;
+        // Full strength at a 1 px radius outlines every individual point,
+        // which is what made returns read as separate tiles with borders
+        // rather than as a continuous canopy. Enough shading to show relief,
+        // not so much that it draws the points.
+        shading.eyeDomeLightingStrength = 0.5;
+        shading.eyeDomeLightingRadius = 0.5;
         // A cap in CSS pixels, which a retina display then doubles. At 10 that
         // meant 20 physical pixels a point: every return rendered as a fat
         // square with an eye-dome outline round it, and the cloud looked like
         // masonry. Large enough to close the survey's ~0.5 m spacing at
         // working range, and no larger.
-        shading.maximumAttenuation = 4;
+        shading.maximumAttenuation = 2;
         // Sizes points from the tile's own geometric error, so density and
         // point size stay in step as tiles stream in.
         shading.geometricErrorScale = 1.0;
@@ -140,6 +177,15 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
 
         setStatus({ state: "ready", detail: "" });
         onReady?.({ viewer, tileset, Cesium });
+
+        // The browser preview available here cannot composite WebGL, so
+        // nothing about how this scene actually renders can be checked from
+        // outside it. In development the scene is reachable from the console
+        // so its real state can be read rather than inferred:
+        //   window.__viewer3d.report()
+        if (process.env.NODE_ENV === "development") {
+          window.__viewer3d = { viewer, tileset, Cesium, report: () => report(viewer, tileset) };
+        }
 
         // Placed explicitly rather than with zoomTo. zoomTo frames the
         // bounding sphere from wherever the camera already is, which for a
