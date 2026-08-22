@@ -31,6 +31,11 @@ const CAMERA_RANGE_FACTOR = 2.2;
 // defaults; window.__viewer3d.tune() changes them live in development.
 const DEFAULT_POINT_SIZE_PX = 5;
 
+// The ring is thinned landscape at several metres between points, so pulling
+// it in at the core's fidelity would cost bandwidth for detail that is not
+// there. Looser error means it streams coarse and stays cheap.
+const CONTEXT_SCREEN_SPACE_ERROR = 8;
+
 /** What the scene actually contains, for diagnosing a render from outside it. */
 const report = (viewer, tileset) => {
   const scene = viewer.scene;
@@ -72,8 +77,8 @@ const report = (viewer, tileset) => {
  * which is the frame Cesium renders in. Nothing is transformed here — if the
  * heights are wrong they were wrong when the tiles were built.
  */
-const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
-                   onReady }) => {
+const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
+                   showTerrain = true, onReady }) => {
   const containerRef = useRef(null);
   const [status, setStatus] = useState({ state: "loading", detail: "" });
 
@@ -146,6 +151,29 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
         if (cancelled) return;
 
         viewer.scene.primitives.add(tileset);
+
+        // The landscape ring, if one was built. Loaded after the core so the
+        // detailed tileset streams first — the ring is context, and waiting on
+        // it would delay the part actually being assessed.
+        if (contextUrl) {
+          try {
+            const ring = await Cesium.Cesium3DTileset.fromUrl(
+              tilesetResource(Cesium, contextUrl, { requiresAuth }),
+              { maximumScreenSpaceError: CONTEXT_SCREEN_SPACE_ERROR },
+            );
+            if (!cancelled) {
+              viewer.scene.primitives.add(ring);
+              const ringShading = ring.pointCloudShading;
+              ringShading.attenuation = true;
+              ringShading.eyeDomeLighting = true;
+              ringShading.eyeDomeLightingStrength = 0.5;
+              ringShading.eyeDomeLightingRadius = 0.5;
+              ringShading.maximumAttenuation = DEFAULT_POINT_SIZE_PX;
+            }
+          } catch {
+            // Context is optional; losing it must not lose the landing point.
+          }
+        }
 
         // Eye-dome lighting is what stops a point cloud reading as a flat
         // speckled sheet. Points carry no normals, so there is no shading cue
@@ -258,7 +286,7 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
       // destroy they outlive unmount and the next viewer fails to get a context.
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
     };
-  }, [tilesetUrl, requiresAuth, showTerrain, onReady]);
+  }, [tilesetUrl, contextUrl, requiresAuth, showTerrain, onReady]);
 
   return (
     <div className="viewer3d">

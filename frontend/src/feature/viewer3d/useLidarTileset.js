@@ -10,7 +10,8 @@ import api from "../auth/api";
  * put an LZ's position into request logs and browser history.
  */
 
-const IDLE = { state: "idle", url: null, key: null, target: null, error: "" };
+const IDLE = { state: "idle", url: null, contextUrl: null, key: null,
+               target: null, error: "" };
 
 export const useLidarTileset = ({ lat, lon, radiusM } = {}) => {
   const [result, setResult] = useState(IDLE);
@@ -27,10 +28,12 @@ export const useLidarTileset = ({ lat, lon, radiusM } = {}) => {
       const body = { lat, lon };
       if (Number.isFinite(radiusM)) body.radius_m = radiusM;
       const res = await api.post("/lidar/resolve", body, { signal });
-      const { key, available, url, target } = res.data || {};
+      const { key, available, url, contextUrl, target } = res.data || {};
       setResult({
         state: available ? "available" : "missing",
         url: available ? url : null,
+        // Optional wider, thinned ring. Absent unless one was built.
+        contextUrl: available ? contextUrl || null : null,
         key: key || null,
         // The target the server resolved, so a "not built" panel can say
         // which coordinates to build rather than quoting a hash.

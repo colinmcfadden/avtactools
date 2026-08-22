@@ -55,6 +55,26 @@
   max-width: none;
   height: min(640px, calc(100vh - 110px));
   max-height: none;
+
+  /* Dragged from the bottom-right corner like a desktop window. Cesium keeps
+     up because the viewer already watches its container with a ResizeObserver
+     — it sizes its canvas at creation and then only on window resize, so a
+     container that changes for any other reason would otherwise go stale. */
+  resize: both;
+  min-width: 360px;
+  min-height: 280px;
+}
+
+/* The native resize grip is nearly invisible on a dark panel, so the corner
+   is marked. Purely a hint: the grip itself is the browser's. */
+.lz3d-window::after {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  color: rgba(255, 255, 255, 0.32);
+  content: "◢";
+  font-size: 0.62rem;
+  pointer-events: none;
 }
 
 .lz3d-window__body {

@@ -24,6 +24,11 @@ lidar_bp = Blueprint("lidar", __name__)
 TILE_CACHE_SECONDS = 7 * 24 * 3600
 
 
+def _context_url(key: str) -> str:
+    """The wider, thinned ring built beside a core tileset."""
+    return f"/lidar/tilesets/{key}/{catalog.CONTEXT_DIRNAME}/tileset.json"
+
+
 def _tileset_url(key: str) -> str:
     """Where the frontend should point Cesium.
 
@@ -121,6 +126,9 @@ def resolve():
         "key": key,
         "available": available,
         "url": _tileset_url(key) if available else None,
+        # Optional: only built when --context was asked for. The viewer draws
+        # it under the core so range never costs detail at the centre.
+        "contextUrl": _context_url(key) if available and catalog.has_context(key) else None,
     }
     if not available:
         # Echo the target back so the client can say how to build it. These

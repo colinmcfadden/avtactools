@@ -45,6 +45,9 @@ DEFAULT_TILES_DIR = "/data/tiles"
 # Written beside tileset.json so the store can be searched by position.
 MANIFEST_FILENAME = "area.json"
 
+# A wider, thinned tileset built beside the core, for landscape context.
+CONTEXT_DIRNAME = "context"
+
 # A target this close to the edge of a built area has almost no context on one
 # side, so it is treated as uncovered and worth its own build.
 USABLE_FRACTION = 0.75
@@ -125,6 +128,13 @@ def read_manifest(directory):
                 float(document["radius_m"]))
     except (ValueError, KeyError, TypeError, OSError):
         return None
+
+
+def has_context(key, *, root=None) -> bool:
+    """Whether a thinned landscape ring was built beside the core tileset."""
+    directory = path_for(key, root=root)
+    return bool(directory
+                and (directory / CONTEXT_DIRNAME / "tileset.json").is_file())
 
 
 def offset_m(lat: float, lon: float, other_lat: float, other_lon: float):

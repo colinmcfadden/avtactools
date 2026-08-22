@@ -36,6 +36,18 @@ FULL_DENSITY_RADIUS_M = 400.0
 DISPLAY_SPACING_M = None
 
 
+# A context ring is landscape, not obstruction data: it exists so the approach
+# has somewhere to be, and nothing in it is measured. Thinning it hard is what
+# makes range affordable — a 1 km ring at 4 m spacing costs less than the core.
+CONTEXT_SPACING_DIVISOR = 250.0
+MIN_CONTEXT_SPACING_M = 2.0
+
+
+def context_spacing(radius_m: float) -> float:
+    """Point spacing for the surrounding context ring."""
+    return max(MIN_CONTEXT_SPACING_M, radius_m / CONTEXT_SPACING_DIVISOR)
+
+
 def spacing_for_radius(radius_m: float) -> float | None:
     """Point spacing that keeps a tileset a sensible size at any radius.
 

@@ -21,7 +21,9 @@ import time
 from pathlib import Path
 
 from . import aoi, catalog, collection, coverage, pipeline
-from .tiles import TileBuildError, build_pointcloud_tiles, spacing_for_radius
+from .catalog import CONTEXT_DIRNAME
+from .tiles import (TileBuildError, build_pointcloud_tiles, context_spacing,
+                    spacing_for_radius)
 
 # Entwine-indexed 3DEP on AWS Open Data. Each survey is its own index, and
 # which one to read is resolved per target by lidar.coverage — most ground is
@@ -100,6 +102,11 @@ def main(argv=None) -> int:
                         help="GDAL-readable aerial imagery for --color-by "
                              "imagery; a GDAL_WMS service description points "
                              "at tile servers without downloading anything")
+    parser.add_argument("--context", type=float, default=None,
+                        help="also build a thinned ring out to this radius, "
+                             "for landscape around the landing point. Kept "
+                             "separate so extending range never costs detail "
+                             "at the centre")
     parser.add_argument("--spacing", type=float, default=None,
                         help="thin to roughly one point per this many metres. "
                              "Defaults to full density for an LZ-sized area, "
@@ -175,6 +182,31 @@ def main(argv=None) -> int:
     # rather than by an exact coordinate match.
     catalog.write_manifest(args.out, args.lat, args.lon, radius_m=args.radius,
                            survey=str(source) if not isinstance(source, list) else None)
+
+    # A second, coarser tileset covering a wider area. Separate rather than a
+    # bigger single build: one pipeline has one spacing, so widening it thins
+    # the centre too — 4x the area at 500 m radius yielded 1.08 points/m2
+    # against 3.50 at 250 m. Two tiers keep the landing point at full density
+    # and pay for range only where nothing is being measured.
+    if args.context:
+        if args.context <= args.radius:
+            print("failed: --context must be larger than --radius", file=sys.stderr)
+            return 1
+        spacing = context_spacing(args.context)
+        print(f"context : {args.context:.0f} m radius at {spacing:.1f} m spacing")
+        context_bbox = aoi.bbox_for(args.lat, args.lon, radius_m=args.context,
+                                    source_srs=source_srs)
+        try:
+            build_pointcloud_tiles(
+                source, args.out / CONTEXT_DIRNAME, bbox=context_bbox,
+                source_srs=source_srs, thin_spacing_m=spacing,
+                classes=classes, color_by=color_by,
+                imagery_raster=args.imagery,
+            )
+        except TileBuildError as error:
+            # The core is already built and usable; a missing ring is a
+            # smaller loss than discarding it.
+            print(f"context failed (core is still usable): {error}", file=sys.stderr)
 
     size = sum(f.stat().st_size for f in args.out.rglob("*") if f.is_file())
     print(f"\nbuilt in {time.time() - started:.0f}s")

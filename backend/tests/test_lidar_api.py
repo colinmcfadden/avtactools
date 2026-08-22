@@ -104,6 +104,47 @@ class LidarApiTests(unittest.TestCase):
         self.assertTrue(body["available"])
         self.assertNotIn("target", body)
 
+    def test_a_context_ring_is_reported_when_one_was_built(self):
+        """Range is a second, thinned tileset rather than a wider single one.
+
+        Widening one build thins the centre too: 500 m radius yielded
+        1.08 points/m2 against 3.50 at 250 m, so extending range cost detail
+        exactly where the aircraft touches down.
+        """
+        key = catalog.key_for(**TARGET, radius_m=250)
+        self.make_tileset(key)
+        catalog.write_manifest(catalog.path_for(key), TARGET["lat"],
+                               TARGET["lon"], radius_m=250)
+        context = catalog.path_for(key) / catalog.CONTEXT_DIRNAME
+        context.mkdir(parents=True)
+        (context / "tileset.json").write_text('{"asset": {}}', encoding="utf-8")
+
+        body = self.client.post("/api/lidar/resolve", json=TARGET,
+                                headers=self.auth).get_json()
+        self.assertIsNotNone(body["contextUrl"])
+        self.assertIn(catalog.CONTEXT_DIRNAME, body["contextUrl"])
+
+    def test_no_context_ring_is_reported_when_none_was_built(self):
+        key = catalog.key_for(**TARGET, radius_m=250)
+        self.make_tileset(key)
+        catalog.write_manifest(catalog.path_for(key), TARGET["lat"],
+                               TARGET["lon"], radius_m=250)
+        body = self.client.post("/api/lidar/resolve", json=TARGET,
+                                headers=self.auth).get_json()
+        self.assertIsNone(body["contextUrl"])
+
+    def test_the_context_ring_is_served_like_any_other_tile(self):
+        """No API change needed: it is a path under the same key."""
+        key = catalog.key_for(**TARGET, radius_m=250)
+        self.make_tileset(key)
+        context = catalog.path_for(key) / catalog.CONTEXT_DIRNAME
+        context.mkdir(parents=True)
+        (context / "tileset.json").write_text('{"asset": {}}', encoding="utf-8")
+        response = self.client.get(
+            f"/api/lidar/tilesets/{key}/{catalog.CONTEXT_DIRNAME}/tileset.json",
+            headers=self.auth)
+        self.assertEqual(response.status_code, 200)
+
     def test_resolve_reports_absence_rather_than_failing(self):
         """A target with no tileset yet is a normal state, not an error."""
         body = self.client.post("/api/lidar/resolve", headers=self.auth,

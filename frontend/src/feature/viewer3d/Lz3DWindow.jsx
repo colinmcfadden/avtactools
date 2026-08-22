@@ -16,7 +16,8 @@ import "./viewer3d.css";
  */
 const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
   const nodeRef = useRef(null);
-  const { state, url, target, error, refresh } = useLidarTileset({ lat, lon, radiusM });
+  const { state, url, contextUrl, target, error, refresh } =
+    useLidarTileset({ lat, lon, radiusM });
 
   // Reported rather than assumed: without terrain the ground sits on the
   // ellipsoid far below the points, which looks like a broken render.
@@ -63,7 +64,9 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
         </div>
 
         <div className="lz3d-window__body">
-          {state === "available" && <Viewer3D tilesetUrl={url} />}
+          {state === "available" && (
+            <Viewer3D tilesetUrl={url} contextUrl={contextUrl} />
+          )}
 
           {state === "available" && hasTerrain === false && (
             <div className="lz3d-window__notice">

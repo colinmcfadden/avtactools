@@ -78,7 +78,7 @@ def docker_available() -> bool:
 
 
 def build(lat, lon, *, radius_m, tiles_dir, image, colour, classes,
-          collection=None, spacing=None):
+          collection=None, spacing=None, context=None):
     from lidar import catalog
 
     key = catalog.key_for(lat, lon, radius_m=radius_m)
@@ -112,6 +112,7 @@ def build(lat, lon, *, radius_m, tiles_dir, image, colour, classes,
             f" --color-by {colour}"
             + (f" --classes {classes}" if classes else "")
             + (f" --spacing {spacing}" if spacing is not None else "")
+            + (f" --context {context}" if context else "")
             + (" --collection /data/lidar" if collection else "")
             + " --imagery /work/lidar/mapbox_imagery.xml"
             " --out /out/tileset",
@@ -159,6 +160,9 @@ def main(argv=None) -> int:
                         help="ASPRS classes to keep; older surveys need 0,1,2")
     parser.add_argument("--collection", default=None,
                         help="directory of downloaded LAZ, instead of AWS")
+    parser.add_argument("--context", type=float, default=None,
+                        help="also build a thinned landscape ring out to this "
+                             "radius; the core keeps full density")
     parser.add_argument("--spacing", type=float, default=None)
     args = parser.parse_args(argv)
 
@@ -180,7 +184,8 @@ def main(argv=None) -> int:
 
     return build(lat, lon, radius_m=args.radius, tiles_dir=args.tiles_dir,
                  image=args.image, colour=args.color_by, classes=args.classes,
-                 collection=args.collection, spacing=args.spacing)
+                 collection=args.collection, spacing=args.spacing,
+                 context=args.context)
 
 
 if __name__ == "__main__":
