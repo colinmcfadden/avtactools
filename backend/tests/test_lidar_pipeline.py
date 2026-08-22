@@ -125,7 +125,7 @@ class PipelineTests(unittest.TestCase):
         for source, expected in [
             ("/data/tile.laz", "readers.las"),
             ("/data/tile.copc.laz", "readers.copc"),
-            ("ept://https://example.com/ept.json", "readers.ept"),
+            ("https://example.com/survey/ept.json", "readers.ept"),
         ]:
             stages = pipeline.build(source, "/out.laz", source_srs=SOURCE_SRS)
             self.assertEqual(stages[0]["type"], expected, source)

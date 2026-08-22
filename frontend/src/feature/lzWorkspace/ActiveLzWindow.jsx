@@ -57,6 +57,7 @@ export default function ActiveLzWindow({
   onClose,
   onSave,
   onRemove,
+  onView3D,
   canSaveActive = true,
   isSaving = false,
   initialPosition = { x: 16, y: 92 },
@@ -198,6 +199,23 @@ export default function ActiveLzWindow({
                   <path d="M8 3v6h8V3M8 21v-7h8v7" />
                 </svg>
                 <span>{isSaving ? "SAVING" : saveLabel}</span>
+              </button>
+              <button
+                type="button"
+                className="active-lz-window__action"
+                onClick={() => onView3D?.(activeDiagram)}
+                disabled={!activeDiagram?.target}
+                title={
+                  activeDiagram?.target
+                    ? "View this LZ/PZ as a 3D point cloud"
+                    : "Set a target before viewing in 3D."
+                }
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
+                  <path d="M4 7.5l8 4.5 8-4.5M12 12v9" />
+                </svg>
+                <span>3D</span>
               </button>
               <button
                 type="button"

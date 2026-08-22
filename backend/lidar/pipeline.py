@@ -92,8 +92,10 @@ def build(source: str, destination: str, *, bbox=None, source_srs: str,
 
 
 def _reader_for(source: str) -> str:
+    # An Entwine index is named by its ept.json, local or remote — PDAL has no
+    # URL scheme for it, and inventing one makes it reject the source outright.
     lowered = source.lower()
-    if lowered.startswith("ept://") or lowered.endswith("ept.json"):
+    if lowered.endswith("ept.json"):
         return "readers.ept"
     if lowered.endswith(".copc.laz"):
         return "readers.copc"

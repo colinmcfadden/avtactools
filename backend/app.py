@@ -24,6 +24,7 @@ from security_config import (
 
 # Import your Blueprints
 from routes.terrain_routes import terrain_bp
+from routes.lidar_routes import lidar_bp
 from routes.location_routes import location_bp
 from routes.weather_routes import weather_bp
 from routes.export_routes import export_bp
@@ -158,6 +159,7 @@ def enforce_affiliation_gate():
 # Register Blueprints
 app.register_blueprint(export_bp)
 app.register_blueprint(terrain_bp)
+app.register_blueprint(lidar_bp)
 app.register_blueprint(location_bp)
 app.register_blueprint(weather_bp)
 app.register_blueprint(auth_bp)

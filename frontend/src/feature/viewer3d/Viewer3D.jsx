@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { loadCesium } from "./cesiumSetup";
+import { tilesetResource } from "./tilesetResource";
 // Cesium's own stylesheet sizes .cesium-widget to fill its container. Without
 // it the widget has no dimensions and the canvas falls back to its 300x150
 // default, so the scene renders into a postage stamp regardless of layout.
@@ -34,7 +35,7 @@ const CLASSIFICATION_STYLE = {
  * which is the frame Cesium renders in. Nothing is transformed here — if the
  * heights are wrong they were wrong when the tiles were built.
  */
-const Viewer3D = ({ tilesetUrl, onReady }) => {
+const Viewer3D = ({ tilesetUrl, requiresAuth = true, onReady }) => {
   const containerRef = useRef(null);
   const [status, setStatus] = useState({ state: "loading", detail: "" });
 
@@ -67,7 +68,11 @@ const Viewer3D = ({ tilesetUrl, onReady }) => {
         viewer.scene.globe.show = false;
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#05080d");
 
-        const tileset = await Cesium.Cesium3DTileset.fromUrl(tilesetUrl, {
+        // A Resource rather than a bare URL: Cesium fetches this tileset's
+        // child tiles itself, and only a Resource carries the bearer token
+        // onto those derived requests.
+        const source = tilesetResource(Cesium, tilesetUrl, { requiresAuth });
+        const tileset = await Cesium.Cesium3DTileset.fromUrl(source, {
           // Points have no surface, so screen-space error is the only lever on
           // how much detail streams in. The default is tuned for buildings.
           maximumScreenSpaceError: 8,
@@ -111,7 +116,7 @@ const Viewer3D = ({ tilesetUrl, onReady }) => {
       // destroy they outlive unmount and the next viewer fails to get a context.
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
     };
-  }, [tilesetUrl, onReady]);
+  }, [tilesetUrl, requiresAuth, onReady]);
 
   return (
     <div className="viewer3d">

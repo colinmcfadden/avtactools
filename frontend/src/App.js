@@ -42,6 +42,7 @@ import ThreatDialog from "./feature/threats/ThreatDialog";
 import ThreatExportModal from "./feature/threats/ThreatExportModal";
 import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
+import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
 import ActiveLzWindow from "./feature/lzWorkspace/ActiveLzWindow";
 import LzDiagramRemoveDialog from "./feature/lzWorkspace/LzDiagramRemoveDialog";
 
@@ -322,6 +323,9 @@ function App() {
     deleteProfile,
   } = useAircraftProfiles();
   const [isAircraftModalOpen, setIsAircraftModalOpen] = useState(false);
+  // 3D point cloud for the active LZ/PZ. Opens over the map rather than
+  // replacing it, so the 2D diagram stays available alongside.
+  const [is3DOpen, setIs3DOpen] = useState(false);
   const { doghouses, updateDoghouse } = useDoghouses(targetLocation, setFlightData, {
     doghouses: activeGraphics.doghouses ?? [],
     setDoghouses,
@@ -1319,6 +1323,7 @@ function App() {
           onSelect={handleSelectDiagram}
           onSave={handleLayerSave}
           onRemove={handleLayerRemove}
+          onView3D={() => setIs3DOpen(true)}
           canSaveActive={canEditGraphics}
           isSaving={isLayerSaveInProgress}
           initialPosition={{ x: 16, y: 86 }}
@@ -1530,6 +1535,18 @@ function App() {
 
       {showUnitBuilder && (
         <UnitBuilder onSubmit={addUnit} onClose={() => setShowUnitBuilder(false)} />
+      )}
+
+      {is3DOpen && activeDiagram?.target && (
+        <Lz3DWindow
+          label={
+            `${activeDiagram.flightData?.lz_label || "LZ"} ` +
+            `${activeDiagram.flightData?.lz_name || activeDiagram.name || ""}`.trim()
+          }
+          lat={activeDiagram.target.lat}
+          lon={activeDiagram.target.lon}
+          onClose={() => setIs3DOpen(false)}
+        />
       )}
 
       {isAircraftModalOpen && (

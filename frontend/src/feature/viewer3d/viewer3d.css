@@ -47,3 +47,52 @@
   background: rgba(40, 16, 16, 0.94);
   color: #e4aaa5;
 }
+
+/* Wider and taller than the form modals — a 500 m area of interest reads as a
+   thumbnail at the default 550px. Overrides .export-modal-container. */
+.lz3d-window {
+  width: min(900px, calc(100vw - 32px));
+  max-width: none;
+  height: min(640px, calc(100vh - 110px));
+  max-height: none;
+}
+
+.lz3d-window__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* With no tileset the status box is the whole content, so it centres rather
+   than sitting in a corner the way it does as an overlay on the canvas. */
+.lz3d-window__body > .viewer3d__status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: 340px;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.lz3d-window__key {
+  display: block;
+  margin: 8px 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  opacity: 0.5;
+}
+
+.lz3d-window__retry {
+  min-height: 28px;
+  margin-top: 4px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: transparent;
+  color: #cfd8e2;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.lz3d-window__retry:hover { border-color: #5aa7d4; }

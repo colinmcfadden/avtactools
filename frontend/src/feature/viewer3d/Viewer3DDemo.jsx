@@ -27,7 +27,7 @@ const Viewer3DDemo = () => {
 
   return (
     <div style={{ position: "fixed", inset: 0 }}>
-      <Viewer3D tilesetUrl={DEMO_TILESET} onReady={handleReady} />
+      <Viewer3D tilesetUrl={DEMO_TILESET} requiresAuth={false} onReady={handleReady} />
       {info && (
         <div className="viewer3d__status" style={{ top: "auto", bottom: 12 }}>
           <strong>Tileset</strong>
