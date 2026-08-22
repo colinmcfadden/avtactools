@@ -18,6 +18,14 @@ import "./viewer3d.css";
 // through to the fallback colour. The only other thing a style set was
 // pointSize, which attenuation below overrides anyway.
 
+// Opening view: looking down at 35 degrees from the north-west, far enough
+// back to hold the whole area of interest. Shallow enough that treelines and
+// obstruction heights read against the horizon, steep enough to still see the
+// landing surface itself.
+const CAMERA_HEADING_DEG = -30;
+const CAMERA_PITCH_DEG = -35;
+const CAMERA_RANGE_FACTOR = 2.2;
+
 /**
  * A 3D view of one LiDAR point cloud tileset.
  *
@@ -107,11 +115,12 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
         shading.eyeDomeLighting = true;
         shading.eyeDomeLightingStrength = 1.0;
         shading.eyeDomeLightingRadius = 1.0;
-        // Points are drawn large enough to meet their neighbours. Below this
-        // the survey's own spacing shows as black gaps between dots — the
-        // single thing that most stops a cloud reading as ground rather than
-        // as a scatter plot.
-        shading.maximumAttenuation = 10;
+        // A cap in CSS pixels, which a retina display then doubles. At 10 that
+        // meant 20 physical pixels a point: every return rendered as a fat
+        // square with an eye-dome outline round it, and the cloud looked like
+        // masonry. Large enough to close the survey's ~0.5 m spacing at
+        // working range, and no larger.
+        shading.maximumAttenuation = 4;
         // Sizes points from the tile's own geometric error, so density and
         // point size stay in step as tiles stream in.
         shading.geometricErrorScale = 1.0;
@@ -132,10 +141,27 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
         setStatus({ state: "ready", detail: "" });
         onReady?.({ viewer, tileset, Cesium });
 
-        viewer.zoomTo(tileset).catch(() => {
-          /* the camera can fail to settle without a render loop; the tileset
-             is already loaded and visible once frames resume */
-        });
+        // Placed explicitly rather than with zoomTo. zoomTo frames the
+        // bounding sphere from wherever the camera already is, which for a
+        // wide, shallow cloud can leave it nearly level with the ground — or
+        // under it, looking at the underside of the terrain, which renders as
+        // a flat wash of colour with the points stranded in the middle of it.
+        //
+        // An LZ is also read obliquely, not from directly overhead: the whole
+        // reason for a 3D view is seeing how tall the obstructions are on
+        // approach, and that is invisible from straight down.
+        const sphere = tileset.boundingSphere;
+        viewer.camera.lookAt(
+          sphere.center,
+          new Cesium.HeadingPitchRange(
+            Cesium.Math.toRadians(CAMERA_HEADING_DEG),
+            Cesium.Math.toRadians(CAMERA_PITCH_DEG),
+            sphere.radius * CAMERA_RANGE_FACTOR,
+          ),
+        );
+        // Releases the camera from the target's reference frame, so the user
+        // can orbit and pan freely from here.
+        viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
       })
       .catch((error) => {
         if (!cancelled) {

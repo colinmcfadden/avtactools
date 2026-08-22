@@ -16,7 +16,7 @@ import "./viewer3d.css";
  */
 const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
   const nodeRef = useRef(null);
-  const { state, url, key, target, error, refresh } = useLidarTileset({ lat, lon, radiusM });
+  const { state, url, target, error, refresh } = useLidarTileset({ lat, lon, radiusM });
 
   // Reported rather than assumed: without terrain the ground sits on the
   // ellipsoid far below the points, which looks like a broken render.
@@ -30,12 +30,22 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
     return () => { cancelled = true; };
   }, [lat, lon]);
 
-  // The command that builds this exact spot. An opaque key told the user
-  // nothing they could act on; coordinates they can paste do.
+  // The command that builds this exact spot, including the cd — the script
+  // path is relative to the repo root, so the command alone fails from
+  // anywhere else, and "run this" without saying where is not an instruction.
   const buildCommand = target
-    ? `python tools/build_lz.py --lat ${target.lat.toFixed(6)} ` +
-      `--lon ${target.lon.toFixed(6)} --radius ${Math.round(target.radius_m)}`
+    ? `cd C:\\_dev\\avtactools; python tools/build_lz.py ` +
+      `--lat ${target.lat.toFixed(6)} --lon ${target.lon.toFixed(6)} ` +
+      `--radius ${Math.round(target.radius_m)}`
     : null;
+
+  const [copied, setCopied] = useState(false);
+  const copyCommand = () => {
+    if (!buildCommand) return;
+    navigator.clipboard?.writeText(buildCommand)
+      .then(() => setCopied(true))
+      .catch(() => setCopied(false));
+  };
 
   return (
     <Draggable nodeRef={nodeRef} handle=".modal-header">
@@ -73,16 +83,24 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
           {state === "missing" && (
             <div className="viewer3d__status lz3d-window__missing">
               <strong>Not generated</strong>
-              No point cloud covers this target yet. Build one with:
+              No point cloud covers this target yet. Open a new PowerShell
+              window — leave the app running — and paste this:
               {buildCommand && (
                 <code className="lz3d-window__command">{buildCommand}</code>
               )}
               <span className="lz3d-window__hint">
-                Takes about 30 seconds. Needs Docker and the toolchain image.
+                One to two minutes, and Docker must be running. Nothing needs
+                restarting afterwards — just press Check again.
               </span>
-              <button type="button" className="lz3d-window__retry" onClick={refresh}>
-                Check again
-              </button>
+              <div className="lz3d-window__actions">
+                <button type="button" className="lz3d-window__retry"
+                        onClick={copyCommand} disabled={!buildCommand}>
+                  {copied ? "Copied" : "Copy command"}
+                </button>
+                <button type="button" className="lz3d-window__retry" onClick={refresh}>
+                  Check again
+                </button>
+              </div>
             </div>
           )}
 
