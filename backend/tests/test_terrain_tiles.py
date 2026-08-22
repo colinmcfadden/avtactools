@@ -99,6 +99,16 @@ class SamplingTests(unittest.TestCase):
                 crs.compound_crs("EPSG:26917"), 237749.995, 3837749.995, 330.0)
         except Exception as error:  # noqa: BLE001
             self.skipTest(f"geoid grids unavailable: {error}")
+
+        # Without the grids PROJ returns the height unchanged and reports
+        # success, so a zero separation means the environment lacks them
+        # rather than that the code is wrong. Production catches this case
+        # itself — see crs.assert_vertical_datum_applied — so here it is an
+        # environment skip, run with PROJ_NETWORK=ON to exercise it.
+        if offset == 0.0 and separation == 0.0:
+            self.skipTest("geoid grids unavailable (PROJ returned a "
+                          "pass-through); set PROJ_NETWORK=ON")
+
         self.assertAlmostEqual(offset, separation, places=1)
         # And it is a real correction, not a silent pass-through.
         self.assertGreater(abs(offset), 1.0)
