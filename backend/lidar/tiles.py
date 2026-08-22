@@ -23,10 +23,27 @@ from pathlib import Path
 from . import pipeline
 from .crs import ECEF
 
-# One point per metre is plenty to read as a treeline on screen. The sample tile
-# carries about 4.3 per m², so this is roughly a quarter of the data for the
-# same visual result — full density is worth keeping only when measuring.
-DISPLAY_SPACING_M = 1.0
+# Thinning was costing more than it saved. A 500 m area of GA_Statewide_B3_2018
+# holds 3.5 points/m²; sampling to one per metre threw away half of that and
+# left visible gaps between points, which is what made the cloud read as
+# scattered dots rather than a surface. Full density for an LZ-sized area is
+# 12.6 MB — cheap for the difference it makes.
+#
+# It cannot stay unbounded, though: area grows with the square of the radius,
+# so a 2 km request would be some 200 MB. Past the radius below, spacing is
+# scaled to keep a tileset roughly constant in size.
+FULL_DENSITY_RADIUS_M = 400.0
+DISPLAY_SPACING_M = None
+
+
+def spacing_for_radius(radius_m: float) -> float | None:
+    """Point spacing that keeps a tileset a sensible size at any radius.
+
+    None means no thinning — every return the survey recorded.
+    """
+    if radius_m <= FULL_DENSITY_RADIUS_M:
+        return None
+    return radius_m / FULL_DENSITY_RADIUS_M
 
 
 class TileBuildError(RuntimeError):

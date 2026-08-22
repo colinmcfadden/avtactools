@@ -86,8 +86,11 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
         const source = tilesetResource(Cesium, tilesetUrl, { requiresAuth });
         const tileset = await Cesium.Cesium3DTileset.fromUrl(source, {
           // Points have no surface, so screen-space error is the only lever on
-          // how much detail streams in. The default is tuned for buildings.
-          maximumScreenSpaceError: 8,
+          // how much detail streams in. The default is tuned for buildings; at
+          // 8 the viewer was refusing to load the fine tiles at all, which
+          // capped how dense the cloud could ever look no matter what was
+          // built. An LZ is small enough to afford loading it properly.
+          maximumScreenSpaceError: 2,
         });
         if (cancelled) return;
 
@@ -104,7 +107,14 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
         shading.eyeDomeLighting = true;
         shading.eyeDomeLightingStrength = 1.0;
         shading.eyeDomeLightingRadius = 1.0;
-        shading.maximumAttenuation = 4;
+        // Points are drawn large enough to meet their neighbours. Below this
+        // the survey's own spacing shows as black gaps between dots — the
+        // single thing that most stops a cloud reading as ground rather than
+        // as a scatter plot.
+        shading.maximumAttenuation = 10;
+        // Sizes points from the tile's own geometric error, so density and
+        // point size stay in step as tiles stream in.
+        shading.geometricErrorScale = 1.0;
 
         // Ready means the tileset is in the scene, not that the camera has
         // finished moving. zoomTo resolves only when its flight completes, and

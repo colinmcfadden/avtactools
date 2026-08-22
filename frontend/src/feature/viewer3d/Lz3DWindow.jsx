@@ -1,7 +1,8 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Draggable from "react-draggable";
 import Viewer3D from "./Viewer3D";
 import { useLidarTileset } from "./useLidarTileset";
+import { probeTerrain } from "./terrainProvider";
 import "../export/ExportModal.css";
 import "./viewer3d.css";
 
@@ -16,6 +17,18 @@ import "./viewer3d.css";
 const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
   const nodeRef = useRef(null);
   const { state, url, key, target, error, refresh } = useLidarTileset({ lat, lon, radiusM });
+
+  // Reported rather than assumed: without terrain the ground sits on the
+  // ellipsoid far below the points, which looks like a broken render.
+  const [hasTerrain, setHasTerrain] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return undefined;
+    probeTerrain(lat, lon)
+      .then((available) => { if (!cancelled) setHasTerrain(available); })
+      .catch(() => { if (!cancelled) setHasTerrain(false); });
+    return () => { cancelled = true; };
+  }, [lat, lon]);
 
   // The command that builds this exact spot. An opaque key told the user
   // nothing they could act on; coordinates they can paste do.
@@ -41,6 +54,14 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
 
         <div className="lz3d-window__body">
           {state === "available" && <Viewer3D tilesetUrl={url} />}
+
+          {state === "available" && hasTerrain === false && (
+            <div className="lz3d-window__notice">
+              No terrain here — the ground will sit far below the points. Start
+              the backend with <code>TERRAIN_DATA_DIR</code> set, or this target
+              is outside the mounted DEMs.
+            </div>
+          )}
 
           {state === "resolving" && (
             <div className="viewer3d__status">

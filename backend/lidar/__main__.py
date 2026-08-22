@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from . import aoi, catalog, collection, coverage, pipeline
-from .tiles import DISPLAY_SPACING_M, TileBuildError, build_pointcloud_tiles
+from .tiles import TileBuildError, build_pointcloud_tiles, spacing_for_radius
 
 # Entwine-indexed 3DEP on AWS Open Data. Each survey is its own index, and
 # which one to read is resolved per target by lidar.coverage — most ground is
@@ -100,9 +100,11 @@ def main(argv=None) -> int:
                         help="GDAL-readable aerial imagery for --color-by "
                              "imagery; a GDAL_WMS service description points "
                              "at tile servers without downloading anything")
-    parser.add_argument("--spacing", type=float, default=DISPLAY_SPACING_M,
-                        help="thin to roughly one point per this many metres; "
-                             "0 keeps full density for measurement")
+    parser.add_argument("--spacing", type=float, default=None,
+                        help="thin to roughly one point per this many metres. "
+                             "Defaults to full density for an LZ-sized area, "
+                             "scaling back for large radii; 0 forces full "
+                             "density at any size")
     args = parser.parse_args(argv)
 
     classes = (tuple(int(c) for c in args.classes.split(","))
@@ -160,7 +162,8 @@ def main(argv=None) -> int:
     try:
         tileset = build_pointcloud_tiles(
             source, args.out, bbox=bbox, source_srs=source_srs,
-            thin_spacing_m=args.spacing or None,
+            thin_spacing_m=(spacing_for_radius(args.radius)
+                            if args.spacing is None else (args.spacing or None)),
             classes=classes, color_by=color_by,
             imagery_raster=args.imagery,
         )

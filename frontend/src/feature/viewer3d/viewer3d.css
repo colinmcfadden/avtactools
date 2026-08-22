@@ -114,3 +114,26 @@
 }
 
 .lz3d-window__retry:hover { border-color: #5aa7d4; }
+
+/* Sits along the bottom of the canvas: relevant while looking at the scene,
+   but never in the way of it. */
+.lz3d-window__notice {
+  position: absolute;
+  right: 12px;
+  bottom: 26px;
+  left: 12px;
+  z-index: 6;
+  padding: 7px 10px;
+  border: 1px solid rgba(214, 168, 100, 0.4);
+  border-radius: 6px;
+  background: rgba(46, 34, 12, 0.92);
+  color: #e8cf9f;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.lz3d-window__notice code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+}

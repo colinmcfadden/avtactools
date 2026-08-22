@@ -41,8 +41,14 @@ export const imageryTemplate = (styleId = "satellite-v9") => mapboxTiles(styleId
 export const MAPBOX_IMAGERY = {
   template: mapboxTiles("satellite-v9"),
   attribution: MAPBOX_ATTRIBUTION,
-  tileWidth: 512,
-  tileHeight: 512,
+  // 1024, not 512. The URL asks for 512 tiles with the @2x suffix, and Mapbox
+  // answers that with a 1024px retina tile. Declaring 512 hands Cesium images
+  // twice the size it budgeted for, and the ground never draws.
+  //
+  // Leaflet does not hit this because tileSize there is a layout measurement
+  // rather than a claim about the image; Cesium takes it literally.
+  tileWidth: 1024,
+  tileHeight: 1024,
   maximumLevel: 20,
 };
 

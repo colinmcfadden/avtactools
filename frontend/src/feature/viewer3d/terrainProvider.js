@@ -50,6 +50,23 @@ export const fetchHeightmap = async (level, x, y, { fetchImpl = fetch } = {}) =>
 };
 
 /**
+ * Whether the server has DEM coverage for a point.
+ *
+ * Worth asking up front: with no terrain the globe sits on the ellipsoid,
+ * hundreds of metres below the point cloud, and the scene reads as points
+ * floating over nothing. That looks like a rendering fault rather than what it
+ * is — a backend started without TERRAIN_DATA_DIR, or a target outside the
+ * mounted DEMs.
+ */
+export const probeTerrain = async (lat, lon, { level = 12, fetchImpl } = {}) => {
+  const across = 2 << level;
+  const down = 1 << level;
+  const x = Math.floor((lon + 180) / (360 / across));
+  const y = Math.floor((90 - lat) / (180 / down));
+  return (await fetchHeightmap(level, x, y, { fetchImpl })) !== null;
+};
+
+/**
  * A terrain provider backed by the heightmap endpoint.
  *
  * Returns null when Cesium is unavailable so the viewer can fall back to a
