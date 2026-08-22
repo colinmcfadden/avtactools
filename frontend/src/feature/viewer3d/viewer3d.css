@@ -163,3 +163,36 @@
   gap: 8px;
   justify-content: center;
 }
+
+/* Point size sits over the scene rather than in the window chrome: it is
+   adjusted while looking at the result, and the effect is immediate. */
+.viewer3d__control {
+  position: absolute;
+  bottom: 10px;
+  left: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid rgba(125, 166, 199, 0.3);
+  border-radius: 999px;
+  background: rgba(12, 18, 27, 0.86);
+  color: #cfd8e2;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.viewer3d__control input[type="range"] {
+  width: 110px;
+  accent-color: #5aa7d4;
+  cursor: pointer;
+}
+
+.viewer3d__control output {
+  min-width: 1.4em;
+  color: #eaf2f8;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

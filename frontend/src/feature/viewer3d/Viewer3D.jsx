@@ -30,6 +30,18 @@ const CAMERA_RANGE_FACTOR = 2.2;
 // getting them right by exchanging screenshots is slow. These are the
 // defaults; window.__viewer3d.tune() changes them live in development.
 const DEFAULT_POINT_SIZE_PX = 5;
+const POINT_SIZE_RANGE = [2, 16];
+
+// Remembered across sessions. Point size is the one setting that depends on
+// the display as much as the data — a retina panel doubles it — so the right
+// value is the viewer's to pick, not one this code can know.
+const POINT_SIZE_KEY = "avtac.viewer3d.pointSize";
+
+const storedPointSize = () => {
+  const stored = Number(localStorage.getItem(POINT_SIZE_KEY));
+  return Number.isFinite(stored) && stored >= POINT_SIZE_RANGE[0]
+    && stored <= POINT_SIZE_RANGE[1] ? stored : DEFAULT_POINT_SIZE_PX;
+};
 
 // The ring is thinned landscape at several metres between points, so pulling
 // it in at the core's fidelity would cost bandwidth for detail that is not
@@ -81,6 +93,20 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
                    showTerrain = true, onReady }) => {
   const containerRef = useRef(null);
   const [status, setStatus] = useState({ state: "loading", detail: "" });
+
+  // Both tilesets, so the size control reaches the context ring too.
+  const sceneRef = useRef({ viewer: null, tilesets: [] });
+  const [pointSize, setPointSize] = useState(storedPointSize);
+
+  useEffect(() => {
+    const { viewer, tilesets } = sceneRef.current;
+    tilesets.forEach((t) => {
+      if (t && !t.isDestroyed?.()) t.pointCloudShading.maximumAttenuation = pointSize;
+    });
+    localStorage.setItem(POINT_SIZE_KEY, String(pointSize));
+    // The scene renders on demand, so a shading change needs a nudge to show.
+    if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+  }, [pointSize, status.state]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,29 +177,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
         if (cancelled) return;
 
         viewer.scene.primitives.add(tileset);
-
-        // The landscape ring, if one was built. Loaded after the core so the
-        // detailed tileset streams first — the ring is context, and waiting on
-        // it would delay the part actually being assessed.
-        if (contextUrl) {
-          try {
-            const ring = await Cesium.Cesium3DTileset.fromUrl(
-              tilesetResource(Cesium, contextUrl, { requiresAuth }),
-              { maximumScreenSpaceError: CONTEXT_SCREEN_SPACE_ERROR },
-            );
-            if (!cancelled) {
-              viewer.scene.primitives.add(ring);
-              const ringShading = ring.pointCloudShading;
-              ringShading.attenuation = true;
-              ringShading.eyeDomeLighting = true;
-              ringShading.eyeDomeLightingStrength = 0.5;
-              ringShading.eyeDomeLightingRadius = 0.5;
-              ringShading.maximumAttenuation = DEFAULT_POINT_SIZE_PX;
-            }
-          } catch {
-            // Context is optional; losing it must not lose the landing point.
-          }
-        }
+        sceneRef.current = { viewer, tilesets: [tileset] };
 
         // Eye-dome lighting is what stops a point cloud reading as a flat
         // speckled sheet. Points carry no normals, so there is no shading cue
@@ -190,19 +194,38 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
         // not so much that it draws the points.
         shading.eyeDomeLightingStrength = 0.5;
         shading.eyeDomeLightingRadius = 0.5;
-        // A cap in CSS pixels, which a retina display then doubles. At 10 that
-        // meant 20 physical pixels a point: every return rendered as a fat
-        // square with an eye-dome outline round it, and the cloud looked like
-        // masonry. Large enough to close the survey's ~0.5 m spacing at
-        // working range, and no larger.
         // Attenuation grows point size as the camera approaches and this caps
-        // it. Too low and close-up views thin out until vegetation seems to
-        // vanish; too high and distant views turn to masonry. 5 holds a
-        // surface at working range without either.
-        shading.maximumAttenuation = DEFAULT_POINT_SIZE_PX;
+        // it, in CSS pixels, which a retina display then doubles. Too low and
+        // close-up views thin out until vegetation seems to vanish; too high
+        // and every return draws as a bordered square. The viewer sets it —
+        // the right value depends on their display as much as on the data.
+        shading.maximumAttenuation = storedPointSize();
         // Sizes points from the tile's own geometric error, so density and
         // point size stay in step as tiles stream in.
         shading.geometricErrorScale = 1.0;
+
+        // The landscape ring, if one was built. Started only once the core is
+        // configured and drawing: awaiting it first left the landing point
+        // rendering unshaded until the ring arrived, and unshaded for good if
+        // it never did.
+        if (contextUrl) {
+          Cesium.Cesium3DTileset.fromUrl(
+            tilesetResource(Cesium, contextUrl, { requiresAuth }),
+            { maximumScreenSpaceError: CONTEXT_SCREEN_SPACE_ERROR },
+          ).then((ring) => {
+            if (cancelled || viewer.isDestroyed()) return;
+            viewer.scene.primitives.add(ring);
+            const ringShading = ring.pointCloudShading;
+            ringShading.attenuation = true;
+            ringShading.eyeDomeLighting = true;
+            ringShading.eyeDomeLightingStrength = 0.5;
+            ringShading.eyeDomeLightingRadius = 0.5;
+            ringShading.maximumAttenuation = storedPointSize();
+            sceneRef.current.tilesets.push(ring);
+          }).catch(() => {
+            // Context is optional; losing it must not lose the landing point.
+          });
+        }
 
         // Ready means the tileset is in the scene, not that the camera has
         // finished moving. zoomTo resolves only when its flight completes, and
@@ -291,6 +314,22 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
   return (
     <div className="viewer3d">
       <div ref={containerRef} className="viewer3d__canvas" />
+
+      {status.state === "ready" && (
+        <label className="viewer3d__control">
+          <span>Point size</span>
+          <input
+            type="range"
+            min={POINT_SIZE_RANGE[0]}
+            max={POINT_SIZE_RANGE[1]}
+            step={1}
+            value={pointSize}
+            onChange={(event) => setPointSize(Number(event.target.value))}
+            aria-label="Point size"
+          />
+          <output>{pointSize}</output>
+        </label>
+      )}
       {status.state !== "ready" && (
         <div
           className={`viewer3d__status${
