@@ -11,6 +11,7 @@ expressed in.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from .crs import ECEF
 
@@ -21,10 +22,41 @@ MEDIUM_VEGETATION = 4
 HIGH_VEGETATION = 5
 NOISE = 7
 
-# What an LZ assessment actually needs: the surface, and anything standing on
-# it. Unclassified returns are dropped — in the sample tile they were 22% of
-# points and contribute noise rather than structure.
+CREATED = 0
+UNCLASSIFIED = 1
+
+# What an LZ assessment needs from a fully classified product: the surface, and
+# anything standing on it.
 OBSTRUCTION_CLASSES = (GROUND, LOW_VEGETATION, MEDIUM_VEGETATION, HIGH_VEGETATION)
+
+# Older products classify ground and nothing else. In ARRA_GA_LAKELANIER_2010,
+# 46% of returns are class 0 and 30% class 1 against 24% ground — so the trees
+# are in there, just unlabelled, and filtering to OBSTRUCTION_CLASSES discards
+# three quarters of the survey and leaves a bare terrain sheet.
+SURFACE_CLASSES = (CREATED, UNCLASSIFIED, GROUND)
+
+# 8-bit RGB per class. Ground reads as bare earth and vegetation darkens with
+# height, so canopy stands out against the surface an aircraft would touch on.
+CLASSIFICATION_COLORS = {
+    GROUND: (138, 127, 106),
+    LOW_VEGETATION: (111, 143, 82),
+    MEDIUM_VEGETATION: (79, 125, 60),
+    HIGH_VEGETATION: (47, 107, 50),
+}
+
+# Colour by height above ground rather than by class. This is what makes an
+# unclassified survey usable, and it is the more direct reading for an LZ
+# anyway: the question on approach is how tall the obstruction is, not what
+# species it belongs to. Bands are (upper_bound_m, rgb); the last is open-ended.
+HEIGHT_BANDS = (
+    (0.5, (138, 127, 106)),   # the surface itself
+    (2.0, (111, 143, 82)),    # grass, scrub
+    (5.0, (79, 125, 60)),     # brush, saplings
+    (15.0, (47, 107, 50)),    # tree canopy
+    (None, (196, 96, 58)),    # above 15 m — a hazard on short final
+)
+
+HAG_DIMENSION = "HeightAboveGround"
 
 # Readers with a spatial index, which can honour a `bounds` argument. The plain
 # LAS reader has none and errors on `bounds` rather than ignoring it.
@@ -42,52 +74,157 @@ def classification_limits(classes) -> str:
     return ",".join(f"Classification[{c}:{c}]" for c in sorted(classes))
 
 
-def build(source: str, destination: str, *, bbox=None, source_srs: str,
-          classes=OBSTRUCTION_CLASSES, thin_spacing_m: float | None = None) -> list:
+def to_16_bit(channel: int) -> int:
+    """An 8-bit channel widened to the 16-bit field LAS actually defines.
+
+    Writing 8-bit values into a 16-bit field is the quiet version of this bug:
+    PDAL stores them verbatim and reports them back unchanged, so the LAS looks
+    right, but a reader that correctly treats the field as 16-bit scales 138
+    down to 0 and the whole cloud renders black. Multiplying by 257 maps 0 to 0
+    and 255 to 65535 exactly.
+    """
+    return channel * 257
+
+
+def _paint(rgb, where: str) -> list:
+    red, green, blue = (to_16_bit(c) for c in rgb)
+    return [f"Red = {red} WHERE {where}",
+            f"Green = {green} WHERE {where}",
+            f"Blue = {blue} WHERE {where}"]
+
+
+def classification_colorization(classes=OBSTRUCTION_CLASSES) -> dict:
+    """A ``filters.assign`` stage painting each class its map colour.
+
+    3D Tiles carries per-point RGB but no classification, so a viewer styling
+    on ``${Classification}`` matches nothing and paints every point its
+    fallback colour — a uniformly grey cloud where the ground and the treeline
+    are indistinguishable. Baking the palette into RGB here puts the
+    information somewhere the format can actually carry it.
+    """
+    assignments = []
+    for code in sorted(classes):
+        if code in CLASSIFICATION_COLORS:
+            assignments.extend(_paint(CLASSIFICATION_COLORS[code],
+                                      f"Classification == {code}"))
+    return {"type": "filters.assign", "value": assignments}
+
+
+def height_colorization(bands=HEIGHT_BANDS) -> dict:
+    """A ``filters.assign`` stage painting each point by its height above ground."""
+    assignments, lower = [], None
+    for upper, rgb in bands:
+        if lower is None:
+            where = f"{HAG_DIMENSION} < {upper}"
+        elif upper is None:
+            where = f"{HAG_DIMENSION} >= {lower}"
+        else:
+            where = f"{HAG_DIMENSION} >= {lower} && {HAG_DIMENSION} < {upper}"
+        assignments.extend(_paint(rgb, where))
+        lower = upper
+    return {"type": "filters.assign", "value": assignments}
+
+
+def height_above_ground() -> dict:
+    """Derive height above ground from the ground-classified returns.
+
+    Nearest-neighbour rather than the Delaunay variant: it is markedly faster
+    on a dense tile and an LZ only needs the height to within a fraction of a
+    metre. Requires class 2 to be present, which is the one thing even a
+    minimally classified survey provides.
+    """
+    return {"type": "filters.hag_nn", "allow_extrapolation": True}
+
+
+COLOR_BY_CLASSIFICATION = "classification"
+COLOR_BY_HEIGHT = "height"
+COLOR_MODES = (COLOR_BY_CLASSIFICATION, COLOR_BY_HEIGHT, None)
+
+
+def build(source, destination: str, *, bbox=None, source_srs: str,
+          classes=OBSTRUCTION_CLASSES, thin_spacing_m: float | None = None,
+          color_by: str | None = COLOR_BY_CLASSIFICATION) -> list:
     """Pipeline stages for one area of interest.
 
-    ``source`` may be a local file or an EPT/COPC URL — PDAL reads a remote
-    index and fetches only the points inside ``bbox``, so an area of interest
-    costs a query rather than a download.
+    ``source`` may be a local file, an EPT/COPC URL, or a list of local tiles.
+    A remote index is read directly and only the points inside ``bbox`` are
+    fetched, so an area of interest costs a query rather than a download.
+
+    A list is how a downloaded collection is read: the published tiles are
+    plain LAZ with no index, an area of interest near a tile edge spans
+    several of them, and the readers have to be merged before anything
+    downstream sees a single cloud.
 
     ``thin_spacing_m`` decimates to roughly one point per that spacing. The
     sample tile carries 4.3 points/m², which is far more than a view needs; the
     full density is worth keeping only when measuring.
     """
-    reader_type = _reader_for(source)
-    reader = {"type": reader_type, "filename": source}
-    stages = [reader]
+    sources = [source] if isinstance(source, (str, Path)) else list(source)
+    if not sources:
+        raise ValueError("no source tiles to read")
 
-    if bbox is not None:
-        bounds = bounds_expression(bbox)
-        if reader_type in INDEXED_READERS:
-            # EPT and COPC carry a spatial index, so the reader fetches only
-            # the requested extent — an area of interest costs a query rather
-            # than a whole tile.
-            reader["bounds"] = bounds
-        else:
-            # Plain LAS/LAZ has no index. It must be read in full and cropped,
-            # and it rejects a `bounds` argument outright.
-            stages.append({"type": "filters.crop", "bounds": bounds})
+    bounds = bounds_expression(bbox) if bbox is not None else None
+    stages, needs_crop = [], False
+
+    for one in sources:
+        reader_type = _reader_for(str(one))
+        reader = {"type": reader_type, "filename": str(one)}
+        if bounds is not None:
+            if reader_type in INDEXED_READERS:
+                # EPT and COPC carry a spatial index, so the reader fetches
+                # only the requested extent — an area of interest costs a
+                # query rather than a whole tile.
+                reader["bounds"] = bounds
+            else:
+                # Plain LAS/LAZ has no index. It must be read in full and
+                # cropped, and it rejects a `bounds` argument outright.
+                needs_crop = True
+        stages.append(reader)
+
+    if len(stages) > 1:
+        # Without an explicit merge, PDAL runs the rest of the pipeline once
+        # per reader and the last one wins — the output would hold a single
+        # tile's worth of the area rather than all of them.
+        stages.append({"type": "filters.merge"})
+
+    if needs_crop:
+        stages.append({"type": "filters.crop", "bounds": bounds})
 
     # Noise first: a stray low point would otherwise drag the ground surface
     # down and make an obstruction look taller than it is.
     stages.append({"type": "filters.range",
                    "limits": classification_limits(classes)})
 
+    if color_by not in COLOR_MODES:
+        raise ValueError(f"unknown colour mode {color_by!r}")
+
+    if color_by == COLOR_BY_HEIGHT:
+        # Before thinning: the ground surface this measures against is built
+        # from the ground returns, and sampling first would thin them out too.
+        stages.append(height_above_ground())
+
     if thin_spacing_m:
         stages.append({"type": "filters.sample", "radius": thin_spacing_m})
+
+    if color_by == COLOR_BY_CLASSIFICATION:
+        stages.append(classification_colorization(classes))
+    elif color_by == COLOR_BY_HEIGHT:
+        stages.append(height_colorization())
 
     # The vertical half of this is the whole reason crs.py exists.
     stages.append({"type": "filters.reprojection",
                    "in_srs": source_srs, "out_srs": ECEF})
 
     # ECEF values are ~5e6 m, so millimetre scaling with an auto offset keeps
-    # the LAS integer encoding from quantising away real detail.
-    stages.append({"type": "writers.las", "filename": destination,
-                   "scale_x": 0.001, "scale_y": 0.001, "scale_z": 0.001,
-                   "offset_x": "auto", "offset_y": "auto", "offset_z": "auto",
-                   "a_srs": ECEF})
+    # the LAS integer encoding from quantising away real detail. Format 3 is
+    # the first that carries RGB; the default has nowhere to put the colours.
+    writer = {"type": "writers.las", "filename": destination,
+              "scale_x": 0.001, "scale_y": 0.001, "scale_z": 0.001,
+              "offset_x": "auto", "offset_y": "auto", "offset_z": "auto",
+              "a_srs": ECEF}
+    if color_by:
+        writer["dataformat_id"] = 3
+    stages.append(writer)
     return stages
 
 

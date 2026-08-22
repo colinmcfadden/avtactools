@@ -7,25 +7,14 @@ import { tilesetResource } from "./tilesetResource";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import "./viewer3d.css";
 
-// Classified 3DEP returns, coloured so ground reads as terrain and canopy as
-// canopy. These are ASPRS classification codes carried through from the source
-// tiles, so the scene distinguishes obstruction from ground without extra data.
-const CLASSIFICATION_STYLE = {
-  color: {
-    // Cesium's styling language uses ${...} inside ordinary strings, which
-    // ESLint reads as a template literal written with the wrong quotes.
-    /* eslint-disable no-template-curly-in-string */
-    conditions: [
-      ["${Classification} === 2", "color('#8a7f6a')"], // ground
-      ["${Classification} === 3", "color('#6f8f52')"], // low vegetation
-      ["${Classification} === 4", "color('#4f7d3c')"], // medium vegetation
-      ["${Classification} === 5", "color('#2f6b32')"], // high vegetation
-      ["true", "color('#8895a0')"],
-    ],
-    /* eslint-enable no-template-curly-in-string */
-  },
-  pointSize: 2.0,
-};
+// Colour comes baked into each point's RGB by the tile build (see
+// backend/lidar/pipeline.py), not from a style applied here.
+//
+// The earlier version styled on ${Classification}, which silently painted
+// every cloud one flat grey: 3D Tiles .pnts files carry POSITION and RGB and
+// no classification at all, so the condition matched nothing and every point
+// fell through to the fallback colour. Point size is all that is left to set.
+const POINT_STYLE = { pointSize: 2.0 };
 
 /**
  * A 3D view of one LiDAR point cloud tileset.
@@ -80,7 +69,7 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, onReady }) => {
         if (cancelled) return;
 
         viewer.scene.primitives.add(tileset);
-        tileset.style = new Cesium.Cesium3DTileStyle(CLASSIFICATION_STYLE);
+        tileset.style = new Cesium.Cesium3DTileStyle(POINT_STYLE);
 
         // Ready means the tileset is in the scene, not that the camera has
         // finished moving. zoomTo resolves only when its flight completes, and

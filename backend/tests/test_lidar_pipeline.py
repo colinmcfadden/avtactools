@@ -105,7 +105,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_an_indexed_reader_crops_at_read_time(self):
         """EPT and COPC have a spatial index, so only the extent is fetched."""
-        stages = pipeline.build("ept://https://example.com/ept.json", "/out.laz",
+        stages = pipeline.build("https://example.com/survey/ept.json", "/out.laz",
                                 bbox=self.BBOX, source_srs=SOURCE_SRS)
         self.assertIn("bounds", stages[0])
         self.assertFalse(any(s["type"] == "filters.crop" for s in stages))
@@ -142,6 +142,153 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(parsed["pipeline"][0]["type"], "readers.las")
 
 
+class MultipleSourceTests(unittest.TestCase):
+    """Reading a downloaded collection, where an area can span several tiles."""
+
+    BBOX = (1077000, 1348000, 1078000, 1349000)
+    TILES = ["/data/lidar/tile_00.laz", "/data/lidar/tile_10.laz"]
+
+    def stages_for(self, sources, **kwargs):
+        return pipeline.build(sources, "/out.las", bbox=self.BBOX,
+                              source_srs=SOURCE_SRS, **kwargs)
+
+    def test_every_tile_gets_its_own_reader(self):
+        stages = self.stages_for(self.TILES)
+        readers = [s for s in stages if s["type"].startswith("readers.")]
+        self.assertEqual([r["filename"] for r in readers], self.TILES)
+
+    def test_readers_are_merged_before_anything_downstream(self):
+        """Without a merge, PDAL runs the tail once per reader and one wins.
+
+        The output would then hold a single tile's share of the area, which
+        looks like a valid tileset with a straight edge through it.
+        """
+        stages = self.stages_for(self.TILES)
+        types = [s["type"] for s in stages]
+        self.assertIn("filters.merge", types)
+        self.assertEqual(types.index("filters.merge"), len(self.TILES))
+        self.assertLess(types.index("filters.merge"), types.index("filters.crop"))
+
+    def test_a_single_tile_needs_no_merge(self):
+        types = [s["type"] for s in self.stages_for([self.TILES[0]])]
+        self.assertNotIn("filters.merge", types)
+
+    def test_a_lone_string_still_works(self):
+        types = [s["type"] for s in self.stages_for(self.TILES[0])]
+        self.assertEqual(types[0], "readers.las")
+        self.assertNotIn("filters.merge", types)
+
+    def test_unindexed_tiles_are_cropped_once_rather_than_per_reader(self):
+        crops = [s for s in self.stages_for(self.TILES)
+                 if s["type"] == "filters.crop"]
+        self.assertEqual(len(crops), 1)
+
+    def test_an_empty_source_list_is_refused(self):
+        """Better than writing an empty tileset for a target with no coverage."""
+        with self.assertRaises(ValueError):
+            self.stages_for([])
+
+
+class ColorizationTests(unittest.TestCase):
+    BBOX = (1077000, 1348000, 1078000, 1349000)
+
+    def stages(self, **kwargs):
+        return pipeline.build("/data/tile.laz", "/out.las", bbox=self.BBOX,
+                              source_srs=SOURCE_SRS, **kwargs)
+
+    def test_each_kept_class_is_painted(self):
+        assign = [s for s in self.stages() if s["type"] == "filters.assign"]
+        self.assertEqual(len(assign), 1)
+        # Three channels per class.
+        self.assertEqual(len(assign[0]["value"]),
+                         3 * len(pipeline.OBSTRUCTION_CLASSES))
+
+    def test_ground_and_canopy_get_different_colours(self):
+        """The whole point: a grey cloud cannot show where the trees are."""
+        self.assertNotEqual(pipeline.CLASSIFICATION_COLORS[pipeline.GROUND],
+                            pipeline.CLASSIFICATION_COLORS[pipeline.HIGH_VEGETATION])
+
+    def test_colours_are_assigned_before_reprojection(self):
+        """Reprojection rewrites coordinates; classification must still exist."""
+        types = [s["type"] for s in self.stages()]
+        self.assertLess(types.index("filters.assign"),
+                        types.index("filters.reprojection"))
+
+    def test_the_writer_uses_a_format_that_carries_rgb(self):
+        """The default LAS point format has nowhere to put colour."""
+        self.assertEqual(self.stages()[-1]["dataformat_id"], 3)
+
+    def test_colouring_can_be_turned_off_for_measurement_output(self):
+        stages = self.stages(color_by=None)
+        self.assertNotIn("filters.assign", [s["type"] for s in stages])
+        self.assertNotIn("dataformat_id", stages[-1])
+
+    def test_an_unknown_colour_mode_is_refused(self):
+        with self.assertRaises(ValueError):
+            self.stages(color_by="elevation")
+
+    def test_eight_bit_channels_are_widened_to_the_field_las_defines(self):
+        """8-bit values in a 16-bit field read as near-black to a correct reader."""
+        self.assertEqual(pipeline.to_16_bit(0), 0)
+        self.assertEqual(pipeline.to_16_bit(255), 65535)
+        assign = next(s for s in self.stages() if s["type"] == "filters.assign")
+        self.assertIn("Red = 35466 WHERE Classification == 2", assign["value"])
+
+
+class HeightColorizationTests(unittest.TestCase):
+    """Colouring by height above ground, for surveys that classify only ground."""
+
+    BBOX = (1077000, 1348000, 1078000, 1349000)
+
+    def stages(self, **kwargs):
+        kwargs.setdefault("color_by", pipeline.COLOR_BY_HEIGHT)
+        kwargs.setdefault("classes", pipeline.SURFACE_CLASSES)
+        return pipeline.build("/data/tile.laz", "/out.las", bbox=self.BBOX,
+                              source_srs=SOURCE_SRS, **kwargs)
+
+    def test_height_above_ground_is_derived_first(self):
+        types = [s["type"] for s in self.stages()]
+        self.assertIn("filters.hag_nn", types)
+        self.assertLess(types.index("filters.hag_nn"),
+                        types.index("filters.assign"))
+
+    def test_ground_is_measured_before_thinning_removes_it(self):
+        """Sampling first would decimate the surface the heights measure against."""
+        types = [s["type"] for s in self.stages(thin_spacing_m=1.0)]
+        self.assertLess(types.index("filters.hag_nn"),
+                        types.index("filters.sample"))
+
+    def test_every_band_is_painted_and_the_last_is_open_ended(self):
+        assign = next(s for s in self.stages() if s["type"] == "filters.assign")
+        self.assertEqual(len(assign["value"]), 3 * len(pipeline.HEIGHT_BANDS))
+        self.assertTrue(any(v.endswith(">= 15.0") for v in assign["value"]))
+
+    def test_bands_do_not_overlap_or_leave_a_gap(self):
+        """A point in a gap keeps whatever colour it already had."""
+        bounds = [upper for upper, _rgb in pipeline.HEIGHT_BANDS]
+        self.assertIsNone(bounds[-1])
+        finite = bounds[:-1]
+        self.assertEqual(finite, sorted(finite))
+        self.assertEqual(len(set(finite)), len(finite))
+
+    def test_the_tallest_band_is_visually_distinct(self):
+        """Above 15 m is a hazard on short final, not more canopy."""
+        canopy = pipeline.HEIGHT_BANDS[-2][1]
+        hazard = pipeline.HEIGHT_BANDS[-1][1]
+        self.assertGreater(hazard[0], canopy[0] + 100)
+
+    def test_surface_classes_keep_the_unlabelled_returns(self):
+        """ARRA-era surveys put the trees in classes 0 and 1."""
+        self.assertIn(pipeline.CREATED, pipeline.SURFACE_CLASSES)
+        self.assertIn(pipeline.UNCLASSIFIED, pipeline.SURFACE_CLASSES)
+        self.assertIn(pipeline.GROUND, pipeline.SURFACE_CLASSES)
+        self.assertNotIn(pipeline.NOISE, pipeline.SURFACE_CLASSES)
+
+    def test_classification_colouring_does_not_derive_height(self):
+        types = [s["type"] for s in self.stages(
+            color_by=pipeline.COLOR_BY_CLASSIFICATION)]
+        self.assertNotIn("filters.hag_nn", types)
+
+
 if __name__ == "__main__":
-    import unittest.mock  # noqa: F401
     unittest.main()

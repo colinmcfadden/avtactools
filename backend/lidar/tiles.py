@@ -33,13 +33,17 @@ class TileBuildError(RuntimeError):
     """Tile generation failed; the message carries the tool's own output."""
 
 
-def build_pointcloud_tiles(source: str, output_dir: Path, *, bbox,
+def build_pointcloud_tiles(source, output_dir: Path, *, bbox,
                            source_srs: str, thin_spacing_m=DISPLAY_SPACING_M,
+                           classes=pipeline.OBSTRUCTION_CLASSES,
+                           color_by=pipeline.COLOR_BY_CLASSIFICATION,
                            runner=None) -> Path:
     """Produce a 3D Tiles point cloud, returning the path to its tileset.json.
 
-    ``source`` may be a local file or a remote EPT/COPC URL. ``bbox`` is in the
-    source's own coordinates, since that is what the tile index is written in.
+    ``source`` may be a local file, a remote EPT/COPC URL, or a list of local
+    tiles covering the area — which is what a downloaded collection yields near
+    a tile boundary. ``bbox`` is in the source's own coordinates, since that is
+    what the tile index is written in.
     """
     output_dir = Path(output_dir)
     run = runner or _run
@@ -52,8 +56,9 @@ def build_pointcloud_tiles(source: str, output_dir: Path, *, bbox,
         reprojected = scratch / "aoi_ecef.las"
 
         stages = pipeline.build(source, str(reprojected), bbox=bbox,
-                                source_srs=source_srs,
-                                thin_spacing_m=thin_spacing_m)
+                                source_srs=source_srs, classes=classes,
+                                thin_spacing_m=thin_spacing_m,
+                                color_by=color_by)
         pipeline_file = scratch / "pipeline.json"
         pipeline_file.write_text(pipeline.to_json(stages))
 
