@@ -3,7 +3,17 @@ import {
   TERRAIN_SAMPLES,
   createTerrainProvider,
   fetchHeightmap,
+  hasElevation,
 } from "./terrainProvider";
+
+const expectFlat = (heights) => {
+  // Never null: CustomHeightmapTerrainProvider reads .constructor off the
+  // callback's result, so a null throws inside Cesium and fails the tile.
+  // A tile that fails at level 0 stops the globe subdividing at all.
+  expect(heights).toBeInstanceOf(Int16Array);
+  expect(hasElevation(heights)).toBe(false);
+  expect(heights.every((h) => h === 0)).toBe(true);
+};
 
 const tileBytes = (fill = 100) => {
   const heights = new Int16Array(TERRAIN_SAMPLES * TERRAIN_SAMPLES).fill(fill);
@@ -35,29 +45,59 @@ describe("fetchHeightmap", () => {
     expect(options.headers.Authorization).toBe("Bearer tok-123");
   });
 
-  it("treats 204 as 'no DEM here' rather than a failure", async () => {
+  it("falls back to flat on 204, which means 'no DEM here'", async () => {
     // The DEMs cover part of one country; Cesium asks across the whole globe.
     const fetchImpl = jest.fn().mockResolvedValue({ ok: false, status: 204 });
-    await expect(fetchHeightmap(13, 100, 100, { fetchImpl })).resolves.toBeNull();
+    expectFlat(await fetchHeightmap(13, 100, 100, { fetchImpl }));
   });
 
-  it("returns null on a server error instead of rejecting", async () => {
-    // A rejected promise stalls Cesium's tile queue and retries forever.
+  it("falls back to flat on a server error", async () => {
     const fetchImpl = jest.fn().mockResolvedValue({ ok: false, status: 500 });
-    await expect(fetchHeightmap(13, 1, 1, { fetchImpl })).resolves.toBeNull();
+    expectFlat(await fetchHeightmap(13, 1, 1, { fetchImpl }));
   });
 
-  it("rejects a payload of the wrong size rather than rendering garbage", async () => {
+  it("falls back to flat when the network rejects", async () => {
+    // A rejected callback fails the tile exactly the way a null does.
+    const fetchImpl = jest.fn().mockRejectedValue(new Error("offline"));
+    expectFlat(await fetchHeightmap(13, 1, 1, { fetchImpl }));
+  });
+
+  it("falls back to flat on a payload of the wrong size", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(ok(new ArrayBuffer(16)));
-    await expect(fetchHeightmap(13, 1, 1, { fetchImpl })).resolves.toBeNull();
+    expectFlat(await fetchHeightmap(13, 1, 1, { fetchImpl }));
   });
 
   it("does not ask past the level where the source runs out of detail", async () => {
     const fetchImpl = jest.fn();
-    await expect(
-      fetchHeightmap(TERRAIN_MAX_LEVEL + 1, 1, 1, { fetchImpl }),
-    ).resolves.toBeNull();
+    expectFlat(await fetchHeightmap(TERRAIN_MAX_LEVEL + 1, 1, 1, { fetchImpl }));
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("never resolves to null for any failure mode", async () => {
+    // The bug this guards: null crashed Cesium at level 0, so the globe
+    // could never subdivide and a world-sized imagery tile stretched across
+    // the whole view, reading as a flat wash of colour where ground should be.
+    const failures = [
+      { ok: false, status: 204 },
+      { ok: false, status: 401 },
+      { ok: false, status: 500 },
+      ok(new ArrayBuffer(0)),
+    ];
+    for (const outcome of failures) {
+      const heights = await fetchHeightmap(0, 0, 0, {
+        fetchImpl: jest.fn().mockResolvedValue(outcome),
+      });
+      expect(heights).not.toBeNull();
+      expect(heights).toBeInstanceOf(Int16Array);
+      expect(heights).toHaveLength(TERRAIN_SAMPLES * TERRAIN_SAMPLES);
+    }
+  });
+
+  it("reports real elevation as distinct from the flat fallback", async () => {
+    const real = await fetchHeightmap(13, 1, 1, {
+      fetchImpl: jest.fn().mockResolvedValue(ok(tileBytes(430))),
+    });
+    expect(hasElevation(real)).toBe(true);
   });
 
   it("requests the level/x/y path the backend serves", async () => {

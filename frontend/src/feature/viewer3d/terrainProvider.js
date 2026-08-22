@@ -24,30 +24,48 @@ export const TERRAIN_MAX_LEVEL = 14;
 
 const HEIGHTMAP_PATH = "/terrain/heightmap";
 
+// Sea level, returned wherever there is no DEM. Shared and never mutated:
+// most of the globe is outside our coverage, so this is the common answer.
+const FLAT = new Int16Array(TERRAIN_SAMPLES * TERRAIN_SAMPLES);
+
 /**
- * Fetch one tile's heights, or null where there is no DEM coverage.
+ * Fetch one tile's heights, falling back to flat where there is no DEM.
  *
- * A null is a normal answer, not a failure: the DEMs cover part of one
- * country and Cesium asks for tiles across the whole globe. Returning null
- * lets it render those as flat rather than stalling on retries.
+ * It must always resolve to a TypedArray. CustomHeightmapTerrainProvider
+ * reads `.constructor` off whatever the callback returns, so a null throws
+ * inside Cesium and the tile fails — and a tile that fails at level 0 stops
+ * the globe subdividing at all, leaving a single world-sized imagery tile
+ * stretched across the view. That reads as a flat wash of colour where the
+ * ground should be, which looks nothing like a terrain bug.
+ *
+ * The DEMs cover part of one country and Cesium asks across the whole globe,
+ * so "no data here" is the normal case, not an error. Flat is what Cesium
+ * itself uses when no terrain provider is set.
  */
 export const fetchHeightmap = async (level, x, y, { fetchImpl = fetch } = {}) => {
-  if (level > TERRAIN_MAX_LEVEL) return null;
+  if (level > TERRAIN_MAX_LEVEL) return FLAT;
 
-  const token = localStorage.getItem("auth_token");
-  const response = await fetchImpl(
-    absoluteTilesetUrl(`${HEIGHTMAP_PATH}/${level}/${x}/${y}`),
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-  );
+  try {
+    const token = localStorage.getItem("auth_token");
+    const response = await fetchImpl(
+      absoluteTilesetUrl(`${HEIGHTMAP_PATH}/${level}/${x}/${y}`),
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
 
-  // 204 is the backend saying "no DEM here", which is not an error.
-  if (response.status === 204) return null;
-  if (!response.ok) return null;
+    // 204 is the backend saying "no DEM here".
+    if (response.status === 204 || !response.ok) return FLAT;
 
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength !== TERRAIN_SAMPLES * TERRAIN_SAMPLES * 2) return null;
-  return new Int16Array(buffer);
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength !== TERRAIN_SAMPLES * TERRAIN_SAMPLES * 2) return FLAT;
+    return new Int16Array(buffer);
+  } catch {
+    // A rejected callback fails the tile the same way null does.
+    return FLAT;
+  }
 };
+
+/** Whether a tile carries real elevation rather than the flat fallback. */
+export const hasElevation = (heights) => heights !== FLAT;
 
 /**
  * Whether the server has DEM coverage for a point.
@@ -63,7 +81,7 @@ export const probeTerrain = async (lat, lon, { level = 12, fetchImpl } = {}) => 
   const down = 1 << level;
   const x = Math.floor((lon + 180) / (360 / across));
   const y = Math.floor((90 - lat) / (180 / down));
-  return (await fetchHeightmap(level, x, y, { fetchImpl })) !== null;
+  return hasElevation(await fetchHeightmap(level, x, y, { fetchImpl }));
 };
 
 /**

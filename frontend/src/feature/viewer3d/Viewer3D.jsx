@@ -26,6 +26,11 @@ const CAMERA_HEADING_DEG = -30;
 const CAMERA_PITCH_DEG = -35;
 const CAMERA_RANGE_FACTOR = 2.2;
 
+// Point size and shading are a matter of taste and of display density, and
+// getting them right by exchanging screenshots is slow. These are the
+// defaults; window.__viewer3d.tune() changes them live in development.
+const DEFAULT_POINT_SIZE_PX = 5;
+
 /** What the scene actually contains, for diagnosing a render from outside it. */
 const report = (viewer, tileset) => {
   const scene = viewer.scene;
@@ -94,6 +99,11 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
           fullscreenButton: false,
           infoBox: false,
           selectionIndicator: false,
+          // Without this the viewer requests its default Cesium ion base
+          // layer during construction, which 401s because no ion token is
+          // configured. Harmless — the layer is replaced below either way —
+          // but it puts a failed request in the console of every session.
+          baseLayer: false,
         });
 
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#05080d");
@@ -157,7 +167,11 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
         // square with an eye-dome outline round it, and the cloud looked like
         // masonry. Large enough to close the survey's ~0.5 m spacing at
         // working range, and no larger.
-        shading.maximumAttenuation = 2;
+        // Attenuation grows point size as the camera approaches and this caps
+        // it. Too low and close-up views thin out until vegetation seems to
+        // vanish; too high and distant views turn to masonry. 5 holds a
+        // surface at working range without either.
+        shading.maximumAttenuation = DEFAULT_POINT_SIZE_PX;
         // Sizes points from the tile's own geometric error, so density and
         // point size stay in step as tiles stream in.
         shading.geometricErrorScale = 1.0;
@@ -184,7 +198,29 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, showTerrain = true,
         // so its real state can be read rather than inferred:
         //   window.__viewer3d.report()
         if (process.env.NODE_ENV === "development") {
-          window.__viewer3d = { viewer, tileset, Cesium, report: () => report(viewer, tileset) };
+          window.__viewer3d = {
+            viewer,
+            tileset,
+            Cesium,
+            report: () => report(viewer, tileset),
+            /** Adjust point size and shading live: tune({ size: 8 }) */
+            tune: ({ size, edlStrength, edlRadius, screenSpaceError } = {}) => {
+              const s = tileset.pointCloudShading;
+              if (size !== undefined) s.maximumAttenuation = size;
+              if (edlStrength !== undefined) s.eyeDomeLightingStrength = edlStrength;
+              if (edlRadius !== undefined) s.eyeDomeLightingRadius = edlRadius;
+              if (screenSpaceError !== undefined) {
+                tileset.maximumScreenSpaceError = screenSpaceError;
+              }
+              viewer.scene.requestRender();
+              return {
+                size: s.maximumAttenuation,
+                edlStrength: s.eyeDomeLightingStrength,
+                edlRadius: s.eyeDomeLightingRadius,
+                screenSpaceError: tileset.maximumScreenSpaceError,
+              };
+            },
+          };
         }
 
         // Placed explicitly rather than with zoomTo. zoomTo frames the
