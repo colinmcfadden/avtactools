@@ -20,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import aoi, collection, coverage, pipeline
+from . import aoi, catalog, collection, coverage, pipeline
 from .tiles import DISPLAY_SPACING_M, TileBuildError, build_pointcloud_tiles
 
 # Entwine-indexed 3DEP on AWS Open Data. Each survey is its own index, and
@@ -167,6 +167,11 @@ def main(argv=None) -> int:
     except TileBuildError as error:
         print(f"\nfailed: {error}", file=sys.stderr)
         return 1
+
+    # Record what was built, so the API can find this tileset by position
+    # rather than by an exact coordinate match.
+    catalog.write_manifest(args.out, args.lat, args.lon, radius_m=args.radius,
+                           survey=str(source) if not isinstance(source, list) else None)
 
     size = sum(f.stat().st_size for f in args.out.rglob("*") if f.is_file())
     print(f"\nbuilt in {time.time() - started:.0f}s")

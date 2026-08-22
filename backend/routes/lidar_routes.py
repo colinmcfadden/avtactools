@@ -107,7 +107,15 @@ def resolve():
     if not 50 <= radius <= 2000:
         return jsonify({"error": "radius_m must be between 50 and 2000."}), 400
 
-    key = catalog.key_for(lat, lon, radius_m=radius)
+    # Coverage first, exact key second. A target is rarely re-entered to the
+    # last decimal — it arrives from an MGRS round-trip, a map click, or a
+    # nudged marker — and hashing rounded coordinates turns a tenth of a metre
+    # across a cell boundary into a different key. Asking which built area
+    # contains the target answers the question actually being asked.
+    key = catalog.find_covering(lat, lon)
+    if key is None:
+        key = catalog.key_for(lat, lon, radius_m=radius)
+
     available = catalog.exists(key)
     return jsonify({
         "key": key,

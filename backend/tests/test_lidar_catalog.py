@@ -1,6 +1,8 @@
 """Tileset naming, and the checks that keep a URL from reaching the disk."""
 
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -91,3 +93,92 @@ class AvailabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoverageLookupTests(unittest.TestCase):
+    """Finding a tileset by position rather than by an exact coordinate match.
+
+    Hashing rounded coordinates buckets targets into cells, and two points a
+    tenth of a metre apart fall in different cells whenever they straddle a
+    boundary. 34.64815 rounds to 34.6482; the same point arriving via an MGRS
+    round-trip as 34.64814884 rounds to 34.6481. The tileset was there and the
+    lookup said "not generated".
+    """
+
+    LAT, LON, RADIUS = 34.64815, -83.86130, 250.0
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+        self.key = catalog.key_for(self.LAT, self.LON, radius_m=self.RADIUS)
+        directory = self.root / self.key
+        (directory).mkdir(parents=True)
+        (directory / "tileset.json").write_text("{}", encoding="utf-8")
+        catalog.write_manifest(directory, self.LAT, self.LON, radius_m=self.RADIUS)
+
+    def test_the_exact_target_is_found(self):
+        self.assertEqual(catalog.find_covering(self.LAT, self.LON, root=self.root),
+                         self.key)
+
+    def test_a_target_from_an_mgrs_round_trip_is_found(self):
+        """The case that broke: same place, different rounding cell."""
+        typed_lat, typed_lon = 34.64814884477028, -83.86130087665374
+        self.assertNotEqual(catalog.key_for(typed_lat, typed_lon, radius_m=self.RADIUS),
+                            self.key)
+        self.assertEqual(catalog.find_covering(typed_lat, typed_lon, root=self.root),
+                         self.key)
+
+    def test_a_target_nudged_across_the_area_is_still_found(self):
+        # 100 m north, well inside a 250 m radius.
+        moved = self.LAT + 100.0 / catalog.METRES_PER_DEGREE_LAT
+        self.assertEqual(catalog.find_covering(moved, self.LON, root=self.root),
+                         self.key)
+
+    def test_a_target_beyond_the_usable_area_is_not_found(self):
+        """Matching to the very edge would leave the target with no context."""
+        far = self.LAT + 240.0 / catalog.METRES_PER_DEGREE_LAT
+        self.assertIsNone(catalog.find_covering(far, self.LON, root=self.root))
+
+    def test_a_target_in_another_state_is_not_found(self):
+        self.assertIsNone(catalog.find_covering(40.0, -100.0, root=self.root))
+
+    def test_longitude_is_scaled_by_latitude(self):
+        """A degree of longitude is ~820 m shorter here than a degree of latitude.
+
+        Without the cosine term an east-west offset reads as smaller than it
+        is, and a target outside the area would match anyway.
+        """
+        north, east = catalog.offset_m(self.LAT, self.LON + 0.001,
+                                       self.LAT, self.LON)
+        self.assertEqual(round(north), 0)
+        self.assertLess(east, 111.32)   # would be 111.32 m unscaled
+        self.assertGreater(east, 80.0)
+
+    def test_the_nearest_area_wins_when_several_cover_a_target(self):
+        neighbour_lat = self.LAT + 40.0 / catalog.METRES_PER_DEGREE_LAT
+        other = catalog.key_for(neighbour_lat, self.LON, radius_m=self.RADIUS)
+        directory = self.root / other
+        directory.mkdir(parents=True)
+        (directory / "tileset.json").write_text("{}", encoding="utf-8")
+        catalog.write_manifest(directory, neighbour_lat, self.LON, radius_m=self.RADIUS)
+
+        # Sitting 5 m from the neighbour's centre, 35 m from the original's.
+        probe = neighbour_lat + 5.0 / catalog.METRES_PER_DEGREE_LAT
+        self.assertEqual(catalog.find_covering(probe, self.LON, root=self.root), other)
+
+    def test_a_tileset_without_a_manifest_is_skipped_not_fatal(self):
+        """Tilesets built before manifests existed must not break the lookup."""
+        legacy = "0" * 16
+        (self.root / legacy).mkdir()
+        (self.root / legacy / "tileset.json").write_text("{}", encoding="utf-8")
+        self.assertEqual(catalog.find_covering(self.LAT, self.LON, root=self.root),
+                         self.key)
+
+    def test_a_corrupt_manifest_is_skipped(self):
+        (self.root / self.key / catalog.MANIFEST_FILENAME).write_text(
+            "not json", encoding="utf-8")
+        self.assertIsNone(catalog.find_covering(self.LAT, self.LON, root=self.root))
+
+    def test_a_manifest_round_trips(self):
+        area = catalog.read_manifest(self.root / self.key)
+        self.assertEqual(area, (self.LAT, self.LON, self.RADIUS))
