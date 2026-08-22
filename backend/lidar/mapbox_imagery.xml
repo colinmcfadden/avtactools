@@ -1,0 +1,31 @@
+<GDAL_WMS>
+  <!--
+    Aerial imagery as a GDAL raster, so PDAL's filters.colorization can sample
+    real colour per point without anything being downloaded ahead of time.
+
+    Same Mapbox satellite tiles the 2D map draws, so a point cloud and the map
+    under it cannot disagree about what is on the ground.
+
+    BlockSize is 1024 rather than 512 because the @2x suffix asks Mapbox for
+    retina tiles: request 512 and it returns 1024, which GDAL rejects as the
+    wrong size for the block.
+  -->
+  <Service name="TMS">
+    <ServerUrl>https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/512/${z}/${x}/${y}@2x?access_token=pk.eyJ1IjoiY21jZmFkZGVuOSIsImEiOiJjbWxvNGhhYWIwNmpmM2VvbTJ5YjJ3MmZxIn0.zxZ__KSBdP8KuLN0rzULlw</ServerUrl>
+  </Service>
+  <DataWindow>
+    <UpperLeftX>-20037508.34</UpperLeftX>
+    <UpperLeftY>20037508.34</UpperLeftY>
+    <LowerRightX>20037508.34</LowerRightX>
+    <LowerRightY>-20037508.34</LowerRightY>
+    <TileLevel>18</TileLevel>
+    <TileCountX>1</TileCountX>
+    <TileCountY>1</TileCountY>
+    <YOrigin>top</YOrigin>
+  </DataWindow>
+  <Projection>EPSG:3857</Projection>
+  <BlockSizeX>1024</BlockSizeX>
+  <BlockSizeY>1024</BlockSizeY>
+  <BandsCount>3</BandsCount>
+  <Cache/>
+</GDAL_WMS>

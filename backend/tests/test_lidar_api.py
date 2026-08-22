@@ -80,6 +80,30 @@ class LidarApiTests(unittest.TestCase):
         self.assertNotIn("lat", body)
         self.assertNotIn("lon", body)
 
+    def test_an_unbuilt_target_comes_back_with_its_coordinates(self):
+        """So the client can say how to build it.
+
+        Reporting only an opaque key left the user with a hash and no action;
+        the coordinates are the caller's own, already in the request body.
+        """
+        body = self.client.post("/api/lidar/resolve", json=TARGET,
+                                headers=self.auth).get_json()
+        self.assertFalse(body["available"])
+        self.assertAlmostEqual(body["target"]["lat"], TARGET["lat"])
+        self.assertAlmostEqual(body["target"]["lon"], TARGET["lon"])
+        self.assertEqual(body["target"]["radius_m"], 250)
+
+    def test_a_built_target_does_not_echo_coordinates_back(self):
+        """Nothing needs them once there is a tileset to point at."""
+        key = catalog.key_for(**TARGET, radius_m=250)
+        self.make_tileset(key)
+        catalog.write_manifest(catalog.path_for(key), TARGET["lat"],
+                               TARGET["lon"], radius_m=250)
+        body = self.client.post("/api/lidar/resolve", json=TARGET,
+                                headers=self.auth).get_json()
+        self.assertTrue(body["available"])
+        self.assertNotIn("target", body)
+
     def test_resolve_reports_absence_rather_than_failing(self):
         """A target with no tileset yet is a normal state, not an error."""
         body = self.client.post("/api/lidar/resolve", headers=self.auth,

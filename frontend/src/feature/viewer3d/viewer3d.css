@@ -74,13 +74,31 @@
   transform: translate(-50%, -50%);
 }
 
-.lz3d-window__key {
+/* The build command has to be selectable and readable — it is the one thing
+   in this panel the user is meant to act on. */
+.lz3d-window__command {
   display: block;
-  margin: 8px 0;
-  font-size: 0.66rem;
-  letter-spacing: 0.04em;
-  opacity: 0.5;
+  margin: 10px 0 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(125, 166, 199, 0.28);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #cfe3f2;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  text-align: left;
+  user-select: all;
+  word-break: break-all;
 }
+
+.lz3d-window__hint {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.66rem;
+  opacity: 0.55;
+}
+
+.lz3d-window__missing { max-width: 420px; }
 
 .lz3d-window__retry {
   min-height: 28px;

@@ -15,7 +15,14 @@ import "./viewer3d.css";
  */
 const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
   const nodeRef = useRef(null);
-  const { state, url, key, error, refresh } = useLidarTileset({ lat, lon, radiusM });
+  const { state, url, key, target, error, refresh } = useLidarTileset({ lat, lon, radiusM });
+
+  // The command that builds this exact spot. An opaque key told the user
+  // nothing they could act on; coordinates they can paste do.
+  const buildCommand = target
+    ? `python tools/build_lz.py --lat ${target.lat.toFixed(6)} ` +
+      `--lon ${target.lon.toFixed(6)} --radius ${Math.round(target.radius_m)}`
+    : null;
 
   return (
     <Draggable nodeRef={nodeRef} handle=".modal-header">
@@ -43,10 +50,15 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
           )}
 
           {state === "missing" && (
-            <div className="viewer3d__status">
+            <div className="viewer3d__status lz3d-window__missing">
               <strong>Not generated</strong>
-              No point cloud has been built for this location yet.
-              <code className="lz3d-window__key">{key}</code>
+              No point cloud covers this target yet. Build one with:
+              {buildCommand && (
+                <code className="lz3d-window__command">{buildCommand}</code>
+              )}
+              <span className="lz3d-window__hint">
+                Takes about 30 seconds. Needs Docker and the toolchain image.
+              </span>
               <button type="button" className="lz3d-window__retry" onClick={refresh}>
                 Check again
               </button>

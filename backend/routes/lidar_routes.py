@@ -117,8 +117,15 @@ def resolve():
         key = catalog.key_for(lat, lon, radius_m=radius)
 
     available = catalog.exists(key)
-    return jsonify({
+    body = {
         "key": key,
         "available": available,
         "url": _tileset_url(key) if available else None,
-    })
+    }
+    if not available:
+        # Echo the target back so the client can say how to build it. These
+        # are the caller's own coordinates, already in the request body, so
+        # nothing new is disclosed — and without them the client can only
+        # report an opaque key nobody can act on.
+        body["target"] = {"lat": lat, "lon": lon, "radius_m": radius}
+    return jsonify(body)
