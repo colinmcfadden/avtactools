@@ -20,14 +20,13 @@ import sys
 import time
 from pathlib import Path
 
-from . import aoi, collection, pipeline
+from . import aoi, collection, coverage, pipeline
 from .tiles import DISPLAY_SPACING_M, TileBuildError, build_pointcloud_tiles
 
-# Entwine-indexed 3DEP on AWS Open Data. Each survey block is its own index, so
-# the right one depends on where the target is; north Georgia is B3. Choosing a
-# block from a coverage index is a later problem — for now it is explicit.
+# Entwine-indexed 3DEP on AWS Open Data. Each survey is its own index, and
+# which one to read is resolved per target by lidar.coverage — most ground is
+# covered several times over by surveys of very different quality.
 EPT_BASE = "https://s3-us-west-2.amazonaws.com/usgs-lidar-public"
-DEFAULT_EPT_PROJECT = "GA_Statewide_B3_2018"
 
 
 def ept_url(project: str) -> str:
@@ -81,8 +80,9 @@ def main(argv=None) -> int:
     parser.add_argument("--reindex", action="store_true",
                         help="re-read every tile header, for a collection that "
                              "is still downloading")
-    parser.add_argument("--project", default=DEFAULT_EPT_PROJECT,
-                        help="EPT survey block, when reading from AWS")
+    parser.add_argument("--project", default=None,
+                        help="EPT survey to read, overriding the automatic "
+                             "choice; see lidar.coverage for what covers a point")
     parser.add_argument("--classes", default=None,
                         help="comma-separated ASPRS classes to keep; defaults "
                              "to ground and vegetation. Surveys that classify "
@@ -115,9 +115,23 @@ def main(argv=None) -> int:
             # one case where it has to be assumed. Albers is what the statewide
             # products use; a collection reads the real value per tile.
             source_srs = aoi.ALBERS_NAVD88
-        else:
+        elif args.project:
             source = ept_url(args.project)
             source_srs = aoi.WEB_MERCATOR_NAVD88
+        else:
+            try:
+                survey = coverage.best_survey(args.lat, args.lon)
+            except coverage.CoverageError as error:
+                print(f"failed: {error}", file=sys.stderr)
+                return 1
+            source = survey.url
+            source_srs = aoi.WEB_MERCATOR_NAVD88
+            print(f"survey  : {survey.name} ({survey.year})")
+            if not survey.likely_classified:
+                # Worth saying plainly: the build will still succeed, it will
+                # just have no vegetation in it.
+                print("warning : this survey predates the 3DEP classification "
+                      "spec — expect ground only. Try --color-by height.")
         bbox = aoi.bbox_for(args.lat, args.lon, radius_m=args.radius,
                             source_srs=source_srs)
 

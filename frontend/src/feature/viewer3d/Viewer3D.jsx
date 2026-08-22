@@ -8,13 +8,13 @@ import "cesium/Build/Cesium/Widgets/widgets.css";
 import "./viewer3d.css";
 
 // Colour comes baked into each point's RGB by the tile build (see
-// backend/lidar/pipeline.py), not from a style applied here.
+// backend/lidar/pipeline.py). No style is applied here at all.
 //
 // The earlier version styled on ${Classification}, which silently painted
-// every cloud one flat grey: 3D Tiles .pnts files carry POSITION and RGB and
-// no classification at all, so the condition matched nothing and every point
-// fell through to the fallback colour. Point size is all that is left to set.
-const POINT_STYLE = { pointSize: 2.0 };
+// every cloud one flat grey: .pnts files carry POSITION and RGB and no
+// classification, so the condition matched nothing and every point fell
+// through to the fallback colour. The only other thing a style set was
+// pointSize, which attenuation below overrides anyway.
 
 /**
  * A 3D view of one LiDAR point cloud tileset.
@@ -69,7 +69,19 @@ const Viewer3D = ({ tilesetUrl, requiresAuth = true, onReady }) => {
         if (cancelled) return;
 
         viewer.scene.primitives.add(tileset);
-        tileset.style = new Cesium.Cesium3DTileStyle(POINT_STYLE);
+
+        // Eye-dome lighting is what stops a point cloud reading as a flat
+        // speckled sheet. Points carry no normals, so there is no shading cue
+        // at all without it; EDL darkens each point by how much nearer its
+        // neighbours are, which outlines canopy and terrain relief. Attenuation
+        // sizes points by distance so the near ground reads as a surface rather
+        // than separating into dots.
+        const shading = tileset.pointCloudShading;
+        shading.attenuation = true;
+        shading.eyeDomeLighting = true;
+        shading.eyeDomeLightingStrength = 1.0;
+        shading.eyeDomeLightingRadius = 1.0;
+        shading.maximumAttenuation = 4;
 
         // Ready means the tileset is in the scene, not that the camera has
         // finished moving. zoomTo resolves only when its flight completes, and
