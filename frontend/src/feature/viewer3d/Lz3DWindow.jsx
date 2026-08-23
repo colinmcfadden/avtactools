@@ -6,6 +6,12 @@ import { probeTerrain } from "./terrainProvider";
 import "../export/ExportModal.css";
 import "./viewer3d.css";
 
+// Where builds are run, and the downloaded survey to read. Configured because
+// they differ per deployment: a workstation checkout on Windows, or the server
+// that holds both the LiDAR and the tilesets it serves.
+const BUILD_CWD = process.env.REACT_APP_LIDAR_BUILD_CWD || "/opt/avtactools";
+const BUILD_COLLECTION = process.env.REACT_APP_LIDAR_COLLECTION || "";
+
 /**
  * The 3D point cloud for one LZ/PZ, in a draggable window over the map.
  *
@@ -31,13 +37,15 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
     return () => { cancelled = true; };
   }, [lat, lon]);
 
-  // The command that builds this exact spot, including the cd — the script
-  // path is relative to the repo root, so the command alone fails from
-  // anywhere else, and "run this" without saying where is not an instruction.
+  // The command that builds this exact spot. It has to say where to run, since
+  // the script path is relative to the repo root — but where that is depends on
+  // the deployment. Builds belong wherever the LiDAR and the tileset store
+  // live, which for a self-hosted backend is the server, not a workstation.
   const buildCommand = target
-    ? `cd C:\\_dev\\avtactools; python tools/build_lz.py ` +
+    ? `cd ${BUILD_CWD} && python tools/build_lz.py ` +
       `--lat ${target.lat.toFixed(6)} --lon ${target.lon.toFixed(6)} ` +
-      `--radius ${Math.round(target.radius_m)}`
+      `--radius ${Math.round(target.radius_m)}` +
+      (BUILD_COLLECTION ? ` --collection ${BUILD_COLLECTION}` : "")
     : null;
 
   const [copied, setCopied] = useState(false);
@@ -86,8 +94,8 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
           {state === "missing" && (
             <div className="viewer3d__status lz3d-window__missing">
               <strong>Not generated</strong>
-              No point cloud covers this target yet. Open a new PowerShell
-              window — leave the app running — and paste this:
+              No point cloud covers this target yet. Run this on the machine
+              that holds the tileset store — leave the app running:
               {buildCommand && (
                 <code className="lz3d-window__command">{buildCommand}</code>
               )}
