@@ -38,28 +38,44 @@ def ept_url(project: str) -> str:
 def _from_collection(args):
     """Pick the tiles covering the target out of a downloaded collection.
 
-    The CRS is read from the tiles rather than assumed. Published products
-    differ — the statewide LAZ is Albers, the Lake Lanier project is UTM 17N —
-    and reading one as the other crops an area that contains nothing.
+    A collection is not one survey. A download over one area routinely holds
+    several — the 2018 Georgia statewide product in Albers alongside the ARRA
+    Lake Lanier project in UTM 17N — and their tile bounds are then numbers in
+    different frames. Taking the first tile's CRS to speak for all of them
+    compares Albers eastings around 1,076,000 against UTM ones around 237,000
+    and selects nothing, or worse, the wrong tiles.
+
+    So each coordinate system is tried on its own, and the group that actually
+    covers the target with the most tiles wins.
     """
     tiles = collection.index_for(args.collection, refresh=args.reindex)
+    groups = collection.by_crs(tiles)
 
-    # Every tile in a collection comes from one product, so the first one
-    # speaks for all of them; a mismatch further in is caught below.
-    tile_crs = collection.read_crs(tiles[0].path)
-    source_srs = tile_crs.compound()
+    best = None
+    for source_srs, group in groups.items():
+        if not source_srs:
+            continue
+        bbox = aoi.bbox_for(args.lat, args.lon, radius_m=args.radius,
+                            source_srs=source_srs)
+        covering = collection.tiles_for(group, bbox)
+        if covering and (best is None or len(covering) > len(best[2])):
+            best = (source_srs, bbox, covering)
+
+    if best is None:
+        raise collection.CollectionError(
+            f"none of the {len(tiles)} tiles in {args.collection} cover "
+            f"{args.lat:.5f}, {args.lon:.5f}")
+
+    source_srs, bbox, covering = best
+    if len(groups) > 1:
+        print(f"note    : {len(groups)} coordinate systems in this collection; "
+              f"using {source_srs}")
+
+    tile_crs = collection.read_crs(covering[0].path)
     if not tile_crs.vertical_declared:
         print(f"note    : vertical datum not machine-readable "
               f"({tile_crs.citation or 'no citation'}); forcing "
               f"{collection.DEFAULT_VERTICAL}")
-
-    bbox = aoi.bbox_for(args.lat, args.lon, radius_m=args.radius,
-                        source_srs=source_srs)
-    covering = collection.tiles_for(tiles, bbox)
-    if not covering:
-        raise collection.CollectionError(
-            f"none of the {len(tiles)} tiles in {args.collection} cover "
-            f"{args.lat:.5f}, {args.lon:.5f}")
 
     return [str(tile.path) for tile in covering], source_srs, bbox
 

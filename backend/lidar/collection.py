@@ -102,8 +102,13 @@ class Tile:
     """One LAZ file and the ground it covers."""
 
     path: Path
-    bounds: tuple  # (xmin, ymin, xmax, ymax) in the collection's own CRS
+    bounds: tuple  # (xmin, ymin, xmax, ymax) in this tile's own CRS
     points: int
+    # Carried per tile, not per directory. A download covering one area can
+    # easily hold two surveys — a 2018 statewide product in Albers beside an
+    # ARRA-era one in UTM — and their bounds are then numbers in different
+    # frames. Comparing them against one bbox selects nonsense.
+    crs: str = ""
 
     def intersects(self, bbox) -> bool:
         """Whether this tile overlaps an area of interest.
@@ -137,7 +142,13 @@ def read_header(path) -> Tile:
         if wide:
             points = wide
 
-    return Tile(path=path, bounds=(minx, miny, maxx, maxy), points=points)
+    try:
+        crs = read_crs(path).compound()
+    except (CollectionError, OSError, struct.error):
+        crs = ""
+
+    return Tile(path=path, bounds=(minx, miny, maxx, maxy), points=points,
+                crs=crs)
 
 
 def _vlrs(data, header_size, count):
@@ -243,6 +254,19 @@ def scan(directory, *, pattern="*.laz") -> list:
     return tiles
 
 
+def by_crs(tiles) -> dict:
+    """Tiles grouped by the coordinate system they are written in.
+
+    A collection is not guaranteed to be one survey. Georgia's 2018 statewide
+    product is Albers and the ARRA Lake Lanier project is UTM 17N, and a
+    download of one area can contain both.
+    """
+    groups = {}
+    for tile in tiles:
+        groups.setdefault(tile.crs, []).append(tile)
+    return groups
+
+
 def tiles_for(tiles, bbox) -> list:
     """The tiles covering an area of interest, largest overlap first.
 
@@ -266,7 +290,8 @@ def save_index(tiles, path) -> Path:
     path = Path(path)
     path.write_text(json.dumps({
         "tiles": [
-            {"path": str(tile.path), "bounds": list(tile.bounds), "points": tile.points}
+            {"path": str(tile.path), "bounds": list(tile.bounds),
+             "points": tile.points, "crs": tile.crs}
             for tile in tiles
         ],
     }, indent=2), encoding="utf-8")
@@ -282,7 +307,8 @@ def load_index(path) -> list:
         if tile_path.exists():
             tiles.append(Tile(path=tile_path,
                               bounds=tuple(entry["bounds"]),
-                              points=entry.get("points", 0)))
+                              points=entry.get("points", 0),
+                              crs=entry.get("crs", "")))
     return tiles
 
 

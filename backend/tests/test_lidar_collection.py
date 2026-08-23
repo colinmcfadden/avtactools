@@ -150,6 +150,57 @@ class CrsTests(unittest.TestCase):
         self.assertTrue(crs.vertical_declared)
 
 
+class MixedSurveyTests(unittest.TestCase):
+    """A downloaded collection is not guaranteed to be a single survey.
+
+    A real 1,731-tile download over north Georgia held 1,499 tiles of the 2018
+    statewide product in Albers and 232 of the ARRA Lake Lanier project in
+    UTM 17N. Their bounds are then numbers in different frames — Albers
+    eastings near 1,076,000 against UTM ones near 237,000 — so one bbox
+    compared against all of them selects nothing, or the wrong tiles.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.dir, ignore_errors=True))
+        write_tile(self.dir, "albers_a.laz",
+                   bounds=(1076000.0, 1347000.0, 1077000.0, 1348000.0),
+                   geokeys={3072: (0, 1, 6350)})
+        write_tile(self.dir, "albers_b.laz",
+                   bounds=(1077000.0, 1347000.0, 1078000.0, 1348000.0),
+                   geokeys={3072: (0, 1, 6350)})
+        write_tile(self.dir, "utm.laz",
+                   bounds=(237000.0, 3837000.0, 238500.0, 3838500.0),
+                   geokeys={3072: (0, 1, 26917)})
+        self.tiles = collection.scan(self.dir)
+
+    def test_each_tile_carries_its_own_coordinate_system(self):
+        systems = {tile.crs for tile in self.tiles}
+        self.assertEqual(systems, {"EPSG:6350+5703", "EPSG:26917+5703"})
+
+    def test_tiles_group_by_coordinate_system(self):
+        groups = collection.by_crs(self.tiles)
+        self.assertEqual(len(groups), 2)
+        self.assertEqual(len(groups["EPSG:6350+5703"]), 2)
+        self.assertEqual(len(groups["EPSG:26917+5703"]), 1)
+
+    def test_a_bbox_only_selects_within_its_own_frame(self):
+        """The failure: an Albers bbox must not match a UTM tile."""
+        groups = collection.by_crs(self.tiles)
+        albers_bbox = (1076500.0, 1347500.0, 1076600.0, 1347600.0)
+        self.assertEqual(
+            len(collection.tiles_for(groups["EPSG:6350+5703"], albers_bbox)), 1)
+        self.assertEqual(
+            len(collection.tiles_for(groups["EPSG:26917+5703"], albers_bbox)), 0)
+
+    def test_the_crs_survives_the_cached_index(self):
+        """Re-reading every header for 1,700 files is not free."""
+        collection.save_index(self.tiles, Path(self.dir) / collection.INDEX_FILENAME)
+        reloaded = collection.load_index(Path(self.dir) / collection.INDEX_FILENAME)
+        self.assertEqual({t.crs for t in reloaded},
+                         {"EPSG:6350+5703", "EPSG:26917+5703"})
+
+
 class IndexTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
