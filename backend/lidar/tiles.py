@@ -26,21 +26,42 @@ from .crs import ECEF
 # Thinning was costing more than it saved. A 500 m area of GA_Statewide_B3_2018
 # holds 3.5 points/m²; sampling to one per metre threw away half of that and
 # left visible gaps between points, which is what made the cloud read as
-# scattered dots rather than a surface. Full density for an LZ-sized area is
-# 12.6 MB — cheap for the difference it makes.
+# scattered dots rather than a surface.
 #
-# It cannot stay unbounded, though: area grows with the square of the radius,
-# so a 2 km request would be some 200 MB. Past the radius below, spacing is
-# scaled to keep a tileset roughly constant in size.
-FULL_DENSITY_RADIUS_M = 400.0
-DISPLAY_SPACING_M = None
+# The remaining thinning was guarding browser memory, and that guard was
+# unnecessary: 3D Tiles streams by level of detail. A built tileset of 688,375
+# points loads 2,670 of them when the camera is pulled back, and only reaches
+# the full-detail leaves close in. Quadrupling the area does not quadruple what
+# a viewer holds.
+#
+# So the real costs of a large build are the ones the operator pays — time
+# against a remote survey, and disk on the server — not anything the crew
+# sees. Full density therefore runs out to a radius wide enough for any
+# approach, and thinning past it is gentle rather than protective.
+FULL_DENSITY_RADIUS_M = 1000.0
+
+# Roughly bytes per point through the pipeline, for warning about a build
+# before it runs rather than after it has taken twenty minutes.
+BYTES_PER_POINT = 15
+TYPICAL_DENSITY_PER_M2 = 2.75
+
+
+def estimated_size_mb(radius_m: float, spacing_m=None) -> float:
+    """Rough tileset size, for telling an operator what they have asked for."""
+    area = (2 * radius_m) ** 2
+    density = TYPICAL_DENSITY_PER_M2 if not spacing_m else min(
+        TYPICAL_DENSITY_PER_M2, 1.0 / (spacing_m ** 2))
+    return area * density * BYTES_PER_POINT / 1048576
 
 
 # A context ring is landscape, not obstruction data: it exists so the approach
 # has somewhere to be, and nothing in it is measured. Thinning it hard is what
-# makes range affordable — a 1 km ring at 4 m spacing costs less than the core.
+# makes a wide ring affordable to build.
 CONTEXT_SPACING_DIVISOR = 250.0
 MIN_CONTEXT_SPACING_M = 2.0
+
+# No thinning. Kept as a name because callers pass it explicitly.
+DISPLAY_SPACING_M = None
 
 
 def context_spacing(radius_m: float) -> float:
@@ -49,13 +70,16 @@ def context_spacing(radius_m: float) -> float:
 
 
 def spacing_for_radius(radius_m: float) -> float | None:
-    """Point spacing that keeps a tileset a sensible size at any radius.
+    """Point spacing for a build of this radius.
 
-    None means no thinning — every return the survey recorded.
+    None means no thinning — every return the survey recorded, which is the
+    answer for anything up to a kilometre.
     """
     if radius_m <= FULL_DENSITY_RADIUS_M:
         return None
-    return radius_m / FULL_DENSITY_RADIUS_M
+    # Gentle: the square root keeps a 4 km radius at 2 m spacing rather than
+    # the 10 m the old linear rule would have imposed.
+    return (radius_m / FULL_DENSITY_RADIUS_M) ** 0.5
 
 
 class TileBuildError(RuntimeError):

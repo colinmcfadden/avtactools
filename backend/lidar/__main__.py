@@ -23,7 +23,7 @@ from pathlib import Path
 from . import aoi, catalog, collection, coverage, pipeline
 from .catalog import CONTEXT_DIRNAME
 from .tiles import (TileBuildError, build_pointcloud_tiles, context_spacing,
-                    spacing_for_radius)
+                    estimated_size_mb, spacing_for_radius)
 
 # Entwine-indexed 3DEP on AWS Open Data. Each survey is its own index, and
 # which one to read is resolved per target by lidar.coverage — most ground is
@@ -158,6 +158,16 @@ def main(argv=None) -> int:
     print(f"srs     : {source_srs}")
     print(f"classes : {','.join(str(c) for c in classes)}  "
           f"colour by {color_by or 'nothing'}")
+    thinning = (spacing_for_radius(args.radius)
+                if args.spacing is None else (args.spacing or None))
+    estimate = estimated_size_mb(args.radius, thinning)
+    print(f"density : {f'{thinning:.1f} m spacing' if thinning else 'full'}"
+          f"  (~{estimate:.0f} MB)")
+    if estimate > 250:
+        # Build time against a remote survey is the real cost, and it is easy
+        # to ask for twenty minutes of it by accident.
+        print("warning : a build this size takes a long while; consider a "
+              "smaller --radius with --context for the surroundings")
     if isinstance(source, list):
         print(f"source  : {len(source)} tile(s) from {args.collection}")
         for path in source:
@@ -169,8 +179,7 @@ def main(argv=None) -> int:
     try:
         tileset = build_pointcloud_tiles(
             source, args.out, bbox=bbox, source_srs=source_srs,
-            thin_spacing_m=(spacing_for_radius(args.radius)
-                            if args.spacing is None else (args.spacing or None)),
+            thin_spacing_m=thinning,
             classes=classes, color_by=color_by,
             imagery_raster=args.imagery,
         )
