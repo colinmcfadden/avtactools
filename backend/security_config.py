@@ -60,28 +60,52 @@ def session_cookie_secure(environ):
     return bool(trusted_proxy_header(environ))
 
 
+PRODUCTION_SIGNALS = 'FLY_APP_NAME, TRUSTED_PROXY or APP_ENV=production'
+
+
+def is_production(environ):
+    """Whether this process is a deployment, so startup checks must hold.
+
+    These checks were keyed to ``FLY_APP_NAME``, so the self-hosted deployment
+    behind Cloudflare skipped them and silently signed every session with the
+    public development secret. Any declared edge now counts — a bare local run
+    never sets ``TRUSTED_PROXY`` — and ``APP_ENV=production`` covers a host
+    with neither.
+
+    There is deliberately no switch back to the development fallback: the only
+    thing it would allow is the forgeable secret on a deployed host. To run
+    locally with ``TRUSTED_PROXY`` set, give it a JWT secret and email settings.
+    """
+    if environ.get('FLY_APP_NAME') or (environ.get('TRUSTED_PROXY') or '').strip():
+        return True
+    return (environ.get('APP_ENV') or '').strip().lower() in ('production', 'prod')
+
+
 def resolve_jwt_secret(environ):
     secret = environ.get('JWT_SECRET_KEY')
-    if environ.get('FLY_APP_NAME') and (not secret or len(secret) < 32):
+    if is_production(environ) and (not secret or len(secret) < 32):
         raise RuntimeError(
-            'JWT_SECRET_KEY must be configured on Fly and contain at least 32 characters'
+            'JWT_SECRET_KEY must be configured in production '
+            f'({PRODUCTION_SIGNALS} is set) and contain at least 32 characters'
         )
     return secret or 'dev-secret-change-me'
 
 
 def validate_email_configuration(environ):
-    """Refuse a Fly deployment that cannot deliver account activation mail."""
+    """Refuse a deployment that cannot deliver account activation mail."""
 
-    if not environ.get('FLY_APP_NAME'):
+    if not is_production(environ):
         return
 
     api_key = (environ.get('RESEND_API_KEY') or '').strip()
     sender = (environ.get('EMAIL_FROM') or '').strip().lower()
     if not api_key:
         raise RuntimeError(
-            'RESEND_API_KEY must be configured on Fly for account email delivery'
+            'RESEND_API_KEY must be configured in production '
+            f'({PRODUCTION_SIGNALS} is set) for account email delivery'
         )
     if not sender or 'onboarding@resend.dev' in sender:
         raise RuntimeError(
-            'EMAIL_FROM must use a verified Resend sending domain on Fly'
+            'EMAIL_FROM must use a verified Resend sending domain in production '
+            f'({PRODUCTION_SIGNALS} is set)'
         )
