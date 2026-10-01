@@ -27,8 +27,10 @@ from functools import lru_cache
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling
-from rasterio.warp import reproject
-from rasterio.transform import from_bounds
+from rasterio.transform import Affine, from_bounds
+from rasterio.warp import reproject, transform_bounds
+from rasterio.windows import Window
+from rasterio.windows import from_bounds as window_from_bounds
 
 from terrain_provider import LOCAL_CATALOG
 
@@ -139,6 +141,80 @@ def _close_gaps(grid: np.ndarray, *, passes: int = 24) -> np.ndarray:
     return filled
 
 
+# Pixels read per tile sample along each axis. Bilinear resampling onto the
+# tile grid wants a little more than one source pixel per sample; much more is
+# reading detail the tile then throws away.
+OVERSAMPLE = 2
+
+
+def _read_patch(dataset, bounds, samples: int, dst_transform):
+    """One DEM's heights on a tile's grid, read only as finely as the tile needs.
+
+    Reading a DEM's full band to fill a 65x65 grid is what made coarse tiles
+    take minutes. A 1/3 arc-second DEM is 10812 pixels square — 468 MB — and a
+    level 0 tile touches every DEM mounted, so the first tile Cesium asked for
+    meant reading tens of gigabytes. Nothing on the globe loads until that tile
+    does, so the surface around the point cloud simply never appeared.
+
+    Instead this reads only the window of the DEM inside the tile, decimated to
+    about twice the tile's own resolution. GDAL serves a decimated read from
+    the file's overviews (USGS DEMs carry them to 1/32), so a continent-sized
+    tile costs a few hundred kilobytes per DEM. Near the landing point, where a
+    tile is smaller than the window's pixel count, nothing is decimated at all.
+
+    Returns None when the DEM does not reach into the tile.
+    """
+    west, south, east, north = bounds
+    # Two samples of margin on every side. Bilinear interpolation at the
+    # tile's edge needs the source pixels just beyond it; cropping exactly to
+    # the tile cut them off and left edge cells up to 2 m out.
+    pad_x = (east - west) / (samples - 1) * 2
+    pad_y = (north - south) / (samples - 1) * 2
+    left, bottom, right, top = transform_bounds(WGS84, dataset.crs,
+                                                west - pad_x, south - pad_y,
+                                                east + pad_x, north + pad_y,
+                                                densify_pts=21)
+    window = window_from_bounds(left, bottom, right, top,
+                                transform=dataset.transform)
+
+    # Whole pixels, clipped to the DEM.
+    col0 = max(0, math.floor(window.col_off))
+    row0 = max(0, math.floor(window.row_off))
+    col1 = min(dataset.width, math.ceil(window.col_off + window.width))
+    row1 = min(dataset.height, math.ceil(window.row_off + window.height))
+    if col1 <= col0 or row1 <= row0:
+        return None
+    width, height = col1 - col0, row1 - row0
+
+    # What share of the tile this window spans, and so how many pixels it
+    # needs to contribute.
+    span_x = abs(dataset.transform.a) * width / max(right - left, 1e-12)
+    span_y = abs(dataset.transform.e) * height / max(top - bottom, 1e-12)
+    out_w = max(2, min(width, math.ceil(samples * OVERSAMPLE * span_x)))
+    out_h = max(2, min(height, math.ceil(samples * OVERSAMPLE * span_y)))
+
+    read_window = Window(col0, row0, width, height)
+    data = dataset.read(1, window=read_window, out_shape=(out_h, out_w),
+                        resampling=Resampling.bilinear, masked=True)
+    source = np.ma.filled(data.astype(np.float32), np.nan)
+    src_transform = (dataset.window_transform(read_window)
+                     * Affine.scale(width / out_w, height / out_h))
+
+    patch = np.full((samples, samples), np.nan, dtype=np.float32)
+    reproject(
+        source=source,
+        destination=patch,
+        src_transform=src_transform,
+        src_crs=dataset.crs,
+        src_nodata=np.nan,
+        dst_transform=dst_transform,
+        dst_crs=WGS84,
+        dst_nodata=np.nan,
+        resampling=Resampling.bilinear,
+    )
+    return patch
+
+
 def _sources_for(bounds_latlon):
     """Local DEM files intersecting a tile, highest resolution first."""
     south, west, north, east = bounds_latlon
@@ -166,17 +242,11 @@ def sample_tile(level: int, x: int, y: int, *, samples: int = TILE_SAMPLES):
     for entry in sources:
         try:
             with rasterio.open(entry.path) as dataset:
-                patch = np.full((samples, samples), np.nan, dtype=np.float32)
-                reproject(
-                    source=rasterio.band(dataset, 1),
-                    destination=patch,
-                    src_crs=dataset.crs,
-                    dst_crs=WGS84,
-                    dst_transform=transform,
-                    dst_nodata=np.nan,
-                    resampling=Resampling.bilinear,
-                )
+                patch = _read_patch(dataset, (west, south, east, north),
+                                    samples, transform)
         except (rasterio.errors.RasterioError, OSError, ValueError):
+            continue
+        if patch is None:
             continue
 
         # Later sources are coarser, so they only fill what is still missing.
