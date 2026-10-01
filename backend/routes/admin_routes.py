@@ -35,6 +35,7 @@ from routes.aircraft_routes import (
     _slugify as _aircraft_slug,
 )
 from auth_rate_limit import check_rate_limits
+from security_config import resolve_client_ip
 from email_service import send_verification_email, send_password_reset_email
 from routes.auth import _create_account_token, VERIFY_PURPOSE, RESET_PURPOSE
 
@@ -97,9 +98,7 @@ def _inject():
 
 
 def _client_ip():
-    if os.environ.get('FLY_APP_NAME'):
-        return (request.headers.get('Fly-Client-IP') or request.remote_addr or 'unknown').strip()
-    return request.remote_addr or 'unknown'
+    return resolve_client_ip(request, os.environ)
 
 
 # --- authentication ---------------------------------------------------------

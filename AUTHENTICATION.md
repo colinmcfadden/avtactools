@@ -31,9 +31,10 @@ after an explicit user action.
    `NEW_ACCOUNT_NOTIFY_EMAIL` as Fly secrets.
 5. Do not set `EMAIL_DELIVERY_MODE=console` in production.
 
-Fly startup intentionally fails if `RESEND_API_KEY` is missing or `EMAIL_FROM`
-still uses Resend's test sender. This prevents registrations from appearing to
-succeed when the activation email cannot be delivered.
+Production startup (Fly, or any host with `TRUSTED_PROXY` or
+`APP_ENV=production` set) intentionally fails if `RESEND_API_KEY` is missing or
+`EMAIL_FROM` still uses Resend's test sender. This prevents registrations from
+appearing to succeed when the activation email cannot be delivered.
 
 The backend sends verification, welcome, password-reset, password-changed, and
 optional new-account administrator notifications. API keys stay in Flask and

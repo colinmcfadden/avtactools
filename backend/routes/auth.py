@@ -1,5 +1,4 @@
 import hashlib
-import ipaddress
 import os
 import re
 import secrets
@@ -15,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from auth_rate_limit import check_rate_limits
+from security_config import resolve_client_ip
 from email_service import (
     send_new_account_notification,
     send_password_changed_email,
@@ -76,14 +76,7 @@ def _now():
 
 
 def _client_ip():
-    peer = request.remote_addr or 'unknown'
-    if os.environ.get('FLY_APP_NAME'):
-        fly_peer = request.headers.get('Fly-Client-IP', '').strip()
-        try:
-            peer = str(ipaddress.ip_address(fly_peer))
-        except ValueError:
-            pass
-    return peer
+    return resolve_client_ip(request, os.environ)
 
 
 def _generate_mil_code():
@@ -136,16 +129,9 @@ def _rate_limit(scope, email=None):
         'mil_verify': ((20, 600), None),
     }
     ip_rule, email_rule = limits[scope]
-    # Fly injects Fly-Client-IP at its trusted edge. Only honor it when this
-    # process is actually running as a Fly app; locally, use the WSGI peer and
-    # never trust caller-supplied X-Forwarded-For.
-    peer = request.remote_addr or 'unknown'
-    if os.environ.get('FLY_APP_NAME'):
-        fly_peer = request.headers.get('Fly-Client-IP', '').strip()
-        try:
-            peer = str(ipaddress.ip_address(fly_peer))
-        except ValueError:
-            pass
+    # Only a declared edge's header is believed; anything else uses the WSGI
+    # peer, so a caller-supplied X-Forwarded-For can never buy a fresh bucket.
+    peer = _client_ip()
     rules = [(f'{scope}:ip', peer, ip_rule[0], ip_rule[1])]
     if email and email_rule:
         rules.append((f'{scope}:email', email, email_rule[0], email_rule[1]))

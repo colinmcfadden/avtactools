@@ -16,7 +16,11 @@ from models import AircraftProfile, User, db
 from entitlements import account_active, affiliation_ok
 from aircraft_seed import seed_aircraft_profiles
 from schema_sync import sync_table_columns
-from security_config import resolve_jwt_secret, validate_email_configuration
+from security_config import (
+    resolve_jwt_secret,
+    session_cookie_secure,
+    validate_email_configuration,
+)
 
 # Import your Blueprints
 from routes.terrain_routes import terrain_bp
@@ -86,9 +90,10 @@ app.config['SECRET_KEY'] = os.environ.get('ADMIN_SESSION_SECRET') or app.config[
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    # Only require HTTPS for the cookie in the deployed (Fly) environment so
-    # local http://localhost admin testing still works.
-    SESSION_COOKIE_SECURE=bool(os.environ.get('FLY_APP_NAME')),
+    # Secure wherever an HTTPS edge is declared, not only on Fly — this was
+    # keyed to FLY_APP_NAME, so moving the app anywhere else silently dropped
+    # the flag and sent admin session cookies in the clear.
+    SESSION_COOKIE_SECURE=session_cookie_secure(os.environ),
 )
 
 db.init_app(app)
