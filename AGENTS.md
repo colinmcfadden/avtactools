@@ -213,9 +213,13 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 | Database | Supabase Postgres, **Session-mode pooler** | — |
 
 - **Which backend is live is decided by `REACT_APP_API_URL` in Vercel.**
-- The container runs **one gunicorn worker** with a 180 s timeout: SAM holds
-  about 1 GB resident. The rate limiter, QR store and route-share store are
-  in-process — do not add workers or machines without moving them to Redis.
+- The container runs **one gunicorn worker with 8 threads** and a 180 s
+  timeout. One worker because SAM holds about 1 GB resident and the rate
+  limiter, QR store and route-share store are in-process — do not add workers
+  or machines without moving them to Redis. Threads so terrain tiles and
+  point-cloud files load side by side; SAM runs one analysis at a time behind
+  `_sam_lock` (its predictor keeps state between calls). Anything else
+  module-level that is mutated per request needs a lock too.
 - **SAM weights are not in git.** `SAM('sam_b.pt')` runs at import and
   downloads ~350 MB when the file is missing, so a container built from GitHub
   pays that on first start.
@@ -232,6 +236,36 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
   and the backend share `/data/tiles` — see `backend/lidar/SERVER_SETUP.md`.
 - The Fly backend has no build service, so on Fly the 3D window falls back to
   printing a build command for an operator.
+
+### 3D loading speed — what is in place
+
+Options weighed in October 2026 for how fast the 3D view fills in. Measured on
+the owner's workstation against the north Georgia DEMs (73 × 1/3″, 30–35°N).
+
+| | Option | Status | Effect |
+|---|---|---|---|
+| A | gunicorn threads | **Done** — `--threads 8` in `backend/Dockerfile`; SAM and the DEM catalog refresh behind locks | Terrain tiles and point-cloud files no longer queue behind each other or behind an LZ analysis. Production only: the Flask dev server was already threaded. |
+| B | Disk cache of terrain tiles | **Done** — `terrain_tiles.tile_bytes`, `TERRAIN_TILE_CACHE_DIR` | Each tile is computed once. A cached LZ path (levels 0–16) loads in ~40 ms. Keyed by a fingerprint of the DEMs, the tile code and whether the geoid grids are present, so none of those changing can serve stale heights. |
+| C | Low-resolution layer for coarse tiles | **Replaced by warming** — `terrain_tiles.warm`, `TERRAIN_WARM_LEVEL` | Levels 0–8 were the slow ones (0.3–3.3 s per tile; ~12 s down one path); from level 9 every tile is ~50 ms. Warming computes levels 0–9 over the DEM coverage at startup instead: 380 tiles, 58 s, 3.3 MB, once. A first-ever LZ view then costs ~350 ms of terrain. |
+| D | Pre-generate every tile | **Not done** | Pointless after B and C: fine tiles are already ~50 ms on demand, and the whole pyramid is hours and gigabytes. |
+| E | Build the point cloud on save | **Done** — `viewer3d/useBuildOnSave.js` | Saving an LZ asks for a kept build in the background. The build service runs builds someone is watching first, so this never delays the 3D window. LZs loaded already saved are not built. |
+| F | Build from the downloaded collection | **Owner config** — set `LIDAR_COLLECTION=/data/lidar` on the VM's build service | Skips reading the survey from AWS. Not measured since the imagery fix below made builds 5× faster; expect a further cut. |
+| G | Coarser point-cloud streaming (`maximumScreenSpaceError` 2 → 4) | **Not done** | Trades the fidelity the 3D view exists for. |
+
+Also: point colour from Mapbox level 18 instead of 20 (§13) took a 500 m build
+from 707 s to 137 s.
+
+**Cesium ion instead of self-hosted terrain** was considered and not taken. It
+would be faster on a first view (pre-built tiles on a CDN), but its free tier
+is non-commercial only (Commercial starts at $149/month as of October 2026),
+and its terrain is a blend of sources that need not match the USGS DEMs and
+the LiDAR to the metre — self-hosting from the same DEMs, with the same geoid
+correction, is what keeps the point cloud sitting on the ground.
+
+**On the VM:** mount a persistent directory and set
+`TERRAIN_TILE_CACHE_DIR` to it (e.g. `/data/cache/terrain`); without it the
+cache lives in the container's temp directory and is lost on every redeploy,
+which costs one warm-up (~1 min) and the first view of each area again.
 
 ---
 
@@ -257,6 +291,8 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 | `TERRAIN_DATA_DIR` | DEM directory, `os.pathsep`-separated. |
 | `TERRAIN_SOURCE` | `auto` (local, then Terrarium) · `local` · `remote`/`terrarium`. |
 | `TERRAIN_*` | Tuning: `ANALYSIS_PADDING_M`, `CATALOG_REFRESH_SECONDS`, `LOCAL_HIGHRES_MAX_M`, `LOCAL_MIN_RESOLUTION_M`, `MAX_GRID_SIZE`, `TERRARIUM_SLOPE_ZOOM`, `REQUIRE_GEOID`. |
+| `TERRAIN_TILE_CACHE_DIR` | Disk cache for 3D terrain tiles (§9). Default `<temp>/ezpz-terrain-cache`; `none` disables. Point it at a persistent mount in production. Safe to delete. |
+| `TERRAIN_WARM_LEVEL` | Pre-compute terrain levels 0..N over the DEMs at startup (§9). Default `9`; `-1` disables. |
 | `LIDAR_TILES_DIR` | Tileset store the API serves. Default `/data/tiles`. |
 | `LIDAR_BUILDER_URL` | The build service, e.g. `http://<internal host>:8090`. Unset → no on-demand builds. |
 | `LIDAR_BUILDER_TOKEN` | Shared secret with the build service. |
@@ -402,8 +438,9 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   the build service. `lidar/build.py` is the single build path; the service
   (`lidar/worker.py`), the CLI (`python -m lidar`) and `tools/build_lz.py` all
   go through it.
-- **Builds happen on first view.** The service builds one at a time from a
-  bounded queue, stages each under `.staging-<key>` and moves it into place
+- **Builds happen on first view, or in the background when an LZ is saved.**
+  The service builds one at a time from a bounded queue — builds someone is
+  watching first (polled in the last 15 s), then the rest oldest first — stages each under `.staging-<key>` and moves it into place
   only when complete. It prefers the downloaded collection when that covers
   ≥95% of the area and falls back to AWS otherwise, so an LZ near the edge of
   the download is never built with a side missing. Measured from AWS with

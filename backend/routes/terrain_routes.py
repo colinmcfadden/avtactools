@@ -5,6 +5,7 @@ import mercantile
 import requests
 import cv2
 from ultralytics import SAM
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
@@ -16,6 +17,11 @@ terrain_bp = Blueprint('terrain', __name__)
 # Load the SAM model (This downloads 'sam_b.pt' on first run)
 # 'sam_b.pt' is the Base model (good balance of speed/accuracy)
 model = SAM('sam_b.pt')
+
+# One analysis at a time. gunicorn runs threads so map and 3D requests do not
+# queue behind each other, but SAM must not run twice at once: its predictor
+# keeps state between calls, and each run holds about a gigabyte.
+_sam_lock = threading.Lock()
 
 # --- HELPER FUNCTIONS ---
 
@@ -126,7 +132,8 @@ def analyze_field():
         # imgsz=512: the source tile is only 256px, so the default 1024
         # inference size just upscales it 4x and runs the encoder at 1024^2 —
         # ~3.3GB of memory (OOM-kills a 2GB machine) for no added detail.
-        results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4, imgsz=512)
+        with _sam_lock:
+            results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4, imgsz=512)
         
         if results[0].masks is not None:
             # Get the mask with the highest score (usually the first one)
@@ -287,14 +294,14 @@ def terrain_heightmap(level, x, y):
         return jsonify({'error': 'Level out of range.'}), 400
 
     try:
-        heights = terrain_tiles.sample_tile(level, x, y)
+        data = terrain_tiles.tile_bytes(level, x, y)
     except terrain_tiles.TerrainTileError as error:
         return jsonify({'error': str(error)}), 400
 
-    if heights is None:
+    if data is None:
         return ('', 204)
 
-    response = make_response(terrain_tiles.encode(heights))
+    response = make_response(data)
     response.headers['Content-Type'] = 'application/octet-stream'
     response.headers['X-Terrain-Samples'] = str(terrain_tiles.TILE_SAMPLES)
     # The DEMs change only when new ones are mounted, and the response is

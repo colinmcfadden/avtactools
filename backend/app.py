@@ -23,6 +23,7 @@ from security_config import (
 )
 
 # Import your Blueprints
+import terrain_tiles
 from routes.terrain_routes import terrain_bp
 from routes.lidar_routes import lidar_bp
 from routes.location_routes import location_bp
@@ -170,6 +171,10 @@ app.register_blueprint(threat_bp)
 app.register_blueprint(route_share_bp)
 app.register_blueprint(aircraft_bp)
 app.register_blueprint(admin_bp)
+
+# Compute the coarse terrain tiles ahead of the first 3D view, in the
+# background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR.
+terrain_tiles.start_warming()
 
 @app.route('/')
 def health_check():

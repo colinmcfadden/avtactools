@@ -20,9 +20,14 @@ for the same reason: without it the surface sits about 30 m off in Georgia.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
+import sys
+import tempfile
+import threading
 from functools import lru_cache
+from pathlib import Path
 
 import numpy as np
 import rasterio
@@ -374,6 +379,183 @@ def sample_points(points):
     ellipsoidal = ground + geoid
     return ([None if np.isnan(value) else round(float(value), 2) for value in ellipsoidal],
             [round(float(value), 2) for value in geoid])
+
+
+# -- Disk cache -------------------------------------------------------------
+#
+# A tile depends only on its coordinates and the DEMs mounted, so each is
+# computed once and then served from disk to every user and device. Coarse
+# tiles are what make the first view slow — levels 0-8 each read a little of
+# dozens of DEMs, 0.3-3 s apiece, against ~50 ms from level 9 down — so those
+# are also computed ahead of time (warm) rather than on the first visit.
+#
+#   TERRAIN_TILE_CACHE_DIR   where tiles are kept; "none" disables
+#                            (default: <system temp>/ezpz-terrain-cache)
+#   TERRAIN_WARM_LEVEL       pre-compute levels 0..N over the DEM coverage at
+#                            startup; -1 disables (default 9)
+#
+# Deleting the cache directory is always safe; it refills on demand.
+
+# Bump whenever how a tile is computed changes, so tiles made by older code
+# are never served again.
+CACHE_VERSION = 1
+DEFAULT_WARM_LEVEL = 9
+
+_fingerprint_lock = threading.Lock()
+_fingerprint_memo: tuple = (None, None)
+
+
+def _log(message: str) -> None:
+    print(f"[terrain] {message}", file=sys.stderr, flush=True)
+
+
+def cache_root() -> Path | None:
+    raw = (os.environ.get("TERRAIN_TILE_CACHE_DIR") or "").strip()
+    if raw.lower() in {"none", "off"}:
+        return None
+    return Path(raw) if raw else Path(tempfile.gettempdir()) / "ezpz-terrain-cache"
+
+
+def _fingerprint(entries) -> str:
+    """Names one generation of cached tiles: these DEMs, this code, this geoid.
+
+    Tiles live under it, so mounting a new DEM, changing how tiles are
+    computed, or installing the geoid grids moves to a fresh directory instead
+    of serving stale heights. Without the grids PROJ passes heights through
+    unchanged, so a pass-through offset of zero names a different generation
+    from a real one.
+    """
+    global _fingerprint_memo
+    with _fingerprint_lock:
+        if _fingerprint_memo[0] is entries:
+            return _fingerprint_memo[1]
+
+    digest = hashlib.sha1(f"v{CACHE_VERSION}:{TILE_SAMPLES}:{OVERSAMPLE}".encode())
+    for entry in sorted(entries, key=lambda e: e.path):
+        try:
+            stat = os.stat(entry.path)
+            digest.update(f"{entry.path}:{stat.st_size}:{stat.st_mtime_ns}".encode())
+        except OSError:
+            digest.update(entry.path.encode())
+    try:
+        digest.update(f"geoid:{geoid_offset(-84.0, 34.5):.2f}".encode())
+    except Exception:  # noqa: BLE001 — grids missing
+        digest.update(b"geoid:none")
+    fingerprint = digest.hexdigest()[:16]
+
+    with _fingerprint_lock:
+        _fingerprint_memo = (entries, fingerprint)
+    return fingerprint
+
+
+def _cache_path(level: int, x: int, y: int) -> Path | None:
+    root = cache_root()
+    if root is None:
+        return None
+    entries = LOCAL_CATALOG.entries()
+    if not entries:
+        return None
+    return root / _fingerprint(entries) / str(level) / str(x) / f"{y}.i16"
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Best effort: a cache that cannot be written only costs speed."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        temporary.write_bytes(data)
+        os.replace(temporary, path)
+    except OSError as error:
+        _log(f"tile cache not written ({error.__class__.__name__}); serving uncached")
+
+
+def tile_bytes(level: int, x: int, y: int) -> bytes | None:
+    """One tile as served — encoded heights — or None where no DEM reaches.
+
+    From the disk cache when it has been computed before. "No DEM here" is not
+    cached: it costs only a look at the catalog, and Cesium asks it of tiles
+    across the whole globe.
+    """
+    path = _cache_path(level, x, y)
+    if path is not None:
+        try:
+            return path.read_bytes()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            path = None
+
+    heights = sample_tile(level, x, y)
+    if heights is None:
+        return None
+    data = encode(heights)
+    if path is not None:
+        _write_atomic(path, data)
+    return data
+
+
+def tiles_covering(entries, level: int):
+    """Every tile at ``level`` that touches one of the DEMs, as (x, y)."""
+    across = ROOT_TILES_X << level
+    down = ROOT_TILES_Y << level
+    width = 360.0 / across
+    height = 180.0 / down
+    tiles = set()
+    for entry in entries:
+        south, west, north, east = entry.bounds_latlon
+        x0 = max(0, math.floor((west + 180.0) / width))
+        x1 = min(across - 1, math.floor((east + 180.0) / width))
+        y0 = max(0, math.floor((90.0 - north) / height))
+        y1 = min(down - 1, math.floor((90.0 - south) / height))
+        tiles.update((x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1))
+    return sorted(tiles)
+
+
+def warm(max_level: int, *, log=_log) -> int:
+    """Compute and cache levels 0..max_level over the DEM coverage.
+
+    Returns how many tiles were computed; ones already cached are skipped, so
+    after the first run this costs a directory listing.
+    """
+    if cache_root() is None or max_level < 0:
+        return 0
+    entries = LOCAL_CATALOG.entries()
+    if not entries:
+        return 0
+    made = 0
+    for level in range(max_level + 1):
+        for x, y in tiles_covering(entries, level):
+            path = _cache_path(level, x, y)
+            if path is None or path.exists():
+                continue
+            try:
+                if tile_bytes(level, x, y) is not None:
+                    made += 1
+            except TerrainTileError:
+                continue
+    if made:
+        log(f"warmed {made} coarse tiles (levels 0-{max_level})")
+    return made
+
+
+def start_warming() -> threading.Thread | None:
+    """Warm the coarse levels in the background, once, at startup."""
+    try:
+        level = int(os.environ.get("TERRAIN_WARM_LEVEL", DEFAULT_WARM_LEVEL))
+    except ValueError:
+        level = DEFAULT_WARM_LEVEL
+    if level < 0 or cache_root() is None or not os.environ.get("TERRAIN_DATA_DIR"):
+        return None
+
+    def run():
+        try:
+            warm(level)
+        except Exception as error:  # noqa: BLE001 — warming is an optimisation
+            _log(f"warming stopped: {error}")
+
+    thread = threading.Thread(target=run, name="terrain-warm", daemon=True)
+    thread.start()
+    return thread
 
 
 def encode(heights: np.ndarray) -> bytes:

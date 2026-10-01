@@ -25,6 +25,9 @@ COPY . .
 
 EXPOSE 8080
 
-# Single worker (the SAM model is ~1GB resident) with a generous timeout for
-# CPU terrain inference.
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "180", "app:app"]
+# One worker — SAM holds ~1 GB and the rate limiter, QR and route-share stores
+# live in process memory — but several threads, so terrain tiles and point
+# cloud files are served side by side rather than queueing behind each other
+# or behind an analysis. SAM itself is serialised by a lock. The generous
+# timeout is for CPU inference.
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "180", "app:app"]
