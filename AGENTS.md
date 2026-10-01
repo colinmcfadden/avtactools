@@ -36,7 +36,7 @@ These come from the owner. Do not work around them.
 
 | Rule | Why / how |
 |---|---|
-| **Unclassified only. No CUI.** | Hosting is Vercel/Fly/a home server. Nothing here is an authorized boundary. |
+| **Unclassified only. No CUI.** | Hosting is Vercel/a home server. Nothing here is an authorized boundary. |
 | **Threats are never persisted.** | They may be sensitive. Threats live in React state and are exported, never saved server-side. The QR flow puts the payload in the URL for this reason. |
 | **Super-admin is untouchable.** | The account in `SUPER_ADMIN_EMAIL` is always an active admin and cannot be demoted, suspended or deleted. |
 | **Any `.mil` address clears the affiliation gate.** | `POST /api/auth/mil/request` + `/verify`. |
@@ -57,10 +57,17 @@ Browser — React 19 SPA (CRA), hosted on Vercel
                                     ├─ Postgres (Supabase)        [SQLite ezpz.db locally]
                                     ├─ SAM model (ultralytics)    LZ boundary detection
                                     ├─ local DEMs                 slope analysis, 3D terrain
-                                    ├─ LiDAR tilesets             built offline (Docker: PDAL + py3dtiles)
-                                    ├─ Resend (email), Google (OAuth token check)
-                                    └─ keyless public APIs        AWC, FAA NOTAM, Terrarium, OpenTopoData, Esri
+                                    ├─ LiDAR tilesets  ◄── shared /data/tiles ──┐
+                                    ├─ Resend (email), Google (OAuth token check)│
+                                    ├─ keyless public APIs   AWC, FAA NOTAM,     │
+                                    │                        Terrarium, Esri ... │
+                                    └─ build requests ──► LiDAR build service ───┘
+                                                          (backend/lidar image: PDAL +
+                                                           py3dtiles, internal only)
 ```
+
+The build service is a separate container. The API forwards build requests to
+it and relays progress; it never runs the LiDAR toolchain or touches Docker.
 
 The same Flask app serves a server-rendered admin dashboard at `/admin`,
 reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
@@ -84,7 +91,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Threats** | `.ths` import/export, terrain-masking viewshed, KMZ, QR | `feature/threats/` | `routes/threat_routes.py`, `threat_download_store.py`, `threat_template.ths` |
 | **Weather** | METAR, NOTAMs, winds aloft | `feature/weather/` | `routes/weather_routes.py` |
 | **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
-| **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium | `feature/viewer3d/` | `routes/lidar_routes.py`, `terrain_tiles.py`, `backend/lidar/`, `tools/` |
+| **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
 
 Entitlement keys (`entitlements.FEATURES`): `lz_pz_tools`, `routes`,
 `msnx_import`, `threats`, `cloud_save`, `exports`, `aircraft_profiles`. A
@@ -145,7 +152,7 @@ who have not cleared the `.mil`/approval check.
 | aircraft | `/api/aircraft-profiles` CRUD, `/<id>/template` |
 | threats | `POST /api/threat-mask`, `POST /api/threats-ths`, `GET/POST /api/threats-kmz`, `POST /api/threats-kmz-link` |
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
-| lidar | `POST /api/lidar/resolve`, `GET /api/lidar/tilesets[/<key>[/<path>]]` |
+| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>`, `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key |
 | admin | `/admin/*` — session cookie, not JWT |
 | health | `GET /` → JSON status (or redirect to `/admin/login` on the admin host) |
 
@@ -175,7 +182,6 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 | Service | Used for | Where | Credential |
 |---|---|---|---|
 | **Vercel** | Frontend hosting, PR preview deploys | project settings | Vercel account |
-| **Fly.io** | Backend hosting — app `backend-brisk-acorn-4800`, region `iad`, 2 GB / 1 CPU | `backend/fly.toml` | `fly` CLI |
 | **Coolify** on a home Proxmox VM | Backend hosting; auto-deploys from GitHub | self-hosted | GitHub App |
 | **Cloudflare** | DNS; Tunnel to the home server; Access policies | dashboard | — |
 | **Supabase** | Postgres | `DATABASE_URL` | secret |
@@ -202,6 +208,7 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 | Frontend | Vercel, `ezpztac.app` | Automatically: `main` → production, PRs → previews |
 | Backend (Fly) | `backend-brisk-acorn-4800.fly.dev` | **Manually:** `fly deploy` from `backend/` |
 | Backend (self-hosted) | Coolify VM, `prod-ezpz-api.mcfadd.in` via Cloudflare Tunnel | Automatically on push, via Coolify's GitHub App |
+| LiDAR build service | Coolify VM, beside the backend — **no public domain** | Automatically on push (separate Coolify app, base dir `/backend/lidar`) |
 | Admin | `admin.ezpztac.app` → the backend's `/admin` | with the backend |
 | Database | Supabase Postgres, **Session-mode pooler** | — |
 
@@ -219,9 +226,11 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 - **Coolify:** set the domain scheme to `http://` (Cloudflare terminates TLS;
   Force HTTPS causes a redirect loop). Mount `/data/tiles` and `/data/topo`
   into the container.
-- The home VM holds the LiDAR (`/data/lidar`), tilesets (`/data/tiles`) and
-  DEMs (`/data/topo`). Build point clouds there — see
-  `backend/lidar/SERVER_SETUP.md`.
+- The home VM holds the LiDAR (`/data/lidar`), tilesets (`/data/tiles`), the
+  coverage index (`/data/cache`) and DEMs (`/data/topo`). The build service
+  and the backend share `/data/tiles` — see `backend/lidar/SERVER_SETUP.md`.
+- The Fly backend has no build service, so on Fly the 3D window falls back to
+  printing a build command for an operator.
 
 ---
 
@@ -247,7 +256,13 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 | `TERRAIN_SOURCE` | `auto` (local, then Terrarium) · `local` · `remote`/`terrarium`. |
 | `TERRAIN_*` | Tuning: `ANALYSIS_PADDING_M`, `CATALOG_REFRESH_SECONDS`, `LOCAL_HIGHRES_MAX_M`, `LOCAL_MIN_RESOLUTION_M`, `MAX_GRID_SIZE`, `TERRARIUM_SLOPE_ZOOM`, `REQUIRE_GEOID`. |
 | `LIDAR_TILES_DIR` | Tileset store the API serves. Default `/data/tiles`. |
+| `LIDAR_BUILDER_URL` | The build service, e.g. `http://<internal host>:8090`. Unset → no on-demand builds. |
+| `LIDAR_BUILDER_TOKEN` | Shared secret with the build service. |
 | `LIDAR_CACHE_DIR` | Where the USGS coverage index is cached. |
+
+The build service has its own settings (`LIDAR_COLLECTION`,
+`LIDAR_BUILD_CONTEXT_M`, `LIDAR_BUILDER_QUEUE`, …) — documented at the top of
+`backend/lidar/worker.py`.
 | `PROJ_NETWORK=ON` | **Local dev only**, when PROJ geoid grids aren't installed (§13). |
 
 There is **no `backend/.env.example`** — it was removed in `55aef5d` although
@@ -380,8 +395,17 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   but **found by coverage**: each has an `area.json` manifest and `resolve`
   returns the nearest one whose area contains the target.
 - Pipeline: PDAL crops, classifies, colours from Mapbox imagery, reprojects to
-  ECEF → py3dtiles writes `.pnts`. Run it in the `backend/lidar` Docker image
-  (`docker build -t avtac-lidar:dev backend/lidar`) via `tools/build_lz.py`.
+  ECEF → py3dtiles writes `.pnts`. It runs in the `backend/lidar` Docker image
+  (`docker build -t avtac-lidar:dev backend/lidar`), whose default command is
+  the build service. `lidar/build.py` is the single build path; the service
+  (`lidar/worker.py`), the CLI (`python -m lidar`) and `tools/build_lz.py` all
+  go through it.
+- **Builds happen on first view.** The service builds one at a time from a
+  bounded queue, stages each under `.staging-<key>` and moves it into place
+  only when complete. It prefers the downloaded collection when that covers
+  ≥95% of the area and falls back to AWS otherwise, so an LZ near the edge of
+  the download is never built with a side missing. Measured: ~130 s from AWS
+  for a 250 m radius.
 - 3D Tiles stream by level of detail, so a large area costs build time and
   disk, not browser memory. `--context` adds a thinned landscape ring without
   thinning the landing area.

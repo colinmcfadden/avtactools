@@ -26,7 +26,9 @@ from routes.lidar_routes import lidar_bp  # noqa: E402
 TARGET = {"lat": 34.591552, "lon": -84.128225}
 
 
-class LidarApiTests(unittest.TestCase):
+class LidarApiHarness(unittest.TestCase):
+    """An app with only the LiDAR blueprint, a token, and a temp tile store."""
+
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="tiles-"))
         self.addCleanup(shutil.rmtree, self.root, True)
@@ -56,6 +58,8 @@ class LidarApiTests(unittest.TestCase):
         (directory / "tileset.json").write_text(body)
         return directory
 
+
+class LidarApiTests(LidarApiHarness):
     # --- access -----------------------------------------------------------
 
     def test_every_endpoint_requires_a_token(self):
@@ -239,6 +243,109 @@ class LidarApiTests(unittest.TestCase):
         (self.root / "0123456789abcdef").mkdir()      # started, no tileset.json
         body = self.client.get("/api/lidar/tilesets", headers=self.auth).get_json()
         self.assertEqual(body["keys"], [key])
+
+
+class BuildApiTests(LidarApiHarness):
+    """Asking for a point cloud where none exists yet.
+
+    The API never runs the toolchain; it forwards to the build service. These
+    replace that service with stand-ins and check what the browser is told.
+    """
+
+    JOB = {"key": "0123456789abcdef", "state": "queued", "stage": "waiting",
+           "error": None, "position": 0}
+
+    def setUp(self):
+        super().setUp()
+        self.env = patch.dict("os.environ", {"LIDAR_BUILDER_URL": "http://builder:8090"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def build(self, target=None):
+        return self.client.post("/api/lidar/build", headers=self.auth,
+                                json=target or TARGET)
+
+    def test_the_build_endpoints_need_a_token(self):
+        self.assertEqual(self.client.post("/api/lidar/build", json=TARGET).status_code, 401)
+        self.assertEqual(self.client.get("/api/lidar/build/" + "0" * 16).status_code, 401)
+
+    def test_resolve_says_whether_a_build_can_be_asked_for(self):
+        body = self.client.post("/api/lidar/resolve", headers=self.auth,
+                                json=TARGET).get_json()
+        self.assertTrue(body["canBuild"])
+        with patch.dict("os.environ", {"LIDAR_BUILDER_URL": ""}):
+            body = self.client.post("/api/lidar/resolve", headers=self.auth,
+                                    json=TARGET).get_json()
+        self.assertFalse(body["canBuild"])
+
+    def test_a_build_is_forwarded_and_accepted(self):
+        with patch("lidar_builder.submit", return_value=self.JOB) as submit:
+            response = self.build()
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.get_json()["state"], "queued")
+        submit.assert_called_once_with(TARGET["lat"], TARGET["lon"], 250.0)
+
+    def test_somewhere_already_built_is_done_without_asking_the_service(self):
+        key = catalog.key_for(**TARGET, radius_m=250)
+        catalog.write_manifest(self.make_tileset(key), TARGET["lat"], TARGET["lon"],
+                               radius_m=250)
+        with patch("lidar_builder.submit") as submit:
+            body = self.build().get_json()
+        submit.assert_not_called()
+        self.assertEqual(body["state"], "done")
+        self.assertTrue(body["url"].endswith("/tileset.json"))
+
+    def test_without_a_service_the_answer_is_503_not_a_crash(self):
+        with patch.dict("os.environ", {"LIDAR_BUILDER_URL": ""}):
+            response = self.build()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["code"], "builder_not_configured")
+
+    def test_an_unreachable_service_is_503(self):
+        import lidar_builder
+        with patch("lidar_builder.submit",
+                   side_effect=lidar_builder.BuilderUnavailable("down")):
+            response = self.build()
+        self.assertEqual(response.status_code, 503)
+
+    def test_a_full_queue_is_429(self):
+        import lidar_builder
+        with patch("lidar_builder.submit", side_effect=lidar_builder.BuilderBusy("full")):
+            self.assertEqual(self.build().status_code, 429)
+
+    def test_build_areas_are_capped_tighter_than_lookups(self):
+        """Builds are interactive; a 2 km radius is minutes of someone's wait."""
+        response = self.build({**TARGET, "radius_m": 2000})
+        self.assertEqual(response.status_code, 400)
+
+    def test_progress_is_relayed_by_key(self):
+        running = {**self.JOB, "state": "running", "stage": "processing points",
+                   "elapsed_s": 12}
+        with patch("lidar_builder.status", return_value=running):
+            body = self.client.get(f"/api/lidar/build/{self.JOB['key']}",
+                                   headers=self.auth).get_json()
+        self.assertEqual(body["stage"], "processing points")
+        self.assertEqual(body["elapsed_s"], 12)
+
+    def test_a_finished_build_reports_where_the_tileset_is(self):
+        key = self.JOB["key"]
+        self.make_tileset(key)
+        with patch("lidar_builder.status") as status:
+            body = self.client.get(f"/api/lidar/build/{key}", headers=self.auth).get_json()
+        status.assert_not_called()          # the disk is the source of truth
+        self.assertEqual(body["state"], "done")
+        self.assertEqual(body["url"], f"/lidar/tilesets/{key}/tileset.json")
+
+    def test_progress_for_an_unknown_build_is_404(self):
+        with patch("lidar_builder.status", return_value=None):
+            response = self.client.get("/api/lidar/build/" + "0" * 16, headers=self.auth)
+        self.assertEqual(response.status_code, 404)
+
+    def test_a_malformed_key_never_reaches_the_service(self):
+        with patch("lidar_builder.status") as status:
+            response = self.client.get("/api/lidar/build/not-a-key", headers=self.auth)
+        self.assertEqual(response.status_code, 400)
+        status.assert_not_called()
 
 
 if __name__ == "__main__":

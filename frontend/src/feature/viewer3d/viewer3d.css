@@ -196,3 +196,60 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* A build in progress. Indeterminate on purpose: the service reports stages,
+   not percentages, and a bar that invents a percentage would lie. */
+.lz3d-window__building {
+  min-width: 300px;
+  max-width: 380px;
+}
+
+.lz3d-window__stage {
+  display: block;
+  margin-top: 2px;
+  color: #eaf2f8;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.lz3d-window__progress {
+  position: relative;
+  height: 4px;
+  margin: 12px 0 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(125, 166, 199, 0.18);
+}
+
+.lz3d-window__progress span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 40%;
+  border-radius: 999px;
+  background: #5aa7d4;
+  animation: lz3d-progress 1.6s ease-in-out infinite;
+}
+
+@keyframes lz3d-progress {
+  from { left: -40%; }
+  to { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lz3d-window__progress span {
+    left: 0;
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+.lz3d-window__elapsed {
+  display: block;
+  margin-bottom: 8px;
+  color: #9fb2c4;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}

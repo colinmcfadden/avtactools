@@ -46,3 +46,16 @@ from crs import assert_vertical_datum_applied, compound_crs;\
 sep = assert_vertical_datum_applied(compound_crs('EPSG:6350'), (1077500.0, 1348500.0, 532.2));\
 print(f'geoid grids OK: separation {sep:.2f} m');\
 "
+
+# The package itself, last, so editing Python does not rebuild the grid layer
+# above. With this the image is also the build service (lidar.worker), which
+# the API calls when someone opens the 3D view somewhere nothing is built yet.
+#
+# tools/build_lz.py still works against this image: it mounts its own copy of
+# the code, runs from /work so that copy wins on sys.path, and replaces CMD.
+COPY . /opt/app/lidar/
+ENV PYTHONPATH=/opt/app \
+    LIDAR_TILES_DIR=/data/tiles \
+    LIDAR_CACHE_DIR=/data/cache
+EXPOSE 8090
+CMD ["python3", "-m", "lidar.worker"]

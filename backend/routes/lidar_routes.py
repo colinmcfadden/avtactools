@@ -1,9 +1,10 @@
-"""Serving pre-generated LiDAR point cloud tilesets.
+"""Serving LiDAR point cloud tilesets, and asking for missing ones to be built.
 
-Tilesets are built offline by ``python -m lidar`` and served from disk here.
-Generation needs PDAL and py3dtiles — a four-gigabyte toolchain the API has no
-reason to carry — and an LZ does not move, so the work is done once and cached
-rather than on request.
+Tilesets are served from disk here. Generating one needs PDAL and py3dtiles — a
+multi-gigabyte toolchain the API has no reason to carry — so builds run in a
+separate service (``lidar.worker``) that writes into the same store. The API
+only forwards requests to it and relays progress; see ``lidar_builder``. An LZ
+does not move, so each place is built once and then served from cache.
 
 Everything is behind JWT. The point data itself is public domain, but *which*
 places have tilesets is not: an unauthenticated endpoint would let anyone
@@ -13,6 +14,7 @@ enumerate where a unit has been planning to land.
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_jwt_extended import jwt_required
 
+import lidar_builder
 from lidar import catalog
 from lidar.aoi import DEFAULT_RADIUS_M
 
@@ -22,6 +24,45 @@ lidar_bp = Blueprint("lidar", __name__)
 # more often than the app's own endpoints and the content never changes for a
 # given key — the key includes everything that determines the contents.
 TILE_CACHE_SECONDS = 7 * 24 * 3600
+
+# Builds are interactive — someone is waiting in the 3D window — so their area
+# is capped tighter than lookups are. Matches the service's own limit.
+BUILD_RADIUS_MAX_M = 1000
+
+
+class _BadTarget(ValueError):
+    pass
+
+
+def _parse_target(data, *, max_radius):
+    """lat, lon and radius from a JSON body, or _BadTarget with a reason."""
+    try:
+        lat = float(data["lat"])
+        lon = float(data["lon"])
+    except (KeyError, TypeError, ValueError):
+        raise _BadTarget("lat and lon are required.") from None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise _BadTarget("lat and lon are out of range.")
+
+    radius = data.get("radius_m")
+    try:
+        radius = float(radius) if radius is not None else DEFAULT_RADIUS_M
+    except (TypeError, ValueError):
+        raise _BadTarget("radius_m must be a number.") from None
+    if not 50 <= radius <= max_radius:
+        raise _BadTarget(f"radius_m must be between 50 and {max_radius:.0f}.")
+    return lat, lon, radius
+
+
+def _available_body(key):
+    return {
+        "key": key,
+        "available": True,
+        "url": _tileset_url(key),
+        # Optional: only built when a context ring was asked for. The viewer
+        # draws it under the core so range never costs detail at the centre.
+        "contextUrl": _context_url(key) if catalog.has_context(key) else None,
+    }
 
 
 def _context_url(key: str) -> str:
@@ -97,20 +138,11 @@ def resolve():
     sensitive part, and this keeps them out of URLs, request logs and the
     browser's history.
     """
-    data = request.get_json(silent=True) or {}
     try:
-        lat = float(data["lat"])
-        lon = float(data["lon"])
-    except (KeyError, TypeError, ValueError):
-        return jsonify({"error": "lat and lon are required."}), 400
-
-    radius = data.get("radius_m")
-    try:
-        radius = float(radius) if radius is not None else DEFAULT_RADIUS_M
-    except (TypeError, ValueError):
-        return jsonify({"error": "radius_m must be a number."}), 400
-    if not 50 <= radius <= 2000:
-        return jsonify({"error": "radius_m must be between 50 and 2000."}), 400
+        lat, lon, radius = _parse_target(request.get_json(silent=True) or {},
+                                         max_radius=2000)
+    except _BadTarget as error:
+        return jsonify({"error": str(error)}), 400
 
     # Coverage first, exact key second. A target is rarely re-entered to the
     # last decimal — it arrives from an MGRS round-trip, a map click, or a
@@ -121,19 +153,82 @@ def resolve():
     if key is None:
         key = catalog.key_for(lat, lon, radius_m=radius)
 
-    available = catalog.exists(key)
-    body = {
+    if catalog.exists(key):
+        return jsonify(_available_body(key))
+
+    return jsonify({
         "key": key,
-        "available": available,
-        "url": _tileset_url(key) if available else None,
-        # Optional: only built when --context was asked for. The viewer draws
-        # it under the core so range never costs detail at the centre.
-        "contextUrl": _context_url(key) if available and catalog.has_context(key) else None,
-    }
-    if not available:
+        "available": False,
+        "url": None,
+        "contextUrl": None,
+        # Whether asking for a build will do anything. Without the service the
+        # client falls back to telling an operator what to run.
+        "canBuild": lidar_builder.configured(),
         # Echo the target back so the client can say how to build it. These
         # are the caller's own coordinates, already in the request body, so
         # nothing new is disclosed — and without them the client can only
         # report an opaque key nobody can act on.
-        body["target"] = {"lat": lat, "lon": lon, "radius_m": radius}
-    return jsonify(body)
+        "target": {"lat": lat, "lon": lon, "radius_m": radius},
+    })
+
+
+@lidar_bp.route("/api/lidar/build", methods=["POST"])
+@jwt_required()
+def start_build():
+    """Ask the build service for a point cloud at this target.
+
+    Idempotent: asking again while a build is queued or running returns that
+    build, and asking for somewhere already built returns it as done. The 3D
+    window calls this whenever it opens on unbuilt ground.
+    """
+    try:
+        lat, lon, radius = _parse_target(request.get_json(silent=True) or {},
+                                         max_radius=BUILD_RADIUS_MAX_M)
+    except _BadTarget as error:
+        return jsonify({"error": str(error)}), 400
+
+    covering = catalog.find_covering(lat, lon)
+    if covering:
+        return jsonify({"state": "done", **_available_body(covering)})
+
+    if not lidar_builder.configured():
+        return jsonify({"error": "Point clouds cannot be built on this server.",
+                        "code": "builder_not_configured"}), 503
+    try:
+        job = lidar_builder.submit(lat, lon, radius)
+    except lidar_builder.BuilderBusy as error:
+        return jsonify({"error": str(error), "code": "builder_busy"}), 429
+    except lidar_builder.BuilderUnavailable as error:
+        return jsonify({"error": str(error), "code": "builder_unavailable"}), 503
+    return jsonify(_job_body(job)), 202
+
+
+@lidar_bp.route("/api/lidar/build/<key>", methods=["GET"])
+@jwt_required()
+def build_status(key):
+    """Progress of a build, by its opaque key — no coordinates in the URL."""
+    if not catalog.is_valid_key(key):
+        return jsonify({"error": "Malformed tileset key."}), 400
+    if catalog.exists(key):
+        return jsonify({"state": "done", **_available_body(key)})
+    if not lidar_builder.configured():
+        return jsonify({"error": "Point clouds cannot be built on this server.",
+                        "code": "builder_not_configured"}), 503
+    try:
+        job = lidar_builder.status(key)
+    except lidar_builder.BuilderUnavailable as error:
+        return jsonify({"error": str(error), "code": "builder_unavailable"}), 503
+    if job is None:
+        return jsonify({"error": "No build is running for this location.",
+                        "code": "no_build"}), 404
+    return jsonify(_job_body(job))
+
+
+def _job_body(job):
+    """The service's view of a job, plus where to find the result when done."""
+    body = {k: job.get(k) for k in ("key", "state", "stage", "error",
+                                    "position", "elapsed_s")}
+    key = job.get("key")
+    if job.get("state") == "done" and key and catalog.exists(key):
+        body.update(_available_body(key))
+    return body

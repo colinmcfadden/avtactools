@@ -12,18 +12,53 @@ import "./viewer3d.css";
 const BUILD_CWD = process.env.REACT_APP_LIDAR_BUILD_CWD || "/opt/avtactools";
 const BUILD_COLLECTION = process.env.REACT_APP_LIDAR_COLLECTION || "";
 
+// The build service's stage names, as a crew member would want to read them.
+const STAGE_LABELS = {
+  waiting: "Queued",
+  starting: "Starting",
+  "locating survey": "Finding the LiDAR survey",
+  "processing points": "Processing points",
+  "building tiles": "Building 3D tiles",
+  "building context": "Building the surrounding area",
+};
+
+const formatElapsed = (seconds) => {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
+/**
+ * Seconds since the build was first seen. Ticks locally so the clock moves
+ * smoothly between the service's three-second progress reports.
+ */
+const useBuildClock = (building, key) => {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!building) return undefined;
+    const started = Date.now();
+    setElapsed(0);
+    const tick = setInterval(() => setElapsed((Date.now() - started) / 1000), 1000);
+    return () => clearInterval(tick);
+  }, [building, key]);
+  return elapsed;
+};
+
 /**
  * The 3D point cloud for one LZ/PZ, in a draggable window over the map.
  *
- * Point clouds are generated ahead of time, so much of this component is about
- * the case where one does not exist yet. That is a normal state — the crew has
- * picked a point nobody has built tiles for — and it should read as "not built"
- * rather than as a failure.
+ * Opening it somewhere new starts a build on the server, and the window shows
+ * progress until the point cloud arrives. That is the normal first visit to any
+ * LZ, so it reads as work in progress rather than as a failure. Only a server
+ * without a build service falls back to telling an operator what to run.
  */
 const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
   const nodeRef = useRef(null);
-  const { state, url, contextUrl, target, error, refresh } =
-    useLidarTileset({ lat, lon, radiusM });
+  const { state, url, contextUrl, target, error, refresh, stage, position,
+          elapsedS, buildFailed } = useLidarTileset({ lat, lon, radiusM });
+  // The service's own count wins once it reports one, so reopening the window
+  // mid-build shows the real time rather than restarting at 0:00.
+  const elapsed = Math.max(useBuildClock(state === "building", target?.lat),
+                           elapsedS || 0);
 
   // Reported rather than assumed: without terrain the ground sits on the
   // ellipsoid far below the points, which looks like a broken render.
@@ -91,11 +126,30 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
             </div>
           )}
 
+          {state === "building" && (
+            <div className="viewer3d__status lz3d-window__building" role="status">
+              <strong>Building point cloud</strong>
+              <span className="lz3d-window__stage">
+                {STAGE_LABELS[stage] || stage || "Starting"}
+                {position > 0 && ` — ${position} ahead in the queue`}
+              </span>
+              <div className="lz3d-window__progress" aria-hidden="true">
+                <span />
+              </div>
+              <span className="lz3d-window__elapsed">{formatElapsed(elapsed)}</span>
+              <span className="lz3d-window__hint">
+                First visit to this LZ — usually one to three minutes. You can
+                close this window; the build carries on, and next time it opens
+                straight away.
+              </span>
+            </div>
+          )}
+
           {state === "missing" && (
             <div className="viewer3d__status lz3d-window__missing">
               <strong>Not generated</strong>
-              No point cloud covers this target yet. Run this on the machine
-              that holds the tileset store — leave the app running:
+              This server can't build point clouds itself. Run this on the
+              machine that holds the tileset store — leave the app running:
               {buildCommand && (
                 <code className="lz3d-window__command">{buildCommand}</code>
               )}
@@ -117,7 +171,7 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
 
           {state === "error" && (
             <div className="viewer3d__status viewer3d__error" role="alert">
-              <strong>Lookup failed</strong>
+              <strong>{buildFailed ? "Build failed" : "Lookup failed"}</strong>
               {error}
               <button type="button" className="lz3d-window__retry" onClick={refresh}>
                 Retry

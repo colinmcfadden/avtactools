@@ -285,6 +285,21 @@ def _overlap_area(bounds, bbox) -> float:
     return max(0.0, xmax - xmin) * max(0.0, ymax - ymin)
 
 
+def coverage_fraction(tiles, bbox) -> float:
+    """How much of an area of interest the given tiles actually cover, 0 to 1.
+
+    "Some tile intersects" is not "the area is covered". A target near the edge
+    of a download intersects the outermost tiles and builds without complaint
+    into a point cloud with a straight edge through it. Tiles within one survey
+    abut without overlapping, so summing their overlaps is the covered area.
+    """
+    area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+    if area <= 0:
+        return 0.0
+    covered = sum(_overlap_area(tile.bounds, bbox) for tile in tiles)
+    return min(1.0, covered / area)
+
+
 def save_index(tiles, path) -> Path:
     """Cache an index so repeated builds do not re-read every header."""
     path = Path(path)
@@ -328,5 +343,10 @@ def index_for(directory, *, refresh=False, pattern="*.laz") -> list:
     tiles = scan(directory, pattern=pattern)
     if not tiles:
         raise CollectionError(f"no readable LAZ tiles in {directory}")
-    save_index(tiles, cache)
+    try:
+        save_index(tiles, cache)
+    except OSError:
+        # A collection mounted read-only still builds; it just re-reads the
+        # headers next time instead of using a cached index.
+        pass
     return tiles

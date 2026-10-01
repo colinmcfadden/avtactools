@@ -24,6 +24,7 @@ from pathlib import Path
 
 INDEX_URL = "https://usgs.entwine.io/boundaries/resources.geojson"
 CACHE_FILENAME = "usgs_ept_coverage.geojson"
+USER_AGENT = "avtactools-lidar/1.0"
 
 # A four-digit year in the project name is how the surveys date themselves;
 # there is no year field in the index.
@@ -58,12 +59,20 @@ def cache_path(root=None) -> Path:
 
 
 def fetch_index(destination=None, *, url=INDEX_URL, opener=None) -> Path:
-    """Download the coverage index, which is about 8 MB and rarely changes."""
+    """Download the coverage index, which is about 8 MB and rarely changes.
+
+    Written to a temporary name and moved into place, so a download cut short
+    never leaves a truncated index that later loads as "no coverage anywhere".
+    """
     destination = Path(destination or cache_path())
     destination.parent.mkdir(parents=True, exist_ok=True)
     open_url = opener or urllib.request.urlopen
-    with open_url(url) as response, destination.open("wb") as handle:
+    # The host refuses urllib's default User-Agent with a 403.
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    partial = destination.with_suffix(destination.suffix + ".part")
+    with open_url(request) as response, partial.open("wb") as handle:
         handle.write(response.read())
+    partial.replace(destination)
     return destination
 
 

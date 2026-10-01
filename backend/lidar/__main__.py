@@ -11,6 +11,8 @@ holding them. The covering tiles are found by indexing the LAS headers, and
 their coordinate system is read from the files rather than assumed:
 
     python -m lidar --lat 34.6481 --lon -83.8613 --collection /data/lidar --out /data/tiles/lz_lanier
+
+The build service (lidar.worker) runs the same build through lidar.build.
 """
 
 from __future__ import annotations
@@ -20,64 +22,9 @@ import sys
 import time
 from pathlib import Path
 
-from . import aoi, catalog, collection, coverage, pipeline
-from .catalog import CONTEXT_DIRNAME
-from .tiles import (TileBuildError, build_pointcloud_tiles, context_spacing,
-                    estimated_size_mb, spacing_for_radius)
-
-# Entwine-indexed 3DEP on AWS Open Data. Each survey is its own index, and
-# which one to read is resolved per target by lidar.coverage — most ground is
-# covered several times over by surveys of very different quality.
-EPT_BASE = "https://s3-us-west-2.amazonaws.com/usgs-lidar-public"
-
-
-def ept_url(project: str) -> str:
-    return f"{EPT_BASE}/{project}/ept.json"
-
-
-def _from_collection(args):
-    """Pick the tiles covering the target out of a downloaded collection.
-
-    A collection is not one survey. A download over one area routinely holds
-    several — the 2018 Georgia statewide product in Albers alongside the ARRA
-    Lake Lanier project in UTM 17N — and their tile bounds are then numbers in
-    different frames. Taking the first tile's CRS to speak for all of them
-    compares Albers eastings around 1,076,000 against UTM ones around 237,000
-    and selects nothing, or worse, the wrong tiles.
-
-    So each coordinate system is tried on its own, and the group that actually
-    covers the target with the most tiles wins.
-    """
-    tiles = collection.index_for(args.collection, refresh=args.reindex)
-    groups = collection.by_crs(tiles)
-
-    best = None
-    for source_srs, group in groups.items():
-        if not source_srs:
-            continue
-        bbox = aoi.bbox_for(args.lat, args.lon, radius_m=args.radius,
-                            source_srs=source_srs)
-        covering = collection.tiles_for(group, bbox)
-        if covering and (best is None or len(covering) > len(best[2])):
-            best = (source_srs, bbox, covering)
-
-    if best is None:
-        raise collection.CollectionError(
-            f"none of the {len(tiles)} tiles in {args.collection} cover "
-            f"{args.lat:.5f}, {args.lon:.5f}")
-
-    source_srs, bbox, covering = best
-    if len(groups) > 1:
-        print(f"note    : {len(groups)} coordinate systems in this collection; "
-              f"using {source_srs}")
-
-    tile_crs = collection.read_crs(covering[0].path)
-    if not tile_crs.vertical_declared:
-        print(f"note    : vertical datum not machine-readable "
-              f"({tile_crs.citation or 'no citation'}); forcing "
-              f"{collection.DEFAULT_VERTICAL}")
-
-    return [str(tile.path) for tile in covering], source_srs, bbox
+from . import aoi, pipeline
+from .build import BuildError, BuildRequest, build_for_target
+from .tiles import estimated_size_mb, spacing_for_radius
 
 
 def main(argv=None) -> int:
@@ -130,113 +77,36 @@ def main(argv=None) -> int:
                              "density at any size")
     args = parser.parse_args(argv)
 
-    classes = (tuple(int(c) for c in args.classes.split(","))
-               if args.classes else pipeline.OBSTRUCTION_CLASSES)
-    color_by = None if args.color_by == "none" else args.color_by
-
-    if args.collection:
-        try:
-            source, source_srs, bbox = _from_collection(args)
-        except collection.CollectionError as error:
-            print(f"failed: {error}", file=sys.stderr)
-            return 1
-    else:
-        if args.source:
-            source = args.source
-            # A published tile carries its own CRS, so a lone --source is the
-            # one case where it has to be assumed. Albers is what the statewide
-            # products use; a collection reads the real value per tile.
-            source_srs = aoi.ALBERS_NAVD88
-        elif args.project:
-            source = ept_url(args.project)
-            source_srs = aoi.WEB_MERCATOR_NAVD88
-        else:
-            try:
-                survey = coverage.best_survey(args.lat, args.lon)
-            except coverage.CoverageError as error:
-                print(f"failed: {error}", file=sys.stderr)
-                return 1
-            source = survey.url
-            source_srs = aoi.WEB_MERCATOR_NAVD88
-            print(f"survey  : {survey.name} ({survey.year})")
-            if not survey.likely_classified:
-                # Worth saying plainly: the build will still succeed, it will
-                # just have no vegetation in it.
-                print("warning : this survey predates the 3DEP classification "
-                      "spec — expect ground only. Try --color-by height.")
-        bbox = aoi.bbox_for(args.lat, args.lon, radius_m=args.radius,
-                            source_srs=source_srs)
-
-    extent = aoi.ground_extent_m(bbox, source_srs=source_srs)
+    request = BuildRequest(
+        lat=args.lat, lon=args.lon, radius_m=args.radius,
+        context_m=args.context,
+        classes=(tuple(int(c) for c in args.classes.split(","))
+                 if args.classes else pipeline.OBSTRUCTION_CLASSES),
+        color_by=None if args.color_by == "none" else args.color_by,
+        imagery=args.imagery, spacing_m=args.spacing,
+        source=args.source, project=args.project,
+        collection=args.collection, reindex=args.reindex,
+    )
 
     print(f"target  : {args.lat:.6f}, {args.lon:.6f}")
-    print(f"area    : {extent:.0f} m across")
-    print(f"srs     : {source_srs}")
-    print(f"classes : {','.join(str(c) for c in classes)}  "
-          f"colour by {color_by or 'nothing'}")
-    thinning = (spacing_for_radius(args.radius)
-                if args.spacing is None else (args.spacing or None))
-    estimate = estimated_size_mb(args.radius, thinning)
-    print(f"density : {f'{thinning:.1f} m spacing' if thinning else 'full'}"
-          f"  (~{estimate:.0f} MB)")
-    if estimate > 250:
+    thinning = (spacing_for_radius(args.radius) if args.spacing is None
+                else (args.spacing or None))
+    if estimated_size_mb(args.radius, thinning) > 250:
         # Build time against a remote survey is the real cost, and it is easy
         # to ask for twenty minutes of it by accident.
         print("warning : a build this size takes a long while; consider a "
               "smaller --radius with --context for the surroundings")
-    if isinstance(source, list):
-        print(f"source  : {len(source)} tile(s) from {args.collection}")
-        for path in source:
-            print(f"          {Path(path).name}")
-    else:
-        print(f"source  : {source}")
 
     started = time.time()
     try:
-        tileset = build_pointcloud_tiles(
-            source, args.out, bbox=bbox, source_srs=source_srs,
-            thin_spacing_m=thinning,
-            classes=classes, color_by=color_by,
-            imagery_raster=args.imagery,
-        )
-    except TileBuildError as error:
+        summary = build_for_target(request, args.out, log=print)
+    except BuildError as error:
         print(f"\nfailed: {error}", file=sys.stderr)
         return 1
 
-    # Record what was built, so the API can find this tileset by position
-    # rather than by an exact coordinate match.
-    catalog.write_manifest(args.out, args.lat, args.lon, radius_m=args.radius,
-                           survey=str(source) if not isinstance(source, list) else None)
-
-    # A second, coarser tileset covering a wider area. Separate rather than a
-    # bigger single build: one pipeline has one spacing, so widening it thins
-    # the centre too — 4x the area at 500 m radius yielded 1.08 points/m2
-    # against 3.50 at 250 m. Two tiers keep the landing point at full density
-    # and pay for range only where nothing is being measured.
-    if args.context:
-        if args.context <= args.radius:
-            print("failed: --context must be larger than --radius", file=sys.stderr)
-            return 1
-        spacing = context_spacing(args.context)
-        print(f"context : {args.context:.0f} m radius at {spacing:.1f} m spacing")
-        context_bbox = aoi.bbox_for(args.lat, args.lon, radius_m=args.context,
-                                    source_srs=source_srs)
-        try:
-            build_pointcloud_tiles(
-                source, args.out / CONTEXT_DIRNAME, bbox=context_bbox,
-                source_srs=source_srs, thin_spacing_m=spacing,
-                classes=classes, color_by=color_by,
-                imagery_raster=args.imagery,
-            )
-        except TileBuildError as error:
-            # The core is already built and usable; a missing ring is a
-            # smaller loss than discarding it.
-            print(f"context failed (core is still usable): {error}", file=sys.stderr)
-
-    size = sum(f.stat().st_size for f in args.out.rglob("*") if f.is_file())
     print(f"\nbuilt in {time.time() - started:.0f}s")
-    print(f"  {tileset}")
-    print(f"  {size / 1048576:.1f} MB")
+    print(f"  {summary['tileset']}")
+    print(f"  {summary['bytes'] / 1048576:.1f} MB")
     return 0
 
 
