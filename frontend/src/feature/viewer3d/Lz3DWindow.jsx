@@ -157,6 +157,11 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, onClose }) => {
                 One to two minutes, and Docker must be running. Nothing needs
                 restarting afterwards — just press Check again.
               </span>
+              <span className="lz3d-window__hint">
+                To build automatically instead, run the build service and start
+                the backend with <code>LIDAR_BUILDER_URL</code> set
+                (backend/lidar/SERVER_SETUP.md).
+              </span>
               <div className="lz3d-window__actions">
                 <button type="button" className="lz3d-window__retry"
                         onClick={copyCommand} disabled={!buildCommand}>
