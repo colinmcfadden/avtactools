@@ -1,6 +1,7 @@
 # Plan: Planning Graphics in the 3D View
 
-Status: not started — written 2026-10-01 as a reference for future work.
+Status: Phase 1 (routes) built on `feat/3d-lz-route` as a preview, 2026-10-01;
+the depth-test question below is settled. Phases 2–4 not started.
 Builds on the 3D LZ view (`feat/3d-lz-route`); nothing here has to change for
 that to ship first.
 
@@ -165,9 +166,17 @@ Options:
 - **d.** Leave it off and rely on computed clearance (Phase 3) to show
   conflicts by colour.
 
-Recommendation: try (a); if the ground returns sink, (b); add (c) either way.
-This needs a screenshot from the owner on a real GPU, so it comes first —
-it decides how Phase 1 looks.
+**Result (spike, 2026-10-01): keep it off, add (c), rely on (d).** With depth
+testing on, the point cloud looked unchanged — but routes were hidden almost
+everywhere. Distant terrain is drawn coarse (Cesium's level of detail), and a
+route at 50 ft AGL sits below that coarse surface along most of its length,
+so nearly every leg rendered as hidden and the curtains vanished. Occlusion
+against terrain says more about the level of detail than about clearance.
+
+With it off, routes are still depth-tested against the point cloud, so a leg
+flown through the canopy draws dashed across it (the `depthFailMaterial`) —
+the case that matters near the LZ. A route behind a ridge does show through
+the ridge; clearance against terrain is Phase 3's job, in numbers.
 
 ---
 

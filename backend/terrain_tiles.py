@@ -29,6 +29,7 @@ import rasterio
 from rasterio.enums import Resampling
 from rasterio.transform import Affine, from_bounds
 from rasterio.warp import reproject, transform_bounds
+from rasterio.warp import transform as warp_transform
 from rasterio.windows import Window
 from rasterio.windows import from_bounds as window_from_bounds
 
@@ -267,13 +268,112 @@ def sample_tile(level: int, x: int, y: int, *, samples: int = TILE_SAMPLES):
     except Exception:  # noqa: BLE001 — grids missing; see module docstring
         # Better to serve orthometric heights than nothing, but say so loudly
         # rather than silently placing the surface 30 m out.
-        if os.environ.get("TERRAIN_REQUIRE_GEOID", "").strip().lower() in {"1", "true", "yes"}:
+        if _geoid_required():
             raise TerrainTileError(
                 "geoid grids unavailable; terrain would be ~30 m out. "
                 "Install them with projsync or set PROJ_NETWORK=ON."
             )
 
     return destination
+
+
+# One request's worth of points. A 40 km route sampled every 30 m is about
+# 1,300; this leaves room for several routes without letting one request turn
+# into minutes of DEM reads.
+MAX_POINTS = 5000
+
+
+def _geoid_required() -> bool:
+    return os.environ.get("TERRAIN_REQUIRE_GEOID", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _bilinear(dataset, xs, ys) -> np.ndarray:
+    """Heights at points in the DEM's own CRS, interpolated as the tiles are.
+
+    Bilinear rather than the nearest pixel, because the surface the viewer
+    draws is bilinear: a nearest-pixel height on a slope can sit a metre or
+    two off it, which is enough to float a route's curtain off the ground.
+    NaN where any of the four surrounding pixels is missing.
+    """
+    inverse = ~dataset.transform
+    heights = np.full(len(xs), np.nan)
+    for index, (x, y) in enumerate(zip(xs, ys)):
+        col, row = inverse * (x, y)
+        # Pixel centres sit half a pixel in from the corner the transform names.
+        col -= 0.5
+        row -= 0.5
+        col0, row0 = math.floor(col), math.floor(row)
+        if col0 < 0 or row0 < 0 or col0 + 1 >= dataset.width or row0 + 1 >= dataset.height:
+            continue
+        # Consecutive route samples fall in the same DEM block, which GDAL
+        # keeps cached, so a read per point stays cheap.
+        block = dataset.read(1, window=Window(col0, row0, 2, 2), masked=True)
+        if np.ma.getmaskarray(block).any():
+            continue
+        fx, fy = col - col0, row - row0
+        top = block[0, 0] * (1 - fx) + block[0, 1] * fx
+        bottom = block[1, 0] * (1 - fx) + block[1, 1] * fx
+        heights[index] = top * (1 - fy) + bottom * fy
+    return heights
+
+
+def sample_points(points):
+    """Ellipsoidal ground height and geoid separation at each point, in metres.
+
+    ``points`` is a sequence of ``(lat, lon)``. Returns two lists, aligned with
+    it: the ground — on the same surface the terrain tiles draw, from the same
+    DEMs with the same correction — and the geoid separation there, which is
+    what turns an MSL altitude into a height Cesium can place.
+
+    Ground is None where no local DEM covers the point: the terrain tiles draw
+    those places flat, and a height invented for them would put a route's
+    curtain somewhere that is not the ground.
+
+    Without geoid grids PROJ passes heights through unchanged. The tiles then
+    serve orthometric heights, and so does this — ground and route stay in one
+    frame, so clearance between them is still right.
+    """
+    count = len(points)
+    if count == 0:
+        return [], []
+    lats = np.array([float(lat) for lat, _lon in points])
+    lons = np.array([float(lon) for _lat, lon in points])
+    ground = np.full(count, np.nan)
+
+    sources = _sources_for((lats.min(), lons.min(), lats.max(), lons.max()))
+    for entry in sources:
+        pending = np.flatnonzero(np.isnan(ground))
+        if pending.size == 0:
+            break
+        south, west, north, east = entry.bounds_latlon
+        inside = pending[(lats[pending] >= south) & (lats[pending] <= north)
+                         & (lons[pending] >= west) & (lons[pending] <= east)]
+        if inside.size == 0:
+            continue
+        try:
+            with rasterio.open(entry.path) as dataset:
+                xs, ys = warp_transform(WGS84, dataset.crs,
+                                        lons[inside].tolist(), lats[inside].tolist())
+                # Sources run finest first, so a coarser DEM only fills what
+                # the finer ones could not.
+                ground[inside] = _bilinear(dataset, xs, ys)
+        except (rasterio.errors.RasterioError, OSError, ValueError):
+            continue
+
+    try:
+        _x, _y, geoid = _geoid_transformer().transform(lons, lats, np.zeros(count))
+        geoid = np.asarray(geoid, dtype=float)
+    except Exception:  # noqa: BLE001 — grids missing; see sample_tile
+        if _geoid_required():
+            raise TerrainTileError(
+                "geoid grids unavailable; heights would be ~30 m out. "
+                "Install them with projsync or set PROJ_NETWORK=ON."
+            )
+        geoid = np.zeros(count)
+
+    ellipsoidal = ground + geoid
+    return ([None if np.isnan(value) else round(float(value), 2) for value in ellipsoidal],
+            [round(float(value), 2) for value in geoid])
 
 
 def encode(heights: np.ndarray) -> bytes:

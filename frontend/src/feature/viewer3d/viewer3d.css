@@ -184,6 +184,46 @@
   text-transform: uppercase;
 }
 
+/* Where the camera looks: the landing zone, or every visible route. */
+.viewer3d__camera {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(125, 166, 199, 0.3);
+  border-radius: 999px;
+  background: rgba(12, 18, 27, 0.86);
+}
+
+.viewer3d__camera button {
+  padding: 4px 11px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #cfd8e2;
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.viewer3d__camera button:hover:not(:disabled),
+.viewer3d__camera button:focus-visible:not(:disabled) {
+  background: rgba(90, 167, 212, 0.22);
+  color: #ffffff;
+  outline: none;
+}
+
+.viewer3d__camera button:disabled {
+  color: rgba(207, 216, 226, 0.38);
+  cursor: not-allowed;
+}
+
 .viewer3d__control input[type="range"] {
   width: 110px;
   accent-color: #5aa7d4;

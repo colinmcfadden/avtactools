@@ -1552,6 +1552,8 @@ function App() {
           }
           lat={activeDiagram.target.lat}
           lon={activeDiagram.target.lon}
+          importedRoutes={importedRoutes}
+          sketchedRoutes={sketchedRoutes}
           onClose={() => setIs3DOpen(false)}
         />
       )}

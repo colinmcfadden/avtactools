@@ -3,6 +3,7 @@ import { loadCesium } from "./cesiumSetup";
 import { tilesetResource } from "./tilesetResource";
 import { MAPBOX_IMAGERY } from "../mapStyles/mapStyles";
 import { createTerrainProvider } from "./terrainProvider";
+import { drawRoutes, routePositions } from "./routeEntities";
 // Cesium's own stylesheet sizes .cesium-widget to fill its container. Without
 // it the widget has no dimensions and the canvas falls back to its 300x150
 // default, so the scene renders into a postage stamp regardless of layout.
@@ -25,6 +26,23 @@ import "./viewer3d.css";
 const CAMERA_HEADING_DEG = -30;
 const CAMERA_PITCH_DEG = -35;
 const CAMERA_RANGE_FACTOR = 2.2;
+
+/** Frame a bounding sphere the way the view opens: oblique, from the north-west. */
+const frameSphere = (Cesium, camera, sphere, { duration } = {}) => {
+  const offset = new Cesium.HeadingPitchRange(
+    Cesium.Math.toRadians(CAMERA_HEADING_DEG),
+    Cesium.Math.toRadians(CAMERA_PITCH_DEG),
+    sphere.radius * CAMERA_RANGE_FACTOR,
+  );
+  if (duration === undefined) {
+    camera.lookAt(sphere.center, offset);
+    // Releases the camera from the target's reference frame, so the user
+    // can orbit and pan freely from here.
+    camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  } else {
+    camera.flyToBoundingSphere(sphere, { offset, duration });
+  }
+};
 
 // Point size and shading are a matter of taste and of display density, and
 // getting them right by exchanging screenshots is slow. These are the
@@ -89,13 +107,19 @@ const report = (viewer, tileset) => {
  * which is the frame Cesium renders in. Nothing is transformed here — if the
  * heights are wrong they were wrong when the tiles were built.
  */
+const NO_ROUTES = [];
+
 const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
-                   showTerrain = true, onReady }) => {
+                   showTerrain = true, routeScene = NO_ROUTES, onReady }) => {
   const containerRef = useRef(null);
   const [status, setStatus] = useState({ state: "loading", detail: "" });
 
   // Both tilesets, so the size control reaches the context ring too.
-  const sceneRef = useRef({ viewer: null, tilesets: [] });
+  const sceneRef = useRef({ viewer: null, tilesets: [], Cesium: null, routes: null });
+  // The routes as of the latest render, for a viewer that becomes ready after
+  // they arrived — the drawing effect below only runs when they change.
+  const routeSceneRef = useRef(routeScene);
+  routeSceneRef.current = routeScene;
   const [pointSize, setPointSize] = useState(storedPointSize);
 
   useEffect(() => {
@@ -160,6 +184,13 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
         }
         // Points sit on the surface, so any depth test against it drops the
         // ground returns into the terrain and makes the cloud look eaten.
+        //
+        // Routes would want it on, so a ridge hides the leg behind it — but
+        // tried, it hid far more than that. Distant terrain is drawn coarse,
+        // and a route at 50 ft AGL sits below the coarse surface along most of
+        // its length, so nearly every leg rendered as hidden. Routes are still
+        // hidden by the point cloud, which is the case that matters near the
+        // LZ; clearance against terrain belongs in numbers, not occlusion.
         viewer.scene.globe.depthTestAgainstTerrain = false;
 
         // A Resource rather than a bare URL: Cesium fetches this tileset's
@@ -177,7 +208,14 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
         if (cancelled) return;
 
         viewer.scene.primitives.add(tileset);
-        sceneRef.current = { viewer, tilesets: [tileset] };
+        // Routes get their own data source, redrawn by the effect below
+        // whenever they change. They are deliberately not a dependency of
+        // this effect: that would rebuild the whole viewer — WebGL context,
+        // point cloud, terrain — every time a point moved in 2D.
+        const routes = new Cesium.CustomDataSource("routes");
+        viewer.dataSources.add(routes);
+        drawRoutes(Cesium, routes.entities, routeSceneRef.current);
+        sceneRef.current = { viewer, tilesets: [tileset], Cesium, routes };
 
         // Eye-dome lighting is what stops a point cloud reading as a flat
         // speckled sheet. Points carry no normals, so there is no shading cue
@@ -283,18 +321,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
         // An LZ is also read obliquely, not from directly overhead: the whole
         // reason for a 3D view is seeing how tall the obstructions are on
         // approach, and that is invisible from straight down.
-        const sphere = tileset.boundingSphere;
-        viewer.camera.lookAt(
-          sphere.center,
-          new Cesium.HeadingPitchRange(
-            Cesium.Math.toRadians(CAMERA_HEADING_DEG),
-            Cesium.Math.toRadians(CAMERA_PITCH_DEG),
-            sphere.radius * CAMERA_RANGE_FACTOR,
-          ),
-        );
-        // Releases the camera from the target's reference frame, so the user
-        // can orbit and pan freely from here.
-        viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+        frameSphere(Cesium, viewer.camera, tileset.boundingSphere);
       })
       .catch((error) => {
         if (!cancelled) {
@@ -311,10 +338,47 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
     };
   }, [tilesetUrl, contextUrl, requiresAuth, showTerrain, onReady]);
 
+  useEffect(() => {
+    const { viewer, Cesium, routes } = sceneRef.current;
+    if (status.state !== "ready" || !viewer || viewer.isDestroyed() || !routes) return;
+    drawRoutes(Cesium, routes.entities, routeScene);
+    viewer.scene.requestRender();
+  }, [routeScene, status.state]);
+
+  const hasRoutes = routeScene.some((route) => route.lines.length > 0);
+
+  const frameLz = () => {
+    const { viewer, Cesium, tilesets } = sceneRef.current;
+    if (!viewer || viewer.isDestroyed() || !tilesets[0]) return;
+    frameSphere(Cesium, viewer.camera, tilesets[0].boundingSphere, { duration: 1.2 });
+  };
+
+  const frameRoutes = () => {
+    const { viewer, Cesium } = sceneRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+    const positions = routePositions(Cesium, routeScene);
+    if (positions.length === 0) return;
+    frameSphere(Cesium, viewer.camera, Cesium.BoundingSphere.fromPoints(positions),
+                { duration: 1.2 });
+  };
+
   return (
     <div className="viewer3d">
       <div ref={containerRef} className="viewer3d__canvas" />
 
+      {status.state === "ready" && (
+        <div className="viewer3d__camera" role="group" aria-label="Camera">
+          <button type="button" onClick={frameLz} title="Frame the landing zone">LZ</button>
+          <button
+            type="button"
+            onClick={frameRoutes}
+            disabled={!hasRoutes}
+            title={hasRoutes ? "Frame the visible routes" : "No visible routes to show"}
+          >
+            Routes
+          </button>
+        </div>
+      )}
       {status.state === "ready" && (
         <label className="viewer3d__control">
           <span>Point size</span>

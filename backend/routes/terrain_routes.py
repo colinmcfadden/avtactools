@@ -302,3 +302,45 @@ def terrain_heightmap(level, x, y):
     response.cache_control.private = True
     response.cache_control.max_age = 7 * 24 * 3600
     return response
+
+
+@terrain_bp.route('/api/terrain/heights', methods=['POST'])
+@jwt_required()
+def terrain_heights():
+    """Ground and geoid separation at points, for placing graphics in 3D.
+
+    Body: { points: [{lat, lon}, ...] }
+    Returns: { groundM: [m | null, ...], geoidM: [m, ...] }  (index-aligned)
+
+    Ground is ellipsoidal and comes from the same DEMs as the terrain tiles, so
+    a point sits on the surface the viewer draws. It is deliberately separate
+    from /api/elevations, which feeds the route planner and the AMPS export:
+    changing that source would change exported altitudes.
+
+    Coordinates travel in the body only, as for the LiDAR routes.
+    """
+    data = request.get_json(silent=True) or {}
+    points = data.get('points')
+    if not isinstance(points, list):
+        return jsonify({'error': 'points must be a list'}), 400
+    if len(points) > terrain_tiles.MAX_POINTS:
+        return jsonify({'error': f'At most {terrain_tiles.MAX_POINTS} points per request.'}), 400
+
+    try:
+        coords = [(float(p['lat']), float(p['lon'])) for p in points]
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': 'Invalid points'}), 400
+    if any(not (np.isfinite(lat) and np.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180)
+           for lat, lon in coords):
+        return jsonify({'error': 'Invalid points'}), 400
+
+    try:
+        ground, geoid = terrain_tiles.sample_points(coords)
+    except terrain_tiles.TerrainTileError as error:
+        return jsonify({'error': str(error)}), 503
+
+    response = jsonify({'groundM': ground, 'geoidM': geoid})
+    # Behind a token, and it describes where someone is planning to fly.
+    response.cache_control.private = True
+    response.cache_control.no_store = True
+    return response
