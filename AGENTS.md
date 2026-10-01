@@ -122,7 +122,7 @@ avtactools/
 │  ├─ public/                msnx_template.msnx, static assets; public/cesium/ is copied at build
 │  └─ scripts/copy-cesium.js prestart/prebuild: copies Cesium's static build into public/
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
-├─ docs/                     USER_GUIDE.md, INVITE_ONLY_LOGIN_PLAN.md
+├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md
 ├─ .github/workflows/        release.yaml (semantic-release only)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
 └─ backend/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
