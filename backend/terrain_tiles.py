@@ -26,6 +26,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -403,6 +404,7 @@ DEFAULT_WARM_LEVEL = 9
 
 _fingerprint_lock = threading.Lock()
 _fingerprint_memo: tuple = (None, None)
+_write_failure_logged = False
 
 
 def _log(message: str) -> None:
@@ -459,14 +461,33 @@ def _cache_path(level: int, x: int, y: int) -> Path | None:
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
-    """Best effort: a cache that cannot be written only costs speed."""
+    """Best effort: a cache that cannot be written only costs speed.
+
+    Two writers can race for one tile — request threads, the warm-up, or a
+    second process. On Windows the loser cannot replace a file someone has
+    open (PermissionError), but by then the winner has written the very same
+    bytes, since a tile depends only on its coordinates. That is success, not
+    a failure to report.
+    """
+    global _write_failure_logged
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         temporary.write_bytes(data)
         os.replace(temporary, path)
+        return
     except OSError as error:
-        _log(f"tile cache not written ({error.__class__.__name__}); serving uncached")
+        failure = error
+    try:
+        temporary.unlink()
+    except OSError:
+        pass
+    if path.exists() or _write_failure_logged:
+        return
+    # Once per process: a cache that cannot be written fails for every tile.
+    _write_failure_logged = True
+    _log(f"tile cache not writable at {cache_root()} "
+         f"({failure.__class__.__name__}); serving uncached")
 
 
 def tile_bytes(level: int, x: int, y: int) -> bytes | None:
@@ -522,6 +543,7 @@ def warm(max_level: int, *, log=_log) -> int:
     entries = LOCAL_CATALOG.entries()
     if not entries:
         return 0
+    _clear_abandoned_writes()
     made = 0
     for level in range(max_level + 1):
         for x, y in tiles_covering(entries, level):
@@ -536,6 +558,24 @@ def warm(max_level: int, *, log=_log) -> int:
     if made:
         log(f"warmed {made} coarse tiles (levels 0-{max_level})")
     return made
+
+
+# A write takes milliseconds; anything older was abandoned, not in progress.
+ABANDONED_WRITE_AGE_S = 60
+
+
+def _clear_abandoned_writes() -> None:
+    """Remove half-written tiles left by a process that stopped mid-write."""
+    root = cache_root()
+    if root is None or not root.is_dir():
+        return
+    cutoff = time.time() - ABANDONED_WRITE_AGE_S
+    for leftover in root.rglob("*.tmp"):
+        try:
+            if leftover.stat().st_mtime < cutoff:
+                leftover.unlink()
+        except OSError:
+            pass
 
 
 def start_warming() -> threading.Thread | None:

@@ -173,8 +173,11 @@ app.register_blueprint(aircraft_bp)
 app.register_blueprint(admin_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
-# background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR.
-terrain_tiles.start_warming()
+# background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
+# `python app.py` the reloader runs this module twice — in a process that only
+# watches files, then in the one that serves — so warm only in the latter.
+if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"):
+    terrain_tiles.start_warming()
 
 @app.route('/')
 def health_check():

@@ -150,6 +150,53 @@ class WarmingTests(CacheHarness):
             self.assertIsNone(terrain_tiles.start_warming())
 
 
+class RacingWriterTests(CacheHarness):
+    """Two writers for one tile: request threads, the warm-up, a second process.
+
+    On Windows the loser cannot replace a file someone has open, but the
+    winner wrote the same bytes, so the tile is cached all the same.
+    """
+
+    def setUp(self):
+        super().setUp()
+        terrain_tiles._write_failure_logged = False
+        self.logged = []
+        log = patch.object(terrain_tiles, "_log", side_effect=self.logged.append)
+        log.start()
+        self.addCleanup(log.stop)
+
+    def test_losing_the_race_is_not_a_failure(self):
+        path = terrain_tiles._cache_path(12, 1100, 830)
+        path.parent.mkdir(parents=True)
+        path.write_bytes(terrain_tiles.encode(GRID))     # the winner's copy
+        with patch.object(terrain_tiles.os, "replace", side_effect=PermissionError):
+            terrain_tiles._write_atomic(path, terrain_tiles.encode(GRID))
+        self.assertEqual(self.logged, [])
+        self.assertEqual([p.name for p in path.parent.iterdir()], ["830.i16"])
+
+    def test_an_unwritable_cache_is_reported_once_not_per_tile(self):
+        with patch.object(terrain_tiles.os, "replace", side_effect=PermissionError):
+            for y in range(830, 835):
+                self.assertEqual(terrain_tiles.tile_bytes(12, 1100, y),
+                                 terrain_tiles.encode(GRID))
+        self.assertEqual(len(self.logged), 1)
+        self.assertFalse(any(self.cache.rglob("*.tmp")))
+
+    def test_warming_clears_abandoned_writes_but_not_ones_in_progress(self):
+        import time
+        folder = self.cache / "leftovers"
+        folder.mkdir(parents=True)
+        old = folder / "1.i16.111.222.tmp"
+        fresh = folder / "2.i16.111.333.tmp"
+        old.write_bytes(b"x")
+        fresh.write_bytes(b"x")
+        stale = time.time() - terrain_tiles.ABANDONED_WRITE_AGE_S - 5
+        os.utime(old, (stale, stale))
+        terrain_tiles.warm(0, log=lambda _m: None)
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.exists())
+
+
 class CatalogRefreshTests(unittest.TestCase):
     def test_concurrent_requests_rescan_the_dems_once(self):
         """With threads, every request arriving at a stale catalog would rescan."""
