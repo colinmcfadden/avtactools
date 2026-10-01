@@ -16,7 +16,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lidar import catalog, collection, coverage  # noqa: E402
+from lidar import aoi, catalog, collection, coverage  # noqa: E402
 from lidar.build import (BuildError, BuildRequest, build_for_target,  # noqa: E402
                          resolve_source)
 from test_lidar_collection import write_tile  # noqa: E402
@@ -139,7 +139,7 @@ class BuildTests(unittest.TestCase):
     def test_a_build_leaves_a_tileset_and_its_manifest(self, _best):
         build_for_target(BuildRequest(lat=LAT, lon=LON), self.out, runner=fake_runner)
         self.assertTrue((self.out / "tileset.json").exists())
-        self.assertEqual(catalog.read_manifest(self.out), (LAT, LON, 250.0))
+        self.assertEqual(catalog.read_manifest(self.out), (LAT, LON, aoi.DEFAULT_RADIUS_M))
 
     @patch.object(coverage, "best_survey", return_value=SURVEY)
     def test_progress_moves_through_the_stages_in_order(self, _best):

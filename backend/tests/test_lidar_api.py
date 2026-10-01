@@ -20,10 +20,12 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from lidar import catalog  # noqa: E402
+from lidar import aoi, catalog  # noqa: E402
 from routes.lidar_routes import lidar_bp  # noqa: E402
 
 TARGET = {"lat": 34.591552, "lon": -84.128225}
+# Whatever the app builds by default; the tests follow it rather than pin it.
+RADIUS = aoi.DEFAULT_RADIUS_M
 
 
 class LidarApiHarness(unittest.TestCase):
@@ -64,7 +66,7 @@ class LidarApiTests(LidarApiHarness):
 
     def test_every_endpoint_requires_a_token(self):
         """Otherwise the endpoint discloses where planning has happened."""
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         for method, path in [("get", f"/api/lidar/tilesets/{key}"),
                              ("get", f"/api/lidar/tilesets/{key}/tileset.json"),
@@ -95,14 +97,14 @@ class LidarApiTests(LidarApiHarness):
         self.assertFalse(body["available"])
         self.assertAlmostEqual(body["target"]["lat"], TARGET["lat"])
         self.assertAlmostEqual(body["target"]["lon"], TARGET["lon"])
-        self.assertEqual(body["target"]["radius_m"], 250)
+        self.assertEqual(body["target"]["radius_m"], RADIUS)
 
     def test_a_built_target_does_not_echo_coordinates_back(self):
         """Nothing needs them once there is a tileset to point at."""
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         catalog.write_manifest(catalog.path_for(key), TARGET["lat"],
-                               TARGET["lon"], radius_m=250)
+                               TARGET["lon"], radius_m=RADIUS)
         body = self.client.post("/api/lidar/resolve", json=TARGET,
                                 headers=self.auth).get_json()
         self.assertTrue(body["available"])
@@ -115,10 +117,10 @@ class LidarApiTests(LidarApiHarness):
         1.08 points/m2 against 3.50 at 250 m, so extending range cost detail
         exactly where the aircraft touches down.
         """
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         catalog.write_manifest(catalog.path_for(key), TARGET["lat"],
-                               TARGET["lon"], radius_m=250)
+                               TARGET["lon"], radius_m=RADIUS)
         context = catalog.path_for(key) / catalog.CONTEXT_DIRNAME
         context.mkdir(parents=True)
         (context / "tileset.json").write_text('{"asset": {}}', encoding="utf-8")
@@ -129,17 +131,17 @@ class LidarApiTests(LidarApiHarness):
         self.assertIn(catalog.CONTEXT_DIRNAME, body["contextUrl"])
 
     def test_no_context_ring_is_reported_when_none_was_built(self):
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         catalog.write_manifest(catalog.path_for(key), TARGET["lat"],
-                               TARGET["lon"], radius_m=250)
+                               TARGET["lon"], radius_m=RADIUS)
         body = self.client.post("/api/lidar/resolve", json=TARGET,
                                 headers=self.auth).get_json()
         self.assertIsNone(body["contextUrl"])
 
     def test_the_context_ring_is_served_like_any_other_tile(self):
         """No API change needed: it is a path under the same key."""
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         context = catalog.path_for(key) / catalog.CONTEXT_DIRNAME
         context.mkdir(parents=True)
@@ -157,7 +159,7 @@ class LidarApiTests(LidarApiHarness):
         self.assertIsNone(body["url"])
 
     def test_resolve_points_at_a_generated_tileset(self):
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         body = self.client.post("/api/lidar/resolve", headers=self.auth,
                                 json=TARGET).get_json()
@@ -183,7 +185,7 @@ class LidarApiTests(LidarApiHarness):
     # --- serving ----------------------------------------------------------
 
     def test_a_generated_tileset_is_served(self):
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         response = self.client.get(f"/api/lidar/tilesets/{key}/tileset.json",
                                    headers=self.auth)
@@ -192,7 +194,7 @@ class LidarApiTests(LidarApiHarness):
 
     def test_tiles_are_cacheable(self):
         """Cesium fetches many children per view and the key pins the content."""
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         response = self.client.get(f"/api/lidar/tilesets/{key}/tileset.json",
                                    headers=self.auth)
@@ -204,7 +206,7 @@ class LidarApiTests(LidarApiHarness):
         Flask's max_age emits "public" on its own, which would let Cloudflare
         or any other shared cache hold a tile and serve it to someone else.
         """
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         response = self.client.get(f"/api/lidar/tilesets/{key}/tileset.json",
                                    headers=self.auth)
@@ -213,7 +215,7 @@ class LidarApiTests(LidarApiHarness):
         self.assertNotIn("public", cache_control)
 
     def test_an_ungenerated_tileset_is_a_clean_404(self):
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         response = self.client.get(f"/api/lidar/tilesets/{key}", headers=self.auth)
         self.assertEqual(response.status_code, 404)
         self.assertFalse(response.get_json()["available"])
@@ -226,7 +228,7 @@ class LidarApiTests(LidarApiHarness):
 
     def test_traversal_through_the_filename_is_refused(self):
         """The key is validated, so the filename is the remaining way out."""
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         secret = self.root / "secret.txt"
         secret.write_text("should not be reachable")
@@ -238,7 +240,7 @@ class LidarApiTests(LidarApiHarness):
             self.assertNotIn(b"should not be reachable", response.data)
 
     def test_listing_reports_only_complete_tilesets(self):
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         (self.root / "0123456789abcdef").mkdir()      # started, no tileset.json
         body = self.client.get("/api/lidar/tilesets", headers=self.auth).get_json()
@@ -283,12 +285,12 @@ class BuildApiTests(LidarApiHarness):
             response = self.build()
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.get_json()["state"], "queued")
-        submit.assert_called_once_with(TARGET["lat"], TARGET["lon"], 250.0)
+        submit.assert_called_once_with(TARGET["lat"], TARGET["lon"], RADIUS)
 
     def test_somewhere_already_built_is_done_without_asking_the_service(self):
-        key = catalog.key_for(**TARGET, radius_m=250)
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
         catalog.write_manifest(self.make_tileset(key), TARGET["lat"], TARGET["lon"],
-                               radius_m=250)
+                               radius_m=RADIUS)
         with patch("lidar_builder.submit") as submit:
             body = self.build().get_json()
         submit.assert_not_called()
