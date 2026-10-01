@@ -1323,7 +1323,14 @@ function App() {
           onSelect={handleSelectDiagram}
           onSave={handleLayerSave}
           onRemove={handleLayerRemove}
-          onView3D={() => setIs3DOpen(true)}
+          onView3D={(diagramId) => {
+            // The 3D window always shows the active LZ, so a row's 3D button
+            // makes its LZ active first.
+            if (diagramId && diagramId !== activeDiagramId) {
+              handleSelectDiagram(diagramId);
+            }
+            setIs3DOpen(true);
+          }}
           canSaveActive={canEditGraphics}
           isSaving={isLayerSaveInProgress}
           initialPosition={{ x: 16, y: 86 }}
