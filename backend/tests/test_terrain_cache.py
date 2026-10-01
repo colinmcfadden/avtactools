@@ -197,6 +197,22 @@ class RacingWriterTests(CacheHarness):
         self.assertTrue(fresh.exists())
 
 
+class GeoidCheckTests(unittest.TestCase):
+    """PROJ without grids reports success and returns the height unchanged."""
+
+    def test_a_real_separation_means_the_grids_are_there(self):
+        with patch.object(terrain_tiles, "geoid_offset", return_value=-30.35):
+            self.assertTrue(terrain_tiles.geoid_grids_available())
+
+    def test_a_pass_through_means_they_are_not(self):
+        with patch.object(terrain_tiles, "geoid_offset", return_value=0.0):
+            self.assertFalse(terrain_tiles.geoid_grids_available())
+
+    def test_an_error_means_they_are_not(self):
+        with patch.object(terrain_tiles, "geoid_offset", side_effect=RuntimeError):
+            self.assertFalse(terrain_tiles.geoid_grids_available())
+
+
 class CatalogRefreshTests(unittest.TestCase):
     def test_concurrent_requests_rescan_the_dems_once(self):
         """With threads, every request arriving at a stale catalog would rescan."""

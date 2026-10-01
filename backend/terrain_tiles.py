@@ -111,6 +111,19 @@ def geoid_offset(lon: float, lat: float, *, transformer=None) -> float:
     return height
 
 
+def geoid_grids_available() -> bool:
+    """Whether NAVD88 heights can actually be corrected to the ellipsoid.
+
+    Without the grids PROJ does not fail — it returns the height unchanged and
+    reports success — so the only sign is a separation of zero where the real
+    one is tens of metres. Every point in the lower 48 is at least 7 m off.
+    """
+    try:
+        return abs(geoid_offset(-84.0, 34.5)) > 1.0
+    except Exception:  # noqa: BLE001 — grids missing
+        return False
+
+
 def _close_gaps(grid: np.ndarray, *, passes: int = 24) -> np.ndarray:
     """Fill cells with no DEM data by spreading the nearest real elevation.
 

@@ -23,6 +23,7 @@ from security_config import (
 )
 
 # Import your Blueprints
+import lidar_builder
 import terrain_tiles
 from routes.terrain_routes import terrain_bp
 from routes.lidar_routes import lidar_bp
@@ -178,6 +179,14 @@ app.register_blueprint(admin_bp)
 # watches files, then in the one that serves — so warm only in the latter.
 if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"):
     terrain_tiles.start_warming()
+    # Say at startup what the 3D view will lack, rather than leave it to be
+    # found later as a "can't build" panel, or as terrain sitting 30 m off the
+    # point cloud. Both have happened after a restart lost its settings.
+    if not lidar_builder.configured():
+        app.logger.warning("3D: point-cloud builds are off (LIDAR_BUILDER_URL is not set)")
+    if os.environ.get("TERRAIN_DATA_DIR") and not terrain_tiles.geoid_grids_available():
+        app.logger.warning("3D: geoid grids unavailable, so terrain will sit ~30 m off the "
+                           "LiDAR. Set PROJ_NETWORK=ON or install the grids (projsync).")
 
 @app.route('/')
 def health_check():
