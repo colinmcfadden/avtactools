@@ -255,6 +255,17 @@ the owner's workstation against the north Georgia DEMs (73 × 1/3″, 30–35°N
 Also: point colour from Mapbox level 18 instead of 20 (§13) took a 500 m build
 from 707 s to 137 s.
 
+**Heavy work goes first.** Terrain tiles not yet cached are computed per
+request, and with the 3D window streaming ~20 at once an LZ analysis took
+31.7 s instead of ~9–12 s. More threads do not help: tile work and SAM share one
+Python interpreter (the GIL), and the browser was not the bottleneck (0.7 s
+queued). So while an analysis, viewshed or export is in flight
+(`feature/auth/requestPriority.js`, marked by an axios interceptor), the
+terrain provider requests no new tiles, and the server's warm-up pauses
+(`terrain_tiles.pauses_warming` on those routes). Measured after: 0 terrain
+requests during the analysis, SAM 8.9 s. Point-cloud files still load; they
+are static files and cost the server almost nothing.
+
 **Cesium ion instead of self-hosted terrain** was considered and not taken. It
 would be faster on a first view (pre-built tiles on a CDN), but its free tier
 is non-commercial only (Commercial starts at $149/month as of October 2026),

@@ -213,6 +213,40 @@ class GeoidCheckTests(unittest.TestCase):
             self.assertFalse(terrain_tiles.geoid_grids_available())
 
 
+class AnalysisFirstTests(CacheHarness):
+    """Warming waits while an analysis runs; they would only slow each other."""
+
+    def test_warming_holds_until_the_analysis_finishes(self):
+        finished = threading.Event()
+        with terrain_tiles.analysis_running():
+            worker = threading.Thread(
+                target=lambda: (terrain_tiles.warm(2, log=lambda _m: None), finished.set()))
+            worker.start()
+            self.assertFalse(finished.wait(0.3))
+            self.assertEqual(self.sample.call_count, 0)
+        self.assertTrue(finished.wait(5))
+        self.assertGreater(self.sample.call_count, 0)
+
+    def test_overlapping_analyses_hold_it_until_the_last_ends(self):
+        first = terrain_tiles.analysis_running()
+        second = terrain_tiles.analysis_running()
+        first.__enter__()
+        second.__enter__()
+        first.__exit__(None, None, None)
+        self.assertFalse(terrain_tiles._no_analysis.is_set())
+        second.__exit__(None, None, None)
+        self.assertTrue(terrain_tiles._no_analysis.is_set())
+
+    def test_a_failing_analysis_still_lets_warming_go(self):
+        @terrain_tiles.pauses_warming
+        def broken():
+            raise RuntimeError("SAM fell over")
+
+        with self.assertRaises(RuntimeError):
+            broken()
+        self.assertTrue(terrain_tiles._no_analysis.is_set())
+
+
 class CatalogRefreshTests(unittest.TestCase):
     def test_concurrent_requests_rescan_the_dems_once(self):
         """With threads, every request arriving at a stale catalog would rescan."""

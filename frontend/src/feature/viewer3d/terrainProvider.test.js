@@ -1,3 +1,4 @@
+import { beginPriority } from "../auth/requestPriority";
 import {
   TERRAIN_MAX_LEVEL,
   TERRAIN_SAMPLES,
@@ -29,6 +30,18 @@ const ok = (buffer) => ({
 beforeEach(() => localStorage.clear());
 
 describe("fetchHeightmap", () => {
+  it("holds new tiles while heavy server work runs, then fetches them", async () => {
+    // An LZ analysis ran three times slower while terrain tiles were computed.
+    const fetchImpl = jest.fn().mockResolvedValue(ok(tileBytes(250)));
+    const end = beginPriority();
+    const pending = fetchHeightmap(13, 4375, 2519, { fetchImpl });
+    await Promise.resolve();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    end();
+    expect((await pending)[0]).toBe(250);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("returns the tile's heights as an Int16Array", async () => {
     const fetchImpl = jest.fn().mockResolvedValue(ok(tileBytes(250)));
     const heights = await fetchHeightmap(13, 4375, 2519, { fetchImpl });

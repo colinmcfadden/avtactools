@@ -14,6 +14,7 @@
  */
 
 import { absoluteTilesetUrl } from "./tilesetResource";
+import { priorityActive, whenIdle } from "../auth/requestPriority";
 
 // Must match terrain_tiles.TILE_SAMPLES. Cesium asks for a fixed grid size up
 // front and cannot renegotiate per tile.
@@ -51,6 +52,11 @@ const FLAT = new Int16Array(TERRAIN_SAMPLES * TERRAIN_SAMPLES);
  */
 export const fetchHeightmap = async (level, x, y, { fetchImpl = fetch } = {}) => {
   if (level > TERRAIN_MAX_LEVEL) return FLAT;
+
+  // A tile not yet cached is computed on the server, and a few dozen of those
+  // at once slowed an LZ analysis threefold. Hold new tiles until it is done;
+  // Cesium simply waits a little longer for them.
+  if (priorityActive()) await whenIdle();
 
   try {
     const token = localStorage.getItem("auth_token");

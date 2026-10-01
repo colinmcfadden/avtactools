@@ -77,6 +77,7 @@ def find_field_contour(image):
 
 @terrain_bp.route('/api/analyze-field', methods=['POST'])
 @jwt_required()
+@terrain_tiles.pauses_warming
 def analyze_field():
     data = request.json
     try:
@@ -166,6 +167,7 @@ def analyze_field():
 
 @terrain_bp.route('/api/terrain-analysis', methods=['POST'])
 @jwt_required()
+@terrain_tiles.pauses_warming
 def terrain_analysis():
     """Return a continuous, polygon-clipped terrain slope raster."""
     data = request.get_json(silent=True) or {}

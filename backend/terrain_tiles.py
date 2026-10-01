@@ -20,6 +20,7 @@ for the same reason: without it the surface sits about 30 m off in Georgia.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import math
 import os
@@ -27,6 +28,7 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -545,6 +547,39 @@ def tiles_covering(entries, level: int):
     return sorted(tiles)
 
 
+# Analyses (SAM, slope, viewshed) count here while they run, and warming
+# waits for them: the warm-up and an analysis share one Python interpreter,
+# which runs Python on one thread at a time, so competing only slows both.
+_analyses = 0
+_analyses_lock = threading.Lock()
+_no_analysis = threading.Event()
+_no_analysis.set()
+
+
+@contextmanager
+def analysis_running():
+    global _analyses
+    with _analyses_lock:
+        _analyses += 1
+        _no_analysis.clear()
+    try:
+        yield
+    finally:
+        with _analyses_lock:
+            _analyses -= 1
+            if _analyses == 0:
+                _no_analysis.set()
+
+
+def pauses_warming(view):
+    """Decorate a route whose work should not share the server with warming."""
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        with analysis_running():
+            return view(*args, **kwargs)
+    return wrapper
+
+
 def warm(max_level: int, *, log=_log) -> int:
     """Compute and cache levels 0..max_level over the DEM coverage.
 
@@ -563,6 +598,7 @@ def warm(max_level: int, *, log=_log) -> int:
             path = _cache_path(level, x, y)
             if path is None or path.exists():
                 continue
+            _no_analysis.wait()
             try:
                 if tile_bytes(level, x, y) is not None:
                     made += 1

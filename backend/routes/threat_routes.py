@@ -27,6 +27,7 @@ import cv2
 from flask import Blueprint, current_app, request, jsonify, send_file, url_for
 from flask_jwt_extended import jwt_required, verify_jwt_in_request
 
+import terrain_tiles
 from terrain_provider import load_terrarium_radius
 from threat_download_store import ThreatDownloadStore
 from entitlements import require_feature
@@ -168,6 +169,7 @@ def render_mask_png(dem, meta, radar_elev_m, bands, max_r_px):
 @threat_bp.route('/api/threat-mask', methods=['POST'])
 @jwt_required()
 @require_feature('threats')
+@terrain_tiles.pauses_warming
 def threat_mask():
     """
     Body: { lat, lon, radars: [ {
