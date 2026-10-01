@@ -29,10 +29,10 @@ import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
 
 // The slope PNG already carries its own per-band alpha (145-185 of 255, rising
-// with steepness so hazardous ground stands out), and this multiplies it. 0.8
-// lands the middle band at 50% and the full range at roughly 45-58%, which
-// keeps the steep-ground emphasis. 0.5 here would read nearer 30%.
-const SLOPE_OVERLAY_OPACITY = 0.8;
+// with steepness so hazardous ground stands out), and this multiplies it. 0.55
+// lands the middle band near 36% and the full range at roughly 31-40%, light
+// enough to read the imagery through while keeping the steep-ground emphasis.
+const SLOPE_OVERLAY_OPACITY = 0.55;
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
