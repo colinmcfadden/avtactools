@@ -13,6 +13,12 @@ build is staged under a hidden name and moved into place only once complete,
 so the API never serves a half-written tileset. Coordinates are never logged:
 the log carries tileset keys, which are opaque, and stage names.
 
+A build runs only while someone wants it. The 3D window asks after its build
+every few seconds; a job nobody has asked about for ABANDON_AFTER_S is dropped
+— queued or mid-run — unless it was asked to be kept (a saved LZ). Without
+this, a refreshed page left its build running and every LZ opened afterwards
+queued behind work nobody would ever look at.
+
 Configuration (environment):
 
     LIDAR_TILES_DIR          tileset store, shared with the API   (/data/tiles)
@@ -34,15 +40,19 @@ import os
 import queue
 import re
 import shutil
+import signal
+import subprocess
 import sys
 import threading
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from . import catalog, pipeline
 from .build import BuildError, BuildRequest, build_for_target
+from .tiles import TileBuildError
 
 STAGING_PREFIX = ".staging-"
 DEFAULT_PORT = 8090
@@ -56,6 +66,21 @@ RADIUS_RANGE = (50.0, 1000.0)
 # dropped so the job table cannot grow without bound.
 FINISHED_TTL_S = 3600
 
+# How long a build survives without anyone asking after it. The 3D window asks
+# every 3 s, but a browser slows a background tab's timers to once a minute, so
+# this has to outlast that or a build would be dropped while its owner simply
+# looked at another tab.
+ABANDON_AFTER_S = 90
+REAP_INTERVAL_S = 5
+
+# How often a running tool is checked for cancellation.
+CANCEL_POLL_S = 0.5
+
+# Who is waiting on a build: an opaque id per browser tab. Requests without one
+# share a single anonymous watcher.
+ANONYMOUS = "anonymous"
+_WATCHER = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
 TOKEN_HEADER = "X-Builder-Token"
 BUNDLED_IMAGERY = Path(__file__).with_name("mapbox_imagery.xml")
 
@@ -64,6 +89,61 @@ ACTIVE = ("queued", "running")
 
 class QueueFull(RuntimeError):
     """Too many builds already waiting."""
+
+
+class BuildCancelled(Exception):
+    """The build was dropped because nobody was waiting for it any more."""
+
+
+def _watcher(value) -> str:
+    return value if isinstance(value, str) and _WATCHER.match(value) else ANONYMOUS
+
+
+def _kill(process: subprocess.Popen) -> None:
+    """Stop a tool and anything it started.
+
+    py3dtiles converts with a pool of worker processes; killing only the
+    parent would leave them running. Each tool is started in its own session,
+    so its process group is everything it spawned.
+    """
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+    except OSError:
+        pass
+
+
+def cancellable_runner(cancel: threading.Event, *, poll_s: float = CANCEL_POLL_S):
+    """Run the external tools, stopping the current one when ``cancel`` is set.
+
+    Behaves like tiles._run otherwise: stdout on success, TileBuildError with
+    the tool's own message on failure.
+    """
+    def run(command):
+        if cancel.is_set():
+            raise BuildCancelled()
+        process = subprocess.Popen(command, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True,
+                                   start_new_session=True)
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=poll_s)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel.is_set():
+                    _kill(process)
+                    process.communicate()
+                    raise BuildCancelled() from None
+        if process.returncode != 0:
+            raise TileBuildError(
+                f"{command[0]} failed ({process.returncode}):\n"
+                f"{(stderr or stdout or '').strip()[:2000]}"
+            )
+        return stdout
+
+    return run
 
 
 def _log(message: str) -> None:
@@ -114,12 +194,13 @@ class Builder:
 
     # -- requests ---------------------------------------------------------
 
-    def submit(self, lat: float, lon: float, radius_m: float) -> dict:
+    def submit(self, lat: float, lon: float, radius_m: float, *,
+               keep: bool = False, watcher: str | None = None) -> dict:
         """Queue a build, or report the one already queued or finished.
 
         Asking twice for the same place returns the same job — the 3D window
         re-requests on reopen, and a second build of identical ground would
-        only cost time.
+        only cost time. ``keep`` builds it even once nobody is waiting.
         """
         key = catalog.key_for(lat, lon, radius_m=radius_m)
         with self._lock:
@@ -128,6 +209,7 @@ class Builder:
                 return {"key": key, "state": "done"}
             job = self._jobs.get(key)
             if job and job["state"] in ACTIVE:
+                self._watch(job, watcher, keep)
                 return self._snapshot(job)
             active = sum(1 for j in self._jobs.values() if j["state"] in ACTIVE)
             if active >= self.queue_limit:
@@ -135,19 +217,64 @@ class Builder:
             job = {"key": key, "state": "queued", "stage": "waiting",
                    "error": None, "seq": next(self._sequence),
                    "queued_at": self.clock(), "started_at": None,
-                   "finished_at": None}
+                   "finished_at": None, "keep": False, "watchers": {},
+                   "cancel": threading.Event()}
+            self._watch(job, watcher, keep)
             self._jobs[key] = job
             self._queue.put((key, lat, lon, radius_m))
             return self._snapshot(job)
 
-    def status(self, key: str) -> dict | None:
+    def status(self, key: str, *, watcher: str | None = None,
+               keep: bool = False) -> dict | None:
+        """A build's progress. Asking counts as still waiting for it."""
         with self._lock:
             job = self._jobs.get(key)
             if job:
+                if job["state"] in ACTIVE:
+                    self._watch(job, watcher, keep)
                 return self._snapshot(job)
         if catalog.exists(key, root=self.root):
             return {"key": key, "state": "done"}
         return None
+
+    def release(self, key: str, *, watcher: str | None = None) -> dict | None:
+        """This watcher has stopped waiting; drop the build if nobody else is."""
+        with self._lock:
+            job = self._jobs.get(key)
+            if not job:
+                return None
+            job["watchers"].pop(_watcher(watcher), None)
+            if job["state"] in ACTIVE and self._abandoned(job, self.clock()):
+                self._cancel(job)
+            return self._snapshot(job)
+
+    def reap(self) -> None:
+        """Drop every build nobody has asked after recently."""
+        with self._lock:
+            now = self.clock()
+            for job in list(self._jobs.values()):
+                if job["state"] in ACTIVE and self._abandoned(job, now):
+                    self._cancel(job)
+
+    def _watch(self, job: dict, watcher: str | None, keep: bool) -> None:
+        job["watchers"][_watcher(watcher)] = self.clock()
+        if keep:
+            job["keep"] = True
+
+    @staticmethod
+    def _abandoned(job: dict, now: float) -> bool:
+        if job["keep"]:
+            return False
+        return all(now - seen > ABANDON_AFTER_S for seen in job["watchers"].values())
+
+    def _cancel(self, job: dict) -> None:
+        """Call with the lock held."""
+        if job["state"] == "queued":
+            job.update(state="cancelled", stage="cancelled", finished_at=self.clock())
+            _log(f"{job['key']} dropped before starting: nobody is waiting for it")
+        elif not job["cancel"].is_set():
+            job["cancel"].set()
+            _log(f"{job['key']} stopping: nobody is waiting for it")
 
     def pending(self) -> int:
         with self._lock:
@@ -177,6 +304,13 @@ class Builder:
         self._thread = threading.Thread(target=self._run, name="lidar-builder",
                                         daemon=True)
         self._thread.start()
+        threading.Thread(target=self._reap_forever, name="lidar-reaper",
+                         daemon=True).start()
+
+    def _reap_forever(self) -> None:
+        while True:
+            time.sleep(REAP_INTERVAL_S)
+            self.reap()
 
     def _run(self) -> None:
         while True:
@@ -188,22 +322,33 @@ class Builder:
 
     def process(self, key: str, lat: float, lon: float, radius_m: float) -> None:
         """Run one build. Public so tests can drive it without the thread."""
-        job = self._jobs[key]
         staging = self.root / f"{STAGING_PREFIX}{key}"
         final = self.root / key
 
-        def stage(name: str) -> None:
-            job["stage"] = name
-            _log(f"{key} {name}")
-
         with self._lock:
+            job = self._jobs.get(key)
+            # Dropped while it waited, or a later request for the same place
+            # already ran: either way this queue entry has nothing to do.
+            if not job or job["state"] != "queued":
+                return
             job.update(state="running", stage="starting", started_at=self.clock())
         _log(f"{key} started")
+
+        cancel = job["cancel"]
+
+        def stage(name: str) -> None:
+            if cancel.is_set():
+                raise BuildCancelled()
+            job["stage"] = name
+            _log(f"{key} {name}")
 
         try:
             shutil.rmtree(staging, ignore_errors=True)
             self.root.mkdir(parents=True, exist_ok=True)
-            self.build(self.make_request(lat, lon, radius_m), staging, stage=stage)
+            self.build(self.make_request(lat, lon, radius_m), staging, stage=stage,
+                       runner=cancellable_runner(cancel))
+            if cancel.is_set():
+                raise BuildCancelled()
             # Complete on disk before it becomes visible under its real name.
             if final.exists():
                 shutil.rmtree(final)
@@ -211,6 +356,10 @@ class Builder:
             with self._lock:
                 job.update(state="done", stage="done", finished_at=self.clock())
             _log(f"{key} done in {round(job['finished_at'] - job['started_at'])}s")
+        except BuildCancelled:
+            with self._lock:
+                job.update(state="cancelled", stage="cancelled", finished_at=self.clock())
+            _log(f"{key} stopped after {round(job['finished_at'] - job['started_at'])}s")
         except BuildError as error:
             self._fail(job, str(error))
         except Exception:  # noqa: BLE001 — a crashed build must not kill the queue
@@ -268,15 +417,38 @@ def make_handler(builder: Builder, token: str | None):
             presented = self.headers.get(TOKEN_HEADER, "")
             return hmac.compare_digest(presented.encode(), token.encode())
 
+        def _job_request(self):
+            """(key, query) for /builds/<key>, or None."""
+            parts = urlsplit(self.path)
+            match = _JOB_PATH.match(parts.path)
+            if not match:
+                return None
+            query = {name: values[0] for name, values in parse_qs(parts.query).items()}
+            return match.group(1), query
+
         def do_GET(self):
             if self.path == "/health":
                 return self._send(200, {"ok": True, "pending": builder.pending()})
             if not self._authorised():
                 return self._send(401, {"error": "unauthorised"})
-            match = _JOB_PATH.match(self.path)
-            if not match:
+            found = self._job_request()
+            if not found:
                 return self._send(404, {"error": "not found"})
-            job = builder.status(match.group(1))
+            key, query = found
+            job = builder.status(key, watcher=query.get("watcher"),
+                                 keep=query.get("keep") == "1")
+            if job is None:
+                return self._send(404, {"error": "no such build"})
+            return self._send(200, job)
+
+        def do_DELETE(self):
+            if not self._authorised():
+                return self._send(401, {"error": "unauthorised"})
+            found = self._job_request()
+            if not found:
+                return self._send(404, {"error": "not found"})
+            key, query = found
+            job = builder.release(key, watcher=query.get("watcher"))
             if job is None:
                 return self._send(404, {"error": "no such build"})
             return self._send(200, job)
@@ -295,7 +467,9 @@ def make_handler(builder: Builder, token: str | None):
             except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 return self._send(400, {"error": "lat, lon and radius_m are required"})
             try:
-                return self._send(202, builder.submit(lat, lon, radius))
+                return self._send(202, builder.submit(
+                    lat, lon, radius, keep=body.get("keep") is True,
+                    watcher=body.get("watcher")))
             except QueueFull:
                 return self._send(429, {"error": "The build queue is full. Try again shortly."})
 

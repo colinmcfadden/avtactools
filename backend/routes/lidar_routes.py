@@ -11,6 +11,8 @@ places have tilesets is not: an unauthenticated endpoint would let anyone
 enumerate where a unit has been planning to land.
 """
 
+import re
+
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_jwt_extended import jwt_required
 
@@ -180,10 +182,14 @@ def start_build():
     Idempotent: asking again while a build is queued or running returns that
     build, and asking for somewhere already built returns it as done. The 3D
     window calls this whenever it opens on unbuilt ground.
+
+    ``watcher`` is an opaque id for the browser tab waiting on the build; the
+    service drops a build nobody is waiting for. ``keep`` (a saved LZ) asks
+    for it to finish regardless.
     """
+    data = request.get_json(silent=True) or {}
     try:
-        lat, lon, radius = _parse_target(request.get_json(silent=True) or {},
-                                         max_radius=BUILD_RADIUS_MAX_M)
+        lat, lon, radius = _parse_target(data, max_radius=BUILD_RADIUS_MAX_M)
     except _BadTarget as error:
         return jsonify({"error": str(error)}), 400
 
@@ -195,7 +201,8 @@ def start_build():
         return jsonify({"error": "Point clouds cannot be built on this server.",
                         "code": "builder_not_configured"}), 503
     try:
-        job = lidar_builder.submit(lat, lon, radius)
+        job = lidar_builder.submit(lat, lon, radius, keep=data.get("keep") is True,
+                                   watcher=_watcher_id(data.get("watcher")))
     except lidar_builder.BuilderBusy as error:
         return jsonify({"error": str(error), "code": "builder_busy"}), 429
     except lidar_builder.BuilderUnavailable as error:
@@ -215,13 +222,40 @@ def build_status(key):
         return jsonify({"error": "Point clouds cannot be built on this server.",
                         "code": "builder_not_configured"}), 503
     try:
-        job = lidar_builder.status(key)
+        job = lidar_builder.status(key, watcher=_watcher_id(request.args.get("watcher")),
+                                   keep=request.args.get("keep") == "1")
     except lidar_builder.BuilderUnavailable as error:
         return jsonify({"error": str(error), "code": "builder_unavailable"}), 503
     if job is None:
         return jsonify({"error": "No build is running for this location.",
                         "code": "no_build"}), 404
     return jsonify(_job_body(job))
+
+
+@lidar_bp.route("/api/lidar/build/<key>", methods=["DELETE"])
+@jwt_required()
+def release_build(key):
+    """Stop waiting for a build. The service drops it if nobody else is waiting
+    and it was not asked to be kept; a finished or unknown build is a no-op."""
+    if not catalog.is_valid_key(key):
+        return jsonify({"error": "Malformed tileset key."}), 400
+    if not lidar_builder.configured():
+        return ("", 204)
+    try:
+        job = lidar_builder.release(key, watcher=_watcher_id(request.args.get("watcher")))
+    except lidar_builder.BuilderUnavailable as error:
+        return jsonify({"error": str(error), "code": "builder_unavailable"}), 503
+    if job is None:
+        return ("", 204)
+    return jsonify(_job_body(job))
+
+
+# Opaque per-tab ids; anything else is dropped rather than forwarded.
+_WATCHER_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+def _watcher_id(value):
+    return value if isinstance(value, str) and _WATCHER_ID.match(value) else None
 
 
 def _job_body(job):

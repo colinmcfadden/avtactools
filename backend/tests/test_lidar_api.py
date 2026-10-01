@@ -285,7 +285,53 @@ class BuildApiTests(LidarApiHarness):
             response = self.build()
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.get_json()["state"], "queued")
-        submit.assert_called_once_with(TARGET["lat"], TARGET["lon"], RADIUS)
+        submit.assert_called_once_with(TARGET["lat"], TARGET["lon"], RADIUS,
+                                       keep=False, watcher=None)
+
+    # --- who is waiting -----------------------------------------------------
+
+    def test_the_watcher_and_keep_are_forwarded(self):
+        with patch("lidar_builder.submit", return_value=self.JOB) as submit:
+            self.build({**TARGET, "watcher": "tab-12345678", "keep": True})
+        submit.assert_called_once_with(TARGET["lat"], TARGET["lon"], RADIUS,
+                                       keep=True, watcher="tab-12345678")
+
+    def test_a_malformed_watcher_is_not_forwarded(self):
+        with patch("lidar_builder.submit", return_value=self.JOB) as submit:
+            self.build({**TARGET, "watcher": "../etc/passwd"})
+        self.assertIsNone(submit.call_args.kwargs["watcher"])
+
+    def test_polling_counts_as_waiting(self):
+        with patch("lidar_builder.status", return_value=self.JOB) as status:
+            self.client.get(f"/api/lidar/build/{self.JOB['key']}?watcher=tab-12345678&keep=1",
+                            headers=self.auth)
+        status.assert_called_once_with(self.JOB["key"], watcher="tab-12345678", keep=True)
+
+    def test_leaving_a_build_is_forwarded(self):
+        cancelled = {**self.JOB, "state": "cancelled"}
+        with patch("lidar_builder.release", return_value=cancelled) as release:
+            response = self.client.delete(
+                f"/api/lidar/build/{self.JOB['key']}?watcher=tab-12345678", headers=self.auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["state"], "cancelled")
+        release.assert_called_once_with(self.JOB["key"], watcher="tab-12345678")
+
+    def test_leaving_needs_a_token(self):
+        self.assertEqual(self.client.delete("/api/lidar/build/" + "0" * 16).status_code, 401)
+
+    def test_leaving_a_build_the_service_never_had_is_harmless(self):
+        with patch("lidar_builder.release", return_value=None):
+            response = self.client.delete("/api/lidar/build/" + "0" * 16, headers=self.auth)
+        self.assertEqual(response.status_code, 204)
+
+    def test_leaving_without_a_service_is_harmless(self):
+        with patch.dict("os.environ", {"LIDAR_BUILDER_URL": ""}):
+            response = self.client.delete("/api/lidar/build/" + "0" * 16, headers=self.auth)
+        self.assertEqual(response.status_code, 204)
+
+    def test_leaving_a_malformed_key_is_refused(self):
+        response = self.client.delete("/api/lidar/build/not-a-key", headers=self.auth)
+        self.assertEqual(response.status_code, 400)
 
     def test_somewhere_already_built_is_done_without_asking_the_service(self):
         key = catalog.key_for(**TARGET, radius_m=RADIUS)

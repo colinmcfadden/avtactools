@@ -20,12 +20,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lidar import catalog  # noqa: E402
 from lidar.build import BuildError, BuildRequest  # noqa: E402
+from lidar.tiles import TileBuildError  # noqa: E402
 from lidar.worker import (  # noqa: E402
-    STAGING_PREFIX, TOKEN_HEADER, Builder, QueueFull, make_handler,
-    request_factory)
+    ABANDON_AFTER_S, STAGING_PREFIX, TOKEN_HEADER, Builder, BuildCancelled,
+    QueueFull, cancellable_runner, make_handler, request_factory)
 
 TARGET = (34.596407, -84.128098, 250.0)
 OTHER = (34.783817, -84.082190, 250.0)
+WATCHER = "tab-aaaaaaaa"
+OTHER_WATCHER = "tab-bbbbbbbb"
 
 
 def fake_build(request, out_dir, *, stage=lambda _s: None, **_kwargs):
@@ -276,6 +279,175 @@ class HttpTests(unittest.TestCase):
     def test_a_malformed_key_never_reaches_the_builder(self):
         status, _ = self.call("GET", "/builds/../../etc")
         self.assertEqual(status, 404)
+
+    def test_asking_with_a_watcher_keeps_the_build(self):
+        _, job = self.call("POST", "/builds", {"lat": TARGET[0], "lon": TARGET[1],
+                                               "radius_m": 250, "watcher": WATCHER})
+        status, body = self.call("GET", f"/builds/{job['key']}?watcher={WATCHER}")
+        self.assertEqual((status, body["state"]), (200, "queued"))
+
+    def test_leaving_drops_an_unkept_build(self):
+        _, job = self.call("POST", "/builds", {"lat": TARGET[0], "lon": TARGET[1],
+                                               "radius_m": 250, "watcher": WATCHER})
+        status, body = self.call("DELETE", f"/builds/{job['key']}?watcher={WATCHER}")
+        self.assertEqual((status, body["state"]), (200, "cancelled"))
+
+    def test_leaving_a_kept_build_leaves_it_running(self):
+        _, job = self.call("POST", "/builds", {"lat": TARGET[0], "lon": TARGET[1],
+                                               "radius_m": 250, "watcher": WATCHER,
+                                               "keep": True})
+        _, body = self.call("DELETE", f"/builds/{job['key']}?watcher={WATCHER}")
+        self.assertEqual(body["state"], "queued")
+
+    def test_leaving_needs_the_token(self):
+        status, _ = self.call("DELETE", "/builds/" + "0" * 16, token="wrong")
+        self.assertEqual(status, 401)
+
+
+class AbandonedBuildTests(unittest.TestCase):
+    """A build runs only while someone is waiting for it, unless it is kept.
+
+    A refreshed page used to leave its build running, and every LZ opened
+    afterwards queued behind work nobody would ever look at.
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+        self.clock = Clock()
+        self.builds = []
+
+        def recording_build(request, out_dir, **kwargs):
+            self.builds.append(request)
+            return fake_build(request, out_dir, **kwargs)
+
+        self.builder = Builder(self.root, make_request=make_request,
+                               build=recording_build, clock=self.clock)
+        self.key = catalog.key_for(TARGET[0], TARGET[1], radius_m=TARGET[2])
+
+    def later(self, seconds):
+        self.clock.now += seconds
+
+    def test_a_build_nobody_asks_after_is_dropped(self):
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        self.later(ABANDON_AFTER_S + 1)
+        self.builder.reap()
+        self.assertEqual(self.builder.status(self.key)["state"], "cancelled")
+        self.assertEqual(self.builder.pending(), 0)
+
+    def test_asking_after_a_build_keeps_it(self):
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        for _ in range(5):
+            self.later(ABANDON_AFTER_S - 10)
+            self.builder.status(self.key, watcher=WATCHER)
+            self.builder.reap()
+        self.assertEqual(self.builder.status(self.key)["state"], "queued")
+
+    def test_a_kept_build_outlives_its_watchers(self):
+        """A saved LZ is worth finishing even if the page goes away."""
+        self.builder.submit(*TARGET, watcher=WATCHER, keep=True)
+        self.builder.release(self.key, watcher=WATCHER)
+        self.later(ABANDON_AFTER_S * 10)
+        self.builder.reap()
+        self.assertEqual(self.builder.status(self.key)["state"], "queued")
+
+    def test_keeping_can_be_asked_for_after_the_build_started(self):
+        """Saving an LZ while its point cloud builds."""
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        self.builder.status(self.key, watcher=WATCHER, keep=True)
+        self.later(ABANDON_AFTER_S * 10)
+        self.builder.reap()
+        self.assertEqual(self.builder.status(self.key)["state"], "queued")
+
+    def test_the_last_watcher_leaving_drops_it_at_once(self):
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        job = self.builder.release(self.key, watcher=WATCHER)
+        self.assertEqual(job["state"], "cancelled")
+
+    def test_one_watcher_leaving_does_not_drop_another_watchers_build(self):
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        self.builder.submit(*TARGET, watcher=OTHER_WATCHER)
+        job = self.builder.release(self.key, watcher=WATCHER)
+        self.assertEqual(job["state"], "queued")
+
+    def test_a_dropped_build_is_never_run(self):
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        self.builder.release(self.key, watcher=WATCHER)
+        self.builder.process(self.key, *TARGET)
+        self.assertEqual(self.builds, [])
+        self.assertFalse(catalog.exists(self.key, root=self.root))
+
+    def test_builds_behind_a_dropped_one_move_up(self):
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        behind = self.builder.submit(*OTHER, watcher=OTHER_WATCHER)
+        self.assertEqual(behind["position"], 1)
+        self.builder.release(self.key, watcher=WATCHER)
+        other_key = catalog.key_for(OTHER[0], OTHER[1], radius_m=OTHER[2])
+        self.assertEqual(self.builder.status(other_key)["position"], 0)
+
+    def test_a_dropped_place_can_be_asked_for_again(self):
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        self.builder.release(self.key, watcher=WATCHER)
+        again = self.builder.submit(*TARGET, watcher=WATCHER)
+        self.assertEqual(again["state"], "queued")
+        # Two queue entries now name this place; the first runs the new job
+        # and the second finds nothing left to do.
+        self.builder.process(self.key, *TARGET)
+        self.builder.process(self.key, *TARGET)
+        self.assertEqual(len(self.builds), 1)
+        self.assertEqual(self.builder.status(self.key)["state"], "done")
+
+    def test_a_running_build_stops_and_leaves_nothing_behind(self):
+        builder = self.builder
+        key = self.key
+
+        def abandoned_mid_build(request, out_dir, *, stage, **_kwargs):
+            stage("processing points")
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
+            builder.release(key, watcher=WATCHER)
+            stage("building tiles")   # the next stage notices
+            raise AssertionError("should have been cancelled")
+
+        builder.build = abandoned_mid_build
+        builder.submit(*TARGET, watcher=WATCHER)
+        builder.process(key, *TARGET)
+        self.assertEqual(builder.status(key)["state"], "cancelled")
+        self.assertFalse(catalog.exists(key, root=self.root))
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_requests_without_a_watcher_id_share_one(self):
+        """Older clients still get a working lease."""
+        self.builder.submit(*TARGET)
+        self.builder.status(self.key, watcher="not a valid id!")
+        self.assertEqual(self.builder.release(self.key)["state"], "cancelled")
+
+
+class CancellableRunnerTests(unittest.TestCase):
+    def test_output_comes_back_like_the_plain_runner(self):
+        run = cancellable_runner(threading.Event())
+        self.assertEqual(run([sys.executable, "-c", "print('ok')"]).strip(), "ok")
+
+    def test_a_failing_tool_reports_its_error(self):
+        run = cancellable_runner(threading.Event())
+        with self.assertRaises(TileBuildError) as caught:
+            run([sys.executable, "-c", "import sys; sys.exit('bad input')"])
+        self.assertIn("bad input", str(caught.exception))
+
+    def test_cancelling_stops_a_running_tool_promptly(self):
+        import time
+        cancel = threading.Event()
+        run = cancellable_runner(cancel, poll_s=0.05)
+        threading.Timer(0.3, cancel.set).start()
+        started = time.monotonic()
+        with self.assertRaises(BuildCancelled):
+            run([sys.executable, "-c", "import time; time.sleep(30)"])
+        self.assertLess(time.monotonic() - started, 5)
+
+    def test_nothing_starts_once_cancelled(self):
+        cancel = threading.Event()
+        cancel.set()
+        with self.assertRaises(BuildCancelled):
+            cancellable_runner(cancel)([sys.executable, "-c", "print('ran')"])
 
 
 if __name__ == "__main__":

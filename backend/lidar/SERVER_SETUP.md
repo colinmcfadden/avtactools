@@ -99,6 +99,12 @@ docker exec <build service container> python3 -c \
   shortly" rather than growing.
 - **Asking twice is free.** Reopening the window joins the build already
   running for that place.
+- **Only wanted builds run.** The 3D window polls its build every 3 s; a build
+  nobody has polled for 90 s is dropped, queued or mid-run (its PDAL or
+  py3dtiles process is killed). Closing the window drops it at once, and a
+  refreshed page drops the previous load's builds as it starts. A saved LZ's
+  build is marked `keep` and always finishes. Without this a refresh left its
+  build running and every LZ opened next queued behind it.
 - **Builds are staged.** Each is written under `/data/tiles/.staging-<key>` and
   moved into place only when complete, so a half-written tileset is never
   served. Staging left by a restart is cleared on startup.

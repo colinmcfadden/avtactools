@@ -54,15 +54,16 @@ const useBuildClock = (building, key) => {
  */
 const NO_ROUTES = [];
 
-const Lz3DWindow = ({ label, lat, lon, radiusM, importedRoutes = NO_ROUTES,
-                      sketchedRoutes = NO_ROUTES, onClose }) => {
+const Lz3DWindow = ({ label, lat, lon, radiusM, saved = false,
+                      importedRoutes = NO_ROUTES, sketchedRoutes = NO_ROUTES,
+                      onClose }) => {
   const nodeRef = useRef(null);
   // The same route state the 2D map draws, so an edit there shows here.
   const routes = useMemo(() => [...importedRoutes, ...sketchedRoutes],
                          [importedRoutes, sketchedRoutes]);
   const { scene: routeScene } = useRouteScene(routes);
   const { state, url, contextUrl, target, error, refresh, stage, position,
-          elapsedS, buildFailed } = useLidarTileset({ lat, lon, radiusM });
+          elapsedS, buildFailed } = useLidarTileset({ lat, lon, radiusM, keep: saved });
   // The service's own count wins once it reports one, so reopening the window
   // mid-build shows the real time rather than restarting at 0:00.
   const elapsed = Math.max(useBuildClock(state === "building", target?.lat),
@@ -146,8 +147,12 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, importedRoutes = NO_ROUTES,
               </div>
               <span className="lz3d-window__elapsed">{formatElapsed(elapsed)}</span>
               <span className="lz3d-window__hint">
-                Loads in 1-3 minutes. You may
-                close this window; the build will finish in the background.
+                {/* A build runs only while someone waits for it, unless the
+                    LZ is saved — see useLidarTileset. */}
+                Takes several minutes the first time; opens at once after that.{" "}
+                {saved
+                  ? "This LZ is saved, so you may close this window and the build finishes in the background."
+                  : "Closing this window or refreshing stops the build. Save the LZ to keep it building."}
               </span>
             </div>
           )}

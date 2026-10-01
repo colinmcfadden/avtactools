@@ -1,10 +1,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import api from "../auth/api";
-import { useLidarTileset } from "./useLidarTileset";
+import { releaseAbandonedBuilds, useLidarTileset, watcherId } from "./useLidarTileset";
 
 jest.mock("../auth/api", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() },
+  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
 }));
 
 const TARGET = { lat: 34.783817, lon: -84.08219 };
@@ -29,6 +29,9 @@ beforeEach(() => {
   jest.useFakeTimers();
   api.get.mockReset();
   api.post.mockReset();
+  api.delete.mockReset();
+  api.delete.mockResolvedValue({});
+  sessionStorage.clear();
 });
 
 afterEach(() => {
@@ -165,4 +168,106 @@ it("does nothing until there is a target", () => {
   const { result } = renderHook(() => useLidarTileset({}));
   expect(result.current.state).toBe("idle");
   expect(api.post).not.toHaveBeenCalled();
+});
+
+describe("only building what someone is waiting for", () => {
+  // A refreshed page used to leave its build running, and every LZ opened
+  // afterwards queued behind work nobody would look at.
+
+  const building = () => {
+    route({ resolve: missing(true), build: { data: { key: KEY, state: "queued" } } });
+    api.get.mockResolvedValue({ data: { key: KEY, state: "running" } });
+  };
+
+  const buildBody = () => api.post.mock.calls.find(([path]) => path === "/lidar/build")[1];
+
+  it("says who is waiting, and that an unsaved LZ need not be kept", async () => {
+    building();
+    const { result } = renderHook(() => useLidarTileset(TARGET));
+    await waitFor(() => expect(result.current.state).toBe("building"));
+    expect(buildBody()).toMatchObject({ watcher: watcherId(), keep: false });
+
+    await advance(3000);
+    const [, config] = api.get.mock.calls[0];
+    expect(config.params).toEqual({ watcher: watcherId() });
+  });
+
+  it("asks for a saved LZ's build to be kept", async () => {
+    building();
+    const { result } = renderHook(() => useLidarTileset({ ...TARGET, keep: true }));
+    await waitFor(() => expect(result.current.state).toBe("building"));
+    expect(buildBody()).toMatchObject({ keep: true });
+    await advance(3000);
+    expect(api.get.mock.calls[0][1].params).toEqual({ watcher: watcherId(), keep: "1" });
+  });
+
+  it("marks the build kept when the LZ is saved mid-build, without starting over", async () => {
+    building();
+    const { result, rerender } = renderHook((props) => useLidarTileset(props),
+                                            { initialProps: { ...TARGET, keep: false } });
+    await waitFor(() => expect(result.current.state).toBe("building"));
+    rerender({ ...TARGET, keep: true });
+    await advance(3000);
+    expect(api.get.mock.calls.at(-1)[1].params.keep).toBe("1");
+    expect(api.post.mock.calls.filter(([path]) => path === "/lidar/build")).toHaveLength(1);
+  });
+
+  it("lets the build go when the window closes", async () => {
+    building();
+    const { result, unmount } = renderHook(() => useLidarTileset(TARGET));
+    await waitFor(() => expect(result.current.state).toBe("building"));
+    unmount();
+    expect(api.delete).toHaveBeenCalledWith(`/lidar/build/${KEY}`,
+                                            { params: { watcher: watcherId() } });
+  });
+
+  it("has nothing to let go once the point cloud is open", async () => {
+    route({ resolve: { data: { ...DONE, available: true } } });
+    const { result, unmount } = renderHook(() => useLidarTileset(TARGET));
+    await waitFor(() => expect(result.current.state).toBe("available"));
+    unmount();
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it("releases a previous page's build when the app loads again", async () => {
+    building();
+    const { result } = renderHook(() => useLidarTileset(TARGET));
+    await waitFor(() => expect(result.current.state).toBe("building"));
+    // A refresh: the page is gone without unmounting anything. The reloaded
+    // app finds the build recorded in this tab and lets it go.
+    releaseAbandonedBuilds();
+    expect(api.delete).toHaveBeenCalledWith(`/lidar/build/${KEY}`,
+                                            { params: { watcher: watcherId() } });
+    api.delete.mockClear();
+    releaseAbandonedBuilds();
+    expect(api.delete).not.toHaveBeenCalled();
+  });
+
+  it("asks again if the build was dropped while this tab was still waiting", async () => {
+    // A background tab whose timers the browser stopped for longer than the
+    // service's lease.
+    let builds = 0;
+    route({
+      resolve: missing(true),
+      build: () => {
+        builds += 1;
+        return Promise.resolve({ data: { key: KEY, state: "queued" } });
+      },
+    });
+    api.get
+      .mockResolvedValueOnce({ data: { key: KEY, state: "cancelled" } })
+      .mockResolvedValueOnce({ data: DONE });
+
+    const { result } = renderHook(() => useLidarTileset(TARGET));
+    await waitFor(() => expect(result.current.state).toBe("building"));
+    await advance(3000);
+    await waitFor(() => expect(builds).toBe(2));
+    await advance(3000);
+    await waitFor(() => expect(result.current.state).toBe("available"));
+  });
+
+  it("keeps one watcher id for the life of the tab", () => {
+    expect(watcherId()).toBe(watcherId());
+    expect(watcherId()).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+  });
 });

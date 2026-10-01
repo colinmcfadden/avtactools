@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "../auth/api";
 
 /**
@@ -12,6 +12,11 @@ import api from "../auth/api";
  * Coordinates only ever travel in POST bodies. Progress is read by the build's
  * opaque key, so an LZ's position never lands in a URL, a request log, or the
  * browser's history.
+ *
+ * A build runs only while someone is waiting for it. Polling is what tells the
+ * build service this tab still wants it; closing the window says it no longer
+ * does, and a build nobody asks after is dropped. An LZ that is saved passes
+ * `keep`, and its build finishes regardless — a refresh should not cost it.
  *
  * States: idle · resolving · building · available · missing · error
  */
@@ -34,15 +39,78 @@ const IDLE = {
   error: "", stage: null, position: null, elapsedS: null, buildFailed: false,
 };
 
+// Who is waiting, as far as the build service is concerned: one opaque id per
+// browser tab. Session storage, so a refresh keeps it — the reloaded page can
+// then tell the service the previous page's builds are no longer wanted.
+const WATCHER_KEY = "avtac.lidar.watcher";
+// Builds this tab started and has not yet seen finish or released.
+const IN_FLIGHT_KEY = "avtac.lidar.building";
+
+const randomId = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `tab-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+};
+
+// Storage can be unavailable (private windows, blocked site data); the lease
+// on the server still drops abandoned builds, just a little later.
+const readSession = (key) => {
+  try { return sessionStorage.getItem(key); } catch { return null; }
+};
+const writeSession = (key, value) => {
+  try { sessionStorage.setItem(key, value); } catch { /* lease covers it */ }
+};
+
+let memoryWatcher = null;
+export const watcherId = () => {
+  const stored = readSession(WATCHER_KEY);
+  if (stored) return stored;
+  memoryWatcher = memoryWatcher || randomId();
+  writeSession(WATCHER_KEY, memoryWatcher);
+  return memoryWatcher;
+};
+
+const inFlight = () => {
+  try { return JSON.parse(readSession(IN_FLIGHT_KEY) || "[]"); } catch { return []; }
+};
+const markInFlight = (key) => {
+  if (key && !inFlight().includes(key)) writeSession(IN_FLIGHT_KEY, JSON.stringify([...inFlight(), key]));
+};
+const clearInFlight = (key) => {
+  writeSession(IN_FLIGHT_KEY, JSON.stringify(inFlight().filter((k) => k !== key)));
+};
+
+/** Stop waiting for a build. Fire and forget: the lease is the backstop. */
+const release = (key) => {
+  if (!key) return;
+  clearInFlight(key);
+  api.delete(`/lidar/build/${key}`, { params: { watcher: watcherId() } }).catch(() => {});
+};
+
+/**
+ * Release builds a previous load of this tab was waiting on.
+ *
+ * A refresh gives the page no chance to say it is leaving — the request would
+ * be cut off mid-flight — so the reloaded page says it instead. Without this,
+ * the old build ran on and every LZ opened afterwards queued behind it until
+ * the server's lease ran out.
+ */
+export const releaseAbandonedBuilds = () => {
+  inFlight().forEach(release);
+};
+
 const isCancel = (err) => err?.name === "CanceledError" || err?.code === "ERR_CANCELED";
 
 const messageOf = (err, fallback) =>
   err?.response?.data?.error || err?.message || fallback;
 
-export const useLidarTileset = ({ lat, lon, radiusM } = {}) => {
+export const useLidarTileset = ({ lat, lon, radiusM, keep = false } = {}) => {
   const [result, setResult] = useState(IDLE);
   // Bumped by refresh() to run the whole lookup again.
   const [attempt, setAttempt] = useState(0);
+  // Read on every request rather than restarting the lookup: saving an LZ
+  // mid-build should mark its build kept, not begin it again.
+  const keepRef = useRef(keep);
+  keepRef.current = keep;
 
   const hasTarget = Number.isFinite(lat) && Number.isFinite(lon);
 
@@ -59,43 +127,72 @@ export const useLidarTileset = ({ lat, lon, radiusM } = {}) => {
     let failures = 0;
     let resubmits = 0;
     let resolvedTarget = null;
+    // The build this effect is waiting on, if any — released on cleanup.
+    let waitingOn = null;
 
     const body = { lat, lon };
     if (Number.isFinite(radiusM)) body.radius_m = radiusM;
 
-    const finish = (data) => setResult({
-      ...IDLE,
-      state: "available",
-      url: data.url,
-      // Optional wider, thinned ring. Absent unless one was built.
-      contextUrl: data.contextUrl || null,
-      key: data.key || null,
-    });
+    const settled = () => {
+      clearInFlight(waitingOn);
+      waitingOn = null;
+    };
 
-    const fail = (message, { buildFailed = false } = {}) => setResult({
-      ...IDLE, state: "error", error: message, buildFailed, target: resolvedTarget,
-    });
+    const finish = (data) => {
+      settled();
+      setResult({
+        ...IDLE,
+        state: "available",
+        url: data.url,
+        // Optional wider, thinned ring. Absent unless one was built.
+        contextUrl: data.contextUrl || null,
+        key: data.key || null,
+      });
+    };
 
-    const showJob = (job) => setResult({
-      ...IDLE,
-      state: "building",
-      key: job.key || null,
-      stage: job.stage || "waiting",
-      position: Number.isFinite(job.position) ? job.position : null,
-      elapsedS: Number.isFinite(job.elapsed_s) ? job.elapsed_s : null,
-      target: resolvedTarget,
-    });
+    const fail = (message, { buildFailed = false } = {}) => {
+      settled();
+      setResult({
+        ...IDLE, state: "error", error: message, buildFailed, target: resolvedTarget,
+      });
+    };
+
+    const showJob = (job) => {
+      if (job.key && job.key !== waitingOn) {
+        waitingOn = job.key;
+        markInFlight(job.key);
+      }
+      setResult({
+        ...IDLE,
+        state: "building",
+        key: job.key || null,
+        stage: job.stage || "waiting",
+        position: Number.isFinite(job.position) ? job.position : null,
+        elapsedS: Number.isFinite(job.elapsed_s) ? job.elapsed_s : null,
+        target: resolvedTarget,
+      });
+    };
+
+    // Every poll says who is still waiting, and whether the LZ is now saved.
+    const watching = () => ({ watcher: watcherId(), ...(keepRef.current ? { keep: "1" } : {}) });
 
     const poll = (key) => {
       timer = setTimeout(async () => {
         if (cancelled) return;
         try {
-          const res = await api.get(`/lidar/build/${key}`, { signal });
+          const res = await api.get(`/lidar/build/${key}`, { signal, params: watching() });
           failures = 0;
           const job = res.data || {};
           if (job.state === "done" && job.url) return finish(job);
           if (job.state === "failed") {
             return fail(job.error || "The build failed.", { buildFailed: true });
+          }
+          // Dropped as unwatched while this tab was still here — a background
+          // tab the browser stopped running timers in. Ask again.
+          if (job.state === "cancelled" && resubmits < MAX_RESUBMITS) {
+            resubmits += 1;
+            startBuild();
+            return;
           }
           showJob(job);
           poll(key);
@@ -118,7 +215,9 @@ export const useLidarTileset = ({ lat, lon, radiusM } = {}) => {
 
     const startBuild = async () => {
       try {
-        const res = await api.post("/lidar/build", body, { signal });
+        const res = await api.post("/lidar/build",
+                                   { ...body, keep: keepRef.current, watcher: watcherId() },
+                                   { signal });
         const job = res.data || {};
         if (job.state === "done" && job.url) return finish(job);
         showJob(job);
@@ -156,6 +255,10 @@ export const useLidarTileset = ({ lat, lon, radiusM } = {}) => {
       cancelled = true;
       controller.abort();
       clearTimeout(timer);
+      // The window closed or moved to another LZ: this tab no longer wants
+      // the build. The service drops it unless it is kept or someone else
+      // is waiting.
+      release(waitingOn);
     };
   }, [hasTarget, lat, lon, radiusM, attempt]);
 

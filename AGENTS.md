@@ -152,7 +152,7 @@ who have not cleared the `.mil`/approval check.
 | aircraft | `/api/aircraft-profiles` CRUD, `/<id>/template` |
 | threats | `POST /api/threat-mask`, `POST /api/threats-ths`, `GET/POST /api/threats-kmz`, `POST /api/threats-kmz-link` |
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
-| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>`, `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key |
+| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key |
 | admin | `/admin/*` — session cookie, not JWT |
 | health | `GET /` → JSON status (or redirect to `/admin/login` on the admin host) |
 
@@ -406,8 +406,12 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   bounded queue, stages each under `.staging-<key>` and moves it into place
   only when complete. It prefers the downloaded collection when that covers
   ≥95% of the area and falls back to AWS otherwise, so an LZ near the edge of
-  the download is never built with a side missing. Measured: ~130 s from AWS
-  for a 250 m radius.
+  the download is never built with a side missing. Measured from AWS: 138 s
+  at 250 m radius, 707 s at 500 m — 4× the area, ~5× the time.
+- **Only wanted builds run.** A build nobody has polled for 90 s is dropped,
+  queued or mid-run; closing the 3D window drops it at once, and a reloaded
+  page releases the previous load's builds (ids in `sessionStorage`). Saved
+  LZs pass `keep` and always finish. Each browser tab is one opaque watcher.
 - 3D Tiles stream by level of detail, so a large area costs build time and
   disk, not browser memory. `--context` adds a thinned landscape ring without
   thinning the landing area.

@@ -43,6 +43,7 @@ import ThreatExportModal from "./feature/threats/ThreatExportModal";
 import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
 import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
+import { releaseAbandonedBuilds } from "./feature/viewer3d/useLidarTileset";
 import ActiveLzWindow from "./feature/lzWorkspace/ActiveLzWindow";
 import LzDiagramRemoveDialog from "./feature/lzWorkspace/LzDiagramRemoveDialog";
 
@@ -326,6 +327,12 @@ function App() {
   // 3D point cloud for the active LZ/PZ. Opens over the map rather than
   // replacing it, so the 2D diagram stays available alongside.
   const [is3DOpen, setIs3DOpen] = useState(false);
+  // A refresh cannot tell the build service it is leaving, so the reloaded
+  // page does: point-cloud builds the previous load was waiting on are
+  // released rather than left to run ahead of everything opened next.
+  useEffect(() => {
+    releaseAbandonedBuilds();
+  }, []);
   const { doghouses, updateDoghouse } = useDoghouses(targetLocation, setFlightData, {
     doghouses: activeGraphics.doghouses ?? [],
     setDoghouses,
@@ -1552,6 +1559,7 @@ function App() {
           }
           lat={activeDiagram.target.lat}
           lon={activeDiagram.target.lon}
+          saved={activeDiagram.savedId != null}
           importedRoutes={importedRoutes}
           sketchedRoutes={sketchedRoutes}
           onClose={() => setIs3DOpen(false)}
