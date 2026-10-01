@@ -89,6 +89,9 @@ ANONYMOUS = "anonymous"
 _WATCHER = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 TOKEN_HEADER = "X-Builder-Token"
+# Sent by the API (see lidar_builder). The query-string forms are accepted too.
+WATCHER_HEADER = "X-Build-Watcher"
+KEEP_HEADER = "X-Build-Keep"
 BUNDLED_IMAGERY = Path(__file__).with_name("mapbox_imagery.xml")
 
 ACTIVE = ("queued", "running")
@@ -443,13 +446,15 @@ def make_handler(builder: Builder, token: str | None):
             return hmac.compare_digest(presented.encode(), token.encode())
 
         def _job_request(self):
-            """(key, query) for /builds/<key>, or None."""
+            """(key, watcher, keep) for /builds/<key>, or None."""
             parts = urlsplit(self.path)
             match = _JOB_PATH.match(parts.path)
             if not match:
                 return None
             query = {name: values[0] for name, values in parse_qs(parts.query).items()}
-            return match.group(1), query
+            watcher = self.headers.get(WATCHER_HEADER) or query.get("watcher")
+            keep = (self.headers.get(KEEP_HEADER) or query.get("keep")) == "1"
+            return match.group(1), watcher, keep
 
         def do_GET(self):
             if self.path == "/health":
@@ -459,9 +464,8 @@ def make_handler(builder: Builder, token: str | None):
             found = self._job_request()
             if not found:
                 return self._send(404, {"error": "not found"})
-            key, query = found
-            job = builder.status(key, watcher=query.get("watcher"),
-                                 keep=query.get("keep") == "1")
+            key, watcher, keep = found
+            job = builder.status(key, watcher=watcher, keep=keep)
             if job is None:
                 return self._send(404, {"error": "no such build"})
             return self._send(200, job)
@@ -472,8 +476,8 @@ def make_handler(builder: Builder, token: str | None):
             found = self._job_request()
             if not found:
                 return self._send(404, {"error": "not found"})
-            key, query = found
-            job = builder.release(key, watcher=query.get("watcher"))
+            key, watcher, _keep = found
+            job = builder.release(key, watcher=watcher)
             if job is None:
                 return self._send(404, {"error": "no such build"})
             return self._send(200, job)

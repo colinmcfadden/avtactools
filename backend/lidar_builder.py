@@ -20,6 +20,13 @@ import os
 import requests
 
 TOKEN_HEADER = "X-Builder-Token"
+# Who is waiting on a build, and whether to keep it, travel as headers rather
+# than in the URL. The API and the service deploy separately, so for a moment
+# one is always newer than the other: a service that predates these headers
+# ignores them and still finds the build, where a query string it did not
+# expect made it answer 404 and the 3D window give up.
+WATCHER_HEADER = "X-Build-Watcher"
+KEEP_HEADER = "X-Build-Keep"
 
 # The service answers from memory; anything slower than this is a service that
 # is down or wedged, and the browser should hear so rather than wait.
@@ -70,10 +77,12 @@ def submit(lat: float, lon: float, radius_m: float, *, keep: bool = False,
 
 
 def _watching(watcher: str | None, keep: bool = False) -> dict:
-    params = {"watcher": watcher} if watcher else {}
+    headers = _headers()
+    if watcher:
+        headers[WATCHER_HEADER] = watcher
     if keep:
-        params["keep"] = "1"
-    return params
+        headers[KEEP_HEADER] = "1"
+    return headers
 
 
 def status(key: str, *, watcher: str | None = None, keep: bool = False) -> dict | None:
@@ -82,8 +91,8 @@ def status(key: str, *, watcher: str | None = None, keep: bool = False) -> dict 
     Asking counts as still waiting for it.
     """
     try:
-        response = requests.get(_url(f"/builds/{key}"), headers=_headers(),
-                                params=_watching(watcher, keep), timeout=TIMEOUT_S)
+        response = requests.get(_url(f"/builds/{key}"),
+                                headers=_watching(watcher, keep), timeout=TIMEOUT_S)
     except requests.RequestException as error:
         raise BuilderUnavailable("The build service is not reachable.") from error
     if response.status_code == 404:
@@ -97,8 +106,8 @@ def status(key: str, *, watcher: str | None = None, keep: bool = False) -> dict 
 def release(key: str, *, watcher: str | None = None) -> dict | None:
     """This watcher has stopped waiting. None if the service never had the build."""
     try:
-        response = requests.delete(_url(f"/builds/{key}"), headers=_headers(),
-                                   params=_watching(watcher), timeout=TIMEOUT_S)
+        response = requests.delete(_url(f"/builds/{key}"),
+                                   headers=_watching(watcher), timeout=TIMEOUT_S)
     except requests.RequestException as error:
         raise BuilderUnavailable("The build service is not reachable.") from error
     if response.status_code == 404:
