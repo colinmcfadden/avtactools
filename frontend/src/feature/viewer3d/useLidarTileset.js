@@ -98,6 +98,18 @@ export const releaseAbandonedBuilds = () => {
   inFlight().forEach(release);
 };
 
+/**
+ * Ask for a point cloud to be built in the background and kept — for an LZ
+ * that has just been saved, so it is ready by the time anyone opens it in 3D.
+ * Nobody waits on it, so the build service runs it behind anything a person
+ * in the 3D window is waiting for. Already built, or a server that cannot
+ * build: both are fine, and nothing is reported.
+ */
+export const requestKeptBuild = ({ lat, lon } = {}) => {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  api.post("/lidar/build", { lat, lon, keep: true }).catch(() => {});
+};
+
 const isCancel = (err) => err?.name === "CanceledError" || err?.code === "ERR_CANCELED";
 
 const messageOf = (err, fallback) =>

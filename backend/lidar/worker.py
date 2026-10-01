@@ -19,6 +19,10 @@ every few seconds; a job nobody has asked about for ABANDON_AFTER_S is dropped
 this, a refreshed page left its build running and every LZ opened afterwards
 queued behind work nobody would ever look at.
 
+Builds someone is watching run first. A saved LZ asks for its point cloud in
+the background (kept, nobody watching); that should be ready by the time
+anyone opens it, but never make a person in the 3D window wait behind it.
+
 Configuration (environment):
 
     LIDAR_TILES_DIR          tileset store, shared with the API   (/data/tiles)
@@ -37,7 +41,6 @@ import hmac
 import itertools
 import json
 import os
-import queue
 import re
 import shutil
 import signal
@@ -72,6 +75,10 @@ FINISHED_TTL_S = 3600
 # looked at another tab.
 ABANDON_AFTER_S = 90
 REAP_INTERVAL_S = 5
+
+# Someone is actively waiting on a build if they asked after it this recently.
+# The 3D window asks every 3 s; a save's background request asks once.
+WAITING_WITHIN_S = 15
 
 # How often a running tool is checked for cancellation.
 CANCEL_POLL_S = 0.5
@@ -187,8 +194,9 @@ class Builder:
         self.queue_limit = queue_limit
         self.clock = clock
         self._jobs: dict[str, dict] = {}
-        self._queue: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
+        # Wakes the worker thread when something is queued.
+        self._ready = threading.Condition(self._lock)
         self._sequence = itertools.count()
         self._thread = None
 
@@ -218,10 +226,10 @@ class Builder:
                    "error": None, "seq": next(self._sequence),
                    "queued_at": self.clock(), "started_at": None,
                    "finished_at": None, "keep": False, "watchers": {},
-                   "cancel": threading.Event()}
+                   "cancel": threading.Event(), "target": (lat, lon, radius_m)}
             self._watch(job, watcher, keep)
             self._jobs[key] = job
-            self._queue.put((key, lat, lon, radius_m))
+            self._ready.notify()
             return self._snapshot(job)
 
     def status(self, key: str, *, watcher: str | None = None,
@@ -262,6 +270,24 @@ class Builder:
             job["keep"] = True
 
     @staticmethod
+    def _rank(job: dict, now: float) -> tuple:
+        """Order to build in: anyone actively waiting first, then oldest first."""
+        waiting = any(now - seen <= WAITING_WITHIN_S for seen in job["watchers"].values())
+        return (not waiting, job["seq"])
+
+    def next_job(self, *, block: bool = True) -> dict | None:
+        """The queued job to build next. Public so tests can check the order."""
+        with self._ready:
+            while True:
+                now = self.clock()
+                queued = [j for j in self._jobs.values() if j["state"] == "queued"]
+                if queued:
+                    return min(queued, key=lambda j: self._rank(j, now))
+                if not block:
+                    return None
+                self._ready.wait()
+
+    @staticmethod
     def _abandoned(job: dict, now: float) -> bool:
         if job["keep"]:
             return False
@@ -284,9 +310,11 @@ class Builder:
         view = {k: job[k] for k in ("key", "state", "stage", "error")}
         now = self.clock()
         if job["state"] == "queued":
+            rank = self._rank(job, now)
             view["position"] = sum(
                 1 for j in self._jobs.values()
-                if j["state"] in ACTIVE and j["seq"] < job["seq"])
+                if j["state"] == "running"
+                or (j["state"] == "queued" and self._rank(j, now) < rank))
         if job["started_at"]:
             view["elapsed_s"] = round((job["finished_at"] or now) - job["started_at"])
         return view
@@ -314,11 +342,8 @@ class Builder:
 
     def _run(self) -> None:
         while True:
-            item = self._queue.get()
-            try:
-                self.process(*item)
-            finally:
-                self._queue.task_done()
+            job = self.next_job()
+            self.process(job["key"], *job["target"])
 
     def process(self, key: str, lat: float, lon: float, radius_m: float) -> None:
         """Run one build. Public so tests can drive it without the thread."""

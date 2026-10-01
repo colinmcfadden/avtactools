@@ -22,8 +22,8 @@ from lidar import catalog  # noqa: E402
 from lidar.build import BuildError, BuildRequest  # noqa: E402
 from lidar.tiles import TileBuildError  # noqa: E402
 from lidar.worker import (  # noqa: E402
-    ABANDON_AFTER_S, STAGING_PREFIX, TOKEN_HEADER, Builder, BuildCancelled,
-    QueueFull, cancellable_runner, make_handler, request_factory)
+    ABANDON_AFTER_S, STAGING_PREFIX, TOKEN_HEADER, WAITING_WITHIN_S, Builder,
+    BuildCancelled, QueueFull, cancellable_runner, make_handler, request_factory)
 
 TARGET = (34.596407, -84.128098, 250.0)
 OTHER = (34.783817, -84.082190, 250.0)
@@ -448,6 +448,61 @@ class CancellableRunnerTests(unittest.TestCase):
         cancel.set()
         with self.assertRaises(BuildCancelled):
             cancellable_runner(cancel)([sys.executable, "-c", "print('ran')"])
+
+
+class BuildOrderTests(unittest.TestCase):
+    """Someone in the 3D window never waits behind a background build."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
+        self.clock = Clock()
+        self.builder = Builder(self.root, make_request=make_request,
+                               build=fake_build, clock=self.clock)
+
+    def key(self, target):
+        return catalog.key_for(target[0], target[1], radius_m=target[2])
+
+    def test_a_watched_build_runs_before_an_older_background_one(self):
+        # A saved LZ asks once, then nobody watches it.
+        self.builder.submit(*TARGET, keep=True)
+        self.clock.now += WAITING_WITHIN_S + 1
+        watched = self.builder.submit(*OTHER, watcher=WATCHER)
+
+        self.assertEqual(self.builder.next_job(block=False)["key"], self.key(OTHER))
+        # Nothing ahead of it, though the background build was queued first.
+        self.assertEqual(watched["position"], 0)
+
+    def test_watched_builds_run_oldest_first(self):
+        self.builder.submit(*TARGET, watcher=WATCHER)
+        self.builder.submit(*OTHER, watcher=OTHER_WATCHER)
+        self.assertEqual(self.builder.next_job(block=False)["key"], self.key(TARGET))
+
+    def test_background_builds_still_run_when_nobody_is_waiting(self):
+        self.builder.submit(*TARGET, keep=True)
+        self.clock.now += WAITING_WITHIN_S + 1
+        self.assertEqual(self.builder.next_job(block=False)["key"], self.key(TARGET))
+
+    def test_the_worker_thread_builds_in_that_order(self):
+        built = []
+
+        def recording(request, out_dir, **kwargs):
+            built.append((request.lat, request.lon))
+            return fake_build(request, out_dir, **kwargs)
+
+        self.builder.build = recording
+        self.builder.submit(*TARGET, keep=True)
+        self.clock.now += WAITING_WITHIN_S + 1
+        self.builder.submit(*OTHER, watcher=WATCHER)
+        self.builder.start()
+        for _ in range(100):
+            if len(built) == 2:
+                break
+            threading.Event().wait(0.05)
+        self.assertEqual(built, [OTHER[:2], TARGET[:2]])
+
+    def test_nothing_queued_is_nothing_to_run(self):
+        self.assertIsNone(self.builder.next_job(block=False))
 
 
 if __name__ == "__main__":

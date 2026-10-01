@@ -44,6 +44,7 @@ import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
 import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
 import { releaseAbandonedBuilds } from "./feature/viewer3d/useLidarTileset";
+import { useBuildOnSave } from "./feature/viewer3d/useBuildOnSave";
 import ActiveLzWindow from "./feature/lzWorkspace/ActiveLzWindow";
 import LzDiagramRemoveDialog from "./feature/lzWorkspace/LzDiagramRemoveDialog";
 
@@ -333,6 +334,8 @@ function App() {
   useEffect(() => {
     releaseAbandonedBuilds();
   }, []);
+  // Saved LZs get their point cloud built in the background, ready for 3D.
+  useBuildOnSave(diagrams);
   const { doghouses, updateDoghouse } = useDoghouses(targetLocation, setFlightData, {
     doghouses: activeGraphics.doghouses ?? [],
     setDoghouses,
