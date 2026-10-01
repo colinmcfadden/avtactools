@@ -222,7 +222,8 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 - **Supabase's direct host is IPv6-only.** Use the Session pooler URL, or
   containers without IPv6 fail with `Network is unreachable`.
 - **Behind Cloudflare, set `TRUSTED_PROXY=cloudflare`**, or client IPs (rate
-  limiting, audit) come from the tunnel. Fly is detected automatically.
+  limiting, audit) come from the tunnel and the startup secret and email
+  checks (§10) don't run. Fly is detected automatically.
 - **Coolify:** set the domain scheme to `http://` (Cloudflare terminates TLS;
   Force HTTPS causes a redirect loop). Mount `/data/tiles` and `/data/topo`
   into the container.
@@ -240,17 +241,18 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 
 | Variable | Purpose |
 |---|---|
-| `JWT_SECRET_KEY` | **Required — set it on every deployment.** Signs JWTs. Startup rejects a missing or <32-char value **only on Fly** (keyed on `FLY_APP_NAME`); anywhere else it silently falls back to the public string `dev-secret-change-me`. |
+| `JWT_SECRET_KEY` | **Required — set it on every deployment.** Signs JWTs. Startup refuses a missing or <32-char value in production — whenever `FLY_APP_NAME`, `TRUSTED_PROXY` or `APP_ENV=production` is set (`security_config.is_production`). Only a bare local run falls back to the public string `dev-secret-change-me`; there is deliberately no override to allow that fallback in production. |
 | `DATABASE_URL` | Postgres URL (Supabase pooler). Unset → SQLite `backend/ezpz.db`. `postgres://` is rewritten. |
 | `CORS_ORIGINS` | Comma-separated allowed origins. **Plural** — `CORS_ORIGIN` is silently ignored. Default `http://localhost:3000`. |
 | `GOOGLE_CLIENT_ID` | Google OAuth client; same value as the frontend's. |
-| `RESEND_API_KEY`, `EMAIL_FROM` | Email. Fly refuses to start without them (or with Resend's test sender); other hosts start regardless. |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Email. Production (same test as `JWT_SECRET_KEY`) refuses to start without them, or with Resend's test sender. A bare local run needs neither. |
 | `EMAIL_DELIVERY_MODE` | `console` locally — links print to the Flask log. Never in production. |
 | `FRONTEND_URL` | Base for links in emails. |
 | `NEW_ACCOUNT_NOTIFY_EMAIL` | Optional admin notification on sign-up. |
 | `SUPER_ADMIN_EMAIL` | The protected super-admin account. |
 | `ADMIN_SESSION_SECRET` | Admin dashboard cookie; falls back to the JWT secret. |
-| `TRUSTED_PROXY` | `fly` or `cloudflare` — which header holds the client IP. |
+| `TRUSTED_PROXY` | `fly` or `cloudflare` — which header holds the client IP. Any value also marks the process as production, turning on the startup checks. |
+| `APP_ENV` | `production` turns on the startup checks for a host with neither `FLY_APP_NAME` nor `TRUSTED_PROXY`. |
 | `SESSION_COOKIE_SECURE` | Override; defaults on when a trusted proxy is set. |
 | `TERRAIN_DATA_DIR` | DEM directory, `os.pathsep`-separated. |
 | `TERRAIN_SOURCE` | `auto` (local, then Terrarium) · `local` · `remote`/`terrarium`. |
@@ -449,10 +451,6 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 
 - `README.md`'s deployment section and project tree are stale (it describes
   Hugging Face Spaces and a `backend/src/` layout). This file is current.
-- **Startup safety checks only run on Fly.** `security_config.py` keys the JWT
-  secret and email checks on `FLY_APP_NAME`, so the Coolify deployment gets
-  neither — a missing `JWT_SECRET_KEY` there means tokens signed with a public
-  default. Guard these on "is production", not "is Fly".
 - `backend/.env.example` is missing (§10).
 - `tests/test_threat_qr_export.py` fails (pre-existing).
 - No tests run in CI; `pytest` isn't a declared dependency.
