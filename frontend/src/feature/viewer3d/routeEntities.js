@@ -56,7 +56,8 @@ export const drawRoutes = (Cesium, entities, scene) => {
       }
 
       for (const marker of route.markers) {
-        if (marker.groundM != null) {
+        // Nothing to drop to from a point already on the ground.
+        if (marker.groundM != null && marker.heightM - marker.groundM > 1) {
           entities.add({
             polyline: {
               positions: toPositions([[marker.lon, marker.lat, marker.groundM],

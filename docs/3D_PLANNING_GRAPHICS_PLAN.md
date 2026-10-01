@@ -89,6 +89,16 @@ geoid model. The backend has one (`terrain_tiles.geoid_offset`, using the
 PROJ grids the terrain tiles already depend on), so route heights and the
 rendered terrain always use the same correction.
 
+### 6a. Pickup and landing zones are drawn on the ground.
+
+A target at either end of a route is where the aircraft sits on the ground.
+Its planned altitude describes the leg flown in, so drawn literally the LZ pin
+hung 50 ft over the trees. Route-end targets go on the 3D ground instead,
+labelled with the zone's elevation MSL, and the legs either side become the
+climb out and the descent in. Display only — the plan and the AMPS export keep
+the planned value. A target in the middle of a route is overflown and keeps
+its altitude; where the ground is unknown, the planned altitude is used.
+
 ### 7. A new heights endpoint rather than changing `/api/elevations`.
 
 `/api/elevations` feeds the planner and the AMPS export. Switching it to the

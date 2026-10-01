@@ -39,6 +39,16 @@ export const distanceM = (a, b) => {
 
 const isFinitePoint = (p) => Number.isFinite(p?.lat) && Number.isFinite(p?.lon);
 
+/**
+ * A target at either end of a route is the pickup or the landing zone, where
+ * the aircraft is on the ground. Its planned altitude is the leg flown in, not
+ * where it ends up, so it is drawn on the ground and the leg becomes the climb
+ * out or the descent in. Display only: the plan and the AMPS export keep the
+ * planned value. A target mid-route is overflown and keeps its altitude.
+ */
+const isTouchdown = (point, index, count) =>
+  point.ptType === "target" && (index === 0 || index === count - 1);
+
 // The same call the route panel makes (RoutePlanSection.jsx), so the 3D labels
 // and the panel can never disagree about a planned altitude.
 const planFor = (route) =>
@@ -95,10 +105,12 @@ export const prepareRoutes = (routes = []) => {
 
     // AMPS points carry the planned altitudes; shaping points only shape the
     // line, so their heights come from the AMPS points either side.
-    const anchors = planPoints(route).map((point, i) => {
+    const amps = planPoints(route);
+    const anchors = amps.map((point, i) => {
       const index = points.indexOf(point);
       return { sample: vertexSample[index], distance: along[index],
-               name: point.name, ptType: point.ptType ?? null, plan: plan.points[i] };
+               name: point.name, ptType: point.ptType ?? null, plan: plan.points[i],
+               touchdown: isTouchdown(point, i, amps.length) };
     });
 
     prepared.push({ id: route.id ?? route.name, name: route.name, color: route.color,
@@ -125,6 +137,9 @@ const formatFt = (ft) => `${Math.round(ft).toLocaleString("en-US")}'`;
  */
 const placeAnchor = (anchor, groundM, geoidM) => {
   const { mslFt, aglFt } = anchor.plan;
+  if (anchor.touchdown && groundM != null) {
+    return { heightM: groundM, basis: "ground" };
+  }
   if (mslFt != null) {
     return { heightM: mslFt * FT_TO_M + (geoidM ?? 0), basis: "msl" };
   }
@@ -134,10 +149,17 @@ const placeAnchor = (anchor, groundM, geoidM) => {
   return { heightM: null, basis: null };
 };
 
-const labelFor = ({ heightM, basis, groundM, ...anchor }) => {
+const labelFor = ({ heightM, basis, groundM, geoidM, ...anchor }) => {
   const name = String(anchor.name || "").replace(/^\./, "") || "Point";
   const measuredAglFt = groundM != null ? (heightM - groundM) / FT_TO_M : null;
   const lines = [name];
+
+  if (basis === "ground") {
+    // The zone's own elevation, back from the ellipsoid to MSL: the number a
+    // crew briefs for a landing zone.
+    lines.push(`On the ground · ${formatFt((groundM - (geoidM ?? 0)) / FT_TO_M)} MSL`);
+    return { text: lines.join("\n"), measuredAglFt: 0, mismatch: false };
+  }
 
   if (basis === "agl") {
     lines.push(`${formatFt(anchor.plan.aglFt)} AGL · no planned MSL`);
@@ -213,8 +235,9 @@ export const placeRoutes = (prepared, heights) => {
 
     const anchors = route.anchors.map((anchor) => {
       const groundM = groundAll[anchor.sample] ?? null;
-      const placed = placeAnchor(anchor, groundM, geoidAll?.[anchor.sample]);
-      return { ...anchor, ...placed, groundM };
+      const geoidM = geoidAll?.[anchor.sample] ?? null;
+      const placed = placeAnchor(anchor, groundM, geoidM);
+      return { ...anchor, ...placed, groundM, geoidM };
     });
 
     const heightsM = route.distances.map((d) => heightAt(anchors, d));

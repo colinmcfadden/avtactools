@@ -20,7 +20,7 @@ const makeRoute = (overrides = {}) => ({
     amps("a", 34.6, -84.1, ".SP", "ip"),
     { lat: 34.605, lon: -84.095, kind: "shaping", name: "" },
     amps("b", 34.61, -84.09, ".CP1"),
-    amps("c", 34.62, -84.08, ".RP", "target"),
+    amps("c", 34.62, -84.08, ".RP", "ip"),
   ],
   plan: { altitude: { value: 1500, ref: "msl" } },
   // The planner's ground, in feet, per AMPS point.
@@ -190,5 +190,63 @@ describe("placeRoutes", () => {
     const prepared = prepareRoutes([makeRoute(), makeRoute({ id: "r2", color: "#f97316" })]);
     const placed = placeRoutes(prepared, answer(prepared));
     expect(placed.map((r) => r.color)).toEqual(["#22c55e", "#f97316"]);
+  });
+});
+
+describe("pickup and landing zones", () => {
+  // A target at either end of a route is where the aircraft is on the ground.
+  const zoneToZone = (overrides = {}) => makeRoute({
+    points: [
+      amps("pz", 34.59, -84.11, ".TGT", "target"),
+      amps("a", 34.6, -84.1, ".SP", "ip"),
+      amps("b", 34.61, -84.09, ".RP", "ip"),
+      amps("lz", 34.62, -84.08, ".TGT", "target"),
+    ],
+    elevations: { pz: 900, a: 1000, b: 1100, lz: 1200 },
+    ...overrides,
+  });
+
+  const GROUND_M = 1200 * FT_TO_M + GEOID_M;   // 1,200 ft MSL, as Cesium wants it
+
+  it("draws both ends on the ground, whatever altitude the plan gives them", () => {
+    const prepared = prepareRoutes([zoneToZone()]);
+    const [route] = placeRoutes(prepared, answer(prepared, GROUND_M));
+    const ends = route.markers.filter((m) => m.label.startsWith("TGT"));
+    expect(ends).toHaveLength(2);
+    for (const end of ends) expect(end.heightM).toBeCloseTo(GROUND_M, 6);
+  });
+
+  it("labels a zone with its own elevation above sea level", () => {
+    const prepared = prepareRoutes([zoneToZone()]);
+    const [route] = placeRoutes(prepared, answer(prepared, GROUND_M));
+    expect(route.markers.at(-1).label).toBe("TGT\nOn the ground · 1,200' MSL");
+  });
+
+  it("descends from the release point into the landing zone", () => {
+    const prepared = prepareRoutes([zoneToZone()]);
+    const [route] = placeRoutes(prepared, answer(prepared, GROUND_M));
+    const rp = markerNamed(route, "RP");
+    const line = route.lines[0];
+    const rpIndex = line.findIndex(([lon, lat]) => lon === rp.lon && lat === rp.lat);
+    const descent = line.slice(rpIndex).map(([, , h]) => h);
+    expect(descent[0]).toBeCloseTo(1500 * FT_TO_M + GEOID_M, 6);
+    for (let i = 1; i < descent.length; i++) expect(descent[i]).toBeLessThan(descent[i - 1]);
+    expect(descent.at(-1)).toBeCloseTo(GROUND_M, 6);
+  });
+
+  it("keeps a target in the middle of a route at its planned altitude", () => {
+    const route = zoneToZone();
+    route.points[1] = amps("a", 34.6, -84.1, ".TGT2", "target");
+    const prepared = prepareRoutes([route]);
+    const [placed] = placeRoutes(prepared, answer(prepared, GROUND_M));
+    expect(markerNamed(placed, "TGT2").heightM).toBeCloseTo(1500 * FT_TO_M + GEOID_M, 6);
+  });
+
+  it("falls back to the planned altitude where the ground is unknown", () => {
+    const prepared = prepareRoutes([zoneToZone()]);
+    const heights = answer(prepared, GROUND_M);
+    heights.groundM[prepared.routes[0].anchors[3].sample] = null;
+    const [route] = placeRoutes(prepared, heights);
+    expect(route.markers.at(-1).heightM).toBeCloseTo(1500 * FT_TO_M + GEOID_M, 6);
   });
 });
