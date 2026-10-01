@@ -25,7 +25,7 @@ ALBERS_NAVD88 = "EPSG:6350+5703"      # the LAZ tiles as downloaded
 WEB_MERCATOR_NAVD88 = "EPSG:3857+5703"  # the AWS Entwine copy
 
 # Enough to see the approach ends and the treeline around a landing point.
-DEFAULT_RADIUS_M = 250.0
+DEFAULT_RADIUS_M = 500.0
 
 
 def _horizontal(crs_string: str) -> CRS:
