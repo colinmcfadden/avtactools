@@ -406,12 +406,16 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   bounded queue, stages each under `.staging-<key>` and moves it into place
   only when complete. It prefers the downloaded collection when that covers
   ≥95% of the area and falls back to AWS otherwise, so an LZ near the edge of
-  the download is never built with a side missing. Measured from AWS: 138 s
-  at 250 m radius, 707 s at 500 m — 4× the area, ~5× the time.
+  the download is never built with a side missing. Measured from AWS with
+  level-18 imagery: 137 s at a 500 m radius.
 - **Only wanted builds run.** A build nobody has polled for 90 s is dropped,
   queued or mid-run; closing the 3D window drops it at once, and a reloaded
   page releases the previous load's builds (ids in `sessionStorage`). Saved
   LZs pass `keep` and always finish. Each browser tab is one opaque watcher.
+- **Point colour comes from Mapbox at level 18**, not 20: level 20 tiles are
+  level 18 enlarged (measured at five places), and fetching 16× the tiles one
+  at a time was most of a build — 500 m took 707 s at level 20, 137 s at 18,
+  with identical colours.
 - 3D Tiles stream by level of detail, so a large area costs build time and
   disk, not browser memory. `--context` adds a thinned landscape ring without
   thinning the landing area.
