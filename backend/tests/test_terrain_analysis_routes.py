@@ -10,25 +10,20 @@ import sys
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import cv2
 import mercantile
 import numpy as np
+import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# The route module loads the SAM model when imported, which needs 350 MB of
-# weights and a second or two. None of it is needed here.
-if "app.routes.terrain" not in sys.modules:
-    sys.modules.setdefault("ultralytics", MagicMock())
-from app.routes import terrain as terrain_routes
-from app.routes.terrain import (  # noqa: E402
-    _decode_terrarium,
-    _sample_elevations_ft,
-    fetch_satellite_tile,
-    terrain_bp,
-)
+from app.routes.terrain import terrain_bp  # noqa: E402
+from app.services.terrain import field_detection  # noqa: E402
+from app.services.terrain.elevations import sample_elevations_ft  # noqa: E402
+from app.services.terrain.field_detection import fetch_satellite_tile  # noqa: E402
+from app.services.terrain.provider import decode_terrarium  # noqa: E402
 from support import make_app  # noqa: E402
 
 LZ = (34.783817, -84.08219)
@@ -64,27 +59,27 @@ class Response:
 
 class TerrariumTests(unittest.TestCase):
     def test_colour_channels_decode_to_metres(self):
-        decoded = _decode_terrarium(terrarium_png(500.0))
+        decoded = decode_terrarium(terrarium_png(500.0))
         self.assertEqual(decoded.shape, (256, 256))
         self.assertAlmostEqual(float(decoded[0, 0]), 500.0, places=2)
 
     def test_garbage_is_not_a_tile(self):
-        self.assertIsNone(_decode_terrarium(b"not a png"))
+        self.assertIsNone(decode_terrarium(b"not a png"))
 
     def test_points_are_sampled_in_feet_from_one_fetch_per_tile(self):
-        with patch.object(terrain_routes.requests, "get",
+        with patch.object(requests, "get",
                           return_value=Response(terrarium_png(500.0))) as get:
-            feet = _sample_elevations_ft([{"lat": LZ[0], "lon": LZ[1]},
+            feet = sample_elevations_ft([{"lat": LZ[0], "lon": LZ[1]},
                                           {"lat": LZ[0] + 0.0001, "lon": LZ[1] + 0.0001}])
         self.assertEqual(feet, [1640, 1640])               # 500 m
         self.assertEqual(get.call_count, 1)
 
     def test_a_tile_that_cannot_be_fetched_leaves_its_points_unknown(self):
-        with patch.object(terrain_routes.requests, "get", return_value=Response(status=503)):
-            self.assertEqual(_sample_elevations_ft([{"lat": LZ[0], "lon": LZ[1]}]), [None])
-        with patch.object(terrain_routes.requests, "get",
-                          side_effect=terrain_routes.requests.exceptions.ConnectionError):
-            self.assertEqual(_sample_elevations_ft([{"lat": LZ[0], "lon": LZ[1]}]), [None])
+        with patch.object(requests, "get", return_value=Response(status=503)):
+            self.assertEqual(sample_elevations_ft([{"lat": LZ[0], "lon": LZ[1]}]), [None])
+        with patch.object(requests, "get",
+                          side_effect=requests.exceptions.ConnectionError):
+            self.assertEqual(sample_elevations_ft([{"lat": LZ[0], "lon": LZ[1]}]), [None])
 
 
 class ElevationsEndpointTests(unittest.TestCase):
@@ -99,7 +94,7 @@ class ElevationsEndpointTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/elevations", json={}).status_code, 401)
 
     def test_no_points_is_an_empty_list_without_any_lookup(self):
-        with patch.object(terrain_routes.requests, "get") as get:
+        with patch.object(requests, "get") as get:
             self.assertEqual(self.post({"points": []}).get_json(), {"elevationsFt": []})
         get.assert_not_called()
 
@@ -108,7 +103,7 @@ class ElevationsEndpointTests(unittest.TestCase):
         self.assertEqual(self.post({"points": [{"lat": "x", "lon": 2}]}).status_code, 400)
 
     def test_elevations_come_back_aligned_with_the_points(self):
-        with patch.object(terrain_routes.requests, "get", return_value=Response(terrarium_png(100.0))):
+        with patch.object(requests, "get", return_value=Response(terrarium_png(100.0))):
             body = self.post({"points": [{"lat": LZ[0], "lon": LZ[1]}] * 2}).get_json()
         self.assertEqual(body, {"elevationsFt": [328, 328]})
 
@@ -137,8 +132,8 @@ class AnalyzeFieldTests(unittest.TestCase):
                 return Response(body={"results": [{"elevation": elevation}]})
             return Response(imagery_png(), status=tile_status)
 
-        with patch.object(terrain_routes.requests, "get", side_effect=fake_get), \
-                patch.object(terrain_routes, "model", model or self.model):
+        with patch.object(requests, "get", side_effect=fake_get), \
+                patch.object(field_detection, "get_model", return_value=model or self.model):
             return self.client.post("/api/analyze-field",
                                     json={"lat": LZ[0], "lon": LZ[1]} if body is None else body,
                                     headers=self.auth)
@@ -184,7 +179,7 @@ class AnalyzeFieldTests(unittest.TestCase):
         self.assertEqual(response.get_json()["message"], "Map data unavailable")
 
     def test_bad_coordinates_are_refused_before_anything_is_fetched(self):
-        with patch.object(terrain_routes.requests, "get") as get:
+        with patch.object(requests, "get") as get:
             response = self.client.post("/api/analyze-field", json={"lat": "x"}, headers=self.auth)
         self.assertEqual(response.status_code, 400)
         get.assert_not_called()
@@ -192,11 +187,11 @@ class AnalyzeFieldTests(unittest.TestCase):
     def test_elevation_is_to_be_determined_when_the_lookup_fails(self):
         def fake_get(url, *args, **kwargs):
             if "opentopodata" in url:
-                raise terrain_routes.requests.exceptions.ConnectionError
+                raise requests.exceptions.ConnectionError
             return Response(imagery_png())
 
-        with patch.object(terrain_routes.requests, "get", side_effect=fake_get), \
-                patch.object(terrain_routes, "model", self.model):
+        with patch.object(requests, "get", side_effect=fake_get), \
+                patch.object(field_detection, "get_model", return_value=self.model):
             body = self.client.post("/api/analyze-field", json={"lat": LZ[0], "lon": LZ[1]},
                                     headers=self.auth).get_json()
         self.assertEqual(body["elevation"], "TBD")
@@ -212,12 +207,12 @@ class AnalyzeFieldTests(unittest.TestCase):
         self.assertEqual(response.get_json()["message"], "out of memory")
 
     def test_the_imagery_tile_comes_from_arcgis_at_the_zoom_asked_for(self):
-        with patch.object(terrain_routes.requests, "get", return_value=Response(imagery_png())) as get:
+        with patch.object(requests, "get", return_value=Response(imagery_png())) as get:
             image, tile = fetch_satellite_tile(LZ[0], LZ[1], zoom=16)
         self.assertEqual(image.shape, (256, 256, 3))
         self.assertEqual((tile.z, tile.x, tile.y), (16, *mercantile.tile(LZ[1], LZ[0], 16)[:2]))
         self.assertIn("World_Imagery/MapServer/tile/16/", get.call_args.args[0])
-        with patch.object(terrain_routes.requests, "get", return_value=Response(status=404)):
+        with patch.object(requests, "get", return_value=Response(status=404)):
             self.assertEqual(fetch_satellite_tile(LZ[0], LZ[1]), (None, None))
 
 

@@ -1,79 +1,16 @@
 from flask import Blueprint, request, jsonify, make_response
 from flask_jwt_extended import jwt_required
-import numpy as np
 import mercantile
-import requests
-import cv2
-from ultralytics import SAM
-import threading
+import numpy as np
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 
+from app.services.terrain import field_detection
 from app.services.terrain import tiles as terrain_tiles
+from app.services.terrain.elevations import sample_elevations_ft
 from app.services.terrain.provider import build_slope_analysis
 
 terrain_bp = Blueprint('terrain', __name__)
 
-# Load the SAM model (This downloads 'sam_b.pt' on first run)
-# 'sam_b.pt' is the Base model (good balance of speed/accuracy)
-model = SAM('sam_b.pt')
-
-# One analysis at a time. gunicorn runs threads so map and 3D requests do not
-# queue behind each other, but SAM must not run twice at once: its predictor
-# keeps state between calls, and each run holds about a gigabyte.
-_sam_lock = threading.Lock()
-
-# --- HELPER FUNCTIONS ---
-
-def fetch_satellite_tile(lat, lon, zoom=16):
-    """
-    Downloads the specific map tile for a lat/lon
-    """
-    # 1. Calculate which "Tile" contains this coordinate
-    tile = mercantile.tile(lon, lat, zoom)
-    
-    # 2. Public Satellite Endpoint (ArcGIS World Imagery)
-    # Note: In production, use your Mapbox URL for better quality
-    url = f"https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{zoom}/{tile.y}/{tile.x}"
-    
-    response = requests.get(url)
-    if response.status_code == 200:
-        # Convert bytes to an image OpenCV can read
-        image = np.asarray(bytearray(response.content), dtype="uint8")
-        image = cv2.imdecode(image, cv2.IMREAD_COLOR)
-        return image, tile
-    return None, None
-
-def find_field_contour(image):
-    """
-    Uses Image Segmentation to find the large open area
-    """
-    # 1. Convert to Grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # 2. Blur it slightly to remove "noise" (grass texture)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    
-    # 3. Thresholding (The "Magic" part)
-    # We assume fields are lighter/smoother than dense dark forests.
-    # This separates the image into Black (Trees) and White (Fields).
-    # You might need to tune these numbers (30, 255) based on your terrain.
-    _, thresh = cv2.threshold(blurred, 100, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    
-    # 4. Find Contours (Shapes)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # 5. Find the largest shape (assuming the field is the biggest thing in the tile)
-    if contours:
-        largest_contour = max(contours, key=cv2.contourArea)
-        
-        # Simplify the shape (make it look like a tactical polygon, not a jagged mess)
-        epsilon = 0.02 * cv2.arcLength(largest_contour, True)
-        approx = cv2.approxPolyDP(largest_contour, epsilon, True)
-        return approx
-    return None
-
-# --- ROUTES ---
 
 @terrain_bp.route('/api/analyze-field', methods=['POST'])
 @jwt_required()
@@ -86,28 +23,13 @@ def analyze_field():
     except:
         return jsonify({"status": "error", "message": "Invalid Coords"}), 400
     
-    try:
-        # Use the same API you used in terrain_analysis
-        elev_url = f"https://api.opentopodata.org/v1/srtm30m?locations={lat},{lon}"
-        elev_res = requests.get(elev_url).json()
-        
-        # Extract the value (default to 0 if API fails)
-        results = elev_res.get('results', [])
-        elevation_meters = results[0].get('elevation') if results else 0
-        
-        # Convert to Feet for aviation (optional, but standard for LZ cards)
-        elevation_feet = int(elevation_meters * 3.28084) if elevation_meters else 0
-        elevation_str = f"{elevation_feet}"
-        
-    except Exception as e:
-        print(f"Elevation Fetch Error: {e}")
-        elevation_str = "TBD"
+    elevation_str = field_detection.elevation_label(lat, lon)
 
     # CHANGE 1: Zoom out to 15 or 16 to see the whole field context
     zoom_level = 14
     
     # 1. Get the Image
-    image, tile = fetch_satellite_tile(lat, lon, zoom=zoom_level)
+    image, tile = field_detection.fetch_satellite_tile(lat, lon, zoom=zoom_level)
     if image is None:
         return jsonify({"status": "error", "message": "Map data unavailable"}), 500
 
@@ -129,12 +51,7 @@ def analyze_field():
 
     # 3. Run SAM AI with the specific point
     try:
-        # We prompt with the calculated [prompt_x, prompt_y].
-        # imgsz=512: the source tile is only 256px, so the default 1024
-        # inference size just upscales it 4x and runs the encoder at 1024^2 —
-        # ~3.3GB of memory (OOM-kills a 2GB machine) for no added detail.
-        with _sam_lock:
-            results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4, imgsz=512)
+        results = field_detection.predict(image, prompt_x, prompt_y)
         
         if results[0].masks is not None:
             # Get the mask with the highest score (usually the first one)
@@ -188,66 +105,6 @@ def terrain_analysis():
         traceback.print_exc()
         return jsonify({"error": str(error)}), 500
 
-# --- Terrain elevations (open AWS Terrarium DEM, same source as threat masks) ---
-
-_TERRARIUM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
-_DEM_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-_M_TO_FT = 3.28084
-_ELEV_ZOOM = 13  # ~19 m/px; over the US this taps 3DEP/NED, ~bare-earth
-
-
-def _decode_terrarium(png_bytes):
-    """Terrarium RGB -> metres: elevation = R*256 + G + B/256 - 32768."""
-    arr = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_COLOR)
-    if arr is None:
-        return None
-    b = arr[:, :, 0].astype(np.float32)
-    g = arr[:, :, 1].astype(np.float32)
-    r = arr[:, :, 2].astype(np.float32)
-    return (r * 256.0 + g + b / 256.0) - 32768.0
-
-
-def _sample_elevations_ft(points, zoom=_ELEV_ZOOM):
-    """
-    Ground elevation (feet) for each point, sampled from Terrarium DEM tiles.
-    Each needed tile is fetched once and decoded, then points are sampled with
-    nearest-pixel. No rate limit, and consistent with the threat terrain masks.
-    """
-    tiles = {}
-    keys = []
-    for p in points:
-        t = mercantile.tile(p['lon'], p['lat'], zoom)
-        key = (t.x, t.y)
-        tiles[key] = t
-        keys.append(key)
-
-    def grab(item):
-        key, t = item
-        try:
-            resp = requests.get(_TERRARIUM_URL.format(z=zoom, x=t.x, y=t.y),
-                                headers=_DEM_HEADERS, timeout=15)
-            return key, (_decode_terrarium(resp.content) if resp.status_code == 200 else None)
-        except requests.exceptions.RequestException:
-            return key, None
-
-    dem_cache = {}
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        for key, dem in pool.map(grab, tiles.items()):
-            dem_cache[key] = dem
-
-    out = []
-    for p, key in zip(points, keys):
-        dem = dem_cache.get(key)
-        if dem is None:
-            out.append(None)
-            continue
-        b = mercantile.bounds(tiles[key])
-        px = min(255, max(0, int((p['lon'] - b.west) / (b.east - b.west) * 256)))
-        py = min(255, max(0, int((b.north - p['lat']) / (b.north - b.south) * 256)))
-        out.append(round(float(dem[py, px]) * _M_TO_FT))
-    return out
-
-
 @terrain_bp.route('/api/elevations', methods=['POST'])
 @jwt_required()
 def get_elevations():
@@ -271,7 +128,7 @@ def get_elevations():
         return jsonify({'error': 'Invalid points'}), 400
 
     try:
-        return jsonify({'elevationsFt': _sample_elevations_ft(pts)})
+        return jsonify({'elevationsFt': sample_elevations_ft(pts)})
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         return jsonify({'error': str(e), 'elevationsFt': [None] * len(pts)})

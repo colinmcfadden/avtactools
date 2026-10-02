@@ -103,7 +103,7 @@ def bounds_for_polygon(polygon: Iterable[Iterable[float]], padding_m: float | No
     return south - lat_pad, west - lon_pad, north + lat_pad, east + lon_pad
 
 
-def _decode_terrarium(png_bytes: bytes) -> np.ndarray | None:
+def decode_terrarium(png_bytes: bytes) -> np.ndarray | None:
     """Decode Terrarium RGB to elevation metres."""
     arr = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_COLOR)
     if arr is None:
@@ -123,7 +123,7 @@ def _terrarium_tile(z: int, x: int, y: int) -> np.ndarray | None:
         )
         if response.status_code != 200:
             return None
-        dem = _decode_terrarium(response.content)
+        dem = decode_terrarium(response.content)
         if dem is not None:
             dem.setflags(write=False)
         return dem

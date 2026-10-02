@@ -15,11 +15,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.routes.threats import (  # noqa: E402
-    _circle_coords,
+from app.services.threats.kmz import _circle_coords, _kml_color, _viewshed_rings  # noqa: E402
+from app.services.threats.viewshed import (  # noqa: E402
     _hex_to_bgr,
-    _kml_color,
-    _viewshed_rings,
     radar_elev_m,
     render_mask_png,
     viewshed,

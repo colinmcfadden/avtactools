@@ -25,10 +25,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.terrain import tiles as terrain_tiles  # noqa: E402
 from app.services.terrain.provider import RasterEntry  # noqa: E402
 
-# The terrain blueprint loads the SAM model at import, which downloads 350 MB
-# when the weights are missing. None of it is needed here.
-if "app.routes.terrain" not in sys.modules:
-    sys.modules.setdefault("ultralytics", MagicMock())
 from app.routes.terrain import terrain_bp  # noqa: E402
 
 PIXEL_DEG = 1.0 / 1200

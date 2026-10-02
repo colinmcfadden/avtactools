@@ -20,8 +20,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.routes import threats as threat_routes
-from app.routes.threats import _amps_dtg, _xml_escape, build_ths_bytes, build_threats_kmz  # noqa: E402
+from app.services.threats import kmz as kmz_module  # noqa: E402
+from app.services.threats.kmz import _xml_escape, build_threats_kmz  # noqa: E402
+from app.services.threats.ths import _amps_dtg, build_ths_bytes  # noqa: E402
 
 KML = "{http://www.opengis.net/kml/2.2}"
 SIZE, CENTER = 121, 60
@@ -53,7 +54,7 @@ def placemark_names(root):
 
 class KmzTests(unittest.TestCase):
     def build(self, threats, dem=None):
-        with patch.object(threat_routes, "fetch_dem", return_value=dem or terrain()):
+        with patch.object(kmz_module, "fetch_dem", return_value=dem or terrain()):
             return kml_of(build_threats_kmz(threats))
 
     def test_a_threat_gets_a_folder_with_masks_then_a_range_ring_then_its_marker(self):
