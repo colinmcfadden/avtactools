@@ -21,6 +21,7 @@ import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import ExportHandler from "../feature/export/ExportHandler";
+import CursorGridReadout from "./CursorGridReadout";
 import MsnxRouteLayer, {
   buildIcon as buildSketchPointIcon,
 } from "../feature/msnxImport/MsnxRouteLayer";
@@ -433,6 +434,8 @@ const MapView = ({
         setExportProgress={setExportProgress}
         onExportComplete={onExportComplete}
       />
+
+      <CursorGridReadout />
     </MapContainer>
   );
 };
