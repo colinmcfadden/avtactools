@@ -47,6 +47,216 @@ paths:
               schema:
                 $ref: "#/components/schemas/Config"
 
+  /api/auth/login:
+    post:
+      operationId: login
+      summary: Sign in with email and password
+      description: |
+        A native app (`X-EZPZ-Client` platform `android` or `ios`) also receives a
+        `refresh_token`, which keeps it signed in for days with no signal. The web
+        app does not: its exposure is unchanged.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/google:
+    post:
+      operationId: googleSignIn
+      summary: Sign in with a Google ID token
+      description: |
+        The token's audience must be one of the server's `GOOGLE_CLIENT_IDS` (the
+        web, Android and iOS clients each have their own).
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/refresh:
+    post:
+      operationId: refresh
+      summary: Swap a refresh token for a new access token and the next refresh token
+      description: |
+        The refresh token is spent: use the new one. If a response is lost, repeating
+        the same request within 30 seconds is safe and is answered again. After that, a
+        spent token coming back signs the device out (`refresh_reuse_detected`): it
+        looks like a copy. A password reset, a suspension, a sign-out from another
+        device, and 180 days since sign-in all end the session; the answer is 401 and
+        the app must ask the user to sign in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: A new access token and the next refresh token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/logout:
+    post:
+      operationId: logout
+      summary: End this device's session
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Signed out. The access token stops working at once.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [success] }
+
+  /api/auth/sessions:
+    get:
+      operationId: listSessions
+      summary: The user's signed-in devices
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Devices that are still signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+
+  /api/auth/sessions/{id}:
+    delete:
+      operationId: revokeSession
+      summary: Sign one of the user's devices out
+      description: Its access token stops working at once. 404 for a session that is not the caller's.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Signed out.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [success] }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/me:
+    get:
+      operationId: me
+      summary: The signed-in user
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteAccount
+      summary: Delete the account and everything saved under it
+      description: |
+        Required by the app stores. Irreversible. The body must carry `confirm: "DELETE"`
+        and proof of ownership now: the `password`, or for a Google-only account a fresh
+        Google ID token as `google_token`. A token alone is not proof. The super-admin
+        account cannot be deleted (403 `super_admin_protected`).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm: { type: string, enum: [DELETE] }
+                password: { type: string }
+                google_token: { type: string }
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, message]
+                properties:
+                  status: { type: string, enum: [success] }
+                  message: { type: string }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+
 components:
   parameters:
     ClientHeader:
@@ -63,7 +273,85 @@ components:
         maxLength: 64
         pattern: '^(android|ios|web)/\d{1,4}\.\d{1,4}\.\d{1,4}(-[0-9A-Za-z.]{1,20})?( \(\d{1,9}\))?$'
 
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: The `access_token` from sign-in or refresh.
+
+  responses:
+    Error:
+      description: An error. `code` is stable and meant for the app; `message` is for people.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
   schemas:
+    Error:
+      type: object
+      required: [status, message, error]
+      properties:
+        status: { type: string, enum: [error] }
+        message: { type: string }
+        error: { type: string }
+        code:
+          type: string
+          description: |
+            Stable codes include `invalid_credentials`, `invalid_refresh_token`,
+            `refresh_reuse_detected`, `refresh_expired`, `account_unavailable`,
+            `reauthentication_required`, `confirmation_required`, `session_not_found`,
+            `super_admin_protected`, `rate_limited`, `affiliation_required`.
+
+    User:
+      type: object
+      required: [id, email, name, role, is_admin, is_active, features, access_ok]
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        picture: { type: string, nullable: true }
+        email_verified: { type: boolean }
+        account_status: { type: string }
+        has_password: { type: boolean }
+        role: { type: string }
+        is_admin: { type: boolean }
+        is_active: { type: boolean }
+        features:
+          type: object
+          description: Entitlements. A missing key means enabled.
+          additionalProperties: { type: boolean }
+        mil_email: { type: string, nullable: true }
+        affiliation_verified: { type: boolean }
+        access_ok: { type: boolean, description: Whether the `.mil` / approval gate is cleared. }
+
+    TokenResponse:
+      type: object
+      required: [status, access_token, user]
+      properties:
+        status: { type: string, enum: [success] }
+        access_token: { type: string }
+        refresh_token:
+          type: string
+          description: Native clients only. Spent on use; the response to `/refresh` carries the next one.
+        refresh_expires_in:
+          type: integer
+          description: Seconds a refresh token lives (30 days); each refresh extends it, up to 180 days from sign-in.
+        user:
+          $ref: "#/components/schemas/User"
+
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, client, created_at, last_active_at, current]
+      properties:
+        id: { type: string }
+        client: { type: string, nullable: true, description: "The app, e.g. `android/1.4.0 (212)`." }
+        created_at: { type: string }
+        last_active_at: { type: string }
+        current: { type: boolean, description: This device. }
+
     Config:
       type: object
       additionalProperties: false

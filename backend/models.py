@@ -100,6 +100,15 @@ class AccountToken(db.Model):
     used_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
+    # Refresh tokens only (purpose 'refresh'; see refresh_tokens.py). Every token
+    # a device is issued, one after another as it refreshes, shares a `family` --
+    # that chain is one signed-in device. `client` names the app for the device
+    # list ("android/1.4.0 (212)"), and `session_version` is the credential's at
+    # issue, so a password reset ends every family. NULL for every other purpose.
+    family = db.Column(db.String(36), nullable=True, index=True)
+    client = db.Column(db.String(80), nullable=True)
+    session_version = db.Column(db.Integer, nullable=True)
+
     user = db.relationship('User', back_populates='account_tokens')
 
 

@@ -1,5 +1,6 @@
 """Focused tests for password accounts, one-time tokens, and Google linking."""
 
+import os
 import sys
 import unittest
 from datetime import timedelta
@@ -17,7 +18,7 @@ if str(BACKEND_DIR) not in sys.path:
 from auth_rate_limit import clear_rate_limits  # noqa: E402
 from models import AccountToken, LoginEvent, User, db  # noqa: E402
 from routes.auth import auth_bp  # noqa: E402
-from security_config import resolve_jwt_secret, validate_email_configuration  # noqa: E402
+from security_config import google_client_ids, resolve_jwt_secret, validate_email_configuration  # noqa: E402
 
 
 class SecurityConfigTests(unittest.TestCase):
@@ -52,6 +53,38 @@ class SecurityConfigTests(unittest.TestCase):
             'EMAIL_FROM': 'EZ-PZ <security@accounts.example.com>',
         }))
         self.assertIsNone(validate_email_configuration({}))
+
+
+class GoogleClientIdTests(unittest.TestCase):
+    """An ID token's audience is the client ID of the app that asked for it."""
+
+    def test_the_web_client_id_alone_works_as_before(self):
+        self.assertEqual(google_client_ids({'GOOGLE_CLIENT_ID': 'web'}), ['web'])
+
+    def test_several_ids_are_read_from_the_plural_variable(self):
+        self.assertEqual(
+            google_client_ids({'GOOGLE_CLIENT_IDS': 'web, android ,ios'}),
+            ['web', 'android', 'ios'],
+        )
+
+    def test_both_variables_combine_without_duplicates_and_in_order(self):
+        self.assertEqual(
+            google_client_ids({'GOOGLE_CLIENT_ID': 'web', 'GOOGLE_CLIENT_IDS': 'android,web,ios'}),
+            ['web', 'android', 'ios'],
+        )
+
+    def test_app_config_takes_precedence_like_the_singular_always_did(self):
+        self.assertEqual(
+            google_client_ids({'GOOGLE_CLIENT_ID': 'env'}, {'GOOGLE_CLIENT_ID': 'config'}),
+            ['config'],
+        )
+
+    def test_nothing_configured_is_an_empty_list_never_none(self):
+        # google-auth reads audience=None as "do not check the audience", so this
+        # must stay a list; an empty one rejects every token.
+        for environ in ({}, {'GOOGLE_CLIENT_ID': ''}, {'GOOGLE_CLIENT_IDS': ' , ,'}):
+            with self.subTest(environ=environ):
+                self.assertEqual(google_client_ids(environ), [])
 
 
 class AuthFlowTests(unittest.TestCase):
@@ -263,6 +296,36 @@ class AuthFlowTests(unittest.TestCase):
             'password': 'a different secure password',
         })
         self.assertEqual(new_password.status_code, 200)
+
+    def test_google_login_accepts_every_configured_client_as_the_audience(self):
+        self.app.config['GOOGLE_CLIENT_IDS'] = 'android-client,ios-client'
+        claims = {'sub': 'g-1', 'email': 'pilot@example.com', 'email_verified': True, 'name': 'P'}
+        with (
+            patch('routes.auth.id_token.verify_oauth2_token', return_value=claims) as verify,
+            patch('routes.auth.send_welcome_email', return_value=True),
+            patch('routes.auth.send_new_account_notification', return_value=True),
+        ):
+            response = self.client.post('/api/auth/google', json={'token': 'credential'})
+        self.assertEqual(response.status_code, 200)
+        audience = verify.call_args.args[2]
+        self.assertEqual(audience, ['test-client-id', 'android-client', 'ios-client'])
+
+    def test_google_login_refuses_a_token_for_some_other_client(self):
+        # google-auth raises ValueError for a wrong audience; that must read as a bad token.
+        with patch('routes.auth.id_token.verify_oauth2_token', side_effect=ValueError('wrong audience')):
+            response = self.client.post('/api/auth/google', json={'token': 'credential'})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()['code'], 'invalid_google_token')
+
+    def test_google_login_is_off_without_any_client_id(self):
+        self.app.config['GOOGLE_CLIENT_ID'] = ''
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('GOOGLE_CLIENT_ID', None)
+            os.environ.pop('GOOGLE_CLIENT_IDS', None)
+            with patch('routes.auth.id_token.verify_oauth2_token') as verify:
+                response = self.client.post('/api/auth/google', json={'token': 'credential'})
+        self.assertEqual(response.status_code, 503)
+        verify.assert_not_called()
 
     def test_google_login_discards_unverified_preregistered_password(self):
         self.assertEqual(self._register(email='victim@example.com').status_code, 202)

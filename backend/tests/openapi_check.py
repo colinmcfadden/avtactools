@@ -84,12 +84,27 @@ def validate(spec, schema, value, path="$"):
         for name in schema.get("required", []):
             if name not in value:
                 problems.append(f"{path}: missing required field {name!r}")
+        extra = schema.get("additionalProperties", True)
         for name, item in value.items():
             if name in properties:
                 problems += validate(spec, properties[name], item, f"{path}.{name}")
-            elif schema.get("additionalProperties") is False:
+            elif extra is False:
                 problems.append(f"{path}: unexpected field {name!r}")
+            elif isinstance(extra, dict):
+                # A map: every extra key's value must match this schema.
+                problems += validate(spec, extra, item, f"{path}.{name}")
     if isinstance(value, list) and "items" in schema:
         for index, item in enumerate(value):
             problems += validate(spec, schema["items"], item, f"{path}[{index}]")
     return problems
+
+
+def response_schema(spec, path, method, status):
+    """The JSON schema a route documents for one status code."""
+    response = _resolve(spec, spec["paths"][path][method.lower()]["responses"][str(status)])
+    return response["content"]["application/json"]["schema"]
+
+
+def check_response(spec, path, method, status, body):
+    """Problems with ``body`` against what the spec says ``method path`` returns for ``status``."""
+    return validate(spec, response_schema(spec, path, method, status), body)

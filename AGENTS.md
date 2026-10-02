@@ -158,6 +158,7 @@ responses to. A route not in that file is not yet something an app may rely on.
 | Area | Routes |
 |---|---|
 | auth | `POST /api/auth/{login,register,google,verify-email,resend-verification,forgot-password,reset-password,mil/request,mil/verify}`, `GET /api/auth/me` |
+| auth, native apps | `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/sessions`, `DELETE /api/auth/sessions/<id>`, `DELETE /api/auth/me` (account deletion) — design in `AUTHENTICATION.md` |
 | terrain | `POST /api/analyze-field` (SAM), `POST /api/terrain-analysis` (slope), `POST /api/elevations` (planner/AMPS ground, Terrarium), `GET /api/terrain/heightmap/<level>/<x>/<y>`, `POST /api/terrain/heights` (3D ground + geoid, local DEMs) |
 | location | `POST /api/convert-grid` (MGRS → lat/lon), `POST /api/convert-to-mgrs` (no longer called by the SPA, which converts lat/lon → MGRS itself with `utils/mgrs.js`) |
 | weather | `GET /api/weather`, `POST /api/route-winds` |
@@ -184,12 +185,16 @@ tokens, stored as SHA-256), `LoginEvent`, `AircraftProfile`, `SavedRoute`,
 **There is no migration framework.** `db.create_all()` creates tables;
 new columns on existing tables are added by guarded `ALTER TABLE` statements in
 `app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile` and
-`LoginEvent` against the live schema (`LoginEvent.client` was added that way, with
-a test against a pre-existing table). When you add a column, add it one of these
+`LoginEvent` and `AccountToken` against the live schema (`LoginEvent.client` and
+the refresh-token columns `family`, `client`, `session_version` were added that
+way, each with a test against a pre-existing table). When you add a column, add it one of these
 ways — and quote `"user"`, which is reserved in Postgres.
 
 JWTs carry an `sv` (session version) claim; a password reset bumps it, which
-revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
+revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`). A native
+app's token also carries `sid` (its device session) and is refused the moment that
+session is signed out: `token_revocation.is_revoked` is the one check, used by
+`app.py` and the tests alike.
 
 ---
 
@@ -306,6 +311,7 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `DATABASE_URL` | Postgres URL (Supabase pooler). Unset → SQLite `backend/ezpz.db`. `postgres://` is rewritten. |
 | `CORS_ORIGINS` | Comma-separated allowed origins. **Plural** — `CORS_ORIGIN` is silently ignored. Default `http://localhost:3000`. |
 | `GOOGLE_CLIENT_ID` | Google OAuth client; same value as the frontend's. |
+| `GOOGLE_CLIENT_IDS` | Comma-separated extra Google client IDs the server accepts as an ID token's audience: the Android and iOS apps each have their own. Combined with `GOOGLE_CLIENT_ID`. A native sign-in fails with `invalid_google_token` until its client ID is here. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Email. Production (same test as `JWT_SECRET_KEY`) refuses to start without them, or with Resend's test sender. A bare local run needs neither. |
 | `EMAIL_DELIVERY_MODE` | `console` locally — links print to the Flask log. Never in production. |
 | `FRONTEND_URL` | Base for links in emails. |

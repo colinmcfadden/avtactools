@@ -13,8 +13,9 @@ except ImportError:
     __version__ = "0.0.0-dev"
 
 from database_url import database_uri, is_postgres
-from models import AircraftProfile, LoginEvent, User, db
-from entitlements import account_active, affiliation_ok
+from models import AccountToken, AircraftProfile, LoginEvent, User, db
+from entitlements import affiliation_ok
+from token_revocation import is_revoked
 from aircraft_seed import seed_aircraft_profiles
 from schema_sync import sync_table_columns
 from security_config import (
@@ -106,25 +107,10 @@ jwt = JWTManager(app)
 
 @jwt.token_in_blocklist_loader
 def token_is_revoked(_jwt_header, jwt_payload):
-    """Reject deleted/suspended users and JWTs predating a password reset."""
+    """Reject deleted/suspended users, JWTs predating a password reset, and
+    native device sessions that were signed out (see token_revocation)."""
 
-    try:
-        user = db.session.get(User, int(jwt_payload.get('sub')))
-    except (TypeError, ValueError):
-        return True
-    if user is None:
-        return True
-    # An admin-set suspension (is_active = False) revokes access immediately for
-    # any auth method — the super-admin is exempt (account_active handles that).
-    if not account_active(user):
-        return True
-    credential = user.local_credential
-    if credential is not None and credential.status == 'suspended':
-        return True
-    expected_version = credential.session_version if credential else 0
-    # Tokens issued before session versioning had no ``sv`` claim and could
-    # otherwise retain the old 30-day lifetime after deployment.
-    return 'sv' not in jwt_payload or jwt_payload.get('sv') != expected_version
+    return is_revoked(jwt_payload)
 
 
 @app.before_request
@@ -249,6 +235,8 @@ with app.app_context():
     sync_table_columns(db, AircraftProfile)
     # login_event gained `client` (the X-EZPZ-Client app version) after launch.
     sync_table_columns(db, LoginEvent)
+    # account_token gained the refresh-token columns (family, client, session_version).
+    sync_table_columns(db, AccountToken)
 
     # Master aircraft profiles. Fills in missing slugs only — admin edits and
     # user-created profiles are never touched.

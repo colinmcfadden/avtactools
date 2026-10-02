@@ -18,7 +18,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AircraftProfile, LoginEvent, db  # noqa: E402
+from models import AccountToken, AircraftProfile, LoginEvent, db  # noqa: E402
 from schema_sync import sync_table_columns  # noqa: E402
 
 
@@ -205,3 +205,53 @@ class LoginEventClientColumnTests(unittest.TestCase):
     def test_is_idempotent(self):
         sync_table_columns(db, LoginEvent)
         self.assertEqual([], sync_table_columns(db, LoginEvent))
+
+
+# account_token before refresh tokens added family, client and session_version.
+LEGACY_ACCOUNT_TOKEN = """
+CREATE TABLE account_token (
+    id INTEGER NOT NULL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    purpose VARCHAR(32) NOT NULL,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME,
+    created_at DATETIME NOT NULL
+)
+"""
+
+
+class AccountTokenRefreshColumnsTests(unittest.TestCase):
+    """Production already has an account_token table full of verification and reset tokens."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_ACCOUNT_TOKEN))
+        db.session.execute(text(
+            "INSERT INTO account_token (user_id, purpose, token_hash, expires_at, created_at) "
+            "VALUES (3, 'password_reset', 'abc', '2026-12-01 00:00:00', '2026-09-01 00:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_the_refresh_columns_and_keeps_existing_tokens(self):
+        added = sync_table_columns(db, AccountToken)
+        self.assertEqual({"family", "client", "session_version"}, set(added))
+        row = AccountToken.query.one()
+        self.assertEqual("password_reset", row.purpose)
+        self.assertIsNone(row.family)
+        self.assertIsNone(row.session_version)
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, AccountToken)
+        self.assertEqual([], sync_table_columns(db, AccountToken))

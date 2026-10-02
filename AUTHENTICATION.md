@@ -60,14 +60,58 @@ as `GOOGLE_CLIENT_ID` on Fly.
 Add the production frontend URL and any intentionally supported preview URL to
 `CORS_ORIGINS` as a comma-separated list. Avoid a wildcard origin.
 
+## Native apps (Android, iOS)
+
+The native apps use the same endpoints, plus a few that exist for them. They are
+identified by `X-EZPZ-Client: android/1.4.0 (212)` (`backend/client_header.py`).
+
+- **Google client IDs.** An ID token's audience is the client ID of the app that
+  asked Google for it, so the web, Android and iOS clients each have their own.
+  `GOOGLE_CLIENT_ID` (the web's) and the comma-separated `GOOGLE_CLIENT_IDS` are
+  all accepted. The audience passed to google-auth is always a non-empty list:
+  `None` would skip the check, and an empty list rejects everything.
+- **Refresh tokens, native only.** A crew at a FARP cannot sign in every 24 hours,
+  so an android or ios client is also given a refresh token (`POST
+  /api/auth/refresh`). The web is not: its token sits in `localStorage` where any
+  script can read it, and a 30-day token there would be a worse trade than the
+  24-hour one.
+  - Stored as SHA-256 hashes, like every account token (`AccountToken`, purpose
+    `refresh`). Each use spends the token and returns the next; the chain is one
+    signed-in device (a *family*).
+  - Alive 30 days from each refresh, ending 180 days after sign-in.
+  - A spent token presented again within 30 seconds is read as a lost response (the
+    phone was in a dead zone) and answered again. After that it is read as a copy:
+    the whole family is revoked (`refresh_reuse_detected`).
+  - A password reset, an admin suspension, and a revoke all end it.
+- **Revocation is immediate.** A native access token carries its family as `sid`,
+  and every request checks the family still has a live token
+  (`token_revocation.is_revoked`). So `POST /api/auth/logout` and `DELETE
+  /api/auth/sessions/<id>` (a lost phone, revoked from a tablet) take effect at
+  once instead of when the 24-hour access token lapses. `GET /api/auth/sessions`
+  lists the devices.
+- **Revoke must be final.** Revoking a family expires every token in it. Marking
+  them merely *spent* would leave the newest one good for the 30-second lost-response
+  window, which is how this was first written; `tests/test_native_sessions.py` has the
+  case.
+- **Account deletion** (`DELETE /api/auth/me`), which the app stores require. It
+  wants the word `DELETE` and proof of ownership *now*: the password, or a fresh
+  Google ID token. An access token alone is not proof, because a copied refresh
+  token can mint one. The super-admin cannot be deleted. It removes saved LZs,
+  routes, point sets, custom aircraft profiles, sign-in history and every token.
+
+The contract for these routes is `contracts/openapi.yaml`, and
+`backend/tests/test_openapi_contract.py` and `test_native_sessions.py` hold the
+responses to it. Changes are additive: an installed app cannot be updated.
+
 ## Current security posture and next steps
 
 The current bearer-token design is compatible with the existing Vercel/Fly
 split and invalidates account sessions after a password reset. It is still a
 prototype posture. Before handling CUI or other sensitive operational data:
 
-- Add server-side logout/session revocation. Today logout removes the browser's
-  token, but a copied token remains valid until its 24-hour expiry.
+- Add server-side logout/session revocation **for the web**. The native apps have
+  it (above); on the web, logout still only removes the browser's token, and a
+  copied token remains valid until its 24-hour expiry.
 - Put the frontend and API on sibling custom domains and migrate sessions from
   browser local storage to short-lived Secure, HttpOnly cookies with CSRF
   protection and refresh-token rotation.

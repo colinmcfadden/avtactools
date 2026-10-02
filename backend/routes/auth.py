@@ -6,16 +6,17 @@ import uuid
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
-from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
+from flask_jwt_extended import create_access_token, get_jwt, get_jwt_identity, jwt_required
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import refresh_tokens
 from auth_rate_limit import check_rate_limits
 from client_header import client_from_request
-from security_config import resolve_client_ip
+from security_config import google_client_ids, resolve_client_ip
 from email_service import (
     send_new_account_notification,
     send_password_changed_email,
@@ -24,7 +25,17 @@ from email_service import (
     send_welcome_email,
     send_mil_verification_email,
 )
-from models import AccountToken, LocalCredential, LoginEvent, User, db
+from models import (
+    AccountToken,
+    AircraftProfile,
+    LocalCredential,
+    LoginEvent,
+    SavedLZ,
+    SavedPointSet,
+    SavedRoute,
+    User,
+    db,
+)
 from entitlements import (
     account_active,
     affiliation_ok,
@@ -125,6 +136,9 @@ def _rate_limit(scope, email=None):
         'resend': ((10, 3600), (3, 3600)),
         'forgot': ((10, 3600), (5, 3600)),
         'google': ((30, 600), None),
+        # Behind a unit's shared NAT many devices share an address, so this is generous.
+        'refresh': ((120, 600), None),
+        'delete_account': ((5, 3600), None),
         'reset': ((20, 3600), None),
         'mil_request': ((10, 3600), None),
         'mil_verify': ((20, 600), None),
@@ -249,17 +263,35 @@ def _auth_success(user, method='password'):
     except Exception:  # noqa: BLE001 — history is best-effort, never blocks login
         db.session.rollback()
 
+    return _token_response(user, refresh_tokens.native_client_label(request))
+
+
+def _token_response(user, native_label, family=None, refresh_token=None):
+    """The sign-in / refresh body: an access token, and for a native app a refresh token.
+
+    A new native sign-in (``family`` unset) starts a device session. A refresh
+    passes the family and the already-rotated token, so the same session carries on.
+    """
     credential = user.local_credential
-    return jsonify({
-        "status": "success",
-        "access_token": create_access_token(
-            identity=str(user.id),
-            additional_claims={
-                "sv": credential.session_version if credential else 0,
-            },
-        ),
-        "user": _serialize_user(user),
-    })
+    session_version = credential.session_version if credential else 0
+    claims = {"sv": session_version}
+    body = {"status": "success"}
+
+    if native_label and family is None:
+        refresh_token, family = refresh_tokens.issue_family(
+            user.id, session_version, native_label
+        )
+        db.session.commit()
+    if native_label and family is not None:
+        # `sid` ties the access token to the device session, so signing that
+        # device out refuses the token at once rather than when it lapses.
+        claims["sid"] = family
+        body["refresh_token"] = refresh_token
+        body["refresh_expires_in"] = int(refresh_tokens.REFRESH_LIFETIME.total_seconds())
+
+    body["access_token"] = create_access_token(identity=str(user.id), additional_claims=claims)
+    body["user"] = _serialize_user(user)
+    return jsonify(body)
 
 
 def _error(message, status_code=400, code=None):
@@ -505,15 +537,16 @@ def google_auth():
     if limited:
         return limited
     token = _payload().get('token')
-    client_id = current_app.config.get('GOOGLE_CLIENT_ID') or os.environ.get(
-        'GOOGLE_CLIENT_ID'
-    )
-    if not token or not client_id:
+    # The web, Android and iOS apps each have their own client ID, and an ID
+    # token's audience is the one that asked for it. Always a non-empty list
+    # here: an empty one rejects everything, and None would skip the check.
+    client_ids = google_client_ids(os.environ, current_app.config)
+    if not token or not client_ids:
         return _error("Google sign-in is not configured.", 503)
 
     try:
         idinfo = id_token.verify_oauth2_token(
-            token, google_requests.Request(), client_id
+            token, google_requests.Request(), client_ids
         )
         verified_claim = idinfo.get('email_verified')
         email_is_verified = verified_claim is True or str(
@@ -585,6 +618,73 @@ def google_auth():
         db.session.rollback()
         current_app.logger.exception("Google authentication failed")
         return _error("Google authentication is temporarily unavailable.", 503)
+
+
+@auth_bp.route('/api/auth/refresh', methods=['POST'])
+def refresh():
+    """Swap a refresh token for a new access token and the next refresh token.
+
+    Native apps only (they are the only clients issued one). The presented token
+    is spent: using it again is read as a lost response for 30 seconds and as a
+    copy after that, which signs the device out (see refresh_tokens).
+    """
+    limited = _rate_limit('refresh')
+    if limited:
+        return limited
+
+    now = _now()
+    found = refresh_tokens.find(_payload().get('refresh_token'), now)
+    if found is None:
+        return _error("This session has expired. Sign in again.", 401, "invalid_refresh_token")
+
+    user = found.user
+    credential = user.local_credential
+    if not account_active(user) or (credential is not None and credential.status == 'suspended'):
+        refresh_tokens.revoke_family(found.family, now)
+        db.session.commit()
+        return _error("This account is not available.", 403, "account_unavailable")
+    # A password reset bumps the session version, which ends every device session.
+    if found.session_version != (credential.session_version if credential else 0):
+        refresh_tokens.revoke_family(found.family, now)
+        db.session.commit()
+        return _error("This session has expired. Sign in again.", 401, "invalid_refresh_token")
+
+    new_token, failure = refresh_tokens.rotate(found, now)
+    db.session.commit()
+    if failure:
+        return _error("This session has expired. Sign in again.", 401, failure)
+    return _token_response(user, found.client, family=found.family, refresh_token=new_token)
+
+
+@auth_bp.route('/api/auth/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    """End this device's session. The access token stops working at once."""
+    refresh_tokens.revoke_family(get_jwt().get('sid'))
+    db.session.commit()
+    return jsonify({"status": "success"})
+
+
+@auth_bp.route('/api/auth/sessions', methods=['GET'])
+@jwt_required()
+def list_sessions():
+    """The user's signed-in devices, so a lost one can be signed out."""
+    sessions = refresh_tokens.list_sessions(
+        int(get_jwt_identity()), current_family=get_jwt().get('sid')
+    )
+    return jsonify({"sessions": sessions})
+
+
+@auth_bp.route('/api/auth/sessions/<session_id>', methods=['DELETE'])
+@jwt_required()
+def revoke_session(session_id):
+    """Sign one of the user's devices out. Its access token stops working at once."""
+    mine = {s['id'] for s in refresh_tokens.list_sessions(int(get_jwt_identity()))}
+    if session_id not in mine:
+        return _error("No such session.", 404, "session_not_found")
+    refresh_tokens.revoke_family(session_id)
+    db.session.commit()
+    return jsonify({"status": "success"})
 
 
 @auth_bp.route('/api/auth/mil/request', methods=['POST'])
@@ -672,3 +772,73 @@ def me():
     if not account_active(user):
         return _error("This account is not available.", 403, "account_unavailable")
     return jsonify(_serialize_user(user))
+
+
+def _google_proves_identity(user, token):
+    """Whether a fresh Google ID token belongs to this account (used to confirm deletion)."""
+    client_ids = google_client_ids(os.environ, current_app.config)
+    if not token or not client_ids:
+        return False
+    try:
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), client_ids)
+    except Exception:  # noqa: BLE001 — any failure to verify is "not proven"
+        return False
+    verified = idinfo.get('email_verified')
+    if not (verified is True or str(verified).lower() == 'true'):
+        return False
+    subject = str(idinfo.get('sub') or '')
+    if _is_google_identity(user):
+        return bool(subject) and subject == user.google_id
+    return _normalize_email(idinfo.get('email')) == (user.email or '').casefold()
+
+
+@auth_bp.route('/api/auth/me', methods=['DELETE'])
+@jwt_required()
+def delete_account():
+    """Delete the signed-in account and everything saved under it.
+
+    Required by the app stores for any app that creates accounts. Irreversible,
+    so it asks for two things: the word DELETE, and proof the caller is the
+    account's owner *now* (the password, or a fresh Google ID token). A token
+    alone is not proof: a copied refresh token can mint access tokens, and a
+    stranger holding a signed-in phone should not be able to erase the account.
+
+    The super-admin account cannot be deleted, here or anywhere else.
+    """
+    limited = _rate_limit('delete_account')
+    if limited:
+        return limited
+    user = db.session.get(User, int(get_jwt_identity()))
+    if not user:
+        return _error("User not found.", 404)
+    if is_super_admin(user):
+        return _error("The super-admin account can't be deleted.", 403, "super_admin_protected")
+
+    body = _payload()
+    if body.get('confirm') != 'DELETE':
+        return _error("Type DELETE to confirm.", 400, "confirmation_required")
+
+    credential = user.local_credential
+    password = body.get('password')
+    if isinstance(password, str) and credential is not None:
+        proven = check_password_hash(credential.password_hash, password)
+    elif body.get('google_token'):
+        proven = _google_proves_identity(user, body.get('google_token'))
+    else:
+        return _error(
+            "Confirm it's you with your password or a fresh Google sign-in.",
+            401,
+            "reauthentication_required",
+        )
+    if not proven:
+        return _error("That didn't match this account.", 401, "invalid_credentials")
+
+    uid = user.id
+    SavedRoute.query.filter_by(user_id=uid).delete()
+    SavedLZ.query.filter_by(user_id=uid).delete()
+    SavedPointSet.query.filter_by(user_id=uid).delete()
+    AircraftProfile.query.filter_by(user_id=uid).delete()
+    LoginEvent.query.filter_by(user_id=uid).delete()
+    db.session.delete(user)  # cascades the credential and every account token, refresh tokens included
+    db.session.commit()
+    return jsonify({"status": "success", "message": "Your account has been deleted."})
