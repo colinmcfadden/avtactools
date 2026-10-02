@@ -29,8 +29,15 @@ DEFAULT_RADIUS_M = 500.0
 
 
 def _horizontal(crs_string: str) -> CRS:
-    """The horizontal half of a compound CRS — cropping is a 2D operation."""
-    return CRS.from_string(crs_string.split("+")[0])
+    """The horizontal half of a CRS — cropping is a 2D operation.
+
+    Takes "EPSG:6350+5703" and WKT alike. This used to split the string at
+    "+", which cut WKT apart: a LAS 1.4 tile states its CRS as compound WKT
+    named "NAD83(2011) / Conus Albers + NAVD88 height", plus sign included, and
+    every build from the downloaded collection crashed on it.
+    """
+    crs = CRS.from_user_input(crs_string)
+    return crs.sub_crs_list[0] if crs.is_compound else crs
 
 
 def mercator_scale(latitude: float) -> float:

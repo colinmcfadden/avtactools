@@ -93,8 +93,15 @@ class TileCrs:
         """
         if self.vertical_declared:
             return self.horizontal
-        code = vertical[len(_EPSG_PREFIX):] if vertical.startswith(_EPSG_PREFIX) else vertical
-        return f"{self.horizontal}+{code}"
+        if self.horizontal.startswith(_EPSG_PREFIX):
+            code = vertical[len(_EPSG_PREFIX):] if vertical.startswith(_EPSG_PREFIX) else vertical
+            return f"{self.horizontal}+{code}"
+        # WKT cannot take a "+code" suffix; build the compound CRS properly.
+        from pyproj import CRS
+        from pyproj.crs import CompoundCRS
+        horizontal = CRS.from_user_input(self.horizontal)
+        return CompoundCRS(name=f"{horizontal.name} + NAVD88 height",
+                           components=[horizontal, CRS.from_user_input(vertical)]).to_wkt()
 
 
 @dataclass(frozen=True)
