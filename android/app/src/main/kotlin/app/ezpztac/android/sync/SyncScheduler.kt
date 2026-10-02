@@ -10,21 +10,10 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import app.ezpztac.sync.SyncScheduler
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/** When the app's saved records are sent to and read from the server. The work itself is [SyncRunner]. */
-interface SyncScheduler {
-    /** Sync as soon as there is a connection: after an edit, at launch, after signing in. Asking while one is queued does nothing more. */
-    fun requestSync()
-
-    /** Also sync now and then in the background, whether or not the app is open. */
-    fun schedulePeriodic()
-
-    /** Stop everything (signed out). */
-    fun cancelAll()
-}
 
 @Singleton
 class WorkManagerSyncScheduler @Inject constructor(@ApplicationContext private val context: Context) : SyncScheduler {

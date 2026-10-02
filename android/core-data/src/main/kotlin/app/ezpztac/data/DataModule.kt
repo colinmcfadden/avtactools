@@ -1,6 +1,7 @@
 package app.ezpztac.data
 
 import android.content.Context
+import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.SyncStore
 import dagger.Module
@@ -9,6 +10,9 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /** The one database, and what is built on it: the sync store and the repository the screens edit records through. */
 @Module
@@ -28,9 +32,19 @@ internal object DataModule {
 
     @Provides
     @Singleton
+    fun recordFeed(store: RoomSyncStore): RecordFeed = store
+
+    @Provides
+    @Singleton
     fun accountScope(database: EzpzDatabase): AccountScope = RoomAccountScope(database)
 
     @Provides
     @Singleton
     fun repository(store: SyncStore): SyncRepository = SyncRepository(store)
+
+    /** The open diagram outlives any screen, so its delayed save runs in a scope of its own that is never cancelled with one. */
+    @Provides
+    @Singleton
+    fun diagramSession(repository: DiagramRepository): DiagramSession =
+        DiagramSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default))
 }

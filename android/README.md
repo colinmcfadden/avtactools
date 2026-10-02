@@ -22,11 +22,12 @@ android/
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
 ├─ feature-map/     the 2D map: MapLibre, base maps, crosshair readout, search, GPS
 ├─ feature-auth/    sign-in, sign-up, verify, reset and the .mil gate: screens and their view models
-├─ app/             the application: Hilt, Compose, manifest; a skeleton so far
+├─ feature-workspace/ the Diagrams tab: list, make from a target, open, rename, delete, settle a conflict
+├─ app/             the application: Hilt, Compose, manifest, the shell and the map with its sheet
 └─ build-logic/     the convention plugins every module uses
 ```
 
-Not here yet: `core-symbols`, `core-packs`, the `feature-*` modules and the 2D map.
+Not here yet: `core-symbols`, `core-packs`, and the other `feature-*` modules (graphics, routes, threats, weather, exports, 3D).
 
 Every module is tested against the golden fixtures in [`../contracts`](../contracts/README.md),
 the same files the web app's tests read, so the app cannot quietly disagree with

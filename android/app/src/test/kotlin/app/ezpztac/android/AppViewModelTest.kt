@@ -1,8 +1,15 @@
 package app.ezpztac.android
 
-import app.ezpztac.android.sync.SyncScheduler
+import app.ezpztac.sync.InMemorySyncStore
+import app.ezpztac.sync.RecordingScheduler
+import app.ezpztac.sync.SequentialIds
+import app.ezpztac.sync.SyncRepository
+import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.data.AccountScope
+import app.ezpztac.data.DiagramRepository
+import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.Ownership
+import app.ezpztac.model.DiagramTarget
 import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AppConfig
 import app.ezpztac.network.AuthState
@@ -19,6 +26,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -94,7 +103,10 @@ class AppViewModelTest {
         override fun update(token: String?) { written += token }
     }
 
-    private class Rig(val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens())
+    private class Rig(
+        val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
+        val repository: DiagramRepository, val session: DiagramSession,
+    )
 
     private fun TestScope.rig(
         stored: AuthState = AuthState.SignedIn(user()),
@@ -107,9 +119,12 @@ class AppViewModelTest {
         val accounts = FakeAccounts(owner, unsynced)
         val scheduler = FakeScheduler()
         val tokens = FakeTokens()
-        val model = AppViewModel(backend, accounts, scheduler, tokens, version)
+        val store = InMemorySyncStore()
+        val repository = DiagramRepository(SyncRepository(store, SequentialIds("t")), store, RecordingScheduler())
+        val session = DiagramSession(repository, backgroundScope)
+        val model = AppViewModel(backend, accounts, scheduler, session, tokens, version)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens)
+        return Rig(backend, accounts, scheduler, model, tokens, repository, session)
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -250,6 +265,38 @@ class AppViewModelTest {
         r.backend.state.value = AuthState.SignedIn(user())
         advanceUntilIdle()
         assertTrue(r.model.gate.value is Gate.Ready)
+    }
+
+    @Test
+    fun `signing out saves and closes the open diagram, so the next account does not see it on the map`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val made = r.repository.create(DiagramTarget(34.78, -84.08, "16S GD 66993 52949"), "LZ HAWK")
+        r.session.open(made.id)
+        r.session.edit("Rename") { it.copy(name = "LZ CROW") }                              // not yet saved: the pause has not passed
+        r.model.signOut()
+        advanceUntilIdle()
+        assertNull(r.session.active.value)
+        assertEquals("LZ CROW", r.repository.open(made.id)!!.name)                           // saved first, for when this person comes back
+    }
+
+    @Test
+    fun `a session that ends on its own closes the diagram too`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val made = r.repository.create(DiagramTarget(34.78, -84.08, "16S GD 66993 52949"), "LZ HAWK")
+        r.session.open(made.id)
+        r.backend.state.value = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long")
+        advanceUntilIdle()
+        assertNull(r.session.active.value)
+    }
+
+    @Test
+    fun `being signed in leaves an open diagram alone`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val made = r.repository.create(DiagramTarget(34.78, -84.08, "16S GD 66993 52949"), "LZ HAWK")
+        r.session.open(made.id)
+        r.backend.state.value = AuthState.SignedIn(user().copy(name = "Renamed"))
+        advanceUntilIdle()
+        assertNotNull(r.session.active.value)
     }
 
     @Test

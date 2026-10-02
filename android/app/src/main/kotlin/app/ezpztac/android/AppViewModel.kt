@@ -2,15 +2,17 @@ package app.ezpztac.android
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.ezpztac.android.sync.SyncScheduler
+import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.auth.AuthLinks
 import app.ezpztac.auth.AuthRoute
 import app.ezpztac.data.AccountScope
+import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.Ownership
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.AppConfig
 import app.ezpztac.network.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +34,7 @@ class AppViewModel @Inject constructor(
     private val backend: AuthBackend,
     private val accounts: AccountScope,
     private val sync: SyncScheduler,
+    private val session: DiagramSession,
     private val mapTokens: MapTokenSink,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
@@ -64,7 +67,10 @@ class AppViewModel @Inject constructor(
     private suspend fun onAuth(auth: AuthState) {
         ownership.value = null
         if (auth !is AuthState.SignedIn) {
-            if (auth is AuthState.SignedOut) sync.cancelAll()
+            if (auth is AuthState.SignedOut) {
+                sync.cancelAll()
+                closeDiagram()
+            }
             return
         }
         if (!auth.user.accessOk) return                                   // held at the gate: nothing of this account is touched yet
@@ -76,6 +82,17 @@ class AppViewModel @Inject constructor(
             ownership.value = owner
         }
         if (ownership.value == Ownership.Yours) startSyncing()
+    }
+
+    /** Whoever signs in next must not find this account's open diagram on the map. It is saved first; if that fails the person is signed out anyway. */
+    private suspend fun closeDiagram() {
+        try {
+            session.close()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // The diagram is closed regardless ([DiagramSession.close]); a change that could not be written is lost with the sign-out.
+        }
     }
 
     private fun startSyncing() {

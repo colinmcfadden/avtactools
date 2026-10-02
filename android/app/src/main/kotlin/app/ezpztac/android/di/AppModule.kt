@@ -9,7 +9,7 @@ import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
-import app.ezpztac.android.sync.SyncScheduler
+import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.android.sync.WorkManagerSyncScheduler
 import app.ezpztac.data.session.EncryptedSessionStore
 import app.ezpztac.data.session.KeystoreSecretBox
@@ -21,6 +21,7 @@ import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ClientInfo
 import app.ezpztac.network.SessionStore
 import app.ezpztac.sync.ApiSyncApi
+import app.ezpztac.sync.ConflictResolver
 import app.ezpztac.sync.SyncApi
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStore
@@ -96,6 +97,9 @@ interface AppBindings {
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner
+
+    @Binds
+    fun conflictResolver(impl: SyncEngine): ConflictResolver
 
     @Binds
     fun mapTokens(impl: MapPreferences): MapTokenSource

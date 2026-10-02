@@ -57,6 +57,7 @@ include(":core-data")
 // One module per screen family; features never depend on each other, `app` wires them (docs/NATIVE_APPS_PLAN.md).
 include(":feature-auth")
 include(":feature-map")
+include(":feature-workspace")
 
 // Test support: reads ../contracts/fixtures. Not part of the shipped app.
 include(":core-testing")

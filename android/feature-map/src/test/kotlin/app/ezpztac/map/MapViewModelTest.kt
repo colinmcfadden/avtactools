@@ -91,6 +91,26 @@ class MapViewModelTest {
     }
 
     @Test
+    fun `opening a diagram goes to its target and brings back its base map`() = runTest(dispatcher) {
+        val (vm, _) = model()
+        val seen = commandsOf(vm)
+        vm.showDiagram(LatLon(34.78, -84.08), "topo")
+        assertEquals(listOf<MapCommand>(MapCommand.FlyTo(LatLon(34.78, -84.08), MapViewModel.DIAGRAM_ZOOM)), seen)
+        assertEquals("topo", vm.state.value.style.id)
+        assertEquals("topo", vm.chosenStyleId())
+    }
+
+    @Test
+    fun `a diagram with no target leaves the camera, and one with no base map leaves the style`() = runTest(dispatcher) {
+        val (vm, _) = model()
+        vm.selectStyle("topo")
+        val seen = commandsOf(vm)
+        vm.showDiagram(null, null)
+        assertEquals(emptyList<MapCommand>(), seen)
+        assertEquals("topo", vm.state.value.style.id)
+    }
+
+    @Test
     fun `a token that arrives later brings satellite back without the person doing anything`() = runTest(dispatcher) {
         val tokens = Tokens(null)
         val vm = MapViewModel(tokens, FakeLocation(), Memory())

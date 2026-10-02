@@ -1,5 +1,9 @@
 package app.ezpztac.sync
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -9,6 +13,15 @@ import kotlinx.coroutines.sync.withLock
  */
 public interface SyncStore {
     public suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T
+}
+
+/**
+ * A list of records that updates itself: what a screen shows. Separate from [SyncStore] because only a screen wants it, and a store
+ * that cannot offer it (a test double) still works for the sync engine.
+ */
+public interface RecordFeed {
+    /** The records of [kind] that are not deleted, in the order the store holds them, emitted again whenever any of them changes. */
+    public fun observe(kind: RecordKind): Flow<List<LocalRecord>>
 }
 
 public interface SyncTransaction {
@@ -30,8 +43,9 @@ public interface SyncTransaction {
 }
 
 /** A store that lives in memory: for tests, and for the first version of the app before Room is wired in. */
-public class InMemorySyncStore : SyncStore {
+public class InMemorySyncStore : SyncStore, RecordFeed {
     private val lock = Mutex()
+    private val version = MutableStateFlow(0L)
     private val records = LinkedHashMap<Pair<RecordKind, String>, LocalRecord>()
     private val entries = LinkedHashMap<Long, OutboxEntry>()
     private var nextSeq = 1L
@@ -56,6 +70,10 @@ public class InMemorySyncStore : SyncStore {
         override suspend fun setCursor(cursor: Int) { this@InMemorySyncStore.cursor = cursor }
     }
 
+    override fun observe(kind: RecordKind): Flow<List<LocalRecord>> = version
+        .map { lock.withLock { records.values.filter { it.kind == kind && !it.deleted } } }
+        .distinctUntilChanged()
+
     override suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T = lock.withLock {
         transactions++
         // All or nothing: a block that throws leaves the store as it was.
@@ -64,7 +82,7 @@ public class InMemorySyncStore : SyncStore {
         val savedSeq = nextSeq
         val savedCursor = cursor
         try {
-            tx.block()
+            tx.block().also { version.value++ }
         } catch (e: Throwable) {
             records.clear(); records.putAll(savedRecords)
             entries.clear(); entries.putAll(savedEntries)

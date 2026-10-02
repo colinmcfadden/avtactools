@@ -5,6 +5,7 @@ import app.ezpztac.sync.Attempt
 import app.ezpztac.sync.LocalRecord
 import app.ezpztac.sync.Operation
 import app.ezpztac.sync.OutboxEntry
+import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncStore
 import app.ezpztac.sync.SyncTransaction
@@ -18,7 +19,7 @@ import kotlinx.serialization.json.JsonObject
  * [SyncStore] on Room. Each [transaction] is one SQLite transaction: it commits whole or, if the block throws, not at all, and
  * Room runs writers one at a time, so a change made while a sync is in the middle of one never sees half of it.
  */
-public class RoomSyncStore internal constructor(private val database: EzpzDatabase) : SyncStore {
+public class RoomSyncStore internal constructor(private val database: EzpzDatabase) : SyncStore, RecordFeed {
     private val dao get() = database.syncDao()
 
     override suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T =
@@ -29,7 +30,7 @@ public class RoomSyncStore internal constructor(private val database: EzpzDataba
      * *any* row of the table changes (another kind's, or a queued change), so equal lists are dropped: a screen only redraws for a change
      * it can see.
      */
-    public fun observe(kind: RecordKind): Flow<List<LocalRecord>> =
+    override fun observe(kind: RecordKind): Flow<List<LocalRecord>> =
         dao.observe(kind.name).map { rows -> rows.map { it.toModel() } }.distinctUntilChanged()
 }
 

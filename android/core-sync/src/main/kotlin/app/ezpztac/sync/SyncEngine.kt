@@ -71,7 +71,7 @@ public class SyncEngine(
     private val deviceLabel: String = "this device",
     private val now: () -> Instant = Instant::now,
     private val zone: ZoneId = ZoneId.systemDefault(),
-) {
+) : ConflictResolver {
     private val running = Mutex()
 
     public suspend fun sync(): SyncReport {
@@ -405,7 +405,7 @@ public class SyncEngine(
     }
 
     /** Settles a conflict kept beside a record, as the user chose. */
-    public suspend fun resolve(kind: RecordKind, copyUuid: String, resolution: Resolution) {
+    override suspend fun resolve(kind: RecordKind, copyUuid: String, resolution: Resolution) {
         val repository = SyncRepository(store, ids)
         store.transaction {
             val copy = record(kind, copyUuid) ?: return@transaction

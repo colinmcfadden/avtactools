@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
@@ -29,13 +33,14 @@ import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.rememberMapHost
+import app.ezpztac.workspace.DiagramsHost
 import kotlinx.coroutines.flow.filterNotNull
 
 private val PEEK = 112.dp
 
 /**
- * The signed-in app: the map is the root, with a bottom sheet over it (docs/NATIVE_APPS_PLAN.md, "Mobile UX"). The sheet holds the version
- * and a sign-out for now; the diagrams and the planning tools go into it.
+ * The signed-in app: the map is the root, with a bottom sheet over it (docs/NATIVE_APPS_PLAN.md, "Mobile UX"). The sheet holds the
+ * diagrams, with the version and a sign-out below; the planning tools go into it as they are built. Opening a diagram takes the map to it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +50,7 @@ fun MapHome(
     maintenance: String?,
     onSignOut: () -> Unit,
     viewModel: MapViewModel = hiltViewModel(),
+    home: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val host = rememberMapHost()
@@ -59,14 +65,22 @@ fun MapHome(
         }
     }
     LaunchedEffect(host) { snapshotFlow { host.camera }.filterNotNull().collect(viewModel::onCamera) }
+    LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
+    // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { home.appStopped() }
 
     BottomSheetScaffold(
         scaffoldState = scaffold,
         sheetPeekHeight = PEEK,
         sheetContainerColor = MaterialTheme.colorScheme.surface,
         sheetContent = {
-            Column(Modifier.fillMaxWidth().padding(horizontal = Tokens.Spacing.xl.dp, vertical = Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.xl.dp, vertical = Tokens.Spacing.md.dp),
+                verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+            ) {
                 if (maintenance != null) Banner(maintenance, BannerKind.Warning)
+                // A new diagram starts at the middle of the map: the grid under the crosshair, or its degrees where there is no grid.
+                DiagramsHost(suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon })
                 Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                 Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(stringResource(R.string.classification_notice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -76,7 +90,7 @@ fun MapHome(
     ) { _ ->
         MapScreen(
             state = state, camera = host.camera, gps = state.gps,
-            onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = viewModel::selectStyle,
+            onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
             onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
             onFaceNorth = viewModel::faceNorth,
             bottomInset = PEEK,

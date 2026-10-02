@@ -3,6 +3,8 @@ package app.ezpztac.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import app.ezpztac.geo.PlaceResult
+import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.LatLon
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -115,12 +117,12 @@ class MapViewModel @Inject constructor(
     // -- Search ------------------------------------------------------------------------------------------
 
     fun search(text: String) {
-        when (val result = Search.resolve(text)) {
-            is SearchResult.Place -> {
+        when (val result = PlaceSearch.resolve(text)) {
+            is PlaceResult.Found -> {
                 _state.update { it.copy(searchError = null) }
                 _commands.tryEmit(MapCommand.FlyTo(result.at, SEARCH_ZOOM))
             }
-            is SearchResult.NotUnderstood -> _state.update { it.copy(searchError = result.message) }
+            is PlaceResult.NotUnderstood -> _state.update { it.copy(searchError = result.message) }
         }
     }
 
@@ -132,6 +134,12 @@ class MapViewModel @Inject constructor(
     fun restoreStyle(id: String?) {
         chosenStyleId = id
         restyle()
+    }
+
+    /** A diagram was opened: its saved base map comes back, and the map goes to its target (a diagram with none leaves the camera where it is). */
+    fun showDiagram(at: LatLon?, baseMapId: String?) {
+        if (baseMapId != null) restoreStyle(baseMapId)
+        if (at != null) _commands.tryEmit(MapCommand.FlyTo(at, DIAGRAM_ZOOM))
     }
 
     fun selectStyle(id: String) {
@@ -210,5 +218,8 @@ class MapViewModel @Inject constructor(
         /** About a rotor diameter per few points: close enough to see a landing zone. */
         const val SEARCH_ZOOM = 16.0
         const val LOCATE_ZOOM = 16.0
+
+        /** Close enough to place an aircraft by eye: a landing zone fills the screen. */
+        const val DIAGRAM_ZOOM = 17.0
     }
 }

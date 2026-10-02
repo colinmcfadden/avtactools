@@ -23,6 +23,7 @@ dependencies {
     testImplementation(project(":core-testing"))
     testImplementation(testFixtures(project(":core-network")))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
     testImplementation(libs.okhttp.mockwebserver)
 }
 
