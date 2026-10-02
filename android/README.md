@@ -14,7 +14,7 @@ android/
 ├─ core-model/      LatLon, Mgrs, AircraftProfile, route plan and result — in the web's saved-JSON shape
 ├─ core-geo/        MGRS both ways, coordinate parsing, great-circle distance and course
 ├─ core-planning/   aircraft geometry, capacity, separation, the route planner
-├─ core-formats/    reads an AMPS .msnx mission file (read side)
+├─ core-formats/    reads AMPS .msnx, .LPS and .ths files; the rows of a .ths export
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
 └─ build-logic/     the convention plugin every module uses
 ```

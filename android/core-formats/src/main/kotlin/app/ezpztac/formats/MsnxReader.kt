@@ -24,7 +24,7 @@ import org.xml.sax.InputSource
 import org.xml.sax.SAXException
 
 /** A mission file that cannot be read. The message is for the user. */
-public class MsnxException(message: String, cause: Throwable? = null) : Exception(message, cause)
+public class MsnxException(message: String, cause: Throwable? = null) : FormatException(message, cause)
 
 /**
  * Reads an AMPS mission (`.msnx`) into the routes and plans the app works with.

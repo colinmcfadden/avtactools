@@ -14,7 +14,11 @@ on:
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
       - "frontend/src/feature/msnxImport/routeCalc*"
+      - "frontend/src/feature/localPoints/**"
+      - "frontend/src/feature/threats/**"
       - "backend/requirements.txt"
+      - "backend/ths_export.py"
+      - "backend/threat_template.ths"
       - ".github/workflows/contracts.yaml"
   pull_request:
     paths:
@@ -23,7 +27,11 @@ on:
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
       - "frontend/src/feature/msnxImport/routeCalc*"
+      - "frontend/src/feature/localPoints/**"
+      - "frontend/src/feature/threats/**"
       - "backend/requirements.txt"
+      - "backend/ths_export.py"
+      - "backend/threat_template.ths"
       - ".github/workflows/contracts.yaml"
 
 permissions:
@@ -70,3 +78,16 @@ jobs:
         run: pip install "$(grep -i '^pygeodesy==' backend/requirements.txt)"
       - name: Regenerate and compare
         run: python contracts/scripts/mgrs_fixtures.py check
+
+  sqlite:
+    name: SQLite and the .ths exporter agree with the fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Standard library only: sqlite3 is the reference, and backend/ths_export.py needs nothing else.
+      - name: Compare
+        run: python contracts/scripts/sqlite_fixtures.py check

@@ -31,6 +31,20 @@ const dumps = (document) => {
   return `${lines.join("\n")}\n`;
 };
 
+/**
+ * Pretty JSON that keeps anything short on one line (a point, a band), so a regenerated
+ * fixture diffs record by record and a 400-point file is not 4,000 lines.
+ */
+const compact = (value, indent = "", width = 200) => {
+  const flat = JSON.stringify(value);
+  if (flat === undefined || flat.length <= width || value === null || typeof value !== "object") return flat;
+  const inner = `${indent}  `;
+  if (Array.isArray(value)) {
+    return `[\n${value.map((v) => inner + compact(v, inner, width)).join(",\n")}\n${indent}]`;
+  }
+  return `{\n${Object.entries(value).map(([k, v]) => `${inner}${JSON.stringify(k)}: ${compact(v, inner, width)}`).join(",\n")}\n${indent}}`;
+};
+
 const fixturePath = (name) => path.join(FIXTURES, name);
 
 const writeFixture = (name, content) => {
@@ -39,4 +53,4 @@ const writeFixture = (name, content) => {
   fs.writeFileSync(file, content);
 };
 
-module.exports = { UPDATE, dumps, fixturePath, writeFixture, FIXTURES };
+module.exports = { UPDATE, dumps, compact, fixturePath, writeFixture, FIXTURES };

@@ -91,7 +91,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Cloud save** | LZs, routes, point sets | `feature/savedMaps/`, `msnxImport/useSavedRoutes.js` | `routes/{lz_routes,saved_routes,point_sets}.py` |
 | **Routes & AMPS** | Sketch and plan routes (speed/alt/wind/fuel/TOT); import/export `.msnx`; ForeFlight share | `feature/msnxImport/` | `routes/route_share_routes.py`, `route_share_store.py`, `/api/route-winds` |
 | **Local points** | Import AMPS `.LPS` point files | `feature/localPoints/` | — |
-| **Threats** | `.ths` import/export, terrain-masking viewshed, KMZ, QR | `feature/threats/` | `routes/threat_routes.py`, `threat_download_store.py`, `threat_template.ths` |
+| **Threats** | `.ths` import/export, terrain-masking viewshed, KMZ, QR | `feature/threats/` | `routes/threat_routes.py`, `ths_export.py`, `threat_download_store.py`, `threat_template.ths` |
 | **Weather** | METAR, NOTAMs, winds aloft | `feature/weather/` | `routes/weather_routes.py` |
 | **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
 | **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
@@ -113,6 +113,7 @@ avtactools/
 │  ├─ templates/admin/       Admin dashboard (server-rendered)
 │  ├─ terrain_provider.py    DEM catalog (TERRAIN_DATA_DIR) + Terrarium fallback; slope analysis
 │  ├─ terrain_tiles.py       Per-tile heightmaps for the Cesium terrain provider
+│  ├─ ths_export.py          Writes an AMPS .ths from the template (stdlib only, so fixtures can import it)
 │  ├─ lidar/                 Offline point-cloud pipeline — runs in its own Docker image (§12)
 │  ├─ tests/                 pytest
 │  ├─ Dockerfile, fly.toml   Production container and Fly config
@@ -666,7 +667,7 @@ toolchain); `contracts/` holds the golden fixtures. iOS is not started.
 | `core-model` | Domain types in the web's saved-JSON shape (`LatLon`, `Mgrs`, `AircraftProfile`, route plan and result, and the saved LZ `Diagram` with its normalizer and `Workspace`) | done for these. Graphics stay opaque JSON, so a field a newer web release adds survives |
 | `core-geo` | MGRS both ways, free-text coordinate parser, great-circle distance and course | done |
 | `core-planning` | Aircraft geometry, capacity, separation, profile lookup, route planner, plan defaults and migration | done |
-| `core-formats` | Reads an AMPS `.msnx` into a `Mission` (routes with plan values, aircraft) as the web's `parseMsnx` does. **Read side only**: writing and mutating a `.msnx` (`createMsnx`, `mutateMsnx`) is not ported. `.LPS` and `.ths` are not started | reader done |
+| `core-formats` | Reads an AMPS `.msnx` into a `Mission`, an `.LPS` into a `LocalPointSet` and a `.ths` into `Threat`s, as the web's `parseMsnx` / `parseLps` / `parseThs` do, with a small read-only SQLite reader of its own (`SqliteReader`). `ThsExport` gives the rows of a `.ths` export. **Not ported**: writing or mutating a `.msnx` (`createMsnx`, `mutateMsnx`), and *writing* a `.ths` file itself, which is the platform's job (copy `threat_template.ths`, insert `ThsExport`'s rows) | readers and export rows done |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
 | everything else in the plan (`app`, `core-data`, `feature-*` …) | needs the Android Gradle Plugin or is later work | **not started** |
 
@@ -698,6 +699,35 @@ never "fix" a number in a client alone. `contracts/README.md` has the commands.
   those; strict types would reject documents the web opens. Quirks kept on
   purpose: a blank-but-present `mgrs` (`"  "`) stays untrimmed; a present but
   non-array `pzMarkers` is empty and does *not* fall back to `pzMarker`.
+- **`.LPS` and `.ths` files are read by our own SQLite reader, not the platform's.** The plan
+  (`docs/NATIVE_APPS_PLAN.md`) says platform SQLite; the pure reader won because it is the same
+  code path as the web's (so the same files read the same), it runs in JVM tests, it copies
+  nothing to a temp file, and it never touches a virtual table (the `.ths` template has one,
+  `@INFO_SCHEMA_COLUMNS`). The price is that it is ours to keep correct, so it is held to **SQLite
+  itself**: `contracts/fixtures/sqlite/tables.json` is every table as Python's `sqlite3` reads it, and
+  both the web reader and `SqliteReader` must return it. That caught a real bug in the web's reader
+  that its one real sample file never hit: any negative integer stored in 1–8 bytes was read 256 (or
+  65536, …) too small (`readBigIntBE` subtracted the sign twice). A whole-number REAL such as a
+  longitude of -86.0 or an elevation of -12 ft is stored as an integer, so it was wrong. Fixed in the
+  web in the same change. A reader needs a reference that is not itself.
+- `SqliteReader` also takes a file it does not trust: pages and cells are bounds-checked, a page
+  can be reached once (a b-tree that loops is refused, not followed), nesting is limited, and a
+  damaged file ends in `SqliteException`. `SqliteHostileFileTest` cuts and corrupts the real
+  fixtures and builds hostile ones (`MiniSqlite`, a test-only writer whose output SQLite itself
+  verified). A refusal test asserts the *reason*: a fault caught only by a later check would
+  hide a missing earlier one (mutation runs showed seven such survivors).
+- Where the Kotlin readers deliberately differ from the web (each has a test, none is in a web
+  fixture): a threat with a NULL or non-numeric position is skipped (the web puts it at 0°, 0°);
+  a radar value that is not a number takes the radar type's default (the web carries NaN); a point
+  with NaN coordinates is skipped; only an `INTEGER PRIMARY KEY` column is filled from the row id
+  (the web fills any NULL first column); column names are matched without regard to case;
+  UTF-16 databases read (the web assumes UTF-8). These are web bugs or gaps, listed for the owner.
+- The `.ths` exporter writes the colours of a radar's bands with a quirk worth knowing: with fewer
+  than three bands the missing colours are `[1, 3, 5]` appended *after* the ones given, so two bands
+  leave the third colour as 1, not 5 (`backend/ths_export.py`). The web always sends three bands, so
+  it never shows. `ThsExport` reproduces it, because the fixture is what the backend writes today.
+- Text is cut to the AMPS column widths by *characters* (code points), not UTF-16 units, so an emoji
+  at the boundary is never split.
 - A `.msnx` comes from whoever sent it, so `MsnxReader` treats it as hostile: it
   reads only the parts it needs, bounds each one's inflated size (an archive that
   expands past the limit is refused, not held in memory), and rejects any

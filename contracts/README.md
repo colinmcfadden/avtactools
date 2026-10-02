@@ -14,7 +14,10 @@ contracts/
 │  ├─ coords/       parse.json                      reference: the web app
 │  ├─ planning/     aircraft.json, route.json       reference: the web app
 │  ├─ workspace/    diagram.json                    reference: the web app
-│  └─ msnx/         template.msnx, parse.json, ...  reference: the web app
+│  ├─ msnx/         template.msnx, parse.json, ...  reference: the web app
+│  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
+│  ├─ localpoints/  parse.json                      reference: the web app
+│  └─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
 └─ scripts/         generators for the fixtures PyGeodesy owns
 ```
 
@@ -38,6 +41,10 @@ reference is.
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `msnx/*` | `frontend/src/contracts/msnxFixtures.test.js` | — | `core-formats` |
+| `sqlite/tables.json` | `frontend/src/contracts/sqliteFixtures.test.js` | `backend/tests/test_contract_fixtures.py` | `core-formats` |
+| `localpoints/parse.json` | `frontend/src/contracts/sqliteFixtures.test.js` | — | `core-formats` |
+| `threats/parse.json` | `frontend/src/contracts/sqliteFixtures.test.js` | — | `core-formats` |
+| `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
 
 iOS joins this table when it starts; it reads the same files.
 
@@ -51,6 +58,29 @@ are fixtures too: the web suite fails if a rebuild differs from what is committe
 the Kotlin reader is always tested on the files the web would produce today.
 Everything inside is invented; no file from a real mission. A real, unclassified AMPS
 export from the owner would be added as a further case, and is the better test.
+
+### The `sqlite/` fixtures
+
+`.LPS` and `.ths` files are SQLite databases, and the web and the apps each read them with a small
+reader of their own, so the reader needs a reference that is not itself: **SQLite**. `tables.json` is
+every table of every file as Python's `sqlite3` reads it, and both readers are held to it, including
+a table three b-tree levels deep, a value spread over overflow pages, and one value of every
+storage class and integer width, positive and negative. `parse.json` files are then what the web's
+parsers make of those files.
+
+- `threats.ths` is written by the backend's own exporter (`backend/ths_export.py`), so the reader is
+  tried on real exporter output and the native exporters are held to its rows (`threats/export.json`
+  has the inputs; the rows are `tables.json["threats.ths"]`).
+- The `.LPS` files are synthetic (a `Points` table with SpatiaLite POINT blobs). A real, unclassified
+  `.LPS` and `.ths` from AMPS would be the better test and are added here when the owner has them.
+- `check` compares *content*, never bytes: the bytes of a SQLite file carry the version of SQLite that
+  wrote them, so they differ between machines while meaning the same.
+- `utf16le.db` and `utf16be.db` are for the native readers only; the web's reader assumes UTF-8.
+
+```powershell
+python contracts/scripts/sqlite_fixtures.py write    # regenerate the databases and tables.json
+python contracts/scripts/sqlite_fixtures.py check    # needs nothing but Python
+```
 
 ## Changing a fixture
 
