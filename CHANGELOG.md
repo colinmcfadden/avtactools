@@ -1,3 +1,10 @@
+## [1.7.4](https://github.com/colinmcfadden/avtactools/compare/v1.7.3...v1.7.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* keep the build service Dockerfile intact under Coolify ([3f10a82](https://github.com/colinmcfadden/avtactools/commit/3f10a82ace935a28988dcc47e5b3d055f53bd524))
+
 ## [1.7.3](https://github.com/colinmcfadden/avtactools/compare/v1.7.2...v1.7.3) (2026-10-02)
 
 
