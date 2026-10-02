@@ -16,6 +16,7 @@ android/
 ├─ core-planning/   aircraft geometry, capacity, separation, the route planner
 ├─ core-formats/    reads AMPS .msnx, .LPS and .ths files; the rows of a .ths export
 ├─ core-network/    the API client: transport, sign-in, token refresh, typed routes, request priority
+├─ core-sync/       the sync engine: outbox, pull by cursor, conflicts kept side by side
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
 └─ build-logic/     the convention plugin every module uses
 ```

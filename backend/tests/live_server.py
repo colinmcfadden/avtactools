@@ -20,6 +20,7 @@ Test-only routes, under ``/__test__`` (they exist only here):
     POST /__test__/account      {email, password, approved?} makes a verified account
     POST /__test__/age-refresh  {seconds, user_id?} moves every spent refresh token that far into the
                                 past, standing in for time passing (the 30 s grace period)
+    POST /__test__/clear-rate-limits  forgets the sign-in rate limiter's counts (every client here shares one address)
     POST /__test__/stop         ends the process
 """
 
@@ -41,6 +42,7 @@ from werkzeug.security import generate_password_hash  # noqa: E402
 from werkzeug.serving import make_server  # noqa: E402
 
 from affiliation_gate import enforce_affiliation_gate  # noqa: E402
+from auth_rate_limit import clear_rate_limits  # noqa: E402
 from models import AccountToken, LocalCredential, User, db  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.auth import auth_bp  # noqa: E402
@@ -93,6 +95,11 @@ def create_app():
             row.used_at = row.used_at - timedelta(seconds=seconds)
         db.session.commit()
         return jsonify({"moved": len(rows)})
+
+    @app.post("/__test__/clear-rate-limits")
+    def clear_limits():
+        clear_rate_limits()
+        return jsonify({"status": "cleared"})
 
     @app.post("/__test__/stop")
     def stop():

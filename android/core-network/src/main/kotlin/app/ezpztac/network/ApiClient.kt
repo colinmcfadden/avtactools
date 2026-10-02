@@ -32,6 +32,9 @@ import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLHandshakeException
 
+/** Tolerant on the way in: a field a newer server adds must not break an installed app. Nothing absent is written as null. */
+public val ApiJson: Json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = false }
+
 /** How the client reads the time, so tests can drive it. */
 public fun interface TimeSource {
     public fun nowMillis(): Long
@@ -347,8 +350,7 @@ public class ApiClient(
             return NetworkException(e.message ?: "The server could not be reached.", e, requestMayHaveBeenSent = !notSent)
         }
 
-        /** Tolerant on the way in: a field a newer server adds must not break an installed app. */
-        val JSON: Json = Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = false }
+        val JSON: Json get() = ApiJson
 
         private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
         private val EMPTY_BODY = ByteArray(0).toRequestBody(null)

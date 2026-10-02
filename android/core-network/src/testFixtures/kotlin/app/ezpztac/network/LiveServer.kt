@@ -15,8 +15,8 @@ import kotlin.concurrent.thread
  * routes and token rotation behind a real socket. Needs a Python with the server's packages: set
  * `EZPZ_LIVE_PYTHON` to it. Without that, [startOrNull] returns null and the tests that use it are skipped.
  */
-internal class LiveServer private constructor(private val process: Process, val port: Int) : AutoCloseable {
-    val baseUrl: String get() = "http://127.0.0.1:$port"
+public class LiveServer private constructor(private val process: Process, public val port: Int) : AutoCloseable {
+    public val baseUrl: String get() = "http://127.0.0.1:$port"
 
     private val http = OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
     private val json = "application/json".toMediaType()
@@ -30,12 +30,17 @@ internal class LiveServer private constructor(private val process: Process, val 
     }
 
     /** A verified account. [approved] false leaves it outside the `.mil` / approval gate. */
-    fun makeAccount(email: String, password: String = PASSWORD, approved: Boolean = true) {
+    public fun makeAccount(email: String, password: String = PASSWORD, approved: Boolean = true) {
         post("/__test__/account", """{"email":"$email","password":"$password","approved":$approved}""")
     }
 
+    /** Forgets the sign-in rate limiter's counts: every client in a test comes from one address, and signs in often. */
+    public fun clearRateLimits() {
+        post("/__test__/clear-rate-limits", "{}")
+    }
+
     /** Moves every spent refresh token this many seconds into the past: time passing, for the 30 s grace period. */
-    fun ageSpentRefreshTokens(seconds: Int) {
+    public fun ageSpentRefreshTokens(seconds: Int) {
         post("/__test__/age-refresh", """{"seconds":$seconds}""")
     }
 
@@ -45,13 +50,13 @@ internal class LiveServer private constructor(private val process: Process, val 
         http.dispatcher.executorService.shutdown()
     }
 
-    companion object {
-        const val PASSWORD = "a secure flight password"
+    public companion object {
+        public const val PASSWORD = "a secure flight password"
 
         /** True when the live tests can run here. */
-        val available: Boolean get() = !System.getenv("EZPZ_LIVE_PYTHON").isNullOrBlank()
+        public val available: Boolean get() = !System.getenv("EZPZ_LIVE_PYTHON").isNullOrBlank()
 
-        fun startOrNull(accessTokenSeconds: Int = 2): LiveServer? {
+        public fun startOrNull(accessTokenSeconds: Int = 2): LiveServer? {
             val python = System.getenv("EZPZ_LIVE_PYTHON")?.takeIf { it.isNotBlank() } ?: return null
             val contracts = File(System.getProperty("ezpz.contracts") ?: error("ezpz.contracts is not set"))
             val backend = File(contracts.parentFile.parentFile, "backend")

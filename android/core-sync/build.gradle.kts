@@ -1,28 +1,24 @@
 plugins {
     id("ezpz.kotlin-library")
     alias(libs.plugins.kotlin.serialization)
-    `java-test-fixtures`
 }
 
-// The API client, auth session and token refresh (docs/NATIVE_APPS_PLAN.md, "App architecture").
-// OkHttp and kotlinx.serialization are on the plan's approved list; nothing here touches
-// Android, so the whole of it runs in JVM tests against a mock server.
+// The sync engine (docs/NATIVE_APPS_PLAN.md, "Sync and conflicts"): an outbox of local changes pushed in order,
+// a pull by cursor, and conflicts kept side by side. It talks to a SyncStore (Room, in the app) and to the
+// server through core-network, and has no Android code, so every rule is tested here, including against the
+// real server (backend/tests/live_server.py).
 dependencies {
     api(project(":core-model"))
-    api(libs.kotlinx.serialization.json)
+    api(project(":core-network"))
     api(libs.kotlinx.coroutines.core)
-    api(libs.okhttp)
 
     testImplementation(project(":core-testing"))
+    testImplementation(testFixtures(project(":core-network")))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
-
-    // The real-server helper, shared with the modules whose tests also want it (core-sync).
-    testFixturesApi(libs.okhttp)
 }
 
-// The live-server tests run the real Flask routes (backend/tests/live_server.py), so editing the server has to
-// re-run them, and so does pointing them at a different Python (or at none, which skips them).
+// The live-server tests run the real Flask routes, so editing the server re-runs them.
 tasks.test {
     inputs.files(
         fileTree(rootProject.layout.projectDirectory.dir("../backend")) {

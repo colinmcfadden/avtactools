@@ -679,6 +679,7 @@ toolchain); `contracts/` holds the golden fixtures. iOS is not started.
 | `core-planning` | Aircraft geometry, capacity, separation, profile lookup, route planner, plan defaults and migration | done |
 | `core-formats` | Reads an AMPS `.msnx` into a `Mission`, an `.LPS` into a `LocalPointSet` and a `.ths` into `Threat`s, as the web's `parseMsnx` / `parseLps` / `parseThs` do, with a small read-only SQLite reader of its own (`SqliteReader`). `ThsExport` gives the rows of a `.ths` export. **Not ported**: writing or mutating a `.msnx` (`createMsnx`, `mutateMsnx`), and *writing* a `.ths` file itself, which is the platform's job (copy `threat_template.ths`, insert `ThsExport`'s rows) | readers and export rows done |
 | `core-network` | The API client over OkHttp: one transport (`ApiClient`) with the session behind it, typed calls for the routes in `contracts/openapi.yaml`, DTOs, the request-priority gate, and the "update required" check. See *The API client* below | client, auth and refresh done; the sign-up and `.mil` flows and the web-share routes are not yet typed |
+| `core-sync` | The sync engine: local edits into an outbox, a push in order, a pull by cursor, conflicts kept side by side. Pure logic over a `SyncStore` interface (Room implements it in the app; `InMemorySyncStore` here). LZs and custom aircraft profiles sync; routes and point sets join when their API is typed (the engine passes over their changes, and the cursor must be reset to 0 when it learns them). See *The sync engine* below | engine done; Room store not started |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
 | everything else in the plan (`app`, `core-data`, `feature-*` …) | needs the Android Gradle Plugin or is later work | **not started** |
 
@@ -793,6 +794,27 @@ client is built around not losing one:
 - Failures are typed: `NetworkException` (with `requestMayHaveBeenSent`), `SessionEndedException`,
   `AffiliationRequiredException`, `RevisionConflictException` (carries the server's copy),
   `RateLimitedException`, `ApiException`.
+
+**The sync engine** (`core-sync`; rules in the plan's "Sync and conflicts", server side in `backend/sync_support.py`):
+- **Nothing is overwritten, ever.** An edit is sent with the revision it was based on; a server that has moved on answers 409
+  with its copy, the record *becomes* the server's copy, and what was changed here is kept as a record of its own — "NAME (from
+  this device, 14:32)" — which is also uploaded, so the work is not only on one phone. The user then picks keep mine, keep theirs
+  or keep both (`resolve`). Deleted here and edited there: the edit wins (the record comes back). Edited here and deleted there:
+  the work is kept and re-created under a *new* uuid, because the server holds the old one as a deletion.
+- **A send is a snapshot until it is answered** (`Attempt`: key, base revision, content). A send whose answer was lost may have
+  been applied, and the only safe move is the *same* request under the same idempotency key, which the server answers instead of
+  refusing. Sending the record's newer content under a new key on the old revision conflicted with the device's *own* earlier
+  write (found by a test, now the `lost update answer` tests, on the fake and on the real server). So the old write is settled
+  first and the newer content goes on top as a fresh write. A `delete` keeps an unconfirmed `UPDATE` queued for the same reason,
+  and keeps a `CREATE` that may have reached the server (otherwise the record comes back at the next pull).
+- **A pull never overwrites a record that has changes of its own**; the push finds out (409) and keeps both. The page and the
+  cursor are applied in one store transaction.
+- **A failure that proves the request was never applied** (no route, a 401, a 429, the gate) is not counted as an attempt.
+- **Both the fake and the real server run the same scenarios** (`SyncScenarios`: two devices, conflicts, restore/recreate, a fresh
+  device pulling everything, for both LZs and aircraft profiles). The fake (`FakeServer`) exists for failures the real one will
+  not produce on demand; running the scenarios on the real server is what keeps the fake honest.
+- Not done: the Room store, WorkManager scheduling (`RetryPolicy.delayMillis` says how long to wait), routes and point sets,
+  the conflict screen, and the 14-day "sign in again" rule.
 
 **Building in an agent sandbox.** `dl.google.com` (Google's Maven: the Android
 Gradle Plugin, AndroidX, Compose, the SDK) is blocked by the cloud environment's
