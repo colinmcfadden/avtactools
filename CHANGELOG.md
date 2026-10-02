@@ -1,3 +1,10 @@
+## [1.7.5](https://github.com/colinmcfadden/avtactools/compare/v1.7.4...v1.7.5) (2026-10-02)
+
+
+### Bug Fixes
+
+* read WKT coordinate systems from the downloaded LiDAR ([530eae3](https://github.com/colinmcfadden/avtactools/commit/530eae3b4d831fae3e7c0b8a74a54f91b952d111))
+
 ## [1.7.4](https://github.com/colinmcfadden/avtactools/compare/v1.7.3...v1.7.4) (2026-10-02)
 
 
