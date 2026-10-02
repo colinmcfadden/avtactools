@@ -49,4 +49,4 @@ EXPOSE 8080
 # cloud files are served side by side rather than queueing behind each other
 # or behind an analysis. SAM itself is serialised by a lock. The generous
 # timeout is for CPU inference.
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "180", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "180", "wsgi:app"]

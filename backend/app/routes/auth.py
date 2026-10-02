@@ -13,9 +13,9 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from auth_rate_limit import check_rate_limits
-from security_config import resolve_client_ip
-from email_service import (
+from app.security.rate_limit import check_rate_limits
+from app.security.config import resolve_client_ip
+from app.services.mailer import (
     send_new_account_notification,
     send_password_changed_email,
     send_password_reset_email,
@@ -23,8 +23,9 @@ from email_service import (
     send_welcome_email,
     send_mil_verification_email,
 )
-from models import AccountToken, LocalCredential, LoginEvent, User, db
-from entitlements import (
+from app.extensions import db
+from app.models import AccountToken, LocalCredential, LoginEvent, User
+from app.security.entitlements import (
     account_active,
     affiliation_ok,
     is_admin,

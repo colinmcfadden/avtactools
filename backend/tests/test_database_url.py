@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from database_url import database_uri, is_postgres  # noqa: E402
+from app.database.url import database_uri, is_postgres  # noqa: E402
 
 SQLITE = "sqlite:////code/ezpz.db"
 

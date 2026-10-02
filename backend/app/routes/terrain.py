@@ -9,8 +9,8 @@ import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
-import terrain_tiles
-from terrain_provider import build_slope_analysis
+from app.services.terrain import tiles as terrain_tiles
+from app.services.terrain.provider import build_slope_analysis
 
 terrain_bp = Blueprint('terrain', __name__)
 

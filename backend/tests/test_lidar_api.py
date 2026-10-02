@@ -21,7 +21,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from lidar import aoi, catalog  # noqa: E402
-from routes.lidar_routes import lidar_bp  # noqa: E402
+from app.routes.lidar import lidar_bp  # noqa: E402
 
 TARGET = {"lat": 34.591552, "lon": -84.128225}
 # Whatever the app builds by default; the tests follow it rather than pin it.
@@ -45,8 +45,8 @@ class LidarApiHarness(unittest.TestCase):
         self.client = self.app.test_client()
 
         for item in (patch("lidar.catalog.tiles_dir", return_value=self.root),
-                     patch("models.db", MagicMock()),
-                     patch("entitlements.has_feature", return_value=True)):
+                     patch("app.extensions.db", MagicMock()),
+                     patch("app.security.entitlements.has_feature", return_value=True)):
             item.start()
             self.addCleanup(item.stop)
 
@@ -281,7 +281,7 @@ class BuildApiTests(LidarApiHarness):
         self.assertFalse(body["canBuild"])
 
     def test_a_build_is_forwarded_and_accepted(self):
-        with patch("lidar_builder.submit", return_value=self.JOB) as submit:
+        with patch("app.services.lidar_client.submit", return_value=self.JOB) as submit:
             response = self.build()
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.get_json()["state"], "queued")
@@ -291,25 +291,25 @@ class BuildApiTests(LidarApiHarness):
     # --- who is waiting -----------------------------------------------------
 
     def test_the_watcher_and_keep_are_forwarded(self):
-        with patch("lidar_builder.submit", return_value=self.JOB) as submit:
+        with patch("app.services.lidar_client.submit", return_value=self.JOB) as submit:
             self.build({**TARGET, "watcher": "tab-12345678", "keep": True})
         submit.assert_called_once_with(TARGET["lat"], TARGET["lon"], RADIUS,
                                        keep=True, watcher="tab-12345678")
 
     def test_a_malformed_watcher_is_not_forwarded(self):
-        with patch("lidar_builder.submit", return_value=self.JOB) as submit:
+        with patch("app.services.lidar_client.submit", return_value=self.JOB) as submit:
             self.build({**TARGET, "watcher": "../etc/passwd"})
         self.assertIsNone(submit.call_args.kwargs["watcher"])
 
     def test_polling_counts_as_waiting(self):
-        with patch("lidar_builder.status", return_value=self.JOB) as status:
+        with patch("app.services.lidar_client.status", return_value=self.JOB) as status:
             self.client.get(f"/api/lidar/build/{self.JOB['key']}?watcher=tab-12345678&keep=1",
                             headers=self.auth)
         status.assert_called_once_with(self.JOB["key"], watcher="tab-12345678", keep=True)
 
     def test_leaving_a_build_is_forwarded(self):
         cancelled = {**self.JOB, "state": "cancelled"}
-        with patch("lidar_builder.release", return_value=cancelled) as release:
+        with patch("app.services.lidar_client.release", return_value=cancelled) as release:
             response = self.client.delete(
                 f"/api/lidar/build/{self.JOB['key']}?watcher=tab-12345678", headers=self.auth)
         self.assertEqual(response.status_code, 200)
@@ -320,7 +320,7 @@ class BuildApiTests(LidarApiHarness):
         self.assertEqual(self.client.delete("/api/lidar/build/" + "0" * 16).status_code, 401)
 
     def test_leaving_a_build_the_service_never_had_is_harmless(self):
-        with patch("lidar_builder.release", return_value=None):
+        with patch("app.services.lidar_client.release", return_value=None):
             response = self.client.delete("/api/lidar/build/" + "0" * 16, headers=self.auth)
         self.assertEqual(response.status_code, 204)
 
@@ -337,7 +337,7 @@ class BuildApiTests(LidarApiHarness):
         key = catalog.key_for(**TARGET, radius_m=RADIUS)
         catalog.write_manifest(self.make_tileset(key), TARGET["lat"], TARGET["lon"],
                                radius_m=RADIUS)
-        with patch("lidar_builder.submit") as submit:
+        with patch("app.services.lidar_client.submit") as submit:
             body = self.build().get_json()
         submit.assert_not_called()
         self.assertEqual(body["state"], "done")
@@ -350,15 +350,15 @@ class BuildApiTests(LidarApiHarness):
         self.assertEqual(response.get_json()["code"], "builder_not_configured")
 
     def test_an_unreachable_service_is_503(self):
-        import lidar_builder
-        with patch("lidar_builder.submit",
-                   side_effect=lidar_builder.BuilderUnavailable("down")):
+        from app.services import lidar_client
+        with patch("app.services.lidar_client.submit",
+                   side_effect=lidar_client.BuilderUnavailable("down")):
             response = self.build()
         self.assertEqual(response.status_code, 503)
 
     def test_a_full_queue_is_429(self):
-        import lidar_builder
-        with patch("lidar_builder.submit", side_effect=lidar_builder.BuilderBusy("full")):
+        from app.services import lidar_client
+        with patch("app.services.lidar_client.submit", side_effect=lidar_client.BuilderBusy("full")):
             self.assertEqual(self.build().status_code, 429)
 
     def test_build_areas_are_capped_tighter_than_lookups(self):
@@ -369,7 +369,7 @@ class BuildApiTests(LidarApiHarness):
     def test_progress_is_relayed_by_key(self):
         running = {**self.JOB, "state": "running", "stage": "processing points",
                    "elapsed_s": 12}
-        with patch("lidar_builder.status", return_value=running):
+        with patch("app.services.lidar_client.status", return_value=running):
             body = self.client.get(f"/api/lidar/build/{self.JOB['key']}",
                                    headers=self.auth).get_json()
         self.assertEqual(body["stage"], "processing points")
@@ -378,19 +378,19 @@ class BuildApiTests(LidarApiHarness):
     def test_a_finished_build_reports_where_the_tileset_is(self):
         key = self.JOB["key"]
         self.make_tileset(key)
-        with patch("lidar_builder.status") as status:
+        with patch("app.services.lidar_client.status") as status:
             body = self.client.get(f"/api/lidar/build/{key}", headers=self.auth).get_json()
         status.assert_not_called()          # the disk is the source of truth
         self.assertEqual(body["state"], "done")
         self.assertEqual(body["url"], f"/lidar/tilesets/{key}/tileset.json")
 
     def test_progress_for_an_unknown_build_is_404(self):
-        with patch("lidar_builder.status", return_value=None):
+        with patch("app.services.lidar_client.status", return_value=None):
             response = self.client.get("/api/lidar/build/" + "0" * 16, headers=self.auth)
         self.assertEqual(response.status_code, 404)
 
     def test_a_malformed_key_never_reaches_the_service(self):
-        with patch("lidar_builder.status") as status:
+        with patch("app.services.lidar_client.status") as status:
             response = self.client.get("/api/lidar/build/not-a-key", headers=self.auth)
         self.assertEqual(response.status_code, 400)
         status.assert_not_called()

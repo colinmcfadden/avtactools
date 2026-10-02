@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
-from models import db, SavedLZ
-from entitlements import require_feature
+from app.extensions import db
+from app.models import SavedLZ
+from app.security.entitlements import require_feature
 
 lz_bp = Blueprint('lz', __name__)
 

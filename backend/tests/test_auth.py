@@ -14,10 +14,11 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from auth_rate_limit import clear_rate_limits  # noqa: E402
-from models import AccountToken, User, db  # noqa: E402
-from routes.auth import auth_bp  # noqa: E402
-from security_config import resolve_jwt_secret, validate_email_configuration  # noqa: E402
+from app.security.rate_limit import clear_rate_limits  # noqa: E402
+from app.extensions import db
+from app.models import AccountToken, User  # noqa: E402
+from app.routes.auth import auth_bp  # noqa: E402
+from app.security.config import resolve_jwt_secret, validate_email_configuration  # noqa: E402
 
 
 class SecurityConfigTests(unittest.TestCase):
@@ -86,16 +87,16 @@ class AuthFlowTests(unittest.TestCase):
         self.reset_tokens = []
         self.patchers = [
             patch(
-                'routes.auth.send_verification_email',
+                'app.routes.auth.send_verification_email',
                 side_effect=lambda _user, token: self.verification_tokens.append(token) or True,
             ),
             patch(
-                'routes.auth.send_password_reset_email',
+                'app.routes.auth.send_password_reset_email',
                 side_effect=lambda _user, token: self.reset_tokens.append(token) or True,
             ),
-            patch('routes.auth.send_welcome_email', return_value=True),
-            patch('routes.auth.send_password_changed_email', return_value=True),
-            patch('routes.auth.send_new_account_notification', return_value=True),
+            patch('app.routes.auth.send_welcome_email', return_value=True),
+            patch('app.routes.auth.send_password_changed_email', return_value=True),
+            patch('app.routes.auth.send_new_account_notification', return_value=True),
         ]
         for patcher in self.patchers:
             patcher.start()
@@ -237,10 +238,10 @@ class AuthFlowTests(unittest.TestCase):
             'name': 'Actual Owner',
         }
         with (
-            patch('routes.auth.id_token.verify_oauth2_token', return_value=claims),
-            patch('routes.auth.send_welcome_email', return_value=True) as welcome,
+            patch('app.routes.auth.id_token.verify_oauth2_token', return_value=claims),
+            patch('app.routes.auth.send_welcome_email', return_value=True) as welcome,
             patch(
-                'routes.auth.send_new_account_notification', return_value=True
+                'app.routes.auth.send_new_account_notification', return_value=True
             ) as notify_admin,
         ):
             google = self.client.post(
@@ -272,10 +273,10 @@ class AuthFlowTests(unittest.TestCase):
             'name': 'New Google User',
         }
         with (
-            patch('routes.auth.id_token.verify_oauth2_token', return_value=claims),
-            patch('routes.auth.send_welcome_email', return_value=True) as welcome,
+            patch('app.routes.auth.id_token.verify_oauth2_token', return_value=claims),
+            patch('app.routes.auth.send_welcome_email', return_value=True) as welcome,
             patch(
-                'routes.auth.send_new_account_notification', return_value=True
+                'app.routes.auth.send_new_account_notification', return_value=True
             ) as notify_admin,
         ):
             response = self.client.post(
@@ -354,7 +355,7 @@ class AuthFlowTests(unittest.TestCase):
         self.assertIn('Retry-After', blocked.headers)
 
     def test_unknown_and_google_only_logins_run_dummy_password_check(self):
-        with patch('routes.auth.check_password_hash', return_value=False) as check:
+        with patch('app.routes.auth.check_password_hash', return_value=False) as check:
             unknown = self.client.post('/api/auth/login', json={
                 'email': 'unknown@example.com',
                 'password': 'a secure flight password',
@@ -369,7 +370,7 @@ class AuthFlowTests(unittest.TestCase):
                 name='Google Only',
             ))
             db.session.commit()
-        with patch('routes.auth.check_password_hash', return_value=False) as check:
+        with patch('app.routes.auth.check_password_hash', return_value=False) as check:
             google_only = self.client.post('/api/auth/login', json={
                 'email': 'google-only@example.com',
                 'password': 'a secure flight password',

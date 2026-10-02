@@ -99,7 +99,8 @@ def require_feature(key):
         def wrapped(*args, **kwargs):
             from flask import jsonify
             from flask_jwt_extended import get_jwt_identity
-            from models import db, User
+            from app.extensions import db
+            from app.models import User
             try:
                 user = db.session.get(User, int(get_jwt_identity()))
             except (TypeError, ValueError):

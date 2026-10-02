@@ -14,7 +14,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from security_config import (  # noqa: E402
+from app.security.config import (  # noqa: E402
     resolve_client_ip,
     session_cookie_secure,
     trusted_proxy_header,

@@ -22,22 +22,23 @@ from werkzeug.security import check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile
-from entitlements import (
+from app.extensions import db
+from app.models import User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile
+from app.security.entitlements import (
     FEATURES, FEATURE_KEYS, resolve_features,
     is_admin, is_super_admin, account_active, affiliation_ok,
 )
-from amps_package import inspect_amps_package
-from aircraft_seed import ICON_CHOICES
-from routes.aircraft_routes import (
+from app.services.aircraft.amps_package import inspect_amps_package
+from app.services.aircraft.seed import ICON_CHOICES
+from app.routes.aircraft import (
     AIRSPEED_TYPES, ALTITUDE_REFS,
     _NUMERIC_FIELDS as AIRCRAFT_NUMERIC_FIELDS,
     _slugify as _aircraft_slug,
 )
-from auth_rate_limit import check_rate_limits
-from security_config import resolve_client_ip
-from email_service import send_verification_email, send_password_reset_email
-from routes.auth import _create_account_token, VERIFY_PURPOSE, RESET_PURPOSE
+from app.security.rate_limit import check_rate_limits
+from app.security.config import resolve_client_ip
+from app.services.mailer import send_verification_email, send_password_reset_email
+from app.routes.auth import _create_account_token, VERIFY_PURPOSE, RESET_PURPOSE
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 

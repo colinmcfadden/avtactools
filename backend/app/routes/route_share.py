@@ -17,8 +17,8 @@ import html
 from flask import Blueprint, request, jsonify, send_file, url_for, current_app, Response
 from flask_jwt_extended import jwt_required
 
-from route_share_store import RouteShareStore
-from entitlements import require_feature
+from app.stores.route_shares import RouteShareStore
+from app.security.entitlements import require_feature
 
 route_share_bp = Blueprint('route_share', __name__)
 

@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
-from models import db, SavedPointSet
-from entitlements import require_feature
+from app.extensions import db
+from app.models import SavedPointSet
+from app.security.entitlements import require_feature
 
 point_sets_bp = Blueprint('point_sets', __name__)
 

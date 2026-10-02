@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import lidar_builder  # noqa: E402
+from app.services import lidar_client  # noqa: E402
 from lidar.build import BuildRequest  # noqa: E402
 from lidar.worker import Builder, make_handler  # noqa: E402
 
@@ -69,7 +69,7 @@ class OlderServiceTests(unittest.TestCase):
         self.addCleanup(env.stop)
 
     def test_progress_is_still_found_by_a_service_that_predates_watchers(self):
-        job = lidar_builder.status(JOB["key"], watcher=WATCHER, keep=True)
+        job = lidar_client.status(JOB["key"], watcher=WATCHER, keep=True)
         self.assertEqual(job, JOB)
 
 
@@ -90,21 +90,21 @@ class CurrentServiceTests(unittest.TestCase):
         self.addCleanup(env.stop)
 
     def test_leaving_drops_a_build_nobody_else_waits_for(self):
-        job = lidar_builder.submit(*TARGET, watcher=WATCHER)
-        self.assertEqual(lidar_builder.status(job["key"], watcher=WATCHER)["state"], "queued")
-        self.assertEqual(lidar_builder.release(job["key"], watcher=WATCHER)["state"],
+        job = lidar_client.submit(*TARGET, watcher=WATCHER)
+        self.assertEqual(lidar_client.status(job["key"], watcher=WATCHER)["state"], "queued")
+        self.assertEqual(lidar_client.release(job["key"], watcher=WATCHER)["state"],
                          "cancelled")
 
     def test_keeping_asked_for_while_polling_survives_leaving(self):
         """Saving the LZ while its point cloud builds."""
-        job = lidar_builder.submit(*TARGET, watcher=WATCHER)
-        lidar_builder.status(job["key"], watcher=WATCHER, keep=True)
-        self.assertEqual(lidar_builder.release(job["key"], watcher=WATCHER)["state"],
+        job = lidar_client.submit(*TARGET, watcher=WATCHER)
+        lidar_client.status(job["key"], watcher=WATCHER, keep=True)
+        self.assertEqual(lidar_client.release(job["key"], watcher=WATCHER)["state"],
                          "queued")
 
     def test_an_unknown_build_is_none(self):
-        self.assertIsNone(lidar_builder.status("0" * 16, watcher=WATCHER))
-        self.assertIsNone(lidar_builder.release("0" * 16, watcher=WATCHER))
+        self.assertIsNone(lidar_client.status("0" * 16, watcher=WATCHER))
+        self.assertIsNone(lidar_client.release("0" * 16, watcher=WATCHER))
 
 
 if __name__ == "__main__":

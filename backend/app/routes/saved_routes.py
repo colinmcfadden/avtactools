@@ -4,8 +4,9 @@ import io
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
-from models import db, SavedRoute
-from entitlements import require_feature
+from app.extensions import db
+from app.models import SavedRoute
+from app.security.entitlements import require_feature
 
 saved_routes_bp = Blueprint('saved_routes', __name__)
 

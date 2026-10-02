@@ -9,7 +9,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from terrain_provider import LocalRasterCatalog, _directional_summary, _horn_gradients
+from app.services.terrain.provider import LocalRasterCatalog, _directional_summary, _horn_gradients
 
 
 class HornSlopeTests(unittest.TestCase):

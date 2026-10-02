@@ -8,39 +8,40 @@ import os
 load_dotenv()
 
 try:
-    from version import __version__
+    from app.version import __version__
 except ImportError:
     __version__ = "0.0.0-dev"
 
-from database_url import database_uri, is_postgres
-from models import AircraftProfile, User, db
-from entitlements import account_active, affiliation_ok
-from aircraft_seed import seed_aircraft_profiles
-from schema_sync import sync_table_columns
-from security_config import (
+from app.database.url import database_uri, is_postgres
+from app.extensions import db
+from app.models import AircraftProfile, User
+from app.security.entitlements import account_active, affiliation_ok
+from app.services.aircraft.seed import seed_aircraft_profiles
+from app.database.schema_sync import sync_table_columns
+from app.security.config import (
     resolve_jwt_secret,
     session_cookie_secure,
     validate_email_configuration,
 )
 
 # Import your Blueprints
-import lidar_builder
-import terrain_tiles
-from routes.terrain_routes import terrain_bp
-from routes.lidar_routes import lidar_bp
-from routes.location_routes import location_bp
-from routes.weather_routes import weather_bp
-from routes.export_routes import export_bp
-from routes.auth import auth_bp
-from routes.lz_routes import lz_bp
-from routes.saved_routes import saved_routes_bp
-from routes.point_sets import point_sets_bp
-from routes.threat_routes import threat_bp
-from routes.route_share_routes import route_share_bp
-from routes.aircraft_routes import aircraft_bp
-from routes.admin_routes import admin_bp
+from app.services import lidar_client
+from app.services.terrain import tiles as terrain_tiles
+from app.routes.terrain import terrain_bp
+from app.routes.lidar import lidar_bp
+from app.routes.location import location_bp
+from app.routes.weather import weather_bp
+from app.routes.export import export_bp
+from app.routes.auth import auth_bp
+from app.routes.lz import lz_bp
+from app.routes.saved_routes import saved_routes_bp
+from app.routes.point_sets import point_sets_bp
+from app.routes.threats import threat_bp
+from app.routes.route_share import route_share_bp
+from app.routes.aircraft import aircraft_bp
+from app.routes.admin import admin_bp
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="app/templates")
 cors_origins = [
     origin.strip()
     for origin in os.environ.get(
@@ -180,7 +181,7 @@ if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
     # Say at startup what the 3D view will lack, rather than leave it to be
     # found later as a "can't build" panel, or as terrain sitting 30 m off the
     # point cloud. Both have happened after a restart lost its settings.
-    if not lidar_builder.configured():
+    if not lidar_client.configured():
         app.logger.warning("3D: point-cloud builds are off (LIDAR_BUILDER_URL is not set)")
     if os.environ.get("TERRAIN_DATA_DIR") and not terrain_tiles.geoid_grids_available():
         app.logger.warning("3D: geoid grids unavailable, so terrain will sit ~30 m off the "

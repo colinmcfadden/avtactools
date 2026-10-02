@@ -18,7 +18,7 @@ from rasterio.transform import from_bounds
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import terrain_tiles  # noqa: E402
+from app.services.terrain import tiles as terrain_tiles  # noqa: E402
 
 
 class TileBoundsTests(unittest.TestCase):

@@ -17,9 +17,10 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AircraftProfile, db  # noqa: E402
-from schema_sync import sync_table_columns  # noqa: E402
+from app.services.aircraft.seed import seed_aircraft_profiles  # noqa: E402
+from app.extensions import db
+from app.models import AircraftProfile  # noqa: E402
+from app.database.schema_sync import sync_table_columns  # noqa: E402
 
 
 # The shape aircraft_profile had before perf_source and the template_* columns

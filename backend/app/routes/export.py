@@ -7,7 +7,8 @@ from openpyxl.drawing.image import Image as ExcelImage
 from io import BytesIO
 from flask_jwt_extended import jwt_required
 
-from export_service import generate_custom_package
+from app.paths import LZ_CARD_TEMPLATE
+from app.services.mission_package import generate_custom_package
 
 export_bp = Blueprint('export_bp', __name__)
 
@@ -31,8 +32,7 @@ def generate_excel():
     image_file = request.files['map_image']
 
     # 2. Load the Template
-    template_path = 'lz_template.xlsx'
-    wb = load_workbook(template_path)
+    wb = load_workbook(LZ_CARD_TEMPLATE)
     ws = wb.active  # Get the first sheet
 
     wpn_status = str(data.get('weapons_status', '')).strip()

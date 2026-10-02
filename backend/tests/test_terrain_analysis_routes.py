@@ -20,10 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # The route module loads the SAM model when imported, which needs 350 MB of
 # weights and a second or two. None of it is needed here.
-if "routes.terrain_routes" not in sys.modules:
+if "app.routes.terrain" not in sys.modules:
     sys.modules.setdefault("ultralytics", MagicMock())
-from routes import terrain_routes  # noqa: E402
-from routes.terrain_routes import (  # noqa: E402
+from app.routes import terrain as terrain_routes
+from app.routes.terrain import (  # noqa: E402
     _decode_terrarium,
     _sample_elevations_ft,
     fetch_satellite_tile,

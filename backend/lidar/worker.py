@@ -89,7 +89,7 @@ ANONYMOUS = "anonymous"
 _WATCHER = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 TOKEN_HEADER = "X-Builder-Token"
-# Sent by the API (see lidar_builder). The query-string forms are accepted too.
+# Sent by the API (see app/services/lidar_client.py). The query-string forms are accepted too.
 WATCHER_HEADER = "X-Build-Watcher"
 KEEP_HEADER = "X-Build-Keep"
 BUNDLED_IMAGERY = Path(__file__).with_name("mapbox_imagery.xml")

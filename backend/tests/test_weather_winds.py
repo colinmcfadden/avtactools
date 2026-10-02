@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from routes import weather_routes  # noqa: E402
-from routes.weather_routes import (  # noqa: E402
+from app.routes import weather as weather_routes
+from app.routes.weather import (  # noqa: E402
     FORECAST_THRESHOLD_SEC,
     _nearest_report,
     _num,

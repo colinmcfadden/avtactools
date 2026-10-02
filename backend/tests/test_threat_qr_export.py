@@ -13,11 +13,11 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from routes.threat_routes import (  # noqa: E402
+from app.routes.threats import (  # noqa: E402
     _threat_download_store,
     threat_bp,
 )
-from threat_download_store import ThreatDownloadStore  # noqa: E402
+from app.stores.threat_downloads import ThreatDownloadStore  # noqa: E402
 
 
 class ThreatDownloadStoreTests(unittest.TestCase):
@@ -92,7 +92,7 @@ class ThreatQrRouteTests(unittest.TestCase):
     def test_qr_url_contains_only_an_opaque_token(self):
         marker = 'SENSITIVE-THREAT-NAME'
         with patch(
-            'routes.threat_routes.build_threats_kmz',
+            'app.routes.threats.build_threats_kmz',
             return_value=b'generated-kmz',
         ):
             created = self.client.post(

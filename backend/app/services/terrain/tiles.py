@@ -41,7 +41,7 @@ from rasterio.warp import transform as warp_transform
 from rasterio.windows import Window
 from rasterio.windows import from_bounds as window_from_bounds
 
-from terrain_provider import LOCAL_CATALOG
+from app.services.terrain.provider import LOCAL_CATALOG
 
 # Cesium's default terrain tiling scheme covers the globe with two tiles at
 # level 0, each 90 degrees tall, and quarters them at every level below.

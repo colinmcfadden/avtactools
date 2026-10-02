@@ -22,14 +22,14 @@ from rasterio.transform import from_origin
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import terrain_tiles  # noqa: E402
-from terrain_provider import RasterEntry  # noqa: E402
+from app.services.terrain import tiles as terrain_tiles  # noqa: E402
+from app.services.terrain.provider import RasterEntry  # noqa: E402
 
 # The terrain blueprint loads the SAM model at import, which downloads 350 MB
 # when the weights are missing. None of it is needed here.
-if "routes.terrain_routes" not in sys.modules:
+if "app.routes.terrain" not in sys.modules:
     sys.modules.setdefault("ultralytics", MagicMock())
-from routes.terrain_routes import terrain_bp  # noqa: E402
+from app.routes.terrain import terrain_bp  # noqa: E402
 
 PIXEL_DEG = 1.0 / 1200
 

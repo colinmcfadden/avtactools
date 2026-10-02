@@ -20,8 +20,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from routes import threat_routes  # noqa: E402
-from routes.threat_routes import _amps_dtg, _xml_escape, build_ths_bytes, build_threats_kmz  # noqa: E402
+from app.routes import threats as threat_routes
+from app.routes.threats import _amps_dtg, _xml_escape, build_ths_bytes, build_threats_kmz  # noqa: E402
 
 KML = "{http://www.opengis.net/kml/2.2}"
 SIZE, CENTER = 121, 60

@@ -3,7 +3,7 @@
 Tilesets are served from disk here. Generating one needs PDAL and py3dtiles — a
 multi-gigabyte toolchain the API has no reason to carry — so builds run in a
 separate service (``lidar.worker``) that writes into the same store. The API
-only forwards requests to it and relays progress; see ``lidar_builder``. An LZ
+only forwards requests to it and relays progress; see ``lidar_client``. An LZ
 does not move, so each place is built once and then served from cache.
 
 Everything is behind JWT. The point data itself is public domain, but *which*
@@ -16,7 +16,7 @@ import re
 from flask import Blueprint, jsonify, request, send_from_directory
 from flask_jwt_extended import jwt_required
 
-import lidar_builder
+from app.services import lidar_client
 from lidar import catalog
 from lidar.aoi import DEFAULT_RADIUS_M
 
@@ -165,7 +165,7 @@ def resolve():
         "contextUrl": None,
         # Whether asking for a build will do anything. Without the service the
         # client falls back to telling an operator what to run.
-        "canBuild": lidar_builder.configured(),
+        "canBuild": lidar_client.configured(),
         # Echo the target back so the client can say how to build it. These
         # are the caller's own coordinates, already in the request body, so
         # nothing new is disclosed — and without them the client can only
@@ -197,15 +197,15 @@ def start_build():
     if covering:
         return jsonify({"state": "done", **_available_body(covering)})
 
-    if not lidar_builder.configured():
+    if not lidar_client.configured():
         return jsonify({"error": "Point clouds cannot be built on this server.",
                         "code": "builder_not_configured"}), 503
     try:
-        job = lidar_builder.submit(lat, lon, radius, keep=data.get("keep") is True,
+        job = lidar_client.submit(lat, lon, radius, keep=data.get("keep") is True,
                                    watcher=_watcher_id(data.get("watcher")))
-    except lidar_builder.BuilderBusy as error:
+    except lidar_client.BuilderBusy as error:
         return jsonify({"error": str(error), "code": "builder_busy"}), 429
-    except lidar_builder.BuilderUnavailable as error:
+    except lidar_client.BuilderUnavailable as error:
         return jsonify({"error": str(error), "code": "builder_unavailable"}), 503
     return jsonify(_job_body(job)), 202
 
@@ -218,13 +218,13 @@ def build_status(key):
         return jsonify({"error": "Malformed tileset key."}), 400
     if catalog.exists(key):
         return jsonify({"state": "done", **_available_body(key)})
-    if not lidar_builder.configured():
+    if not lidar_client.configured():
         return jsonify({"error": "Point clouds cannot be built on this server.",
                         "code": "builder_not_configured"}), 503
     try:
-        job = lidar_builder.status(key, watcher=_watcher_id(request.args.get("watcher")),
+        job = lidar_client.status(key, watcher=_watcher_id(request.args.get("watcher")),
                                    keep=request.args.get("keep") == "1")
-    except lidar_builder.BuilderUnavailable as error:
+    except lidar_client.BuilderUnavailable as error:
         return jsonify({"error": str(error), "code": "builder_unavailable"}), 503
     if job is None:
         return jsonify({"error": "No build is running for this location.",
@@ -239,11 +239,11 @@ def release_build(key):
     and it was not asked to be kept; a finished or unknown build is a no-op."""
     if not catalog.is_valid_key(key):
         return jsonify({"error": "Malformed tileset key."}), 400
-    if not lidar_builder.configured():
+    if not lidar_client.configured():
         return ("", 204)
     try:
-        job = lidar_builder.release(key, watcher=_watcher_id(request.args.get("watcher")))
-    except lidar_builder.BuilderUnavailable as error:
+        job = lidar_client.release(key, watcher=_watcher_id(request.args.get("watcher")))
+    except lidar_client.BuilderUnavailable as error:
         return jsonify({"error": str(error), "code": "builder_unavailable"}), 503
     if job is None:
         return ("", 204)

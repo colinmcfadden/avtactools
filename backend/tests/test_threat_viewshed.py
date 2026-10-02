@@ -15,7 +15,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from routes.threat_routes import (  # noqa: E402
+from app.routes.threats import (  # noqa: E402
     _circle_coords,
     _hex_to_bgr,
     _kml_color,

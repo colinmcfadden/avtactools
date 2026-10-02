@@ -27,10 +27,11 @@ import cv2
 from flask import Blueprint, current_app, request, jsonify, send_file, url_for
 from flask_jwt_extended import jwt_required, verify_jwt_in_request
 
-import terrain_tiles
-from terrain_provider import load_terrarium_radius
-from threat_download_store import ThreatDownloadStore
-from entitlements import require_feature
+from app.paths import THREAT_TEMPLATE
+from app.services.terrain import tiles as terrain_tiles
+from app.services.terrain.provider import load_terrarium_radius
+from app.stores.threat_downloads import ThreatDownloadStore
+from app.security.entitlements import require_feature
 
 threat_bp = Blueprint('threat', __name__)
 
@@ -38,7 +39,7 @@ FT_TO_M = 0.3048
 NMI_TO_M = 1852.0
 EARTH_RADIUS_M = 6371000.0
 REFRACTION_K = 0.13  # standard atmospheric refraction coefficient
-TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'threat_template.ths')
+TEMPLATE_PATH = THREAT_TEMPLATE
 THREAT_QR_TTL_SECONDS = 10 * 60
 THREAT_QR_MAX_DOWNLOADS = 3
 _threat_download_store = ThreatDownloadStore(

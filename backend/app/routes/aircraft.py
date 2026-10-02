@@ -13,8 +13,9 @@ import io
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
-from models import db, AircraftProfile
-from entitlements import require_feature
+from app.extensions import db
+from app.models import AircraftProfile
+from app.security.entitlements import require_feature
 
 aircraft_bp = Blueprint('aircraft', __name__)
 
