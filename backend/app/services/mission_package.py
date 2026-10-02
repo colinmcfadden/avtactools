@@ -7,7 +7,6 @@ import requests
 import numpy as np
 from PIL import Image
 import logging
-import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

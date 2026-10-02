@@ -1,6 +1,5 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-import pygeodesy
 from pygeodesy import mgrs
 from pygeodesy.ellipsoidalExact import LatLon
 

@@ -14,7 +14,7 @@ import io
 import re
 import html
 
-from flask import Blueprint, request, jsonify, send_file, url_for, current_app, Response
+from flask import Blueprint, request, jsonify, send_file, url_for, Response
 from flask_jwt_extended import jwt_required
 
 from app.stores.route_shares import RouteShareStore
