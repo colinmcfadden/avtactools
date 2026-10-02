@@ -102,8 +102,22 @@ public class ApiClient(
      */
     internal suspend fun updateUser(user: ApiUser) = refreshLock.withLock {
         val stored = sessions.read() ?: return@withLock           // signed out meanwhile: there is nothing to update
-        sessions.write(stored.copy(user = user))
+        sessions.write(stored.copy(user = user, verifiedAtEpochSeconds = nowSeconds()))     // the server just said so
         holder.set(AuthState.SignedIn(user))
+    }
+
+    private fun nowSeconds(): Long = time.nowMillis() / 1000
+
+    /**
+     * Whether this device has gone [OfflineGrace.DAYS] without the server confirming the account, so the person has to sign in again.
+     * Ends the session (locally: the server cannot be reached to say so) and announces it on [state]; what the person saved stays.
+     */
+    public suspend fun endSessionIfOfflineTooLong(): Boolean = refreshLock.withLock {
+        val stored = sessions.read() ?: return@withLock false
+        if (!OfflineGrace.expired(stored, nowSeconds())) return@withLock false
+        sessions.clear()
+        holder.set(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"))
+        true
     }
 
     // -- Sign-in, refresh and sign-out ------------------------------------------------
@@ -209,8 +223,9 @@ public class ApiClient(
         val session = StoredSession(
             accessToken = tokens.accessToken,
             refreshToken = refresh,
-            refreshExpiresAtEpochSeconds = tokens.refreshExpiresIn?.let { time.nowMillis() / 1000 + it },
+            refreshExpiresAtEpochSeconds = tokens.refreshExpiresIn?.let { nowSeconds() + it },
             user = tokens.user,
+            verifiedAtEpochSeconds = nowSeconds(),
         )
         sessions.write(session)                                                         // before anything relies on it
         holder.set(AuthState.SignedIn(tokens.user))

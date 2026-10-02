@@ -9,6 +9,7 @@ import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncStore
 import app.ezpztac.sync.SyncTransaction
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -23,8 +24,13 @@ public class RoomSyncStore internal constructor(private val database: EzpzDataba
     override suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T =
         database.withTransaction { RoomTransaction(dao).block() }
 
-    /** The records of a kind that are not deleted, as a list that updates itself when any of them changes. */
-    public fun observe(kind: RecordKind): Flow<List<LocalRecord>> = dao.observe(kind.name).map { rows -> rows.map { it.toModel() } }
+    /**
+     * The records of a kind that are not deleted, as a list that updates itself when any of them changes. Room re-runs the query when
+     * *any* row of the table changes (another kind's, or a queued change), so equal lists are dropped: a screen only redraws for a change
+     * it can see.
+     */
+    public fun observe(kind: RecordKind): Flow<List<LocalRecord>> =
+        dao.observe(kind.name).map { rows -> rows.map { it.toModel() } }.distinctUntilChanged()
 }
 
 private class RoomTransaction(private val dao: SyncDao) : SyncTransaction {

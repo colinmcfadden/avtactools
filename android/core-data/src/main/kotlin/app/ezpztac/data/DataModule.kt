@@ -28,5 +28,9 @@ internal object DataModule {
 
     @Provides
     @Singleton
+    fun accountScope(database: EzpzDatabase): AccountScope = RoomAccountScope(database)
+
+    @Provides
+    @Singleton
     fun repository(store: SyncStore): SyncRepository = SyncRepository(store)
 }

@@ -34,8 +34,15 @@ val robolectricOpens = listOf(
     "java.base/sun.nio.ch", "java.base/sun.security.util",
 )
 
+// Screenshot tests draw their pictures only when asked (-Pezpz.screenshots), into <module>/build/screenshots, for a person to look at.
+val drawScreenshots = providers.gradleProperty("ezpz.screenshots").isPresent
+
 tasks.withType<Test>().configureEach {
     jvmArgs(robolectricOpens.map { "--add-opens=$it=ALL-UNNAMED" })
+    if (drawScreenshots) {
+        systemProperty("roborazzi.test.record", "true")
+        outputs.upToDateWhen { false }                      // a picture is only drawn by a run that runs
+    }
     systemProperty("ezpz.contracts", contractsDir.asFile.absolutePath)
     inputs.dir(contractsDir).withPropertyName("contractFixtures")
     testLogging {

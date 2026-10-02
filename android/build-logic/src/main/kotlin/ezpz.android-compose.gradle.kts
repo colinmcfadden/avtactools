@@ -24,4 +24,7 @@ dependencies {
     "debugImplementation"(libs.findLibrary("compose-ui-test-manifest").get())
     "testImplementation"(platform(libs.findLibrary("compose-bom").get()))
     "testImplementation"(libs.findLibrary("compose-ui-test-junit4").get())
+    // Screenshots of Compose screens, drawn on the JVM by Robolectric: the only way to look at a screen without a device.
+    "testImplementation"(libs.findLibrary("roborazzi").get())
+    "testImplementation"(libs.findLibrary("roborazzi-compose").get())
 }

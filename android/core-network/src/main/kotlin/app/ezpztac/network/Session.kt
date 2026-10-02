@@ -18,7 +18,30 @@ public data class StoredSession(
     /** When the refresh token stops working (epoch seconds), from the server's `refresh_expires_in`. */
     val refreshExpiresAtEpochSeconds: Long?,
     val user: ApiUser,
+    /**
+     * When the server last vouched for this account (epoch seconds): a sign-in, a refresh, or an answer to "who is this". A device that
+     * has not heard from the server for [OfflineGrace.DAYS] has to sign in again, so an approval an admin withdrew cannot be used for ever.
+     */
+    val verifiedAtEpochSeconds: Long? = null,
 )
+
+/**
+ * How long a device may go without the server confirming the account before it must sign in again: 14 days, as the owner decided
+ * (docs/NATIVE_APPS_PLAN.md, "Risks and decisions"). It is the one place access that was withdrawn is noticed by a device that never
+ * goes online; everything it saved stays on the device, only the session ends.
+ */
+public object OfflineGrace {
+    public const val DAYS: Long = 14
+
+    /**
+     * Whether [session] is past the grace period at [nowEpochSeconds]. A session with no stamp is not: it is stamped at the next answer,
+     * and locking someone out over a missing note would be worse than waiting for it.
+     */
+    public fun expired(session: StoredSession, nowEpochSeconds: Long): Boolean {
+        val verified = session.verifiedAtEpochSeconds ?: return false
+        return nowEpochSeconds - verified > DAYS * 24 * 60 * 60
+    }
+}
 
 /** Where the session is kept. Calls are made one at a time by the client, never concurrently. */
 public interface SessionStore {

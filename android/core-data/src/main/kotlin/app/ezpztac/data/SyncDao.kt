@@ -51,4 +51,19 @@ internal interface SyncDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun setState(state: SyncStateEntity)
+
+    @Query("DELETE FROM sync_state WHERE `key` = :key")
+    suspend fun clearState(key: String)
+
+    @Query("DELETE FROM record")
+    suspend fun wipeRecords()
+
+    @Query("DELETE FROM outbox")
+    suspend fun wipeOutbox()
+
+    @Query("DELETE FROM sync_state")
+    suspend fun wipeState()
+
+    @Query("SELECT COUNT(*) FROM outbox")
+    suspend fun outboxSize(): Int
 }

@@ -681,10 +681,10 @@ design tokens. iOS is not started.
 | `core-formats` | Reads an AMPS `.msnx` into a `Mission`, an `.LPS` into a `LocalPointSet` and a `.ths` into `Threat`s, as the web's `parseMsnx` / `parseLps` / `parseThs` do, with a small read-only SQLite reader of its own (`SqliteReader`). `ThsExport` gives the rows of a `.ths` export. **Not ported**: writing or mutating a `.msnx` (`createMsnx`, `mutateMsnx`), and *writing* a `.ths` file itself, which is the platform's job (copy `threat_template.ths`, insert `ThsExport`'s rows) | readers and export rows done |
 | `core-network` | The API client over OkHttp: one transport (`ApiClient`) with the session behind it, typed calls for the routes in `contracts/openapi.yaml`, DTOs, the request-priority gate, and the "update required" check. See *The API client* below | client, auth, refresh, sign-up, verification, password reset and the `.mil` gate done; the web-share routes are not yet typed |
 | `core-sync` | The sync engine: local edits into an outbox, a push in order, a pull by cursor, conflicts kept side by side. Pure logic over a `SyncStore` interface (`RoomSyncStore` in `core-data` implements it for the app; `InMemorySyncStore` here). LZs and custom aircraft profiles sync; routes and point sets join when their API is typed (the engine passes over their changes, and the cursor must be reset to 0 when it learns them). Its `testFixtures` (the scenarios as plain functions, the fake server, a `Device`) are shared with `core-data`. See *The sync engine* below | engine done |
-| `core-data` | Android library: the Room database (`EzpzDatabase`, version 1) and `RoomSyncStore`, plus the Hilt module. One generic `record` table keyed by (kind, uuid) instead of the plan's table per domain, because the engine treats every kind alike; add a column when a screen needs one. Schemas are exported to `core-data/schemas/` and **committed** (a migration test reads them) | store done and held to the same scenarios as the in-memory one; repositories for the screens, routes and point sets not yet |
+| `core-data` | Android library: the Room database (`EzpzDatabase`, version 1), `RoomSyncStore`, `AccountScope` (whose plans are on the device) and the encrypted session store (`EncryptedSessionStore` over a `SecretBox`; `KeystoreSecretBox` is the Android Keystore one), plus the Hilt module. One generic `record` table keyed by (kind, uuid) instead of the plan's table per domain, because the engine treats every kind alike; add a column when a screen needs one. Schemas are exported to `core-data/schemas/` and **committed** (a migration test reads them) | store done and held to the same scenarios as the in-memory one; repositories for the screens, routes and point sets not yet |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
 | `core-designsystem` | Android library: the theme (dark, light and the red-shifted **night** palette), type, and `Tokens`, which is **generated** from `contracts/tokens/tokens.json` by `contracts/scripts/tokens.py` (CI checks it is current). A test holds every palette to WCAG contrast, because nothing in an agent session can look at a screen | theme and tokens; shared components (sheet, inspector, readout pill) join as screens need them |
-| `app` | The application: Hilt, Compose, the manifest and its security settings. See *The app module* below | a skeleton that starts and shows the version; no screens yet |
+| `app` | The application: Hilt, Compose, the manifest and its security settings, and the shell: `Gate`/`gateFor` (what stands between the person and the app), `AppViewModel`, WorkManager sync (`SyncScheduler`, `SyncWorker`). See *The app module* below | the shell and its wiring; no feature screens yet |
 | everything else in the plan (`core-data`, `core-symbols`, `core-packs`, `feature-*` …) | later work | **not started** |
 
 Package root is `app.ezpztac.*` (the reverse of `ezpztac.app`). The Android
@@ -864,6 +864,20 @@ client is built around not losing one:
 - **Robolectric** runs the Android modules' unit tests on the JVM, so no device or emulator is needed. JDK 17+ closes
   packages it reaches into, so the common plugin passes `--add-opens` for them; a "FileDescriptor internals" error means
   a package is missing from that list.
+- **Looking at a screen.** There is no emulator, but Roborazzi draws Compose on the JVM under Robolectric: run a screenshot test with
+  `./gradlew :<module>:testDebugUnitTest -Pezpz.screenshots` and the pictures land in `<module>/build/screenshots/*.png` — open them
+  with the Read tool. (`-Pezpz.screenshots` also forces the tests to run rather than come from the cache.) The first picture of the
+  shared components found a blue "Retry" on an amber banner and a busy button that turned grey and hid its own spinner. What cannot be
+  seen this way: OpenGL (the 3D view), MapLibre, animation, and the system's own windows (the Google account sheet).
+- **The shell's rules** (`Gate.kt`, `AppViewModel`; each has a test, and mutation runs killed every one of them): an app below the
+  server's minimum version is stopped *before* anything else, even sign-in; **maintenance is a banner, never a block**, because planning is
+  local; no config at launch (no signal) blocks nothing; a device that has not heard from the server for **14 days** (`OfflineGrace`) must
+  sign in again, and its plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
+  shown nothing of them, nothing is uploaded under their account, and they choose between clearing them (told how many changes never
+  reached the server) and signing out. The plan did not say this, and it matters: without it a second user on a shared device would see
+  and sync the first user's LZs.
+- **Not verifiable here:** `KeystoreSecretBox` (Robolectric has no AndroidKeyStore; the box around it, `AesGcmBox`, and the store are
+  tested) and WorkManager's real scheduling (the worker and the outcome mapping are tested). Both need a device run.
 - **Building in an agent sandbox.** The cloud environment's network policy must allow `dl.google.com` (AGP, AndroidX,
   Compose, the SDK) and `jitpack.io`. The Android SDK is not in the image: download the command-line tools from
   `dl.google.com/android/repository`, accept licences, install `platforms;android-37.0`, `build-tools;37.0.0`, and put

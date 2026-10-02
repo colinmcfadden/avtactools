@@ -1,0 +1,247 @@
+package app.ezpztac.android
+
+import app.ezpztac.android.sync.SyncScheduler
+import app.ezpztac.data.AccountScope
+import app.ezpztac.data.Ownership
+import app.ezpztac.network.ApiUser
+import app.ezpztac.network.AppConfig
+import app.ezpztac.network.AuthState
+import app.ezpztac.network.NetworkException
+import app.ezpztac.network.SignedOutReason
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class AppViewModelTest {
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before
+    fun before() = Dispatchers.setMain(dispatcher)
+
+    @After
+    fun after() = Dispatchers.resetMain()
+
+    private fun user(id: Int = 1, accessOk: Boolean = true) = ApiUser(
+        id = id, email = "pilot$id@example.com", name = "Pilot $id", role = "user", isAdmin = false, isActive = true, features = emptyMap(), accessOk = accessOk,
+    )
+
+    private fun config(minimum: String? = null, maintenance: Boolean = false) = AppConfig(
+        1, "1.7.6", AppConfig.MinAppVersion(android = minimum), AppConfig.Maintenance(maintenance, if (maintenance) "Back soon." else null),
+        AppConfig.Services(false, false), AppConfig.MapboxConfig("pk.x"),
+    )
+
+    private class FakeBackend(
+        var stored: AuthState = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN),
+    ) : AuthBackend {
+        override val state = MutableStateFlow<AuthState>(AuthState.Unknown)
+        var config: Result<AppConfig> = Result.failure(NetworkException("no signal", null, requestMayHaveBeenSent = false))
+        var refreshed: Result<ApiUser>? = null
+        var offlineTooLong = false
+        val calls = mutableListOf<String>()
+
+        override suspend fun restore(): AuthState { calls += "restore"; state.value = stored; return stored }
+        override suspend fun endSessionIfOfflineTooLong(): Boolean {
+            calls += "grace"
+            if (!offlineTooLong) return false
+            state.value = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long")
+            return true
+        }
+        override suspend fun refreshUser(): ApiUser {
+            calls += "refreshUser"
+            val result = refreshed ?: Result.failure(NetworkException("no signal", null, requestMayHaveBeenSent = false))
+            val user = result.getOrThrow()
+            state.value = AuthState.SignedIn(user)
+            return user
+        }
+        override suspend fun config(): AppConfig { calls += "config"; return config.getOrThrow() }
+        override suspend fun logout(): Boolean { calls += "logout"; state.value = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN); return true }
+    }
+
+    private class FakeAccounts(var owner: Int? = null, var unsynced: Int = 0) : AccountScope {
+        val log = mutableListOf<String>()
+        override suspend fun ownership(userId: Int): Ownership = when (owner) {
+            null -> Ownership.Unclaimed
+            userId -> Ownership.Yours
+            else -> Ownership.SomeoneElses(unsynced)
+        }
+        override suspend fun claim(userId: Int) { check(owner == null || owner == userId); owner = userId; log += "claim $userId" }
+        override suspend fun wipe() { owner = null; unsynced = 0; log += "wipe" }
+    }
+
+    private class FakeScheduler : SyncScheduler {
+        var requested = 0
+        var periodic = 0
+        var cancelled = 0
+        override fun requestSync() { requested++ }
+        override fun schedulePeriodic() { periodic++ }
+        override fun cancelAll() { cancelled++ }
+    }
+
+    private class Rig(val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel)
+
+    private fun TestScope.rig(
+        stored: AuthState = AuthState.SignedIn(user()),
+        owner: Int? = null,
+        unsynced: Int = 0,
+        configure: FakeBackend.() -> Unit = {},
+        version: String = "1.7.6",
+    ): Rig {
+        val backend = FakeBackend(stored).apply(configure)
+        val accounts = FakeAccounts(owner, unsynced)
+        val scheduler = FakeScheduler()
+        val model = AppViewModel(backend, accounts, scheduler, version)
+        advanceUntilIdle()
+        return Rig(backend, accounts, scheduler, model)
+    }
+
+    // -- Launch ------------------------------------------------------------------------------------
+
+    @Test
+    fun `nobody signed in goes to the sign-in, and no sync is asked for`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN))
+        assertEquals(Gate.SignedOut(SignedOutReason.NOT_SIGNED_IN, null), r.model.gate.value)
+        assertEquals(0, r.scheduler.requested)
+    }
+
+    @Test
+    fun `a stored session starts the app with no signal at all, on the plans that are here`() = runTest(dispatcher) {
+        val r = rig(owner = 1)                                                              // the server cannot be reached: config and refresh fail
+        assertEquals(Gate.Ready(user(), null), r.model.gate.value)
+        assertEquals(1, r.scheduler.requested)                                              // ... and a sync is queued for when there is signal
+        assertEquals(1, r.scheduler.periodic)
+        assertEquals(emptyList<String>(), r.accounts.log)                                   // nothing was claimed again or wiped
+    }
+
+    @Test
+    fun `the first account to sign in on a device claims it`() = runTest(dispatcher) {
+        val r = rig(owner = null)
+        assertEquals(listOf("claim 1"), r.accounts.log)
+        assertTrue(r.model.gate.value is Gate.Ready)
+    }
+
+    @Test
+    fun `at launch it asks the server who this is, and keeps what changed`() = runTest(dispatcher) {
+        val r = rig(owner = 1, stored = AuthState.SignedIn(user(accessOk = false)), configure = { refreshed = Result.success(user(accessOk = true)) })
+        assertTrue("refreshUser" in r.backend.calls)
+        assertEquals(Gate.Ready(user(), null), r.model.gate.value)                          // an admin approved access while the app was closed
+    }
+
+    @Test
+    fun `a device offline for too long is signed out on launch, and says why`() = runTest(dispatcher) {
+        val r = rig(owner = 1, configure = { offlineTooLong = true })
+        assertEquals(Gate.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"), r.model.gate.value)
+        assertEquals(0, r.scheduler.requested)
+        assertTrue("its plans were not wiped", "wipe" !in r.accounts.log)
+        assertTrue("refreshUser" !in r.backend.calls)                                       // no point asking a server that cannot be reached
+    }
+
+    // -- What the server says ------------------------------------------------------------------------------
+
+    @Test
+    fun `an app the server no longer supports is stopped`() = runTest(dispatcher) {
+        val r = rig(owner = 1, configure = { config = Result.success(config(minimum = "1.8.0")) })
+        assertEquals(Gate.UpdateRequired("1.8.0"), r.model.gate.value)
+    }
+
+    @Test
+    fun `maintenance is a banner over the plans, not a wall`() = runTest(dispatcher) {
+        val r = rig(owner = 1, configure = { config = Result.success(config(maintenance = true)) })
+        assertEquals(Gate.Ready(user(), "Back soon."), r.model.gate.value)
+    }
+
+    @Test
+    fun `a config that could not be fetched at launch can be fetched again`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        assertEquals(Gate.Ready(user(), null), r.model.gate.value)
+        r.backend.config = Result.success(config(minimum = "9.0.0"))
+        r.model.loadConfig()
+        advanceUntilIdle()
+        assertEquals(Gate.UpdateRequired("9.0.0"), r.model.gate.value)
+    }
+
+    // -- The .mil / approval gate -----------------------------------------------------------------------------------
+
+    @Test
+    fun `an account outside the gate is held there, and nothing of it is touched`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedIn(user(accessOk = false)), owner = null)
+        assertEquals(Gate.NeedsAffiliation(user(accessOk = false)), r.model.gate.value)
+        assertEquals(emptyList<String>(), r.accounts.log)
+        assertEquals(0, r.scheduler.requested)
+    }
+
+    @Test
+    fun `clearing the gate lets the account in and starts its sync`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedIn(user(accessOk = false)), owner = null)
+        r.backend.refreshed = Result.success(user(accessOk = true))                         // the code was accepted
+        r.model.recheckAccess()
+        advanceUntilIdle()
+        assertEquals(Gate.Ready(user(), null), r.model.gate.value)
+        assertEquals(listOf("claim 1"), r.accounts.log)
+        assertEquals(1, r.scheduler.requested)
+    }
+
+    // -- Whose plans are here ---------------------------------------------------------------------------------------------
+
+    @Test
+    fun `another person's plans are not shown, not uploaded, and not wiped without asking`() = runTest(dispatcher) {
+        val r = rig(owner = 2, unsynced = 3)
+        assertEquals(Gate.DataBelongsToSomeoneElse(user(), 3), r.model.gate.value)
+        assertEquals(0, r.scheduler.requested)
+        assertEquals(emptyList<String>(), r.accounts.log)
+    }
+
+    @Test
+    fun `clearing the other account's plans claims the device and starts the sync`() = runTest(dispatcher) {
+        val r = rig(owner = 2, unsynced = 3)
+        r.model.clearOtherAccountsPlans()
+        advanceUntilIdle()
+        assertEquals(listOf("wipe", "claim 1"), r.accounts.log)
+        assertEquals(Gate.Ready(user(), null), r.model.gate.value)
+        assertEquals(1, r.scheduler.requested)
+    }
+
+    @Test
+    fun `signing in during the session as someone else is caught the same way`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), owner = 2, unsynced = 1)
+        r.backend.state.value = AuthState.SignedIn(user(id = 1))                            // signs in on the sign-in screen
+        advanceUntilIdle()
+        assertEquals(Gate.DataBelongsToSomeoneElse(user(id = 1), 1), r.model.gate.value)
+    }
+
+    @Test
+    fun `signing out stops the sync and keeps the plans for when they come back`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.model.signOut()
+        advanceUntilIdle()
+        assertEquals(Gate.SignedOut(SignedOutReason.NOT_SIGNED_IN, null), r.model.gate.value)
+        assertEquals(1, r.scheduler.cancelled)
+        assertTrue("wipe" !in r.accounts.log)
+        // The same person signing back in finds them.
+        r.backend.state.value = AuthState.SignedIn(user())
+        advanceUntilIdle()
+        assertTrue(r.model.gate.value is Gate.Ready)
+    }
+
+    @Test
+    fun `a refreshed answer about the same account does not start the sync again`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val before = r.scheduler.requested
+        // The server's answer to "who is this" differs in a detail (a renamed account, an entitlement), but it is the same person at the same gate.
+        r.backend.state.value = AuthState.SignedIn(user().copy(name = "Renamed", features = mapOf("threats" to false)))
+        advanceUntilIdle()
+        assertEquals(before, r.scheduler.requested)
+        assertEquals(emptyList<String>(), r.accounts.log)
+    }
+}
