@@ -1,0 +1,21 @@
+plugins {
+    id("ezpz.android-library")
+    id("ezpz.android-room")
+    id("ezpz.android-hilt")
+    alias(libs.plugins.kotlin.serialization)
+}
+
+android {
+    namespace = "app.ezpztac.data"
+}
+
+// The local database (docs/NATIVE_APPS_PLAN.md, "Data model and local storage"): the source of truth the screens read
+// and the sync engine works through. The rules live in core-sync; this is where they are kept.
+dependencies {
+    api(project(":core-model"))
+    api(project(":core-sync"))
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.core)
+
+    testImplementation(testFixtures(project(":core-sync")))
+}

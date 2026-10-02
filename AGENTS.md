@@ -680,7 +680,8 @@ design tokens. iOS is not started.
 | `core-planning` | Aircraft geometry, capacity, separation, profile lookup, route planner, plan defaults and migration | done |
 | `core-formats` | Reads an AMPS `.msnx` into a `Mission`, an `.LPS` into a `LocalPointSet` and a `.ths` into `Threat`s, as the web's `parseMsnx` / `parseLps` / `parseThs` do, with a small read-only SQLite reader of its own (`SqliteReader`). `ThsExport` gives the rows of a `.ths` export. **Not ported**: writing or mutating a `.msnx` (`createMsnx`, `mutateMsnx`), and *writing* a `.ths` file itself, which is the platform's job (copy `threat_template.ths`, insert `ThsExport`'s rows) | readers and export rows done |
 | `core-network` | The API client over OkHttp: one transport (`ApiClient`) with the session behind it, typed calls for the routes in `contracts/openapi.yaml`, DTOs, the request-priority gate, and the "update required" check. See *The API client* below | client, auth and refresh done; the sign-up and `.mil` flows and the web-share routes are not yet typed |
-| `core-sync` | The sync engine: local edits into an outbox, a push in order, a pull by cursor, conflicts kept side by side. Pure logic over a `SyncStore` interface (Room implements it in the app; `InMemorySyncStore` here). LZs and custom aircraft profiles sync; routes and point sets join when their API is typed (the engine passes over their changes, and the cursor must be reset to 0 when it learns them). See *The sync engine* below | engine done; Room store not started |
+| `core-sync` | The sync engine: local edits into an outbox, a push in order, a pull by cursor, conflicts kept side by side. Pure logic over a `SyncStore` interface (`RoomSyncStore` in `core-data` implements it for the app; `InMemorySyncStore` here). LZs and custom aircraft profiles sync; routes and point sets join when their API is typed (the engine passes over their changes, and the cursor must be reset to 0 when it learns them). Its `testFixtures` (the scenarios as plain functions, the fake server, a `Device`) are shared with `core-data`. See *The sync engine* below | engine done |
+| `core-data` | Android library: the Room database (`EzpzDatabase`, version 1) and `RoomSyncStore`, plus the Hilt module. One generic `record` table keyed by (kind, uuid) instead of the plan's table per domain, because the engine treats every kind alike; add a column when a screen needs one. Schemas are exported to `core-data/schemas/` and **committed** (a migration test reads them) | store done and held to the same scenarios as the in-memory one; repositories for the screens, routes and point sets not yet |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
 | `core-designsystem` | Android library: the theme (dark, light and the red-shifted **night** palette), type, and `Tokens`, which is **generated** from `contracts/tokens/tokens.json` by `contracts/scripts/tokens.py` (CI checks it is current). A test holds every palette to WCAG contrast, because nothing in an agent session can look at a screen | theme and tokens; shared components (sheet, inspector, readout pill) join as screens need them |
 | `app` | The application: Hilt, Compose, the manifest and its security settings. See *The app module* below | a skeleton that starts and shows the version; no screens yet |
@@ -816,8 +817,16 @@ client is built around not losing one:
 - **Both the fake and the real server run the same scenarios** (`SyncScenarios`: two devices, conflicts, restore/recreate, a fresh
   device pulling everything, for both LZs and aircraft profiles). The fake (`FakeServer`) exists for failures the real one will
   not produce on demand; running the scenarios on the real server is what keeps the fake honest.
-- Not done: the Room store, WorkManager scheduling (`RetryPolicy.delayMillis` says how long to wait), routes and point sets,
-  the conflict screen, and the 14-day "sign in again" rule.
+- **Two stores, one set of scenarios.** `ScenarioBook` (in `core-sync`'s `testFixtures`) holds the scenarios as plain suspend
+  functions, so JUnit 5 runs them against the fake and the real server (`ScenarioSuite`) and JUnit 4 under Robolectric runs them
+  with every device's records in Room (`RoomScenarioTest`). `RoomSyncStoreTest` says *why* they agree: ordering, rollback,
+  never reusing an outbox number, a document coming back byte for byte. Mutation runs found the first draft's gaps (two tests
+  used uuids that happened to sort the same way as insertion order).
+- **Room traps.** `@Insert(onConflict = REPLACE)` deletes and re-inserts, which moves an edited record to the end of the list:
+  use `@Upsert`. The Room KSP argument is `room.schemaLocation` (`room.schemaDirectory` is the *Gradle plugin's* name and is
+  ignored here, with only a warning).
+- Not done: WorkManager scheduling (`RetryPolicy.delayMillis` says how long to wait), routes and point sets, the conflict
+  screen, and the 14-day "sign in again" rule.
 
 **The app module and the Android build.**
 - **Convention plugins** in `android/build-logic`: `ezpz.kotlin-library` (pure modules), and for Android

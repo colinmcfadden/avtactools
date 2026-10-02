@@ -11,7 +11,7 @@ internal class FakeEnv : Env {
     override fun close() {}
 }
 
-internal class FakeSyncScenarios : SyncScenarios() {
+internal class FakeSyncScenarios : ScenarioSuite() {
     override fun env(): Env = FakeEnv()
 }
 

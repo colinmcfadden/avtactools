@@ -18,7 +18,7 @@ import kotlinx.serialization.json.JsonPrimitive
  * a refusal, an edit that lands mid-push). The scenarios the two share also run against the real server
  * (`LiveSyncTest`), which is what keeps this one honest.
  */
-internal class FakeServer : SyncApi {
+public class FakeServer : SyncApi {
     class Rec(
         val serverId: Int, val kind: RecordKind, val uuid: String,
         var revision: Int, var name: String, var data: JsonObject, var deleted: Boolean, var seq: Int, var lastKey: String?,

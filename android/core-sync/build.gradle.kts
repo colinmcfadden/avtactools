@@ -1,6 +1,7 @@
 plugins {
     id("ezpz.kotlin-library")
     alias(libs.plugins.kotlin.serialization)
+    `java-test-fixtures`
 }
 
 // The sync engine (docs/NATIVE_APPS_PLAN.md, "Sync and conflicts"): an outbox of local changes pushed in order,
@@ -11,6 +12,13 @@ dependencies {
     api(project(":core-model"))
     api(project(":core-network"))
     api(libs.kotlinx.coroutines.core)
+
+    // What the stores and the servers are tried with, shared with core-data: the scenarios as plain functions (no test
+    // framework needed to run them), an in-memory server with the real one's rules, and devices to drive them.
+    testFixturesApi(project(":core-network"))
+    testFixturesApi(libs.kotlinx.coroutines.core)
+    testFixturesApi(platform(libs.junit.bom))
+    testFixturesApi(libs.junit.jupiter.api)
 
     testImplementation(project(":core-testing"))
     testImplementation(testFixtures(project(":core-network")))

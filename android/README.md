@@ -18,12 +18,13 @@ android/
 ├─ core-network/    the API client: transport, sign-in, token refresh, typed routes, request priority
 ├─ core-sync/       the sync engine: outbox, pull by cursor, conflicts kept side by side
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
+├─ core-data/       Room database and the SyncStore on it (schemas in core-data/schemas, committed)
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
 ├─ app/             the application: Hilt, Compose, manifest; a skeleton so far
 └─ build-logic/     the convention plugins every module uses
 ```
 
-Not here yet: `core-data` (Room), `core-symbols`, `core-packs`, the `feature-*` modules and the 2D map.
+Not here yet: `core-symbols`, `core-packs`, the `feature-*` modules and the 2D map.
 
 Every module is tested against the golden fixtures in [`../contracts`](../contracts/README.md),
 the same files the web app's tests read, so the app cannot quietly disagree with

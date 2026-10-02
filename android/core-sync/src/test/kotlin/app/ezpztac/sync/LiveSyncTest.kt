@@ -61,7 +61,7 @@ internal class LiveEnv(private val server: LiveServer) : Env {
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-internal class LiveSyncScenarios : SyncScenarios() {
+internal class LiveSyncScenarios : ScenarioSuite() {
     private var server: LiveServer? = null
 
     @BeforeAll
