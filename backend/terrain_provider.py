@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import math
 import os
+import threading
 import time
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -240,6 +241,8 @@ class LocalRasterCatalog:
     def __init__(self):
         self._entries: list[RasterEntry] = []
         self._refreshed_at = 0.0
+        # Requests run on several threads; one rescan of every DEM is enough.
+        self._refresh_lock = threading.Lock()
 
     def _roots(self):
         raw = os.environ.get("TERRAIN_DATA_DIR", "")
@@ -249,7 +252,13 @@ class LocalRasterCatalog:
         refresh_after = _env_float("TERRAIN_CATALOG_REFRESH_SECONDS", 300.0)
         if time.monotonic() - self._refreshed_at < refresh_after:
             return self._entries
+        with self._refresh_lock:
+            # Another thread may have refreshed while this one waited.
+            if time.monotonic() - self._refreshed_at < refresh_after:
+                return self._entries
+            return self._refresh()
 
+    def _refresh(self):
         entries: list[RasterEntry] = []
         for root in self._roots():
             for directory, _, files in os.walk(root):

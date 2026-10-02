@@ -208,6 +208,73 @@
   box-shadow: inset 0 0 0 1px rgba(159, 221, 252, 0.1);
 }
 
+/* Each row carries its own 3D button at the end. It is a sibling of the row
+   button (buttons cannot nest), so the row reserves room on its right and the
+   3D button sits over that space. */
+.active-lz-window__item {
+  position: relative;
+}
+
+.active-lz-window__row.has-3d {
+  padding-right: 58px;
+}
+
+.active-lz-window__row-3d {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  color: #c5e8fb;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.075em;
+  background: rgba(22, 61, 89, 0.72);
+  border: 1px solid rgba(91, 180, 228, 0.5);
+  border-radius: 4px;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.active-lz-window__row-3d svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: #6fc6f2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.active-lz-window__row-3d:hover:not(:disabled),
+.active-lz-window__row-3d:focus-visible:not(:disabled) {
+  color: #effaff;
+  background: rgba(35, 93, 127, 0.88);
+  border-color: #89d9ff;
+  outline: none;
+}
+
+.active-lz-window__row-3d:hover:not(:disabled) svg,
+.active-lz-window__row-3d:focus-visible:not(:disabled) svg {
+  stroke: #9fe0ff;
+}
+
+.active-lz-window__row-3d:disabled {
+  color: rgba(173, 194, 209, 0.52);
+  background: rgba(35, 50, 64, 0.44);
+  border-color: rgba(109, 135, 153, 0.28);
+  cursor: not-allowed;
+}
+
+.active-lz-window__row-3d:disabled svg {
+  stroke: currentColor;
+}
+
 .active-lz-window__row-marker {
   align-self: stretch;
   min-height: 31px;

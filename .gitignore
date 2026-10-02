@@ -55,3 +55,14 @@ LZ_Map_Layer_*
 # Approved local terrain data must remain outside source control.
 /backend/terrain-data/
 /backend/dted/
+/topo/
+
+# Cesium static assets and generated LiDAR tilesets are build output, copied or
+# generated on demand rather than committed.
+/frontend/public/cesium/
+/frontend/public/tiles/
+
+# Downloaded LiDAR indexes: the USGS coverage GeoJSON (~8 MB) and the per-
+# collection tile index are both regenerated on demand.
+usgs_ept_coverage.geojson
+tile_index.json

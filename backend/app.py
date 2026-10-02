@@ -16,10 +16,17 @@ from models import AircraftProfile, User, db
 from entitlements import account_active, affiliation_ok
 from aircraft_seed import seed_aircraft_profiles
 from schema_sync import sync_table_columns
-from security_config import resolve_jwt_secret, validate_email_configuration
+from security_config import (
+    resolve_jwt_secret,
+    session_cookie_secure,
+    validate_email_configuration,
+)
 
 # Import your Blueprints
+import lidar_builder
+import terrain_tiles
 from routes.terrain_routes import terrain_bp
+from routes.lidar_routes import lidar_bp
 from routes.location_routes import location_bp
 from routes.weather_routes import weather_bp
 from routes.export_routes import export_bp
@@ -86,9 +93,10 @@ app.config['SECRET_KEY'] = os.environ.get('ADMIN_SESSION_SECRET') or app.config[
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    # Only require HTTPS for the cookie in the deployed (Fly) environment so
-    # local http://localhost admin testing still works.
-    SESSION_COOKIE_SECURE=bool(os.environ.get('FLY_APP_NAME')),
+    # Secure wherever an HTTPS edge is declared, not only on Fly — this was
+    # keyed to FLY_APP_NAME, so moving the app anywhere else silently dropped
+    # the flag and sent admin session cookies in the clear.
+    SESSION_COOKIE_SECURE=session_cookie_secure(os.environ),
 )
 
 db.init_app(app)
@@ -153,6 +161,7 @@ def enforce_affiliation_gate():
 # Register Blueprints
 app.register_blueprint(export_bp)
 app.register_blueprint(terrain_bp)
+app.register_blueprint(lidar_bp)
 app.register_blueprint(location_bp)
 app.register_blueprint(weather_bp)
 app.register_blueprint(auth_bp)
@@ -163,6 +172,21 @@ app.register_blueprint(threat_bp)
 app.register_blueprint(route_share_bp)
 app.register_blueprint(aircraft_bp)
 app.register_blueprint(admin_bp)
+
+# Compute the coarse terrain tiles ahead of the first 3D view, in the
+# background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
+# `python app.py` the reloader runs this module twice — in a process that only
+# watches files, then in the one that serves — so warm only in the latter.
+if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"):
+    terrain_tiles.start_warming()
+    # Say at startup what the 3D view will lack, rather than leave it to be
+    # found later as a "can't build" panel, or as terrain sitting 30 m off the
+    # point cloud. Both have happened after a restart lost its settings.
+    if not lidar_builder.configured():
+        app.logger.warning("3D: point-cloud builds are off (LIDAR_BUILDER_URL is not set)")
+    if os.environ.get("TERRAIN_DATA_DIR") and not terrain_tiles.geoid_grids_available():
+        app.logger.warning("3D: geoid grids unavailable, so terrain will sit ~30 m off the "
+                           "LiDAR. Set PROJ_NETWORK=ON or install the grids (projsync).")
 
 @app.route('/')
 def health_check():

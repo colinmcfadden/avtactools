@@ -1,13 +1,15 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 from flask_jwt_extended import jwt_required
 import numpy as np
 import mercantile
 import requests
 import cv2
 from ultralytics import SAM
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 
+import terrain_tiles
 from terrain_provider import build_slope_analysis
 
 terrain_bp = Blueprint('terrain', __name__)
@@ -15,6 +17,11 @@ terrain_bp = Blueprint('terrain', __name__)
 # Load the SAM model (This downloads 'sam_b.pt' on first run)
 # 'sam_b.pt' is the Base model (good balance of speed/accuracy)
 model = SAM('sam_b.pt')
+
+# One analysis at a time. gunicorn runs threads so map and 3D requests do not
+# queue behind each other, but SAM must not run twice at once: its predictor
+# keeps state between calls, and each run holds about a gigabyte.
+_sam_lock = threading.Lock()
 
 # --- HELPER FUNCTIONS ---
 
@@ -70,6 +77,7 @@ def find_field_contour(image):
 
 @terrain_bp.route('/api/analyze-field', methods=['POST'])
 @jwt_required()
+@terrain_tiles.pauses_warming
 def analyze_field():
     data = request.json
     try:
@@ -125,7 +133,8 @@ def analyze_field():
         # imgsz=512: the source tile is only 256px, so the default 1024
         # inference size just upscales it 4x and runs the encoder at 1024^2 —
         # ~3.3GB of memory (OOM-kills a 2GB machine) for no added detail.
-        results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4, imgsz=512)
+        with _sam_lock:
+            results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4, imgsz=512)
         
         if results[0].masks is not None:
             # Get the mask with the highest score (usually the first one)
@@ -158,6 +167,7 @@ def analyze_field():
 
 @terrain_bp.route('/api/terrain-analysis', methods=['POST'])
 @jwt_required()
+@terrain_tiles.pauses_warming
 def terrain_analysis():
     """Return a continuous, polygon-clipped terrain slope raster."""
     data = request.get_json(silent=True) or {}
@@ -265,3 +275,81 @@ def get_elevations():
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         return jsonify({'error': str(e), 'elevationsFt': [None] * len(pts)})
+
+
+@terrain_bp.route('/api/terrain/heightmap/<int:level>/<int:x>/<int:y>', methods=['GET'])
+@jwt_required()
+def terrain_heightmap(level, x, y):
+    """Elevations for one terrain tile, as little-endian Int16 metres.
+
+    Feeds Cesium's CustomHeightmapTerrainProvider in the 3D view. A tile
+    outside the mounted DEM coverage answers 204, which the provider reads as
+    "no data here" and renders flat — the DEMs cover part of one country and
+    Cesium asks across the whole globe.
+
+    Heights are ellipsoidal, matching the frame the LiDAR tiles are built in.
+    """
+    if level > terrain_tiles.MAX_LEVEL:
+        # A sanity bound only — Cesium stops subdividing well before this.
+        # Refusing a level Cesium actually wants leaves that tile flat, which
+        # puts a hole in the globe rather than capping detail.
+        return jsonify({'error': 'Level out of range.'}), 400
+
+    try:
+        data = terrain_tiles.tile_bytes(level, x, y)
+    except terrain_tiles.TerrainTileError as error:
+        return jsonify({'error': str(error)}), 400
+
+    if data is None:
+        return ('', 204)
+
+    response = make_response(data)
+    response.headers['Content-Type'] = 'application/octet-stream'
+    response.headers['X-Terrain-Samples'] = str(terrain_tiles.TILE_SAMPLES)
+    # The DEMs change only when new ones are mounted, and the response is
+    # derived purely from level/x/y. Private because it is behind a token.
+    response.cache_control.private = True
+    response.cache_control.max_age = 7 * 24 * 3600
+    return response
+
+
+@terrain_bp.route('/api/terrain/heights', methods=['POST'])
+@jwt_required()
+def terrain_heights():
+    """Ground and geoid separation at points, for placing graphics in 3D.
+
+    Body: { points: [{lat, lon}, ...] }
+    Returns: { groundM: [m | null, ...], geoidM: [m, ...] }  (index-aligned)
+
+    Ground is ellipsoidal and comes from the same DEMs as the terrain tiles, so
+    a point sits on the surface the viewer draws. It is deliberately separate
+    from /api/elevations, which feeds the route planner and the AMPS export:
+    changing that source would change exported altitudes.
+
+    Coordinates travel in the body only, as for the LiDAR routes.
+    """
+    data = request.get_json(silent=True) or {}
+    points = data.get('points')
+    if not isinstance(points, list):
+        return jsonify({'error': 'points must be a list'}), 400
+    if len(points) > terrain_tiles.MAX_POINTS:
+        return jsonify({'error': f'At most {terrain_tiles.MAX_POINTS} points per request.'}), 400
+
+    try:
+        coords = [(float(p['lat']), float(p['lon'])) for p in points]
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': 'Invalid points'}), 400
+    if any(not (np.isfinite(lat) and np.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180)
+           for lat, lon in coords):
+        return jsonify({'error': 'Invalid points'}), 400
+
+    try:
+        ground, geoid = terrain_tiles.sample_points(coords)
+    except terrain_tiles.TerrainTileError as error:
+        return jsonify({'error': str(error)}), 503
+
+    response = jsonify({'groundM': ground, 'geoidM': geoid})
+    # Behind a token, and it describes where someone is planning to fly.
+    response.cache_control.private = True
+    response.cache_control.no_store = True
+    return response

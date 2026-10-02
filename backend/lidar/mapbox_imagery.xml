@@ -1,0 +1,41 @@
+<GDAL_WMS>
+  <!--
+    Aerial imagery as a GDAL raster, so PDAL's filters.colorization can sample
+    real colour per point without anything being downloaded ahead of time.
+
+    Same Mapbox satellite tiles the 2D map draws, so a point cloud and the map
+    under it cannot disagree about what is on the ground.
+
+    BlockSize is 1024 rather than 512 because the @2x suffix asks Mapbox for
+    retina tiles: request 512 and it returns 1024, which GDAL rejects as the
+    wrong size for the block.
+
+    TileLevel 18: about 12 cm per pixel in north Georgia, still four pixels
+    to every point at full density (~0.55 m apart). It was 20, on the theory
+    that finer imagery resolves individual crowns. Measured, it does not:
+    Mapbox's source imagery is coarser than level 18 here, and level 20 tiles
+    are level 18 enlarged — within 1-2 of 255 levels at five places tested,
+    rural and town. Colour comes out the same (rebuilt at level 18: same
+    point count, same mean and spread of RGB), but level 20 needs 16 times
+    the tiles, fetched one at a time. A 500 m build took 707 s at level 20
+    and 137 s at level 18.
+  -->
+  <Service name="TMS">
+    <ServerUrl>https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/512/${z}/${x}/${y}@2x?access_token=pk.eyJ1IjoiY21jZmFkZGVuOSIsImEiOiJjbWxvNGhhYWIwNmpmM2VvbTJ5YjJ3MmZxIn0.zxZ__KSBdP8KuLN0rzULlw</ServerUrl>
+  </Service>
+  <DataWindow>
+    <UpperLeftX>-20037508.34</UpperLeftX>
+    <UpperLeftY>20037508.34</UpperLeftY>
+    <LowerRightX>20037508.34</LowerRightX>
+    <LowerRightY>-20037508.34</LowerRightY>
+    <TileLevel>18</TileLevel>
+    <TileCountX>1</TileCountX>
+    <TileCountY>1</TileCountY>
+    <YOrigin>top</YOrigin>
+  </DataWindow>
+  <Projection>EPSG:3857</Projection>
+  <BlockSizeX>1024</BlockSizeX>
+  <BlockSizeY>1024</BlockSizeY>
+  <BandsCount>3</BandsCount>
+  <Cache/>
+</GDAL_WMS>

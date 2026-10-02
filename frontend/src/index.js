@@ -6,9 +6,21 @@ import App from './App';
 import { AuthProvider } from './feature/auth/AuthContext';
 import AuthGate from './feature/auth/AuthGate';
 import reportWebVitals from './reportWebVitals';
+import Viewer3DDemo from './feature/viewer3d/Viewer3DDemo';
+
+// Development-only route for the 3D point cloud view, reached with `?view3d`.
+// Guarded on NODE_ENV so a production build cannot render it and cannot use it
+// to sidestep AuthGate; CRA replaces this at build time, so the branch is
+// removed from the production bundle entirely.
+const showViewer3DDemo =
+  process.env.NODE_ENV === 'development' &&
+  new URLSearchParams(window.location.search).has('view3d');
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
+  showViewer3DDemo ? (
+    <Viewer3DDemo />
+  ) : (
   <React.StrictMode>
     <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}>
       <AuthProvider>
@@ -18,6 +30,7 @@ root.render(
       </AuthProvider>
     </GoogleOAuthProvider>
   </React.StrictMode>
+  )
 );
 
 // If you want to start measuring performance in your app, pass a function

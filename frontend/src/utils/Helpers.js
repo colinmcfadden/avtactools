@@ -1,4 +1,5 @@
 import { UH60_ROTOR_RADIUS_FEET } from './helicopterCapacity';
+import { looksLikeCoordinateText } from './coordParse';
 
 export const isPointInPolygon = (point, polygon) => {
   if (!point || !polygon) return false;
@@ -129,6 +130,12 @@ export const calculateDoghouseHandlePos = (lat, lon) => {
 };
 
 export const formatMGRS = (val) => {
+  // The target input also accepts a pasted lat/long, which this would otherwise
+  // destroy — "34.5, -84.2" would lose its punctuation and become "345842".
+  // Anything carrying coordinate punctuation or a hemisphere letter is left
+  // exactly as typed for the coordinate parser to deal with on submit.
+  if (looksLikeCoordinateText(val)) return val;
+
   // Strip all non-alphanumeric characters and force uppercase
   let clean = val.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   if (!clean) return '';

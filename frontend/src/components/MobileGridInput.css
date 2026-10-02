@@ -7,6 +7,9 @@
 @media (max-width: 850px) {
     .mobile-top-search-container {
         display: flex;
+        /* Column so the coordinate hint can stack below the input row rather
+           than competing with it for horizontal space. */
+        flex-direction: column;
         position: absolute;
         top: 15px;
         left: 112px; /* Clears Leaflet zoom controls + the unit badge */
@@ -21,9 +24,15 @@
         min-width: 0;
     }
 
+    .mobile-search-row {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+    }
+
     .top-search-input {
         flex-grow: 1;
-        min-width: 0; 
+        min-width: 0;
         width: 100%;
         background: transparent;
         border: none;

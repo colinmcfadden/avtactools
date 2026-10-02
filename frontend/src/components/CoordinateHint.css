@@ -1,0 +1,31 @@
+/* Live confirmation that the target field's contents parsed as a lat/long. */
+
+.coord-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 7px;
+  margin-top: 6px;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.coord-hint__tag {
+  padding: 1px 6px;
+  border: 1px solid rgba(90, 167, 212, 0.45);
+  border-radius: 999px;
+  background: rgba(90, 167, 212, 0.12);
+  color: #a9d3ec;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.coord-hint__value {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  opacity: 0.85;
+}
+
+.coord-hint__note {
+  opacity: 0.55;
+}
