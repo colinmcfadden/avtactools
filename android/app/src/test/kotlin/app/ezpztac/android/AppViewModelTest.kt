@@ -244,4 +244,33 @@ class AppViewModelTest {
         assertEquals(before, r.scheduler.requested)
         assertEquals(emptyList<String>(), r.accounts.log)
     }
+
+    // -- Links from emails ------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `a verification link is held until it has been dealt with`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.model.onLink("https://ezpztac.app/?auth=verify&token=abc")
+        assertEquals(app.ezpztac.auth.AuthRoute.Verify("abc"), r.model.pendingLink.value)
+        r.model.linkHandled()
+        assertEquals(null, r.model.pendingLink.value)
+    }
+
+    @Test
+    fun `a link that is not one of the two emailed ones is ignored`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.model.onLink("https://ezpztac.app/")
+        r.model.onLink("https://example.com/?auth=verify&token=x")                           // a stranger's address with the right words
+        r.model.onLink(null)
+        assertEquals(null, r.model.pendingLink.value)
+    }
+
+    @Test
+    fun `opening a link does not change who is signed in or whose plans are here`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.model.onLink("https://ezpztac.app/?auth=reset&token=abc")
+        advanceUntilIdle()
+        assertTrue(r.model.gate.value is Gate.Ready)
+        assertEquals(emptyList<String>(), r.accounts.log)
+    }
 }

@@ -20,6 +20,7 @@ android/
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
 ├─ core-data/       Room database and the SyncStore on it (schemas in core-data/schemas, committed)
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
+├─ feature-auth/    sign-in, sign-up, verify, reset and the .mil gate: screens and their view models
 ├─ app/             the application: Hilt, Compose, manifest; a skeleton so far
 └─ build-logic/     the convention plugins every module uses
 ```
@@ -59,7 +60,7 @@ wrapper fetches. Tell Gradle where the SDK is, once, in `android/local.propertie
 
 A debug build is `app.ezpztac.unreleased.debug`. To talk to a Flask server on your machine from the
 emulator: `.\gradlew.bat :app:installDebug -Pezpz.apiUrl=http://10.0.2.2:5000/` (debug builds allow
-cleartext to that address only).
+cleartext to that address only). `-Pezpz.googleClientId=<web client ID>` turns the Google button on.
 
 A release build is refused until the owner has chosen the `applicationId`
 (`-Pezpz.applicationId=<id>`): it is permanent once published.

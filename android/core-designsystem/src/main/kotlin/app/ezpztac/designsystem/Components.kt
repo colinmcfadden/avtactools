@@ -216,6 +216,9 @@ fun SecondaryButton(
         enabled = enabled,
         modifier = modifier.fillMaxWidth().heightIn(min = Tokens.Size.touchTarget.dp),
         shape = RoundedCornerShape(Tokens.Radius.md.dp),
+        // A disabled one often carries words that have to be read (a countdown), so its text stays at the secondary-text contrast
+        // the palettes are tested to; only the border and the missing tap say it is off.
+        colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant),
     ) { Text(text) }
 }
 

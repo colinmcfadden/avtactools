@@ -684,7 +684,8 @@ design tokens. iOS is not started.
 | `core-data` | Android library: the Room database (`EzpzDatabase`, version 1), `RoomSyncStore`, `AccountScope` (whose plans are on the device) and the encrypted session store (`EncryptedSessionStore` over a `SecretBox`; `KeystoreSecretBox` is the Android Keystore one), plus the Hilt module. One generic `record` table keyed by (kind, uuid) instead of the plan's table per domain, because the engine treats every kind alike; add a column when a screen needs one. Schemas are exported to `core-data/schemas/` and **committed** (a migration test reads them) | store done and held to the same scenarios as the in-memory one; repositories for the screens, routes and point sets not yet |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
 | `core-designsystem` | Android library: the theme (dark, light and the red-shifted **night** palette), type, and `Tokens`, which is **generated** from `contracts/tokens/tokens.json` by `contracts/scripts/tokens.py` (CI checks it is current). A test holds every palette to WCAG contrast, because nothing in an agent session can look at a screen | theme and tokens; shared components (sheet, inspector, readout pill) join as screens need them |
-| `app` | The application: Hilt, Compose, the manifest and its security settings, and the shell: `Gate`/`gateFor` (what stands between the person and the app), `AppViewModel`, WorkManager sync (`SyncScheduler`, `SyncWorker`). See *The app module* below | the shell and its wiring; no feature screens yet |
+| `feature-auth` | The sign-in screens: sign in, register, "check your inbox", verify and reset (from an emailed link), forgot/resend, and the `.mil` gate (`AffiliationHost`). Stateless screens (`AuthContent`, `AffiliationContent`) over two view models; talks to the server through an `AuthApi` seam. Mirrors the web's `AUTH_MODES` | done; Google sign-in is the app's (below) |
+| `app` | The application: Hilt, Compose, the manifest and its security settings, and the shell: `Gate`/`gateFor` (what stands between the person and the app), `AppViewModel`, WorkManager sync (`SyncScheduler`, `SyncWorker`). See *The app module* below | the shell, the auth flow and the Google sign-in glue; no workspace yet (a placeholder home with sign-out) |
 | everything else in the plan (`core-data`, `core-symbols`, `core-packs`, `feature-*` …) | later work | **not started** |
 
 Package root is `app.ezpztac.*` (the reverse of `ezpztac.app`). The Android
@@ -876,8 +877,21 @@ client is built around not losing one:
   shown nothing of them, nothing is uploaded under their account, and they choose between clearing them (told how many changes never
   reached the server) and signing out. The plan did not say this, and it matters: without it a second user on a shared device would see
   and sync the first user's LZs.
+- **Links from emails** (`AuthLinks`): the server's emails open `https://<site>/?auth=verify|reset&token=…`. The app takes only
+  **https links to the site's own hosts** (`ezpztac.app`, `www.ezpztac.app`): any app on the phone can start the activity with any
+  address, and a "reset" link from elsewhere would put the person on a screen that takes a token an attacker chose. The manifest's
+  `autoVerify` filter opens the app for those links only once the site serves `/.well-known/assetlinks.json` for the package and its
+  signing certificate — **an owner step** (it needs the applicationId and the signing key); until then the browser handles them.
+  A link outranks every screen except "update required", and is dropped once the person is back at the sign-in.
+- **Google sign-in** (`CredentialManagerGoogleSignIn`): Credential Manager, offered only when the build has
+  `-Pezpz.googleClientId=<web client ID>` (the audience the server lists in `GOOGLE_CLIENT_IDS`); the app's own Android OAuth
+  client (package + signing certificate) must exist in the same Google Cloud project. No test reaches it (it needs Play services and
+  an account on a device).
+- **Strings are inline English** in the composables, not yet in `strings.xml`; move them when a second language is wanted.
+- **A destructive choice is never the prominent one**: on "plans from another account", *Sign out* is the primary button and
+  *Clear them and continue* the secondary, with the cost stated above both.
 - **Not verifiable here:** `KeystoreSecretBox` (Robolectric has no AndroidKeyStore; the box around it, `AesGcmBox`, and the store are
-  tested) and WorkManager's real scheduling (the worker and the outcome mapping are tested). Both need a device run.
+  tested), Google's account sheet, and WorkManager's real scheduling (the worker and the outcome mapping are tested). Both need a device run.
 - **Building in an agent sandbox.** The cloud environment's network policy must allow `dl.google.com` (AGP, AndroidX,
   Compose, the SDK) and `jitpack.io`. The Android SDK is not in the image: download the command-line tools from
   `dl.google.com/android/repository`, accept licences, install `platforms;android-37.0`, `build-tools;37.0.0`, and put

@@ -3,6 +3,8 @@ package app.ezpztac.android
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.android.sync.SyncScheduler
+import app.ezpztac.auth.AuthLinks
+import app.ezpztac.auth.AuthRoute
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.Ownership
 import app.ezpztac.network.ApiException
@@ -12,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.stateIn
@@ -32,7 +35,11 @@ class AppViewModel @Inject constructor(
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
     private val config = MutableStateFlow<AppConfig?>(null)
+    private val link = MutableStateFlow<AuthRoute?>(null)
     private val ownership = MutableStateFlow<Ownership?>(null)
+
+    /** A link from an email (verify, reset) that has been opened and not yet dealt with. It outranks everything but an update. */
+    val pendingLink: StateFlow<AuthRoute?> = link.asStateFlow()
 
     val gate: StateFlow<Gate> = combine(config, backend.state, ownership) { config, auth, ownership ->
         gateFor(config, auth, ownership, version)
@@ -101,6 +108,15 @@ class AppViewModel @Inject constructor(
             ownership.value = Ownership.Yours
             startSyncing()
         }
+    }
+
+    /** An address the app was opened with. Anything that is not one of the two emailed links is ignored. */
+    fun onLink(url: String?) {
+        AuthLinks.parse(url)?.let { link.value = it }
+    }
+
+    fun linkHandled() {
+        link.value = null
     }
 
     fun signOut() {
