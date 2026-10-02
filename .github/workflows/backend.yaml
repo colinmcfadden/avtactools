@@ -1,0 +1,55 @@
+name: Backend contracts
+
+# The server is the other half of every contract in contracts/: the OpenAPI file, the recorded
+# responses the native apps decode, the sync rules and the .ths exporter. Nothing ran the backend's
+# tests in CI before this (AGENTS.md, section 11), so this runs the ones that need no terrain data,
+# SAM weights or GPU, with only the packages they import.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "backend/**"
+      - "contracts/**"
+      - ".github/workflows/backend.yaml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "contracts/**"
+      - ".github/workflows/backend.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-tests:
+    name: Contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The pinned versions from requirements.txt, for just what these tests import. (GET /api/config reads the
+      # Mapbox token from export_service, which pulls in rasterio, numpy and mercantile. Not torch or opencv,
+      # which the SAM, terrain and LiDAR tests need and these do not.)
+      - name: Install
+        run: |
+          for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
+                   python-dotenv PyYAML openpyxl pillow pygeodesy rasterio numpy mercantile affine; do
+            grep -i "^$p==" backend/requirements.txt
+          done | xargs pip install pytest
+
+      - name: Test
+        working-directory: backend
+        run: >
+          python -m pytest -q -p no:cacheprovider
+          tests/test_network_fixtures.py tests/test_contract_fixtures.py tests/test_openapi_contract.py
+          tests/test_sync.py tests/test_aircraft_sync.py tests/test_native_sessions.py
+          tests/test_schema_sync.py tests/test_app_config.py tests/test_client_header.py tests/test_auth.py
+          tests/test_affiliation_gate.py

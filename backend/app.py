@@ -1,6 +1,6 @@
-from flask import Flask, redirect, request, jsonify
+from flask import Flask, redirect, request
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, verify_jwt_in_request, get_jwt_identity
+from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from datetime import timedelta
 import os
@@ -14,7 +14,7 @@ except ImportError:
 
 from database_url import database_uri, is_postgres
 from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, User, db
-from entitlements import affiliation_ok
+from affiliation_gate import enforce_affiliation_gate
 from token_revocation import is_revoked
 from aircraft_seed import seed_aircraft_profiles
 from schema_sync import ensure_unique_index, sync_table_columns
@@ -114,36 +114,7 @@ def token_is_revoked(_jwt_header, jwt_payload):
     return is_revoked(jwt_payload)
 
 
-@app.before_request
-def enforce_affiliation_gate():
-    """Server-side military-affiliation gate.
-
-    The frontend hides the app until a user clears the gate, but a signed-in
-    user could otherwise call the API directly with their token. Refuse every
-    ``/api/*`` request from an unverified, unapproved user — except the auth
-    flows they still need (login, register, Google, /me, and .mil verification
-    itself), which all live under ``/api/auth/``.
-    """
-    path = request.path
-    if not path.startswith('/api/') or path.startswith('/api/auth/'):
-        return None
-    try:
-        verify_jwt_in_request(optional=True)
-        identity = get_jwt_identity()
-    except Exception:  # noqa: BLE001 — bad/expired token: let the view's own guard answer
-        return None
-    if identity is None:
-        return None  # anonymous request to a public endpoint — unchanged
-    try:
-        user = db.session.get(User, int(identity))
-    except (TypeError, ValueError):
-        return None
-    if user is not None and not affiliation_ok(user):
-        return jsonify({
-            "error": "Military affiliation verification is required to use this feature.",
-            "code": "affiliation_required",
-        }), 403
-    return None
+app.before_request(enforce_affiliation_gate)
 
 
 # Register Blueprints

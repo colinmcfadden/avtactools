@@ -1,0 +1,25 @@
+{
+  "description": "Whether each URL is heavy server work (isPriorityRequest in feature/auth/requestPriority.js): the end of the path, with any query string left off, is one of the listed paths. A native client holds background requests back while a heavy one is in flight.",
+  "generatedBy": "frontend/src/contracts/networkFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "heavyPaths": ["/analyze-field","/terrain-analysis","/threat-mask","/export-package","/generate-excel"],
+  "cases": [
+    {"url":"/analyze-field","heavy":true},
+    {"url":"/api/analyze-field","heavy":true},
+    {"url":"https://example.com/api/analyze-field","heavy":true},
+    {"url":"/api/analyze-field?debug=1","heavy":true},
+    {"url":"/api/terrain-analysis","heavy":true},
+    {"url":"/api/threat-mask","heavy":true},
+    {"url":"/api/export-package","heavy":true},
+    {"url":"/api/generate-excel","heavy":true},
+    {"url":"/api/lz","heavy":false},
+    {"url":"/api/lz/12","heavy":false},
+    {"url":"/api/sync/changes?since=0","heavy":false},
+    {"url":"/api/terrain/heightmap/3/4/5","heavy":false},
+    {"url":"/api/terrain/heights","heavy":false},
+    {"url":"/api/analyze-field/extra","heavy":false},
+    {"url":"/api/analyze-fields","heavy":false},
+    {"url":"/api/not-analyze-field","heavy":false},
+    {"url":"/api/convert-grid?next=/api/analyze-field","heavy":false},
+    {"url":"","heavy":false}
+  ]
+}

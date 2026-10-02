@@ -17,7 +17,8 @@ contracts/
 │  ├─ msnx/         template.msnx, parse.json, ...  reference: the web app
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
-│  └─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
+│  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
+│  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
 └─ scripts/         generators for the fixtures PyGeodesy owns
 ```
 
@@ -44,6 +45,8 @@ reference is.
 | `sqlite/tables.json` | `frontend/src/contracts/sqliteFixtures.test.js` | `backend/tests/test_contract_fixtures.py` | `core-formats` |
 | `localpoints/parse.json` | `frontend/src/contracts/sqliteFixtures.test.js` | — | `core-formats` |
 | `threats/parse.json` | `frontend/src/contracts/sqliteFixtures.test.js` | — | `core-formats` |
+| `network/responses.json` | — (it is *written* from the server) | `backend/tests/test_network_fixtures.py` | `core-network` |
+| `network/priority.json` | `frontend/src/contracts/networkFixtures.test.js` | — | `core-network` |
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
 
 iOS joins this table when it starts; it reads the same files.
@@ -58,6 +61,21 @@ are fixtures too: the web suite fails if a rebuild differs from what is committe
 the Kotlin reader is always tested on the files the web would produce today.
 Everything inside is invented; no file from a real mission. A real, unclassified AMPS
 export from the owner would be added as a further case, and is the better test.
+
+### The `network/` fixtures
+
+`responses.json` is what the server really answered, recorded from its own code by
+`backend/tests/test_network_fixtures.py`: sign-in (native and web), the refresh rotation (including a repeat
+inside the grace period and a spent token after it), saved LZs, the conflict and error shapes, the change feed,
+aircraft profiles and account deletion. Tokens, timestamps, generated ids and the server version are replaced by
+placeholders, so the file is stable. The native clients decode every body with their own types (strictly: an
+unknown field fails there) and replay the bodies against a mock server to test their auth and retry logic. A
+change in what the server says fails the backend test until the file is regenerated, and then the clients'
+tests show what they have to follow.
+
+```powershell
+cd backend; $env:UPDATE_CONTRACTS="1"; python -m pytest tests/test_network_fixtures.py
+```
 
 ### The `sqlite/` fixtures
 
