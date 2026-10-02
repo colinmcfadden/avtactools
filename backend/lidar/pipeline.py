@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .aoi import WEB_MERCATOR_NAVD88
+from .aoi import _horizontal as horizontal_crs
 from .crs import ECEF
 
 # ASPRS classification codes present in 3DEP tiles.
@@ -169,6 +171,16 @@ def imagery_colorization(raster: str) -> dict:
                            f"Blue:3:{RGB_SCALE}")}
 
 
+# The bundled imagery (mapbox_imagery.xml) is Web Mercator, and a custom
+# LIDAR_IMAGERY raster must be too: points are moved into it before colouring.
+IMAGERY_EPSG = 3857
+
+
+def in_imagery_frame(srs: str) -> bool:
+    """Whether points in ``srs`` can be looked up in the imagery as they are."""
+    return horizontal_crs(srs).to_epsg() == IMAGERY_EPSG
+
+
 def build(source, destination: str, *, bbox=None, source_srs: str,
           classes=OBSTRUCTION_CLASSES, thin_spacing_m: float | None = None,
           color_by: str | None = COLOR_BY_CLASSIFICATION,
@@ -235,6 +247,8 @@ def build(source, destination: str, *, bbox=None, source_srs: str,
     if thin_spacing_m:
         stages.append({"type": "filters.sample", "radius": thin_spacing_m})
 
+    # The frame the points are in from here on.
+    frame = source_srs
     if color_by == COLOR_BY_CLASSIFICATION:
         stages.append(classification_colorization(classes))
     elif color_by == COLOR_BY_HEIGHT:
@@ -242,14 +256,23 @@ def build(source, destination: str, *, bbox=None, source_srs: str,
     elif color_by == COLOR_BY_IMAGERY:
         if not imagery_raster:
             raise ValueError("colour by imagery needs an imagery_raster")
-        # Before reprojection, while the points are still in the source's own
-        # projected frame — GDAL has to line the raster up with them, and ECEF
-        # is not a frame imagery is published in.
+        # filters.colorization looks each point up in the raster at the
+        # point's own coordinates and does no reprojection, so the points
+        # must already be in the imagery's frame. AWS data arrives in it. The
+        # downloaded collection is in Albers, and Albers coordinates for north
+        # Georgia read as Web Mercator land in Nigeria: the first build from
+        # the collection came out coloured like savanna. Move the points over
+        # first, keeping NAVD88 heights, so the geoid correction below is the
+        # same one AWS builds get.
+        if not in_imagery_frame(source_srs):
+            stages.append({"type": "filters.reprojection",
+                           "in_srs": source_srs, "out_srs": WEB_MERCATOR_NAVD88})
+            frame = WEB_MERCATOR_NAVD88
         stages.append(imagery_colorization(imagery_raster))
 
     # The vertical half of this is the whole reason crs.py exists.
     stages.append({"type": "filters.reprojection",
-                   "in_srs": source_srs, "out_srs": ECEF})
+                   "in_srs": frame, "out_srs": ECEF})
 
     # ECEF values are ~5e6 m, so millimetre scaling with an auto offset keeps
     # the LAS integer encoding from quantising away real detail. Format 3 is

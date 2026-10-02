@@ -469,6 +469,14 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   level 18 enlarged (measured at five places), and fetching 16× the tiles one
   at a time was most of a build — 500 m took 707 s at level 20, 137 s at 18,
   with identical colours.
+- **Imagery colour needs the points in Web Mercator.** PDAL's
+  `filters.colorization` looks each point up at its own coordinates and does
+  no reprojection. AWS data is already Web Mercator; the downloaded collection
+  is Albers, and Albers coordinates for Georgia read as Web Mercator are in
+  Nigeria — the first collection build came out savanna-tan.
+  `pipeline.build` now moves non-Mercator points over first. Test the
+  collection path with real compound WKT (AWS points re-saved as Albers LAS
+  1.4 reproduce it), not only AWS builds.
 - 3D Tiles stream by level of detail, so a large area costs build time and
   disk, not browser memory. `--context` adds a thinned landscape ring without
   thinning the landing area.

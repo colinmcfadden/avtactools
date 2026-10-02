@@ -290,5 +290,61 @@ class HeightColorizationTests(unittest.TestCase):
         self.assertNotIn("filters.hag_nn", types)
 
 
+class ImageryFrameTests(unittest.TestCase):
+    """Imagery colour is looked up at each point's own coordinates.
+
+    PDAL's colorization does no reprojection. Albers coordinates for north
+    Georgia, read as Web Mercator, are in Nigeria: the first build from the
+    downloaded collection came out coloured like savanna.
+    """
+
+    BBOX = (1077000, 1348000, 1078000, 1349000)
+    RASTER = "/opt/app/lidar/mapbox_imagery.xml"
+
+    def stages(self, source_srs):
+        return pipeline.build("/data/tile.laz", "/out.las", bbox=self.BBOX,
+                              source_srs=source_srs, color_by=pipeline.COLOR_BY_IMAGERY,
+                              imagery_raster=self.RASTER)
+
+    def reprojections(self, stages):
+        return [(s["in_srs"], s["out_srs"]) for s in stages
+                if s["type"] == "filters.reprojection"]
+
+    def test_albers_points_move_into_the_imagery_frame_before_colouring(self):
+        stages = self.stages(SOURCE_SRS)
+        types = [s["type"] for s in stages]
+        self.assertEqual(self.reprojections(stages), [
+            (SOURCE_SRS, pipeline.WEB_MERCATOR_NAVD88),
+            (pipeline.WEB_MERCATOR_NAVD88, ECEF),
+        ])
+        self.assertLess(types.index("filters.reprojection"), types.index("filters.colorization"))
+
+    def test_wkt_albers_moves_too(self):
+        """The downloaded tiles state their CRS as compound WKT, not a code."""
+        wkt = CRS.from_user_input(SOURCE_SRS).to_wkt("WKT1_GDAL")
+        self.assertEqual(self.reprojections(self.stages(wkt))[0],
+                         (wkt, pipeline.WEB_MERCATOR_NAVD88))
+
+    def test_web_mercator_points_are_coloured_as_they_are(self):
+        """AWS's Entwine copy is already in the imagery's frame."""
+        stages = self.stages(pipeline.WEB_MERCATOR_NAVD88)
+        self.assertEqual(self.reprojections(stages), [(pipeline.WEB_MERCATOR_NAVD88, ECEF)])
+
+    def test_synthetic_colours_need_no_extra_step(self):
+        stages = pipeline.build("/data/tile.laz", "/out.las", bbox=self.BBOX,
+                                source_srs=SOURCE_SRS)
+        self.assertEqual(self.reprojections(stages), [(SOURCE_SRS, ECEF)])
+
+    def test_the_detour_keeps_navd88_heights_unchanged(self):
+        """So the geoid correction afterwards is the one AWS builds get."""
+        from pyproj import Transformer
+        to_mercator = Transformer.from_crs(SOURCE_SRS, pipeline.WEB_MERCATOR_NAVD88, always_xy=True)
+        x, y, z = to_mercator.transform(*SAMPLE_POINT)
+        self.assertAlmostEqual(z, SAMPLE_POINT[2], places=6)
+        # And the point lands in Georgia, not Nigeria.
+        lon, lat = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True).transform(x, y)
+        self.assertTrue(-85.5 < lon < -80.8 and 30.3 < lat < 35.1, (lon, lat))
+
+
 if __name__ == "__main__":
     unittest.main()
