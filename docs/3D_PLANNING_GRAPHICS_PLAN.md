@@ -109,7 +109,7 @@ question 2). The new endpoint serves the 3D view only.
 
 ## The heights endpoint
 
-`POST /api/terrain/heights` in `backend/routes/terrain_routes.py`.
+`POST /api/terrain/heights` in `backend/app/routes/terrain.py`.
 
 ```json
 // request — coordinates only in the body, as for the LiDAR routes
@@ -120,7 +120,7 @@ question 2). The new endpoint serves the 3D view only.
   "geoidM":  [-30.35, ...] } // add to an MSL height to get Cesium's height
 ```
 
-- Ground comes from the same DEM catalogue as `terrain_tiles.py`, converted
+- Ground comes from the same DEM catalogue as `services/terrain/tiles.py`, converted
   with the same offset, so a point sits on the surface the viewer renders.
   Coarse terrain levels are decimated, so a point exactly on the ground can
   look slightly off when zoomed far out; it matches up close.
@@ -201,7 +201,7 @@ answer.
 
 Most of the value.
 
-- **Backend:** the heights endpoint, with a helper in `terrain_tiles.py`
+- **Backend:** the heights endpoint, with a helper in `services/terrain/tiles.py`
   beside `geoid_offset`.
 - **Frontend:**
   - `sceneGraphics.js` — routes and points to shapes.
@@ -296,8 +296,8 @@ ground".
 
 | File | Change |
 |---|---|
-| `backend/routes/terrain_routes.py` | `POST /api/terrain/heights` |
-| `backend/terrain_tiles.py` | Height sampling beside `geoid_offset` |
+| `backend/app/routes/terrain.py` | `POST /api/terrain/heights` |
+| `backend/app/services/terrain/tiles.py` | Height sampling beside `geoid_offset` |
 | `backend/tests/test_terrain_heights.py` | New |
 | `frontend/src/feature/viewer3d/sceneGraphics.js` (+ test) | New — state to shapes |
 | `frontend/src/feature/viewer3d/useSceneHeights.js` (+ test) | New — fetch and cache heights |

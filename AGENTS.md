@@ -25,7 +25,7 @@ mission planning system).
 - **Users:** Army aviators. Access requires a verified `.mil` email or admin
   approval.
 - **Status:** public beta. Version lives in `frontend/package.json` and
-  `backend/version.py`, both written by semantic-release.
+  `backend/app/version.py`, both written by semantic-release.
 - **Repo:** `github.com/colinmcfadden/avtactools` · default branch `develop`.
 
 ---
@@ -70,7 +70,7 @@ The build service is a separate container. The API forwards build requests to
 it and relays progress; it never runs the LiDAR toolchain or touches Docker.
 
 The same Flask app serves a server-rendered admin dashboard at `/admin`,
-reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
+reached on `admin.ezpztac.app` (the host check in `app/routes/health.py` redirects `/` there).
 
 ---
 
@@ -78,22 +78,22 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 
 | Feature | What it does | Frontend | Backend |
 |---|---|---|---|
-| **Auth & access** | Google or email/password; email verification; `.mil` affiliation gate; per-user feature entitlements | `feature/auth/` | `routes/auth.py`, `entitlements.py`, `security_config.py`, `auth_rate_limit.py`, `email_service.py` |
-| **Admin dashboard** | Users, roles, entitlements, access approval, password resets, master aircraft list | — (Jinja) | `routes/admin_routes.py`, `templates/admin/` |
+| **Auth & access** | Google or email/password; email verification; `.mil` affiliation gate; per-user feature entitlements | `feature/auth/` | `routes/auth.py`, `security/{entitlements,config,rate_limit}.py`, `services/mailer.py` |
+| **Admin dashboard** | Users, roles, entitlements, access approval, password resets, master aircraft list | — (Jinja) | `routes/admin.py`, `templates/admin/` |
 | **LZ/PZ workspace** | Several LZ diagrams per session; target by MGRS; switch between them | `feature/lzWorkspace/`, `components/MapView.jsx`, `App.js` | — |
-| **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
+| **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM | `feature/terrain/` | `routes/terrain.py`, `services/terrain/{provider,field_detection,elevations}.py` |
 | **Planning graphics** | Helicopters, PZ markers, sectors of fire, go-arounds, doghouses, units, LZ box | `feature/{helicopters,pzMarker,sectorsOfFire,goAround,doghouses,unit}/` | — |
 | **MIL-STD symbology** | MIL-STD-2525C symbols for units and threats (milsymbol) | `feature/symbols/` | — |
-| **LZ card export** | Card image and Excel card | `feature/export/` | `routes/export_routes.py`, `export_service.py`, `lz_template.xlsx` |
+| **LZ card export** | Card image and Excel card | `feature/export/` | `routes/export.py`, `services/mission_package.py`, `assets/lz_template.xlsx` |
 | **Cloud save** | LZs, routes, point sets | `feature/savedMaps/`, `msnxImport/useSavedRoutes.js` | `routes/{lz_routes,saved_routes,point_sets}.py` |
-| **Routes & AMPS** | Sketch and plan routes (speed/alt/wind/fuel/TOT); import/export `.msnx`; ForeFlight share | `feature/msnxImport/` | `routes/route_share_routes.py`, `route_share_store.py`, `/api/route-winds` |
+| **Routes & AMPS** | Sketch and plan routes (speed/alt/wind/fuel/TOT); import/export `.msnx`; ForeFlight share | `feature/msnxImport/` | `routes/route_share.py`, `stores/route_shares.py`, `/api/route-winds` |
 | **Local points** | Import AMPS `.LPS` point files | `feature/localPoints/` | — |
-| **Threats** | `.ths` import/export, terrain-masking viewshed, KMZ, QR | `feature/threats/` | `routes/threat_routes.py`, `threat_download_store.py`, `threat_template.ths` |
-| **Weather** | METAR, NOTAMs, winds aloft | `feature/weather/` | `routes/weather_routes.py` |
-| **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
-| **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
+| **Threats** | `.ths` import/export, terrain-masking viewshed, KMZ, QR | `feature/threats/` | `routes/threats.py`, `services/threats/{viewshed,kmz,ths}.py`, `stores/threat_downloads.py`, `assets/threat_template.ths` |
+| **Weather** | METAR, NOTAMs, winds aloft | `feature/weather/` | `routes/weather.py`, `services/weather.py` |
+| **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft.py`, `services/aircraft/{seed,amps_package}.py` |
+| **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar.py`, `services/lidar_client.py`, `services/terrain/tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
 
-Entitlement keys (`entitlements.FEATURES`): `lz_pz_tools`, `routes`,
+Entitlement keys (`security/entitlements.FEATURES`): `lz_pz_tools`, `routes`,
 `msnx_import`, `threats`, `cloud_save`, `exports`, `aircraft_profiles`. A
 missing key means **enabled**, so new features default on.
 
@@ -103,17 +103,26 @@ missing key means **enabled**, so new features default on.
 
 ```
 avtactools/
-├─ backend/                  Flask API (Python 3.11)
-│  ├─ app.py                 App factory, CORS, JWT, affiliation gate, blueprints, ad hoc migrations
-│  ├─ models.py              SQLAlchemy models (§7)
-│  ├─ routes/                One blueprint per area (§6)
-│  ├─ templates/admin/       Admin dashboard (server-rendered)
-│  ├─ terrain_provider.py    DEM catalog (TERRAIN_DATA_DIR) + Terrarium fallback; slope analysis
-│  ├─ terrain_tiles.py       Per-tile heightmaps for the Cesium terrain provider
-│  ├─ lidar/                 Offline point-cloud pipeline — runs in its own Docker image (§12)
-│  ├─ tests/                 pytest
-│  ├─ Dockerfile, fly.toml   Production container and Fly config
-│  └─ version.py             Written by semantic-release
+├─ backend/                  Flask API (Python 3.11) — see backend/README.md
+│  ├─ wsgi.py                Entry point: `python wsgi.py` locally, gunicorn `wsgi:app` in production
+│  ├─ app/                   The application package
+│  │  ├─ __init__.py         `create_app()` — the factory; nothing is built at import time
+│  │  ├─ config.py, extensions.py, hooks.py, startup.py, paths.py
+│  │  │                      Settings from the environment; db/jwt/cors; the revocation + affiliation
+│  │  │                      gate; seeding and background work; locations of bundled files
+│  │  ├─ models/             SQLAlchemy models (§7)
+│  │  ├─ database/           URL handling and the start-up schema updates (§7)
+│  │  ├─ security/           Production checks, rate limiting, entitlements
+│  │  ├─ routes/             HTTP only: one blueprint per area (§6)
+│  │  ├─ services/           The logic, without Flask: terrain/ (DEM catalog + Terrarium fallback,
+│  │  │                      slope analysis, per-tile heightmaps for Cesium, SAM), threats/,
+│  │  │                      aircraft/, weather, mailer, mission_package, lidar_client
+│  │  ├─ stores/             Short-lived in-process stores (route shares, threat links)
+│  │  ├─ assets/, templates/admin/   Bundled templates; the admin dashboard (server-rendered)
+│  │  └─ version.py          Written by semantic-release
+│  ├─ lidar/                 Offline point-cloud pipeline — its own Docker image and service (§12)
+│  ├─ tests/                 pytest, laid out like app/
+│  └─ Dockerfile, fly.toml   Production container and Fly config
 ├─ frontend/                 React 19 SPA (Create React App)
 │  ├─ src/App.js             Top-level state and layout — large; most features hook in here
 │  ├─ src/components/        Shared UI (MapView, Controls, MissionSummary, mobile inputs)
@@ -125,13 +134,17 @@ avtactools/
 ├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md
 ├─ .github/workflows/        release.yaml (semantic-release only)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
-└─ backend/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
+└─ backend/docs/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
 ```
 
 **Conventions.** Frontend features are self-contained folders with a
 `use<Feature>.js` hook owning the state; `App.js` composes them. Backend areas
-are Flask blueprints under `routes/`, each registered in `app.py`. Comments
-explain *why*, not what — match the surrounding density.
+are Flask blueprints under `app/routes/`, each registered in
+`app/routes/__init__.py`. A route parses the request and answers; the work is in
+`app/services/`, which does not import Flask. Importing a module must not do
+work (load a model, open a connection, start a thread) — that belongs in
+`app/startup.py`. Comments explain *why*, not what — match the surrounding
+density.
 
 ---
 
@@ -162,13 +175,13 @@ Regenerate this from the source of truth with `app.url_map` if it drifts.
 
 ## 7. Data model
 
-`models.py`: `User`, `LocalCredential`, `AccountToken` (verification and reset
+`app/models/`: `User`, `LocalCredential`, `AccountToken` (verification and reset
 tokens, stored as SHA-256), `LoginEvent`, `AircraftProfile`, `SavedRoute`,
 `SavedPointSet`, `SavedLZ`.
 
 **There is no migration framework.** `db.create_all()` creates tables;
 new columns on existing tables are added by guarded `ALTER TABLE` statements in
-`app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile`
+`app/database/migrations.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile`
 against the live schema. When you add a column, add it the same way — and
 quote `"user"`, which is reserved in Postgres.
 
@@ -185,15 +198,15 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 | **Coolify** on a home Proxmox VM | Backend hosting; auto-deploys from GitHub | self-hosted | GitHub App |
 | **Cloudflare** | DNS; Tunnel to the home server; Access policies | dashboard | — |
 | **Supabase** | Postgres | `DATABASE_URL` | secret |
-| **Resend** | Transactional email | `email_service.py` | `RESEND_API_KEY` |
+| **Resend** | Transactional email | `services/mailer.py` | `RESEND_API_KEY` |
 | **Google Cloud** | OAuth sign-in | `routes/auth.py`, `GoogleLoginButton.jsx` | client ID (public) |
-| **Mapbox** | Basemaps, LZ-card imagery, point-cloud colour | `mapStyles.js`, `export_service.py`, `lidar/mapbox_imagery.xml` | public `pk.` token — **hardcoded in all three**; restrict it by URL in Mapbox |
-| **Esri World Imagery** | Imagery fed to SAM | `terrain_routes.py` | keyless |
+| **Mapbox** | Basemaps, LZ-card imagery, point-cloud colour | `mapStyles.js`, `services/mission_package.py`, `lidar/mapbox_imagery.xml` | public `pk.` token — **hardcoded in all three**; restrict it by URL in Mapbox |
+| **Esri World Imagery** | Imagery fed to SAM | `services/terrain/field_detection.py` | keyless |
 | **FAA VFR sectional** (ArcGIS-hosted) | VFR basemap | `mapStyles.js` | keyless |
-| **AWS Terrarium tiles** | Elevations, threat viewshed, terrain fallback | `terrain_routes.py`, `threat_routes.py`, `terrain_provider.py` | keyless |
-| **OpenTopoData** (SRTM30m) | Point elevation in field analysis | `terrain_routes.py` | keyless |
-| **aviationweather.gov** | METAR, winds aloft | `weather_routes.py` | keyless |
-| **FAA NOTAM search** | NOTAMs | `weather_routes.py` | keyless |
+| **AWS Terrarium tiles** | Elevations, threat viewshed, terrain fallback | `services/terrain/{elevations,provider}.py`, `services/threats/viewshed.py` | keyless |
+| **OpenTopoData** (SRTM30m) | Point elevation in field analysis | `services/terrain/field_detection.py` | keyless |
+| **aviationweather.gov** | METAR, winds aloft | `services/weather.py` | keyless |
+| **FAA NOTAM search** | NOTAMs | `routes/weather.py` | keyless |
 | **USGS 3DEP LiDAR** | Point clouds | `backend/lidar/`, `tools/` | keyless (§12) |
 | **USGS 1/3″ DEMs** | Local terrain | mounted at `TERRAIN_DATA_DIR` | downloaded |
 | **Ultralytics SAM** | LZ detection model | `sam_b.pt`, auto-downloaded on first load | — |
@@ -312,10 +325,12 @@ which costs one warm-up (~1 min) and the first view of each area again.
 The build service has its own settings (`LIDAR_COLLECTION`,
 `LIDAR_BUILD_CONTEXT_M`, `LIDAR_BUILDER_QUEUE`, …) — documented at the top of
 `backend/lidar/worker.py`.
-| `PROJ_NETWORK=ON` | **Local dev only**, when PROJ geoid grids aren't installed (§13). |
 
-There is **no `backend/.env.example`** — it was removed in `55aef5d` although
-`AUTHENTICATION.md` still points to it. Use this table.
+`PROJ_NETWORK=ON` is **local dev only**, for when PROJ geoid grids aren't
+installed (§13).
+
+`backend/.env.example` lists every setting the code reads, with placeholders;
+copy it to `backend/.env` for local work. Keep it and this table in step.
 
 ### Frontend (`frontend/.env`, and Vercel)
 
@@ -339,8 +354,8 @@ Give commands in PowerShell syntax.
 # Backend — http://127.0.0.1:5000
 cd backend
 python -m venv venv; .\venv\Scripts\Activate.ps1
-pip install -r requirements.txt pytest        # pytest is not in requirements.txt
-$env:TERRAIN_DATA_DIR="C:\_dev\avtactools\topo"; $env:PROJ_NETWORK="ON"; python app.py
+pip install -r requirements-dev.txt           # requirements.txt plus pytest
+$env:TERRAIN_DATA_DIR="C:\_dev\avtactools\topo"; $env:PROJ_NETWORK="ON"; python wsgi.py
 
 # Frontend — http://localhost:3000
 cd frontend
@@ -377,7 +392,7 @@ cd frontend; npm run build                    # catches lint errors the tests mi
   passes, `feat: LiDAR tiles` is rejected.
 - **Release is automatic on merge to `main`.** `release.yaml` runs
   semantic-release: it reads `feat`/`fix`/`!` commits, bumps
-  `frontend/package.json` and `backend/version.py`, writes `CHANGELOG.md`,
+  `frontend/package.json` and `backend/app/version.py`, writes `CHANGELOG.md`,
   tags, publishes a GitHub release, and commits
   `chore(release): X.Y.Z [skip ci]` so Vercel skips a second build.
 - Vercel deploys `main` to production and builds a preview for every PR. The
@@ -398,7 +413,7 @@ computes in metres and converts at the edges (e.g. `/api/elevations` returns
 
 **Geodesy — the trap that recurs.** USGS DEMs and LiDAR use NAVD88
 (orthometric) heights; Cesium and 3D Tiles use WGS84 ellipsoidal heights. The
-difference in north Georgia is **−30.35 m**. Both `terrain_tiles.py` and the
+difference in north Georgia is **−30.35 m**. Both `services/terrain/tiles.py` and the
 LiDAR pipeline apply it, and must agree. Without geoid grids, PROJ passes
 heights through unchanged **and reports success** — `lidar/crs.py`
 `assert_vertical_datum_applied` exists to catch that. The LiDAR Docker image
@@ -415,7 +430,7 @@ pyproj's default grid location.
   are in `feature/msnxImport/ampsFormats.js`.
 - **`.LPS`** local points and **`.ths`** threats are SQLite/SpatiaLite,
   read in pure JS (`localPoints/sqliteReader.js`) and written from cleaned
-  templates (`threat_template.ths`) so the exact schema survives.
+  templates (`assets/threat_template.ths`) so the exact schema survives.
 
 **Aircraft data.** Only UH-60L performance comes from a real `.vidx`
 (`perf_source: 'vidx'`). Every other airframe is published spec data, flagged
@@ -518,7 +533,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   failure of the same kind: SQLAlchemy was not pinned, a fresh build pulled
   2.1, and 2.1 makes a bare `postgresql://` use psycopg 3, which the image
   does not ship. Pin what the code depends on (SQLAlchemy is now pinned, and
-  `database_url.py` names the driver). Before a release, build the image and
+  `database/url.py` names the driver). Before a release, build the image and
   boot it against a Postgres container — local runs use SQLite and cannot
   catch either failure.
 - **Never `import` Cesium through webpack.** Its source reads `import.meta`,
@@ -533,6 +548,16 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   the start of a line inside a multi-line `RUN` gets ARGs spliced into the
   command ("unknown instruction"). A plain `docker build` passes; only Coolify
   fails. `tests/test_dockerfiles.py` guards it.
+- **Nothing heavy at import time.** The backend used to build the app, run its
+  migrations and load SAM (~1 GB, a download on first run) just by being
+  imported, so every test and every tool that touched a route module paid for
+  all of it, and tests had to stub `ultralytics` to get in. The app is now built
+  by `create_app()`; SAM loads on first use (`services/terrain/field_detection`)
+  with a background preload from `app/startup.py`. Keep it that way.
+- **Tests must not read your shell.** The app takes its settings from the
+  environment, so a developer's `TRUSTED_PROXY`, `LIDAR_BUILDER_URL` or
+  `TERRAIN_DATA_DIR` used to change test results. `tests/conftest.py` clears
+  them before each test; add a new setting there when you add one.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
 
@@ -540,11 +565,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 
 ## 15. Known issues and debt
 
-- `README.md`'s deployment section and project tree are stale (it describes
-  Hugging Face Spaces and a `backend/src/` layout). This file is current.
-- `backend/.env.example` is missing (§10).
-- `tests/test_threat_qr_export.py` fails (pre-existing).
-- No tests run in CI; `pytest` isn't a declared dependency.
+- The root `README.md`'s deployment section is stale (it describes Hugging
+  Face Spaces). This file and `backend/README.md` are current.
+- No tests run in CI (`pytest` is in `requirements-dev.txt`, not the image).
+- `services/terrain/tiles.py` still holds the disk cache, warm-up and geoid
+  logic together; the cache would be easier to read as its own module.
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -561,4 +586,4 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   already states plainly.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
-  `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`.
+  `backend/README.md`, `backend/docs/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`.

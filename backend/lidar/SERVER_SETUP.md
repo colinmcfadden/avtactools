@@ -128,7 +128,7 @@ docker build -t avtac-lidar:dev backend/lidar
 docker run -d --name lidar-builder -p 8090:8090 -e LIDAR_BUILDER_TOKEN=local-dev-token -v C:\_dev\avtactools\data\tiles:/data/tiles -v C:\_dev\avtactools\data\cache:/data/cache avtac-lidar:dev
 
 cd backend
-$env:LIDAR_TILES_DIR="C:\_dev\avtactools\data\tiles"; $env:LIDAR_BUILDER_URL="http://127.0.0.1:8090"; $env:LIDAR_BUILDER_TOKEN="local-dev-token"; $env:TERRAIN_DATA_DIR="C:\_dev\avtactools\topo"; $env:PROJ_NETWORK="ON"; python app.py
+$env:LIDAR_TILES_DIR="C:\_dev\avtactools\data\tiles"; $env:LIDAR_BUILDER_URL="http://127.0.0.1:8090"; $env:LIDAR_BUILDER_TOKEN="local-dev-token"; $env:TERRAIN_DATA_DIR="C:\_dev\avtactools\topo"; $env:PROJ_NETWORK="ON"; python wsgi.py
 ```
 
 `docker logs -f lidar-builder` shows builds as they run.

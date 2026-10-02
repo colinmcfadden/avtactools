@@ -23,7 +23,7 @@ RUN pip3 install --no-cache-dir torch==2.10.0 torchvision==0.25.0 \
 COPY requirements.txt requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Geoid grids for the 3D terrain (terrain_tiles.py). Without them PROJ passes
+# Geoid grids for the 3D terrain (app/services/terrain/tiles.py). Without them PROJ passes
 # heights through unchanged and reports success, and the terrain sits ~30 m
 # off the point clouds. Same CONUS set as the LiDAR build image, so both pick
 # the same NAVD88 -> ellipsoid transformation and agree. The check fails the

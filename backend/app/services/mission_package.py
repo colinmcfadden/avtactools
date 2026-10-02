@@ -92,7 +92,7 @@ def get_stitched_image(bbox, zoom=17):
             try: f.close()
             except: pass
 
-# Inside export_service.py
+# Inside mission_package.py
 
 def generate_custom_package(bounds_dict):
     generated_files = []

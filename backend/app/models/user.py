@@ -18,8 +18,8 @@ class User(db.Model):
     # Admin access control. `role` gates the admin dashboard; `is_active` gates
     # sign-in for every auth method (Google + password); `features` holds
     # per-user entitlement overrides ({key: bool}; missing key => enabled).
-    # See entitlements.py. Columns are added to existing databases by the
-    # idempotent ALTERs in app.py.
+    # See security/entitlements.py. Columns are added to existing databases by the
+    # idempotent ALTERs in database/migrations.py.
     role = db.Column(db.String(20), nullable=False, default='user')
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     features = db.Column(db.JSON, nullable=True)
@@ -27,7 +27,7 @@ class User(db.Model):
     # Military affiliation. A user proves DoD affiliation by verifying control of
     # a .mil address (mil_verified_at set), or an admin approves them manually
     # (access_approved). New users default to unapproved; the ALTER grandfathers
-    # everyone who existed before the gate was introduced. See entitlements.py.
+    # everyone who existed before the gate was introduced. See security/entitlements.py.
     mil_email = db.Column(db.String(120), nullable=True)
     mil_verified_at = db.Column(db.DateTime, nullable=True)
     access_approved = db.Column(db.Boolean, nullable=False, default=False)

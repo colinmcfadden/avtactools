@@ -34,12 +34,12 @@ lz-card-caddy/
 │   │   └── App.css          # Styles
 │   └── package.json
 │
-├── backend/                 # Python API
-│   ├── src/
-│   │   ├── routes/          # API Routes (Terrain, Export)
-│   │   └── app.py           # Flask Entry Point
-│   ├── sam_b.pt             # AI Model Weights (Git LFS)
-│   ├── Dockerfile           # HF Spaces Config
+├── backend/                 # Python API (see backend/README.md)
+│   ├── app/                 # The Flask application: routes, services, models
+│   ├── lidar/               # Point-cloud build service (own Docker image)
+│   ├── tests/               # pytest, laid out like app/
+│   ├── wsgi.py              # Entry point
+│   ├── Dockerfile           # Production container
 │   └── requirements.txt     # Python Dependencies
 │
 └── README.md                # You are here
@@ -82,7 +82,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Run the Flask API
-python app.py
+python wsgi.py
 ```
 
 The API should now be running at http://localhost:5000
