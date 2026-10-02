@@ -66,3 +66,14 @@ LZ_Map_Layer_*
 # collection tile index are both regenerated on demand.
 usgs_ept_coverage.geojson
 tile_index.json
+
+# --- ANDROID / GRADLE ---
+# Build output (build/ is ignored above), the Gradle cache, and per-machine files.
+.gradle/
+.kotlin/
+android/local.properties
+*.iml
+# Signing material never goes in the repository (docs/NATIVE_APPS_PLAN.md, "Signing and delivery").
+*.jks
+*.keystore
+*.p12

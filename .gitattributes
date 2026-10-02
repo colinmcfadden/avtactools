@@ -1,0 +1,6 @@
+# The owner works on Windows; the Gradle wrapper script must stay LF or it
+# fails on Linux (CI, Coolify) with "bad interpreter", and the Windows batch
+# file must stay CRLF.
+android/gradlew text eol=lf
+android/**/*.sh text eol=lf
+*.bat text eol=crlf
