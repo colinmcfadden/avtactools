@@ -3,6 +3,7 @@ import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
 import { convertToLatLongString } from "./utils/Helpers";
+import { toMgrs } from "./utils/mgrs";
 import ExportModal from "./feature/export/ExportModal";
 import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
@@ -954,38 +955,25 @@ function App() {
     [importLegacySnapshot],
   );
 
-  const handleMapRightClick = async (lat, lon, x, y) => {
+  // The grid of a clicked point, worked out in the browser (utils/mgrs gives
+  // the backend's exact answer), so the menu opens with it already filled in.
+  // Lat/long only at the poles, which MGRS covers with a different projection.
+  const gridAt = (lat, lon) => toMgrs(lat, lon) ?? convertToLatLongString(lat, lon);
+
+  const handleMapRightClick = (lat, lon, x, y) => {
     setContextMenu({ x, y, type: "map", lat, lon });
-    setClickedGrid("Calculating...");
-    try {
-      const res = await api.post("/convert-to-mgrs", {
-        lat,
-        lon,
-      });
-      setClickedGrid(res.data.mgrs);
-    } catch (err) {
-      setClickedGrid(convertToLatLongString(lat, lon)); // Fallback to Lat/Lon if backend fails
-    }
+    setClickedGrid(gridAt(lat, lon));
   };
 
   const handleSetAsTarget = () => {
-    if (clickedGrid === "Calculating..." || !contextMenu) return;
+    if (!contextMenu) return;
     startDiagramAtTarget([contextMenu.lat, contextMenu.lon], clickedGrid);
   };
 
   // 2. LZ Right-Click Handler
-  const handleLZRightClick = async (lat, lon, x, y) => {
+  const handleLZRightClick = (lat, lon, x, y) => {
     setContextMenu({ x, y, type: "lz", lat, lon });
-    setClickedGrid("Calculating...");
-    try {
-      const res = await api.post("/convert-to-mgrs", {
-        lat,
-        lon,
-      });
-      setClickedGrid(res.data.mgrs);
-    } catch (err) {
-      setClickedGrid(convertToLatLongString(lat, lon));
-    }
+    setClickedGrid(gridAt(lat, lon));
   };
 
   // 3. Drawing Controls
@@ -1026,9 +1014,8 @@ function App() {
       const coordinate = parseCoordinate(gridInput);
       if (coordinate) {
         const { lat, lon } = coordinate;
-        const res = await api.post("/convert-to-mgrs", { lat, lon });
-        const mgrs = res.data?.mgrs;
-        if (!mgrs) throw new Error("The server didn't return a grid for that position.");
+        const mgrs = toMgrs(lat, lon);
+        if (!mgrs) throw new Error("That position is beyond the MGRS grid (84°N / 80°S).");
         // startDiagramAtTarget rewrites the field with the grid, so the user
         // sees their coordinate resolve into the MGRS the rest of the app uses.
         startDiagramAtTarget([lat, lon], mgrs);
@@ -1375,7 +1362,6 @@ function App() {
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
-                disabled={clickedGrid === "Calculating..."}
               >
                 Set as Target
               </button>
@@ -1393,7 +1379,6 @@ function App() {
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
-                disabled={clickedGrid === "Calculating..."}
               >
                 Set as Target
               </button>

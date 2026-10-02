@@ -118,7 +118,7 @@ avtactools/
 │  ├─ src/App.js             Top-level state and layout — large; most features hook in here
 │  ├─ src/components/        Shared UI (MapView, Controls, MissionSummary, mobile inputs)
 │  ├─ src/feature/<name>/    One folder per feature: components + a use<Name> hook
-│  ├─ src/utils/             Coordinates, LZ dictionary, helicopter capacity
+│  ├─ src/utils/             Coordinates, MGRS (`mgrs.js`), LZ dictionary, helicopter capacity
 │  ├─ public/                msnx_template.msnx, static assets; public/cesium/ is copied at build
 │  └─ scripts/copy-cesium.js prestart/prebuild: copies Cesium's static build into public/
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
@@ -145,7 +145,7 @@ who have not cleared the `.mil`/approval check.
 |---|---|
 | auth | `POST /api/auth/{login,register,google,verify-email,resend-verification,forgot-password,reset-password,mil/request,mil/verify}`, `GET /api/auth/me` |
 | terrain | `POST /api/analyze-field` (SAM), `POST /api/terrain-analysis` (slope), `POST /api/elevations` (planner/AMPS ground, Terrarium), `GET /api/terrain/heightmap/<level>/<x>/<y>`, `POST /api/terrain/heights` (3D ground + geoid, local DEMs) |
-| location | `POST /api/convert-grid`, `POST /api/convert-to-mgrs` |
+| location | `POST /api/convert-grid` (MGRS → lat/lon), `POST /api/convert-to-mgrs` (no longer called by the SPA, which converts lat/lon → MGRS itself with `utils/mgrs.js`) |
 | weather | `GET /api/weather`, `POST /api/route-winds` |
 | export | `POST /api/generate-excel`, `POST /api/export-package` |
 | saved data | `/api/lz`, `/api/routes` (+ `/<id>/file`), `/api/pointsets` — CRUD |
@@ -387,7 +387,12 @@ cd frontend; npm run build                    # catches lint errors the tests mi
 
 ## 13. Domain knowledge
 
-**Coordinates.** Crews work in MGRS. Heights are feet in the UI; the backend
+**Coordinates.** Crews work in MGRS. Lat/lon → MGRS runs in the browser
+(`utils/mgrs.js`: Krüger-series transverse Mercator, matched against the
+backend's PyGeodesy at 5,255 points worldwide, every one identical) — the
+cursor readout converts on every mouse move, so never call the API for it.
+Digits are truncated, not rounded, and the zone is zero-padded (`05R`), as
+PyGeodesy writes it. Heights are feet in the UI; the backend
 computes in metres and converts at the edges (e.g. `/api/elevations` returns
 `elevationsFt`). AMPS files store metres. Check units at every boundary.
 
