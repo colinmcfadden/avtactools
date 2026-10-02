@@ -27,9 +27,9 @@ concurrency:
 
 jobs:
   kotlin-tests:
-    name: Kotlin tests
+    name: Kotlin and Android tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: android
@@ -58,10 +58,21 @@ jobs:
             grep -i "^$p==" backend/requirements.txt
           done | xargs pip install
 
-      # The pure-Kotlin modules (core-model, core-geo, core-planning), held to
-      # the golden fixtures in contracts/. Modules that need the Android Gradle
-      # Plugin join this job when they exist.
+      # GitHub's Ubuntu image has the Android SDK but not necessarily the newest platform: compose 1.12 needs
+      # compileSdk 37 (android/build-logic).
+      - name: Android SDK platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      # The pure-Kotlin modules (core-model, core-geo, core-planning, ...) held to the golden fixtures in
+      # contracts/, and the Android modules' unit tests, which run on the JVM against Robolectric.
       - name: Test
         run: ./gradlew test --console=plain
         env:
           EZPZ_LIVE_PYTHON: python
+
+      # Lint is held to zero warnings (warningsAsErrors in the convention plugins), and the app has to assemble.
+      - name: Lint and assemble
+        run: ./gradlew lintDebug assembleDebug --console=plain

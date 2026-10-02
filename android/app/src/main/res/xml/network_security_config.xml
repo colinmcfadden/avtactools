@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HTTPS only, with the platform's own certificate checks. No pinning: Cloudflare rotates its intermediates, and a
+     pin failure would lock crews out (docs/NATIVE_APPS_PLAN.md, "Security, privacy and distribution"). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

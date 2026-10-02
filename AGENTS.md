@@ -669,8 +669,9 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 The plan, decisions and phases are in `docs/NATIVE_APPS_PLAN.md`; this is what
 exists and the rules for working on it.
 
-**Layout.** `android/` is a Gradle project (Kotlin 2.4, Gradle 8.14, JDK 17
-toolchain); `contracts/` holds the golden fixtures. iOS is not started.
+**Layout.** `android/` is a Gradle project (Kotlin 2.4, Gradle 9.8, Android Gradle
+Plugin 9.4, JDK 17 toolchain); `contracts/` holds the golden fixtures and the
+design tokens. iOS is not started.
 
 | Module | What it is | State |
 |---|---|---|
@@ -681,7 +682,9 @@ toolchain); `contracts/` holds the golden fixtures. iOS is not started.
 | `core-network` | The API client over OkHttp: one transport (`ApiClient`) with the session behind it, typed calls for the routes in `contracts/openapi.yaml`, DTOs, the request-priority gate, and the "update required" check. See *The API client* below | client, auth and refresh done; the sign-up and `.mil` flows and the web-share routes are not yet typed |
 | `core-sync` | The sync engine: local edits into an outbox, a push in order, a pull by cursor, conflicts kept side by side. Pure logic over a `SyncStore` interface (Room implements it in the app; `InMemorySyncStore` here). LZs and custom aircraft profiles sync; routes and point sets join when their API is typed (the engine passes over their changes, and the cursor must be reset to 0 when it learns them). See *The sync engine* below | engine done; Room store not started |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
-| everything else in the plan (`app`, `core-data`, `feature-*` …) | needs the Android Gradle Plugin or is later work | **not started** |
+| `core-designsystem` | Android library: the theme (dark, light and the red-shifted **night** palette), type, and `Tokens`, which is **generated** from `contracts/tokens/tokens.json` by `contracts/scripts/tokens.py` (CI checks it is current). A test holds every palette to WCAG contrast, because nothing in an agent session can look at a screen | theme and tokens; shared components (sheet, inspector, readout pill) join as screens need them |
+| `app` | The application: Hilt, Compose, the manifest and its security settings. See *The app module* below | a skeleton that starts and shows the version; no screens yet |
+| everything else in the plan (`core-data`, `core-symbols`, `core-packs`, `feature-*` …) | later work | **not started** |
 
 Package root is `app.ezpztac.*` (the reverse of `ezpztac.app`). The Android
 `applicationId` is not chosen and is permanent once published: ask the owner.
@@ -816,14 +819,38 @@ client is built around not losing one:
 - Not done: the Room store, WorkManager scheduling (`RetryPolicy.delayMillis` says how long to wait), routes and point sets,
   the conflict screen, and the 14-day "sign in again" rule.
 
-**Building in an agent sandbox.** `dl.google.com` (Google's Maven: the Android
-Gradle Plugin, AndroidX, Compose, the SDK) is blocked by the cloud environment's
-network policy, so only the pure-Kotlin modules can be built and tested there; the
-owner must allow that host before any module that needs the Android plugin can
-be verified. Maven Central also throttles a shared egress IP with 429s: Gradle
-caches what it fetched, so re-run, and give Gradle retries in
-`~/.gradle/gradle.properties` (not in the repo). Never commit a build that was
-not compiled: say so instead.
+**The app module and the Android build.**
+- **Convention plugins** in `android/build-logic`: `ezpz.kotlin-library` (pure modules), and for Android
+  `ezpz.android-library` / `ezpz.android-application` (both apply `ezpz.android-common`), plus `ezpz.android-compose` and
+  `ezpz.android-hilt`. A module applies these and never names AGP, KSP or Hilt itself — build-logic owns those on its
+  classpath, and naming them again with a version fails. **Lint and Kotlin warnings are errors**, so a deprecation fails
+  the build (that is how the old `createComposeRule` was caught: use `androidx.compose.ui.test.junit4.v2`).
+- **AGP 9 compiles Kotlin itself**: no `org.jetbrains.kotlin.android` plugin. It needs Gradle 9.1+, and Gradle's own
+  Kotlin plugin still builds the pure modules under the same Kotlin version.
+- **`compileSdk` is 37**, not 36: Compose 1.12 (the BOM) requires it, and the AAR metadata check fails the build
+  otherwise. `targetSdk` stays 36 until 37 behaviour is tested. `minSdk` 29.
+- **`versionName` is the product's version**, read from `frontend/package.json` (semantic-release writes it, and
+  `android`-scoped commits never bump it). `versionCode` is `GITHUB_RUN_NUMBER`, or 1 locally.
+- **`applicationId` is a placeholder** (`app.ezpztac.unreleased`, `.debug` for debug builds). A release build is refused
+  *before any work* unless `-Pezpz.applicationId=<id>` is passed, because the id is permanent once published and the owner
+  has not chosen it. R8 release builds work (verified with an example id).
+- **The server URL** is `-Pezpz.apiUrl=<root>`, default the self-hosted backend. It is the server **root**: the typed calls
+  carry their own `/api` paths, unlike the web's `REACT_APP_API_URL`, which ends in `/api`.
+- **Security settings in the manifest** (plan, "Security, privacy and distribution"): HTTPS only with the platform's
+  certificate checks and no pinning (`network_security_config.xml`; debug builds also allow cleartext to the emulator's
+  host loopback `10.0.2.2`), `allowBackup=false` and extraction rules that exclude everything, so LZ locations never reach
+  a consumer cloud.
+- **Robolectric** runs the Android modules' unit tests on the JVM, so no device or emulator is needed. JDK 17+ closes
+  packages it reaches into, so the common plugin passes `--add-opens` for them; a "FileDescriptor internals" error means
+  a package is missing from that list.
+- **Building in an agent sandbox.** The cloud environment's network policy must allow `dl.google.com` (AGP, AndroidX,
+  Compose, the SDK) and `jitpack.io`. The Android SDK is not in the image: download the command-line tools from
+  `dl.google.com/android/repository`, accept licences, install `platforms;android-37.0`, `build-tools;37.0.0`, and put
+  `sdk.dir=<path>` in `android/local.properties` (gitignored). The new session after a policy change is the one that gets
+  it; a running session keeps the policy it started with. Maven Central also throttles a shared egress IP with 429s: Gradle
+  caches what it fetched, so re-run, and give Gradle retries in `~/.gradle/gradle.properties` (not in the repo). There
+  is no emulator (no KVM): what looks right on a screen cannot be checked, so ask for a screenshot. Never commit a build
+  that was not compiled: say so instead.
 
 **Rules that carry over unchanged:** unclassified only; threats are never sent
 to the server; no secret in the app binary; no new dependency beyond what the

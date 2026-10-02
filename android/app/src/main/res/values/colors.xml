@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The dark palette's background (contracts/tokens/tokens.json), for the window and the launcher icon only;
+         everything in Compose reads the generated Tokens. -->
+    <color name="ezpz_background">#092137</color>
+    <color name="ezpz_icon_foreground">#5AA7D4</color>
+</resources>

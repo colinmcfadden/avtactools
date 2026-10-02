@@ -9,6 +9,7 @@ golden answers they are all tested against. See `docs/NATIVE_APPS_PLAN.md`
 ```
 contracts/
 ├─ openapi.yaml     the API routes the apps call (checked against the backend's responses)
+├─ tokens/          design tokens (colours for dark, light and night, spacing, type) — tokens.json
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy
 │  ├─ coords/       parse.json                      reference: the web app
@@ -19,7 +20,7 @@ contracts/
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
-└─ scripts/         generators for the fixtures PyGeodesy owns
+└─ scripts/         generators: the fixtures PyGeodesy owns, and tokens.py
 ```
 
 ## Who is the reference
@@ -152,3 +153,19 @@ without the fixture diff in the same PR — and the Android tests then fail unti
   grid pattern requires a zone number).
 - The inverse accepts any even number of digits, as PyGeodesy does. Past ten
   digits the square is smaller than a metre.
+
+## Design tokens
+
+`tokens/tokens.json` is the one place a colour, a spacing step or a type size is decided. The clients keep the same
+names, so "primary" or "touchTarget" means the same on every platform. `scripts/tokens.py write` generates the Android
+`Tokens.kt` (the iOS file joins when iOS starts) and `tokens.py check` fails if the generated file is stale; CI runs it.
+
+The palettes start from the web app's colours (the navy `#092137` app background, the blues, and its red, amber and
+green). The **night** palette is dimmed and red-shifted for a night cockpit. Android's `TokenContrastTest` holds every
+palette to WCAG contrast (4.5:1 for text, 3:1 for icons and large text), so a colour edit that would be hard to read
+fails there; the first run of that test found two real problems in the first draft.
+
+```powershell
+python contracts/scripts/tokens.py write
+python contracts/scripts/tokens.py check
+```

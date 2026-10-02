@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window behind Compose, so the first frame is the app's dark navy and not a white flash. -->
+    <style name="Theme.Ezpz" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ezpz_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>
