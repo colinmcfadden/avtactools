@@ -1,4 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import declared_attr
 from datetime import datetime
 
 db = SQLAlchemy()
@@ -261,7 +262,49 @@ class AircraftProfile(db.Model):
         }
 
 
-class SavedRoute(db.Model):
+class SyncMixin:
+    """What a saved record needs to be kept in step across devices.
+
+    The web app, the Android app and the iOS app each keep a copy and edit it
+    offline, so a record needs an identity that does not depend on the server
+    (``client_uuid``), a version to detect edits made on top of a stale copy
+    (``revision``), a tombstone so a deletion can reach devices that were offline
+    (``deleted_at``), and a place in one per-user change order (``change_seq``)
+    that a device can ask "everything after" about. See sync_support.py.
+
+    Added to existing databases by ``schema_sync``; ``app.py`` adds the unique
+    index. ``revision`` defaults to 1, which backfills the rows that predate it.
+    """
+
+    client_uuid = db.Column(db.String(36), nullable=True)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+    change_seq = db.Column(db.Integer, nullable=True, index=True)
+    # The Idempotency-Key of the last write, so a retry of it after a lost
+    # response is recognised as the same write rather than as a conflict with it.
+    last_idem_key = db.Column(db.String(64), nullable=True)
+
+    @declared_attr
+    def __table_args__(cls):  # noqa: N805 — SQLAlchemy's declared_attr convention
+        # One record per client identity per user: a retried create cannot duplicate.
+        return (db.Index(f'ux_{cls.__tablename__}_user_client_uuid', 'user_id', 'client_uuid', unique=True),)
+
+
+class SyncCounter(db.Model):
+    """Per-user change counter: the order every saved record's changes happened in.
+
+    Taking the next number locks the user's row until the write commits, so a
+    lower number can never commit after a higher one. That is what lets a device
+    keep a cursor and trust it has seen everything up to it.
+    """
+
+    __tablename__ = 'sync_counter'
+
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), primary_key=True)
+    seq = db.Column(db.Integer, nullable=False, default=0)
+
+
+class SavedRoute(SyncMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
@@ -277,7 +320,7 @@ class SavedRoute(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class SavedPointSet(db.Model):
+class SavedPointSet(SyncMixin, db.Model):
     """A named set of local points (imported from an .LPS file) for map display."""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -290,7 +333,7 @@ class SavedPointSet(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class SavedLZ(db.Model):
+class SavedLZ(SyncMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)

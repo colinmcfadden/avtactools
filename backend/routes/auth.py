@@ -33,6 +33,7 @@ from models import (
     SavedLZ,
     SavedPointSet,
     SavedRoute,
+    SyncCounter,
     User,
     db,
 )
@@ -839,6 +840,7 @@ def delete_account():
     SavedPointSet.query.filter_by(user_id=uid).delete()
     AircraftProfile.query.filter_by(user_id=uid).delete()
     LoginEvent.query.filter_by(user_id=uid).delete()
+    SyncCounter.query.filter_by(user_id=uid).delete()
     db.session.delete(user)  # cascades the credential and every account token, refresh tokens included
     db.session.commit()
     return jsonify({"status": "success", "message": "Your account has been deleted."})

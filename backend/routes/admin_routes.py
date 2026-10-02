@@ -22,7 +22,7 @@ from werkzeug.security import check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile
+from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile, SyncCounter
 from entitlements import (
     FEATURES, FEATURE_KEYS, resolve_features,
     is_admin, is_super_admin, account_active, affiliation_ok,
@@ -204,9 +204,10 @@ def user_detail(uid):
     if not user:
         abort(404)
     counts = {
-        'routes': SavedRoute.query.filter_by(user_id=uid).count(),
-        'lzs': SavedLZ.query.filter_by(user_id=uid).count(),
-        'point_sets': SavedPointSet.query.filter_by(user_id=uid).count(),
+        # Not the tombstones a deletion leaves behind for devices to learn of it.
+        'routes': SavedRoute.query.filter_by(user_id=uid, deleted_at=None).count(),
+        'lzs': SavedLZ.query.filter_by(user_id=uid, deleted_at=None).count(),
+        'point_sets': SavedPointSet.query.filter_by(user_id=uid, deleted_at=None).count(),
     }
     try:
         lp = max(1, int(request.args.get('lp', 1)))
@@ -347,6 +348,7 @@ def delete_user(uid):
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
     LoginEvent.query.filter_by(user_id=uid).delete()
+    SyncCounter.query.filter_by(user_id=uid).delete()
     db.session.delete(user)  # cascades local_credential + account_tokens
     db.session.commit()
     flash('User deleted.', 'ok')

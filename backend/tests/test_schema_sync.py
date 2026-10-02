@@ -18,8 +18,8 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AccountToken, AircraftProfile, LoginEvent, db  # noqa: E402
-from schema_sync import sync_table_columns  # noqa: E402
+from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, db  # noqa: E402
+from schema_sync import ensure_unique_index, sync_table_columns  # noqa: E402
 
 
 # The shape aircraft_profile had before perf_source and the template_* columns
@@ -255,3 +255,100 @@ class AccountTokenRefreshColumnsTests(unittest.TestCase):
     def test_is_idempotent(self):
         sync_table_columns(db, AccountToken)
         self.assertEqual([], sync_table_columns(db, AccountToken))
+
+
+# The saved-record tables as production has them: before client_uuid, revision,
+# deleted_at, change_seq and last_idem_key existed.
+LEGACY_SAVED = {
+    "saved_lz": (
+        "CREATE TABLE saved_lz (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, "
+        "name VARCHAR(100) NOT NULL, lz_data JSON NOT NULL, created_at DATETIME, updated_at DATETIME)",
+        SavedLZ, "(1, 'Old LZ', '{\"k\": 1}')", "user_id, name, lz_data",
+    ),
+    "saved_route": (
+        "CREATE TABLE saved_route (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, "
+        "name VARCHAR(100) NOT NULL, kind VARCHAR(20) NOT NULL, route_data JSON NOT NULL, "
+        "msnx_file BLOB, file_name VARCHAR(255), created_at DATETIME, updated_at DATETIME)",
+        SavedRoute, "(1, 'Old route', 'sketch', '{}')", "user_id, name, kind, route_data",
+    ),
+    "saved_point_set": (
+        "CREATE TABLE saved_point_set (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, "
+        "name VARCHAR(100) NOT NULL, points_data JSON NOT NULL, created_at DATETIME, updated_at DATETIME)",
+        SavedPointSet, "(1, 'Old points', '[]')", "user_id, name, points_data",
+    ),
+}
+SYNC_COLUMNS = {"client_uuid", "revision", "deleted_at", "change_seq", "last_idem_key"}
+
+
+class SavedRecordSyncColumnsTests(unittest.TestCase):
+    """Production has these three tables full of crews' work. Adding sync must not touch it."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        for ddl, _model, values, columns in LEGACY_SAVED.values():
+            db.session.execute(text(ddl))
+        for table, (_ddl, _model, values, columns) in LEGACY_SAVED.items():
+            db.session.execute(text(f"INSERT INTO {table} ({columns}) VALUES {values}"))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_each_table_gains_the_sync_columns_and_keeps_its_rows(self):
+        for table, (_ddl, model, _values, _columns) in LEGACY_SAVED.items():
+            with self.subTest(table=table):
+                self.assertEqual(SYNC_COLUMNS, set(sync_table_columns(db, model)))
+                row = model.query.one()
+                self.assertEqual(row.name.startswith("Old"), True)
+
+    def test_existing_rows_start_at_revision_one_and_have_no_identity_yet(self):
+        for _table, (_ddl, model, _values, _columns) in LEGACY_SAVED.items():
+            sync_table_columns(db, model)
+            row = model.query.one()
+            self.assertEqual(row.revision, 1)
+            self.assertIsNone(row.client_uuid)
+            self.assertIsNone(row.change_seq)
+            self.assertIsNone(row.deleted_at)
+
+    def test_the_unique_index_is_added_once_and_enforced(self):
+        from sqlalchemy.exc import IntegrityError
+        for table, (_ddl, model, _values, _columns) in LEGACY_SAVED.items():
+            with self.subTest(table=table):
+                sync_table_columns(db, model)
+                name = f"ux_{table}_user_client_uuid"
+                self.assertTrue(ensure_unique_index(db, model, ("user_id", "client_uuid"), name))
+                self.assertTrue(ensure_unique_index(db, model, ("user_id", "client_uuid"), name))   # idempotent
+                db.session.execute(text(f"UPDATE {table} SET client_uuid = 'aaaaaaaa-0000-0000-0000-000000000001'"))
+                db.session.commit()
+                with self.assertRaises(IntegrityError):
+                    db.session.execute(text(
+                        f"INSERT INTO {table} (id, user_id, name, {_columns.split(', ', 2)[2]}, client_uuid) "
+                        f"SELECT 99, user_id, 'dup', {_columns.split(', ', 2)[2]}, client_uuid FROM {table}"
+                    ))
+                    db.session.commit()
+                db.session.rollback()
+
+    def test_rows_with_no_identity_do_not_collide_under_the_index(self):
+        # Every existing row has client_uuid NULL; NULLs are never equal, so the index cannot fail on them.
+        table, (_ddl, model, _values, _columns) = next(iter(LEGACY_SAVED.items()))
+        sync_table_columns(db, model)
+        db.session.execute(text(f"INSERT INTO {table} (id, user_id, name, lz_data) VALUES (50, 1, 'b', '{{}}')"))
+        db.session.commit()
+        self.assertTrue(ensure_unique_index(db, model, ("user_id", "client_uuid"), f"ux_{table}_user_client_uuid"))
+
+    def test_a_failed_index_is_reported_not_raised(self):
+        table, (_ddl, model, _values, _columns) = next(iter(LEGACY_SAVED.items()))
+        sync_table_columns(db, model)
+        db.session.execute(text(f"UPDATE {table} SET client_uuid = 'dup'"))
+        db.session.execute(text(f"INSERT INTO {table} (id, user_id, name, lz_data, client_uuid) VALUES (60, 1, 'b', '{{}}', 'dup')"))
+        db.session.commit()
+        self.assertFalse(ensure_unique_index(db, model, ("user_id", "client_uuid"), f"ux_{table}_user_client_uuid"))
+        self.assertEqual(model.query.count(), 2)            # still usable afterwards

@@ -13,11 +13,11 @@ except ImportError:
     __version__ = "0.0.0-dev"
 
 from database_url import database_uri, is_postgres
-from models import AccountToken, AircraftProfile, LoginEvent, User, db
+from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, User, db
 from entitlements import affiliation_ok
 from token_revocation import is_revoked
 from aircraft_seed import seed_aircraft_profiles
-from schema_sync import sync_table_columns
+from schema_sync import ensure_unique_index, sync_table_columns
 from security_config import (
     resolve_jwt_secret,
     session_cookie_secure,
@@ -41,6 +41,7 @@ from routes.route_share_routes import route_share_bp
 from routes.aircraft_routes import aircraft_bp
 from routes.admin_routes import admin_bp
 from routes.config_routes import config_bp
+from routes.sync_routes import sync_bp
 from client_header import CLIENT_HEADER
 
 app = Flask(__name__)
@@ -160,6 +161,7 @@ app.register_blueprint(route_share_bp)
 app.register_blueprint(aircraft_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(config_bp)
+app.register_blueprint(sync_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
@@ -237,6 +239,15 @@ with app.app_context():
     sync_table_columns(db, LoginEvent)
     # account_token gained the refresh-token columns (family, client, session_version).
     sync_table_columns(db, AccountToken)
+    # Saved records gained the sync columns (client_uuid, revision, deleted_at,
+    # change_seq, last_idem_key). The unique index that stops a retried create
+    # duplicating has to be added by hand: create_all never alters an existing table.
+    for _model in (SavedLZ, SavedRoute, SavedPointSet):
+        sync_table_columns(db, _model)
+        if not ensure_unique_index(
+            db, _model, ('user_id', 'client_uuid'), f'ux_{_model.__tablename__}_user_client_uuid'
+        ):
+            app.logger.warning("sync: could not add the client_uuid index on %s", _model.__tablename__)
 
     # Master aircraft profiles. Fills in missing slugs only — admin edits and
     # user-created profiles are never touched.

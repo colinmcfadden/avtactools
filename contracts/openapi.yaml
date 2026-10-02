@@ -257,6 +257,182 @@ paths:
         "403":
           $ref: "#/components/responses/Error"
 
+  /api/sync/changes:
+    get:
+      operationId: syncChanges
+      summary: Everything of the caller's that changed after a cursor, deletions included
+      description: |
+        How a device catches up. Send `since=0` the first time; keep the returned
+        `cursor` and send it back as `since` next time. While `has_more` is true, ask
+        again at once. The order is a per-user counter, not a timestamp, so a change
+        is never skipped and none is returned twice, even for edits that race.
+
+        A deleted record arrives as a tombstone (`deleted: true`, empty `data`); the
+        identity (`client_uuid`) survives so the device knows which local record to
+        remove. Never cached.
+      security:
+        - bearer: []
+      parameters:
+        - name: since
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          description: Page size, 1 to 500. A larger request is clamped.
+          schema: { type: integer, minimum: 1, default: 100 }
+      responses:
+        "200":
+          description: A page of changes, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangeFeed"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lz:
+    get:
+      operationId: listLzs
+      summary: The caller's saved LZs (summaries, without deleted ones)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LzSummary"
+    post:
+      operationId: createLz
+      summary: Save an LZ
+      description: |
+        Send `client_uuid`, a UUID the device chose, so a retry after a lost response
+        returns the first record (200) instead of making a second (201).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, lz_data]
+              properties:
+                name: { type: string }
+                lz_data: { description: "The diagram document (schema 2).", type: object }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LzSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LzSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lz/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getLz
+      summary: One saved LZ, with its diagram
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LzFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateLz
+      summary: Edit a saved LZ
+      description: |
+        Send `If-Match: "<revision>"` with the revision the edit was based on. If the
+        server has moved on, nothing is overwritten and the server's copy comes back
+        with 409 (`revision_conflict`): keep the local one beside it for the user to
+        resolve. Without `If-Match` the last writer wins, as the web app always has.
+        A retry carrying the same `Idempotency-Key` is recognised and answered, not
+        refused as a conflict with itself.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                lz_data: { type: object }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LzSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteLz
+      summary: Delete a saved LZ
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion
+        through `/api/sync/changes`. Deleting twice is not an error. A stale
+        `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
 components:
   parameters:
     ClientHeader:
@@ -273,6 +449,28 @@ components:
         maxLength: 64
         pattern: '^(android|ios|web)/\d{1,4}\.\d{1,4}\.\d{1,4}(-[0-9A-Za-z.]{1,20})?( \(\d{1,9}\))?$'
 
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        The record's `revision` that this edit was based on, e.g. `"3"` (`*` matches
+        any). A stale one is refused with 409 and nothing is overwritten.
+      schema:
+        type: string
+        pattern: '^(\*|(W/)?"?\d{1,9}"?)$'
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        A key the device makes up for one write and repeats when it retries it. Printable
+        ASCII, 64 characters at most; anything else is ignored. The write is applied once.
+      schema:
+        type: string
+        maxLength: 64
+
   securitySchemes:
     bearer:
       type: http
@@ -280,7 +478,22 @@ components:
       bearerFormat: JWT
       description: The `access_token` from sign-in or refresh.
 
+  headers:
+    ETag:
+      description: The record's current `revision`, quoted.
+      schema: { type: string, example: '"3"' }
+
   responses:
+    SimpleError:
+      description: |
+        An error from the saved-record and sync routes, which predate the auth routes'
+        shape and keep theirs so the web app is undisturbed: `error` is for people, `code`
+        (when present) is stable and meant for the app.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/SimpleError"
+
     Error:
       description: An error. `code` is stable and meant for the app; `message` is for people.
       content:
@@ -288,7 +501,33 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
 
+    Conflict:
+      description: |
+        The record changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/LzFull"
+
   schemas:
+    SimpleError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        code:
+          type: string
+          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`"
+
     Error:
       type: object
       required: [status, message, error]
@@ -351,6 +590,63 @@ components:
         created_at: { type: string }
         last_active_at: { type: string }
         current: { type: boolean, description: This device. }
+
+    LzSummary:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    LzFull:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision, lz_data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        lz_data: { type: object, description: "The diagram document, schema 2 (see contracts/fixtures/workspace)." }
+
+    Change:
+      type: object
+      required: [type, id, client_uuid, revision, deleted, name, seq, data]
+      description: |
+        One changed record. `type` says which collection: `lz`, `route` or `pointset`.
+        A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
+        has `kind`, `file_name` and `has_file`; fetch the mission file separately.
+      properties:
+        type: { type: string, enum: [lz, route, pointset] }
+        id: { type: integer }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        deleted: { type: boolean }
+        name: { type: string }
+        created_at: { type: string, nullable: true }
+        updated_at: { type: string, nullable: true }
+        seq: { type: integer, minimum: 1, description: This change's place in the user's order. }
+        kind: { type: string, description: "Routes only: `sketch` or `mission`." }
+        file_name: { type: string, nullable: true }
+        has_file: { type: boolean }
+        data: { description: "lz_data, route_data or the points, per `type`." }
+
+    ChangeFeed:
+      type: object
+      additionalProperties: false
+      required: [cursor, has_more, changes]
+      properties:
+        cursor: { type: integer, minimum: 0, description: "Send this as `since` next time. Equals `since` when nothing changed." }
+        has_more: { type: boolean, description: Ask again at once. }
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Change"
 
     Config:
       type: object
