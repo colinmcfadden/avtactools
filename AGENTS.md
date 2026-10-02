@@ -513,6 +513,13 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   `database_url.py` names the driver). Before a release, build the image and
   boot it against a Postgres container — local runs use SQLite and cannot
   catch either failure.
+- **Never `import` Cesium through webpack.** Its source reads `import.meta`,
+  which CRA's webpack leaves in a non-module chunk: a SyntaxError that broke
+  every production 3D view in v1.7 while the dev server worked. Cesium loads
+  from its prebuilt bundle in `public/cesium` (`viewer3d/cesiumSetup.js`).
+  Check 3D changes against a production build (`npm run build`, serve
+  `build/`), not only `npm start` — and a build warning that mentions
+  `import.meta` is a failure, not noise.
 - **Coolify rewrites Dockerfiles.** It inserts `ARG` lines after every line
   starting with `FROM` — case-insensitively — so a Python `from x import y` at
   the start of a line inside a multi-line `RUN` gets ARGs spliced into the
