@@ -27,6 +27,8 @@ mission planning system).
 - **Status:** public beta. Version lives in `frontend/package.json` and
   `backend/version.py`, both written by semantic-release.
 - **Repo:** `github.com/colinmcfadden/avtactools` · default branch `develop`.
+- **Native apps:** planned, not started — Android (Kotlin) first, then iOS and
+  iPadOS (Swift). Read `docs/NATIVE_APPS_PLAN.md` before any mobile work.
 
 ---
 
@@ -122,7 +124,7 @@ avtactools/
 │  ├─ public/                msnx_template.msnx, static assets; public/cesium/ is copied at build
 │  └─ scripts/copy-cesium.js prestart/prebuild: copies Cesium's static build into public/
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
-├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md
+├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md
 ├─ .github/workflows/        release.yaml (semantic-release only)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
 └─ backend/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
@@ -561,4 +563,5 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   already states plainly.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
-  `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`.
+  `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
+  `docs/NATIVE_APPS_PLAN.md`.
