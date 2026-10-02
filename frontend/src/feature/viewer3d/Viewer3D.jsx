@@ -4,6 +4,7 @@ import { tilesetResource } from "./tilesetResource";
 import { MAPBOX_IMAGERY } from "../mapStyles/mapStyles";
 import { createTerrainProvider } from "./terrainProvider";
 import { drawRoutes, routePositions } from "./routeEntities";
+import Compass3D from "./Compass3D";
 // Cesium's own stylesheet sizes .cesium-widget to fill its container. Without
 // it the widget has no dimensions and the canvas falls back to its 300x150
 // default, so the scene renders into a postage stamp regardless of layout.
@@ -378,6 +379,9 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
             Routes
           </button>
         </div>
+      )}
+      {status.state === "ready" && (
+        <Compass3D viewer={sceneRef.current.viewer} Cesium={sceneRef.current.Cesium} />
       )}
       {status.state === "ready" && (
         <label className="viewer3d__control">

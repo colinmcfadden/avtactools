@@ -198,6 +198,97 @@
   background: rgba(12, 18, 27, 0.86);
 }
 
+/* A compass under the camera buttons. The stage gives the dial perspective;
+   Compass3D turns the dial to north and leans it back with the camera. */
+.viewer3d__compass {
+  position: absolute;
+  top: 50px;
+  right: 12px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #eaf2f8;
+  font: inherit;
+  cursor: pointer;
+}
+
+.viewer3d__compass-stage {
+  display: block;
+  width: 72px;
+  height: 72px;
+  perspective: 220px;
+}
+
+.viewer3d__compass-dial {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+.viewer3d__compass-ring {
+  fill: rgba(12, 18, 27, 0.78);
+  stroke: rgba(234, 242, 248, 0.75);
+  stroke-width: 2;
+}
+
+.viewer3d__compass-tick {
+  stroke: rgba(234, 242, 248, 0.8);
+  stroke-width: 1.5;
+}
+
+.viewer3d__compass-north {
+  fill: #e5484d;
+}
+
+.viewer3d__compass-south {
+  fill: rgba(234, 242, 248, 0.85);
+}
+
+.viewer3d__compass-n,
+.viewer3d__compass-letter {
+  font-family: inherit;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.viewer3d__compass-n {
+  fill: #ff6b6b;
+  font-size: 13px;
+}
+
+.viewer3d__compass-letter {
+  fill: rgba(234, 242, 248, 0.85);
+  font-size: 10px;
+}
+
+.viewer3d__compass-heading {
+  padding: 1px 7px;
+  border: 1px solid rgba(125, 166, 199, 0.3);
+  border-radius: 999px;
+  background: rgba(12, 18, 27, 0.86);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer3d__compass:hover .viewer3d__compass-ring,
+.viewer3d__compass:focus-visible .viewer3d__compass-ring {
+  stroke: #89d9ff;
+}
+
+.viewer3d__compass:focus-visible {
+  outline: none;
+}
+
 .viewer3d__camera button {
   padding: 4px 11px;
   border: 0;
