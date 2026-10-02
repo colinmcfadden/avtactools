@@ -15,6 +15,7 @@ import kotlin.math.sqrt
  */
 public object GreatCircle {
     private const val EARTH_RADIUS_NM = 3440.065
+    private const val EARTH_RADIUS_FT = 20_902_231.0
 
     private fun toRad(deg: Double) = deg * Math.PI / 180
     private fun toDeg(rad: Double) = rad * 180 / Math.PI
@@ -25,6 +26,20 @@ public object GreatCircle {
         val a = sin(dLat / 2).let { it * it } +
             cos(toRad(lat1)) * cos(toRad(lat2)) * sin(dLon / 2).let { it * it }
         return 2 * EARTH_RADIUS_NM * asin(sqrt(a))
+    }
+
+    /**
+     * Distance in feet, by the haversine on the web's 20,902,231 ft sphere (`getDistanceFeet` in `utils/Helpers.js`). It is what the
+     * separation between two aircraft is measured with, and it is *not* the planner's sphere above: the two differ in the fifth digit,
+     * and each has to agree with the web where it is used.
+     */
+    public fun distanceFeet(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val rad = Math.PI / 180
+        val dLat = (lat2 - lat1) * rad
+        val dLon = (lon2 - lon1) * rad
+        val a = sin(dLat / 2) * sin(dLat / 2) + cos(lat1 * rad) * cos(lat2 * rad) * sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return EARTH_RADIUS_FT * c
     }
 
     /** Initial true course from the first point to the second, 0 up to 360 degrees. */

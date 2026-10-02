@@ -13,7 +13,7 @@ contracts/
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy
 │  ├─ coords/       parse.json                      reference: the web app
-│  ├─ planning/     aircraft.json, route.json, summary.json   reference: the web app
+│  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json          reference: the web app
 │  ├─ msnx/         template.msnx, parse.json, ...  reference: the web app
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
@@ -40,7 +40,7 @@ reference is.
 | `mgrs/forward.json` | `frontend/src/contracts/mgrsFixtures.test.js` | `backend/tests/test_contract_fixtures.py` | `core-geo` |
 | `mgrs/inverse.json` | — (the web asks the server) | same | `core-geo` |
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
-| `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`) |
+| `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `workspace/ops.json` | `frontend/src/contracts/workspaceOpsFixtures.test.js` | — | `core-model` (`DiagramOps`) |
 | `msnx/*` | `frontend/src/contracts/msnxFixtures.test.js` | — | `core-formats` |
