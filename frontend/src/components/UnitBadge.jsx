@@ -53,7 +53,7 @@ const playFalconSound = () => {
     handled = true;
     synthFalconScreech();
   };
-  const audio = new Audio("/sounds/falcon.mp3");
+  const audio = new Audio("/sounds/falcon_screech.mp3");
   audio.addEventListener("error", fallback);
   audio.play().then(() => {
     handled = true;
