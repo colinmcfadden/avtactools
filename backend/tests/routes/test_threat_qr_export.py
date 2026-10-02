@@ -6,7 +6,8 @@ from unittest.mock import patch
 from flask import Flask
 from flask_jwt_extended import JWTManager, create_access_token
 
-
+from app.extensions import db
+from app.models import User
 from app.routes.threats import (
     _threat_download_store,
     threat_bp,
@@ -63,15 +64,24 @@ class ThreatQrRouteTests(unittest.TestCase):
         self.app.config.update(
             TESTING=True,
             JWT_SECRET_KEY='test-only-secret-that-is-over-32-bytes',
+            SQLALCHEMY_DATABASE_URI='sqlite://',
         )
         JWTManager(self.app)
+        db.init_app(self.app)
         self.app.register_blueprint(threat_bp)
         with self.app.app_context():
+            # Link creation is behind require_feature, which looks the caller up.
+            db.create_all()
+            db.session.add(User(id=1, email='user@example.mil', name='User', google_id='g-1'))
+            db.session.commit()
             self.jwt = create_access_token(identity='1')
         self.client = self.app.test_client()
 
     def tearDown(self):
         _threat_download_store.clear()
+        with self.app.app_context():
+            db.session.remove()
+            db.engine.dispose()
 
     @property
     def auth_headers(self):
