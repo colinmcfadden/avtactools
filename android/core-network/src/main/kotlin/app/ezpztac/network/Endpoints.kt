@@ -1,6 +1,9 @@
 package app.ezpztac.network
 
+import app.ezpztac.model.LatLon
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.UUID
@@ -221,3 +224,35 @@ public suspend fun ApiClient.changes(since: Int = 0, limit: Int? = null): Change
             ),
         ),
     )
+
+// -- Terrain analysis ------------------------------------------------------------------
+
+/**
+ * Finds the landing area around a target (the segmentation model on the satellite tile) and the ground elevation there. The server runs
+ * one analysis at a time and it can take many seconds, so this is heavy work (background calls wait for it, and it has a long read timeout);
+ * cancelling the coroutine abandons the request. A 400 means no area was found at the point, anything else is a failure to try again.
+ */
+public suspend fun ApiClient.analyzeField(at: LatLon): FieldAnalysis = decode(
+    execute(
+        ApiClient.Call(
+            "POST", "/api/analyze-field",
+            body = buildJsonObject { put("lat", at.lat); put("lon", at.lon) },
+        ),
+    ),
+)
+
+/**
+ * Slope over a landing-zone boundary: a banded raster, statistics, and, with a [landingHeadingDeg], the nose-high, nose-low and cross-slope
+ * summary for it. [polygon] needs at least three points (the server answers 400 otherwise). Heavy work, as [analyzeField].
+ */
+public suspend fun ApiClient.terrainAnalysis(polygon: List<LatLon>, landingHeadingDeg: Double? = null): TerrainAnalysis = decode(
+    execute(
+        ApiClient.Call(
+            "POST", "/api/terrain-analysis",
+            body = buildJsonObject {
+                put("polygon", JsonArray(polygon.map { JsonArray(listOf(JsonPrimitive(it.lat), JsonPrimitive(it.lon))) }))
+                if (landingHeadingDeg != null) put("landingHeading", landingHeadingDeg)
+            },
+        ),
+    ),
+)

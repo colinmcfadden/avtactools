@@ -206,3 +206,67 @@ public data class ChangeFeed(
     @SerialName("has_more") val hasMore: Boolean,
     val changes: List<SyncChange>,
 )
+
+// -- Terrain analysis ---------------------------------------------------------------
+
+/** What `/api/analyze-field` found: the polygon of the landing area and the ground elevation there. */
+@Serializable
+public data class FieldAnalysis(
+    val status: String,
+    /** The area as `[lat, lon]` pairs, in the order the model traced it. */
+    @SerialName("suggested_lz") val suggestedLz: List<List<Double>>,
+    /** Feet, as the server writes it: whole feet as a string, or `TBD` when the elevation service could not be reached. */
+    val elevation: String,
+    val message: String,
+)
+
+@Serializable
+public data class SlopeStats(
+    val maxDeg: Double,
+    val p95Deg: Double,
+    val areaOver6Pct: Double,
+    val areaOver10Pct: Double,
+    val areaOver15Pct: Double,
+    val sampleCount: Int,
+    val sampleAreaM2: Double,
+)
+
+/** Slope along and across a landing heading, against the UH-60 limits in [SlopeThresholds]. */
+@Serializable
+public data class DirectionalSlope(
+    val headingDeg: Double,
+    val noseHighMaxDeg: Double,
+    val noseLowMaxDeg: Double,
+    val crossSlopeMaxDeg: Double,
+    val noseHighOverLimitPct: Double,
+    val noseLowOverLimitPct: Double,
+    val crossSlopeOverLimitPct: Double,
+)
+
+@Serializable
+public data class Uh60Limits(val noseHigh: Double, val noseLow: Double, val crossSlope: Double)
+
+@Serializable
+public data class SlopeThresholds(
+    /** The band edges the raster is coloured by, degrees. */
+    val bands: List<Double>,
+    val uh60: Uh60Limits,
+)
+
+/** What `/api/terrain-analysis` returns: a banded slope raster over [bounds] and the numbers behind it. */
+@Serializable
+public data class TerrainAnalysis(
+    val status: String,
+    /** A `data:image/png;base64,` raster, transparent outside the polygon. */
+    val overlay: String,
+    /** `[[south, west], [north, east]]` of the raster. */
+    val bounds: List<List<Double>>,
+    /** Which terrain source answered (`local_highres_cog`, `terrarium` …), shown with the numbers so two sources are never mixed silently. */
+    val source: String,
+    val resolutionM: Double,
+    val verticalDatum: String,
+    val stats: SlopeStats,
+    /** Null when no landing heading was sent. */
+    val directional: DirectionalSlope? = null,
+    val thresholds: SlopeThresholds,
+)

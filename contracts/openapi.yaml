@@ -768,6 +768,89 @@ paths:
         "409":
           $ref: "#/components/responses/AircraftConflict"
 
+  /api/analyze-field:
+    post:
+      operationId: analyzeField
+      summary: Find the landing area around a target, and the ground elevation there
+      description: |
+        Runs the segmentation model on the satellite tile around `lat`/`lon` and returns the area
+        it finds as a polygon (`suggested_lz`, `[lat, lon]` pairs), with the ground elevation in
+        feet as a string (`"TBD"` when the elevation service could not be reached). One analysis
+        runs at a time on the server, and it can take many seconds: an app shows progress and may
+        stop waiting. A failure is `{status: "error", message}`, a shape of its own that this route
+        has always had.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+      responses:
+        "200":
+          description: An area was found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldAnalysis"
+        "400":
+          $ref: "#/components/responses/FieldError"
+        "500":
+          $ref: "#/components/responses/FieldError"
+
+  /api/terrain-analysis:
+    post:
+      operationId: terrainAnalysis
+      summary: Slope over a landing-zone boundary
+      description: |
+        Slope from the best terrain source that covers the polygon, clipped to it: a transparent
+        banded raster (`overlay`, a PNG data URI) placed at `bounds`, statistics over the polygon,
+        and, when a `landingHeading` is given, the nose-high, nose-low and cross-slope summary for
+        that heading against the UH-60 limits in `thresholds`. `directional` is null without a
+        heading. Errors are `{error}`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [polygon]
+              properties:
+                polygon:
+                  type: array
+                  description: At least three `[lat, lon]` pairs.
+                  items:
+                    type: array
+                    items: { type: number }
+                landingHeading:
+                  type: number
+                  nullable: true
+                  description: Degrees true. Absent or null for no directional summary.
+      responses:
+        "200":
+          description: The analysis.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerrainAnalysis"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "500":
+          $ref: "#/components/responses/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+
 components:
   parameters:
     ClientHeader:
@@ -835,6 +918,19 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+
+    FieldError:
+      description: |
+        A failure of `/api/analyze-field`: `message` is for people. There is no `code`; an app tells
+        "no area here" (400) from "the map data or the model failed" (500) by the status.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status, message]
+            properties:
+              status: { type: string, enum: [error] }
+              message: { type: string }
 
     Conflict:
       description: |
@@ -1172,3 +1268,84 @@ components:
               nullable: true
               pattern: '^pk\.'
               description: A *public* Mapbox token only; a secret one is never served.
+
+    FieldAnalysis:
+      type: object
+      required: [status, suggested_lz, elevation, message]
+      properties:
+        status: { type: string, enum: [success] }
+        suggested_lz:
+          type: array
+          description: The polygon of the area found, `[lat, lon]` pairs.
+          items:
+            type: array
+            items: { type: number }
+        elevation:
+          type: string
+          description: Ground elevation in feet (SRTM 30 m), or `TBD` when it could not be had.
+        message: { type: string }
+
+    SlopeStats:
+      type: object
+      required: [maxDeg, p95Deg, areaOver6Pct, areaOver10Pct, areaOver15Pct, sampleCount, sampleAreaM2]
+      properties:
+        maxDeg: { type: number }
+        p95Deg: { type: number }
+        areaOver6Pct: { type: number }
+        areaOver10Pct: { type: number }
+        areaOver15Pct: { type: number }
+        sampleCount: { type: integer }
+        sampleAreaM2: { type: number }
+
+    TerrainAnalysis:
+      type: object
+      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, thresholds]
+      properties:
+        status: { type: string, enum: [success] }
+        overlay:
+          type: string
+          description: A `data:image/png;base64,` raster over `bounds`, banded by slope and transparent outside the polygon.
+        bounds:
+          type: array
+          description: "`[[south, west], [north, east]]` of the raster."
+          items:
+            type: array
+            items: { type: number }
+        source:
+          type: string
+          description: Which terrain source answered, for example `local_highres_cog` or `terrarium`.
+        resolutionM: { type: number }
+        verticalDatum: { type: string }
+        stats:
+          $ref: "#/components/schemas/SlopeStats"
+        directional:
+          type: object
+          nullable: true
+          description: |
+            Null when no landing heading was sent. Percentages are of the polygon's area that is over
+            the UH-60 limit in `thresholds` for that direction.
+          required: [headingDeg, noseHighMaxDeg, noseLowMaxDeg, crossSlopeMaxDeg, noseHighOverLimitPct, noseLowOverLimitPct, crossSlopeOverLimitPct]
+          properties:
+            headingDeg: { type: number }
+            noseHighMaxDeg: { type: number }
+            noseLowMaxDeg: { type: number }
+            crossSlopeMaxDeg: { type: number }
+            noseHighOverLimitPct: { type: number }
+            noseLowOverLimitPct: { type: number }
+            crossSlopeOverLimitPct: { type: number }
+        thresholds:
+          type: object
+          required: [bands, uh60]
+          properties:
+            bands:
+              type: array
+              description: The slope band edges in degrees the raster is coloured by.
+              items: { type: number }
+            uh60:
+              type: object
+              required: [noseHigh, noseLow, crossSlope]
+              description: The UH-60 landing limits in degrees.
+              properties:
+                noseHigh: { type: number }
+                noseLow: { type: number }
+                crossSlope: { type: number }

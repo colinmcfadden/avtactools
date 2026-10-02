@@ -49,6 +49,9 @@ class DtoFixtureTest {
         "mil: me before the gate is cleared" to ApiUser.serializer(),
         "mil/request" to Done.serializer(),
         "mil/verify" to MilVerifyBody.serializer(),
+        "analyze-field" to FieldAnalysis.serializer(),
+        "terrain-analysis" to TerrainAnalysis.serializer(),
+        "terrain-analysis: no landing heading" to TerrainAnalysis.serializer(),
         "sync: changes" to ChangeFeed.serializer(),
         "sync: nothing new" to ChangeFeed.serializer(),
     )

@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -25,7 +26,12 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from unittest.mock import patch  # noqa: E402
+from unittest.mock import MagicMock, patch  # noqa: E402
+
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+import rasterio  # noqa: E402
+from rasterio.transform import from_origin  # noqa: E402
 
 import refresh_tokens  # noqa: E402
 from auth_harness import ANDROID, PASSWORD, NativeAuthCase  # noqa: E402
@@ -34,6 +40,13 @@ from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
+from terrain_provider import LocalRasterCatalog  # noqa: E402
+
+# The terrain blueprint loads the SAM model when it is imported, which downloads 350 MB when the weights are missing. The model is
+# stood in for below, where the route is asked; none of the weights are needed to import it.
+if "routes.terrain_routes" not in sys.modules:
+    sys.modules.setdefault("ultralytics", MagicMock())
+from routes.terrain_routes import terrain_bp  # noqa: E402
 
 FIXTURE = BACKEND_DIR.parent / "contracts" / "fixtures" / "network" / "responses.json"
 UPDATE = os.environ.get("UPDATE_CONTRACTS") == "1"
@@ -84,7 +97,7 @@ def documented(method, path, status):
 
 
 class NetworkFixtureTests(NativeAuthCase):
-    extra_blueprints = (config_bp, lz_bp, aircraft_bp, sync_bp)
+    extra_blueprints = (config_bp, lz_bp, aircraft_bp, sync_bp, terrain_bp)
 
     def setUp(self):
         super().setUp()
@@ -234,9 +247,66 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("mil/verify: the wrong code", self.client.post("/api/auth/mil/verify", headers=head, json={"code": "000000"}))
         self.rec("mil/verify", self.client.post("/api/auth/mil/verify", headers=head, json={"code": self.mil_codes[-1]}))
 
+    def terrain(self):
+        """Analysing a landing zone. The segmentation model and the network are stood in for (the weights are 350 MB and the tile and
+        elevation services are other people's); the route code, the slope maths over a real GeoTIFF and the response are the server's own."""
+        self.make_account(email="analyst@example.com")
+        head = self.bearer(self.login(ANDROID, "analyst@example.com")["access_token"])
+
+        tile_png = cv2.imencode(".png", np.full((256, 256, 3), 90, np.uint8))[1].tobytes()
+
+        class Reply:
+            def __init__(self, status=200, body=None, content=b""):
+                self.status_code, self._body, self.content = status, body, content
+
+            def json(self):
+                return self._body
+
+        def sam(masks):
+            """A model whose one answer is the given pixel polygon, or no mask at all."""
+            result = MagicMock()
+            result.masks = None if masks is None else MagicMock(xy=[np.array(masks, dtype=float)])
+            return MagicMock(predict=MagicMock(return_value=[result]))
+
+        outline = [[100, 90], [160, 92], [165, 150], [105, 155]]            # pixels of the 256-pixel tile
+        elevation = Reply(body={"results": [{"elevation": 1234.5}]})
+
+        def services(tile_status=200):
+            def get(url, **_kw):
+                return elevation if "opentopodata" in url else Reply(tile_status, content=tile_png)
+            return patch("routes.terrain_routes.requests.get", side_effect=get)
+
+        target = {"lat": 34.0965, "lon": -117.095}
+        with services(), patch("routes.terrain_routes.model", sam(outline)):
+            self.rec("analyze-field", self.client.post("/api/analyze-field", headers=head, json=target))
+        with services(), patch("routes.terrain_routes.model", sam(None)):
+            self.rec("analyze-field: no distinct area at the point", self.client.post("/api/analyze-field", headers=head, json=target))
+        with services(404), patch("routes.terrain_routes.model", sam(outline)):
+            self.rec("analyze-field: the map tile is unavailable", self.client.post("/api/analyze-field", headers=head, json=target))
+        self.rec("analyze-field: not coordinates", self.client.post("/api/analyze-field", headers=head, json={"lat": "x", "lon": 1}))
+
+        # Slope over a real GeoTIFF: ~11 m cells rising east, with a hill in one corner, so every statistic has something to say.
+        rows, cols = np.mgrid[0:120, 0:120]
+        dem = (300.0 + 0.5 * cols + 6.0 * np.exp(-(((rows - 90) ** 2) + ((cols - 90) ** 2)) / 200.0)).astype(np.float32)
+        polygon = [[34.098, -117.097], [34.098, -117.093], [34.094, -117.093], [34.094, -117.097]]
+        with tempfile.TemporaryDirectory() as directory:
+            with rasterio.open(Path(directory) / "lz.tif", "w", driver="GTiff", height=120, width=120, count=1, dtype="float32",
+                               crs="EPSG:4326", transform=from_origin(-117.10, 34.10, 0.0001, 0.0001), nodata=-9999) as out:
+                out.write(dem, 1)
+            env = {"TERRAIN_DATA_DIR": directory, "TERRAIN_SOURCE": "local"}
+            with patch.dict(os.environ, env, clear=False), patch("terrain_provider.LOCAL_CATALOG", LocalRasterCatalog()):
+                self.rec("terrain-analysis", self.client.post("/api/terrain-analysis", headers=head, json={"polygon": polygon, "landingHeading": 270}))
+                self.rec("terrain-analysis: no landing heading", self.client.post("/api/terrain-analysis", headers=head, json={"polygon": polygon}))
+                self.rec("terrain-analysis: a heading that is not a number",
+                         self.client.post("/api/terrain-analysis", headers=head, json={"polygon": polygon, "landingHeading": "abc"}))
+                self.rec("terrain-analysis: no terrain source covers the polygon",
+                         self.client.post("/api/terrain-analysis", headers=head, json={"polygon": [[40.0, -100.0], [40.0, -99.99], [40.01, -99.99]]}))
+        self.rec("terrain-analysis: too few points", self.client.post("/api/terrain-analysis", headers=head, json={"polygon": [[1, 2], [3, 4]]}))
+
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
         self.accounts()
+        self.terrain()
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "
                            "generated ids and the server version replaced by placeholders. The native apps decode each body "
