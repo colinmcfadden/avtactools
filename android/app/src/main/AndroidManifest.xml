@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- The device's own position, for the GPS dot and "locate me". It is read from the platform's GPS and never leaves the device. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <!-- The app is for phones and tablets; a GPS and a touch screen are wanted but not required, so a device
          without them can still plan from a typed grid. -->
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />

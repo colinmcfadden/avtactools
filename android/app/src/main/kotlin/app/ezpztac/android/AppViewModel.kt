@@ -32,6 +32,7 @@ class AppViewModel @Inject constructor(
     private val backend: AuthBackend,
     private val accounts: AccountScope,
     private val sync: SyncScheduler,
+    private val mapTokens: MapTokenSink,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
     private val config = MutableStateFlow<AppConfig?>(null)
@@ -93,7 +94,9 @@ class AppViewModel @Inject constructor(
     /** Asks the server for its config. Called at launch and from the "try again" on a banner. */
     suspend fun loadConfig() {
         try {
-            config.value = backend.config()
+            val fetched = backend.config()
+            config.value = fetched
+            mapTokens.update(fetched.mapbox.publicToken)                  // remembered, so the next start with no signal can draw imagery
         } catch (_: ApiException) {
             // Offline: nothing is blocked for want of a config.
         }

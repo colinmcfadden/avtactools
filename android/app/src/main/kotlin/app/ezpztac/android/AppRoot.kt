@@ -71,9 +71,9 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 email = current.user.email, unsyncedChanges = current.unsyncedChanges,
                 onClear = viewModel::clearOtherAccountsPlans, onSignOut = viewModel::signOut,
             )
-            is Gate.Ready -> HomeScreen(
+            is Gate.Ready -> MapHome(
                 version = BuildConfig.VERSION_NAME, build = BuildConfig.VERSION_CODE,
-                maintenance = current.maintenance, onRetryServer = null, onSignOut = viewModel::signOut,
+                maintenance = current.maintenance, onSignOut = viewModel::signOut,
             )
             is Gate.UpdateRequired -> UpdateRequiredScreen(current.minimum)
         }
@@ -145,28 +145,5 @@ fun DataConflictScreen(email: String, unsyncedChanges: Int, onClear: () -> Unit,
         // The safe choice is the prominent one: clearing loses work, so it is a deliberate second step and never the default.
         PrimaryButton("Sign out", onClick = onSignOut)
         SecondaryButton("Clear them and continue", onClick = onClear)
-    }
-}
-
-/** The signed-in app. For now the version and a sign-out; the workspace replaces it. */
-@Composable
-fun HomeScreen(version: String, build: Int, maintenance: String?, onRetryServer: (() -> Unit)?, onSignOut: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            modifier = Modifier.safeDrawingPadding().padding(Tokens.Spacing.xl.dp),
-            verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
-        ) {
-            if (maintenance != null) {
-                Banner(maintenance, BannerKind.Warning, actionLabel = onRetryServer?.let { "Retry" }, onAction = onRetryServer)
-            }
-            Text(androidx.compose.ui.res.stringResource(R.string.home_title), style = MaterialTheme.typography.headlineMedium)
-            Text(androidx.compose.ui.res.stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyLarge)
-            Text(
-                androidx.compose.ui.res.stringResource(R.string.classification_notice),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextAction("Sign out", onClick = onSignOut)
-        }
     }
 }

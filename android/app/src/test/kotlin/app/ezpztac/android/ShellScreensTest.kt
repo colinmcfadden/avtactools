@@ -18,31 +18,11 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
-class HomeScreenTest {
+class ShellScreensTest {
     @get:Rule
     val compose = createComposeRule()
 
     private val log = mutableListOf<String>()
-
-    @Test
-    fun `it says which version this is and that the app is unclassified only`() {
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { HomeScreen("1.7.6", 212, maintenance = null, onRetryServer = null, onSignOut = {}) } }
-        compose.onNodeWithText("Version 1.7.6 (212)").assertIsDisplayed()
-        compose.onNodeWithText("not authorised for CUI", substring = true).assertIsDisplayed()
-    }
-
-    @Test
-    fun `a server in maintenance is a banner above the plans`() {
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { HomeScreen("1.7.6", 212, maintenance = "Back at 1500Z.", onRetryServer = null, onSignOut = {}) } }
-        compose.onNodeWithText("Back at 1500Z.").assertIsDisplayed()
-    }
-
-    @Test
-    fun `signing out is one tap`() {
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { HomeScreen("1.7.6", 212, null, null, onSignOut = { log += "out" }) } }
-        compose.onNodeWithText("Sign out").performClick()
-        assertEquals(listOf("out"), log)
-    }
 
     @Test
     fun `an update that is required names the version and offers the one way out`() {

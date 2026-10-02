@@ -5,12 +5,18 @@ import android.os.Build
 import app.ezpztac.android.ApiClientBackend
 import app.ezpztac.android.AuthBackend
 import app.ezpztac.android.BuildConfig
+import app.ezpztac.android.MapPreferences
+import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
 import app.ezpztac.android.sync.SyncScheduler
 import app.ezpztac.android.sync.WorkManagerSyncScheduler
 import app.ezpztac.data.session.EncryptedSessionStore
 import app.ezpztac.data.session.KeystoreSecretBox
+import app.ezpztac.map.CameraMemory
+import app.ezpztac.map.LocationSource
+import app.ezpztac.map.MapTokenSource
+import app.ezpztac.map.PlatformLocationSource
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ClientInfo
 import app.ezpztac.network.SessionStore
@@ -67,6 +73,10 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun locationSource(@ApplicationContext context: Context): LocationSource = PlatformLocationSource(context)
+
+    @Provides
+    @Singleton
     fun syncApi(client: ApiClient): SyncApi = ApiSyncApi(client)
 
     @Provides
@@ -86,4 +96,13 @@ interface AppBindings {
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner
+
+    @Binds
+    fun mapTokens(impl: MapPreferences): MapTokenSource
+
+    @Binds
+    fun mapTokenSink(impl: MapPreferences): MapTokenSink
+
+    @Binds
+    fun cameraMemory(impl: MapPreferences): CameraMemory
 }

@@ -42,6 +42,7 @@ dependencies {
     implementation(project(":core-network"))
     implementation(project(":core-data"))
     implementation(project(":feature-auth"))
+    implementation(project(":feature-map"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

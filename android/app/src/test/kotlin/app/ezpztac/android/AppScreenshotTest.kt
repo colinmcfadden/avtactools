@@ -27,6 +27,5 @@ class AppScreenshotTest {
 
     @Test fun updateRequired() = shot("update-required") { UpdateRequiredScreen("1.8.0") }
     @Test fun dataConflict() = shot("data-conflict") { DataConflictScreen("pilot@example.com", 3, {}, {}) }
-    @Test fun home() = shot("home") { HomeScreen("1.7.6", 212, maintenance = "The server is down for maintenance. Planning on this device still works.", onRetryServer = null, onSignOut = {}) }
     @Test fun starting() = shot("starting") { StartingScreen() }
 }

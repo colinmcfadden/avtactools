@@ -89,7 +89,12 @@ class AppViewModelTest {
         override fun cancelAll() { cancelled++ }
     }
 
-    private class Rig(val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel)
+    private class FakeTokens : MapTokenSink {
+        val written = mutableListOf<String?>()
+        override fun update(token: String?) { written += token }
+    }
+
+    private class Rig(val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens())
 
     private fun TestScope.rig(
         stored: AuthState = AuthState.SignedIn(user()),
@@ -101,9 +106,10 @@ class AppViewModelTest {
         val backend = FakeBackend(stored).apply(configure)
         val accounts = FakeAccounts(owner, unsynced)
         val scheduler = FakeScheduler()
-        val model = AppViewModel(backend, accounts, scheduler, version)
+        val tokens = FakeTokens()
+        val model = AppViewModel(backend, accounts, scheduler, tokens, version)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model)
+        return Rig(backend, accounts, scheduler, model, tokens)
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -159,6 +165,18 @@ class AppViewModelTest {
     fun `maintenance is a banner over the plans, not a wall`() = runTest(dispatcher) {
         val r = rig(owner = 1, configure = { config = Result.success(config(maintenance = true)) })
         assertEquals(Gate.Ready(user(), "Back soon."), r.model.gate.value)
+    }
+
+    @Test
+    fun `the Mapbox token the server gives is remembered for the next start`() = runTest(dispatcher) {
+        val r = rig(owner = 1, configure = { config = Result.success(config(minimum = null)) })
+        assertEquals(listOf<String?>("pk.x"), r.tokens.written)
+    }
+
+    @Test
+    fun `no config means no token is written`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        assertEquals(emptyList<String?>(), r.tokens.written)
     }
 
     @Test

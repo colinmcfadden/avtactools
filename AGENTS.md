@@ -685,7 +685,8 @@ design tokens. iOS is not started.
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
 | `core-designsystem` | Android library: the theme (dark, light and the red-shifted **night** palette), type, and `Tokens`, which is **generated** from `contracts/tokens/tokens.json` by `contracts/scripts/tokens.py` (CI checks it is current). A test holds every palette to WCAG contrast, because nothing in an agent session can look at a screen | theme and tokens; shared components (sheet, inspector, readout pill) join as screens need them |
 | `feature-auth` | The sign-in screens: sign in, register, "check your inbox", verify and reset (from an emailed link), forgot/resend, and the `.mil` gate (`AffiliationHost`). Stateless screens (`AuthContent`, `AffiliationContent`) over two view models; talks to the server through an `AuthApi` seam. Mirrors the web's `AUTH_MODES` | done; Google sign-in is the app's (below) |
-| `app` | The application: Hilt, Compose, the manifest and its security settings, and the shell: `Gate`/`gateFor` (what stands between the person and the app), `AppViewModel`, WorkManager sync (`SyncScheduler`, `SyncWorker`). See *The app module* below | the shell, the auth flow and the Google sign-in glue; no workspace yet (a placeholder home with sign-out) |
+| `feature-map` | The 2D map: MapLibre Native (the SDK directly, not `maplibre-compose`, which is 0.x and would hide the handles a planning map needs), the three base maps under the web's ids (`satellite`, `topo`, `vfr-sectional`), the crosshair readout (MGRS first, computed on the device), search by grid or coordinate, GPS from the platform's own receiver, and `MapViewModel`. The logic that decides *what* to ask the map (styles, readout, search, GPS state, where the camera goes) is plain code and tested; the MapLibre glue (`MapHost`, `EzpzMap`, `GpsOverlay`) needs a GPU and is compile-verified only | base map, readout, search, GPS; no graphics yet |
+| `app` | The application: Hilt, Compose, the manifest and its security settings, and the shell: `Gate`/`gateFor` (what stands between the person and the app), `AppViewModel`, WorkManager sync (`SyncScheduler`, `SyncWorker`). See *The app module* below | the shell, the auth flow, the Google sign-in glue and the map as the root (with a bottom sheet that holds only the version and sign-out so far) |
 | everything else in the plan (`core-data`, `core-symbols`, `core-packs`, `feature-*` …) | later work | **not started** |
 
 Package root is `app.ezpztac.*` (the reverse of `ezpztac.app`). The Android
@@ -887,6 +888,19 @@ client is built around not losing one:
   `-Pezpz.googleClientId=<web client ID>` (the audience the server lists in `GOOGLE_CLIENT_IDS`); the app's own Android OAuth
   client (package + signing certificate) must exist in the same Google Cloud project. No test reaches it (it needs Play services and
   an account on a device).
+- **The map** (`feature-map`): MapLibre's zoom is Leaflet's minus one (512-point tiles), so `metersPerPixel` is
+  `78271.517 · cos(lat) / 2^zoom`; a saved diagram stores a base map *id*, never a zoom. Mapbox's `@2x` tiles are 512-point,
+  1024-pixel images (`tileSize: 512`); the FAA chart is 256-point with native levels 8–12, and the map stretches what it has outside
+  that. The public Mapbox token comes from `/api/config` and is **remembered** (`MapPreferences`, a plain preference: it is a public
+  `pk.` token, and anything not starting `pk.` is never stored) so a launch with no signal still draws satellite; with none at all only
+  the FAA chart is offered and a diagram keeps remembering *satellite* (`chosenStyleId`). **A URL-restricted token may refuse a
+  native app** (no web referrer): confirm with the owner. Labels over the map (distances, headings) are meant to be **Compose overlays
+  projected from lat/lon**, not map text, because a raster-only style has no glyphs; shapes are MapLibre layers and unit symbols
+  bitmaps. GPS uses only the platform's `LocationManager` (no Play services, no third party) and nothing about a position is stored or
+  sent; the last *camera* (where the person was looking) is kept in a preference, on the device only.
+- **What cannot be seen here:** the map itself (no GPU: only the overlays are drawn, over a stand-in), and whether R8 strips something
+  the libraries need at run time (a release build links and an unsigned APK is made, but nothing runs it). An early device run of a
+  release build is the first thing to do.
 - **Strings are inline English** in the composables, not yet in `strings.xml`; move them when a second language is wanted.
 - **A destructive choice is never the prominent one**: on "plans from another account", *Sign out* is the primary button and
   *Clear them and continue* the secondary, with the cost stated above both.

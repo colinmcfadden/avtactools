@@ -20,6 +20,7 @@ android/
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
 ├─ core-data/       Room database and the SyncStore on it (schemas in core-data/schemas, committed)
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
+├─ feature-map/     the 2D map: MapLibre, base maps, crosshair readout, search, GPS
 ├─ feature-auth/    sign-in, sign-up, verify, reset and the .mil gate: screens and their view models
 ├─ app/             the application: Hilt, Compose, manifest; a skeleton so far
 └─ build-logic/     the convention plugins every module uses
