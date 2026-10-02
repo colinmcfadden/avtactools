@@ -513,6 +513,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   `database_url.py` names the driver). Before a release, build the image and
   boot it against a Postgres container — local runs use SQLite and cannot
   catch either failure.
+- **Coolify rewrites Dockerfiles.** It inserts `ARG` lines after every line
+  starting with `FROM` — case-insensitively — so a Python `from x import y` at
+  the start of a line inside a multi-line `RUN` gets ARGs spliced into the
+  command ("unknown instruction"). A plain `docker build` passes; only Coolify
+  fails. `tests/test_dockerfiles.py` guards it.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
 

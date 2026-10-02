@@ -39,11 +39,15 @@ WORKDIR /work
 # Fail the build if the vertical transform is a no-op, so a broken image is
 # caught here rather than by silently mislocated obstructions months later.
 # The sample point is the validated tile near Ellijay: separation is -30.35 m.
+#
+# No line here may start with "from": Coolify inserts ARG lines after every
+# line that starts with FROM, in any case, and a Python import there split
+# this command in two (tests/test_dockerfiles.py guards it).
 COPY crs.py /opt/lidar/crs.py
 RUN python3 -c "\
 import sys; sys.path.insert(0, '/opt/lidar');\
-from crs import assert_vertical_datum_applied, compound_crs;\
-sep = assert_vertical_datum_applied(compound_crs('EPSG:6350'), (1077500.0, 1348500.0, 532.2));\
+import crs;\
+sep = crs.assert_vertical_datum_applied(crs.compound_crs('EPSG:6350'), (1077500.0, 1348500.0, 532.2));\
 print(f'geoid grids OK: separation {sep:.2f} m');\
 "
 
