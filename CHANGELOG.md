@@ -1,3 +1,10 @@
+## [1.7.6](https://github.com/colinmcfadden/avtactools/compare/v1.7.5...v1.7.6) (2026-10-02)
+
+
+### Bug Fixes
+
+* load Cesium from its prebuilt bundle ([b3a9fc7](https://github.com/colinmcfadden/avtactools/commit/b3a9fc72e7c8786f72c89016502556583c40a07a))
+
 ## [1.7.5](https://github.com/colinmcfadden/avtactools/compare/v1.7.4...v1.7.5) (2026-10-02)
 
 
