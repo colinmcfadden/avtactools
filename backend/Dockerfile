@@ -28,7 +28,12 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # off the point clouds. Same CONUS set as the LiDAR build image, so both pick
 # the same NAVD88 -> ellipsoid transformation and agree. The check fails the
 # build rather than shipping uncorrected terrain.
-RUN pyproj sync --bbox -125,24,-66,50 --system-directory \
+#
+# --target-directory is load-bearing: --system-directory downloads somewhere
+# pyproj never reads, and the check below then fails at 0 m. "--bbox=" because
+# argparse would read a bare -125,... as an option and refuse it.
+RUN pyproj sync --bbox=-125,24,-66,50 \
+        --target-directory "$(python -c 'import pyproj; print(pyproj.datadir.get_data_dir())')" \
     && python -c "from pyproj import Transformer; \
 t = Transformer.from_crs('EPSG:4326+5703', 'EPSG:4979', always_xy=True); \
 sep = t.transform(-84.08, 34.78, 0.0)[2]; \
