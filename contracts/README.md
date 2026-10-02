@@ -8,6 +8,7 @@ golden answers they are all tested against. See `docs/NATIVE_APPS_PLAN.md`
 
 ```
 contracts/
+├─ openapi.yaml     the API routes the apps call (checked against the backend's responses)
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy
 │  ├─ coords/       parse.json                      reference: the web app
@@ -72,8 +73,10 @@ without the fixture diff in the same PR — and the Android tests then fail unti
 - **No real data.** Everything here is invented or public. Nothing from a real
   mission, no CUI. Real, unclassified AMPS files for round-trip tests come from
   the owner and are added deliberately.
-- `openapi.yaml`, the other half of this folder in the plan, arrives with the
-  first endpoint the apps call.
+- `openapi.yaml` is the other half of this folder: the routes the apps call, one at
+  a time as each arrives (`GET /api/config` so far). `backend/tests/test_openapi_contract.py`
+  holds the server's responses to it and fails on an added, removed or retyped
+  field. Changes are additive: store builds stay in the field for months.
 
 ## Known limits
 

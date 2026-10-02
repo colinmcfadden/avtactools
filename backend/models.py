@@ -118,6 +118,9 @@ class LoginEvent(db.Model):
     method = db.Column(db.String(20), nullable=False, default='password')  # google | password
     ip = db.Column(db.String(64), nullable=True)
     user_agent = db.Column(db.String(400), nullable=True)
+    # Which app signed in, from the X-EZPZ-Client header, e.g. "android/1.4.0 (212)".
+    # NULL for the web app today and for anything that sent no (or a malformed) header.
+    client = db.Column(db.String(80), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 

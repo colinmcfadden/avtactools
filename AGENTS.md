@@ -142,9 +142,18 @@ explain *why*, not what — match the surrounding density.
 
 ## 6. API surface
 
-All `/api/*` routes need a bearer JWT except the public auth flows. A
-`before_request` gate returns `403 affiliation_required` for signed-in users
-who have not cleared the `.mil`/approval check.
+All `/api/*` routes need a bearer JWT except the public auth flows and
+`GET /api/config`. A `before_request` gate returns `403 affiliation_required` for
+signed-in users who have not cleared the `.mil`/approval check.
+
+The native apps send `X-EZPZ-Client: android/1.4.0 (212)` on every request
+(`client_header.py`). Only a header of exactly that shape is kept, and it is
+recorded on sign-in (`LoginEvent.client`, shown in the admin login history), so
+the owner can see which app versions are in the field before changing an
+endpoint. **Routes the apps call are additive-only** — a removed or retyped field
+breaks an installed app nobody can update — and are described in
+`contracts/openapi.yaml`, which `backend/tests/test_openapi_contract.py` holds the
+responses to. A route not in that file is not yet something an app may rely on.
 
 | Area | Routes |
 |---|---|
@@ -159,6 +168,7 @@ who have not cleared the `.mil`/approval check.
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
 | lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key |
 | admin | `/admin/*` — session cookie, not JWT |
+| app config | `GET /api/config` — **public**, cached 60 s: `minAppVersion` per platform, `maintenance`, which optional `services` are up, and the Mapbox public token (`app_config.py`, `routes/config_routes.py`) |
 | health | `GET /` → JSON status (or redirect to `/admin/login` on the admin host) |
 
 Regenerate this from the source of truth with `app.url_map` if it drifts.
@@ -173,9 +183,10 @@ tokens, stored as SHA-256), `LoginEvent`, `AircraftProfile`, `SavedRoute`,
 
 **There is no migration framework.** `db.create_all()` creates tables;
 new columns on existing tables are added by guarded `ALTER TABLE` statements in
-`app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile`
-against the live schema. When you add a column, add it the same way — and
-quote `"user"`, which is reserved in Postgres.
+`app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile` and
+`LoginEvent` against the live schema (`LoginEvent.client` was added that way, with
+a test against a pre-existing table). When you add a column, add it one of these
+ways — and quote `"user"`, which is reserved in Postgres.
 
 JWTs carry an `sv` (session version) claim; a password reset bumps it, which
 revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
@@ -192,7 +203,7 @@ revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`).
 | **Supabase** | Postgres | `DATABASE_URL` | secret |
 | **Resend** | Transactional email | `email_service.py` | `RESEND_API_KEY` |
 | **Google Cloud** | OAuth sign-in | `routes/auth.py`, `GoogleLoginButton.jsx` | client ID (public) |
-| **Mapbox** | Basemaps, LZ-card imagery, point-cloud colour | `mapStyles.js`, `export_service.py`, `lidar/mapbox_imagery.xml` | public `pk.` token — **hardcoded in all three**; restrict it by URL in Mapbox |
+| **Mapbox** | Basemaps, LZ-card imagery, point-cloud colour | `mapStyles.js`, `export_service.py`, `lidar/mapbox_imagery.xml` | public `pk.` token — **hardcoded in all three**; restrict it by URL in Mapbox. `/api/config` also serves it to the native apps (`MAPBOX_PUBLIC_TOKEN`, else the export one), `pk.` only. **A URL-restricted token may refuse a native app**, which sends no web referrer: confirm with the owner before relying on it, and give the apps their own token via `MAPBOX_PUBLIC_TOKEN` if it does |
 | **Esri World Imagery** | Imagery fed to SAM | `terrain_routes.py` | keyless |
 | **FAA VFR sectional** (ArcGIS-hosted) | VFR basemap | `mapStyles.js` | keyless |
 | **AWS Terrarium tiles** | Elevations, threat viewshed, terrain fallback | `terrain_routes.py`, `threat_routes.py`, `terrain_provider.py` | keyless |
@@ -313,6 +324,9 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `LIDAR_BUILDER_URL` | The build service, e.g. `http://<internal host>:8090`. Unset → no on-demand builds. |
 | `LIDAR_BUILDER_TOKEN` | Shared secret with the build service. |
 | `LIDAR_CACHE_DIR` | Where the USGS coverage index is cached. |
+| `MIN_APP_VERSION_ANDROID`, `MIN_APP_VERSION_IOS` | Oldest supported native app version, `X.Y.Z`, served by `/api/config`; the app shows "Update required" below it. Unset = no minimum. A malformed value is ignored and logged, never served. |
+| `MAINTENANCE_MESSAGE` | Non-empty turns maintenance on in `/api/config` and is the notice the apps show (500 chars max). |
+| `MAPBOX_PUBLIC_TOKEN` | The Mapbox token `/api/config` hands the native apps, so it can rotate without an app release. Must start `pk.`; anything else is dropped. Default: the token in `export_service.py`. |
 
 The build service has its own settings (`LIDAR_COLLECTION`,
 `LIDAR_BUILD_CONTEXT_M`, `LIDAR_BUILDER_QUEUE`, …) — documented at the top of

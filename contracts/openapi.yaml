@@ -1,0 +1,127 @@
+openapi: 3.0.3
+info:
+  title: EZ/PZ API (the parts the native apps call)
+  version: 0.1.0
+  description: |
+    The contract between the Flask API and the web and native clients. It holds
+    the routes the apps call, one at a time as each arrives; a route missing from
+    here is not yet something an app may rely on. `backend/tests/test_openapi_contract.py`
+    fails when a response stops matching, so a server change that would break an
+    installed app shows up as a test failure first.
+
+    Store builds stay in the field for months. Changes here are additive: a new
+    optional field, a new route. Removing or retyping a field breaks apps that
+    cannot be updated, and needs `configVersion` bumped and `minAppVersion` raised.
+
+    Every route is under `/api`. The base URL is the deployment's (the same host
+    the web app uses); it is not part of the spec.
+servers:
+  - url: https://prod-ezpz-api.mcfadd.in
+    description: Self-hosted production (Coolify behind Cloudflare Tunnel)
+  - url: http://127.0.0.1:5000
+    description: Local development
+
+paths:
+  /api/config:
+    get:
+      operationId: getConfig
+      summary: What an app needs before anyone signs in
+      description: |
+        Public: no token. The same answer for everyone, cached for a minute. Apps
+        read it at launch (never on the startup path to a usable map) and again on
+        resume, to learn whether an update is required, whether there is a
+        maintenance notice, which optional services are up, and which Mapbox public
+        token to use, so the token can rotate without an app release.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      responses:
+        "200":
+          description: The configuration.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=60
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+
+components:
+  parameters:
+    ClientHeader:
+      name: X-EZPZ-Client
+      in: header
+      required: false
+      description: |
+        Which app is calling: `platform/version (build)`, e.g. `android/1.4.0 (212)`.
+        Sent by the native apps on every request. Recorded against sign-ins so the
+        owner can see which versions are in the field. Anything that does not match
+        this shape is ignored, never stored.
+      schema:
+        type: string
+        maxLength: 64
+        pattern: '^(android|ios|web)/\d{1,4}\.\d{1,4}\.\d{1,4}(-[0-9A-Za-z.]{1,20})?( \(\d{1,9}\))?$'
+
+  schemas:
+    Config:
+      type: object
+      additionalProperties: false
+      required: [configVersion, serverVersion, minAppVersion, maintenance, services, mapbox]
+      properties:
+        configVersion:
+          type: integer
+          minimum: 1
+          description: Bumped when the shape changes in a way an old app cannot read.
+        serverVersion:
+          type: string
+          description: The backend's semantic version.
+        minAppVersion:
+          type: object
+          additionalProperties: false
+          required: [android, ios]
+          description: |
+            The oldest app version the server still supports, per platform, as
+            `X.Y.Z`; null means no minimum. An app below it shows "Update required".
+          properties:
+            android:
+              type: string
+              nullable: true
+              pattern: '^\d{1,4}\.\d{1,4}\.\d{1,4}$'
+            ios:
+              type: string
+              nullable: true
+              pattern: '^\d{1,4}\.\d{1,4}\.\d{1,4}$'
+        maintenance:
+          type: object
+          additionalProperties: false
+          required: [active, message]
+          properties:
+            active:
+              type: boolean
+            message:
+              type: string
+              nullable: true
+              maxLength: 500
+        services:
+          type: object
+          additionalProperties: false
+          required: [lidarBuilds, packs]
+          description: Optional services, so the app can hide what is down instead of failing.
+          properties:
+            lidarBuilds:
+              type: boolean
+              description: The 3D point-cloud build service is configured.
+            packs:
+              type: boolean
+              description: The mission-pack service is configured (not built yet).
+        mapbox:
+          type: object
+          additionalProperties: false
+          required: [publicToken]
+          properties:
+            publicToken:
+              type: string
+              nullable: true
+              pattern: '^pk\.'
+              description: A *public* Mapbox token only; a secret one is never served.

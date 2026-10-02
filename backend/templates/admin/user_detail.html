@@ -149,12 +149,13 @@
   <h2 style="padding:18px 18px 0;">Login history <span class="muted" style="text-transform:none;letter-spacing:0;">({{ login_total }})</span></h2>
   {% if logins %}
     <table style="margin-top:10px;">
-      <thead><tr><th style="padding-left:18px;">When (UTC)</th><th>Method</th><th style="padding-right:18px;">IP address</th></tr></thead>
+      <thead><tr><th style="padding-left:18px;">When (UTC)</th><th>Method</th><th>App</th><th style="padding-right:18px;">IP address</th></tr></thead>
       <tbody>
         {% for e in logins %}
         <tr>
           <td class="mono" style="font-size:12px;padding-left:18px;">{{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') if e.created_at else '—' }}</td>
           <td><span class="badge">{{ e.method }}</span></td>
+          <td class="mono muted" style="font-size:12px;">{{ e.client or '—' }}</td>
           <td class="mono muted" style="font-size:12px;padding-right:18px;">{{ e.ip or '—' }}</td>
         </tr>
         {% endfor %}

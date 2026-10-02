@@ -13,7 +13,7 @@ except ImportError:
     __version__ = "0.0.0-dev"
 
 from database_url import database_uri, is_postgres
-from models import AircraftProfile, User, db
+from models import AircraftProfile, LoginEvent, User, db
 from entitlements import account_active, affiliation_ok
 from aircraft_seed import seed_aircraft_profiles
 from schema_sync import sync_table_columns
@@ -39,6 +39,8 @@ from routes.threat_routes import threat_bp
 from routes.route_share_routes import route_share_bp
 from routes.aircraft_routes import aircraft_bp
 from routes.admin_routes import admin_bp
+from routes.config_routes import config_bp
+from client_header import CLIENT_HEADER
 
 app = Flask(__name__)
 cors_origins = [
@@ -51,7 +53,8 @@ cors_origins = [
 CORS(
     app,
     resources={r'/api/*': {'origins': cors_origins}},
-    allow_headers=['Authorization', 'Content-Type'],
+    # The native apps (and, later, the web) identify themselves with X-EZPZ-Client.
+    allow_headers=['Authorization', 'Content-Type', CLIENT_HEADER],
     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 )
 
@@ -170,6 +173,7 @@ app.register_blueprint(threat_bp)
 app.register_blueprint(route_share_bp)
 app.register_blueprint(aircraft_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(config_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
@@ -243,6 +247,8 @@ with app.app_context():
     # tables above do, diff the model against the live schema and add whatever
     # is absent.
     sync_table_columns(db, AircraftProfile)
+    # login_event gained `client` (the X-EZPZ-Client app version) after launch.
+    sync_table_columns(db, LoginEvent)
 
     # Master aircraft profiles. Fills in missing slugs only — admin edits and
     # user-created profiles are never touched.

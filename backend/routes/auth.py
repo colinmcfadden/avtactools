@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from auth_rate_limit import check_rate_limits
+from client_header import client_from_request
 from security_config import resolve_client_ip
 from email_service import (
     send_new_account_notification,
@@ -242,6 +243,7 @@ def _auth_success(user, method='password'):
             method=method,
             ip=_client_ip(),
             user_agent=(request.headers.get('User-Agent') or '')[:400] or None,
+            client=client_from_request(request),
         ))
         db.session.commit()
     except Exception:  # noqa: BLE001 — history is best-effort, never blocks login

@@ -15,7 +15,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from auth_rate_limit import clear_rate_limits  # noqa: E402
-from models import AccountToken, User, db  # noqa: E402
+from models import AccountToken, LoginEvent, User, db  # noqa: E402
 from routes.auth import auth_bp  # noqa: E402
 from security_config import resolve_jwt_secret, validate_email_configuration  # noqa: E402
 
@@ -193,6 +193,42 @@ class AuthFlowTests(unittest.TestCase):
         )
         self.assertEqual(me.status_code, 200)
         self.assertTrue(me.get_json()['email_verified'])
+
+    def _verified_account(self):
+        self.assertEqual(self._register().status_code, 202)
+        verified = self.client.post('/api/auth/verify-email', json={
+            'token': self.verification_tokens[-1],
+            'password': 'a secure flight password',
+        })
+        self.assertEqual(verified.status_code, 200)
+
+    def _login_with_client_header(self, value):
+        headers = {'X-EZPZ-Client': value} if value is not None else {}
+        response = self.client.post('/api/auth/login', headers=headers, json={
+            'email': 'pilot@example.com',
+            'password': 'a secure flight password',
+        })
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            return LoginEvent.query.order_by(LoginEvent.id.desc()).first().client
+
+    def test_login_records_which_app_signed_in(self):
+        # The owner reads this in the admin dashboard to see which app versions
+        # are in the field before changing an endpoint.
+        self._verified_account()
+        self.assertEqual(self._login_with_client_header('android/1.4.0 (212)'), 'android/1.4.0 (212)')
+        self.assertEqual(self._login_with_client_header('iOS/2.0.0'), 'ios/2.0.0')
+
+    def test_login_without_the_header_records_no_client(self):
+        self._verified_account()
+        self.assertIsNone(self._login_with_client_header(None))
+
+    def test_login_never_stores_a_header_that_is_not_well_formed(self):
+        # Client-supplied text that is shown in the admin dashboard.
+        self._verified_account()
+        for bad in ('<script>alert(1)</script>', 'android/latest', 'x' * 300, 'windows/1.0.0'):
+            with self.subTest(header=bad[:30]):
+                self.assertIsNone(self._login_with_client_header(bad))
 
     def test_password_reset_is_single_use_and_revokes_older_jwt(self):
         old_jwt, _ = self._verify_and_login()

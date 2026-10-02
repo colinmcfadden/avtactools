@@ -18,7 +18,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AircraftProfile, db  # noqa: E402
+from models import AircraftProfile, LoginEvent, db  # noqa: E402
 from schema_sync import sync_table_columns  # noqa: E402
 
 
@@ -143,3 +143,65 @@ class SchemaSyncTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# login_event as it was before `client` (the X-EZPZ-Client app version) was added.
+LEGACY_LOGIN_EVENT = """
+CREATE TABLE login_event (
+    id INTEGER NOT NULL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    method VARCHAR(20) NOT NULL,
+    ip VARCHAR(64),
+    user_agent VARCHAR(400),
+    created_at DATETIME NOT NULL
+)
+"""
+
+
+class LoginEventClientColumnTests(unittest.TestCase):
+    """Production already has a login_event table: the new column must be added to it."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_LOGIN_EVENT))
+        db.session.execute(text(
+            "INSERT INTO login_event (user_id, method, ip, created_at) "
+            "VALUES (7, 'password', '203.0.113.9', '2026-09-01 12:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def _columns(self):
+        return {c["name"] for c in sa_inspect(db.engine).get_columns("login_event")}
+
+    def test_adds_the_client_column_and_keeps_existing_sign_ins(self):
+        self.assertNotIn("client", self._columns())
+
+        self.assertEqual(["client"], sync_table_columns(db, LoginEvent))
+
+        self.assertIn("client", self._columns())
+        # The query that would 500 without the column, against a row that predates it.
+        event = LoginEvent.query.one()
+        self.assertEqual("203.0.113.9", event.ip)
+        self.assertIsNone(event.client)
+
+    def test_new_sign_ins_can_store_a_client(self):
+        sync_table_columns(db, LoginEvent)
+        db.session.add(LoginEvent(user_id=7, method="google", client="android/1.4.0 (212)"))
+        db.session.commit()
+        newest = LoginEvent.query.order_by(LoginEvent.id.desc()).first()
+        self.assertEqual("android/1.4.0 (212)", newest.client)
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, LoginEvent)
+        self.assertEqual([], sync_table_columns(db, LoginEvent))
