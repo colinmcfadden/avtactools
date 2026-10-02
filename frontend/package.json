@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "private": true,
   "dependencies": {
     "@react-oauth/google": "^0.13.5",

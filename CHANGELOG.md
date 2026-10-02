@@ -1,3 +1,10 @@
+## [1.7.2](https://github.com/colinmcfadden/avtactools/compare/v1.7.1...v1.7.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* install the geoid grids where pyproj reads them ([fc64f0e](https://github.com/colinmcfadden/avtactools/commit/fc64f0ea2365381579fe68fed6efe450b9ee16d2))
+
 ## [1.7.1](https://github.com/colinmcfadden/avtactools/compare/v1.7.0...v1.7.1) (2026-10-02)
 
 
