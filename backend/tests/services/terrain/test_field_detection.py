@@ -12,16 +12,12 @@ import threading
 import time
 import types
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import requests
 
-import requests  # noqa: E402
-
-from app.services.terrain import field_detection  # noqa: E402
-
-BACKEND = Path(__file__).resolve().parents[1]
+from app.paths import BACKEND_DIR as BACKEND
+from app.services.terrain import field_detection
 
 
 class FakeSamModule:

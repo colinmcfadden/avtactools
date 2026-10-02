@@ -6,15 +6,9 @@ flag, and every caller collapsed into a single rate-limit bucket because the
 only address visible behind a tunnel is the tunnel's own.
 """
 
-import sys
 import unittest
-from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from app.security.config import (  # noqa: E402
+from app.security.config import (
     resolve_client_ip,
     session_cookie_secure,
     trusted_proxy_header,

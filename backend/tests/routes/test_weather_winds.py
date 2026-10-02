@@ -4,18 +4,14 @@ Written before the helpers moved out of the route module. No network: the
 aviationweather.gov fetch is replaced.
 """
 
-import sys
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.routes import weather as weather_routes  # noqa: E402
-from app.routes.weather import weather_bp  # noqa: E402
-from app.services.weather import (  # noqa: E402
+from app.routes import weather as weather_routes
+from app.routes.weather import weather_bp
+from app.services.weather import (
     FORECAST_THRESHOLD_SEC,
     get_distance,
     nearest_report,
@@ -24,7 +20,7 @@ from app.services.weather import (  # noqa: E402
     to_epoch,
     wind_from_fields,
 )
-from support import make_app  # noqa: E402
+from tests.support import make_app
 
 
 class ParsingTests(unittest.TestCase):

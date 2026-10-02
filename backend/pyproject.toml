@@ -1,0 +1,6 @@
+# Tool settings only; the backend is deployed from requirements.txt, not packaged.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# So `import app` and `import lidar` work however pytest is started.
+pythonpath = ["."]

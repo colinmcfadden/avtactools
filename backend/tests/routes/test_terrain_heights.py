@@ -8,7 +8,6 @@ surface the viewer actually draws.
 
 import os
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,12 +19,10 @@ from flask import Flask
 from flask_jwt_extended import JWTManager, create_access_token
 from rasterio.transform import from_origin
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.services.terrain import tiles as terrain_tiles
+from app.services.terrain.provider import RasterEntry
 
-from app.services.terrain import tiles as terrain_tiles  # noqa: E402
-from app.services.terrain.provider import RasterEntry  # noqa: E402
-
-from app.routes.terrain import terrain_bp  # noqa: E402
+from app.routes.terrain import terrain_bp
 
 PIXEL_DEG = 1.0 / 1200
 

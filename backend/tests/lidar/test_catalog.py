@@ -1,16 +1,11 @@
 """Tileset naming, and the checks that keep a URL from reaching the disk."""
 
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from lidar import catalog  # noqa: E402
+from lidar import catalog
 
 TARGET = (34.591552, -84.128225)
 

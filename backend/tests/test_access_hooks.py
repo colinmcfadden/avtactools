@@ -7,20 +7,17 @@ backstop for everything the UI hides, so each way of being refused is pinned.
 
 import os
 import shutil
-import sys
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from flask_jwt_extended import create_access_token
 
-from flask_jwt_extended import create_access_token  # noqa: E402
-
-from app import create_app  # noqa: E402
-from app.extensions import db  # noqa: E402
-from app.models import LocalCredential, User  # noqa: E402
+from app import create_app
+from app.extensions import db
+from app.models import LocalCredential, User
 
 SECRET = "access-test-secret-over-thirty-two-chars-long"
 GATED = "/api/aircraft-profiles"        # any /api route outside /api/auth/

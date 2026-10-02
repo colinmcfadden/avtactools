@@ -7,19 +7,16 @@ recorded — without the toolchain.
 
 import json
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lidar import aoi, catalog, collection, coverage  # noqa: E402
-from lidar.build import (BuildError, BuildRequest, build_for_target,  # noqa: E402
+from lidar import aoi, catalog, collection, coverage
+from lidar.build import (BuildError, BuildRequest, build_for_target,
                          resolve_source)
-from test_lidar_collection import write_tile  # noqa: E402
+from tests.lidar.helpers import write_tile
 
 # Ellijay, and the Albers bounds of the 1 km tile under it.
 LAT, LON = 34.596407, -84.128098

@@ -16,12 +16,10 @@ import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from lidar import catalog  # noqa: E402
-from lidar.build import BuildError, BuildRequest  # noqa: E402
-from lidar.tiles import TileBuildError  # noqa: E402
-from lidar.worker import (  # noqa: E402
+from lidar import catalog
+from lidar.build import BuildError, BuildRequest
+from lidar.tiles import TileBuildError
+from lidar.worker import (
     ABANDON_AFTER_S, STAGING_PREFIX, TOKEN_HEADER, WAITING_WITHIN_S, Builder,
     BuildCancelled, QueueFull, cancellable_runner, make_handler, request_factory)
 

@@ -9,7 +9,6 @@ DEMs and nothing else.
 
 import os
 import shutil
-import sys
 import tempfile
 import threading
 import unittest
@@ -18,10 +17,8 @@ from unittest.mock import patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.services.terrain import tiles as terrain_tiles  # noqa: E402
-from app.services.terrain.provider import LocalRasterCatalog, RasterEntry  # noqa: E402
+from app.services.terrain import tiles as terrain_tiles
+from app.services.terrain.provider import LocalRasterCatalog, RasterEntry
 
 GRID = np.full((terrain_tiles.TILE_SAMPLES, terrain_tiles.TILE_SAMPLES), 412.0,
                dtype=np.float32)

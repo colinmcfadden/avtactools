@@ -6,7 +6,6 @@ looks like bad terrain rather than a bug in a coordinate formula.
 """
 
 import struct
-import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -16,9 +15,7 @@ import rasterio
 from rasterio.enums import Resampling
 from rasterio.transform import from_bounds
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.services.terrain import tiles as terrain_tiles  # noqa: E402
+from app.services.terrain import tiles as terrain_tiles
 
 
 class TileBoundsTests(unittest.TestCase):

@@ -8,23 +8,20 @@ import logging
 import os
 import shutil
 import sqlite3
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from sqlalchemy import inspect
 
-from sqlalchemy import inspect  # noqa: E402
-
-from app import create_app  # noqa: E402
-from app.config import cors_origins, load_config  # noqa: E402
-from app.extensions import db  # noqa: E402
-from app.models import AircraftProfile  # noqa: E402
-from app.paths import BACKEND_DIR  # noqa: E402
-from app.services.aircraft.seed import SEED_PROFILES  # noqa: E402
-from app.version import __version__  # noqa: E402
+from app import create_app
+from app.config import cors_origins, load_config
+from app.extensions import db
+from app.models import AircraftProfile
+from app.paths import BACKEND_DIR
+from app.services.aircraft.seed import SEED_PROFILES
+from app.version import __version__
 
 SECRET = "factory-test-secret-over-thirty-two-chars"
 PRODUCTION = {"TRUSTED_PROXY": "cloudflare", "JWT_SECRET_KEY": SECRET,

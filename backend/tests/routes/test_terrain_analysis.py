@@ -6,9 +6,7 @@ the one that turns a click into a suggested LZ polygon, so the arithmetic that
 maps pixels back to latitude and longitude is pinned here.
 """
 
-import sys
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -17,14 +15,12 @@ import mercantile
 import numpy as np
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.routes.terrain import terrain_bp  # noqa: E402
-from app.services.terrain import field_detection  # noqa: E402
-from app.services.terrain.elevations import sample_elevations_ft  # noqa: E402
-from app.services.terrain.field_detection import fetch_satellite_tile  # noqa: E402
-from app.services.terrain.provider import decode_terrarium  # noqa: E402
-from support import make_app  # noqa: E402
+from app.routes.terrain import terrain_bp
+from app.services.terrain import field_detection
+from app.services.terrain.elevations import sample_elevations_ft
+from app.services.terrain.field_detection import fetch_satellite_tile
+from app.services.terrain.provider import decode_terrarium
+from tests.support import make_app
 
 LZ = (34.783817, -84.08219)
 

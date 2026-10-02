@@ -8,14 +8,11 @@ the same as "usable".
 """
 
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from lidar import coverage  # noqa: E402
+from lidar import coverage
 
 
 def square(west, south, east, north):

@@ -6,17 +6,13 @@ it returns is a change in what a crew is told is safe.
 """
 
 import base64
-import sys
 import unittest
-from pathlib import Path
 
 import cv2
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.services.threats.kmz import _circle_coords, _kml_color, _viewshed_rings  # noqa: E402
-from app.services.threats.viewshed import (  # noqa: E402
+from app.services.threats.kmz import _circle_coords, _kml_color, _viewshed_rings
+from app.services.threats.viewshed import (
     _hex_to_bgr,
     radar_elev_m,
     render_mask_png,

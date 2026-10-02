@@ -7,7 +7,6 @@ the files.
 
 import io
 import sqlite3
-import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
@@ -18,11 +17,9 @@ from unittest.mock import patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.services.threats import kmz as kmz_module  # noqa: E402
-from app.services.threats.kmz import _xml_escape, build_threats_kmz  # noqa: E402
-from app.services.threats.ths import _amps_dtg, build_ths_bytes  # noqa: E402
+from app.services.threats import kmz as kmz_module
+from app.services.threats.kmz import _xml_escape, build_threats_kmz
+from app.services.threats.ths import _amps_dtg, build_ths_bytes
 
 KML = "{http://www.opengis.net/kml/2.2}"
 SIZE, CENTER = 121, 60

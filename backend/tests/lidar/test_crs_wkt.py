@@ -8,17 +8,14 @@ made-up WKT that nothing ever parsed, so it could not notice.
 """
 
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from pyproj import CRS
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from lidar import aoi, collection  # noqa: E402
-from test_lidar_collection import write_tile  # noqa: E402
+from lidar import aoi, collection
+from tests.lidar.helpers import write_tile
 
 # Real WKT, the form PDAL and the USGS tiles use: its name contains "+".
 COMPOUND_WKT = CRS.from_user_input("EPSG:6350+5703").to_wkt("WKT1_GDAL")

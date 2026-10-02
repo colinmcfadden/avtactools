@@ -10,7 +10,6 @@ import json
 import os
 import re
 import shutil
-import sys
 import tempfile
 import threading
 import unittest
@@ -18,11 +17,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.services import lidar_client  # noqa: E402
-from lidar.build import BuildRequest  # noqa: E402
-from lidar.worker import Builder, make_handler  # noqa: E402
+from app.services import lidar_client
+from lidar.build import BuildRequest
+from lidar.worker import Builder, make_handler
 
 TOKEN = "client-test-token"
 WATCHER = "tab-12345678"

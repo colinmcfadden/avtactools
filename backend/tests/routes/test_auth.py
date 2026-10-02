@@ -1,24 +1,18 @@
 """Focused tests for password accounts, one-time tokens, and Google linking."""
 
-import sys
 import unittest
 from datetime import timedelta
-from pathlib import Path
 from unittest.mock import patch
 
 from flask import Flask
 from flask_jwt_extended import JWTManager
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from app.security.rate_limit import clear_rate_limits  # noqa: E402
+from app.security.rate_limit import clear_rate_limits
 from app.extensions import db
-from app.models import AccountToken, User  # noqa: E402
-from app.routes.auth import auth_bp  # noqa: E402
-from app.security.config import resolve_jwt_secret, validate_email_configuration  # noqa: E402
+from app.models import AccountToken, User
+from app.routes.auth import auth_bp
+from app.security.config import resolve_jwt_secret, validate_email_configuration
 
 
 class SecurityConfigTests(unittest.TestCase):

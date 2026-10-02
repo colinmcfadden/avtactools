@@ -4,13 +4,9 @@ A bare postgresql:// lets SQLAlchemy pick the driver, and SQLAlchemy 2.1 picks
 psycopg 3, which the image does not ship: production crash-looped on it.
 """
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.database.url import database_uri, is_postgres  # noqa: E402
+from app.database.url import database_uri, is_postgres
 
 SQLITE = "sqlite:////code/ezpz.db"
 

@@ -5,22 +5,16 @@ table, so a database whose ``aircraft_profile`` was created before the model
 gained ``perf_source`` 500s on the first query that names it.
 """
 
-import sys
 import unittest
-from pathlib import Path
 
 from flask import Flask
 from sqlalchemy import inspect as sa_inspect, text
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from app.services.aircraft.seed import seed_aircraft_profiles  # noqa: E402
+from app.services.aircraft.seed import seed_aircraft_profiles
 from app.extensions import db
-from app.models import AircraftProfile  # noqa: E402
-from app.database.schema_sync import sync_table_columns  # noqa: E402
+from app.models import AircraftProfile
+from app.database.schema_sync import sync_table_columns
 
 
 # The shape aircraft_profile had before perf_source and the template_* columns

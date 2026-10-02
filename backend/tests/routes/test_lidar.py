@@ -7,7 +7,6 @@ a body rather than a URL.
 """
 
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,12 +15,8 @@ from unittest.mock import MagicMock, patch
 from flask import Flask
 from flask_jwt_extended import JWTManager, create_access_token
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from lidar import aoi, catalog  # noqa: E402
-from app.routes.lidar import lidar_bp  # noqa: E402
+from lidar import aoi, catalog
+from app.routes.lidar import lidar_bp
 
 TARGET = {"lat": 34.591552, "lon": -84.128225}
 # Whatever the app builds by default; the tests follow it rather than pin it.

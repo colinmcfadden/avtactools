@@ -8,19 +8,13 @@ is judging obstruction clearance.
 """
 
 import json
-import sys
 import unittest.mock
 import unittest
-from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
+from pyproj import CRS
 
-from pyproj import CRS  # noqa: E402
-
-from lidar import pipeline  # noqa: E402
-from lidar.crs import (  # noqa: E402
+from lidar import pipeline
+from lidar.crs import (
     ECEF,
     VerticalDatumError,
     assert_vertical_datum_applied,
