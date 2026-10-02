@@ -660,6 +660,19 @@ avtactools/
 
 One repository means a change to a planning formula lands in the web, both apps and the fixtures in a single PR. `AGENTS.md` gains Android and iOS sections in that same PR.
 
+**Branching**
+
+The apps are built in short-lived feature branches off `develop`, one slice at a time, never in one long-lived app branch. A year-long branch would drift from `develop`, conflict with every backend and `AGENTS.md` change, collide with parallel agent work, and break the rule that a formula change lands in all three clients in one PR.
+
+- **One branch per slice** (`feat/android-skeleton`, `feat/android-auth`, `feat/sync-endpoints`, `feat/android-lz-workspace`), each a PR into `develop`, small enough to review in one sitting.
+- **Merge when tests pass, even if nobody can see the feature yet.** Nothing in production builds `android/` or `ios/`: Vercel builds `frontend/` and Coolify builds `backend/`. App code reaches users only when the owner uploads a store build.
+- **Unfinished features hide behind flags** (`/api/config` and entitlements), not behind unmerged branches.
+- **Backend additions stay additive** (new routes, new columns), so the web keeps working as they land.
+- **CI path filters** run app checks only for app changes. Vercel's Ignored Build Step skips previews for PRs that touch only `android/`, `ios/` or `contracts/`.
+- **Throwaway branches only for spikes** (such as the 3D test). Delete them afterwards and rebuild the result in small PRs.
+
+**Agent task — do this in the first app PR:** app commits use a scope, `feat(android): …`, `fix(ios): …`, `feat(contracts): …`. Configure semantic-release in `.github/workflows/release.yaml` and its config so commits scoped `android` or `ios` do not bump the web version. Use the commit-analyzer `releaseRules` with `{ "scope": "android", "release": false }` and `{ "scope": "ios", "release": false }`. Keep `contracts` and `backend` scopes releasing, since they change what the server or web ships. Add the scopes to commitlint's allowed list, and document the convention in `AGENTS.md` §12 in the same PR.
+
 **Test layers**
 
 | Layer | What it covers | Tools |
