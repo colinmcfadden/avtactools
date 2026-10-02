@@ -5,6 +5,7 @@ import {
   parseCoordinate,
 } from "../utils/coordParse";
 import { calculateUH60Capacity } from "../utils/helicopterCapacity";
+import { convertToLatLongString } from "../utils/Helpers";
 import {
   FALLBACK_PROFILE,
   capacityForArea,
@@ -136,6 +137,12 @@ const coordinateFixture = () => ({
     text,
     expected: looksLikeCoordinateText(text),
   })),
+  // `convertToLatLongString` (utils/Helpers.js): the degrees-minutes-seconds text a diagram keeps as its `latLong` after analysis. Seconds
+  // are rounded to two places and never carried into the minute, so 34.999999 reads 59' 60.00": the web's quirk, kept on purpose.
+  latLongString: [
+    [34.783817, -84.08219], [0, 0], [-33.8688, 151.2093], [34.999999, -84.999999], [90, 180], [-90, -180], [-0.0000001, 0.0000001],
+    [34.5457, -84.1234], [34.545678, -84.123456], [0.0078125, -0.0078125], [12.5, 100], [1e-9, -1e-9], [34.00001, -84.00001],
+  ].map(([lat, lon]) => ({ lat, lon, expected: convertToLatLongString(lat, lon) })),
   formatDecimal: [
     { lat: 34.545678, lon: -84.123456, places: 5, expected: formatDecimal(34.545678, -84.123456) },
     { lat: -33.8688, lon: 151.2093, places: 5, expected: formatDecimal(-33.8688, 151.2093) },

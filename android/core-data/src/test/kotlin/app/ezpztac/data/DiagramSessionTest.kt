@@ -11,6 +11,8 @@ import app.ezpztac.sync.SyncTransaction
 import app.ezpztac.sync.RecordKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -299,6 +301,62 @@ class DiagramSessionTest {
         advanceTimeBy(DiagramSession.SAVE_AFTER_STILL_MS)
         runCurrent()
         assertEquals("step 5", r.saved(made.id).name)
+    }
+
+    // -- Changes that are not the person's edit ----------------------------------------------------------------------
+
+    @Test
+    fun `an update to the open diagram is quiet, saved, and survives an undo of an earlier edit`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "v0")
+        r.session.open(made.id)
+        r.session.edit("Rename") { it.copy(name = "v1") }
+        assertTrue(r.session.update(made.id) { it.copy(flightData = JsonObject(mapOf("callSign" to JsonPrimitive("HAWK 6")))) })
+        assertEquals(1, r.session.undoDepth.value)                                           // not an edit to take back
+        r.session.undo()
+        assertEquals("v0", r.session.active.value!!.name)
+        assertEquals(JsonPrimitive("HAWK 6"), r.session.active.value!!.flightData["callSign"])
+        r.session.flush()
+        assertEquals(JsonPrimitive("HAWK 6"), r.repository.open(made.id)!!.flightData["callSign"])
+    }
+
+    @Test
+    fun `an update to a diagram that is not open changes its record and leaves the open one alone`() = runTest {
+        val r = rig()
+        val a = r.repository.create(target, "A")
+        val b = r.repository.create(target, "B")
+        r.session.open(b.id)
+        r.session.edit("Rename") { it.copy(name = "B edited") }
+        assertTrue(r.session.update(a.id) { it.copy(name = "A updated") })
+        assertEquals("A updated", r.repository.open(a.id)!!.name)
+        assertEquals(b.id, r.session.active.value!!.id)
+        assertEquals("B edited", r.session.active.value!!.name)
+        assertEquals(1, r.session.undoDepth.value)
+    }
+
+    @Test
+    fun `an update to a diagram that is gone says so and makes nothing`() = runTest {
+        val r = rig()
+        assertFalse(r.session.update("never-made") { it.copy(name = "x") })
+        val made = r.repository.create(target, "A")
+        r.repository.delete(made.id)
+        assertFalse(r.session.update(made.id) { it.copy(name = "x") })
+        assertEquals(emptyList<String>(), r.device.names(RecordKind.LZ))
+    }
+
+    @Test
+    fun `an update that changes nothing writes nothing`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "A")
+        val other = r.repository.create(target, "B")
+        r.session.open(other.id)
+        r.device.sync()
+        val before = r.device.outbox().size
+        assertTrue(r.session.update(made.id) { it })
+        r.session.update(other.id) { it }
+        r.session.flush()
+        advanceUntilIdle()
+        assertEquals(before, r.device.outbox().size)
     }
 
     // -- Undo ------------------------------------------------------------------------------------------------

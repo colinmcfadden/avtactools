@@ -113,7 +113,7 @@ public object DiagramNormalizer {
         )
     }
 
-    private fun normalizeView(source: JsonObject): DiagramView {
+    internal fun normalizeView(source: JsonObject): DiagramView {
         val view = source["view"].obj() ?: source
         val defaults = DiagramView()
         return DiagramView(

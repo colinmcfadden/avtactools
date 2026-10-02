@@ -14,7 +14,7 @@ contracts/
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy
 │  ├─ coords/       parse.json                      reference: the web app
 │  ├─ planning/     aircraft.json, route.json       reference: the web app
-│  ├─ workspace/    diagram.json                    reference: the web app
+│  ├─ workspace/    diagram.json, ops.json          reference: the web app
 │  ├─ msnx/         template.msnx, parse.json, ...  reference: the web app
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
@@ -42,6 +42,7 @@ reference is.
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
+| `workspace/ops.json` | `frontend/src/contracts/workspaceOpsFixtures.test.js` | — | `core-model` (`DiagramOps`) |
 | `msnx/*` | `frontend/src/contracts/msnxFixtures.test.js` | — | `core-formats` |
 | `sqlite/tables.json` | `frontend/src/contracts/sqliteFixtures.test.js` | `backend/tests/test_contract_fixtures.py` | `core-formats` |
 | `localpoints/parse.json` | `frontend/src/contracts/sqliteFixtures.test.js` | — | `core-formats` |

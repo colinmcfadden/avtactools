@@ -74,6 +74,17 @@ class CoordinateParserTest {
     }
 
     @Test
+    fun `writes degrees minutes and seconds as the web keeps them on an analysed diagram`() {
+        val all = cases("latLongString")
+        assertTrue(all.size >= 10)
+        all.forEach { c ->
+            val lat = c["lat"]!!.jsonPrimitive.double
+            val lon = c["lon"]!!.jsonPrimitive.double
+            assertEquals(c["expected"]!!.jsonPrimitive.content, CoordinateParser.formatLatLongDms(lat, lon), "$lat, $lon")
+        }
+    }
+
+    @Test
     fun `rounds from the exact binary value like toFixed, not the shortest decimal like Java`() {
         // 1.005 is stored as 1.00499999999999989..., so JavaScript gives "1.00";
         // String.format would give "1.01".

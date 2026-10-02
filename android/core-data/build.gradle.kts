@@ -14,6 +14,7 @@ android {
 dependencies {
     api(project(":core-model"))
     api(project(":core-sync"))
+    implementation(project(":core-geo"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
 

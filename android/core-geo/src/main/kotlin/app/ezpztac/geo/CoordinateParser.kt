@@ -3,6 +3,7 @@ package app.ezpztac.geo
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.abs
+import kotlin.math.floor
 
 /**
  * Reads a latitude/longitude out of free text, in whatever shape it arrives:
@@ -323,6 +324,23 @@ public object CoordinateParser {
      */
     public fun formatDecimal(lat: Double, lon: Double, places: Int = 5): String =
         "${toFixed(lat, places)}, ${toFixed(lon, places)}"
+
+    /**
+     * The degrees-minutes-seconds text the web keeps as a diagram's `latLong` after analysis (`convertToLatLongString` in
+     * `utils/Helpers.js`): `34° 47' 1.74" N  84° 4' 55.88" W`. Seconds are rounded to two places and **never carried** into the minute, so
+     * 34.999999 reads `34° 59' 60.00" N`; the web does it and the LZ card shows it, so the apps do too.
+     */
+    public fun formatLatLongDms(lat: Double, lon: Double): String = "${dms(lat, true)}  ${dms(lon, false)}"
+
+    private fun dms(coordinate: Double, isLatitude: Boolean): String {
+        val absolute = abs(coordinate)
+        val degrees = floor(absolute)
+        val minutesNotTruncated = (absolute - degrees) * 60
+        val minutes = floor(minutesNotTruncated)
+        val seconds = toFixed((minutesNotTruncated - minutes) * 60, 2)
+        val direction = if (isLatitude) (if (coordinate >= 0) "N" else "S") else (if (coordinate >= 0) "E" else "W")
+        return "${degrees.toLong()}° ${minutes.toLong()}' $seconds\" $direction"
+    }
 
     internal fun toFixed(value: Double, places: Int): String {
         if (value.isNaN()) return "NaN"

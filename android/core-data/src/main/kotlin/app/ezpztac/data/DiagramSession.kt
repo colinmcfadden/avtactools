@@ -51,13 +51,16 @@ class DiagramSession(
     private var unsaved = false
     private val writing = Mutex()
 
+    /** Held while the open diagram changes (open, close, or a change to one that is not open), so no two of them see each other half done. */
+    private val switching = Mutex()
+
     /** Opens a diagram, saving whatever was open first. False if it is not there. */
-    suspend fun open(uuid: String): Boolean {
+    suspend fun open(uuid: String): Boolean = switching.withLock {
         flush()
-        val diagram = repository.open(uuid) ?: return false
+        val diagram = repository.open(uuid) ?: return@withLock false
         undo.clear(); redo.clear(); publishDepths()
         _active.value = diagram
-        return true
+        true
     }
 
     /**
@@ -65,15 +68,34 @@ class DiagramSession(
      * when the person signs out or deletes the diagram, and a diagram that cannot be closed would stay on screen for the next account.
      */
     suspend fun close() {
-        try {
-            flush()
-        } finally {
-            pending?.cancel()
-            undo.clear(); redo.clear(); publishDepths()
-            _active.value = null
-            unsaved = false
-            _saveFailed.value = false
+        switching.withLock {
+            try {
+                flush()
+            } finally {
+                pending?.cancel()
+                undo.clear(); redo.clear(); publishDepths()
+                _active.value = null
+                unsaved = false
+                _saveFailed.value = false
+            }
         }
+    }
+
+    /**
+     * A change to diagram [id] that is not the person's own edit, such as an analysis that has just come back: it belongs to the diagram it
+     * was asked for, whichever is open by now. If that one is open it is changed quietly (as [setQuietly], so undoing a real edit never
+     * takes it away); if not, its stored record is. False if there is no such diagram any more. Call it from the thread that edits, as
+     * [edit] is: the open diagram is changed without a lock.
+     */
+    suspend fun update(id: String, change: (Diagram) -> Diagram): Boolean = switching.withLock {
+        if (_active.value?.id == id) {
+            setQuietly(change)
+            return@withLock true
+        }
+        val stored = repository.open(id) ?: return@withLock false
+        val changed = change(stored)
+        if (changed != stored) repository.save(changed)
+        true
     }
 
     /**

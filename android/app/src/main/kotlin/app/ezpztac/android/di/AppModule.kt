@@ -17,6 +17,8 @@ import app.ezpztac.map.CameraMemory
 import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
+import app.ezpztac.data.ApiClientTerrainApi
+import app.ezpztac.data.TerrainApi
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ClientInfo
 import app.ezpztac.network.SessionStore
@@ -79,6 +81,10 @@ object AppModule {
     @Provides
     @Singleton
     fun syncApi(client: ApiClient): SyncApi = ApiSyncApi(client)
+
+    @Provides
+    @Singleton
+    fun terrainApi(client: ApiClient): TerrainApi = ApiClientTerrainApi(client)
 
     @Provides
     @Singleton
