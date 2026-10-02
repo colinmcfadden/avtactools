@@ -93,6 +93,10 @@ public data class RoutePoint(
     val name: String? = null,
     /** Charted elevation (a snapped local point); authoritative over the DEM. */
     val chartElevationFt: Double? = null,
+    /** Ground elevation in metres, as a mission file's GPX records it. Imported points only. */
+    val ele: Double? = null,
+    /** What the point's name says it is (`start`, `release`, `target`, `waypoint`). Imported points only. */
+    val role: String? = null,
 ) {
     public companion object {
         public const val KIND_SHAPING: String = "shaping"

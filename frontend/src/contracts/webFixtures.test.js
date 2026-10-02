@@ -44,49 +44,21 @@ import {
   normalizeLzTarget,
   serializeLzDiagram,
 } from "../feature/lzWorkspace/useLzWorkspace";
-import { FIXTURES } from "./readFixture";
 
 const fs = require("fs");
-const path = require("path");
+const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 
 // The web app is the reference implementation for everything here: coordinate
 // parsing, aircraft geometry, capacity, separation and route planning. These
 // fixtures record what it answers so the Android and iOS apps can be held to the
 // same numbers. (MGRS is checked against PyGeodesy instead; see mgrsFixtures.)
-//
-// Normally this suite *verifies* that the committed fixtures still equal what
-// the web code produces. After an intended change to a formula, regenerate and
-// review the diff — the native test suites will then fail until they follow:
-//
-//   cd frontend && UPDATE_CONTRACTS=1 CI=true npx react-scripts test --watchAll=false src/contracts
-
-const UPDATE = process.env.UPDATE_CONTRACTS === "1";
-
-/** One entry per line, so a regenerated fixture diffs case by case. */
-const dumps = (document) => {
-  const lines = ["{"];
-  const keys = Object.keys(document);
-  keys.forEach((key, i) => {
-    const value = document[key];
-    const comma = i < keys.length - 1 ? "," : "";
-    if (Array.isArray(value) && value.length > 0 && typeof value[0] === "object") {
-      lines.push(`  ${JSON.stringify(key)}: [`);
-      lines.push(value.map((v) => `    ${JSON.stringify(v)}`).join(",\n"));
-      lines.push(`  ]${comma}`);
-    } else {
-      lines.push(`  ${JSON.stringify(key)}: ${JSON.stringify(value)}${comma}`);
-    }
-  });
-  lines.push("}");
-  return `${lines.join("\n")}\n`;
-};
+// Regenerating them: see fixtureIO.js.
 
 const settle = (name, document) => {
-  const file = path.join(FIXTURES, name);
+  const file = fixturePath(name);
   const text = dumps(document);
   if (UPDATE) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, text, "utf8");
+    writeFixture(name, text);
     return;
   }
   if (!fs.existsSync(file)) {

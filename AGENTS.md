@@ -660,8 +660,9 @@ toolchain); `contracts/` holds the golden fixtures. iOS is not started.
 | `core-model` | Domain types in the web's saved-JSON shape (`LatLon`, `Mgrs`, `AircraftProfile`, route plan and result, and the saved LZ `Diagram` with its normalizer and `Workspace`) | done for these. Graphics stay opaque JSON, so a field a newer web release adds survives |
 | `core-geo` | MGRS both ways, free-text coordinate parser, great-circle distance and course | done |
 | `core-planning` | Aircraft geometry, capacity, separation, profile lookup, route planner, plan defaults and migration | done |
+| `core-formats` | Reads an AMPS `.msnx` into a `Mission` (routes with plan values, aircraft) as the web's `parseMsnx` does. **Read side only**: writing and mutating a `.msnx` (`createMsnx`, `mutateMsnx`) is not ported. `.LPS` and `.ths` are not started | reader done |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
-| everything else in the plan (`app`, `core-formats`, `core-data`, `feature-*` …) | needs the Android Gradle Plugin or is later work | **not started** |
+| everything else in the plan (`app`, `core-data`, `feature-*` …) | needs the Android Gradle Plugin or is later work | **not started** |
 
 Package root is `app.ezpztac.*` (the reverse of `ezpztac.app`). The Android
 `applicationId` is not chosen and is permanent once published: ask the owner.
@@ -691,6 +692,18 @@ never "fix" a number in a client alone. `contracts/README.md` has the commands.
   those; strict types would reject documents the web opens. Quirks kept on
   purpose: a blank-but-present `mgrs` (`"  "`) stays untrimmed; a present but
   non-array `pzMarkers` is empty and does *not* fall back to `pzMarker`.
+- A `.msnx` comes from whoever sent it, so `MsnxReader` treats it as hostile: it
+  reads only the parts it needs, bounds each one's inflated size (an archive that
+  expands past the limit is refused, not held in memory), and rejects any
+  `<!DOCTYPE` or `<!ENTITY` by *text*. The parser feature flags are best effort —
+  Android's XML runtime does not know all of them — so the text check is the one
+  that must hold, and `MsnxWithoutParserHardeningTest` runs it with the flags off.
+  A refusal test must use an otherwise well-formed document: a DOCTYPE placed
+  before the XML declaration is refused for being malformed, and the test then
+  passes whether the check exists or not (this one did, until a mutation showed it).
+- AMPS values keep the web's arithmetic: metres to feet with 3.28084 (not
+  3.280839895 — the half-foot cases land differently) then `Math.round`; the
+  `.msnx` per-point plan values mean "to this point" (§13).
 - `-Xjdk-release=17` is set so a JDK 21-only API fails to compile instead of
   failing on CI or a device.
 - Fixtures must not depend on the clock or a random id (`contracts/README.md`).

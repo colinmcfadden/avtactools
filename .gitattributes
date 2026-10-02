@@ -4,3 +4,9 @@
 android/gradlew text eol=lf
 android/**/*.sh text eol=lf
 *.bat text eol=crlf
+
+# Fixtures are compared byte for byte. A .msnx is a zip, so no line-ending
+# conversion may touch it; the JSON ones stay LF so a Windows checkout
+# regenerates to the same bytes.
+*.msnx binary
+contracts/fixtures/**/*.json text eol=lf

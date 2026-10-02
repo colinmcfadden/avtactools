@@ -13,7 +13,8 @@ contracts/
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy
 │  ├─ coords/       parse.json                      reference: the web app
 │  ├─ planning/     aircraft.json, route.json       reference: the web app
-│  └─ workspace/    diagram.json                    reference: the web app
+│  ├─ workspace/    diagram.json                    reference: the web app
+│  └─ msnx/         template.msnx, parse.json, ...  reference: the web app
 └─ scripts/         generators for the fixtures PyGeodesy owns
 ```
 
@@ -36,8 +37,20 @@ reference is.
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
+| `msnx/*` | `frontend/src/contracts/msnxFixtures.test.js` | — | `core-formats` |
 
 iOS joins this table when it starts; it reads the same files.
+
+### The `msnx/` fixtures
+
+`*.msnx` are real zip files (the web's template and four files the web's own export
+produced, each reduced to the five parts the readers use) and `parse.json` holds what
+the web's `parseMsnx` reads from each. `amps_values.json` is the text-to-number step on
+its own: the airspeed, wind and metres fields AMPS writes as prose. The `.msnx` bytes
+are fixtures too: the web suite fails if a rebuild differs from what is committed, so
+the Kotlin reader is always tested on the files the web would produce today.
+Everything inside is invented; no file from a real mission. A real, unclassified AMPS
+export from the owner would be added as a further case, and is the better test.
 
 ## Changing a fixture
 

@@ -26,6 +26,13 @@ public object Fixtures {
     }
 
     public fun text(name: String): String = File(directory, name).readText()
+
+    /** A binary fixture, such as a `.msnx` mission file. */
+    public fun bytes(name: String): ByteArray {
+        val file = File(directory, name)
+        check(file.isFile) { "Fixture $name is missing at ${file.path}" }
+        return file.readBytes()
+    }
 }
 
 public fun JsonElement.asObject(): JsonObject = this as JsonObject

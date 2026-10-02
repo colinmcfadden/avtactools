@@ -24,6 +24,7 @@ rootProject.name = "ezpz-android"
 include(":core-model")
 include(":core-geo")
 include(":core-planning")
+include(":core-formats")
 
 // Test support: reads ../contracts/fixtures. Not part of the shipped app.
 include(":core-testing")
