@@ -503,6 +503,12 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   match nothing. Colour is baked into RGB at build time.
 - **API-relative URLs.** `REACT_APP_API_URL` already ends in `/api`; any URL the
   backend returns for the client must not repeat it.
+- **Every backend import must be in `backend/requirements.txt`.** v1.7.0
+  shipped importing `pyproj`, which the developer's machine had and the
+  requirements file did not; production crash-looped on
+  `ModuleNotFoundError` while every local test passed. Before a release, check
+  new third-party imports against the file — or build the image
+  (`docker build backend`), which is the only test that uses it.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
 
