@@ -18,6 +18,9 @@ kotlin {
     explicitApi()
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
+        // Bytecode level alone would let code call a JDK 18+ method that only fails on
+        // CI's JDK 17 or on a device; this limits the API to what JDK 17 has.
+        freeCompilerArgs.add("-Xjdk-release=17")
         allWarningsAsErrors = true
     }
 }

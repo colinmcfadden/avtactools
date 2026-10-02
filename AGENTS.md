@@ -27,8 +27,9 @@ mission planning system).
 - **Status:** public beta. Version lives in `frontend/package.json` and
   `backend/version.py`, both written by semantic-release.
 - **Repo:** `github.com/colinmcfadden/avtactools` · default branch `develop`.
-- **Native apps:** planned, not started — Android (Kotlin) first, then iOS and
-  iPadOS (Swift). Read `docs/NATIVE_APPS_PLAN.md` before any mobile work.
+- **Native apps:** Android (Kotlin) first, then iOS and iPadOS (Swift). Started:
+  the pure-Kotlin core modules and the golden fixtures exist (§17). Read
+  `docs/NATIVE_APPS_PLAN.md` before any mobile work.
 
 ---
 
@@ -123,9 +124,11 @@ avtactools/
 │  ├─ src/utils/             Coordinates, MGRS (`mgrs.js`), LZ dictionary, helicopter capacity
 │  ├─ public/                msnx_template.msnx, static assets; public/cesium/ is copied at build
 │  └─ scripts/copy-cesium.js prestart/prebuild: copies Cesium's static build into public/
+├─ android/                  Gradle project for the Android app (§17); pure-Kotlin core modules so far
+├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17)
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
 ├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md
-├─ .github/workflows/        release.yaml (semantic-release only)
+├─ .github/workflows/        release.yaml (semantic-release); android.yaml, contracts.yaml (path-filtered tests)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
 └─ backend/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
 ```
@@ -358,13 +361,21 @@ npm start                                     # copies Cesium into public/cesium
 cd backend;  python -m pytest tests -q
 cd frontend; $env:CI="true"; npm test         # CI=true, or Jest waits in watch mode
 cd frontend; npm run build                    # catches lint errors the tests miss
+cd android;  .\gradlew.bat test               # Kotlin core modules, against ../contracts
+python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (~20 s)
 ```
 
 - `tests/test_threat_qr_export.py` **fails and predates current work**
   (SQLAlchemy app registration). Report it; don't "fix" it as a side effect.
 - The geoid test skips without `PROJ_NETWORK=ON` — PROJ returns heights
   unchanged, and *reports success*, when grids are missing.
-- **Nothing runs tests in CI.** The only workflow is the release. Run them yourself.
+- **CI runs only two test sets:** `android.yaml` (the Kotlin modules) and
+  `contracts.yaml` (the fixtures, on the web and PyGeodesy sides), each only when
+  its paths change. Backend pytest and the rest of the web's Jest suite still run
+  nowhere but on your machine.
+- `frontend/package-lock.json` is out of sync under npm 10 (`npm ci` reports
+  `Missing: yaml@2.9.1`), so install with `npm install` and restore the lockfile
+  (`git checkout frontend/package-lock.json`) if you only needed `node_modules`.
 - The build prints many pre-existing ESLint warnings; add none of your own.
 
 ---
@@ -378,12 +389,29 @@ cd frontend; npm run build                    # catches lint errors the tests mi
   hook. The subject must not start with a capital: `feat: add LiDAR tiles`
   passes, `feat: LiDAR tiles` is rejected.
 - **Release is automatic on merge to `main`.** `release.yaml` runs
-  semantic-release: it reads `feat`/`fix`/`!` commits, bumps
+  semantic-release: it reads `feat` (minor) and `fix`/`perf` (patch) commits —
+  `refactor`, `docs`, `chore` and `test` release nothing — and a major only from
+  a `BREAKING CHANGE:` footer. **A `!` alone (`feat!: …`) releases nothing at all**
+  under this config (checked against the installed commit-analyzer; six `feat!:`
+  commits in history did not produce a 2.0). It bumps
   `frontend/package.json` and `backend/version.py`, writes `CHANGELOG.md`,
   tags, publishes a GitHub release, and commits
   `chore(release): X.Y.Z [skip ci]` so Vercel skips a second build.
 - Vercel deploys `main` to production and builds a preview for every PR. The
   Fly backend is deployed **by hand**; Coolify deploys itself on push.
+- **App commits carry a scope:** `feat(android): …`, `fix(ios): …`, and
+  `feat(contracts): …` for the fixtures. `.releaserc.json` gives `android` and
+  `ios` `release: false`, so app work never bumps the web version; `contracts`
+  and `backend` still release because they change what the server or web ships.
+  A commit that touches both (`feat(backend,android): …`) releases. commitlint
+  lists these scopes and *warns* on an unknown one rather than failing.
+- **Vercel previews for app-only PRs** are skipped by an *Ignored Build Step* set
+  in the Vercel project settings, not in the repo: a command that exits 0 when
+  nothing under `frontend/` changed, e.g.
+  `git diff --quiet HEAD^ HEAD -- .` (owner to apply; check it against a
+  multi-commit PR before relying on it).
+- Agents do not push store builds. Signing keys never enter the repo (`*.jks`,
+  `*.keystore`, `*.p12` are gitignored).
 
 ---
 
@@ -391,8 +419,9 @@ cd frontend; npm run build                    # catches lint errors the tests mi
 
 **Coordinates.** Crews work in MGRS. Lat/lon → MGRS runs in the browser
 (`utils/mgrs.js`: Krüger-series transverse Mercator, matched against the
-backend's PyGeodesy at 5,255 points worldwide, every one identical) — the
-cursor readout converts on every mouse move, so never call the API for it.
+backend's PyGeodesy at 5,649 points worldwide — `contracts/fixtures/mgrs`, run
+by Jest — every one identical) — the cursor readout converts on every mouse
+move, so never call the API for it.
 Digits are truncated, not rounded, and the zone is zero-padded (`05R`), as
 PyGeodesy writes it. Heights are feet in the UI; the backend
 computes in metres and converts at the edges (e.g. `/api/elevations` returns
@@ -546,7 +575,16 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   Hugging Face Spaces and a `backend/src/` layout). This file is current.
 - `backend/.env.example` is missing (§10).
 - `tests/test_threat_qr_export.py` fails (pre-existing).
-- No tests run in CI; `pytest` isn't a declared dependency.
+- CI runs only the Kotlin modules and the fixtures (§11); backend pytest and
+  most of the web's Jest suite run nowhere but locally, and `pytest` isn't a
+  declared dependency.
+- Web behaviour the native ports reproduce on purpose, because the web is the
+  reference and the fixtures pin it. Each is a candidate to fix on the web
+  *first* (then regenerate the fixtures): `looksLikeCoordinateText("34S")` is
+  false, since its "no other letters" test also matches `E` and `S`;
+  `normalizeProfile` gives an empty profile the `generic` icon but no profile the
+  UH-60L icon, and would turn a `null` number into 0 (unreachable: the API's
+  columns are NOT NULL); `feat!:` commits release nothing (§12).
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -564,4 +602,61 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`.
+  `docs/NATIVE_APPS_PLAN.md`, `android/README.md`, `contracts/README.md`.
+
+---
+
+## 17. Native apps
+
+The plan, decisions and phases are in `docs/NATIVE_APPS_PLAN.md`; this is what
+exists and the rules for working on it.
+
+**Layout.** `android/` is a Gradle project (Kotlin 2.4, Gradle 8.14, JDK 17
+toolchain); `contracts/` holds the golden fixtures. iOS is not started.
+
+| Module | What it is | State |
+|---|---|---|
+| `core-model` | Domain types in the web's saved-JSON shape (`LatLon`, `Mgrs`, `AircraftProfile`, route plan and result) | done for these |
+| `core-geo` | MGRS both ways, free-text coordinate parser, great-circle distance and course | done |
+| `core-planning` | Aircraft geometry, capacity, separation, profile lookup, route planner, plan defaults and migration | done |
+| `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
+| everything else in the plan (`app`, `core-formats`, `core-data`, `feature-*` …) | needs the Android Gradle Plugin or is later work | **not started** |
+
+Package root is `app.ezpztac.*` (the reverse of `ezpztac.app`). The Android
+`applicationId` is not chosen and is permanent once published: ask the owner.
+
+**The web is the reference; the fixtures are the contract.** A planning formula
+changes on the web first (or in the same PR), then `contracts/` is regenerated
+and the diff reviewed, then every client follows. Never hand-edit a fixture and
+never "fix" a number in a client alone. `contracts/README.md` has the commands.
+
+**Porting rules that bit once already** (each is in a test):
+- JavaScript `Math.round` rounds halves *up*; Kotlin's `round` goes to even.
+  `RouteCalc.jsRound`. The fixtures include 0.5, 2.5 and 60.5 s for this.
+- JavaScript `toFixed` rounds the exact binary value; Java's `%.nf` rounds the
+  shortest decimal (`1.005` → `"1.01"` in Java, `"1.00"` in JS).
+  `CoordinateParser.toFixed`.
+- JavaScript's `\s` and `trim()` include no-break and Unicode spaces and the BOM;
+  Java's `\s` does not. Don't use `String.format` for user-visible digits (device
+  locale can emit non-ASCII digits).
+- A regex character class that reads as four characters may be a range:
+  the web's `[‐-―−]` is U+2010–U+2015 plus U+2212. Take code points from the
+  source, never retype them.
+- PyGeodesy's `Mgrs.toStr(prec=…)` counts digits *beyond* 1 m; its inverse
+  returns the square's *centre*, folds longitude into ±180, and accepts any even
+  digit count.
+- `-Xjdk-release=17` is set so a JDK 21-only API fails to compile instead of
+  failing on CI or a device.
+
+**Building in an agent sandbox.** `dl.google.com` (Google's Maven: the Android
+Gradle Plugin, AndroidX, Compose, the SDK) is blocked by the cloud environment's
+network policy, so only the pure-Kotlin modules can be built and tested there; the
+owner must allow that host before any module that needs the Android plugin can
+be verified. Maven Central also throttles a shared egress IP with 429s: Gradle
+caches what it fetched, so re-run, and give Gradle retries in
+`~/.gradle/gradle.properties` (not in the repo). Never commit a build that was
+not compiled: say so instead.
+
+**Rules that carry over unchanged:** unclassified only; threats are never sent
+to the server; no secret in the app binary; no new dependency beyond what the
+plan's owner-approved list covers (ask first for anything else).

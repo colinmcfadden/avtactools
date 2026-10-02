@@ -1,0 +1,72 @@
+name: Contracts
+
+# The golden fixtures in contracts/ are what the web, backend and native apps
+# are all tested against. This checks the web and PyGeodesy sides: a formula
+# change on the web, or a fixture edit, cannot land without the fixtures and
+# their reference agreeing. The native apps check the same files in their own
+# workflows.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "contracts/**"
+      - "frontend/src/contracts/**"
+      - "frontend/src/utils/**"
+      - "frontend/src/feature/aircraft/**"
+      - "frontend/src/feature/msnxImport/routeCalc*"
+      - "backend/requirements.txt"
+      - ".github/workflows/contracts.yaml"
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "frontend/src/contracts/**"
+      - "frontend/src/utils/**"
+      - "frontend/src/feature/aircraft/**"
+      - "frontend/src/feature/msnxImport/routeCalc*"
+      - "backend/requirements.txt"
+      - ".github/workflows/contracts.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web matches the fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # `npm install`, not `npm ci`: npm 10 reports frontend/package-lock.json as
+      # out of sync (it lacks yaml@2.9.1), so `ci` refuses. Move to `npm ci` once
+      # the lockfile is regenerated.
+      - run: npm install --no-audit --no-fund
+      - name: Contract tests
+        run: npx react-scripts test --watchAll=false src/contracts
+        env:
+          CI: "true"
+
+  pygeodesy:
+    name: PyGeodesy agrees with the MGRS fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the pinned PyGeodesy
+        run: pip install "$(grep -i '^pygeodesy==' backend/requirements.txt)"
+      - name: Regenerate and compare
+        run: python contracts/scripts/mgrs_fixtures.py check

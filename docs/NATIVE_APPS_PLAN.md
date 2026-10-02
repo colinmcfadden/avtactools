@@ -1,7 +1,10 @@
 # Plan: Native Android and iOS Apps
 
-Status: not started — written 2026-10-02 as the plan for native apps (Kotlin for
-Android, Swift for iOS and iPadOS) beside the web app. Android goes first.
+Status: P0 started 2026-10-02 — written as the plan for native apps (Kotlin for
+Android, Swift for iOS and iPadOS) beside the web app. Android goes first. So far:
+`contracts/` (golden fixtures), the pure-Kotlin `core-model`, `core-geo` and
+`core-planning` modules, and the release and CI configuration. Nothing that needs
+the Android Gradle Plugin exists yet; see `android/README.md`.
 
 This is the repository copy of the shared planning doc
 (https://claude.ai/code/artifact/b5e194d4-db36-488f-8237-5c265d3977dc). The decisions checklist at

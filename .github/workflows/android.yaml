@@ -1,0 +1,49 @@
+name: Android
+
+# Runs only for changes the Android app depends on. Nothing here deploys: app
+# builds reach users only when the owner uploads a signed build to a store
+# (docs/NATIVE_APPS_PLAN.md, "Signing and delivery").
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "android/**"
+      - "contracts/**"
+      - ".github/workflows/android.yaml"
+  pull_request:
+    paths:
+      - "android/**"
+      - "contracts/**"
+      - ".github/workflows/android.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kotlin-tests:
+    name: Kotlin tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      # Android's toolchain is JDK 17, and the modules compile to it.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The pure-Kotlin modules (core-model, core-geo, core-planning), held to
+      # the golden fixtures in contracts/. Modules that need the Android Gradle
+      # Plugin join this job when they exist.
+      - name: Test
+        run: ./gradlew test --console=plain
