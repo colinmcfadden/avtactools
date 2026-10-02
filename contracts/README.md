@@ -67,8 +67,10 @@ export from the owner would be added as a further case, and is the better test.
 
 `responses.json` is what the server really answered, recorded from its own code by
 `backend/tests/test_network_fixtures.py`: sign-in (native and web), the refresh rotation (including a repeat
-inside the grace period and a spent token after it), saved LZs, the conflict and error shapes, the change feed,
-aircraft profiles and account deletion. Tokens, timestamps, generated ids and the server version are replaced by
+inside the grace period and a spent token after it), sign-up, verification, password reset and the `.mil` gate
+(each with its refusals and a real 429), saved LZs, the conflict and error shapes, the change feed,
+aircraft profiles and account deletion. Each response of a route that `openapi.yaml` describes is also checked
+against it as it is recorded, so the spec cannot lag the server. Tokens, timestamps, generated ids and the server version are replaced by
 placeholders, so the file is stable. The native clients decode every body with their own types (strictly: an
 unknown field fails there) and replay the bodies against a mock server to test their auth and retry logic. A
 change in what the server says fails the backend test until the file is regenerated, and then the clients'

@@ -25,8 +25,11 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from unittest.mock import patch  # noqa: E402
+
 import refresh_tokens  # noqa: E402
 from auth_harness import ANDROID, PASSWORD, NativeAuthCase  # noqa: E402
+from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
@@ -65,12 +68,31 @@ def normalise(value, key=None):
     return value
 
 
+SPEC = load_spec()
+SPEC_PATHS = [(re.compile("^" + re.sub(r"\\\{[^}]+\\\}", "[^/]+", re.escape(template)) + "$"), template) for template in SPEC["paths"]]
+
+
+def documented(method, path, status):
+    """(spec path, status is documented) for a route the contract describes, else None."""
+    for pattern, template in SPEC_PATHS:
+        if pattern.match(path):
+            operation = SPEC["paths"][template].get(method.lower())
+            if operation is None:
+                return None
+            return template, str(status) in operation["responses"]
+    return None
+
+
 class NetworkFixtureTests(NativeAuthCase):
     extra_blueprints = (config_bp, lz_bp, aircraft_bp, sync_bp)
 
     def setUp(self):
         super().setUp()
         self.recorded = []
+        self.mil_codes = []
+        mil = patch("routes.auth.send_mil_verification_email", side_effect=lambda _email, code, _name: self.mil_codes.append(code) or True)
+        mil.start()
+        self.addCleanup(mil.stop)
 
     def rec(self, name, response, *headers):
         """Keep a response: its status, a few headers, and its body (JSON, or None)."""
@@ -80,7 +102,28 @@ class NetworkFixtureTests(NativeAuthCase):
             entry["headers"] = kept
         entry["body"] = normalise(response.get_json(silent=True))
         self.recorded.append(entry)
+        # A recorded response of a route the contract describes must be one the contract describes: the apps decode
+        # what the spec says, so a status or a body it does not cover is a gap in the spec (or a change in the server).
+        found = documented(response.request.method, response.request.path, response.status_code)
+        if found is not None and response.get_json(silent=True) is not None:
+            template, known = found
+            if not known and self.cross_cutting(response):
+                return response
+            self.assertTrue(known, f"{name}: {response.status_code} from {response.request.method} {template} is not in contracts/openapi.yaml")
+            body = response.get_json()
+            problems = check_response(SPEC, template, response.request.method, response.status_code, body)
+            self.assertEqual(problems, [], f"{name}: {template} {response.status_code} does not match the contract")
         return response
+
+    @staticmethod
+    def cross_cutting(response):
+        """Answers any route behind a token can give, described once in the spec's introduction, not per route."""
+        body = response.get_json(silent=True) or {}
+        if response.status_code in (401, 422) and set(body) == {"msg"}:
+            return True                                                        # the JWT library's refusal of a token
+        if response.status_code == 403 and body.get("code") == "affiliation_required":
+            return True                                                        # the .mil gate
+        return False
 
     @staticmethod
     def bearer(token):
@@ -158,8 +201,42 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("account deletion: refused without proof", self.client.delete("/api/auth/me", headers=self.bearer(again["access_token"]), json={"confirm": "DELETE"}))
         self.rec("account deletion", self.client.delete("/api/auth/me", headers=self.bearer(again["access_token"]), json={"confirm": "DELETE", "password": PASSWORD}))
 
+    def accounts(self):
+        """Sign-up, verification, password reset and the .mil affiliation gate: the screens a new user meets first."""
+        a = {**ANDROID, "Content-Type": "application/json"}
+        email = "new.pilot@example.com"
+        self.rec("register", self.client.post("/api/auth/register", headers=a, json={"name": "New Pilot", "email": email}))
+        self.rec("register: the same address again looks the same", self.client.post("/api/auth/register", headers=a, json={"name": "New Pilot", "email": email}))
+        self.rec("register: not an email address", self.client.post("/api/auth/register", headers=a, json={"name": "New Pilot", "email": "nope"}))
+        self.rec("register: no name", self.client.post("/api/auth/register", headers=a, json={"name": "", "email": "x@example.com"}))
+        token = self.tokens[-1]
+        self.rec("verify-email: a link that is not valid", self.client.post("/api/auth/verify-email", headers=a, json={"token": "nonsense", "password": PASSWORD}))
+        self.rec("verify-email: a password that is too weak", self.client.post("/api/auth/verify-email", headers=a, json={"token": token, "password": "short"}))
+        self.rec("verify-email", self.client.post("/api/auth/verify-email", headers=a, json={"token": token, "password": PASSWORD}))
+        self.rec("login: right after verifying", self.client.post("/api/auth/login", headers=a, json={"email": email, "password": PASSWORD}))
+        self.rec("resend-verification", self.client.post("/api/auth/resend-verification", headers=a, json={"email": email}))
+        self.rec("forgot-password", self.client.post("/api/auth/forgot-password", headers=a, json={"email": email}))
+        self.rec("forgot-password: an address nobody has looks the same", self.client.post("/api/auth/forgot-password", headers=a, json={"email": "nobody@example.com"}))
+        reset = self.tokens[-1]
+        self.rec("reset-password: a password that is too weak", self.client.post("/api/auth/reset-password", headers=a, json={"token": reset, "password": "short"}))
+        self.rec("reset-password: a link that is not valid", self.client.post("/api/auth/reset-password", headers=a, json={"token": "nonsense", "password": PASSWORD}))
+        self.rec("reset-password", self.client.post("/api/auth/reset-password", headers=a, json={"token": reset, "password": PASSWORD + " 2"}))
+        for _ in range(2):                                                    # three an hour for one address, then it refuses
+            self.client.post("/api/auth/resend-verification", headers=a, json={"email": email})
+        self.rec("too many attempts", self.client.post("/api/auth/resend-verification", headers=a, json={"email": email}), "Retry-After")
+
+        # The .mil gate: a signed-in account that has not cleared it.
+        session = self.client.post("/api/auth/login", headers=a, json={"email": email, "password": PASSWORD + " 2"}).get_json()
+        head = self.bearer(session["access_token"])
+        self.rec("mil: me before the gate is cleared", self.client.get("/api/auth/me", headers=head))
+        self.rec("mil/request: not a .mil address", self.client.post("/api/auth/mil/request", headers=head, json={"email": "pilot@example.com"}))
+        self.rec("mil/request", self.client.post("/api/auth/mil/request", headers=head, json={"email": "new.pilot@example.mil"}))
+        self.rec("mil/verify: the wrong code", self.client.post("/api/auth/mil/verify", headers=head, json={"code": "000000"}))
+        self.rec("mil/verify", self.client.post("/api/auth/mil/verify", headers=head, json={"code": self.mil_codes[-1]}))
+
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
+        self.accounts()
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "
                            "generated ids and the server version replaced by placeholders. The native apps decode each body "

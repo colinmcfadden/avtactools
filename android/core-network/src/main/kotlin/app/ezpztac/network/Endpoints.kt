@@ -30,6 +30,49 @@ public suspend fun ApiClient.config(): AppConfig =
 
 public suspend fun ApiClient.me(): ApiUser = decode(execute(ApiClient.Call("GET", "/api/auth/me")))
 
+/**
+ * Asks the server who this is *now* and keeps the answer, in the store and on [ApiClient.state]. What the user may do changes on the
+ * server (an admin approves access, entitlements are switched off), and the app learns of it here, at launch and after a step that
+ * changes it.
+ */
+public suspend fun ApiClient.refreshUser(): ApiUser = me().also { updateUser(it) }
+
+// -- Signing up and recovering an account -------------------------------------------
+//
+// These are the routes a person meets before they are signed in, so none of them carries a token (except the `.mil` ones, which are for
+// an account that is signed in and has not yet cleared the affiliation gate). Registration is email-first: a name and an address, a link
+// in the email, and only then a password.
+
+/** Starts an account. The server's answer is the same whether or not the address is already in use. */
+public suspend fun ApiClient.register(name: String, email: String): Accepted =
+    decode(execute(ApiClient.Call("POST", "/api/auth/register", body = buildJsonObject { put("name", name); put("email", email) }, auth = false)))
+
+/** Confirms the address from the emailed link's [token], and sets the first password. Wrong or spent token: `ApiException` with code `invalid_token`. */
+public suspend fun ApiClient.verifyEmail(token: String, password: String): Done =
+    decode(execute(ApiClient.Call("POST", "/api/auth/verify-email", body = buildJsonObject { put("token", token); put("password", password) }, auth = false)))
+
+/** Sends the verification link again (at most one a minute, three an hour, per address). */
+public suspend fun ApiClient.resendVerification(email: String): Accepted =
+    decode(execute(ApiClient.Call("POST", "/api/auth/resend-verification", body = buildJsonObject { put("email", email) }, auth = false)))
+
+public suspend fun ApiClient.forgotPassword(email: String): Accepted =
+    decode(execute(ApiClient.Call("POST", "/api/auth/forgot-password", body = buildJsonObject { put("email", email) }, auth = false)))
+
+/** Sets a new password from the emailed link's [token]. Every other session of the account ends. */
+public suspend fun ApiClient.resetPassword(token: String, password: String): Done =
+    decode(execute(ApiClient.Call("POST", "/api/auth/reset-password", body = buildJsonObject { put("token", token); put("password", password) }, auth = false)))
+
+/** Emails a code to a `.mil` address, to clear the affiliation gate. Any `.mil` address will do; each clears one account. */
+public suspend fun ApiClient.requestMilCode(email: String): Done =
+    decode(execute(ApiClient.Call("POST", "/api/auth/mil/request", body = buildJsonObject { put("email", email) })))
+
+/** Confirms the emailed code. The account is now cleared, and the returned user (also kept) says so. */
+public suspend fun ApiClient.verifyMilCode(code: String): ApiUser {
+    val body: MilVerifyBody = decode(execute(ApiClient.Call("POST", "/api/auth/mil/verify", body = buildJsonObject { put("code", code) })))
+    updateUser(body.user)
+    return body.user
+}
+
 public suspend fun ApiClient.deviceSessions(): List<DeviceSession> =
     decode<SessionsBody>(execute(ApiClient.Call("GET", "/api/auth/sessions"))).sessions
 

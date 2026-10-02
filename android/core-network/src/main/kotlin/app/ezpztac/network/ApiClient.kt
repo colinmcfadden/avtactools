@@ -96,6 +96,16 @@ public class ApiClient(
         return restored
     }
 
+    /**
+     * Replaces the signed-in user's details with what the server just said. It takes the refresh lock, so it cannot land between a refresh
+     * writing a new session and the call that is waiting on it.
+     */
+    internal suspend fun updateUser(user: ApiUser) = refreshLock.withLock {
+        val stored = sessions.read() ?: return@withLock           // signed out meanwhile: there is nothing to update
+        sessions.write(stored.copy(user = user))
+        holder.set(AuthState.SignedIn(user))
+    }
+
     // -- Sign-in, refresh and sign-out ------------------------------------------------
 
     public suspend fun login(email: String, password: String): ApiUser = signIn(

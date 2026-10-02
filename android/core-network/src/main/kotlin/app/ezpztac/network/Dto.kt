@@ -51,6 +51,25 @@ public data class TokenResponse(
     val user: ApiUser,
 )
 
+/**
+ * A request the server accepted without saying what it did. For sign-up, resending a link and a password reset it never says whether an
+ * address has an account, so the answer is the same either way (and a screen must not claim more than "if the address is eligible...").
+ */
+@Serializable
+public data class Accepted(
+    val status: String,
+    val message: String,
+    /** Present on sign-up: the account cannot be used until the emailed link is followed. */
+    @SerialName("requires_verification") val requiresVerification: Boolean = false,
+)
+
+/** A request that was carried out. [message] is for the person. */
+@Serializable
+public data class Done(val status: String, val message: String)
+
+@Serializable
+internal data class MilVerifyBody(val status: String, val user: ApiUser)
+
 /** One signed-in device. */
 @Serializable
 public data class DeviceSession(

@@ -679,7 +679,7 @@ design tokens. iOS is not started.
 | `core-geo` | MGRS both ways, free-text coordinate parser, great-circle distance and course | done |
 | `core-planning` | Aircraft geometry, capacity, separation, profile lookup, route planner, plan defaults and migration | done |
 | `core-formats` | Reads an AMPS `.msnx` into a `Mission`, an `.LPS` into a `LocalPointSet` and a `.ths` into `Threat`s, as the web's `parseMsnx` / `parseLps` / `parseThs` do, with a small read-only SQLite reader of its own (`SqliteReader`). `ThsExport` gives the rows of a `.ths` export. **Not ported**: writing or mutating a `.msnx` (`createMsnx`, `mutateMsnx`), and *writing* a `.ths` file itself, which is the platform's job (copy `threat_template.ths`, insert `ThsExport`'s rows) | readers and export rows done |
-| `core-network` | The API client over OkHttp: one transport (`ApiClient`) with the session behind it, typed calls for the routes in `contracts/openapi.yaml`, DTOs, the request-priority gate, and the "update required" check. See *The API client* below | client, auth and refresh done; the sign-up and `.mil` flows and the web-share routes are not yet typed |
+| `core-network` | The API client over OkHttp: one transport (`ApiClient`) with the session behind it, typed calls for the routes in `contracts/openapi.yaml`, DTOs, the request-priority gate, and the "update required" check. See *The API client* below | client, auth, refresh, sign-up, verification, password reset and the `.mil` gate done; the web-share routes are not yet typed |
 | `core-sync` | The sync engine: local edits into an outbox, a push in order, a pull by cursor, conflicts kept side by side. Pure logic over a `SyncStore` interface (`RoomSyncStore` in `core-data` implements it for the app; `InMemorySyncStore` here). LZs and custom aircraft profiles sync; routes and point sets join when their API is typed (the engine passes over their changes, and the cursor must be reset to 0 when it learns them). Its `testFixtures` (the scenarios as plain functions, the fake server, a `Device`) are shared with `core-data`. See *The sync engine* below | engine done |
 | `core-data` | Android library: the Room database (`EzpzDatabase`, version 1) and `RoomSyncStore`, plus the Hilt module. One generic `record` table keyed by (kind, uuid) instead of the plan's table per domain, because the engine treats every kind alike; add a column when a screen needs one. Schemas are exported to `core-data/schemas/` and **committed** (a migration test reads them) | store done and held to the same scenarios as the in-memory one; repositories for the screens, routes and point sets not yet |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
@@ -795,6 +795,18 @@ client is built around not losing one:
   builds stay in the field for months); `DtoFixtureTest` decodes every recorded real response with
   *unknown fields forbidden*, so a type cannot fall behind the server. The recordings are written by
   `backend/tests/test_network_fixtures.py` (`UPDATE_CONTRACTS=1`), from the server's own code.
+- **Account flows** (`register`, `verifyEmail`, `resendVerification`, `forgotPassword`, `resetPassword`, `requestMilCode`,
+  `verifyMilCode`, `refreshUser`): the pre-sign-in ones carry no token; the `.mil` ones do (the gate lets them through). The
+  server's answer to sign-up, resend and forgot-password is deliberately the same whether or not the address has an account, so
+  a screen may say no more than "if the address is eligible…". `verifyMilCode` and `refreshUser` **update the stored user and
+  `state`** (under the refresh lock, and never resurrecting a signed-out session), because the app gates on `user.accessOk`
+  and an admin can approve access at any time. `LiveAccountTest` runs the whole journey against the real routes: the live
+  server (`backend/tests/live_server.py`) replaces only the mail call, keeping what it was asked to send, and serves it at
+  `/__test__/email`.
+- **Every recorded response of a route in `contracts/openapi.yaml` is checked against it** while the fixtures are recorded
+  (`test_network_fixtures.py`), including that its status is documented: a status or a body the spec does not cover fails there
+  first. The JWT library's own refusals (`{"msg": …}` 401/422) and the affiliation gate's 403 are cross-cutting and described
+  once, not per route.
 - Failures are typed: `NetworkException` (with `requestMayHaveBeenSent`), `SessionEndedException`,
   `AffiliationRequiredException`, `RevisionConflictException` (carries the server's copy),
   `RateLimitedException`, `ApiException`.

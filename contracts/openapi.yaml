@@ -107,6 +107,212 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
 
+  /api/auth/register:
+    post:
+      operationId: register
+      summary: Start an account with a name and an email address
+      description: |
+        Registration is email-first: no password is chosen until the address is verified, so an
+        existing address cannot be told apart from a new one (the answer is the same, 202). The
+        emailed link opens `?auth=verify&token=...` on the site, which the app takes as a deep link.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name: { type: string, maxLength: 120 }
+                email: { type: string }
+      responses:
+        "202":
+          description: Accepted. If the address could be used, a verification link was emailed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/verify-email:
+    post:
+      operationId: verifyEmail
+      summary: Confirm an address and set the password, with the token from the emailed link
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Verified. The account can sign in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Done"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/resend-verification:
+    post:
+      operationId: resendVerification
+      summary: Email the verification link again
+      description: Always 202, whether or not the address has a pending account. At most one link a minute, and three an hour.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      summary: Email a password reset link
+      description: Always 202, whether or not the address has an account.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/reset-password:
+    post:
+      operationId: resetPassword
+      summary: Set a new password with the token from the emailed link
+      description: Ends every other session of the account (the session version is bumped).
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Done"
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/mil/request:
+    post:
+      operationId: milRequest
+      summary: Email a code to a .mil address, to clear the affiliation gate
+      description: |
+        Any `.mil` address clears the gate. The code lives 30 minutes. A `.mil` address clears one
+        account only (409 if it is already verified elsewhere). This route and `/mil/verify` are
+        reachable by a signed-in account that has not cleared the gate.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "202":
+          description: A code was emailed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Done"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/mil/verify:
+    post:
+      operationId: milVerify
+      summary: Confirm the emailed code
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: Cleared. `user.access_ok` is now true.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, user]
+                properties:
+                  status: { type: string, enum: [success] }
+                  user:
+                    $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
   /api/auth/refresh:
     post:
       operationId: refresh
@@ -699,7 +905,8 @@ components:
             Stable codes include `invalid_credentials`, `invalid_refresh_token`,
             `refresh_reuse_detected`, `refresh_expired`, `account_unavailable`,
             `reauthentication_required`, `confirmation_required`, `session_not_found`,
-            `super_admin_protected`, `rate_limited`, `affiliation_required`.
+            `super_admin_protected`, `rate_limited`, `affiliation_required`, `invalid_token`
+            (an emailed link that is invalid, spent or expired), `invalid_code` (a `.mil` code).
 
     User:
       type: object
@@ -722,6 +929,21 @@ components:
         mil_email: { type: string, nullable: true }
         affiliation_verified: { type: boolean }
         access_ok: { type: boolean, description: Whether the `.mil` / approval gate is cleared. }
+
+    Done:
+      type: object
+      required: [status, message]
+      properties:
+        status: { type: string, enum: [success] }
+        message: { type: string }
+
+    Accepted:
+      type: object
+      required: [status, message]
+      properties:
+        status: { type: string, enum: [success] }
+        message: { type: string }
+        requires_verification: { type: boolean, description: Present on registration. }
 
     TokenResponse:
       type: object

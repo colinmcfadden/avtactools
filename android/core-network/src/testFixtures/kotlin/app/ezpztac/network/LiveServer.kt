@@ -34,6 +34,18 @@ public class LiveServer private constructor(private val process: Process, public
         post("/__test__/account", """{"email":"$email","password":"$password","approved":$approved}""")
     }
 
+    /**
+     * The newest secret the real routes "emailed": a link token for [kind] `verify` or `reset` sent to [to], or a `.mil` code for `mil`.
+     * The server captures mail instead of sending it, and everything up to that call is the production route.
+     */
+    public fun emailed(kind: String, to: String = ""): String {
+        val request = Request.Builder().url("$baseUrl/__test__/email?kind=$kind&to=${java.net.URLEncoder.encode(to, "UTF-8")}").get().build()
+        http.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "nothing was emailed ($kind, $to): ${response.code}" }
+            return Regex("\"secret\":\\s*\"([^\"]+)\"").find(response.body!!.string())!!.groupValues[1]
+        }
+    }
+
     /** Forgets the sign-in rate limiter's counts: every client in a test comes from one address, and signs in often. */
     public fun clearRateLimits() {
         post("/__test__/clear-rate-limits", "{}")

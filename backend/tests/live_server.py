@@ -21,6 +21,8 @@ Test-only routes, under ``/__test__`` (they exist only here):
     POST /__test__/age-refresh  {seconds, user_id?} moves every spent refresh token that far into the
                                 past, standing in for time passing (the 30 s grace period)
     POST /__test__/clear-rate-limits  forgets the sign-in rate limiter's counts (every client here shares one address)
+    GET  /__test__/email?kind=&to=   the newest link token (kind verify or reset) or .mil code (kind mil) "sent" to an address.
+                                Email is captured, never sent: the routes run as they do in production up to the mail call.
     POST /__test__/stop         ends the process
 """
 
@@ -35,6 +37,8 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
+
+from unittest.mock import patch  # noqa: E402
 
 from flask import Flask, jsonify, request  # noqa: E402
 from flask_jwt_extended import JWTManager  # noqa: E402
@@ -52,8 +56,27 @@ from routes.sync_routes import sync_bp  # noqa: E402
 from token_revocation import is_revoked  # noqa: E402
 
 
+# What the routes "emailed", newest last: (kind, address, secret). The mail functions are replaced; nothing else is.
+EMAILS = []
+
+
+def _capture_email():
+    """Replaces the mail calls in routes.auth with ones that keep what they were asked to send."""
+    patches = [
+        patch("routes.auth.send_verification_email", side_effect=lambda user, token: EMAILS.append(("verify", user.email, token)) or True),
+        patch("routes.auth.send_password_reset_email", side_effect=lambda user, token: EMAILS.append(("reset", user.email, token)) or True),
+        patch("routes.auth.send_mil_verification_email", side_effect=lambda address, code, _name: EMAILS.append(("mil", None, code)) or True),
+        patch("routes.auth.send_welcome_email", return_value=True),
+        patch("routes.auth.send_password_changed_email", return_value=True),
+        patch("routes.auth.send_new_account_notification", return_value=True),
+    ]
+    for each in patches:
+        each.start()
+
+
 def create_app():
     app = Flask(__name__)
+    _capture_email()
     folder = tempfile.mkdtemp(prefix="ezpz-live-")
     app.config.update(
         SQLALCHEMY_DATABASE_URI="sqlite:///" + os.path.join(folder, "live.db"),
@@ -100,6 +123,15 @@ def create_app():
     def clear_limits():
         clear_rate_limits()
         return jsonify({"status": "cleared"})
+
+    @app.get("/__test__/email")
+    def email():
+        kind, to = request.args["kind"], request.args.get("to", "").lower()
+        # A .mil code is sent to the .mil address, which is not the account's; it is the only one a test has at a time.
+        found = [secret for (k, address, secret) in EMAILS if k == kind and (kind == "mil" or address == to)]
+        if not found:
+            return jsonify({"error": "nothing sent"}), 404
+        return jsonify({"secret": found[-1]})
 
     @app.post("/__test__/stop")
     def stop():

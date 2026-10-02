@@ -38,13 +38,24 @@ class DtoFixtureTest {
         "aircraft: create" to AircraftProfileDto.serializer(),
         "aircraft: list" to ListSerializer(AircraftProfileDto.serializer()),
         "aircraft: update" to AircraftProfileDto.serializer(),
+        "register" to Accepted.serializer(),
+        "register: the same address again looks the same" to Accepted.serializer(),
+        "verify-email" to Done.serializer(),
+        "login: right after verifying" to TokenResponse.serializer(),
+        "resend-verification" to Accepted.serializer(),
+        "forgot-password" to Accepted.serializer(),
+        "forgot-password: an address nobody has looks the same" to Accepted.serializer(),
+        "reset-password" to Done.serializer(),
+        "mil: me before the gate is cleared" to ApiUser.serializer(),
+        "mil/request" to Done.serializer(),
+        "mil/verify" to MilVerifyBody.serializer(),
         "sync: changes" to ChangeFeed.serializer(),
         "sync: nothing new" to ChangeFeed.serializer(),
     )
 
     @TestFactory
     fun `every successful response decodes strictly`(): List<DynamicTest> =
-        Recorded.all.filter { it.status in 200..201 && it.name in decoders }.map { entry ->
+        Recorded.all.filter { it.status in 200..202 && it.name in decoders }.map { entry ->
             DynamicTest.dynamicTest(entry.name) {
                 @Suppress("UNCHECKED_CAST")
                 val serializer = decoders.getValue(entry.name) as KSerializer<Any>
@@ -57,7 +68,7 @@ class DtoFixtureTest {
     @Test
     fun `no successful response is left without a type`() {
         val uncovered = Recorded.all
-            .filter { it.status in 200..201 && it.body != null && it.name !in decoders }
+            .filter { it.status in 200..202 && it.body != null && it.name !in decoders }
             .map { it.name }
             // Bodies that are a status word only, not a record.
             .filterNot { it in setOf("logout", "lz: delete", "aircraft: delete", "account deletion") }
