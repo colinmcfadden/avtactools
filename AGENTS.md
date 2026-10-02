@@ -164,8 +164,8 @@ responses to. A route not in that file is not yet something an app may rely on.
 | weather | `GET /api/weather`, `POST /api/route-winds` |
 | export | `POST /api/generate-excel`, `POST /api/export-package` |
 | saved data | `/api/lz`, `/api/routes` (+ `/<id>/file`), `/api/pointsets` — CRUD, now with sync (below) |
-| sync | `GET /api/sync/changes?since=&limit=` — everything of the caller's after a cursor, deletions included |
-| aircraft | `/api/aircraft-profiles` CRUD, `/<id>/template` |
+| sync | `GET /api/sync/changes?since=&limit=` — everything of the caller's after a cursor, deletions included (`lz`, `route`, `pointset`, `aircraft`) |
+| aircraft | `/api/aircraft-profiles` CRUD, `/<id>/template`. A user's own profiles sync like saved records; the master list does not |
 | threats | `POST /api/threat-mask`, `POST /api/threats-ths`, `GET/POST /api/threats-kmz`, `POST /api/threats-kmz-link` |
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
 | lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key |
@@ -185,25 +185,31 @@ tokens, stored as SHA-256), `LoginEvent`, `AircraftProfile`, `SavedRoute`,
 
 **Saved records sync across devices** (`sync_support.py`; rules in
 `docs/NATIVE_APPS_PLAN.md`, "Sync and conflicts"). `SavedLZ`, `SavedRoute` and
-`SavedPointSet` carry `client_uuid` (an identity the creating device chooses, unique
+`SavedPointSet` — and a user's *own* `AircraftProfile`s, not the admin's master list —
+carry `client_uuid` (an identity the creating device chooses, unique
 per user), `revision` (bumped by every change), `deleted_at`, `change_seq` and
-`last_idem_key`, and a per-user `SyncCounter` hands out the order. Three things to
+`last_idem_key`, and a per-user `SyncCounter` hands out the order. Four things to
 keep true when touching them:
 - **A delete is a tombstone, not a `DELETE`.** The row stays so devices that were
   offline learn of it; its content is blanked at once. So **every query over these
-  models must filter `deleted_at IS NULL`** (the three route files and the admin
-  counts do), or a deleted LZ comes back. Only deleting the whole account removes rows.
+  models must filter `deleted_at IS NULL`** (the route files and the admin counts and
+  aircraft pages do), or a deleted LZ comes back. Only deleting the whole account
+  removes rows — and an admin deleting a *master* aircraft profile, which nobody syncs.
+- **An admin's edit of a user's data is a change too.** The dashboard edits, retires
+  and deletes users' custom aircraft profiles, so `admin_routes` stamps them
+  (`_commit_profile_change`, `sync.tombstone_aircraft`); otherwise a device would
+  overwrite the admin's edit, or never hear of a deletion. A new admin action on
+  synced data needs the same.
 - **The cursor is a counter, not a timestamp**, taken under a row lock
   (`next_seq`), so a lower number never commits after a higher one and a device
   cannot miss a change. Don't "simplify" it to `updated_at`.
 - **Everything is additive for the web.** A request with no `If-Match`,
   `Idempotency-Key` or `client_uuid` behaves as it always did (last writer wins);
-  `tests/test_sync.py::WebStillWorksTests` pins that.
-- Not done: custom `AircraftProfile`s are not in the feed yet.
+  `tests/test_sync.py::WebStillWorksTests` and `tests/test_aircraft_sync.py::WebStillWorksTests` pin that.
 
 **There is no migration framework.** `db.create_all()` creates tables;
 new columns on existing tables are added by guarded `ALTER TABLE` statements in
-`app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile` and
+`app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile`,
 `LoginEvent`, `AccountToken` and the three saved-record models against the live
 schema (`LoginEvent.client`, the refresh-token columns and the sync columns were
 added that way, each with a test against a pre-existing table).

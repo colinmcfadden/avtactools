@@ -23,6 +23,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile, SyncCounter
+import sync_support as sync
 from entitlements import (
     FEATURES, FEATURE_KEYS, resolve_features,
     is_admin, is_super_admin, account_active, affiliation_ok,
@@ -425,6 +426,25 @@ def _aircraft_form_errors(profile, form):
     return errors
 
 
+def _live_profile_or_404(pid):
+    """The profile, or a 404. A deleted custom profile is only a tombstone, kept for the owner's devices."""
+    profile = db.session.get(AircraftProfile, pid)
+    if not profile or profile.deleted_at is not None:
+        abort(404)
+    return profile
+
+
+def _commit_profile_change(profile):
+    """Commit an admin's edit. A user's own profile is also versioned, so their devices pick it up.
+
+    Without that, an admin's change would sit on the server and a device would later
+    overwrite it, or never hear of it (see sync_support.py).
+    """
+    if profile.user_id is not None:
+        sync.stamp(profile, profile.user_id)
+    db.session.commit()
+
+
 @admin_bp.route('/aircraft')
 @admin_required
 def aircraft():
@@ -434,7 +454,7 @@ def aircraft():
         .all()
     )
     custom = (
-        AircraftProfile.query.filter(AircraftProfile.user_id.isnot(None))
+        AircraftProfile.query.filter(AircraftProfile.user_id.isnot(None), AircraftProfile.deleted_at.is_(None))
         .order_by(AircraftProfile.updated_at.desc())
         .limit(100)
         .all()
@@ -469,9 +489,7 @@ def aircraft_new():
 @admin_bp.route('/aircraft/<int:pid>')
 @admin_required
 def aircraft_detail(pid):
-    profile = db.session.get(AircraftProfile, pid)
-    if not profile:
-        abort(404)
+    profile = _live_profile_or_404(pid)
     owner = db.session.get(User, profile.user_id) if profile.user_id else None
     return render_template(
         'admin/aircraft_form.html', nav_section='aircraft', p=profile, creating=False, owner=owner,
@@ -509,9 +527,7 @@ def aircraft_create():
 @admin_required
 def aircraft_save(pid):
     _check_csrf()
-    profile = db.session.get(AircraftProfile, pid)
-    if not profile:
-        abort(404)
+    profile = _live_profile_or_404(pid)
 
     errors = _aircraft_form_errors(profile, request.form)
     if errors:
@@ -519,7 +535,7 @@ def aircraft_save(pid):
         for message in errors:
             flash(message, 'error')
     else:
-        db.session.commit()
+        _commit_profile_change(profile)
         flash('Saved.', 'ok')
     return redirect(url_for('admin.aircraft_detail', pid=pid))
 
@@ -529,15 +545,13 @@ def aircraft_save(pid):
 def aircraft_template(pid):
     """Attach or clear the AMPS package that makes export use this airframe."""
     _check_csrf()
-    profile = db.session.get(AircraftProfile, pid)
-    if not profile:
-        abort(404)
+    profile = _live_profile_or_404(pid)
 
     if request.form.get('clear') == '1':
         profile.template_file = None
         profile.template_name = None
         profile.template_kind = None
-        db.session.commit()
+        _commit_profile_change(profile)
         flash('Template removed. Exports for this profile fall back to the UH-60L package.', 'ok')
         return redirect(url_for('admin.aircraft_detail', pid=pid))
 
@@ -574,7 +588,7 @@ def aircraft_template(pid):
     # unless an admin already typed one in.
     if detected.get('vehicle_description') and not profile.amps_vehicle_description:
         profile.amps_vehicle_description = detected['vehicle_description'][:200]
-    db.session.commit()
+    _commit_profile_change(profile)
 
     note = ''
     if detected.get('vehicle_description'):
@@ -587,16 +601,18 @@ def aircraft_template(pid):
 @admin_required
 def aircraft_delete(pid):
     _check_csrf()
-    profile = db.session.get(AircraftProfile, pid)
-    if not profile:
-        abort(404)
+    profile = _live_profile_or_404(pid)
     if (request.form.get('confirm_slug') or '').strip() != profile.slug:
         flash("Deletion cancelled: the confirmation slug didn't match.", 'error')
         return redirect(url_for('admin.aircraft_detail', pid=pid))
 
     label = profile.name
     was_master = profile.is_system
-    db.session.delete(profile)
+    if was_master:
+        db.session.delete(profile)
+    else:
+        # A user's profile leaves a tombstone, so their devices learn it is gone.
+        sync.tombstone_aircraft(profile, profile.user_id)
     db.session.commit()
     # A deleted seed slug comes back on the next boot; say so rather than
     # letting it look like a bug.
@@ -612,8 +628,8 @@ def aircraft_delete(pid):
 def aircraft_promote(pid):
     """Copy a user's custom profile into the master list."""
     _check_csrf()
-    source = db.session.get(AircraftProfile, pid)
-    if not source or source.is_system:
+    source = _live_profile_or_404(pid)
+    if source.is_system:
         abort(404)
 
     base = _aircraft_slug(source.designation or source.name) or f'custom-{source.id}'

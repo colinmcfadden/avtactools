@@ -11,6 +11,8 @@ docs/NATIVE_APPS_PLAN.md ("Sync and conflicts"):
   server's copy comes back with a 409, so the client can keep both.
 * A deletion is a tombstone (``deleted_at``), so a device that was offline
   learns of it. The content is blanked at once: deleted means gone.
+* A user's own aircraft profiles sync the same way. The admin-managed master
+  list does not (nobody edits it from a device; the apps refetch it).
 * Every change is given the next number in a per-user order (``change_seq``), and
   ``GET /api/sync/changes?since=<n>`` returns everything after ``n``. A counter,
   not a timestamp: timestamps tie, and a lower one can commit after a higher one.
@@ -30,7 +32,7 @@ from datetime import datetime
 from flask import jsonify
 from sqlalchemy import select, update
 
-from models import SavedLZ, SavedPointSet, SavedRoute, SyncCounter, db
+from models import AircraftProfile, SavedLZ, SavedPointSet, SavedRoute, SyncCounter, db
 
 IF_MATCH_ANY = '*'
 INVALID = object()
@@ -146,12 +148,28 @@ def check_precondition(record, request, serialize_full):
     return with_etag(response, record)
 
 
+def tombstone_aircraft(profile, user_id, idem_key=None):
+    """Delete a user's aircraft profile the way a saved record is deleted: gone, but remembered.
+
+    The airframe's AMPS bytes are the largest thing it holds, and "deleted" has to
+    mean they are gone. The caller commits.
+    """
+    profile.name = ''
+    profile.designation = ''
+    profile.amps_vehicle_description = None
+    profile.template_file = None
+    profile.template_name = None
+    profile.template_kind = None
+    stamp(profile, user_id, idem_key, deleted=True)
+
+
 # -- The change feed ---------------------------------------------------------
 
 _KINDS = (
     ('lz', SavedLZ),
     ('route', SavedRoute),
     ('pointset', SavedPointSet),
+    ('aircraft', AircraftProfile),
 )
 
 
@@ -193,6 +211,8 @@ def _change(kind, record):
     }
     if kind == 'lz':
         body['data'] = record.lz_data
+    elif kind == 'aircraft':
+        body['data'] = {} if record.deleted_at is not None else record.to_dict()
     elif kind == 'route':
         body.update(kind=record.kind, file_name=record.file_name, has_file=record.msnx_file is not None,
                     data=record.route_data)

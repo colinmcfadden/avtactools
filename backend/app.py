@@ -239,10 +239,10 @@ with app.app_context():
     sync_table_columns(db, LoginEvent)
     # account_token gained the refresh-token columns (family, client, session_version).
     sync_table_columns(db, AccountToken)
-    # Saved records gained the sync columns (client_uuid, revision, deleted_at,
+    # Saved records (and a user's own aircraft profiles) gained the sync columns (client_uuid, revision, deleted_at,
     # change_seq, last_idem_key). The unique index that stops a retried create
     # duplicating has to be added by hand: create_all never alters an existing table.
-    for _model in (SavedLZ, SavedRoute, SavedPointSet):
+    for _model in (SavedLZ, SavedRoute, SavedPointSet, AircraftProfile):
         sync_table_columns(db, _model)
         if not ensure_unique_index(
             db, _model, ('user_id', 'client_uuid'), f'ux_{_model.__tablename__}_user_client_uuid'

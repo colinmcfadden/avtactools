@@ -134,7 +134,42 @@ class LoginEvent(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
-class AircraftProfile(db.Model):
+class SyncMixin:
+    """What a saved record needs to be kept in step across devices.
+
+    The web app, the Android app and the iOS app each keep a copy and edit it
+    offline, so a record needs an identity that does not depend on the server
+    (``client_uuid``), a version to detect edits made on top of a stale copy
+    (``revision``), a tombstone so a deletion can reach devices that were offline
+    (``deleted_at``), and a place in one per-user change order (``change_seq``)
+    that a device can ask "everything after" about. See sync_support.py.
+
+    Added to existing databases by ``schema_sync``; ``app.py`` adds the unique
+    index. ``revision`` defaults to 1, which backfills the rows that predate it.
+    """
+
+    client_uuid = db.Column(db.String(36), nullable=True)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+    change_seq = db.Column(db.Integer, nullable=True, index=True)
+    # The Idempotency-Key of the last write, so a retry of it after a lost
+    # response is recognised as the same write rather than as a conflict with it.
+    last_idem_key = db.Column(db.String(64), nullable=True)
+
+    @staticmethod
+    def sync_indexes(cls):
+        """One record per client identity per user: a retried create cannot duplicate.
+
+        A model with indexes of its own lists these in its ``__table_args__`` too.
+        """
+        return (db.Index(f'ux_{cls.__tablename__}_user_client_uuid', 'user_id', 'client_uuid', unique=True),)
+
+    @declared_attr
+    def __table_args__(cls):  # noqa: N805 — SQLAlchemy's declared_attr convention
+        return SyncMixin.sync_indexes(cls)
+
+
+class AircraftProfile(SyncMixin, db.Model):
     """An airframe's planning defaults, footprint, and AMPS binding.
 
     Two flavours share this table:
@@ -221,9 +256,9 @@ class AircraftProfile(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    __table_args__ = (
-        db.Index('ix_aircraft_profile_owner_slug', 'user_id', 'slug'),
-    )
+    @declared_attr
+    def __table_args__(cls):  # noqa: N805 — SQLAlchemy's declared_attr convention
+        return (db.Index('ix_aircraft_profile_owner_slug', 'user_id', 'slug'), *SyncMixin.sync_indexes(cls))
 
     @property
     def is_system(self):
@@ -234,7 +269,19 @@ class AircraftProfile(db.Model):
         return self.template_file is not None
 
     def to_dict(self):
-        """Client-facing shape. Never includes the vidx bytes — only a flag."""
+        """Client-facing shape. Never includes the vidx bytes — only a flag.
+
+        A user's own profile also says which copy it is (``client_uuid``,
+        ``revision``) so a device can sync it; the master list is the admin's and
+        does not sync, so it carries neither.
+        """
+        body = self._shape()
+        if self.user_id is not None:
+            body["client_uuid"] = self.client_uuid
+            body["revision"] = self.revision
+        return body
+
+    def _shape(self):
         return {
             "id": self.id,
             "slug": self.slug,
@@ -260,34 +307,6 @@ class AircraftProfile(db.Model):
             "template_name": self.template_name,
             "sort_order": self.sort_order,
         }
-
-
-class SyncMixin:
-    """What a saved record needs to be kept in step across devices.
-
-    The web app, the Android app and the iOS app each keep a copy and edit it
-    offline, so a record needs an identity that does not depend on the server
-    (``client_uuid``), a version to detect edits made on top of a stale copy
-    (``revision``), a tombstone so a deletion can reach devices that were offline
-    (``deleted_at``), and a place in one per-user change order (``change_seq``)
-    that a device can ask "everything after" about. See sync_support.py.
-
-    Added to existing databases by ``schema_sync``; ``app.py`` adds the unique
-    index. ``revision`` defaults to 1, which backfills the rows that predate it.
-    """
-
-    client_uuid = db.Column(db.String(36), nullable=True)
-    revision = db.Column(db.Integer, nullable=False, default=1)
-    deleted_at = db.Column(db.DateTime, nullable=True)
-    change_seq = db.Column(db.Integer, nullable=True, index=True)
-    # The Idempotency-Key of the last write, so a retry of it after a lost
-    # response is recognised as the same write rather than as a conflict with it.
-    last_idem_key = db.Column(db.String(64), nullable=True)
-
-    @declared_attr
-    def __table_args__(cls):  # noqa: N805 — SQLAlchemy's declared_attr convention
-        # One record per client identity per user: a retried create cannot duplicate.
-        return (db.Index(f'ux_{cls.__tablename__}_user_client_uuid', 'user_id', 'client_uuid', unique=True),)
 
 
 class SyncCounter(db.Model):

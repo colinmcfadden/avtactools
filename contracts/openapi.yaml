@@ -433,6 +433,135 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/aircraft-profiles:
+    get:
+      operationId: listAircraftProfiles
+      summary: The master aircraft list, then the caller's own profiles
+      description: |
+        Active master profiles (`is_system: true`, the admin's list) followed by the
+        caller's own live profiles. Only the caller's own carry `client_uuid` and
+        `revision`: the master list does not sync, so a device refetches it.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Master profiles first, then the caller's.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AircraftProfile"
+    post:
+      operationId: createAircraftProfile
+      summary: Make a custom aircraft profile
+      description: |
+        Needs the `aircraft_profiles` entitlement. Anything left out takes a default.
+        Send `client_uuid` so a retry after a lost response returns the first profile
+        (200) instead of making a second (201). `perf_source`, `is_active` and
+        `sort_order` are the admin's and are ignored here.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AircraftProfileInput"
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AircraftProfile"
+        "200":
+          description: A profile with this `client_uuid` already existed; here it is.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AircraftProfile"
+        "400":
+          $ref: "#/components/responses/AircraftError"
+        "403":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/aircraft-profiles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    put:
+      operationId: updateAircraftProfile
+      summary: Edit one of the caller's own profiles
+      description: |
+        Only what is sent changes. `If-Match`, conflicts and `Idempotency-Key` work as
+        they do for a saved LZ. A master profile, or another user's, is a 404.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AircraftProfileInput"
+      responses:
+        "200":
+          description: Saved (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AircraftProfile"
+        "400":
+          $ref: "#/components/responses/AircraftError"
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/AircraftConflict"
+    delete:
+      operationId: deleteAircraftProfile
+      summary: Delete one of the caller's own profiles
+      description: |
+        Leaves a tombstone, with the airframe's details and any AMPS bytes gone, so
+        devices learn of the deletion through `/api/sync/changes`. Deleting twice is
+        not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/AircraftConflict"
+
 components:
   parameters:
     ClientHeader:
@@ -517,6 +646,35 @@ components:
               code: { type: string, enum: [revision_conflict] }
               server:
                 $ref: "#/components/schemas/LzFull"
+
+    AircraftConflict:
+      description: |
+        The profile changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/AircraftProfile"
+
+    AircraftError:
+      description: Refused. `errors` lists every problem found; `error` is the first.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: { type: string }
+              errors: { type: array, items: { type: string } }
+              code: { type: string, enum: [invalid_client_uuid, invalid_if_match] }
 
   schemas:
     SimpleError:
@@ -614,15 +772,98 @@ components:
         revision: { type: integer, minimum: 1 }
         lz_data: { type: object, description: "The diagram document, schema 2 (see contracts/fixtures/workspace)." }
 
+    AircraftProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - slug
+        - name
+        - designation
+        - icon_key
+        - is_system
+        - rotor_diameter_m
+        - rotor_tip_clearance_m
+        - default_airspeed_kts
+        - default_airspeed_type
+        - max_indicated_kts
+        - default_altitude_ft
+        - default_altitude_ref
+        - min_altitude_ft_msl
+        - max_altitude_ft_msl
+        - default_fuel_flow_lb_hr
+        - default_gross_weight_lb
+        - perf_source
+        - amps_vehicle_description
+        - has_template
+        - template_kind
+        - template_name
+        - sort_order
+      description: |
+        An airframe's footprint, planning defaults and AMPS binding. The AMPS bytes
+        themselves are never in this shape (`has_template` says whether there are
+        any); `GET /api/aircraft-profiles/{id}/template` returns them.
+      properties:
+        id: { type: integer }
+        slug: { type: string }
+        name: { type: string }
+        designation: { type: string }
+        icon_key: { type: string }
+        is_system: { type: boolean, description: True for the admin's master list. }
+        rotor_diameter_m: { type: number }
+        rotor_tip_clearance_m: { type: number }
+        default_airspeed_kts: { type: number }
+        default_airspeed_type: { type: string, enum: [ground, indicated, true] }
+        max_indicated_kts: { type: number }
+        default_altitude_ft: { type: number }
+        default_altitude_ref: { type: string, enum: [agl, msl] }
+        min_altitude_ft_msl: { type: number }
+        max_altitude_ft_msl: { type: number }
+        default_fuel_flow_lb_hr: { type: number }
+        default_gross_weight_lb: { type: number }
+        perf_source: { type: string, enum: [vidx, published, custom] }
+        amps_vehicle_description: { type: string, nullable: true }
+        has_template: { type: boolean }
+        template_kind: { type: string, nullable: true, description: "`msnx` or `vidx`." }
+        template_name: { type: string, nullable: true }
+        sort_order: { type: integer }
+        client_uuid: { type: string, description: "The profile's identity. The caller's own profiles only." }
+        revision: { type: integer, minimum: 1, description: "Bumped by every change. The caller's own profiles only." }
+
+    AircraftProfileInput:
+      type: object
+      description: |
+        What a user may set. Anything else is ignored. Numbers are range-checked
+        (rotor 1 to 60 m, speeds 1 to 400 kt, and so on); a minimum altitude above
+        the maximum is refused.
+      properties:
+        client_uuid: { type: string, description: "On create only: a UUID the device chose." }
+        name: { type: string, maxLength: 120 }
+        designation: { type: string, maxLength: 40 }
+        icon_key: { type: string, maxLength: 40 }
+        rotor_diameter_m: { type: number }
+        rotor_tip_clearance_m: { type: number }
+        default_airspeed_kts: { type: number }
+        default_airspeed_type: { type: string, enum: [ground, indicated, true] }
+        max_indicated_kts: { type: number }
+        default_altitude_ft: { type: number }
+        default_altitude_ref: { type: string, enum: [agl, msl] }
+        min_altitude_ft_msl: { type: number }
+        max_altitude_ft_msl: { type: number }
+        default_fuel_flow_lb_hr: { type: number }
+        default_gross_weight_lb: { type: number }
+        amps_vehicle_description: { type: string, maxLength: 200 }
+
     Change:
       type: object
       required: [type, id, client_uuid, revision, deleted, name, seq, data]
       description: |
-        One changed record. `type` says which collection: `lz`, `route` or `pointset`.
+        One changed record. `type` says which collection: `lz`, `route`, `pointset` or
+        `aircraft` (the caller's own profiles; the master list does not sync).
         A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
         has `kind`, `file_name` and `has_file`; fetch the mission file separately.
       properties:
-        type: { type: string, enum: [lz, route, pointset] }
+        type: { type: string, enum: [lz, route, pointset, aircraft] }
         id: { type: integer }
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
@@ -634,7 +875,7 @@ components:
         kind: { type: string, description: "Routes only: `sketch` or `mission`." }
         file_name: { type: string, nullable: true }
         has_file: { type: boolean }
-        data: { description: "lz_data, route_data or the points, per `type`." }
+        data: { description: "lz_data, route_data, the points or the profile, per `type`." }
 
     ChangeFeed:
       type: object

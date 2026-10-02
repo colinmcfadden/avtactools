@@ -54,6 +54,8 @@ CREATE TABLE aircraft_profile (
 """
 
 NEW_COLUMNS = {"perf_source", "template_file", "template_name", "template_kind"}
+# What every synced table gained after that (see SyncMixin in models.py).
+SYNC_COLUMNS = {"client_uuid", "revision", "deleted_at", "change_seq", "last_idem_key"}
 
 
 class SchemaSyncTests(unittest.TestCase):
@@ -84,8 +86,8 @@ class SchemaSyncTests(unittest.TestCase):
 
         added = sync_table_columns(db, AircraftProfile)
 
-        self.assertEqual(NEW_COLUMNS, set(added))
-        self.assertTrue(NEW_COLUMNS <= self._columns())
+        self.assertEqual(NEW_COLUMNS | SYNC_COLUMNS, set(added))
+        self.assertTrue(NEW_COLUMNS | SYNC_COLUMNS <= self._columns())
 
     def test_the_query_that_used_to_500_now_works(self):
         self._create_legacy()
@@ -123,6 +125,47 @@ class SchemaSyncTests(unittest.TestCase):
         self._create_legacy()
         sync_table_columns(db, AircraftProfile)
         self.assertEqual([], sync_table_columns(db, AircraftProfile))
+
+    def test_existing_profiles_start_at_revision_one_with_no_identity_yet(self):
+        # A deployed database holds the admin's master list and crews' own profiles.
+        self._create_legacy()
+        db.session.execute(text(
+            "INSERT INTO aircraft_profile (user_id, slug, name, designation) VALUES "
+            "(NULL, 'master', 'Master', 'M'), (7, 'mine', 'Mine', 'X')"
+        ))
+        db.session.commit()
+
+        sync_table_columns(db, AircraftProfile)
+
+        for row in AircraftProfile.query.all():
+            self.assertEqual(row.revision, 1)
+            self.assertIsNone(row.client_uuid)
+            self.assertIsNone(row.change_seq)
+            self.assertIsNone(row.deleted_at)
+        self.assertIn("revision", AircraftProfile.query.filter_by(slug="mine").one().to_dict())
+
+    def test_the_identity_index_is_added_and_holds_per_user(self):
+        from sqlalchemy.exc import IntegrityError
+        self._create_legacy()
+        sync_table_columns(db, AircraftProfile)
+        name = "ux_aircraft_profile_user_client_uuid"
+        self.assertTrue(ensure_unique_index(db, AircraftProfile, ("user_id", "client_uuid"), name))
+        self.assertTrue(ensure_unique_index(db, AircraftProfile, ("user_id", "client_uuid"), name))   # idempotent
+
+        insert = "INSERT INTO aircraft_profile (user_id, slug, name, designation, client_uuid) VALUES (:u, :s, 'n', 'd', :c)"
+        db.session.execute(text(insert), {"u": 7, "s": "a", "c": "aaaaaaaa-0000-0000-0000-000000000001"})
+        db.session.execute(text(insert), {"u": 8, "s": "a", "c": "aaaaaaaa-0000-0000-0000-000000000001"})   # another user: fine
+        db.session.commit()
+        with self.assertRaises(IntegrityError):
+            db.session.execute(text(insert), {"u": 7, "s": "b", "c": "aaaaaaaa-0000-0000-0000-000000000001"})
+            db.session.commit()
+        db.session.rollback()
+
+    def test_the_model_declares_the_same_index_a_fresh_database_gets(self):
+        db.create_all()
+        indexes = {i["name"] for i in sa_inspect(db.engine).get_indexes("aircraft_profile")}
+        self.assertIn("ux_aircraft_profile_user_client_uuid", indexes)
+        self.assertIn("ix_aircraft_profile_owner_slug", indexes)            # the one it had before
 
     def test_leaves_columns_the_model_dropped_alone(self):
         # Dropping data automatically is never worth it; the stale vidx_*
@@ -277,7 +320,6 @@ LEGACY_SAVED = {
         SavedPointSet, "(1, 'Old points', '[]')", "user_id, name, points_data",
     ),
 }
-SYNC_COLUMNS = {"client_uuid", "revision", "deleted_at", "change_seq", "last_idem_key"}
 
 
 class SavedRecordSyncColumnsTests(unittest.TestCase):

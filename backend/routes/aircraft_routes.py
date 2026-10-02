@@ -6,13 +6,19 @@ requires the ``aircraft_profiles`` entitlement — a restricted user keeps full
 access to the master list, they just can't add their own.
 
 Master profiles are read-only here; they're managed in the admin dashboard.
+
+A custom profile syncs to the apps like a saved LZ (see sync_support.py):
+``client_uuid`` and ``revision`` on every response, ``If-Match`` on edits, and a
+deletion that leaves a tombstone. The master list does not sync; the apps refetch it.
 """
 
 import io
 
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from sqlalchemy.exc import IntegrityError
 
+import sync_support as sync
 from models import db, AircraftProfile
 from entitlements import require_feature
 
@@ -109,9 +115,10 @@ def _apply_fields(profile, body, errors):
 
 
 def _visible_profiles(user_id):
-    """Active master profiles plus every profile this user owns."""
+    """Active master profiles plus every live profile this user owns."""
     return (
         AircraftProfile.query.filter(
+            AircraftProfile.deleted_at.is_(None),
             db.or_(
                 db.and_(
                     AircraftProfile.user_id.is_(None),
@@ -139,6 +146,17 @@ def create_profile():
     user_id = int(get_jwt_identity())
     body = request.get_json(silent=True) or {}
 
+    # An app creating a profile offline names it first; creating the same one twice
+    # (a retry after a lost response) returns the first rather than a duplicate.
+    client_uuid = None
+    if body.get('client_uuid') is not None:
+        client_uuid = sync.valid_client_uuid(body.get('client_uuid'))
+        if client_uuid is None:
+            return jsonify({"error": "client_uuid must be a UUID", "code": "invalid_client_uuid"}), 400
+        existing = AircraftProfile.query.filter_by(user_id=user_id, client_uuid=client_uuid).first()
+        if existing:
+            return sync.with_etag(jsonify(existing.to_dict()), existing)
+
     profile = AircraftProfile(user_id=user_id, perf_source='custom')
     # Defaults for anything the client leaves out, so a sparse payload still
     # produces a usable profile rather than a half-populated row.
@@ -153,20 +171,30 @@ def create_profile():
     base = _slugify(profile.designation or profile.name)
     taken = {
         slug for (slug,) in db.session.query(AircraftProfile.slug)
-        .filter(AircraftProfile.user_id == user_id).all()
+        .filter(AircraftProfile.user_id == user_id, AircraftProfile.deleted_at.is_(None)).all()
     }
     slug, suffix = base, 2
     while slug in taken:
         slug, suffix = f'{base}-{suffix}', suffix + 1
     profile.slug = slug
 
+    profile.client_uuid = client_uuid or sync.new_client_uuid()
     db.session.add(profile)
-    db.session.commit()
-    return jsonify(profile.to_dict()), 201
+    try:
+        sync.stamp(profile, user_id, sync.idempotency_key(request))
+        db.session.commit()
+    except IntegrityError:
+        # A concurrent request with the same client_uuid won the race.
+        db.session.rollback()
+        existing = AircraftProfile.query.filter_by(user_id=user_id, client_uuid=client_uuid).first()
+        if existing is None:
+            raise
+        return sync.with_etag(jsonify(existing.to_dict()), existing)
+    return sync.with_etag(jsonify(profile.to_dict()), profile), 201
 
 
 def _own_profile(profile_id, user_id):
-    return AircraftProfile.query.filter_by(id=profile_id, user_id=user_id).first()
+    return AircraftProfile.query.filter_by(id=profile_id, user_id=user_id, deleted_at=None).first()
 
 
 @aircraft_bp.route('/api/aircraft-profiles/<int:profile_id>', methods=['PUT'])
@@ -179,14 +207,19 @@ def update_profile(profile_id):
         # Master profiles are visible but not editable here; don't leak which.
         return jsonify({"error": "Not found"}), 404
 
+    early = sync.check_precondition(profile, request, lambda p: p.to_dict())
+    if early is not None:
+        return early
+
     errors = []
     _apply_fields(profile, request.get_json(silent=True) or {}, errors)
     if errors:
         db.session.rollback()
         return jsonify({"error": errors[0], "errors": errors}), 400
 
+    sync.stamp(profile, user_id, sync.idempotency_key(request))
     db.session.commit()
-    return jsonify(profile.to_dict())
+    return sync.with_etag(jsonify(profile.to_dict()), profile)
 
 
 @aircraft_bp.route('/api/aircraft-profiles/<int:profile_id>', methods=['DELETE'])
@@ -194,13 +227,21 @@ def update_profile(profile_id):
 @require_feature('aircraft_profiles')
 def delete_profile(profile_id):
     user_id = int(get_jwt_identity())
-    profile = _own_profile(profile_id, user_id)
+    profile = AircraftProfile.query.filter_by(id=profile_id, user_id=user_id).first()
     if not profile:
         return jsonify({"error": "Not found"}), 404
+    if profile.deleted_at is not None:
+        return jsonify({"status": "deleted"})        # deleting twice is not an error
 
-    db.session.delete(profile)
+    early = sync.check_precondition(profile, request, lambda p: p.to_dict())
+    if early is not None:
+        return early
+
+    # A tombstone, so a device that was offline learns of the deletion, with the
+    # content gone: deleted means gone.
+    sync.tombstone_aircraft(profile, user_id, sync.idempotency_key(request))
     db.session.commit()
-    return jsonify({"status": "deleted"})
+    return jsonify({"status": "deleted", "revision": profile.revision})
 
 
 @aircraft_bp.route('/api/aircraft-profiles/<int:profile_id>/template', methods=['GET'])
