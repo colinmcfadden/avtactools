@@ -25,6 +25,14 @@ Dockerfile
 fly.toml
 .dockerignore
 
+# Development only: tests, docs, tooling and templates for env files
+tests/
+docs/
+pyproject.toml
+requirements-dev.txt
+.env.example
+.pytest_cache/
+
 # Approved local terrain data is mounted read-only at runtime, never baked in.
 terrain-data/
 dted/

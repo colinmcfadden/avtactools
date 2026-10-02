@@ -1,0 +1,3 @@
+# Tools for working on the backend. Not installed in the production image.
+-r requirements.txt
+pytest==9.1.1
