@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/colinmcfadden/avtactools/compare/v1.7.0...v1.7.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* add pyproj to backend requirements ([844ce24](https://github.com/colinmcfadden/avtactools/commit/844ce248279af5a9f61988074333cb9b3882c72b))
+
 # [1.7.0](https://github.com/colinmcfadden/avtactools/compare/v1.6.0...v1.7.0) (2026-10-02)
 
 
