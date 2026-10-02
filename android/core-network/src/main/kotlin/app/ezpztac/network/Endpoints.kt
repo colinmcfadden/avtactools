@@ -1,0 +1,180 @@
+package app.ezpztac.network
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import java.util.UUID
+
+/*
+ * The routes an app calls, as functions. Each is one entry in `contracts/openapi.yaml`.
+ *
+ * A write carries an `Idempotency-Key`: the same key on a repeat tells the server it is the same
+ * write, so a retry after a lost response is answered rather than refused as a conflict with
+ * itself. A caller that queues a write for later (the sync engine) passes the key it stored with
+ * it; otherwise one is made for this call and kept across the automatic retries inside it.
+ */
+
+/** The result of saving something that may already exist. */
+public data class Saved<T>(val value: T, val created: Boolean)
+
+private fun newKey(): String = UUID.randomUUID().toString()
+
+private fun revisionHeader(revision: Int?): Map<String, String> =
+    if (revision == null) emptyMap() else mapOf("If-Match" to "\"$revision\"")
+
+/** What the app needs before anyone signs in. */
+public suspend fun ApiClient.config(): AppConfig =
+    decode(execute(ApiClient.Call("GET", "/api/config", auth = false)))
+
+// -- Account and sessions ---------------------------------------------------------
+
+public suspend fun ApiClient.me(): ApiUser = decode(execute(ApiClient.Call("GET", "/api/auth/me")))
+
+public suspend fun ApiClient.deviceSessions(): List<DeviceSession> =
+    decode<SessionsBody>(execute(ApiClient.Call("GET", "/api/auth/sessions"))).sessions
+
+/** Signs another of the user's devices out. The server answers 404 for a session that is not theirs. */
+public suspend fun ApiClient.revokeSession(id: String) {
+    execute(ApiClient.Call("DELETE", "/api/auth/sessions/$id"))
+}
+
+/**
+ * Deletes the account and everything saved under it, which the stores require. Irreversible, so the server
+ * wants proof it is the owner *now*: the [password], or for an account with none a fresh Google ID token.
+ * (A signed-in token alone is not proof.) The super-admin account cannot be deleted.
+ */
+public suspend fun ApiClient.deleteAccount(password: String? = null, googleToken: String? = null) {
+    execute(
+        ApiClient.Call(
+            "DELETE", "/api/auth/me",
+            body = buildJsonObject {
+                put("confirm", "DELETE")
+                if (password != null) put("password", password)
+                if (googleToken != null) put("google_token", googleToken)
+            },
+        ),
+    )
+    // The account is gone, and so is this session: say so rather than leave a token that will be refused.
+    logout()
+}
+
+// -- Saved LZs --------------------------------------------------------------------
+
+public suspend fun ApiClient.listLzs(): List<LzSummary> =
+    decode(execute(ApiClient.Call("GET", "/api/lz")))
+
+public suspend fun ApiClient.getLz(id: Int): LzFull =
+    decode(execute(ApiClient.Call("GET", "/api/lz/$id")))
+
+/**
+ * Saves a new LZ. Pass the [clientUuid] the device chose and a retry after a lost response returns the first
+ * record ([Saved.created] false) instead of making a second.
+ */
+public suspend fun ApiClient.createLz(
+    name: String,
+    lzData: JsonObject,
+    clientUuid: String,
+    idempotencyKey: String = newKey(),
+): Saved<LzSummary> {
+    val response = execute(
+        ApiClient.Call(
+            "POST", "/api/lz",
+            body = buildJsonObject { put("name", name); put("lz_data", lzData); put("client_uuid", clientUuid) },
+            headers = mapOf("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+    return Saved(decode(response), created = response.status == 201)
+}
+
+/**
+ * Edits an LZ on top of [baseRevision], the revision the edit was made against. If the server has moved on,
+ * nothing is overwritten and [RevisionConflictException] carries the server's copy. Without a revision the
+ * last writer wins, as on the web.
+ */
+public suspend fun ApiClient.updateLz(
+    id: Int,
+    baseRevision: Int?,
+    name: String? = null,
+    lzData: JsonObject? = null,
+    idempotencyKey: String = newKey(),
+): LzSummary = decode(
+    execute(
+        ApiClient.Call(
+            "PUT", "/api/lz/$id",
+            body = buildJsonObject { if (name != null) put("name", name); if (lzData != null) put("lz_data", lzData) },
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    ),
+)
+
+/** Deletes an LZ. The server keeps a tombstone so other devices learn of it. Deleting twice is not an error. */
+public suspend fun ApiClient.deleteLz(id: Int, baseRevision: Int? = null, idempotencyKey: String = newKey()) {
+    execute(
+        ApiClient.Call(
+            "DELETE", "/api/lz/$id",
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+}
+
+// -- Aircraft profiles ------------------------------------------------------------
+
+/** The master list, then the caller's own profiles. */
+public suspend fun ApiClient.aircraftProfiles(): List<AircraftProfileDto> =
+    decode(execute(ApiClient.Call("GET", "/api/aircraft-profiles")))
+
+public suspend fun ApiClient.createAircraftProfile(
+    input: AircraftProfileInput,
+    idempotencyKey: String = newKey(),
+): Saved<AircraftProfileDto> {
+    val response = execute(
+        ApiClient.Call(
+            "POST", "/api/aircraft-profiles",
+            body = ApiClient.JSON.encodeToJsonElement(AircraftProfileInput.serializer(), input),
+            headers = mapOf("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+    return Saved(decode(response), created = response.status == 201)
+}
+
+public suspend fun ApiClient.updateAircraftProfile(
+    id: Int,
+    baseRevision: Int?,
+    input: AircraftProfileInput,
+    idempotencyKey: String = newKey(),
+): AircraftProfileDto = decode(
+    execute(
+        ApiClient.Call(
+            "PUT", "/api/aircraft-profiles/$id",
+            body = ApiClient.JSON.encodeToJsonElement(AircraftProfileInput.serializer(), input),
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    ),
+)
+
+public suspend fun ApiClient.deleteAircraftProfile(id: Int, baseRevision: Int? = null, idempotencyKey: String = newKey()) {
+    execute(
+        ApiClient.Call(
+            "DELETE", "/api/aircraft-profiles/$id",
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+}
+
+// -- Sync -------------------------------------------------------------------------
+
+/**
+ * Everything of the caller's that changed after [since], deletions included. Keep the returned cursor and send it
+ * next time; while [ChangeFeed.hasMore] is true, ask again at once. A pull is background work: it waits while
+ * heavy server work is running.
+ */
+public suspend fun ApiClient.changes(since: Int = 0, limit: Int? = null): ChangeFeed =
+    decode(
+        execute(
+            ApiClient.Call(
+                "GET", "/api/sync/changes",
+                query = buildMap { put("since", since.toString()); if (limit != null) put("limit", limit.toString()) },
+                callPriority = CallPriority.BACKGROUND,
+            ),
+        ),
+    )

@@ -9,11 +9,13 @@ on:
     paths:
       - "android/**"
       - "contracts/**"
+      - "backend/**"
       - ".github/workflows/android.yaml"
   pull_request:
     paths:
       - "android/**"
       - "contracts/**"
+      - "backend/**"
       - ".github/workflows/android.yaml"
 
 permissions:
@@ -42,8 +44,24 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # The API client is also tried against the real Flask routes (backend/tests/live_server.py), so a
+      # client and the server it will meet cannot drift apart. Those tests run when EZPZ_LIVE_PYTHON points
+      # at a Python that has the server's packages, and are skipped without it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install what the live test server imports
+        working-directory: .
+        run: |
+          for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
+                   python-dotenv PyYAML openpyxl pillow rasterio numpy mercantile affine; do
+            grep -i "^$p==" backend/requirements.txt
+          done | xargs pip install
+
       # The pure-Kotlin modules (core-model, core-geo, core-planning), held to
       # the golden fixtures in contracts/. Modules that need the Android Gradle
       # Plugin join this job when they exist.
       - name: Test
         run: ./gradlew test --console=plain
+        env:
+          EZPZ_LIVE_PYTHON: python

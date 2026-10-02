@@ -612,6 +612,16 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   the start of a line inside a multi-line `RUN` gets ARGs spliced into the
   command ("unknown instruction"). A plain `docker build` passes; only Coolify
   fails. `tests/test_dockerfiles.py` guards it.
+- **A Kotlin `@Test` that returns a value is never run.** `fun x() = runBlocking { …; assertThrows<E> { … } }`
+  returns the exception, and JUnit answers with a *warning* ("must not return a value. It will not be
+  executed.") and moves on: the test is counted and never runs. Two live-server tests were dead for a while
+  before a mutation that should have failed them survived. Write `= runBlocking<Unit> { … }`. The convention
+  plugin now sets `junit.platform.discovery.issue.severity.critical=WARNING`, so one fails the build.
+- **Mutation-testing a Python file: kill the bytecode.** `.pyc` files are validated by the source's mtime (to
+  the second) and size. A harness that copies a file, writes a same-length mutation within the same second,
+  runs the tests and moves the copy back leaves the *mutated* bytecode looking valid for the restored file. Tests
+  then fail for no visible reason, and later "killed" results are not trustworthy. Run mutations with
+  `python -B` / `PYTHONDONTWRITEBYTECODE=1` and delete `__pycache__` after.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
 
@@ -668,6 +678,7 @@ toolchain); `contracts/` holds the golden fixtures. iOS is not started.
 | `core-geo` | MGRS both ways, free-text coordinate parser, great-circle distance and course | done |
 | `core-planning` | Aircraft geometry, capacity, separation, profile lookup, route planner, plan defaults and migration | done |
 | `core-formats` | Reads an AMPS `.msnx` into a `Mission`, an `.LPS` into a `LocalPointSet` and a `.ths` into `Threat`s, as the web's `parseMsnx` / `parseLps` / `parseThs` do, with a small read-only SQLite reader of its own (`SqliteReader`). `ThsExport` gives the rows of a `.ths` export. **Not ported**: writing or mutating a `.msnx` (`createMsnx`, `mutateMsnx`), and *writing* a `.ths` file itself, which is the platform's job (copy `threat_template.ths`, insert `ThsExport`'s rows) | readers and export rows done |
+| `core-network` | The API client over OkHttp: one transport (`ApiClient`) with the session behind it, typed calls for the routes in `contracts/openapi.yaml`, DTOs, the request-priority gate, and the "update required" check. See *The API client* below | client, auth and refresh done; the sign-up and `.mil` flows and the web-share routes are not yet typed |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
 | everything else in the plan (`app`, `core-data`, `feature-*` …) | needs the Android Gradle Plugin or is later work | **not started** |
 
@@ -745,6 +756,43 @@ never "fix" a number in a client alone. `contracts/README.md` has the commands.
 - Fixtures must not depend on the clock or a random id (`contracts/README.md`).
   One did once — a case without an id baked a random one in — and only the
   Kotlin side noticed. A fixture build now throws if it reaches for either.
+
+**The API client** (`core-network`). The server *spends* a refresh token each time it is used, so the
+client is built around not losing one:
+- **Persist before use.** The new refresh token is written to the `SessionStore` before the refused call is
+  repeated with the new access token. A crash after the response and before the write would still lose it,
+  which is why the server forgives a repeat for 30 s (`REUSE_GRACE`) and why the client never repeats later.
+- **One refresh for many calls.** A mutex plus "did someone already refresh?" (the stored access token is no
+  longer the one that was refused). Ten calls refused at once make one refresh.
+- **A started refresh is finished** (`NonCancellable`), even if the screen that asked has gone: a response
+  with nowhere to be stored has spent the token for nothing.
+- **A refresh whose answer may have been lost is repeated with the same token**, with short pauses, inside
+  20 s, and each attempt gives up on a silent server after 8 s. The grace period runs from when the server
+  spent the token, so waiting out a 60 s read timeout before asking again would arrive too late and sign the
+  device out. A failure *before* the request was sent (no route, refused connection) is not repeated: it cannot
+  have changed anything.
+- **A 401 with a `code` is the server's own answer, not a refused token.** Token refusals come from the JWT
+  library with a bare `{"msg": …}`; the server's own 401s (`invalid_credentials`, `reauthentication_required`)
+  carry a `code`. Treating every 401 as "refresh" would have signed a user out for mistyping the password when
+  deleting their account. (Found by a test against the recorded real response.)
+- **Heavy work first** (`PriorityGate`, the web's `PRIORITY_PATHS`): background calls (sync pulls) wait while an
+  analysis, viewshed or export is in flight, because the server runs on one interpreter. Heavy calls get a
+  190 s read timeout (the server's own is 180 s).
+- **Tried against the real server.** `LiveServerTest` runs the client against the real Flask routes in a child
+  process (`backend/tests/live_server.py`: the production blueprints, JWT revocation and affiliation gate over a
+  throwaway SQLite database, access tokens that live 2 s so a lapse and its refresh are real, and test-only
+  routes to make an account and to move the clock past the 30 s grace period). It proves what the mock tests
+  cannot: a lost refresh answer repeated with the same token is accepted, one repeated after the grace period
+  signs the device out, signing a device out from another ends it at once, two devices editing one LZ get a
+  conflict. It runs when `EZPZ_LIVE_PYTHON` names a Python with the server's packages (CI sets it) and is
+  skipped otherwise; the Gradle test task lists `backend/**/*.py` as an input, so editing the server re-runs it.
+- **Tolerant on the way in, strict in the tests.** The client ignores a field a newer server adds (store
+  builds stay in the field for months); `DtoFixtureTest` decodes every recorded real response with
+  *unknown fields forbidden*, so a type cannot fall behind the server. The recordings are written by
+  `backend/tests/test_network_fixtures.py` (`UPDATE_CONTRACTS=1`), from the server's own code.
+- Failures are typed: `NetworkException` (with `requestMayHaveBeenSent`), `SessionEndedException`,
+  `AffiliationRequiredException`, `RevisionConflictException` (carries the server's copy),
+  `RateLimitedException`, `ApiException`.
 
 **Building in an agent sandbox.** `dl.google.com` (Google's Maven: the Android
 Gradle Plugin, AndroidX, Compose, the SDK) is blocked by the cloud environment's

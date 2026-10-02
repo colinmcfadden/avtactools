@@ -40,6 +40,9 @@ val contractsDir = rootProject.layout.projectDirectory.dir("../contracts/fixture
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     systemProperty("ezpz.contracts", contractsDir.asFile.absolutePath)
+    // JUnit does not run a @Test that returns a value (`= runBlocking { ...; assertThrows<E> { } }` does, quietly):
+    // it reports a warning and moves on, so the test counts as present and never executes. Make that a failure.
+    systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
     inputs.dir(contractsDir).withPropertyName("contractFixtures")
     testLogging {
         events("failed", "skipped")

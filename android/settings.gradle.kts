@@ -26,5 +26,9 @@ include(":core-geo")
 include(":core-planning")
 include(":core-formats")
 
+// The API client: OkHttp over a plain JVM, so the auth and retry logic is tested here
+// (against a mock server) rather than only on a device.
+include(":core-network")
+
 // Test support: reads ../contracts/fixtures. Not part of the shipped app.
 include(":core-testing")
