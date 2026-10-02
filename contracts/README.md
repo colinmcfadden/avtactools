@@ -12,7 +12,8 @@ contracts/
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy
 │  ├─ coords/       parse.json                      reference: the web app
-│  └─ planning/     aircraft.json, route.json       reference: the web app
+│  ├─ planning/     aircraft.json, route.json       reference: the web app
+│  └─ workspace/    diagram.json                    reference: the web app
 └─ scripts/         generators for the fixtures PyGeodesy owns
 ```
 
@@ -34,6 +35,7 @@ reference is.
 | `mgrs/inverse.json` | — (the web asks the server) | same | `core-geo` |
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` |
+| `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 
 iOS joins this table when it starts; it reads the same files.
 
@@ -68,6 +70,9 @@ without the fixture diff in the same PR — and the Android tests then fail unti
   the same thing.
 - **Clock times** are the local time-of-day on the plan's date, on dates without a
   daylight-saving change.
+- **No clock, no randomness.** A case that omits a timestamp or an id would make the
+  web read the clock or invent a random id, and the fixture could never be
+  reproduced. While a fixture is built those throw, so give each case what it needs.
 - **Never hand-edit a fixture.** Change the reference or the generator and
   regenerate.
 - **No real data.** Everything here is invented or public. Nothing from a real

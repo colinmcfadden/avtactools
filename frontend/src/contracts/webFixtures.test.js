@@ -34,6 +34,16 @@ import {
   solveWindTriangle,
   trueCourseDeg,
 } from "../feature/msnxImport/routeCalc";
+import {
+  canAnalyzeLzDiagram,
+  canEditLzDiagramGraphics,
+  createInitialLzWorkspace,
+  createLzDiagramFromTarget,
+  normalizeLegacyLzSnapshot,
+  normalizeLzDiagram,
+  normalizeLzTarget,
+  serializeLzDiagram,
+} from "../feature/lzWorkspace/useLzWorkspace";
 import { FIXTURES } from "./readFixture";
 
 const fs = require("fs");
@@ -550,12 +560,215 @@ const routeFixture = () => ({
   })),
 });
 
+/* -------------------------------------------------------------------------
+ * LZ diagram documents
+ * ---------------------------------------------------------------------- */
+
+// Timestamps are always supplied: normalizeLzDiagram reads the clock when they
+// are absent, and a fixture cannot depend on the clock. Ids likewise.
+const T0 = "2026-09-01T12:00:00.000Z";
+const T1 = "2026-09-02T08:30:00.000Z";
+
+const HELO = { id: "h1", lat: 34.5, lon: -84.1, heading: 270, profileId: "uh60l", futureField: { keep: ["me"] } };
+const SECTOR = { id: "s1", points: [[34.5, -84.1], [34.51, -84.09], [34.5, -84.08]], color: "#ff0000" };
+
+const FULL_DIAGRAM = {
+  schemaVersion: 2,
+  id: "lz-full",
+  savedId: 41,
+  name: "LZ HAWK",
+  dirty: true,
+  createdAt: T0,
+  updatedAt: T1,
+  status: "analyzed",
+  target: { lat: 34.783817, lon: -84.08219, mgrs: "16S GD 66993 52949" },
+  mapData: { mgrs: "16S GD 66993 52949", latLong: "34.78382, -84.08219", zoom: 17, anything: { else: true } },
+  flightData: { callSign: "HAWK 6", frequency: "251.0", landingHeading: 270, extra: [1, 2, 3] },
+  analysis: {
+    customLZ: [[34.7, -84.1], [34.7, -84.0], [34.8, -84.0]],
+    detectedLZ: [[34.71, -84.09], [34.71, -84.01], [34.79, -84.01]],
+    terrainData: { image: "BASE64...", bounds: [[34.7, -84.1], [34.8, -84.0]] },
+    results: { areaSqFt: 188300, maxSlope: 4.2, elevationFt: 1320 },
+    gridElevation: "1320",
+    latLong: "34.78382, -84.08219",
+  },
+  graphics: {
+    doghouses: [{ id: "d1", kind: "SP" }, { id: "d2", kind: "RP" }],
+    helicopters: [HELO],
+    pzMarkers: [{ id: "p1", lat: 34.5, lon: -84.1 }],
+    sectorsOfFire: [SECTOR],
+    goArounds: [{ id: "g1", side: "L" }],
+    units: [{ id: "u1", sidc: "SFGPUCI----D---" }],
+    measurements: [{ id: "m1", a: [34.5, -84.1], b: [34.6, -84.2] }],
+    exportBox: { north: 34.8, south: 34.7, east: -84.0, west: -84.1 },
+  },
+  view: { mapStyle: "outdoors", showLZOutline: false, showHeatmap: true },
+};
+
+// What App.js saved before diagrams were versioned: one flat object.
+const LEGACY_SNAPSHOT = {
+  targetLocation: [34.545678, -84.123456],
+  gridInput: "16S GD 52000 30000",
+  mapData: { mgrs: "16S GD 52000 30000" },
+  flightData: { callSign: "OLD 1" },
+  customLZ: [[34.5, -84.1], [34.5, -84.0], [34.6, -84.0]],
+  detectedLZ: [[34.51, -84.09], [34.51, -84.01], [34.59, -84.01]],
+  analysisResults: { areaSqFt: 90000 },
+  gridElevation: 1100,
+  latLong: "34.54568, -84.12346",
+  helicopters: [HELO],
+  doghouses: [{ id: "d1" }],
+  pzMarker: [{ id: "p-old", lat: 34.5, lon: -84.1 }],
+  sectorsOfFire: [SECTOR],
+  goAround: [{ id: "g-old" }],
+  units: [],
+  exportBox: { north: 1, south: 0, east: 1, west: 0 },
+  mapStyle: "satellite",
+  showLZOutline: false,
+};
+
+const diagramCases = () => [
+  ["an empty object is a draft", {}, { id: "d-empty", createdAt: T0 }],
+  ["a full current diagram round-trips, extra fields in graphics and map data kept", FULL_DIAGRAM, {}],
+  ["a legacy flat snapshot becomes one diagram", LEGACY_SNAPSHOT, { id: "d-legacy", createdAt: T0 }],
+  ["an object target with latitude and lng", { id: "d-obj", createdAt: T0, target: { latitude: "34.5", lng: -84.25 } }, {}],
+  ["a target with longitude", { id: "d-lon", createdAt: T0, target: { lat: 10, longitude: 20, mgrs: "  " } }, {}],
+  ["an unparseable target leaves a draft even when analysis exists", { id: "d-bad", createdAt: T0, target: { lat: "north", lon: 1 }, analysis: { results: { a: 1 } } }, {}],
+  ["analysis results make a targeted diagram analyzed", { id: "d-res", createdAt: T0, target: [1, 2], analysis: { results: { a: 1 } }, status: "draft" }, {}],
+  ["a detected LZ alone counts as analysis", { id: "d-det", createdAt: T0, target: [1, 2], analysis: { detectedLZ: [[1, 2]] } }, {}],
+  ["a requested analyzed status holds without results", { id: "d-req", createdAt: T0, target: [1, 2], status: "analyzed" }, {}],
+  ["an unknown status falls back to targeted", { id: "d-unk", createdAt: T0, target: [1, 2], status: "weird" }, {}],
+  ["the target mgrs comes from the target, then mapData, then gridInput", { id: "d-m1", createdAt: T0, targetLocation: [1, 2], mapData: { mgrs: "MAPDATA" }, gridInput: "GRID" }, {}],
+  ["mapData's mgrs is used when the target has none", { id: "d-m2", createdAt: T0, target: { lat: 1, lon: 2 }, mapData: { mgrs: "MAPDATA" }, gridInput: "GRID" }, {}],
+  ["only gridInput", { id: "d-m3", createdAt: T0, targetLocation: [1, 2], gridInput: "GRID" }, {}],
+  ["dirty follows JavaScript truthiness: 'yes' is dirty", { id: "d-t1", createdAt: T0, dirty: "yes" }, {}],
+  ["dirty follows JavaScript truthiness: 0 and empty are clean", { id: "d-t2", createdAt: T0, dirty: 0 }, {}],
+  ["an option overrides the input's dirty, name and id", { id: "ignored", name: "from input", dirty: true, createdAt: T0 }, { id: "from-option", name: "from option", dirty: false }],
+  ["snake_case timestamps from an API record are read", { id: "d-ts", created_at: T0, updated_at: T1 }, {}],
+  ["updatedAt defaults to createdAt", { id: "d-ts2", createdAt: T0 }, {}],
+  ["non-object graphics items are kept", { id: "d-g", createdAt: T0, graphics: { helicopters: [HELO, 7, "x", null], pzMarkers: "not an array" } }, {}],
+  ["a graphics object hides the flat names beside it", { id: "d-g2", createdAt: T0, graphics: { pzMarker: [{ id: "legacy" }] }, pzMarker: [{ id: "flat" }] }, {}],
+  ["the plural name wins when a graphics object has both", { id: "d-g3", createdAt: T0, graphics: { pzMarkers: [{ id: "new" }], pzMarker: [{ id: "old" }], goArounds: [{ id: "new" }], goAround: [{ id: "old" }] } }, {}],
+  ["a null plural falls back to the legacy name", { id: "d-g4", createdAt: T0, graphics: { pzMarkers: null, pzMarker: [{ id: "old" }], goArounds: null, goAround: [{ id: "old-go" }] } }, {}],
+  ["an empty plural does not fall back", { id: "d-g5", createdAt: T0, graphics: { pzMarkers: [], pzMarker: [{ id: "old" }] } }, {}],
+  ["analysis results under their legacy name", { id: "d-a1", createdAt: T0, target: [1, 2], analysis: { analysisResults: { legacy: true } } }, {}],
+  ["results win over the legacy name", { id: "d-a2", createdAt: T0, target: [1, 2], analysis: { results: { new: true }, analysisResults: { legacy: true } } }, {}],
+  ["a nested analysis hides the flat fields beside it", { id: "d-a3", createdAt: T0, target: [1, 2], analysis: { gridElevation: "nested" }, gridElevation: "flat", customLZ: [[9, 9]] }, {}],
+  ["a view given flat or nested", { id: "d-v", createdAt: T0, view: { mapStyle: "vfr" } }, {}],
+  ["a numeric id becomes a string", { id: 12, createdAt: T0 }, {}],
+  ["a non-object source is an empty diagram", "nonsense", { id: "d-str", createdAt: T0 }],
+];
+
+const legacySnapshotCases = () => [
+  // A saved record carries no client id: the caller gives one when it loads it (the web draws a random one).
+  ["an API record: saved id, name and timestamps come from the wrapper", { id: 77, name: "Saved LZ", created_at: T0, updated_at: T1, lz_data: LEGACY_SNAPSHOT }, { id: "loaded-77" }],
+  ["an API record holding a current diagram", { id: 78, name: "Saved v2", created_at: T0, updated_at: T1, lz_data: { ...FULL_DIAGRAM, id: "inner" } }, {}],
+  ["a bare legacy snapshot with a client id", { ...LEGACY_SNAPSHOT, clientId: "client-1", savedId: 5, name: "Bare", createdAt: T0 }, {}],
+  ["options override the wrapper", { id: 9, name: "Wrapper", created_at: T0, lz_data: LEGACY_SNAPSHOT }, { id: "opt-id", savedId: 99, name: "Opt", dirty: true }],
+];
+
+const fromTargetCases = () => [
+  ["a blank diagram bound to a target", { target: [34.5, -84.1], mgrs: "16S GD 1 2", id: "t1", name: "New", createdAt: T0 }],
+  ["with map data and a view", { target: { lat: 1, lon: 2 }, id: "t2", createdAt: T0, mapData: { zoom: 15, mgrs: "OLD" }, view: { mapStyle: "vfr" } }],
+  ["no usable target gives nothing", { target: null, id: "t3", createdAt: T0 }],
+  ["a saved id", { target: [1, 2], id: "t4", savedId: 12, createdAt: T0 }],
+];
+
+const TARGETS = [
+  [[34.5, -84.1], ""], [[34.5, -84.1], "16S GD 1 2"], [[34.5, -84.1], "   "],
+  [{ lat: 1, lon: 2 }, ""], [{ latitude: 3, longitude: 4, mgrs: "M" }, ""], [{ lat: 5, lng: 6 }, "X"],
+  [{ lat: "7.5", lon: "-8.5" }, ""], [{ lat: "x", lon: 1 }, ""], [{ lat: 1 }, ""], [[1], ""],
+  [null, ""], [undefined, ""], [[], ""], [{ lat: 1, lon: 2, mgrs: 5 }, ""], [{ lat: 1, lon: 2, mgrs: "own" }, "param"],
+];
+
+const workspaceCases = () => {
+  const d = (id, extra = {}) => ({ id, createdAt: T0, target: [34.5, -84.1], ...extra });
+  return [
+    ["nothing", undefined],
+    ["an empty object", {}],
+    ["an array of diagrams", [d("a"), d("b")]],
+    ["an object with a diagrams array", { diagrams: [d("a"), d("b")], activeDiagramId: "a" }],
+    ["a saved workspace", { diagramOrder: ["b", "a"], diagramsById: { a: d("a"), b: d("b") }, activeDiagramId: "a" }],
+    ["a saved workspace naming a diagram that is gone", { diagramOrder: ["a"], diagramsById: { a: d("a") }, activeDiagramId: "zzz" }],
+    ["a single legacy snapshot", { ...LEGACY_SNAPSHOT, id: "legacy-1", createdAt: T0 }],
+    ["duplicate ids are made unique, in order", [d("x"), d("x"), d("x"), d("x-2")]],
+    ["falsy entries are skipped", [d("a"), null, undefined, d("b")]],
+    ["the active diagram defaults to the last", [d("a"), d("b"), d("c")]],
+    ["dirty diagrams stay dirty", [d("a", { dirty: true }), d("b")]],
+  ];
+};
+
+// The web falls back to the clock and a random id when a document has no timestamp
+// or id. A fixture that reached for either could never be reproduced, so while one is
+// built both throw: the case must supply what it needs.
+const withoutClockOrRandomness = (build) => {
+  const toISOString = Date.prototype.toISOString;
+  const hadCrypto = Object.prototype.hasOwnProperty.call(window, "crypto");
+  const crypto = window.crypto;
+  Date.prototype.toISOString = () => {
+    throw new Error("a fixture case relied on the clock: give it createdAt/updatedAt");
+  };
+  Object.defineProperty(window, "crypto", {
+    configurable: true,
+    value: { randomUUID: () => { throw new Error("a fixture case relied on a random id: give it an id"); } },
+  });
+  try {
+    return build();
+  } finally {
+    Date.prototype.toISOString = toISOString;
+    if (hadCrypto) Object.defineProperty(window, "crypto", { configurable: true, value: crypto });
+    else delete window.crypto;
+  }
+};
+
+const diagramFixture = () => withoutClockOrRandomness(() => ({
+  description: "The saved LZ diagram document, as useLzWorkspace.js normalizes it: current v2 diagrams, "
+    + "legacy flat snapshots, API records (lz_data) and whole workspaces. Graphics are opaque objects the "
+    + "normalizer copies without reading, so fields it does not know survive. Timestamps and ids are "
+    + "always supplied (the web falls back to the clock and a random id).",
+  generatedBy: GENERATED_BY,
+  schemaVersion: 2,
+  normalize: diagramCases().map(([name, source, options]) => ({
+    name, source, options, expected: clean(normalizeLzDiagram(source, options)),
+  })),
+  legacySnapshot: legacySnapshotCases().map(([name, snapshot, options]) => ({
+    name, snapshot, options, expected: clean(normalizeLegacyLzSnapshot(snapshot, options)),
+  })),
+  fromTarget: fromTargetCases().map(([name, args]) => ({
+    name, args, expected: clean(createLzDiagramFromTarget(args)),
+  })),
+  serialize: [
+    ["strips the terrain raster and the dirty flag", FULL_DIAGRAM, {}],
+    ["keeps the raster when asked", FULL_DIAGRAM, { includeTerrainData: true }],
+    ["nothing", null, {}],
+  ].map(([name, diagram, options]) => ({
+    name, diagram, options, expected: clean(serializeLzDiagram(diagram, options)),
+  })),
+  target: TARGETS.map(([target, mgrs]) => ({
+    target: target === undefined ? null : target, mgrs, expected: clean(normalizeLzTarget(target, mgrs)),
+  })),
+  capabilities: [
+    ["no diagram", null], ["a draft", { target: null, status: "draft" }],
+    ["targeted", { target: { lat: 1, lon: 2 }, status: "targeted" }],
+    ["analyzed", { target: { lat: 1, lon: 2 }, status: "analyzed" }],
+    ["analyzed but no target", { target: null, status: "analyzed" }],
+  ].map(([name, diagram]) => ({
+    name, diagram,
+    canAnalyze: canAnalyzeLzDiagram(diagram),
+    canEditGraphics: canEditLzDiagramGraphics(diagram),
+  })),
+  workspace: workspaceCases().map(([name, source]) => ({
+    name, source: source === undefined ? null : source, expected: clean(createInitialLzWorkspace(source)),
+  })),
+}));
+
 /* ---------------------------------------------------------------------- */
 
 describe("web reference fixtures", () => {
   it("coords/parse.json", () => settle("coords/parse.json", coordinateFixture()));
   it("planning/aircraft.json", () => settle("planning/aircraft.json", aircraftFixture()));
   it("planning/route.json", () => settle("planning/route.json", routeFixture()));
+  it("workspace/diagram.json", () => settle("workspace/diagram.json", diagramFixture()));
 });
 
 describe("fixture sanity", () => {

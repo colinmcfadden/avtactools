@@ -630,7 +630,7 @@ toolchain); `contracts/` holds the golden fixtures. iOS is not started.
 
 | Module | What it is | State |
 |---|---|---|
-| `core-model` | Domain types in the web's saved-JSON shape (`LatLon`, `Mgrs`, `AircraftProfile`, route plan and result) | done for these |
+| `core-model` | Domain types in the web's saved-JSON shape (`LatLon`, `Mgrs`, `AircraftProfile`, route plan and result, and the saved LZ `Diagram` with its normalizer and `Workspace`) | done for these. Graphics stay opaque JSON, so a field a newer web release adds survives |
 | `core-geo` | MGRS both ways, free-text coordinate parser, great-circle distance and course | done |
 | `core-planning` | Aircraft geometry, capacity, separation, profile lookup, route planner, plan defaults and migration | done |
 | `core-testing` | Reads `contracts/fixtures`; JSON comparison with a tolerance. Test support only, not in the plan's module list | done |
@@ -659,8 +659,16 @@ never "fix" a number in a client alone. `contracts/README.md` has the commands.
 - PyGeodesy's `Mgrs.toStr(prec=…)` counts digits *beyond* 1 m; its inverse
   returns the square's *centre*, folds longitude into ±180, and accepts any even
   digit count.
+- A saved diagram is loosely typed JSON the web has written for many releases, and
+  `normalizeLzDiagram` leans on `??`, truthiness and `Number()`. `JsValue` ports
+  those; strict types would reject documents the web opens. Quirks kept on
+  purpose: a blank-but-present `mgrs` (`"  "`) stays untrimmed; a present but
+  non-array `pzMarkers` is empty and does *not* fall back to `pzMarker`.
 - `-Xjdk-release=17` is set so a JDK 21-only API fails to compile instead of
   failing on CI or a device.
+- Fixtures must not depend on the clock or a random id (`contracts/README.md`).
+  One did once — a case without an id baked a random one in — and only the
+  Kotlin side noticed. A fixture build now throws if it reaches for either.
 
 **Building in an agent sandbox.** `dl.google.com` (Google's Maven: the Android
 Gradle Plugin, AndroidX, Compose, the SDK) is blocked by the cloud environment's
