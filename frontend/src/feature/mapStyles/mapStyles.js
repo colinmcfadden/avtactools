@@ -28,6 +28,30 @@ const MAPBOX_TILE_OPTIONS = {
  * - `preview` (optional): {z,x,y} of the switcher-thumbnail tile, for
  *   servers whose zoom range doesn't include the default preview tile.
  */
+/**
+ * Raw XYZ template for one style, for consumers that are not Leaflet.
+ *
+ * The 3D view drapes the same imagery over terrain, and Cesium wants a plain
+ * URL template rather than a TileLayer. Exported here so both views read from
+ * one definition — a base map that only exists in 2D is a base map that will
+ * drift out of step with the one crews actually navigate against.
+ */
+export const imageryTemplate = (styleId = "satellite-v9") => mapboxTiles(styleId);
+
+export const MAPBOX_IMAGERY = {
+  template: mapboxTiles("satellite-v9"),
+  attribution: MAPBOX_ATTRIBUTION,
+  // 1024, not 512. The URL asks for 512 tiles with the @2x suffix, and Mapbox
+  // answers that with a 1024px retina tile. Declaring 512 hands Cesium images
+  // twice the size it budgeted for, and the ground never draws.
+  //
+  // Leaflet does not hit this because tileSize there is a layout measurement
+  // rather than a claim about the image; Cesium takes it literally.
+  tileWidth: 1024,
+  tileHeight: 1024,
+  maximumLevel: 20,
+};
+
 export const MAP_STYLES = [
   {
     id: "satellite",

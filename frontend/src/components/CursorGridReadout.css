@@ -1,0 +1,44 @@
+/* Beside the map type picker (MapStyleSwitcher: 64px square at left 12px),
+   bottom-aligned with it. Display only: it must never take a click meant for
+   the map. */
+.cursor-grid {
+  position: absolute;
+  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  left: 84px;
+  z-index: 900;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline-strong, rgba(255, 255, 255, 0.18));
+  border-radius: 8px;
+  background: var(--glass, rgba(12, 18, 27, 0.82));
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+  color: #eaf2f8;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.cursor-grid__label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  opacity: 0.6;
+}
+
+/* Fixed-width digits, so the readout does not jitter as they change. */
+.cursor-grid__value {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* No cursor on a touch screen, so nothing to read out. */
+@media (hover: none) {
+  .cursor-grid {
+    display: none;
+  }
+}

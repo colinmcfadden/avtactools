@@ -1,4 +1,5 @@
 import axios from "axios";
+import { beginPriority, isPriorityRequest } from "./requestPriority";
 
 const API_BASE_URL = process.env.REACT_APP_API_URL;
 
@@ -59,6 +60,24 @@ api.interceptors.response.use(
         }, 500);
       }
     }
+    return Promise.reject(error);
+  },
+);
+
+// Heavy server work (an LZ analysis, a viewshed, an export) holds 3D terrain
+// loading back until it finishes, so the two do not compete for the server.
+// See requestPriority.
+api.interceptors.request.use((config) => {
+  if (isPriorityRequest(config.url)) config.endPriority = beginPriority();
+  return config;
+});
+api.interceptors.response.use(
+  (response) => {
+    response.config?.endPriority?.();
+    return response;
+  },
+  (error) => {
+    error.config?.endPriority?.();
     return Promise.reject(error);
   },
 );

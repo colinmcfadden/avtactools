@@ -57,6 +57,7 @@ export default function ActiveLzWindow({
   onClose,
   onSave,
   onRemove,
+  onView3D,
   canSaveActive = true,
   isSaving = false,
   initialPosition = { x: 16, y: 92 },
@@ -145,11 +146,13 @@ export default function ActiveLzWindow({
                     const dirty = isDirty(diagram);
                     const title = diagram?.name || diagram?.title || `LZ/PZ ${index + 1}`;
 
+                    const hasTarget = Boolean(diagram?.target);
+
                     return (
-                      <li key={id ?? `${title}-${index}`}>
+                      <li key={id ?? `${title}-${index}`} className="active-lz-window__item">
                         <button
                           type="button"
-                          className={`active-lz-window__row${active ? " is-active" : ""}`}
+                          className={`active-lz-window__row${active ? " is-active" : ""}${onView3D ? " has-3d" : ""}`}
                           aria-pressed={active}
                           onClick={() => onSelect?.(id, diagram)}
                         >
@@ -170,6 +173,27 @@ export default function ActiveLzWindow({
                             </span>
                           </span>
                         </button>
+                        {/* A sibling of the row, not inside it: a button cannot
+                            contain another button. Positioned over the row's
+                            end so it still reads as part of the card. */}
+                        {onView3D && (
+                          <button
+                            type="button"
+                            className="active-lz-window__row-3d"
+                            onClick={() => onView3D(id, diagram)}
+                            disabled={!hasTarget}
+                            aria-label={`Open ${title} in 3D`}
+                            title={hasTarget
+                              ? `View ${title} in 3D`
+                              : "Set a target before viewing in 3D."}
+                          >
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                              <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
+                              <path d="M4 7.5l8 4.5 8-4.5M12 12v9" />
+                            </svg>
+                            <span>3D</span>
+                          </button>
+                        )}
                       </li>
                     );
                   })}

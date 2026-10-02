@@ -21,12 +21,19 @@ import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import ExportHandler from "../feature/export/ExportHandler";
+import CursorGridReadout from "./CursorGridReadout";
 import MsnxRouteLayer, {
   buildIcon as buildSketchPointIcon,
 } from "../feature/msnxImport/MsnxRouteLayer";
 import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
 import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
+
+// The slope PNG already carries its own per-band alpha (145-185 of 255, rising
+// with steepness so hazardous ground stands out), and this multiplies it. 0.55
+// lands the middle band near 36% and the full range at roughly 31-40%, light
+// enough to read the imagery through while keeping the steep-ground emphasis.
+const SLOPE_OVERLAY_OPACITY = 0.55;
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -339,7 +346,7 @@ const MapView = ({
         <ImageOverlay
           url={terrainData.overlay}
           bounds={terrainData.bounds}
-          opacity={1}
+          opacity={SLOPE_OVERLAY_OPACITY}
           interactive={false}
           zIndex={250}
         />
@@ -427,6 +434,8 @@ const MapView = ({
         setExportProgress={setExportProgress}
         onExportComplete={onExportComplete}
       />
+
+      <CursorGridReadout />
     </MapContainer>
   );
 };

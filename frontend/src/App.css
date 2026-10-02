@@ -416,6 +416,17 @@ input:checked + .slider:before {
   border: none !important;
 }
 
+/* A crosshair over the map, for placing things on an exact spot; the grab
+   hand only while the map is being dragged. Markers and other interactive
+   layers keep Leaflet's pointer. */
+.leaflet-container.leaflet-grab {
+  cursor: crosshair;
+}
+
+.leaflet-dragging .leaflet-container.leaflet-grab {
+  cursor: grabbing;
+}
+
 /* Export handles visibility logic */
 body.hide-export-handles .export-move-handle,
 body.hide-export-handles .export-resize-handle,

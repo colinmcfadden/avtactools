@@ -3,6 +3,7 @@ import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
 import { convertToLatLongString } from "./utils/Helpers";
+import { toMgrs } from "./utils/mgrs";
 import ExportModal from "./feature/export/ExportModal";
 import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
@@ -42,6 +43,9 @@ import ThreatDialog from "./feature/threats/ThreatDialog";
 import ThreatExportModal from "./feature/threats/ThreatExportModal";
 import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
+import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
+import { releaseAbandonedBuilds } from "./feature/viewer3d/useLidarTileset";
+import { useBuildOnSave } from "./feature/viewer3d/useBuildOnSave";
 import ActiveLzWindow from "./feature/lzWorkspace/ActiveLzWindow";
 import LzDiagramRemoveDialog from "./feature/lzWorkspace/LzDiagramRemoveDialog";
 
@@ -322,6 +326,17 @@ function App() {
     deleteProfile,
   } = useAircraftProfiles();
   const [isAircraftModalOpen, setIsAircraftModalOpen] = useState(false);
+  // 3D point cloud for the active LZ/PZ. Opens over the map rather than
+  // replacing it, so the 2D diagram stays available alongside.
+  const [is3DOpen, setIs3DOpen] = useState(false);
+  // A refresh cannot tell the build service it is leaving, so the reloaded
+  // page does: point-cloud builds the previous load was waiting on are
+  // released rather than left to run ahead of everything opened next.
+  useEffect(() => {
+    releaseAbandonedBuilds();
+  }, []);
+  // Saved LZs get their point cloud built in the background, ready for 3D.
+  useBuildOnSave(diagrams);
   const { doghouses, updateDoghouse } = useDoghouses(targetLocation, setFlightData, {
     doghouses: activeGraphics.doghouses ?? [],
     setDoghouses,
@@ -940,38 +955,25 @@ function App() {
     [importLegacySnapshot],
   );
 
-  const handleMapRightClick = async (lat, lon, x, y) => {
+  // The grid of a clicked point, worked out in the browser (utils/mgrs gives
+  // the backend's exact answer), so the menu opens with it already filled in.
+  // Lat/long only at the poles, which MGRS covers with a different projection.
+  const gridAt = (lat, lon) => toMgrs(lat, lon) ?? convertToLatLongString(lat, lon);
+
+  const handleMapRightClick = (lat, lon, x, y) => {
     setContextMenu({ x, y, type: "map", lat, lon });
-    setClickedGrid("Calculating...");
-    try {
-      const res = await api.post("/convert-to-mgrs", {
-        lat,
-        lon,
-      });
-      setClickedGrid(res.data.mgrs);
-    } catch (err) {
-      setClickedGrid(convertToLatLongString(lat, lon)); // Fallback to Lat/Lon if backend fails
-    }
+    setClickedGrid(gridAt(lat, lon));
   };
 
   const handleSetAsTarget = () => {
-    if (clickedGrid === "Calculating..." || !contextMenu) return;
+    if (!contextMenu) return;
     startDiagramAtTarget([contextMenu.lat, contextMenu.lon], clickedGrid);
   };
 
   // 2. LZ Right-Click Handler
-  const handleLZRightClick = async (lat, lon, x, y) => {
+  const handleLZRightClick = (lat, lon, x, y) => {
     setContextMenu({ x, y, type: "lz", lat, lon });
-    setClickedGrid("Calculating...");
-    try {
-      const res = await api.post("/convert-to-mgrs", {
-        lat,
-        lon,
-      });
-      setClickedGrid(res.data.mgrs);
-    } catch (err) {
-      setClickedGrid(convertToLatLongString(lat, lon));
-    }
+    setClickedGrid(gridAt(lat, lon));
   };
 
   // 3. Drawing Controls
@@ -1012,9 +1014,8 @@ function App() {
       const coordinate = parseCoordinate(gridInput);
       if (coordinate) {
         const { lat, lon } = coordinate;
-        const res = await api.post("/convert-to-mgrs", { lat, lon });
-        const mgrs = res.data?.mgrs;
-        if (!mgrs) throw new Error("The server didn't return a grid for that position.");
+        const mgrs = toMgrs(lat, lon);
+        if (!mgrs) throw new Error("That position is beyond the MGRS grid (84°N / 80°S).");
         // startDiagramAtTarget rewrites the field with the grid, so the user
         // sees their coordinate resolve into the MGRS the rest of the app uses.
         startDiagramAtTarget([lat, lon], mgrs);
@@ -1319,6 +1320,14 @@ function App() {
           onSelect={handleSelectDiagram}
           onSave={handleLayerSave}
           onRemove={handleLayerRemove}
+          onView3D={(diagramId) => {
+            // The 3D window always shows the active LZ, so a row's 3D button
+            // makes its LZ active first.
+            if (diagramId && diagramId !== activeDiagramId) {
+              handleSelectDiagram(diagramId);
+            }
+            setIs3DOpen(true);
+          }}
           canSaveActive={canEditGraphics}
           isSaving={isLayerSaveInProgress}
           initialPosition={{ x: 16, y: 86 }}
@@ -1353,7 +1362,6 @@ function App() {
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
-                disabled={clickedGrid === "Calculating..."}
               >
                 Set as Target
               </button>
@@ -1371,7 +1379,6 @@ function App() {
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
-                disabled={clickedGrid === "Calculating..."}
               >
                 Set as Target
               </button>
@@ -1530,6 +1537,21 @@ function App() {
 
       {showUnitBuilder && (
         <UnitBuilder onSubmit={addUnit} onClose={() => setShowUnitBuilder(false)} />
+      )}
+
+      {is3DOpen && activeDiagram?.target && (
+        <Lz3DWindow
+          label={
+            `${activeDiagram.flightData?.lz_label || "LZ"} ` +
+            `${activeDiagram.flightData?.lz_name || activeDiagram.name || ""}`.trim()
+          }
+          lat={activeDiagram.target.lat}
+          lon={activeDiagram.target.lon}
+          saved={activeDiagram.savedId != null}
+          importedRoutes={importedRoutes}
+          sketchedRoutes={sketchedRoutes}
+          onClose={() => setIs3DOpen(false)}
+        />
       )}
 
       {isAircraftModalOpen && (
