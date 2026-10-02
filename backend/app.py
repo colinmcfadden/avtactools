@@ -12,6 +12,7 @@ try:
 except ImportError:
     __version__ = "0.0.0-dev"
 
+from database_url import database_uri, is_postgres
 from models import AircraftProfile, User, db
 from entitlements import account_active, affiliation_ok
 from aircraft_seed import seed_aircraft_profiles
@@ -56,13 +57,10 @@ CORS(
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-# Use a managed database when DATABASE_URL is set (e.g. Neon/Supabase Postgres
-# in production — the Space's own disk is ephemeral); fall back to a local
-# SQLite file for development. Some providers hand out postgres:// URLs, but
-# SQLAlchemy expects postgresql://.
-database_url = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'ezpz.db'))
-if database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+# Use a managed database when DATABASE_URL is set (e.g. Supabase Postgres in
+# production); fall back to a local SQLite file for development. See
+# database_url.py for why the Postgres driver is named explicitly.
+database_url = database_uri(os.environ, 'sqlite:///' + os.path.join(basedir, 'ezpz.db'))
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -75,7 +73,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # check and transparently reconnects; pool_recycle proactively retires
 # connections before the server's own idle timeout can. Only meaningful for a
 # real connection pool, so scope it to Postgres and leave SQLite dev untouched.
-if database_url.startswith('postgresql://'):
+if is_postgres(database_url):
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_pre_ping': True,
         'pool_recycle': 280,

@@ -506,9 +506,13 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **Every backend import must be in `backend/requirements.txt`.** v1.7.0
   shipped importing `pyproj`, which the developer's machine had and the
   requirements file did not; production crash-looped on
-  `ModuleNotFoundError` while every local test passed. Before a release, check
-  new third-party imports against the file — or build the image
-  (`docker build backend`), which is the only test that uses it.
+  `ModuleNotFoundError` while every local test passed. Behind it was a second
+  failure of the same kind: SQLAlchemy was not pinned, a fresh build pulled
+  2.1, and 2.1 makes a bare `postgresql://` use psycopg 3, which the image
+  does not ship. Pin what the code depends on (SQLAlchemy is now pinned, and
+  `database_url.py` names the driver). Before a release, build the image and
+  boot it against a Postgres container — local runs use SQLite and cannot
+  catch either failure.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
 
