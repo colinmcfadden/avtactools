@@ -2,13 +2,22 @@ package app.ezpztac.android
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.SlopeState
+import app.ezpztac.map.LzScene
+import app.ezpztac.map.SlopeImage
 import app.ezpztac.model.LatLon
+import app.ezpztac.network.TerrainAnalysis
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
@@ -23,7 +32,10 @@ data class OpenedDiagram(val id: String, val at: LatLon?, val baseMap: String?)
  * first when the second opens one, and writes down the base map the person chose.
  */
 @HiltViewModel
-class HomeViewModel @Inject constructor(private val session: DiagramSession) : ViewModel() {
+class HomeViewModel @Inject constructor(
+    private val session: DiagramSession,
+    private val analysis: AnalysisService,
+) : ViewModel() {
     private val _opened = MutableSharedFlow<OpenedDiagram>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     /**
@@ -32,7 +44,20 @@ class HomeViewModel @Inject constructor(private val session: DiagramSession) : V
      */
     val opened: SharedFlow<OpenedDiagram> = _opened.asSharedFlow()
 
+    /**
+     * What the map draws for the open diagram: its target, boundary and, once measured, the slope raster. The raster is shown only while
+     * the boundary is still the one it was measured for.
+     */
+    val scene: StateFlow<LzScene> = combine(session.active, analysis.slopes) { diagram, slopes ->
+        val measured = diagram?.let { d -> (slopes[d.id] as? SlopeState.Ready)?.takeIf { it.boundaryKey == analysis.boundaryKey(d) } }
+        LzScene.of(diagram, measured?.analysis?.toSlopeImage())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
+
     init {
+        // An analysed diagram that is opened (or whose boundary changes) has its slope measured, if it has not been already.
+        viewModelScope.launch {
+            session.active.filterNotNull().distinctUntilChangedBy { it.id to it.analysis.detectedLZ }.collect(analysis::ensureSlope)
+        }
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { diagram ->
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))
@@ -55,4 +80,11 @@ class HomeViewModel @Inject constructor(private val session: DiagramSession) : V
             }
         }
     }
+}
+
+private fun TerrainAnalysis.toSlopeImage(): SlopeImage? {
+    val southWest = bounds.getOrNull(0) ?: return null
+    val northEast = bounds.getOrNull(1) ?: return null
+    if (southWest.size < 2 || northEast.size < 2) return null
+    return SlopeImage(south = southWest[0], west = southWest[1], north = northEast[0], east = northEast[1], dataUri = overlay)
 }

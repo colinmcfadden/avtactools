@@ -2,6 +2,7 @@ package app.ezpztac.data
 
 import app.ezpztac.geo.CoordinateParser
 import app.ezpztac.model.Diagram
+import app.ezpztac.model.DiagramGeometry
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.LatLon
@@ -29,7 +30,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlin.coroutines.CoroutineContext
 
@@ -147,7 +147,7 @@ public class AnalysisService(
      * changed boundary). A call that fails is remembered, not thrown: the overlay is a nicety, the analysis stands without it.
      */
     public fun ensureSlope(diagram: Diagram) {
-        val polygon = polygonOf(diagram.analysis.detectedLZ) ?: return
+        val polygon = DiagramGeometry.boundary(diagram).takeIf { it.isNotEmpty() } ?: return
         val key = keyOf(polygon)
         val known = _slopes.value[diagram.id]
         if (known is SlopeState.Loading || (known is SlopeState.Ready && known.boundaryKey == key)) return
@@ -164,8 +164,11 @@ public class AnalysisService(
         }
     }
 
+    /** Which boundary a measured slope belongs to: a raster is drawn only while the diagram's boundary is still the one it was measured for. Null with no boundary. */
+    public fun boundaryKey(diagram: Diagram): String? = DiagramGeometry.boundary(diagram).takeIf { it.isNotEmpty() }?.let(::keyOf)
+
     private suspend fun measure(diagramId: String, boundary: JsonElement?) {
-        val polygon = polygonOf(boundary) ?: return
+        val polygon = DiagramGeometry.polygon(boundary).takeIf { it.isNotEmpty() } ?: return
         _slopes.update { it + (diagramId to SlopeState.Loading) }
         try {
             _slopes.update { it + (diagramId to SlopeState.Ready(keyOf(polygon), api.terrainAnalysis(polygon, null))) }
@@ -199,16 +202,6 @@ public class AnalysisService(
                 "results" to ApiJson.encodeToJsonElement(FieldAnalysis.serializer(), field),
             ),
         )
-    }
-
-    private fun polygonOf(boundary: JsonElement?): List<LatLon>? {
-        val points = (boundary as? JsonArray)?.mapNotNull { point ->
-            val pair = point as? JsonArray ?: return@mapNotNull null
-            val lat = (pair.getOrNull(0) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
-            val lon = (pair.getOrNull(1) as? JsonPrimitive)?.doubleOrNull ?: return@mapNotNull null
-            LatLon(lat, lon)
-        }
-        return points?.takeIf { it.size >= 3 }
     }
 
     private fun keyOf(polygon: List<LatLon>): String = polygon.joinToString(";") { "${it.lat},${it.lon}" }

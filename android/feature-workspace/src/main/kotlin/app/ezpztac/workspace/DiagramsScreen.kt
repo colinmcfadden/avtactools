@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +38,8 @@ import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.model.DiagramStatus
+import app.ezpztac.data.AnalysisStatus
+import app.ezpztac.planning.LzSummary
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 
@@ -49,6 +52,9 @@ class DiagramsActions(
     val delete: (String) -> Unit = {},
     val resolve: (String, SyncEngine.Resolution) -> Unit = { _, _ -> },
     val dismissError: () -> Unit = {},
+    val analyze: () -> Unit = {},
+    val stopAnalysis: () -> Unit = {},
+    val dismissAnalysis: () -> Unit = {},
 )
 
 /**
@@ -63,6 +69,7 @@ fun DiagramsHost(suggestedTarget: String?, modifier: Modifier = Modifier, viewMo
         actions = DiagramsActions(
             startCreating = viewModel::startCreating, cancelCreating = viewModel::cancelCreating, create = viewModel::create, open = viewModel::open,
             rename = viewModel::rename, delete = viewModel::delete, resolve = viewModel::resolve, dismissError = viewModel::dismissError,
+            analyze = viewModel::analyze, stopAnalysis = viewModel::stopAnalysis, dismissAnalysis = viewModel::dismissAnalysisError,
         ),
     )
 }
@@ -75,6 +82,7 @@ fun DiagramsContent(state: DiagramsUiState, suggestedTarget: String?, actions: D
             if (!state.creating) TextAction("New diagram", onClick = actions.startCreating)
         }
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
+        state.current?.let { ActiveDiagramCard(it, actions) }
         if (state.creating) NewDiagramForm(suggestedTarget, state.busy, actions)
         if (state.rows.isEmpty() && !state.creating) {
             Text(
@@ -82,8 +90,141 @@ fun DiagramsContent(state: DiagramsUiState, suggestedTarget: String?, actions: D
                 style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        state.rows.forEach { row -> DiagramListItem(row, actions) }
+        // The open diagram has its card, with rename and delete in it; the list is the others (and an open conflict copy, which keeps its choices).
+        val others = if (state.current == null) state.rows else state.rows.filterNot { it.isActive && it.conflictOf == null }
+        if (state.current != null && others.isNotEmpty()) Text("Other diagrams", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        others.forEach { row -> DiagramListItem(row, actions) }
     }
+}
+
+// -- The open diagram: analysis and its summary ------------------------------------------------------------------
+
+/** The open diagram, with the one thing worth doing next: analyse it. Once analysed, what the web's mission summary says about it. */
+@Composable
+private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions) {
+    Surface(
+        shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Open", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Text(current.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
+                    if (current.grid != null) {
+                        Text(current.grid, style = EzpzText.grid.copy(fontSize = MaterialTheme.typography.bodyMedium.fontSize), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+                    Text(statusLabel(current.status), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    SyncChip(current.sync, current.conflictOf)
+                }
+            }
+            AnalysisControls(current, actions)
+            current.summary?.let { SummaryTiles(it) }
+            ManageControls(current.uuid, current.name, actions)
+        }
+    }
+}
+
+@Composable
+private fun AnalysisControls(current: ActiveDiagramUi, actions: DiagramsActions) {
+    when (val analysis = current.analysis) {
+        is AnalysisUi.Running -> {
+            PrimaryButton(
+                "Analyze", onClick = {}, busy = true,
+                busyText = if (analysis.stage == AnalysisStatus.Running.Stage.FINDING_AREA) "Finding the landing area…" else "Measuring the slope…",
+            )
+            SecondaryButton("Stop", onClick = actions.stopAnalysis)
+            Text(
+                "Needs a connection, and can take a while. The diagram is safe on this device either way.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        is AnalysisUi.Failed -> {
+            Banner(analysis.message, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissAnalysis)
+            if (current.canAnalyze) PrimaryButton("Try again", onClick = actions.analyze)
+        }
+        AnalysisUi.Idle -> when {
+            !current.canAnalyze -> Text("Set a target to analyze this landing zone.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            current.status == DiagramStatus.ANALYZED -> SecondaryButton("Analyze again", onClick = actions.analyze)
+            else -> PrimaryButton("Analyze landing zone", onClick = actions.analyze)
+        }
+    }
+}
+
+@Composable
+private fun SummaryTiles(summary: SummaryUi) {
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+            Tile("Capacity · ${summary.aircraft}", summary.capacity.toString(), Modifier.weight(1f), emphasis = true)
+            Tile("Area (ft²)", withCommas(summary.areaSqFt), Modifier.weight(1f))
+        }
+        Tile("Elevation (MSL)", summary.elevation?.let { if (it.all(Char::isDigit) || it.startsWith("-")) "$it ft" else it } ?: "—", Modifier.fillMaxWidth())
+        SlopeTile(summary.slope)
+    }
+}
+
+@Composable
+private fun Tile(
+    label: String, value: String, modifier: Modifier = Modifier, emphasis: Boolean = false, valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    caption: String? = null,
+) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                value, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = if (emphasis) FontWeight.Bold else FontWeight.SemiBold),
+                color = if (emphasis) MaterialTheme.colorScheme.primary else valueColor,
+            )
+            if (caption != null) Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** The tile that says whether the ground is fit to land on. Colour is never the only signal: the word says it too. */
+@Composable
+private fun SlopeTile(slope: SlopeTileUi) {
+    when (slope) {
+        SlopeTileUi.Measuring -> Tile("Max terrain slope", "Measuring…", Modifier.fillMaxWidth())
+        is SlopeTileUi.Unavailable -> Tile("Max terrain slope", "—", Modifier.fillMaxWidth(), caption = slope.message)
+        is SlopeTileUi.Measured -> {
+            val color = when (slope.call.level) {
+                LzSummary.SlopeLevel.SAFE -> EzpzTheme.status.success
+                LzSummary.SlopeLevel.WARNING -> EzpzTheme.status.warning
+                LzSummary.SlopeLevel.DANGER -> MaterialTheme.colorScheme.error
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Maximum terrain slope ${oneDecimal(slope.call.maxDeg)} degrees. ${slope.call.label}." },
+                shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant, border = BorderStroke(2.dp, color),
+            ) {
+                Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+                    Text("Max terrain slope", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${oneDecimal(slope.call.maxDeg)}°", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
+                        Text(slope.call.label, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = color)
+                    }
+                    Text(
+                        "${slope.source} · ${oneDecimal(slope.resolutionM)} m cells",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 4050 as "4,050", written here rather than by the platform's formatter, which can emit another locale's digits. */
+internal fun withCommas(value: Long): String {
+    val digits = kotlin.math.abs(value).toString()
+    val grouped = digits.reversed().chunked(3).joinToString(",").reversed()
+    return if (value < 0) "-$grouped" else grouped
+}
+
+/** JavaScript's `toFixed(1)`: the exact value, ties up, no locale. */
+internal fun oneDecimal(value: Double): String {
+    val body = java.math.BigDecimal(kotlin.math.abs(value)).setScale(1, java.math.RoundingMode.HALF_UP).toPlainString()
+    return if (value < 0) "-$body" else body
 }
 
 @Composable
@@ -112,16 +253,41 @@ private fun statusLabel(status: DiagramStatus) = when (status) {
     DiagramStatus.ANALYZED -> "Analyzed"
 }
 
-private fun syncLabel(row: DiagramRow) = when {
-    row.conflictOf != null -> "Conflict copy"
-    row.sync == SyncStatus.SYNCED -> "Synced"
+private fun syncLabel(sync: SyncStatus?, conflictOf: String?) = when {
+    conflictOf != null -> "Conflict copy"
+    sync == SyncStatus.SYNCED -> "Synced"
     else -> "Waiting to sync"
+}
+
+/** Rename and Delete for one diagram, each with its small confirmation: a delete is asked about first, a rename has its own field. */
+@Composable
+private fun ManageControls(uuid: String, name: String, actions: DiagramsActions) {
+    var rename by rememberSaveable(uuid) { mutableStateOf<String?>(null) }
+    var confirmDelete by rememberSaveable(uuid) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+        if (rename != null) {
+            EzpzTextField(value = rename.orEmpty(), onValueChange = { rename = it }, label = "Name", imeAction = ImeAction.Done, onImeAction = { actions.rename(uuid, rename.orEmpty()); rename = null })
+            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                TextAction("Save name", onClick = { actions.rename(uuid, rename.orEmpty()); rename = null })
+                TextAction("Cancel", onClick = { rename = null })
+            }
+        } else if (confirmDelete) {
+            Banner("Delete \"$name\"? It is removed from this device and from your account.", BannerKind.Warning)
+            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                TextAction("Delete", onClick = { confirmDelete = false; actions.delete(uuid) })
+                TextAction("Keep it", onClick = { confirmDelete = false })
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                TextAction("Rename", onClick = { rename = name })
+                TextAction("Delete", onClick = { confirmDelete = true })
+            }
+        }
+    }
 }
 
 @Composable
 private fun DiagramListItem(row: DiagramRow, actions: DiagramsActions) {
-    var rename by rememberSaveable(row.uuid) { mutableStateOf<String?>(null) }
-    var confirmDelete by rememberSaveable(row.uuid) { mutableStateOf(false) }
     val border = if (row.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.md.dp),
@@ -132,7 +298,7 @@ private fun DiagramListItem(row: DiagramRow, actions: DiagramsActions) {
         Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = Tokens.Size.touchTarget.dp).clickable { actions.open(row.uuid) }
-                    .semantics { contentDescription = "${row.name}. ${statusLabel(row.status)}. ${syncLabel(row)}" },
+                    .semantics { contentDescription = "${row.name}. ${statusLabel(row.status)}. ${syncLabel(row.sync, row.conflictOf)}" },
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -149,40 +315,23 @@ private fun DiagramListItem(row: DiagramRow, actions: DiagramsActions) {
                     }
                     Text(statusLabel(row.status), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                SyncChip(row)
+                SyncChip(row.sync, row.conflictOf)
             }
             if (row.conflictOf != null) ConflictChoices(row, actions)
-            if (rename != null) {
-                EzpzTextField(value = rename.orEmpty(), onValueChange = { rename = it }, label = "Name", imeAction = ImeAction.Done, onImeAction = { actions.rename(row.uuid, rename.orEmpty()); rename = null })
-                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                    TextAction("Save name", onClick = { actions.rename(row.uuid, rename.orEmpty()); rename = null })
-                    TextAction("Cancel", onClick = { rename = null })
-                }
-            } else if (confirmDelete) {
-                Banner("Delete \"${row.name}\"? It is removed from this device and from your account.", BannerKind.Warning)
-                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                    TextAction("Delete", onClick = { confirmDelete = false; actions.delete(row.uuid) })
-                    TextAction("Keep it", onClick = { confirmDelete = false })
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                    TextAction("Rename", onClick = { rename = row.name })
-                    TextAction("Delete", onClick = { confirmDelete = true })
-                }
-            }
+            ManageControls(row.uuid, row.name, actions)
         }
     }
 }
 
 @Composable
-private fun SyncChip(row: DiagramRow) {
+private fun SyncChip(sync: SyncStatus?, conflictOf: String?) {
     val (color, container) = when {
-        row.conflictOf != null -> EzpzTheme.status.warning to MaterialTheme.colorScheme.background
-        row.sync == SyncStatus.SYNCED -> MaterialTheme.colorScheme.onSurfaceVariant to MaterialTheme.colorScheme.surface
+        conflictOf != null -> EzpzTheme.status.warning to MaterialTheme.colorScheme.background
+        sync == SyncStatus.SYNCED -> MaterialTheme.colorScheme.onSurfaceVariant to MaterialTheme.colorScheme.surface
         else -> MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.surface
     }
     Surface(shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = container, border = BorderStroke(1.dp, color)) {
-        Text(syncLabel(row), Modifier.padding(horizontal = Tokens.Spacing.sm.dp, vertical = Tokens.Spacing.xs.dp), style = MaterialTheme.typography.labelLarge, color = color)
+        Text(syncLabel(sync, conflictOf), Modifier.padding(horizontal = Tokens.Spacing.sm.dp, vertical = Tokens.Spacing.xs.dp), style = MaterialTheme.typography.labelLarge, color = color)
     }
 }
 

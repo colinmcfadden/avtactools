@@ -1,7 +1,22 @@
 package app.ezpztac.workspace
 
+import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.TerrainApi
+import app.ezpztac.model.LatLon
+import app.ezpztac.network.ApiException
+import app.ezpztac.network.DirectionalSlope
+import app.ezpztac.network.FieldAnalysis
+import app.ezpztac.network.SlopeStats
+import app.ezpztac.network.SlopeThresholds
+import app.ezpztac.network.TerrainAnalysis
+import app.ezpztac.network.Uh60Limits
+import app.ezpztac.planning.LzSummary
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.sync.ConflictResolver
@@ -20,6 +35,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
@@ -43,16 +59,39 @@ class DiagramsViewModelTest {
 
     private val grid = "16S GD 66993 52949"
 
-    /** One device with the real repository, session and engine over an in-memory store; only the server is a stand-in. */
+    private companion object {
+        fun slope(maxDeg: Double, directional: DirectionalSlope? = null) = TerrainAnalysis(
+            status = "success", overlay = "data:image/png;base64,AA==", bounds = listOf(listOf(34.7, -84.1), listOf(34.8, -84.0)),
+            source = "local_highres_cog", resolutionM = 10.2, verticalDatum = "NAVD88",
+            stats = SlopeStats(maxDeg, maxDeg - 1, 0.0, 0.0, 0.0, 900, 94_000.0), directional = directional,
+            thresholds = SlopeThresholds(listOf(3.0, 6.0, 10.0, 15.0), Uh60Limits(6.0, 15.0, 15.0)),
+        )
+    }
+
+    /** A terrain server whose answers a test chooses, and which can be held back until the test lets it go. */
+    private class Terrain : TerrainApi {
+        var find: suspend (LatLon) -> FieldAnalysis = { FieldAnalysis("success", listOf(listOf(34.71, -84.09), listOf(34.71, -84.01), listOf(34.79, -84.01), listOf(34.79, -84.09)), "4050", "Field detected") }
+        var measure: suspend (List<LatLon>) -> TerrainAnalysis = { slope(4.2) }
+        override suspend fun analyzeField(at: LatLon): FieldAnalysis = find(at)
+        override suspend fun terrainAnalysis(polygon: List<LatLon>, landingHeadingDeg: Double?): TerrainAnalysis = measure(polygon)
+    }
+
+    /** One device with the real repository, session and engine over an in-memory store; only the servers are stand-ins. */
     private class Rig(scope: TestScope, label: String = "A", val server: FakeServer = FakeServer(), realEngine: Boolean = false, resolver: ConflictResolver? = null) {
+        val terrain = Terrain()
         val device = Device(label, server)
         val scheduler = RecordingScheduler()
         val repository = DiagramRepository(device.repository, device.store as InMemorySyncStore, scheduler)
         val session = DiagramSession(repository, scope.backgroundScope)
         val resolutions = mutableListOf<Triple<RecordKind, String, SyncEngine.Resolution>>()
+        // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and an analysis is work a test waits for.
+        val analysis = AnalysisService(
+            terrain, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler),
+        )
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
+            analysis,
         )
         val rows get() = model.state.value.rows
     }
@@ -352,5 +391,185 @@ class DiagramsViewModelTest {
         r.model.create("fine", grid)
         advanceUntilIdle()
         assertNull(r.model.state.value.error)
+    }
+
+    // -- Analysis --------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `with nothing open there is no open diagram to show`() = runTest(dispatcher) {
+        val r = rig()
+        assertNull(r.model.state.value.current)
+    }
+
+    @Test
+    fun `the open diagram is offered for analysis, with no summary yet`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        val current = r.model.state.value.current!!
+        assertEquals("LZ HAWK", current.name)
+        assertEquals(grid, current.grid)
+        assertEquals(DiagramStatus.TARGETED, current.status)
+        assertTrue(current.canAnalyze)
+        assertEquals(AnalysisUi.Idle, current.analysis)
+        assertNull(current.summary)
+    }
+
+    @Test
+    fun `analysing shows each stage, then the summary`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val slopeGate = CompletableDeferred<Unit>()
+        val r = rig()
+        r.terrain.find = { gate.await(); FieldAnalysis("success", listOf(listOf(34.7800, -84.0900), listOf(34.7800, -84.0866), listOf(34.7777, -84.0866), listOf(34.7777, -84.0900)), "4050", "Field detected") }
+        r.terrain.measure = { slopeGate.await(); slope(4.2) }
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+
+        r.model.analyze()
+        advanceUntilIdle()
+        assertEquals(AnalysisUi.Running(AnalysisStatus.Running.Stage.FINDING_AREA), r.model.state.value.current!!.analysis)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        val measuring = r.model.state.value.current!!
+        assertEquals(AnalysisUi.Running(AnalysisStatus.Running.Stage.MEASURING_SLOPE), measuring.analysis)
+        assertEquals(DiagramStatus.ANALYZED, measuring.status)
+        val tiles = measuring.summary!!                                                       // the tiles that need no server are already there
+        assertEquals(SlopeTileUi.Measuring, tiles.slope)
+        assertEquals(13, tiles.capacity)
+        assertEquals(854_831L, tiles.areaSqFt)
+        assertEquals("UH-60L", tiles.aircraft)
+        assertEquals("4050", tiles.elevation)
+
+        slopeGate.complete(Unit)
+        advanceUntilIdle()
+        val done = r.model.state.value.current!!
+        assertEquals(AnalysisUi.Idle, done.analysis)
+        assertEquals(SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2), "local_highres_cog", 10.2), done.summary!!.slope)
+    }
+
+    @Test
+    fun `a steep slope with no landing heading asks for one, and with a heading over the limit says so`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.measure = { slope(16.0) }
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        val call = (r.model.state.value.current!!.summary!!.slope as SlopeTileUi.Measured).call
+        assertEquals("HEADING REQUIRED", call.label)
+        assertEquals(LzSummary.SlopeLevel.WARNING, call.level)
+
+        r.terrain.measure = { slope(8.0, DirectionalSlope(270.0, 7.0, 1.0, 1.0, 5.0, 0.0, 0.0)) }
+        r.model.analyze()
+        advanceUntilIdle()
+        // Analysing again measures again, so the new numbers replace the old.
+        val limited = (r.model.state.value.current!!.summary!!.slope as SlopeTileUi.Measured).call
+        assertEquals("LIMIT EXCEEDED", limited.label)
+        assertEquals(LzSummary.SlopeLevel.DANGER, limited.level)
+    }
+
+    @Test
+    fun `a slope that cannot be measured is said in words, and the rest of the summary stands`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.measure = { throw ApiException(502, null, "No configured terrain source covers this LZ") }
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        val summary = r.model.state.value.current!!.summary!!
+        assertEquals(SlopeTileUi.Unavailable("No terrain data covers this landing zone."), summary.slope)
+        assertTrue(summary.capacity > 0)
+    }
+
+    @Test
+    fun `a failure is shown on the diagram it was for, in words`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.find = { throw ApiException(400, null, "No distinct field found at this point") }
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        val current = r.model.state.value.current!!
+        assertEquals(AnalysisUi.Failed("No distinct landing area was found at this point. Try a different target."), current.analysis)
+        assertEquals(DiagramStatus.TARGETED, current.status)
+        assertNull(current.summary)
+
+        r.model.dismissAnalysisError()
+        advanceUntilIdle()
+        assertEquals(AnalysisUi.Idle, r.model.state.value.current!!.analysis)
+    }
+
+    @Test
+    fun `an analysis of one diagram is not shown on another`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val r = rig()
+        r.terrain.find = { gate.await(); FieldAnalysis("success", listOf(listOf(34.71, -84.09), listOf(34.71, -84.01), listOf(34.79, -84.01)), "4050", "Field detected") }
+        r.model.create("one", grid)
+        advanceUntilIdle()
+        val first = r.rows.single().uuid
+        r.model.analyze()
+        advanceUntilIdle()
+        r.model.create("two", "16S GD 67993 52949")
+        advanceUntilIdle()
+        assertEquals("two", r.model.state.value.current!!.name)
+        assertEquals(AnalysisUi.Idle, r.model.state.value.current!!.analysis)             // the server is busy with "one", not with this one
+        r.model.open(first)
+        advanceUntilIdle()
+        assertEquals(AnalysisUi.Running(AnalysisStatus.Running.Stage.FINDING_AREA), r.model.state.value.current!!.analysis)
+        r.model.stopAnalysis()
+        advanceUntilIdle()
+        assertEquals(AnalysisUi.Idle, r.model.state.value.current!!.analysis)
+    }
+
+    @Test
+    fun `a slope measured for another boundary is not shown for this one`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        assertTrue((r.model.state.value.current!!.summary!!.slope) is SlopeTileUi.Measured)
+
+        val moved = JsonArray(listOf(listOf(34.7, -84.1), listOf(34.7, -84.0), listOf(34.8, -84.0)).map { p -> JsonArray(p.map(::JsonPrimitive)) })
+        r.session.edit("Boundary") { it.copy(analysis = it.analysis.copy(detectedLZ = moved)) }
+        advanceUntilIdle()
+        assertEquals(SlopeTileUi.Measuring, r.model.state.value.current!!.summary!!.slope)      // the old numbers would be about ground that is no longer outlined
+    }
+
+    @Test
+    fun `a diagram marked analysed with no boundary has no summary to show`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.session.edit("Odd") { it.copy(status = DiagramStatus.ANALYZED) }
+        advanceUntilIdle()
+        assertNull(r.model.state.value.current!!.summary)
+    }
+
+    @Test
+    fun `a boundary on a diagram that is not analysed is not a summary`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        val drawn = JsonArray(listOf(listOf(34.7, -84.1), listOf(34.7, -84.0), listOf(34.8, -84.0)).map { p -> JsonArray(p.map(::JsonPrimitive)) })
+        r.session.edit("Boundary") { it.copy(analysis = it.analysis.copy(detectedLZ = drawn)) }      // status is still targeted
+        advanceUntilIdle()
+        assertEquals(DiagramStatus.TARGETED, r.model.state.value.current!!.status)
+        assertNull(r.model.state.value.current!!.summary)
+    }
+
+    @Test
+    fun `a failure of one diagram's analysis is not shown on the next one opened`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.find = { throw ApiException(500, null, "boom") }
+        r.model.create("one", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        assertTrue(r.model.state.value.current!!.analysis is AnalysisUi.Failed)
+        r.model.create("two", "16S GD 67993 52949")
+        advanceUntilIdle()
+        assertEquals(AnalysisUi.Idle, r.model.state.value.current!!.analysis)
     }
 }

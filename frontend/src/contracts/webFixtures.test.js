@@ -6,6 +6,7 @@ import {
 } from "../utils/coordParse";
 import { calculateUH60Capacity } from "../utils/helicopterCapacity";
 import { convertToLatLongString } from "../utils/Helpers";
+import { lzAreaAndCapacity, slopeStatusFor } from "../components/MissionSummary";
 import {
   FALLBACK_PROFILE,
   capacityForArea,
@@ -741,6 +742,64 @@ const diagramFixture = () => withoutClockOrRandomness(() => ({
   })),
 }));
 
+/* -------------------------------------------------------------------------
+ * The mission summary: area, capacity and the slope call
+ * ---------------------------------------------------------------------- */
+
+// Polygons are [lat, lon] pairs, as an analysis stores them. The area is the web's spherical-excess formula in square feet, and the
+// formula does not carry a polygon across the antimeridian (the longitude jump is taken at face value): the case is here so a port
+// does not "fix" it silently.
+const SUMMARY_POLYGONS = [
+  ["a rectangle about 300 m by 250 m", [[34.7800, -84.0900], [34.7800, -84.0866], [34.7777, -84.0866], [34.7777, -84.0900]]],
+  ["the same walked the other way round", [[34.7800, -84.0900], [34.7777, -84.0900], [34.7777, -84.0866], [34.7800, -84.0866]]],
+  ["a closed ring with the first point repeated", [[34.7800, -84.0900], [34.7800, -84.0866], [34.7777, -84.0866], [34.7777, -84.0900], [34.7800, -84.0900]]],
+  ["a triangle", [[34.5, -84.1], [34.5, -84.09], [34.51, -84.095]]],
+  ["a sliver", [[34.5, -84.1], [34.5, -84.0999], [34.51, -84.0999], [34.51, -84.1]]],
+  ["a kilometre square", [[34.50, -84.10], [34.50, -84.0887], [34.4910, -84.0887], [34.4910, -84.10]]],
+  ["on the equator", [[0.001, 10.0], [0.001, 10.002], [-0.001, 10.002], [-0.001, 10.0]]],
+  ["near the pole, where a degree of longitude is short", [[80.0, 10.0], [80.0, 10.01], [79.999, 10.01], [79.999, 10.0]]],
+  ["south of the equator", [[-33.8688, 151.2093], [-33.8688, 151.2133], [-33.8718, 151.2133], [-33.8718, 151.2093]]],
+  ["across the antimeridian", [[10, 179.999], [10, -179.999], [9.999, -179.999], [9.999, 179.999]]],
+  ["a point repeated three times has no area", [[34.5, -84.1], [34.5, -84.1], [34.5, -84.1]]],
+  ["a straight line of three points has no area", [[34.5, -84.1], [34.5, -84.09], [34.5, -84.08]]],
+  ["two points are not a polygon", [[34.5, -84.1], [34.5, -84.09]]],
+  ["no points", []],
+  ["nothing", null],
+];
+
+const TERRAIN_DATA = [
+  ["nothing measured", null],
+  ["no statistics", {}],
+  ["flat ground", { stats: { maxDeg: 0 } }],
+  ["a gentle slope", { stats: { maxDeg: 4.2 } }],
+  ["exactly ten degrees is not yet a caution", { stats: { maxDeg: 10 } }],
+  ["just over ten", { stats: { maxDeg: 10.1 } }],
+  ["just under fifteen", { stats: { maxDeg: 14.9 } }],
+  ["fifteen with no heading asks for one", { stats: { maxDeg: 15 } }],
+  ["steep with no heading asks for one", { stats: { maxDeg: 32 } }],
+  ["a landing heading with everything inside the limits", { stats: { maxDeg: 4 }, directional: { noseHighMaxDeg: 3, noseLowMaxDeg: 2, crossSlopeMaxDeg: 1 } }],
+  ["a heading, nose high just inside the limit", { stats: { maxDeg: 6 }, directional: { noseHighMaxDeg: 5.9, noseLowMaxDeg: 0, crossSlopeMaxDeg: 0 } }],
+  ["a heading, nose high at the limit", { stats: { maxDeg: 6 }, directional: { noseHighMaxDeg: 6, noseLowMaxDeg: 0, crossSlopeMaxDeg: 0 } }],
+  ["a heading, nose low at the limit", { stats: { maxDeg: 15 }, directional: { noseHighMaxDeg: 0, noseLowMaxDeg: 15, crossSlopeMaxDeg: 0 } }],
+  ["a heading, nose low just inside", { stats: { maxDeg: 14 }, directional: { noseHighMaxDeg: 0, noseLowMaxDeg: 14.9, crossSlopeMaxDeg: 0 } }],
+  ["a heading, cross slope at the limit", { stats: { maxDeg: 15 }, directional: { noseHighMaxDeg: 0, noseLowMaxDeg: 0, crossSlopeMaxDeg: 15 } }],
+  ["a heading, steep but inside the directional limits, is still a caution", { stats: { maxDeg: 20 }, directional: { noseHighMaxDeg: 5, noseLowMaxDeg: 5, crossSlopeMaxDeg: 5 } }],
+];
+
+const summaryFixture = () => ({
+  description: "What the mission summary says about a landing zone, as frontend/src/components/MissionSummary.jsx computes it: area "
+    + "(square feet, rounded) and capacity for an aircraft, and the call the slope tile makes. `profile` is a key into "
+    + "planning/aircraft.json's `profiles`, or null for the default UH-60L.",
+  generatedBy: GENERATED_BY,
+  area: SUMMARY_POLYGONS.flatMap(([name, polygon]) => [null, "ch47f", "oh6"].map((key) => ({
+    name, polygon, profile: key,
+    expected: clean(lzAreaAndCapacity(polygon, key ? PROFILES[key] : undefined)),
+  }))),
+  slope: TERRAIN_DATA.map(([name, terrainData]) => ({
+    name, terrainData, expected: clean(slopeStatusFor(terrainData)),
+  })),
+});
+
 /* ---------------------------------------------------------------------- */
 
 describe("web reference fixtures", () => {
@@ -748,6 +807,7 @@ describe("web reference fixtures", () => {
   it("planning/aircraft.json", () => settle("planning/aircraft.json", aircraftFixture()));
   it("planning/route.json", () => settle("planning/route.json", routeFixture()));
   it("workspace/diagram.json", () => settle("workspace/diagram.json", diagramFixture()));
+  it("planning/summary.json", () => settle("planning/summary.json", summaryFixture()));
 });
 
 describe("fixture sanity", () => {

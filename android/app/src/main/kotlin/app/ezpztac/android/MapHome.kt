@@ -27,6 +27,7 @@ import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
+import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.MapCommand
@@ -53,6 +54,7 @@ fun MapHome(
     home: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val scene by home.scene.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val scaffold = rememberBottomSheetScaffoldState()
 
@@ -97,6 +99,7 @@ fun MapHome(
             modifier = Modifier.fillMaxSize(),
         ) {
             EzpzMap(host = host, style = state.style, initial = viewModel.initialCamera, modifier = Modifier.fillMaxSize())
+            DiagramLayer(host, scene)                       // under the GPS dot, which stays on top
             GpsLayer(host, state.gps)
         }
     }

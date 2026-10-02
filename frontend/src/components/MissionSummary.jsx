@@ -7,52 +7,55 @@ import {
   tipClearanceM,
 } from "../feature/aircraft/aircraftProfiles";
 
+/**
+ * Area (square feet, rounded) and how many aircraft fit in a landing zone. Capacity is a conservative square-grid estimate using the
+ * selected aircraft's own spacing, so a Chinook LZ holds fewer than a Black Hawk one. Pure, and exported so the native apps can be held
+ * to it (contracts/fixtures/planning/summary.json).
+ */
+export const lzAreaAndCapacity = (detectedLZ, profile = FALLBACK_PROFILE) => {
+  if (!detectedLZ) return { area: 0, heloCount: 0 };
+
+  const areaSqFt = getPolygonArea(detectedLZ);
+  const heloCount = capacityForArea(areaSqFt, profile);
+
+  return {
+    area: Math.round(areaSqFt),
+    heloCount: Math.max(0, heloCount),
+  };
+};
+
+/**
+ * The call the slope tile makes. The UH-60 limits are directional, so a limit is only called with a landing heading; a general slope
+ * magnitude is context, and 15 degrees or more without a heading asks for one.
+ */
+export const slopeStatusFor = (terrainData) => {
+  if (!terrainData?.stats) return { className: "status-safe", label: "NO DATA", max: 0 };
+
+  const maxSlope = terrainData.stats.maxDeg;
+  const directional = terrainData.directional;
+
+  if (directional) {
+    const exceedsUh60Limit =
+      directional.noseHighMaxDeg >= 6 ||
+      directional.noseLowMaxDeg >= 15 ||
+      directional.crossSlopeMaxDeg >= 15;
+    if (exceedsUh60Limit) return { className: "status-danger", label: "LIMIT EXCEEDED", max: maxSlope };
+  }
+
+  if (!directional && maxSlope >= 15) return { className: "status-warning", label: "HEADING REQUIRED", max: maxSlope };
+  if (maxSlope > 10) return { className: "status-warning", label: "CAUTION", max: maxSlope };
+
+  return { className: "status-safe", label: "LANDING", max: maxSlope };
+};
+
 const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather, aircraftProfile }) => {
   const profile = aircraftProfile || FALLBACK_PROFILE;
 
   // 1. CALCULATE AREA & CAPACITY
-  const stats = useMemo(() => {
-    if (!detectedLZ) return { area: 0, heloCount: 0 };
-
-    // 1. Get total area in SQUARE FEET
-    const areaSqFt = getPolygonArea(detectedLZ);
-
-    // Capacity is a conservative square-grid estimate using the selected
-    // aircraft's own spacing, so a Chinook LZ holds fewer than a Black Hawk one.
-    const heloCount = capacityForArea(areaSqFt, profile);
-
-    return {
-        area: Math.round(areaSqFt),
-        heloCount: Math.max(0, heloCount)
-    };
-  }, [detectedLZ, profile]);
+  const stats = useMemo(() => lzAreaAndCapacity(detectedLZ, profile), [detectedLZ, profile]);
 
   // 2. SLOPES
-  const slopeStatus = useMemo(() => {
-    if (!terrainData?.stats)
-      return { className: "status-safe", label: "NO DATA", max: 0 };
-
-    const maxSlope = terrainData.stats.maxDeg;
-    const directional = terrainData.directional;
-
-    if (directional) {
-      const exceedsUh60Limit =
-        directional.noseHighMaxDeg >= 6 ||
-        directional.noseLowMaxDeg >= 15 ||
-        directional.crossSlopeMaxDeg >= 15;
-      if (exceedsUh60Limit)
-        return { className: "status-danger", label: "LIMIT EXCEEDED", max: maxSlope };
-    }
-
-    // A general slope magnitude is useful context, but the UH-60 limits are
-    // directional. Require a landing heading before treating it as a limit call.
-    if (!directional && maxSlope >= 15)
-      return { className: "status-warning", label: "HEADING REQUIRED", max: maxSlope };
-    if (maxSlope > 10)
-      return { className: "status-warning", label: "CAUTION", max: maxSlope };
-    
-    return { className: "status-safe", label: "LANDING", max: maxSlope };
-  }, [terrainData]);
+  const slopeStatus = useMemo(() => slopeStatusFor(terrainData), [terrainData]);
 
   if (!detectedLZ) return null;
 
