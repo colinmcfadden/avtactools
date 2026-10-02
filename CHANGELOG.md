@@ -1,3 +1,10 @@
+## [1.7.3](https://github.com/colinmcfadden/avtactools/compare/v1.7.2...v1.7.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* name the Postgres driver and pin SQLAlchemy ([e48dbe1](https://github.com/colinmcfadden/avtactools/commit/e48dbe10c5c265c99e9adf01c58a60abdeed6958))
+
 ## [1.7.2](https://github.com/colinmcfadden/avtactools/compare/v1.7.1...v1.7.2) (2026-10-02)
 
 
