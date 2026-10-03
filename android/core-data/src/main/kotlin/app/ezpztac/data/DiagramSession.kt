@@ -1,6 +1,7 @@
 package app.ezpztac.data
 
 import app.ezpztac.model.Diagram
+import app.ezpztac.model.Doghouses
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -57,7 +58,8 @@ class DiagramSession(
     /** Opens a diagram, saving whatever was open first. False if it is not there. */
     suspend fun open(uuid: String): Boolean = switching.withLock {
         flush()
-        val diagram = repository.open(uuid) ?: return@withLock false
+        val stored = repository.open(uuid) ?: return@withLock false
+        val diagram = Doghouses.settle(null, stored)                // as the web's effect does when a diagram is shown
         undo.clear(); redo.clear(); publishDepths()
         _active.value = diagram
         true
@@ -93,7 +95,7 @@ class DiagramSession(
             return@withLock true
         }
         val stored = repository.open(id) ?: return@withLock false
-        val changed = change(stored)
+        val changed = settled(change)(stored)
         if (changed != stored) repository.save(changed)
         true
     }
@@ -104,7 +106,7 @@ class DiagramSession(
      */
     fun edit(label: String, change: (Diagram) -> Diagram) {
         val before = _active.value ?: return
-        val after = change(before)
+        val after = settled(change)(before)
         if (after == before) return
         undo.addLast(Step(label, before, after))
         while (undo.size > MAX_UNDO) undo.removeFirst()
@@ -118,11 +120,19 @@ class DiagramSession(
      */
     fun setQuietly(change: (Diagram) -> Diagram) {
         val before = _active.value ?: return
+        val change = settled(change)
         val after = change(before)
         if (after == before) return
         patchHistory(change)
         apply(after)
     }
+
+    /**
+     * [change], then the flight data brought in line with the doghouses if the change altered them: the web's `useDoghouses` effect does the
+     * same whenever its doghouses change, so editing a doghouse's heading (or analysing, which makes the standard two) sets the diagram's
+     * landing and takeoff headings. Done to each version of the diagram it is applied to, so undo takes the heading back with the edit.
+     */
+    private fun settled(change: (Diagram) -> Diagram): (Diagram) -> Diagram = { d -> Doghouses.settle(d, change(d)) }
 
     private fun patchHistory(change: (Diagram) -> Diagram) {
         for (i in undo.indices) undo[i] = undo[i].let { Step(it.label, change(it.before), change(it.after)) }

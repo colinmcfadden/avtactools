@@ -56,17 +56,18 @@ class GraphicsViewModelTest {
         val diagram: Diagram get() = checkNotNull(session.active.value)
 
         /** A diagram that is targeted and open, and (when [analysed]) analysed, so graphics may be placed on it. */
-        suspend fun open(analysed: Boolean, grid: String) {
+        suspend fun open(analysed: Boolean, grid: String, doghouses: Boolean = false) {
             val made = repository.create(DiagramTarget(34.783817, -84.08219, grid), "LZ HAWK")
             session.open(made.id)
-            if (analysed) session.setQuietly { DiagramOps.completeAnalysis(it, null) }
+            // An analysis makes the standard SP and RP doghouses (once); without them the diagram is analysed and bare.
+            if (analysed) session.setQuietly { if (doghouses) DiagramOps.afterAnalysis(it, null) else DiagramOps.completeAnalysis(it, null) }
         }
 
         fun graphic(ref: GraphicRef): JsonObject = checkNotNull(DiagramOps.graphic(diagram, ref.collection, ref.key))
     }
 
-    private suspend fun TestScope.opened(analysed: Boolean = true): Rig = Rig(this).also {
-        it.open(analysed, grid)
+    private suspend fun TestScope.opened(analysed: Boolean = true, doghouses: Boolean = false): Rig = Rig(this).also {
+        it.open(analysed, grid, doghouses)
         advanceUntilIdle()
     }
 
@@ -589,5 +590,176 @@ class GraphicsViewModelTest {
         assertFalse(r.state.canEdit)
         assertTrue(r.state.rows.isEmpty())
         assertNull(r.state.inspector)
+    }
+
+
+    // -- Doghouses -------------------------------------------------------------------------------------------------------
+
+    private fun Rig.doghouse(role: String) = diagram.graphics.doghouses.map { it as JsonObject }.first { text(it, "role") == role }
+    private fun Rig.doghouseRef(role: String) = GraphicRef("doghouses", text(doghouse(role), "id"))
+    private fun Rig.flight(key: String) = (diagram.flightData[key] as? JsonPrimitive)?.content
+
+    @Test
+    fun `the two standard doghouses are listed after the other graphics, with what they say`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        r.model.place(GraphicKind.PZ_MARKER, crosshair)
+        advanceUntilIdle()
+        val rows = r.state.rows
+        assertEquals(listOf(GraphicKind.PZ_MARKER, GraphicKind.DOGHOUSE, GraphicKind.DOGHOUSE), rows.map { it.kind })
+        assertEquals(listOf("PZ marker", "Doghouse · [SP1]", "Doghouse · [RP1]"), rows.map { it.title })
+        assertEquals("000° · 01+57 · 3.13 km · 60 kts", rows[1].detail)
+        assertEquals("000° · 02+10 · 5.2 km · 40 kts", rows[2].detail)
+        assertNotNull(rows[1].grid)
+    }
+
+    @Test
+    fun `a doghouse cannot be placed, only the two the analysis makes can be edited`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        r.model.place(GraphicKind.DOGHOUSE, crosshair)
+        advanceUntilIdle()
+        assertEquals(2, r.state.rows.size)
+        assertEquals(0, r.state.undoDepth)
+        assertNull(r.state.error)
+        assertEquals(listOf(GraphicKind.HELICOPTER, GraphicKind.PZ_MARKER, GraphicKind.SECTOR_OF_FIRE, GraphicKind.GO_AROUND), GraphicKind.entries.filter { it.placeable })
+    }
+
+    @Test
+    fun `a held doghouse shows its fields and which flight-data heading it sets`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        r.model.select(r.doghouseRef("takeoff"))
+        advanceUntilIdle()
+        val held = r.state.inspector!!
+        assertEquals(GraphicKind.DOGHOUSE, held.kind)
+        assertEquals(DoghouseUi("[SP1]", "01+57", "3.13", "60", "Sets the takeoff heading on the LZ card"), held.doghouse)
+        assertEquals(0.0, held.rotation!!, 0.0)
+        assertNull(held.reachFt)
+        assertNull(held.direction)
+
+        r.model.select(r.doghouseRef("landing"))
+        advanceUntilIdle()
+        assertEquals("Sets the landing heading on the LZ card", r.state.inspector!!.doghouse!!.feeds)
+    }
+
+    @Test
+    fun `turning a doghouse writes its heading as the web does and the flight data follows, and undo takes both back`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        r.model.select(r.doghouseRef("landing"))
+        advanceUntilIdle()
+        assertEquals("000°", r.flight("landing_hdg"))
+
+        r.model.rotateBy(90.0)
+        advanceUntilIdle()
+        assertEquals("090°", text(r.doghouse("landing"), "heading"))
+        assertEquals("090°", r.flight("landing_hdg"))
+        assertEquals("000°", r.flight("takeoff_hdg"))                                      // the other one is not touched
+        assertEquals("090° · 02+10 · 5.2 km · 40 kts", r.state.rows.first { it.ref == r.doghouseRef("landing") }.detail)
+
+        r.model.setRotation(270.0)
+        advanceUntilIdle()
+        assertEquals("270°", r.flight("landing_hdg"))
+
+        r.model.undo()
+        r.model.undo()
+        advanceUntilIdle()
+        assertEquals("000°", text(r.doghouse("landing"), "heading"))
+        assertEquals("000°", r.flight("landing_hdg"))
+    }
+
+    @Test
+    fun `a doghouse is moved like any graphic`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        val ref = r.doghouseRef("takeoff")
+        r.model.select(ref)
+        advanceUntilIdle()
+        val before = GraphicEdits.position("doghouses", r.graphic(ref))!!
+        r.model.nudge(northFt = 100.0, eastFt = 0.0)
+        advanceUntilIdle()
+        assertEquals(100.0 * 0.3048, GraphicEdits.metresBetween(before, GraphicEdits.position("doghouses", r.graphic(ref))!!).first, 0.01)
+        r.model.moveToCrosshair(crosshair)
+        advanceUntilIdle()
+        assertEquals(crosshair, GraphicEdits.position("doghouses", r.graphic(ref)))
+        assertEquals("01+57", r.state.inspector!!.doghouse!!.time)                         // its fields are untouched by a move
+        assertEquals("[SP1]", r.state.inspector!!.doghouse!!.label)
+    }
+
+    @Test
+    fun `the fields are typed over, stored as the web stores them, each one undo step`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        val ref = r.doghouseRef("takeoff")
+        r.model.select(ref)
+        advanceUntilIdle()
+
+        assertNull(r.model.setDoghouseTime("3:20"))
+        assertNull(r.model.setDoghouseDistance("12.5"))
+        assertNull(r.model.setDoghouseAirspeed("55"))
+        assertNull(r.model.setDoghouseLabel("[SP2]"))
+        advanceUntilIdle()
+        val saved = r.graphic(ref)
+        assertEquals("03+20", text(saved, "time"))
+        assertEquals("12.5km", text(saved, "dist"))
+        assertEquals("55 kts", text(saved, "airspeed"))
+        assertEquals("[SP2]", text(saved, "id_val"))
+        assertEquals(DoghouseUi("[SP2]", "03+20", "12.5", "55", "Sets the takeoff heading on the LZ card"), r.state.inspector!!.doghouse)
+        assertEquals("Doghouse · [SP2]", r.state.rows.first { it.ref == ref }.title)
+        assertEquals(4, r.state.undoDepth)
+
+        r.model.undo()
+        advanceUntilIdle()
+        assertEquals("[SP1]", text(r.graphic(ref), "id_val"))
+    }
+
+    @Test
+    fun `what is not that field is answered in words, changes nothing and leaves the panel's banner alone`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        val ref = r.doghouseRef("takeoff")
+        r.model.select(ref)
+        advanceUntilIdle()
+        val before = r.graphic(ref)
+
+        assertEquals("Enter a time as minutes and seconds, such as 03+20.", r.model.setDoghouseTime("later"))
+        assertEquals("Enter a distance in kilometres, such as 3.1.", r.model.setDoghouseDistance("far"))
+        assertEquals("Enter an airspeed in knots, such as 60.", r.model.setDoghouseAirspeed("fast"))
+        assertEquals("Enter a label of up to 12 characters, such as [SP1].", r.model.setDoghouseLabel(""))
+        advanceUntilIdle()
+        assertEquals(before, r.graphic(ref))
+        assertEquals(0, r.state.undoDepth)
+        assertNull(r.state.error)
+    }
+
+    @Test
+    fun `a doghouse's field cannot be set on another kind of graphic`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        assertNull(r.model.setDoghouseTime("3:20"))                                       // the typing was fine; it is the wrong graphic
+        advanceUntilIdle()
+        assertEquals("That cannot be done to this graphic.", r.state.error)
+        assertEquals(1, r.state.undoDepth)
+    }
+
+    @Test
+    fun `with nothing held a doghouse field edit does nothing`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        assertNull(r.model.setDoghouseTime("3:20"))
+        advanceUntilIdle()
+        assertEquals(0, r.state.undoDepth)
+        assertNull(r.state.error)
+    }
+
+    @Test
+    fun `a doghouse can be deleted and brought back, and the flight data goes with it`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        val ref = r.doghouseRef("landing")
+        r.model.select(ref)
+        r.model.rotateBy(45.0)
+        advanceUntilIdle()
+        assertEquals("045°", r.flight("landing_hdg"))
+        r.model.delete()
+        advanceUntilIdle()
+        assertEquals(1, r.state.rows.size)
+        assertEquals("045°", r.flight("landing_hdg"))                                     // with no landing doghouse the heading stays as it was
+        r.model.undo()
+        advanceUntilIdle()
+        assertEquals(2, r.state.rows.size)
     }
 }

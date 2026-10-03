@@ -1,5 +1,6 @@
 package app.ezpztac.planning
 
+import app.ezpztac.model.Doghouses
 import app.ezpztac.model.LatLon
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -83,9 +84,13 @@ public object GraphicEdits {
     /** [degrees] in `[0, 360)`. */
     public fun normalizeDegrees(degrees: Double): Double = ((degrees % 360) + 360) % 360
 
-    /** The way a graphic points: an aircraft's or a go-around's `rotation`, or the bearing of a PZ marker's tip from its anchor. Null for what does not turn. */
+    /**
+     * The way a graphic points: an aircraft's or a go-around's `rotation`, a doghouse's heading, or the bearing of a PZ marker's tip from its
+     * anchor. Null for what does not turn.
+     */
     public fun rotation(collection: String, graphic: JsonObject): Double? = when (collection) {
         "helicopters", "goArounds" -> normalizeDegrees(number(graphic["rotation"]) ?: 0.0)
+        "doghouses" -> normalizeDegrees(Doghouses.rotation(graphic))
         "pzMarkers" -> pzVector(graphic)?.let { (north, east) -> normalizeDegrees(Math.toDegrees(atan2(east, north))) }
         else -> null
     }
@@ -93,6 +98,8 @@ public object GraphicEdits {
     /** The patch that points a graphic at [degrees] (clockwise from north). A PZ marker keeps its reach and swings its tip round its anchor. */
     public fun setRotation(collection: String, graphic: JsonObject, degrees: Double): JsonObject? = when (collection) {
         "helicopters", "goArounds" -> JsonObject(mapOf("rotation" to num(normalizeDegrees(degrees))))
+        // A doghouse keeps its heading as the web writes it ("270°"), to the whole degree, so it is also the flight data's heading.
+        "doghouses" -> JsonObject(mapOf("heading" to JsonPrimitive(Doghouses.headingText(RouteCalc.jsRound(normalizeDegrees(degrees)) % 360))))
         "pzMarkers" -> pzVector(graphic)?.let { (north, east) -> setPz(graphic, hypot(north, east), degrees) }
         else -> null
     }

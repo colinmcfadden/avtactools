@@ -34,7 +34,20 @@ data class MapLabel(val text: String, val at: ScreenPoint, val violating: Boolea
  * The words that go with the planning graphics, worked out for a camera. A raster style has no glyphs, so these are not map text: they are
  * Compose, put where [MapProjection] says a position is, which is the same arithmetic the tap-to-select and drag use.
  */
+/** A doghouse and where its middle is on the screen. */
+data class PlacedDoghouse(val box: SceneDoghouse, val at: ScreenPoint)
+
 object MapLabels {
+    /** A doghouse is about 60 by 90 dp: it is kept while any of it may be on the screen. */
+    private const val DOGHOUSE_MARGIN_PX = 160.0
+
+    /** The doghouses whose box may be on the screen, each with the place of its middle. */
+    fun doghouses(graphics: GraphicsScene, view: MapProjection): List<PlacedDoghouse> = graphics.doghouses.mapNotNull { box ->
+        val at = view.toScreen(box.at)
+        if (at.x < -DOGHOUSE_MARGIN_PX || at.x > view.widthPx + DOGHOUSE_MARGIN_PX || at.y < -DOGHOUSE_MARGIN_PX || at.y > view.heightPx + DOGHOUSE_MARGIN_PX) null
+        else PlacedDoghouse(box, at)
+    }
+
     /** A line shorter than this on the screen has no room for its words; they would sit on the aircraft. */
     const val MIN_LINE_PX = 56.0
 
@@ -53,17 +66,32 @@ object MapLabels {
     }
 }
 
-/** Draws [MapLabels.separations] over the map. It takes no touches: what is under a label is still tapped. */
+/** Draws what is written over the map: the feet between aircraft, and the doghouse boxes. It takes no touches: what is under one is still tapped. */
 @Composable
 fun GraphicLabelsLayer(host: MapHost, graphics: GraphicsScene, modifier: Modifier = Modifier) {
     val camera = host.camera
     val density = LocalDensity.current.density.toDouble()
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
-        if (camera == null || size == IntSize.Zero || graphics.separations.isEmpty()) return@Box
+        if (camera == null || size == IntSize.Zero || (graphics.separations.isEmpty() && graphics.doghouses.isEmpty())) return@Box
         val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density, host.bottomPaddingPx.toDouble())
+        MapLabels.doghouses(graphics, view).forEach { placed -> PlacedDoghouse(placed, camera.bearingDegrees) }
         MapLabels.separations(graphics, view).forEach { label -> SeparationBadge(label) }
     }
+}
+
+/** A doghouse box where it goes, turned by its heading less the map's own turn (a map facing east shows a box that points east at the top). */
+@Composable
+private fun PlacedDoghouse(placed: PlacedDoghouse, bearingDegrees: Double) {
+    Box(
+        Modifier
+            .offset { IntOffset(placed.at.x.roundToInt(), placed.at.y.roundToInt()) }
+            .graphicsLayer {
+                translationX = -size.width / 2f
+                translationY = -size.height / 2f
+                rotationZ = (placed.box.rotationDeg - bearingDegrees).toFloat()
+            },
+    ) { DoghouseBox(placed.box) }
 }
 
 @Composable

@@ -37,6 +37,10 @@ class GraphicsScreenTest {
 
     private class Recorder {
         val log = mutableListOf<String>()
+
+        /** What the view model says to what was typed: nothing for most, and a complaint for "bad". */
+        private fun problem(typed: String): String? = if (typed == "bad") "That is not one of those." else null
+
         val actions = GraphicsActions(
             place = { log += "place ${it.name}" },
             select = { log += "select ${it.collection}/${it.key}" },
@@ -49,6 +53,10 @@ class GraphicsScreenTest {
             changeReach = { log += "reach $it" },
             tipToCrosshair = { log += "tip" },
             setDirection = { log += "direction $it" },
+            setDoghouseLabel = { log += "label [$it]"; problem(it) },
+            setDoghouseTime = { log += "time [$it]"; problem(it) },
+            setDoghouseDistance = { log += "distance [$it]"; problem(it) },
+            setDoghouseAirspeed = { log += "airspeed [$it]"; problem(it) },
             delete = { log += "delete" },
             undo = { log += "undo" },
             redo = { log += "redo" },
@@ -315,6 +323,82 @@ class GraphicsScreenTest {
         tap("Delete this helicopter")
         tap("Done")
         assertEquals(listOf("delete", "deselect"), r.log)
+    }
+
+    // -- A doghouse ----------------------------------------------------------------------------------------------------------
+
+    private val doghouseRef = GraphicRef("doghouses", "d-sp1")
+
+    private fun doghouseHeld(feeds: String? = "Sets the takeoff heading on the LZ card") = editable(
+        row(doghouseRef, GraphicKind.DOGHOUSE, "Doghouse · [SP1]", "090° · 01+57 · 3.13 km · 60 kts", selected = true),
+        inspector = held(doghouseRef, GraphicKind.DOGHOUSE, "Doghouse · [SP1]", rotation = 90.0)
+            .copy(doghouse = DoghouseUi("[SP1]", "01+57", "3.13", "60", feeds)),
+    )
+
+    @Test
+    fun `a doghouse is not offered to place, because the analysis makes the two and the web makes no more`() {
+        show(editable())
+        compose.onNodeWithContentDescription("Place doghouse at the crosshair").assertDoesNotExist()
+        compose.onNodeWithText("Doghouse").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a doghouse is listed with what it says`() {
+        val r = show(editable(row(doghouseRef, GraphicKind.DOGHOUSE, "Doghouse · [SP1]", "090° · 01+57 · 3.13 km · 60 kts")))
+        compose.onNodeWithText("16S GD 66993 52949  ·  090° · 01+57 · 3.13 km · 60 kts", substring = true).assertIsDisplayed()
+        tap("Doghouse · [SP1]")
+        assertEquals(listOf("select doghouses/d-sp1"), r.log)
+    }
+
+    @Test
+    fun `a held doghouse says which heading on the LZ card it sets, and turns like an aircraft`() {
+        val r = show(doghouseHeld())
+        compose.onNodeWithText("Sets the takeoff heading on the LZ card").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Heading 90°").performScrollTo().assertIsDisplayed()
+        tapDescribed("Turn right 15 degrees")
+        assertEquals(listOf("rotate 15.0"), r.log)
+    }
+
+    @Test
+    fun `a doghouse that sets neither heading says nothing about the card`() {
+        show(doghouseHeld(feeds = null))
+        compose.onNodeWithText("Sets the takeoff heading on the LZ card").assertDoesNotExist()
+        compose.onNodeWithText("Doghouse").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `each field of a doghouse is typed over and sent, and the field empties once it was taken`() {
+        val r = show(doghouseHeld())
+        fun enter(label: String, text: String, set: String) {
+            compose.onNode(hasSetTextAction() and hasText(label)).performScrollTo().performTextInput(text)
+            tap(set)
+        }
+        enter("Label · [SP1]", "[SP2]", "Set label")
+        enter("Time · 01+57", "3:20", "Set time")
+        enter("Distance · 3.13 km", "12.5", "Set distance")
+        enter("Airspeed · 60 kts", "55", "Set airspeed")
+        assertEquals(listOf("label [[SP2]]", "time [3:20]", "distance [12.5]", "airspeed [55]"), r.log)
+        compose.onNode(hasSetTextAction() and hasText("Time · 01+57")).assertTextEqualsEmpty()
+    }
+
+    @Test
+    fun `what the field cannot take is said under it, and kept for the person to correct`() {
+        val r = show(doghouseHeld())
+        val field = compose.onNode(hasSetTextAction() and hasText("Time · 01+57"))
+        field.performScrollTo().performTextInput("bad")
+        tap("Set time")
+        compose.onNodeWithText("That is not one of those.").assertIsDisplayed()
+        assertEquals(listOf("time [bad]"), r.log)
+
+        field.performTextInput("3")                                                          // typing again clears the complaint
+        compose.onNodeWithText("That is not one of those.").assertDoesNotExist()
+    }
+
+    @Test
+    fun `nothing is sent for an empty doghouse field`() {
+        show(doghouseHeld())
+        compose.onNodeWithText("Set time").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Set label").performScrollTo().assertIsNotEnabled()
     }
 }
 

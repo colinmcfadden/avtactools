@@ -70,4 +70,52 @@ internal object JsValue {
         }
         else -> null
     }
+
+    /** What JavaScript counts as white space and line breaks at the start of the text `parseInt` and `parseFloat` read. */
+    private fun isSpace(c: Char) = c in " \t\n\u000B\u000C\r\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+
+    private fun digit(c: Char, radix: Int): Int = when (c) {
+        in '0'..'9' -> c - '0'
+        in 'a'..'f' -> c - 'a' + 10
+        in 'A'..'F' -> c - 'A' + 10
+        else -> -1
+    }.takeIf { it < radix } ?: -1
+
+    /**
+     * `parseInt(text)`: skips leading white space, takes an optional sign, reads a `0x` prefix as hexadecimal, and reads the digits it can,
+     * ignoring what follows ("270°" is 270, "12.7" is 12). NaN when there are no digits. Only the ASCII digits count. A very long run of digits
+     * is rounded to the nearest double, as the engines do.
+     */
+    fun parseInt(text: String): Double {
+        var i = 0
+        while (i < text.length && isSpace(text[i])) i++
+        var negative = false
+        if (i < text.length && (text[i] == '+' || text[i] == '-')) {
+            negative = text[i] == '-'
+            i++
+        }
+        var radix = 10
+        if (i + 1 < text.length && text[i] == '0' && (text[i + 1] == 'x' || text[i + 1] == 'X')) {
+            radix = 16
+            i += 2
+        }
+        val start = i
+        while (i < text.length && digit(text[i], radix) >= 0) i++
+        if (i == start) return Double.NaN
+        val magnitude = java.math.BigInteger(text.substring(start, i), radix).toDouble()
+        return if (negative) -magnitude else magnitude
+    }
+
+    private val FLOAT_PREFIX = Regex("""[+-]?(?:Infinity|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)""")
+
+    /**
+     * `parseFloat(text)`: skips leading white space and reads the longest decimal number at the start ("3.13km" is 3.13, "1e" is 1, ".5" is
+     * 0.5, "-Infinity" is minus infinity); NaN when there is none. A hexadecimal prefix is not read ("0x1F" is 0).
+     */
+    fun parseFloat(text: String): Double {
+        var i = 0
+        while (i < text.length && isSpace(text[i])) i++
+        val match = FLOAT_PREFIX.matchAt(text, i) ?: return Double.NaN
+        return match.value.toDouble()
+    }
 }

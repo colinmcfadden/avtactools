@@ -143,4 +143,24 @@ class GraphicHitTestTest {
     fun `with nothing placed nothing is picked`() {
         assertNull(pick(GraphicsScene.EMPTY, here))
     }
+
+
+    // -- Doghouses -------------------------------------------------------------------------------------------------
+
+    private fun box(id: String, at: LatLon) = SceneDoghouse(GraphicRef("doghouses", id), at, 0.0, "[SP1]", "000", "01", "57", "3.13", "60", false)
+
+    @Test
+    fun `a doghouse is a box, so a finger a little further from its middle than a point's reach still holds it`() {
+        val scene = GraphicsScene(doghouses = listOf(box("d", here)))
+        assertEquals(ref("doghouses", "d"), pick(scene, north(4.0)))                         // 16 px: inside the finger's reach
+        assertEquals(ref("doghouses", "d"), pick(scene, north(8.0)))                         // 33 px: past a point's 24 px, inside a box's 36
+        assertNull(pick(scene, north(12.0)))                                                // 49 px: out
+    }
+
+    @Test
+    fun `a doghouse standing in a sector is held ahead of the sector`() {
+        val scene = GraphicsScene(doghouses = listOf(box("d", north(10.0))), sectors = listOf(sector("s", 50.0)))
+        assertEquals(ref("doghouses", "d"), pick(scene, north(12.0)))
+        assertEquals(ref("sectorsOfFire", "s"), pick(scene, north(-30.0)))
+    }
 }

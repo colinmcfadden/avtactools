@@ -10,6 +10,7 @@ import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
+import app.ezpztac.model.Doghouses
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.Units
@@ -29,11 +30,14 @@ import kotlinx.serialization.json.JsonPrimitive
 import javax.inject.Inject
 
 /** The planning graphics the person can place. */
-enum class GraphicKind(val collection: String, val label: String) {
+enum class GraphicKind(val collection: String, val label: String, val placeable: Boolean = true) {
     HELICOPTER("helicopters", "Helicopter"),
     PZ_MARKER("pzMarkers", "PZ marker"),
     SECTOR_OF_FIRE("sectorsOfFire", "Sector of fire"),
-    GO_AROUND("goArounds", "Go-around");
+    GO_AROUND("goArounds", "Go-around"),
+
+    /** The two standard doghouses (SP and RP) are made once, by the first analysis; the web has no way to add more, so neither does this. */
+    DOGHOUSE("doghouses", "Doghouse", placeable = false);
 
     companion object {
         fun of(collection: String): GraphicKind? = entries.firstOrNull { it.collection == collection }
@@ -52,6 +56,9 @@ data class GraphicRowUi(
     val selected: Boolean,
 )
 
+/** A doghouse's own fields, as the person reads and types them. [feeds] says which flight-data heading its heading sets, if either. */
+data class DoghouseUi(val label: String, val time: String, val distanceKm: String, val airspeedKts: String, val feeds: String?)
+
 /** The graphic that is held, with the controls that apply to its kind. */
 data class InspectorUi(
     val ref: GraphicRef,
@@ -65,6 +72,8 @@ data class InspectorUi(
     val reachFt: Long?,
     /** `"left"` or `"right"` for a go-around. */
     val direction: String?,
+    /** What a doghouse says besides its heading. */
+    val doghouse: DoghouseUi? = null,
 )
 
 data class GraphicsUiState(
@@ -105,7 +114,7 @@ class GraphicsViewModel @Inject constructor(
     /** Puts a new [kind] of graphic at [at] (the crosshair) and selects it. An aircraft is nudged clear of those already down. */
     fun place(kind: GraphicKind, at: LatLon?, direction: String? = null) {
         val diagram = session.active.value ?: return
-        if (!diagram.canEditGraphics) return
+        if (!diagram.canEditGraphics || !kind.placeable) return
         if (at == null) return fail("Move the map to where it should go first.")
         val existing = existingKeys(diagram, kind.collection)
         val made: JsonObject? = when (kind) {
@@ -116,6 +125,7 @@ class GraphicsViewModel @Inject constructor(
             GraphicKind.PZ_MARKER -> PlanningGraphics.createPzMarker(at.lat, at.lon, newTextId("pz", existing))
             GraphicKind.SECTOR_OF_FIRE -> PlanningGraphics.createSectorOfFire(at.lat, at.lon, newTextId("sec", existing))
             GraphicKind.GO_AROUND -> PlanningGraphics.createGoAround(at.lat, at.lon, direction ?: "left", newTextId("ga", existing))
+            GraphicKind.DOGHOUSE -> null
         }
         if (made == null) return fail("That is not a position.")
         error.value = null
@@ -141,6 +151,7 @@ class GraphicsViewModel @Inject constructor(
         "pzMarkers" -> diagram.graphics.pzMarkers
         "sectorsOfFire" -> diagram.graphics.sectorsOfFire
         "goArounds" -> diagram.graphics.goArounds
+        "doghouses" -> diagram.graphics.doghouses
         else -> emptyList()
     }.mapNotNull { (it as? JsonObject)?.get("id") }.map { DiagramOps.idText(it) }.toSet()
 
@@ -153,11 +164,11 @@ class GraphicsViewModel @Inject constructor(
 
     // -- Editing the one that is held --------------------------------------------------------------------------------------
 
-    private fun edit(label: String, patch: (String, JsonObject) -> JsonObject?) {
+    private fun edit(label: String, refusal: String = "That cannot be done to this graphic.", patch: (String, JsonObject) -> JsonObject?) {
         val ref = selection.selected.value ?: return
         val diagram = session.active.value ?: return
         val graphic = DiagramOps.graphic(diagram, ref.collection, ref.key) ?: return
-        val changes = patch(ref.collection, graphic) ?: return fail("That cannot be done to this graphic.")
+        val changes = patch(ref.collection, graphic) ?: return fail(refusal)
         error.value = null
         session.edit(label) { DiagramOps.patchGraphic(it, ref.collection, graphic["id"], changes) }
     }
@@ -194,6 +205,24 @@ class GraphicsViewModel @Inject constructor(
     }
 
     fun setDirection(direction: String) = edit("Go-around") { c, g -> if (c == "goArounds") GraphicEdits.setGoAroundDirection(g, direction) else null }
+
+    // The held doghouse's own fields. What is typed is checked for what the field is and stored as the web stores it; when it is not what the
+    // field is for, the answer is the words to show under the field (not the panel's banner, which may be scrolled out of sight).
+
+    private fun editDoghouse(label: String, refusal: String, patch: JsonObject?): String? {
+        if (patch == null) return refusal
+        edit(label) { c, _ -> if (c == "doghouses") patch else null }
+        return null
+    }
+
+    fun setDoghouseLabel(typed: String): String? =
+        editDoghouse("Doghouse label", "Enter a label of up to ${Doghouses.MAX_LABEL} characters, such as [SP1].", Doghouses.labelPatch(typed))
+
+    fun setDoghouseTime(typed: String): String? = editDoghouse("Doghouse time", "Enter a time as minutes and seconds, such as 03+20.", Doghouses.timePatch(typed))
+
+    fun setDoghouseDistance(typed: String): String? = editDoghouse("Doghouse distance", "Enter a distance in kilometres, such as 3.1.", Doghouses.distancePatch(typed))
+
+    fun setDoghouseAirspeed(typed: String): String? = editDoghouse("Doghouse airspeed", "Enter an airspeed in knots, such as 60.", Doghouses.airspeedPatch(typed))
 
     /** Removes the held graphic. It can be brought back with undo. */
     fun delete() {
@@ -247,6 +276,7 @@ class GraphicsViewModel @Inject constructor(
                 ref = row.ref, kind = row.kind, title = row.title, grid = row.grid, latLon = at?.let { "%.5f, %.5f".format(java.util.Locale.ROOT, it.lat, it.lon) },
                 rotation = GraphicEdits.rotation(row.ref.collection, o), reachFt = if (row.kind == GraphicKind.PZ_MARKER) GraphicEdits.pzReachM(o)?.let(::feetOf) else null,
                 direction = if (row.kind == GraphicKind.GO_AROUND) (o["direction"] as? JsonPrimitive)?.content else null,
+                doghouse = if (row.kind == GraphicKind.DOGHOUSE) doghouseUi(o) else null,
             )
         }
         return GraphicsUiState(canEdit = true, rows = rows, inspector = held, alerts = alerts.map { it.message }, undoDepth = undo, redoDepth = redo, error = error)
@@ -257,7 +287,20 @@ class GraphicsViewModel @Inject constructor(
         "pzMarkers" -> diagram.graphics.pzMarkers
         "sectorsOfFire" -> diagram.graphics.sectorsOfFire
         "goArounds" -> diagram.graphics.goArounds
+        "doghouses" -> diagram.graphics.doghouses
         else -> emptyList()
+    }
+
+    private fun doghouseUi(saved: JsonObject): DoghouseUi {
+        val shown = Doghouses.display(saved, Doghouses.rotation(saved))
+        return DoghouseUi(
+            label = shown.id.orEmpty(), time = "${shown.minutes}+${shown.seconds}", distanceKm = shown.distanceText, airspeedKts = shown.airspeedText,
+            feeds = when {
+                Doghouses.isLanding(saved) -> "Sets the landing heading on the LZ card"
+                Doghouses.isTakeoff(saved) -> "Sets the takeoff heading on the LZ card"
+                else -> null
+            },
+        )
     }
 
     private fun feetOf(meters: Double): Long = RouteCalc.jsRound(meters * Units.METERS_TO_FEET).toLong()
@@ -265,6 +308,7 @@ class GraphicsViewModel @Inject constructor(
     private fun gridOf(at: LatLon): String? = MgrsConverter.toMgrs(at.lat, at.lon)?.format()
 
     private fun titleOf(kind: GraphicKind, saved: JsonObject, aircraft: List<PlanningGraphics.Aircraft>, resolve: (PlanningGraphics.Aircraft) -> AircraftProfile): String = when (kind) {
+        GraphicKind.DOGHOUSE -> Doghouses.display(saved, 0.0).id?.takeIf { it.isNotBlank() }?.let { "Doghouse · $it" } ?: kind.label
         GraphicKind.HELICOPTER -> {
             val key = DiagramOps.idText(saved["id"])
             val own = aircraft.firstOrNull { DiagramOps.idText(it.id) == key }
@@ -277,5 +321,6 @@ class GraphicsViewModel @Inject constructor(
         GraphicKind.HELICOPTER, GraphicKind.GO_AROUND -> GraphicEdits.rotation(kind.collection, saved)?.let { "heading ${it.toLong()}°" }
         GraphicKind.PZ_MARKER -> GraphicEdits.pzReachM(saved)?.let { "reach ${feetOf(it)} ft" }
         GraphicKind.SECTOR_OF_FIRE -> null
+        GraphicKind.DOGHOUSE -> Doghouses.display(saved, Doghouses.rotation(saved)).let { "${it.heading}° · ${it.minutes}+${it.seconds} · ${it.distanceText} km · ${it.airspeedText} kts" }
     }?.let { text -> if (kind == GraphicKind.GO_AROUND) (saved["direction"] as? JsonPrimitive)?.content?.let { "$it · $text" } ?: text else text }
 }

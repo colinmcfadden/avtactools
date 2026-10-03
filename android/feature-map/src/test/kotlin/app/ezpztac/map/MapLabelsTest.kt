@@ -1,5 +1,6 @@
 package app.ezpztac.map
 
+import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -85,5 +86,35 @@ class MapLabelsTest {
     @Test
     fun `there is nothing to say with no pairs`() {
         assertTrue(MapLabels.separations(GraphicsScene.EMPTY, view()).isEmpty())
+    }
+
+
+    // -- Doghouses -------------------------------------------------------------------------------------------------
+
+    private fun box(id: String, at: LatLon) = SceneDoghouse(GraphicRef("doghouses", id), at, 0.0, "[SP1]", "000", "01", "57", "3.13", "60", false)
+
+    @Test
+    fun `a doghouse is placed with its middle where it is`() {
+        val placed = MapLabels.doghouses(GraphicsScene(doghouses = listOf(box("a", here))), view()).single()
+        assertEquals("a", placed.box.ref.key)
+        assertEquals(500.0, placed.at.x, 0.5)
+        assertEquals(1000.0, placed.at.y, 0.5)
+    }
+
+    @Test
+    fun `a doghouse is kept while any of its box may show, and dropped once all of it is off`() {
+        val v = view()
+        fun at(x: Double, y: Double) = GraphicsScene(doghouses = listOf(box("a", v.toLatLon(x, y))))
+        for ((x, y) in listOf(-120.0 to 800.0, 1120.0 to 800.0, 500.0 to -120.0, 500.0 to 2120.0)) {
+            assertEquals("kept at ($x, $y)", 1, MapLabels.doghouses(at(x, y), v).size)
+        }
+        for ((x, y) in listOf(-200.0 to 800.0, 1200.0 to 800.0, 500.0 to -200.0, 500.0 to 2200.0)) {
+            assertTrue("dropped at ($x, $y)", MapLabels.doghouses(at(x, y), v).isEmpty())
+        }
+    }
+
+    @Test
+    fun `doghouses are placed for the view above the sheet`() {
+        assertEquals(800.0, MapLabels.doghouses(GraphicsScene(doghouses = listOf(box("a", here))), view(inset = 400.0)).single().at.y, 0.5)
     }
 }

@@ -1,5 +1,6 @@
 package app.ezpztac.data
 
+import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.sync.Device
 import app.ezpztac.sync.FakeServer
@@ -13,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -465,5 +467,73 @@ class DiagramSessionTest {
         flaky.failing = false
         session.flush()                                                                      // still owed, so it is written now
         assertEquals("A2", repository.open(made.id)!!.name)
+    }
+
+    // -- The flight data follows the doghouses ---------------------------------------------------------------------------
+
+    private fun app.ezpztac.model.Diagram.headings() = flightData["landing_hdg"]?.jsonPrimitive?.content to flightData["takeoff_hdg"]?.jsonPrimitive?.content
+
+    @Test
+    fun `an analysis that makes the standard doghouses sets the landing and takeoff headings, as the web's effect does`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        assertEquals(null to null, r.session.active.value!!.headings())
+        r.session.update(made.id) { DiagramOps.afterAnalysis(it, JsonObject(emptyMap())) }
+        assertEquals("000°" to "000°", r.session.active.value!!.headings())
+        r.session.flush()
+        assertEquals("000°" to "000°", r.saved(made.id).headings())                          // and it is what is saved
+    }
+
+    @Test
+    fun `editing a doghouse's heading moves the flight data with it, and undo takes both back`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        r.session.update(made.id) { DiagramOps.afterAnalysis(it, JsonObject(emptyMap())) }
+        val landing = r.session.active.value!!.graphics.doghouses.map { it as JsonObject }.first { it["role"]?.jsonPrimitive?.content == "landing" }
+
+        r.session.edit("Doghouse heading") { DiagramOps.patchGraphic(it, "doghouses", landing["id"], JsonObject(mapOf("heading" to JsonPrimitive("270°")))) }
+        assertEquals("270°" to "000°", r.session.active.value!!.headings())
+
+        r.session.undo()
+        assertEquals("000°" to "000°", r.session.active.value!!.headings())
+        r.session.redo()
+        assertEquals("270°" to "000°", r.session.active.value!!.headings())
+    }
+
+    @Test
+    fun `an edit that leaves the doghouses alone leaves a flight data the person set by hand alone`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        r.session.update(made.id) { DiagramOps.afterAnalysis(it, JsonObject(emptyMap())) }
+        r.session.edit("Flight data") { DiagramOps.setFlightData(it, JsonObject(mapOf("landing_hdg" to JsonPrimitive("123°")))) }
+        r.session.edit("Rename") { it.copy(name = "LZ CROW") }
+        assertEquals("123°" to "000°", r.session.active.value!!.headings())
+    }
+
+    @Test
+    fun `a diagram that is not open is settled too when a change reaches its record`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.update(made.id) { DiagramOps.afterAnalysis(it, JsonObject(emptyMap())) }
+        assertEquals("000°" to "000°", r.saved(made.id).headings())
+    }
+
+    @Test
+    fun `opening a diagram whose flight data lags its doghouses brings it in line, without making it unsaved`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        // A record written before headings followed doghouses: analysed, with doghouses, and no headings.
+        val stored = DiagramOps.afterAnalysis(r.saved(made.id), JsonObject(emptyMap()))
+        r.repository.save(stored)
+        assertEquals(null to null, r.saved(made.id).headings())
+
+        r.session.open(made.id)
+        assertEquals("000°" to "000°", r.session.active.value!!.headings())
+        val updatedAt = r.saved(made.id).updatedAt
+        r.session.flush()
+        assertEquals(updatedAt, r.saved(made.id).updatedAt)                                 // looking at a diagram does not write it
     }
 }

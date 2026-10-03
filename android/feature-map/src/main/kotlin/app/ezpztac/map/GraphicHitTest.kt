@@ -10,7 +10,7 @@ import kotlin.math.max
  * Which planning graphic a tap on the map was on, worked out on the screen with [MapProjection] and so tried without a GPU.
  *
  * The rules, which are what a person with a finger the size of a fingertip needs:
- * - Anything with a point (an aircraft, a PZ marker's anchor, tip or arrow, a go-around) is hit within [touchRadiusPx] of that point, and an
+ * - Anything with a point (an aircraft, a PZ marker's anchor, tip or arrow, a go-around, a doghouse) is hit within [touchRadiusPx] of that point, and an
  *   aircraft is hit anywhere on its rotor disc, since that is what is drawn. The nearest wins, so two aircraft whose discs overlap go to the
  *   one whose middle is closer to the finger.
  * - A sector is hit anywhere inside it, but only when nothing with a point was: a big sector must not swallow a tap meant for an aircraft
@@ -18,6 +18,9 @@ import kotlin.math.max
  * - Otherwise nothing: the caller puts the held graphic down.
  */
 object GraphicHitTest {
+    /** A doghouse is a box, not a point: it is hit this many times the finger's reach from its middle. */
+    private const val DOGHOUSE_REACH = 1.5
+
     fun pick(graphics: GraphicsScene, view: MapProjection, tap: LatLon, touchRadiusPx: Double): GraphicRef? {
         val finger = view.toScreen(tap)
         var best: GraphicRef? = null
@@ -41,6 +44,11 @@ object GraphicHitTest {
         for (goAround in graphics.goArounds) {
             val distance = distance(finger, view.toScreen(goAround.at))
             if (distance <= touchRadiusPx) consider(goAround.ref, distance)
+        }
+        for (doghouse in graphics.doghouses) {
+            // The box is drawn about 60 by 90 dp: a finger anywhere near its middle is on it.
+            val distance = distance(finger, view.toScreen(doghouse.at))
+            if (distance <= touchRadiusPx * DOGHOUSE_REACH) consider(doghouse.ref, distance)
         }
         best?.let { return it }
 

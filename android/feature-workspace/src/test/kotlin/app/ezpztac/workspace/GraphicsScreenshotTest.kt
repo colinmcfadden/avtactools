@@ -105,4 +105,18 @@ class GraphicsScreenshotTest {
     )
 
     @Test fun error() = shot("error", state(error = "Move the map to where it should go first."))
+
+    private val doghouse = GraphicRef("doghouses", "d-sp1")
+
+    @Test fun doghouseHeld() = shot(
+        "doghouse",
+        state(
+            rows = listOf(
+                row(doghouse, GraphicKind.DOGHOUSE, "Doghouse · [SP1]", "16S GD 66730 52950", "090° · 01+57 · 3.13 km · 60 kts", selected = true),
+                row(GraphicRef("doghouses", "d-rp1"), GraphicKind.DOGHOUSE, "Doghouse · [RP1]", "16S GD 66730 52890", "000° · 02+10 · 5.2 km · 40 kts"),
+            ),
+            inspector = held(doghouse, GraphicKind.DOGHOUSE, "Doghouse · [SP1]", "16S GD 66730 52950", rotation = 90.0)
+                .copy(doghouse = DoghouseUi("[SP1]", "01+57", "3.13", "60", "Sets the takeoff heading on the LZ card")),
+        ),
+    )
 }

@@ -293,7 +293,9 @@ class HomeViewModelTest {
         val id = r.analysed()
         r.session.open(id)
         advanceUntilIdle()
-        assertTrue(r.model.scene.value.graphics.isEmpty)
+        // An analysis makes the standard SP and RP doghouses, so the scene is not bare; nothing has been placed yet.
+        assertEquals(2, r.model.scene.value.graphics.doghouses.size)
+        assertTrue(r.model.scene.value.graphics.pzMarkers.isEmpty() && r.model.scene.value.graphics.aircraft.isEmpty())
 
         r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
         advanceUntilIdle()

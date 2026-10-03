@@ -45,6 +45,7 @@ import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
+import app.ezpztac.model.Doghouses
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
 
@@ -61,6 +62,11 @@ class GraphicsActions(
     val changeReach: (Double) -> Unit = {},
     val tipToCrosshair: () -> Unit = {},
     val setDirection: (String) -> Unit = {},
+    /** A doghouse's fields: each takes what was typed and answers with what is wrong with it, or null when it was taken. */
+    val setDoghouseLabel: (String) -> String? = { null },
+    val setDoghouseTime: (String) -> String? = { null },
+    val setDoghouseDistance: (String) -> String? = { null },
+    val setDoghouseAirspeed: (String) -> String? = { null },
     val delete: () -> Unit = {},
     val undo: () -> Unit = {},
     val redo: () -> Unit = {},
@@ -80,8 +86,9 @@ fun GraphicsHost(crosshair: LatLon?, crosshairGrid: String?, modifier: Modifier 
             place = { kind -> viewModel.place(kind, crosshair) }, select = viewModel::select, deselect = viewModel::deselect, nudge = viewModel::nudge,
             moveToCrosshair = { viewModel.moveToCrosshair(crosshair) }, moveToText = viewModel::moveToText, rotateBy = viewModel::rotateBy,
             setRotation = viewModel::setRotation, changeReach = viewModel::changeReach, tipToCrosshair = { viewModel.tipToCrosshair(crosshair) },
-            setDirection = viewModel::setDirection, delete = viewModel::delete, undo = viewModel::undo, redo = viewModel::redo,
-            dismissError = viewModel::dismissError,
+            setDirection = viewModel::setDirection, setDoghouseLabel = viewModel::setDoghouseLabel, setDoghouseTime = viewModel::setDoghouseTime,
+            setDoghouseDistance = viewModel::setDoghouseDistance, setDoghouseAirspeed = viewModel::setDoghouseAirspeed,
+            delete = viewModel::delete, undo = viewModel::undo, redo = viewModel::redo, dismissError = viewModel::dismissError,
         ),
     )
 }
@@ -126,7 +133,7 @@ private fun PlaceButtons(crosshairGrid: String?, place: (GraphicKind) -> Unit) {
             if (crosshairGrid != null) "Place at the crosshair · $crosshairGrid" else "Place at the crosshair",
             style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        GraphicKind.entries.chunked(2).forEach { pair ->
+        GraphicKind.entries.filter { it.placeable }.chunked(2).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                 pair.forEach { kind ->
                     SecondaryButton(
@@ -204,6 +211,7 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
             EntryRow("Move to a grid", "16S GD 66993 52949", "Go", KeyboardType.Ascii, onSubmit = { actions.moveToText(it); null })
 
             inspector.rotation?.let { heading -> HeadingControls(heading, actions) }
+            inspector.doghouse?.let { doghouse -> DoghouseControls(doghouse, actions) }
             inspector.reachFt?.let { reach -> ReachControls(reach, actions) }
             inspector.direction?.let { direction -> DirectionControls(direction, actions.setDirection) }
 
@@ -248,6 +256,19 @@ private fun HeadingControls(heading: Double, actions: GraphicsActions) {
             val degrees = text.trim().toDoubleOrNull()?.takeIf { it.isFinite() }
             if (degrees == null) "Enter degrees, such as 270." else { actions.setRotation(degrees); null }
         })
+    }
+}
+
+/** What a doghouse says besides its heading, each field to be typed over with a unit and an example, and said in words when it is not that. */
+@Composable
+private fun DoghouseControls(doghouse: DoghouseUi, actions: GraphicsActions) {
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+        Text("Doghouse", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        doghouse.feeds?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        EntryRow("Label · ${doghouse.label}", "Up to ${Doghouses.MAX_LABEL} characters", "Set label", KeyboardType.Text, onSubmit = actions.setDoghouseLabel)
+        EntryRow("Time · ${doghouse.time}", "Minutes+seconds, such as 03+20", "Set time", KeyboardType.Ascii, onSubmit = actions.setDoghouseTime)
+        EntryRow("Distance · ${doghouse.distanceKm} km", "Kilometres, such as 3.1", "Set distance", KeyboardType.Decimal, onSubmit = actions.setDoghouseDistance)
+        EntryRow("Airspeed · ${doghouse.airspeedKts} kts", "Knots, such as 60", "Set airspeed", KeyboardType.Number, onSubmit = actions.setDoghouseAirspeed)
     }
 }
 

@@ -3,11 +3,18 @@ import L from "leaflet";
 import { useMap } from "react-leaflet";
 import { calculateBearing } from '../../utils/Helpers';
 import { mapObjectControlMarkup } from '../../utils/mapObjectControls';
+import {
+  doghouseDisplay,
+  doghouseFieldUpdates,
+  doghouseHeadingDegrees,
+  doghouseHeadingText,
+  doghouseRotation,
+} from "./doghouseFields";
 
 const Doghouse = ({ data, updateDoghouse }) => {
   const map = useMap();
   const markerRef = useRef(null);
-  const rotationRef = useRef(parseInt(data.heading) || 0);
+  const rotationRef = useRef(doghouseRotation(data));
 
   const dataRef = useRef(data);
   const updateRef = useRef(updateDoghouse);
@@ -19,8 +26,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
 
   // --- HTML GENERATOR ---
   const getHtml = (dh, rotation) => {
-    const time = (dh.time || "00+00").split("+");
-    const airspeed = dh.airspeed ? dh.airspeed.split(" ")[0] : "90";
+    const shown = doghouseDisplay(dh, rotation);
 
     return `
       <div class="drag-lifter doghouse-interactive-wrapper" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none;">
@@ -32,24 +38,24 @@ const Doghouse = ({ data, updateDoghouse }) => {
 
         <div class="doghouse-wrapper" style="pointer-events: auto; width: 60px; transform: rotate(${rotation}deg); transform-origin: center center; position: absolute; z-index: 20;">
             <div style="width: 0; height: 0; border-left: 30px solid transparent; border-right: 30px solid transparent; border-bottom: 20px solid black; position: relative;">
-                <div class="dh-input" data-type="id" style="position: absolute; top: 2px; left: -30px; width: 60px; text-align: center; font-weight: bold; font-size: 10px; color: white; cursor: text;">${dh.id_val}</div>
+                <div class="dh-input" data-type="id" style="position: absolute; top: 2px; left: -30px; width: 60px; text-align: center; font-weight: bold; font-size: 10px; color: white; cursor: text;">${shown.id}</div>
             </div>
             <div style="background: white; border: 2px solid black; width: 60px; display: flex; flex-direction: column; font-family: monospace; font-weight: bold; font-size: 12px; color: black;">
                 <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="heading" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${Math.round(rotation).toString().padStart(3, "0")}</span>
+                    <span class="dh-input" data-type="heading" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${shown.heading}</span>
                     <span style="pointer-events: none;">°</span>
                 </div>
                 <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="time-m" style="cursor: text; min-width: 15px; text-align: right; padding: 2px 0;">${time[0] || "00"}</span>
+                    <span class="dh-input" data-type="time-m" style="cursor: text; min-width: 15px; text-align: right; padding: 2px 0;">${shown.minutes}</span>
                     <span style="pointer-events: none;">+</span>
-                    <span class="dh-input" data-type="time-s" style="cursor: text; min-width: 15px; text-align: left; padding: 2px 0;">${time[1] || "00"}</span>
+                    <span class="dh-input" data-type="time-s" style="cursor: text; min-width: 15px; text-align: left; padding: 2px 0;">${shown.seconds}</span>
                 </div>
                 <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="dist" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${parseFloat(dh.dist) || 0}</span>
+                    <span class="dh-input" data-type="dist" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${shown.distance}</span>
                     <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> km</span>
                 </div>
                 <div style="display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="airspeed" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${parseInt(airspeed) || 90}</span>
+                    <span class="dh-input" data-type="airspeed" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${shown.airspeed}</span>
                     <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> kts</span>
                 </div>
             </div>
@@ -107,8 +113,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
         const currentData = dataRef.current; 
 
         if (type === "heading") {
-          let newDeg = parseInt(val) || 0;
-          newDeg = (newDeg + 360) % 360; 
+          const newDeg = doghouseHeadingDegrees(val);
           rotationRef.current = newDeg; 
 
           markerInst.setIcon(
@@ -120,19 +125,18 @@ const Doghouse = ({ data, updateDoghouse }) => {
             })
           );
 
-          updateRef.current(currentData.id, { heading: `${newDeg.toString().padStart(3, "0")}°` });
+          updateRef.current(currentData.id, { heading: doghouseHeadingText(newDeg) });
           setTimeout(() => attachListeners(markerInst), 50);
         } else {
-          let updates = {};
-          if (type === "id") updates.id_val = val;
-          else if (type === "dist") updates.dist = `${val}km`;
-          else if (type === "airspeed") updates.airspeed = `${val} kts`;
-          else if (type.startsWith("time")) {
+          let time;
+          if (type.startsWith("time")) {
             const row = span.parentElement;
-            const m = row.querySelector('[data-type="time-m"]').innerText;
-            const s = row.querySelector('[data-type="time-s"]').innerText;
-            updates.time = `${m}+${s}`;
+            time = {
+              minutes: row.querySelector('[data-type="time-m"]').innerText,
+              seconds: row.querySelector('[data-type="time-s"]').innerText,
+            };
           }
+          const updates = doghouseFieldUpdates(type, val, time);
           updateRef.current(currentData.id, updates);
         }
       };
@@ -292,7 +296,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
   useEffect(() => {
     if (!markerRef.current) return;
 
-    const incomingHeading = parseInt(data.heading) || 0;
+    const incomingHeading = doghouseRotation(data);
     rotationRef.current = incomingHeading;
 
     markerRef.current.setIcon(

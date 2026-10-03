@@ -3,6 +3,7 @@ package app.ezpztac.map
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
+import app.ezpztac.model.Doghouses
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
 import app.ezpztac.planning.AircraftGeometry
@@ -48,6 +49,23 @@ data class SceneSector(val ref: GraphicRef, val ring: List<LatLon>, val selected
 data class SceneGoAround(val ref: GraphicRef, val at: LatLon, val rotationDeg: Double, val direction: String?, val selected: Boolean)
 
 /**
+ * A doghouse: the label box beside the landing zone, turned by its heading. It says what the web's box says, in the web's words:
+ * [label] (`[SP1]`), the [heading] in three digits, the time as [minutes] and [seconds], and the distance and airspeed as written.
+ */
+data class SceneDoghouse(
+    val ref: GraphicRef,
+    val at: LatLon,
+    val rotationDeg: Double,
+    val label: String,
+    val heading: String,
+    val minutes: String,
+    val seconds: String,
+    val distanceKm: String,
+    val airspeedKts: String,
+    val selected: Boolean,
+)
+
+/**
  * What is drawn for a diagram's planning graphics, as plain data (see [LzScene]). Aircraft are drawn to scale, separation lines run between
  * rotor tips, and an aircraft that is too close to another is red. The aircraft are measured as the web measures them (each by its own
  * profile), so what is drawn is what the alerts say.
@@ -58,13 +76,15 @@ data class GraphicsScene(
     val pzMarkers: List<ScenePz> = emptyList(),
     val sectors: List<SceneSector> = emptyList(),
     val goArounds: List<SceneGoAround> = emptyList(),
+    val doghouses: List<SceneDoghouse> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = aircraft.isEmpty() && pzMarkers.isEmpty() && sectors.isEmpty() && goArounds.isEmpty()
+    val isEmpty: Boolean get() = aircraft.isEmpty() && pzMarkers.isEmpty() && sectors.isEmpty() && goArounds.isEmpty() && doghouses.isEmpty()
 
     /** The graphic that is selected, as a position the selection halo sits on. Null when nothing is selected. */
     val selectedAt: LatLon?
         get() = aircraft.firstOrNull { it.selected }?.at ?: pzMarkers.firstOrNull { it.selected }?.anchor
-            ?: goArounds.firstOrNull { it.selected }?.at ?: sectors.firstOrNull { it.selected }?.ring?.let(::centroid)
+            ?: goArounds.firstOrNull { it.selected }?.at ?: doghouses.firstOrNull { it.selected }?.at
+            ?: sectors.firstOrNull { it.selected }?.ring?.let(::centroid)
 
     private fun centroid(ring: List<LatLon>) = LatLon(ring.sumOf { it.lat } / ring.size, ring.sumOf { it.lon } / ring.size)
 
@@ -134,7 +154,18 @@ data class GraphicsScene(
                 val ref = GraphicRef("goArounds", DiagramOps.idText(o["id"]))
                 SceneGoAround(ref, at, number(o["rotation"]) ?: 0.0, (o["direction"] as? JsonPrimitive)?.takeIf { it.isString }?.content, ref == selected)
             }
-            return GraphicsScene(aircraft, separations, pz, sectors, goArounds)
+            val doghouses = g.doghouses.mapNotNull { saved ->
+                val o = saved as? JsonObject ?: return@mapNotNull null
+                val at = LatLon(number(o["lat"]) ?: return@mapNotNull null, number(o["lon"]) ?: return@mapNotNull null)
+                val ref = GraphicRef("doghouses", DiagramOps.idText(o["id"]))
+                val rotation = Doghouses.rotation(o)
+                val shown = Doghouses.display(o, rotation)
+                SceneDoghouse(
+                    ref = ref, at = at, rotationDeg = rotation, label = shown.id.orEmpty(), heading = shown.heading, minutes = shown.minutes, seconds = shown.seconds,
+                    distanceKm = shown.distanceText, airspeedKts = shown.airspeedText, selected = ref == selected,
+                )
+            }
+            return GraphicsScene(aircraft, separations, pz, sectors, goArounds, doghouses)
         }
 
         private fun number(value: JsonElement?): Double? = (value as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() }

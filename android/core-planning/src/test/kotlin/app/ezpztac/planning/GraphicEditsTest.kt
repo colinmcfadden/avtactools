@@ -143,6 +143,28 @@ class GraphicEditsTest {
         assertEquals(setOf("rotation"), GraphicEdits.setRotation("helicopters", helo, 10.0)!!.keys)
     }
 
+    private val doghouse = obj("id" to "d-sp1", "role" to "takeoff", "lat" to 34.5, "lon" to -84.103, "id_val" to "[SP1]", "heading" to "090°", "time" to "01+57")
+
+    @Test
+    fun `a doghouse is turned by its heading, which it keeps as the web writes it`() {
+        assertEquals(90.0, GraphicEdits.rotation("doghouses", doghouse)!!, 0.0)
+        assertEquals(0.0, GraphicEdits.rotation("doghouses", obj("id" to "d", "lat" to 1, "lon" to 2))!!, 0.0)          // none saved is north
+        assertEquals("350°", GraphicEdits.rotateBy("doghouses", doghouse, -100.0)!!.getValue("heading").jsonPrimitive.content)
+        assertEquals("090°", GraphicEdits.setRotation("doghouses", doghouse, 450.0)!!.getValue("heading").jsonPrimitive.content)
+        assertEquals("005°", GraphicEdits.setRotation("doghouses", doghouse, 5.0)!!.getValue("heading").jsonPrimitive.content)   // three digits, as "000°"
+        assertEquals("000°", GraphicEdits.setRotation("doghouses", doghouse, 359.6)!!.getValue("heading").jsonPrimitive.content)  // to the whole degree, wrapped
+        assertEquals("270°", GraphicEdits.setRotation("doghouses", obj("id" to "d", "lat" to 1, "lon" to 2, "heading" to "-90°"), 270.0)!!.getValue("heading").jsonPrimitive.content)
+        assertEquals(setOf("heading"), GraphicEdits.setRotation("doghouses", doghouse, 10.0)!!.keys)                   // nothing else is touched
+    }
+
+    @Test
+    fun `a doghouse is moved like an aircraft`() {
+        val moved = GraphicEdits.nudge("doghouses", doghouse, 10.0, 0.0)!!
+        assertEquals(setOf("lat", "lon"), moved.keys)
+        assertEquals(10.0, GraphicEdits.metresBetween(GraphicEdits.position("doghouses", doghouse)!!, LatLon(moved.d("lat"), moved.d("lon"))).first, 0.01)
+        assertEquals(34.5, GraphicEdits.moveTo("doghouses", doghouse, LatLon(34.5, -84.0))!!.d("lat"), 0.0)
+    }
+
     @Test
     fun `a PZ marker's rotation is the bearing of its tip, and turning it swings the tip keeping its reach`() {
         assertEquals(270.0, GraphicEdits.rotation("pzMarkers", pz)!!, 0.01)                   // the tip is due west
@@ -158,7 +180,8 @@ class GraphicEditsTest {
     fun `what does not turn has no rotation`() {
         assertNull(GraphicEdits.rotation("sectorsOfFire", sector(1.0 to 2.0, 3.0 to 4.0, 5.0 to 6.0)))
         assertNull(GraphicEdits.setRotation("sectorsOfFire", sector(1.0 to 2.0, 3.0 to 4.0, 5.0 to 6.0), 10.0))
-        assertNull(GraphicEdits.rotateBy("doghouses", obj("id" to "d", "lat" to 1, "lon" to 2), 10.0))
+        assertNull(GraphicEdits.rotateBy("units", obj("id" to "u", "lat" to 1, "lon" to 2), 10.0))                    // a unit symbol stays upright
+        assertNull(GraphicEdits.rotation("somethingElse", obj("id" to "u", "lat" to 1, "lon" to 2)))
     }
 
     // -- A PZ marker's reach ---------------------------------------------------------------------------------------------

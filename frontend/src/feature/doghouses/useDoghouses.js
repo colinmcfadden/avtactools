@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { flightDataFromDoghouses, flightDoghouses } from "./doghouseFields";
 
 const toCoordinates = (target) => {
   const lat = Array.isArray(target) ? target[0] : target?.lat;
@@ -85,31 +86,9 @@ export const useDoghouses = (targetLocation, setFlightData, options = {}) => {
   useEffect(() => {
     if (!setFlightData) return;
 
-    // `role` is used by new default doghouses. The older id/id_val fallbacks
-    // keep existing saved diagrams compatible.
-    const landingDoghouse = doghouseList.find(
-      (doghouse) =>
-        doghouse.role === "landing" ||
-        doghouse.id === "dh2" ||
-        doghouse.id_val === "[RP1]",
-    );
-    const takeoffDoghouse = doghouseList.find(
-      (doghouse) =>
-        doghouse.role === "takeoff" ||
-        doghouse.id === "dh1" ||
-        doghouse.id_val === "[SP1]",
-    );
-
-    if (landingDoghouse || takeoffDoghouse) {
-      setFlightData((previous) => ({
-        ...previous,
-        landing_hdg: landingDoghouse
-          ? landingDoghouse.heading
-          : previous.landing_hdg,
-        takeoff_hdg: takeoffDoghouse
-          ? takeoffDoghouse.heading
-          : previous.takeoff_hdg,
-      }));
+    const { landing, takeoff } = flightDoghouses(doghouseList);
+    if (landing || takeoff) {
+      setFlightData((previous) => flightDataFromDoghouses(doghouseList, previous));
     }
   }, [doghouseList, setFlightData]);
 

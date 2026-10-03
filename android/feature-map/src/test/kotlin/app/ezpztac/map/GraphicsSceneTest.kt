@@ -265,4 +265,46 @@ class GraphicsSceneTest {
         assertFalse(LzScene.of(diagram(DiagramGraphics(helicopters = listOf(helo(1, 34.5, -84.1)))), null, profiles, uh60).isEmpty)
         assertNotNull(LzScene.of(diagram(), null, profiles, uh60).target)
     }
+
+
+    // -- Doghouses -------------------------------------------------------------------------------------------------------
+
+    private fun doghouse(id: String, role: String, lat: Double, lon: Double, label: String, heading: String = "270°") =
+        obj("id" to id, "role" to role, "lat" to lat, "lon" to lon, "id_val" to label, "heading" to heading, "time" to "03+20", "dist" to "12.5km", "airspeed" to "55 kts")
+
+    @Test
+    fun `a doghouse says what the web's box says, turned by its heading`() {
+        val scene = sceneOf(DiagramGraphics(doghouses = listOf(doghouse("a-sp1", "takeoff", 34.5, -84.103, "[SP1]"))))
+        val box = scene.doghouses.single()
+        assertEquals(GraphicRef("doghouses", "a-sp1"), box.ref)
+        assertEquals(LatLon(34.5, -84.103), box.at)
+        assertEquals(270.0, box.rotationDeg, 0.0)
+        assertEquals("[SP1]", box.label)
+        assertEquals("270", box.heading)
+        assertEquals("03", box.minutes)
+        assertEquals("20", box.seconds)
+        assertEquals("12.5", box.distanceKm)
+        assertEquals("55", box.airspeedKts)
+        assertFalse(scene.isEmpty)
+    }
+
+    @Test
+    fun `a doghouse of the older kind with nothing but a position is drawn with the web's fallbacks`() {
+        val box = sceneOf(DiagramGraphics(doghouses = listOf(obj("id" to "dh1", "lat" to 34.5, "lon" to -84.1)))).doghouses.single()
+        assertEquals("", box.label)
+        assertEquals("000", box.heading)
+        assertEquals("00", box.minutes)
+        assertEquals("0", box.distanceKm)
+        assertEquals("90", box.airspeedKts)
+    }
+
+    @Test
+    fun `a doghouse without a position is not drawn, and the held one has the halo`() {
+        val graphics = DiagramGraphics(doghouses = listOf(obj("id" to "x", "heading" to "090°"), doghouse("b", "landing", 34.5, -84.1, "[RP1]")))
+        assertEquals(1, sceneOf(graphics).doghouses.size)
+        val held = sceneOf(graphics, GraphicRef("doghouses", "b"))
+        assertEquals(LatLon(34.5, -84.1), held.selectedAt)
+        assertTrue(held.doghouses.single().selected)
+        assertNull(sceneOf(graphics).selectedAt)
+    }
 }
