@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-03 (after the open-files slice).
+Last refreshed: 2026-10-03 (after the route hand-off slice; the initial build, P0–P2, is complete apart from the items above).
 
 ---
 
@@ -14,10 +14,9 @@ Last refreshed: 2026-10-03 (after the open-files slice).
 - **Branch:** `claude/jolly-wozniak-i7rlrq` (all Android work). Push with `git push -u origin claude/jolly-wozniak-i7rlrq`.
   `develop` is the PR target; **no PR has been opened** (the owner has not asked). Codex's threat UI branch
   `feat/android-threat-ui` (`bd43777`) is already merged into this branch.
-- **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and most of P2:
-  routes (sketch, plan, nav log, winds, elevations, `.msnx` export), local points (`.LPS` import, sync, map), weather, and the
-  local-only threat picture (sealed 48 h file, `.ths` in/out, map markers and rings, the Threats section). Per-module state is in
-  AGENTS.md §17's table.
+- **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
+  export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
+  state is in AGENTS.md §17's table. **Not in P2 yet:** the web's file-authoritative imported missions (task #54), an ATAK data package, drag/rotate on the map (#29).
 - **Everything is compiled and unit-tested on a JVM; nothing has ever run on a device or emulator.** The map layers (MapLibre),
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output,
   `FLAG_SECURE` and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
