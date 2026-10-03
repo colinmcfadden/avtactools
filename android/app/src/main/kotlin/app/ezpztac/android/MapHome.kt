@@ -37,6 +37,8 @@ import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.GraphicLabelsLayer
+import app.ezpztac.map.PinLabelsLayer
+import app.ezpztac.map.PointLayer
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
@@ -79,6 +81,7 @@ fun MapHome(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
+    val pointScene by home.points.collectAsStateWithLifecycle()
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
@@ -153,9 +156,11 @@ fun MapHome(
                     },
                 )
                 DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
+                PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's
                 RouteLayer(host, routeScene)
                 GpsLayer(host, state.gps)
                 GraphicLabelsLayer(host, scene.graphics)
+                PinLabelsLayer(host, routeScene, pointScene)
             }
         }
     }

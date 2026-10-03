@@ -42,6 +42,8 @@ import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastDiagramPreferences
 import app.ezpztac.android.LastRouteSet
 import app.ezpztac.android.LastRouteSetPreferences
+import app.ezpztac.android.PointSetViewPreferences
+import app.ezpztac.data.PointSetViewStore
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.symbols.DefaultSymbolRenderer
 import app.ezpztac.symbols.JavaScriptSymbolSource
@@ -152,6 +154,9 @@ interface AppBindings {
 
     @Binds
     fun lastRouteSet(impl: LastRouteSetPreferences): LastRouteSet
+
+    @Binds
+    fun pointSetViews(impl: PointSetViewPreferences): PointSetViewStore
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner

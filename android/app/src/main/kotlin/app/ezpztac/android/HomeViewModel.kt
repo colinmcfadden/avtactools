@@ -7,13 +7,18 @@ import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.PointSelection
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SlopeState
+import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapProjection
+import app.ezpztac.map.PointHitTest
+import app.ezpztac.map.PointScene
 import app.ezpztac.map.RouteHitTest
 import app.ezpztac.map.RouteScene
 import app.ezpztac.map.SlopeImage
@@ -56,6 +61,8 @@ class HomeViewModel @Inject constructor(
     private val sketching: RouteSketching,
     private val last: LastDiagram,
     private val lastSet: LastRouteSet,
+    private val localPoints: LocalPoints,
+    private val pointSelection: PointSelection,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -88,6 +95,14 @@ class HomeViewModel @Inject constructor(
         val points = draft?.takeIf { it.setId == set?.id }?.points.orEmpty().map { LatLon(it.lat, it.lon) }
         RouteScene.of(set, selectedRouteId = chosen, selectedPointId = held?.takeIf { it.routeId == chosen }?.pointId, draft = points)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RouteScene.EMPTY)
+
+    /**
+     * What the map draws for the local points: those of every set that is shown, each in its set's colour, the held one marked. A set that is hidden
+     * is not drawn, and neither is a held point that is in one.
+     */
+    val points: StateFlow<PointScene> = combine(localPoints.sets, pointSelection.held) { sets, held ->
+        PointScene.of(sets.filter { it.visible }.map { DrawnPointSet(it.set.id, it.color, it.set.points) }, held?.setId, held?.pointId)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, PointScene.EMPTY)
 
     /** Whether a boundary or a route is being drawn: the sheet goes down to its peek so the map is there to tap. */
     val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft) { boundary, route -> boundary != null || route != null }
@@ -150,8 +165,8 @@ class HomeViewModel @Inject constructor(
      * A tap on the map at [at], seen through [view]: the graphic under the finger is held, and a tap on nothing puts the held one down.
      * [touchRadiusPx] is how far from a graphic's point a finger still counts as on it. While a boundary is being drawn a tap is a corner of it,
      * and while a route is being drawn a point of it, wherever it falls: nothing else on the map can be held until the person finishes or cancels.
-     * Otherwise a planning graphic is held first; failing that a route or one of its points; a tap on nothing puts down the graphic and the route's point
-     * (the route being worked on stays, so drawing and editing it carry on).
+     * Otherwise a planning graphic is held first; failing that a route or one of its points; failing that a local point (tapping the held one puts it
+     * down); a tap on nothing puts down the graphic, the route's point and the local point (the route being worked on stays, so drawing and editing it carry on).
      */
     fun mapTapped(at: LatLon, view: MapProjection, touchRadiusPx: Double) {
         if (drawing.draft.value != null) {
@@ -164,12 +179,21 @@ class HomeViewModel @Inject constructor(
         }
         val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx)
         if (hit != null) {
+            pointSelection.clear()
             selection.select(hit)
             return
         }
         selection.clear()
         val route = RouteHitTest.pick(routes.value, view, at, touchRadiusPx)
-        if (route != null) routeSelection.select(route.routeId, route.pointId) else routeSelection.releasePoint()
+        if (route != null) {
+            pointSelection.clear()
+            routeSelection.select(route.routeId, route.pointId)
+            return
+        }
+        routeSelection.releasePoint()
+        // A local point is under the routes (a route point snapped onto one is the route's), and over nothing: a tap on nothing puts it down.
+        val point = PointHitTest.pick(points.value, view, at, touchRadiusPx)
+        if (point != null) pointSelection.toggle(point.setId, point.pointId) else pointSelection.clear()
     }
 
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */

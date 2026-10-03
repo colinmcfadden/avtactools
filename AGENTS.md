@@ -1151,8 +1151,15 @@ client is built around not losing one:
   - **A big set is parsed once for as long as its document is the same** (`PointSetRepository.observeSets`): the list is rebuilt for every change to any record, and a set can be thousands of points.
   - **Test traps:** `SyncStore.transaction` is not re-entrant, so reading a record inside one deadlocks (the test then hangs rather than fails); read first, then write. And never `pkill`/`pgrep -f` a
     pattern your own command line contains: it kills the shell (use `[G]radleWorkerMain`).
-  - **Not built yet:** every screen (the Points tab, the import picker, the map layer and its clustering, "use a local point" in a route point's form), and a repository `edit` of the points themselves (the
-    web cannot edit them either).
+  - **On the map** (`feature-map`: `PointScene`, `PointHitTest`, `PinLabels`, `PointOverlay`; `app`: `HomeViewModel.points`, `PointSetViewPreferences`). Every *shown* set is drawn as dots in its
+    colour, the held one larger with an amber ring (`PointSelection`, a singleton the map and the sheet both read); a crowd gathers into one larger ring that breaks up past zoom 12 (MapLibre's own
+    clustering, no count on it: the style has no glyphs). A tap holds a point only after a planning graphic and a route have had theirs (a route point snapped onto a local point is the route's), and a
+    tap on the held one, or on nothing, puts it down. A point id is only unique within its set, so a selection names both. **Names are Compose labels** (`PinLabelsLayer`, which also gives a route's named
+    points their names: nothing drew those before): a route's are always named; local points from zoom 12, at most 40, nearest the middle of the view first, one that would sit on a name already placed left
+    out, and the held one always named. `PointOverlay` is GL and compile-only like every layer.
+  - **The view preference is untrusted text**: a colour that is not `#RRGGBB` is dropped (it reaches the map as a style value), a damaged value is no views, and an unreadable entry costs only its colour.
+  - **Not built yet:** the sheet (the Points section, the import picker, "use a local point" in a route point's form, add to route), and a repository `edit` of the points themselves (the web cannot edit
+    them either).
 - **Aircraft profiles** (`core-data`: `AircraftProfiles`; `core-model`: `AircraftDraft`; `feature-workspace`: `AircraftViewModel`,
   `AircraftScreen`, `AircraftPicker`; `app`: `AircraftChoicePreferences`).
   - **Two sources, one list.** The admin's master list comes from `GET /api/aircraft-profiles` (`is_system`), is kept in a file

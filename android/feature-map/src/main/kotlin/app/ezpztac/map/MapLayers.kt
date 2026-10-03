@@ -24,3 +24,10 @@ fun RouteLayer(host: MapHost, scene: RouteScene) {
     val overlay = remember(host) { RouteOverlay().also { host.onStyle(it::install) } }
     LaunchedEffect(overlay, scene) { overlay.show(scene) }
 }
+
+/** Draws the local points that are shown on [host]'s map, gathered into rings where they crowd. An empty scene takes them off. */
+@Composable
+fun PointLayer(host: MapHost, scene: PointScene) {
+    val overlay = remember(host) { PointOverlay().also { host.onStyle(it::install) } }
+    LaunchedEffect(overlay, scene) { overlay.show(scene) }
+}

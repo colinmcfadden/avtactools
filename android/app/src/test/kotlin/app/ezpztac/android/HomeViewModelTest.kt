@@ -3,6 +3,12 @@ package app.ezpztac.android
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BoundaryDrawing
+import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.PointSelection
+import app.ezpztac.data.PointSetRepository
+import app.ezpztac.data.PointSetView
+import app.ezpztac.data.PointSetViewStore
+import app.ezpztac.data.PointSetViews
 import app.ezpztac.data.InMemoryAircraftChoice
 import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.DiagramRepository
@@ -25,6 +31,7 @@ import app.ezpztac.network.SlopeThresholds
 import app.ezpztac.network.Uh60Limits
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.model.AircraftProfile
+import app.ezpztac.planning.RouteColors
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
@@ -54,6 +61,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import app.ezpztac.testing.Fixtures
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -106,6 +114,12 @@ class HomeViewModelTest {
         }
     }
 
+    private class MemoryViews : PointSetViewStore {
+        override fun load() = emptyMap<String, PointSetView>()
+
+        override fun save(views: Map<String, PointSetView>) {}
+    }
+
     private class FakeLastRouteSet(var stored: String? = null) : LastRouteSet {
         override fun id() = stored
 
@@ -135,7 +149,11 @@ class HomeViewModelTest {
         val sketching = RouteSketching(routeSession, aircraft, mode)
         val last = FakeLastDiagram()
         val lastSet = FakeLastRouteSet()
-        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
+        val pointSets = PointSetRepository(sync, store, scheduler)
+        val pointViews = PointSetViews(MemoryViews())
+        val localPoints = LocalPoints(pointSets, pointViews)
+        val pointSelection = PointSelection()
+        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
 
@@ -573,7 +591,7 @@ class HomeViewModelTest {
 
     // -- Tapping the map -----------------------------------------------------------------------------------------------
 
-    private fun view() = MapProjection(CameraState(LatLon(34.7838, -84.0822), 18.0), 0.0, 0.0, 1.0)
+    private fun view(center: LatLon = LatLon(34.7838, -84.0822)) = MapProjection(CameraState(center, 18.0), 0.0, 0.0, 1.0)
 
     @Test
     fun `a tap on a graphic holds it, a tap on another changes to it, and a tap on nothing puts it down`() = runTest(dispatcher) {
@@ -818,6 +836,102 @@ class HomeViewModelTest {
         assertEquals(2, r.sketching.draft.value!!.points.size)
         assertNull(r.selection.selected.value)
         assertNull(r.routeSelection.held.value)
+    }
+
+    // -- Local points ------------------------------------------------------------------------------------------------
+
+    private val lps = Fixtures.bytes("sqlite/local-points.lps")
+
+    private suspend fun Rig.importedSet(name: String = "NORTH GA.lps") = (pointSets.import(lps, name) as app.ezpztac.data.ImportOutcome.Imported).set
+
+    @Test
+    fun `with no sets of points the map draws none`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertTrue(r.model.points.value.isEmpty)
+    }
+
+    @Test
+    fun `an imported set is drawn, every point in its colour`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        val pins = r.model.points.value.pins
+        assertEquals(set.points.size, pins.size)
+        assertEquals(setOf(set.id), pins.map { it.setId }.toSet())
+        assertEquals(setOf(RouteColors.PALETTE[0]), pins.map { it.color }.toSet())
+        assertTrue(pins.none { it.selected })
+    }
+
+    @Test
+    fun `a set that is hidden is not drawn, and is again when shown`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val one = r.importedSet("ONE.lps")
+        r.importedSet("TWO.lps")
+        advanceUntilIdle()
+        val total = r.model.points.value.pins.size
+        r.pointViews.toggle(one.id)
+        advanceUntilIdle()
+        assertEquals(total / 2, r.model.points.value.pins.size)
+        assertTrue(r.model.points.value.pins.none { it.setId == one.id })
+        r.pointViews.toggle(one.id)
+        advanceUntilIdle()
+        assertEquals(total, r.model.points.value.pins.size)
+    }
+
+    @Test
+    fun `a tap on a local point holds it, and the same tap again puts it down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        val pin = r.model.points.value.pins.first()
+        r.model.mapTapped(pin.at, view(pin.at), touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.data.PointHeld(set.id, pin.pointId), r.pointSelection.held.value)
+        advanceUntilIdle()
+        assertTrue(r.model.points.value.pins.single { it.selected }.pointId == pin.pointId)
+        r.model.mapTapped(pin.at, view(pin.at), touchRadiusPx = 24.0)
+        assertNull(r.pointSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on nothing puts a held local point down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        r.pointSelection.select(set.id, set.points.first().id)
+        r.model.mapTapped(LatLon(10.0, 10.0), view(), touchRadiusPx = 24.0)
+        assertNull(r.pointSelection.held.value)
+    }
+
+    @Test
+    fun `a hidden set cannot be tapped, because it is not on the map`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        val pin = r.model.points.value.pins.first()
+        r.pointViews.toggle(set.id)
+        advanceUntilIdle()
+        r.model.mapTapped(pin.at, view(pin.at), touchRadiusPx = 24.0)
+        assertNull(r.pointSelection.held.value)
+    }
+
+    @Test
+    fun `a route point on a local point wins the tap, and a graphic wins over both`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        r.pointSelection.select(set.id, set.points.first().id)
+
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)                                // the route's point p2, nothing else near
+        assertEquals(app.ezpztac.data.RouteHeld("r1", "p2"), r.routeSelection.held.value)
+        assertNull(r.pointSelection.held.value)                                                // choosing a route point puts the local point down
     }
 
     @Test
