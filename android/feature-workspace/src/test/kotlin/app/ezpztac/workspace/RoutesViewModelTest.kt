@@ -3,7 +3,12 @@ package app.ezpztac.workspace
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.ActiveAircraftChoice
 import app.ezpztac.data.MasterProfileStore
+import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.PointSetRepository
+import app.ezpztac.data.PointSetView
+import app.ezpztac.data.PointSetViewStore
+import app.ezpztac.data.PointSetViews
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.RouteExport
 import app.ezpztac.testing.Fixtures
@@ -15,12 +20,16 @@ import app.ezpztac.network.NetworkException
 import app.ezpztac.network.PointWindDto
 import app.ezpztac.network.WindQuestion
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.SetPoint
+import app.ezpztac.model.PointSets
+import app.ezpztac.model.PointSet
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.model.AltitudeSetting
@@ -100,10 +109,16 @@ class RoutesViewModelTest {
         )
         val sketching = RouteSketching(session, profiles)
         val api = FakeApi()
+        val pointSets = PointSetRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler())
+        val pointViews = PointSetViews(object : PointSetViewStore {
+            override fun load() = emptyMap<String, PointSetView>()
+
+            override fun save(views: Map<String, PointSetView>) {}
+        })
         var template: () -> ByteArray = { Fixtures.repoBytes("frontend/public/msnx_template.msnx") }
         val model = RoutesViewModel(
             repository, session, selection, sketching, resolver ?: ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            RoutePlanning(api, session), RouteExport { template() },
+            RoutePlanning(api, session), RouteExport { template() }, LocalPoints(pointSets, pointViews),
         ).also { it.worker = StandardTestDispatcher(scope.testScheduler) }
         val shared = mutableListOf<ExportFile>()
         init { scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.exports.collect { shared += it } } }
@@ -607,6 +622,125 @@ class RoutesViewModelTest {
         assertEquals(".IP ONE", r.state.detail!!.points[1].name)
         r.model.renamePoint(id, second, ""); settle()
         assertEquals("", r.state.detail!!.points[1].name)
+    }
+
+    // -- Naming a route point after a local point ----------------------------------------------------------------------------
+
+    /** Imports local points, then waits for the sets to reach the view model. */
+    private suspend fun TestScope.withLocalPoints(r: Rig, points: List<SetPoint>, name: String = "LOCAL") {
+        r.device.repository.create(RecordKind.POINT_SET, name, PointSets.serialize(PointSet("set-1", null, name, points)))
+        settle()
+    }
+
+    private fun local(name: String, lat: Double, lon: Double, elevationFt: Double? = null) = SetPoint("id-$name", name, "", "", "", elevationFt, lat, lon)
+
+    @Test
+    fun `a name that is a local point's puts the route point on it, with its charted elevation`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        withLocalPoints(r, listOf(local("BLUE 1", 34.9, -84.9, 1730.0)))
+        val second = r.state.detail!!.points[1].id
+        val depth = r.session.undoDepth.value
+
+        r.model.renamePoint(id, second, "blue 1"); settle()
+        val moved = r.route(id).points.single { it.id == second }
+        assertEquals("BLUE 1", moved.name)
+        assertEquals(34.9, moved.lat, 0.0)
+        assertEquals(-84.9, moved.lon, 0.0)
+        assertEquals(1730.0, moved.chartElevationFt)
+        assertEquals(depth + 1, r.session.undoDepth.value)                                   // the rename and the move are one step
+
+        r.model.undo(); settle()
+        val back = r.route(id).points.single { it.id == second }
+        assertEquals(".SP", back.name)
+        assertNull(back.chartElevationFt)
+        assertTrue(back.lat != 34.9)
+    }
+
+    @Test
+    fun `a leading dot of what is typed is ignored, but only one`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        withLocalPoints(r, listOf(local("BLUE 1", 34.9, -84.9, 100.0), local(".DOTTED", 34.8, -84.8, 200.0)))
+        val second = r.state.detail!!.points[1].id
+
+        r.model.renamePoint(id, second, ".blue 1"); settle()
+        assertEquals(34.9, r.route(id).points.single { it.id == second }.lat, 0.0)
+        assertEquals(".BLUE 1", r.route(id).points.single { it.id == second }.name)           // the name is kept as typed, in capitals
+
+        r.model.renamePoint(id, second, ".DOTTED"); settle()                                  // the dot is stripped from what is typed, never from a point's own name
+        assertEquals(".DOTTED", r.route(id).points.single { it.id == second }.name)
+        assertEquals(34.9, r.route(id).points.single { it.id == second }.lat, 0.0)            // so it is not found: the point stays where it was
+        r.model.renamePoint(id, second, "..DOTTED"); settle()
+        assertEquals(34.8, r.route(id).points.single { it.id == second }.lat, 0.0)
+    }
+
+    @Test
+    fun `a name that is no local point's only renames, and leaves the position and the elevation alone`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        withLocalPoints(r, listOf(local("BLUE 1", 34.9, -84.9, 100.0)))
+        val second = r.state.detail!!.points[1]
+        val before = r.route(id).points.single { it.id == second.id }
+        r.model.renamePoint(id, second.id, "NOWHERE"); settle()
+        val after = r.route(id).points.single { it.id == second.id }
+        assertEquals("NOWHERE", after.name)
+        assertEquals(before.lat, after.lat, 0.0)
+        assertEquals(before.lon, after.lon, 0.0)
+        assertEquals(before.chartElevationFt, after.chartElevationFt)
+    }
+
+    @Test
+    fun `a local point with no elevation clears the elevation the route point had snapped to before`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        withLocalPoints(r, listOf(local("HIGH", 34.9, -84.9, 900.0), local("PLAIN", 34.8, -84.8, null)))
+        val second = r.state.detail!!.points[1].id
+        r.model.renamePoint(id, second, "high"); settle()
+        assertEquals(900.0, r.route(id).points.single { it.id == second }.chartElevationFt)
+        r.model.renamePoint(id, second, "plain"); settle()
+        assertNull(r.route(id).points.single { it.id == second }.chartElevationFt)           // as the web's rename does: it passes no elevation, and the old one goes
+    }
+
+    @Test
+    fun `a set that is hidden on the map still counts for a name`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        withLocalPoints(r, listOf(local("BLUE 1", 34.9, -84.9, 100.0)))
+        for (row in r.pointSets.observe().first()) r.pointViews.toggle(row.uuid)               // hidden on the map
+        settle()
+        assertFalse(r.pointSets.observe().first().isEmpty())
+        assertTrue(r.pointViews.views.value.values.none { it.visible })                       // really hidden: nothing is shown
+        val second = r.state.detail!!.points[1].id
+        r.model.renamePoint(id, second, "blue 1"); settle()
+        assertEquals(34.9, r.route(id).points.single { it.id == second }.lat, 0.0)
+    }
+
+    @Test
+    fun `with no local points a rename is only a rename, as it always was`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val second = r.state.detail!!.points[1]
+        val before = r.route(id).points.single { it.id == second.id }
+        r.model.renamePoint(id, second.id, ".ip one"); settle()
+        val after = r.route(id).points.single { it.id == second.id }
+        assertEquals(".IP ONE", after.name)
+        assertEquals(before.lat, after.lat, 0.0)
+    }
+
+    @Test
+    fun `what a name would do is told before it is saved, and not for a name that matches none`() = runTest(dispatcher) {
+        val r = rig()
+        openWithPlannedRoute(r)
+        assertNull(r.model.localPointNamed("blue 1"))                                         // no local points yet
+        withLocalPoints(r, listOf(local("BLUE 1", 34.9, -84.9, 1730.0), local("NOELEV", 34.8, -84.8, null)))
+        val match = r.model.localPointNamed("blue 1")!!
+        assertEquals(LatLon(34.9, -84.9), match.at)
+        assertEquals(1730.0, match.chartElevationFt)
+        assertEquals("BLUE 1", match.name)
+        assertNull(r.model.localPointNamed("nope"))
+        assertNull(r.model.localPointNamed(""))
+        assertNull(r.model.localPointNamed("noelev")!!.chartElevationFt)
     }
 
     @Test

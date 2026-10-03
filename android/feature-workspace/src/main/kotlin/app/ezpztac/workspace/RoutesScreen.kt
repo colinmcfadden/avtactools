@@ -44,6 +44,7 @@ import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.LocalPointMatch
 import app.ezpztac.planning.PlanDraft
 import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.SyncEngine
@@ -91,6 +92,8 @@ class RoutesActions(
     val exportSet: () -> Unit = {},
     val exportRoute: (routeId: String) -> Unit = {},
     val dismissExportWarning: () -> Unit = {},
+    /** The local point a name typed on a route point would put it on, or null when it names none. */
+    val localPointNamed: (typed: String) -> LocalPointMatch? = { null },
 )
 
 private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = RoutesActions(
@@ -105,6 +108,7 @@ private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = R
     pointToText = viewModel::pointToText, addShapingPoint = { routeId -> viewModel.addShapingPoint(routeId, crosshair) },
     fetchWinds = viewModel::fetchWinds, fetchElevations = viewModel::fetchElevations, dismissNote = viewModel::dismissNote,
     exportSet = viewModel::exportSet, exportRoute = viewModel::exportRoute, dismissExportWarning = viewModel::dismissExportWarning,
+    localPointNamed = viewModel::localPointNamed,
 )
 
 /**

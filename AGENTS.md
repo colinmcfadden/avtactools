@@ -1158,8 +1158,21 @@ client is built around not losing one:
     points their names: nothing drew those before): a route's are always named; local points from zoom 12, at most 40, nearest the middle of the view first, one that would sit on a name already placed left
     out, and the held one always named. `PointOverlay` is GL and compile-only like every layer.
   - **The view preference is untrusted text**: a colour that is not `#RRGGBB` is dropped (it reaches the map as a style value), a damaged value is no views, and an unreadable entry costs only its colour.
-  - **Not built yet:** the sheet (the Points section, the import picker, "use a local point" in a route point's form, add to route), and a repository `edit` of the points themselves (the web cannot edit
-    them either).
+  - **The Points section of the sheet** (`feature-workspace`: `PointsViewModel`, `PointsScreen`, `PickedFile`). The list (name, count, colour, hidden or not, sync state, conflict copies settled with the
+    same three choices as a diagram), *Import .LPS*, Hide/Show, Colour (the route palette; anything else is ignored, since a colour reaches the map as a style value), Rename (blank refused in words
+    at the field), Delete (asks first; **Keep it is the prominent answer**). **The file comes through the system's picker** (`OpenDocument`, `*/*`: an `.LPS` has no media type of its own and the reader
+    says what a file is), so there is no storage permission; `PickedFile` reads it bounded (32 MB: past that it is not a set of local points and is not held in memory), names the set from the picker's
+    display name, and **catches anything** a provider throws, because a provider is someone else's code and reading a chosen file must not end the app. The words shown are the app's own.
+  - **A held local point** shows what the file said of it (grid, degrees, elevation in whole feet with a comma, group, description; none of what the file left out) and offers two things for the route being
+    worked on: *Add to <route>* appends it as a named `turn` point with its charted elevation and holds it (the held route, else the only one; with two and none held it offers nothing rather than guess), and
+    *Use for <route>: <point>* moves the held route point onto it, name and elevation too, exactly as typing its name does. Each is one undo step. The sheet rests at its peek, so the card needs the sheet pulled
+    up, as the graphics inspector does.
+  - **A name typed on a route point snaps it onto a local point** (`RoutesViewModel.renamePoint`): the field says so *before* it is saved ("Matches a local point: saving puts this point on it, at 1,730 ft."),
+    and a local point with no elevation leaves the route point with none, as the web's rename does. Hidden sets count.
+  - **Layout trap found by a test:** the design system's buttons are full width by default, so two in a `Row` push the second out of bounds, where it has no size and cannot be tapped (the delete
+    confirmation's *Keep it* was invisible). Give each `Modifier.weight(1f)`. A Compose test whose content grows after a click needs a window to scroll in (`fillMaxSize().verticalScroll`).
+  - **Not built yet:** opening an `.LPS` from Files, a mail or the share sheet (declared document types), a strip in the sheet's peek for the held point, and a repository `edit` of the points themselves (the
+    web cannot edit them either).
 - **Aircraft profiles** (`core-data`: `AircraftProfiles`; `core-model`: `AircraftDraft`; `feature-workspace`: `AircraftViewModel`,
   `AircraftScreen`, `AircraftPicker`; `app`: `AircraftChoicePreferences`).
   - **Two sources, one list.** The admin's master list comes from `GET /api/aircraft-profiles` (`is_system`), is kept in a file

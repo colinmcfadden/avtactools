@@ -16,6 +16,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
+import app.ezpztac.model.LatLon
+import app.ezpztac.model.LocalPointMatch
 import app.ezpztac.planning.PlanDraft
 import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.SyncEngine
@@ -51,7 +53,9 @@ class RoutesScreenTest {
             pointToText = { r, p, t -> log += "pointTo:$r:$p:$t"; textProblem }, addShapingPoint = { log += "addShaping:$it" },
             fetchWinds = { log += "winds" }, fetchElevations = { log += "elevations" }, dismissNote = { log += "dismissNote" },
             exportSet = { log += "exportSet" }, exportRoute = { log += "exportRoute:$it" }, dismissExportWarning = { log += "dismissExportWarning" },
+            localPointNamed = { typed -> if (typed.startsWith("BLUE")) LocalPointMatch(typed.uppercase(), LatLon(34.9, -84.9), elevation) else null },
         )
+        var elevation: Double? = 1730.0
         var problem: String? = null
         var textProblem: String? = null
         val applied = mutableListOf<Pair<String, PlanDraft>>()
@@ -436,6 +440,23 @@ class RoutesScreenTest {
         compose.onNodeWithText("Target").performClick()
         compose.onNodeWithText("Make it only shape the line").performScrollTo().performClick()
         assertEquals(listOf("renamePoint:r1:p2:X.SP", "type:r1:p2:target", "shaping:r1:p2"), r.log)
+    }
+
+    @Test
+    fun `a name that is a local point's is said to move the point, with its elevation, before it is saved`() {
+        withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true)))
+        compose.onNodeWithText("Shown in AMPS", substring = true).performScrollTo().assertIsDisplayed()          // the usual hint while nothing matches
+        compose.onNodeWithText("Name").performScrollTo().performTextInput("BLUE")                                // typed in front of the name: BLUE.SP
+        compose.onNodeWithText("Matches a local point: saving puts this point on it, at 1,730 ft.").performScrollTo().assertIsDisplayed()
+        assertEquals(0, count("Shown in AMPS", substring = true))
+    }
+
+    @Test
+    fun `a local point with no elevation is matched without saying one, and a name already saved is not announced`() {
+        withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", "BLUE 1", "ip", held = true))) { elevation = null }
+        compose.onNodeWithText("Shown in AMPS", substring = true).performScrollTo().assertIsDisplayed()          // BLUE 1 is the name it has: nothing is about to change
+        compose.onNodeWithText("Name").performScrollTo().performTextInput("BLUE")
+        compose.onNodeWithText("Matches a local point: saving puts this point on it.").performScrollTo().assertIsDisplayed()
     }
 
     @Test

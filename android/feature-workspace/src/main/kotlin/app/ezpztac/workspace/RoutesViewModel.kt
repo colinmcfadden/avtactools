@@ -2,6 +2,7 @@ package app.ezpztac.workspace
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.ExportResult
 import app.ezpztac.geo.MgrsConverter
@@ -19,6 +20,8 @@ import app.ezpztac.data.RouteSetSummary
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SketchFinish
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.LocalPointMatch
+import app.ezpztac.model.LocalPointNames
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.RouteSet
 import app.ezpztac.model.SketchRoute
@@ -45,6 +48,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -179,6 +183,7 @@ class RoutesViewModel @Inject constructor(
     private val conflicts: ConflictResolver,
     private val planning: RoutePlanning,
     private val export: RouteExport,
+    localPoints: LocalPoints,
 ) : ViewModel() {
     private data class Local(
         val creating: Boolean = false, val error: String? = null, val fetching: PlanningKind? = null, val note: PlanningNote? = null, val noteFor: String? = null,
@@ -444,9 +449,22 @@ class RoutesViewModel @Inject constructor(
         selection.holdPoint(if (held.pointId == pointId) null else pointId)
     }
 
-    /** Renames a point, in capitals as the web does. An empty name is allowed (the point is then known by its place in the route). */
+    /** Every point of every set of local points, hidden or not, for a name typed on a route point to be looked up in (as the web looks it up in all that are loaded). */
+    private val localNames: StateFlow<LocalPointNames> = localPoints.sets.map { sets -> LocalPointNames(sets.flatMap { it.set.points }) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, LocalPointNames(emptyList()))
+
+    /** The local point [typed] would name, or null when it names none: what the name field says before the name is saved. */
+    fun localPointNamed(typed: String): LocalPointMatch? = localNames.value.match(typed).takeIf { it.at != null }
+
+    /**
+     * Renames a point, in capitals as the web does. An empty name is allowed (the point is then known by its place in the route). A name that is a local
+     * point's puts the point on it, with its charted elevation, as the web does (a local point with no elevation leaves the point with none).
+     */
     fun renamePoint(routeId: String, pointId: String, name: String) {
-        session.edit("Rename point") { set -> set.mapRoute(routeId) { SketchOps.rename(it, pointId, name.uppercase()) } }
+        val match = localNames.value.match(name)
+        session.edit("Rename point") { set ->
+            set.mapRoute(routeId) { SketchOps.rename(it, pointId, match.name, snapTo = match.at?.let { at -> at.lat to at.lon }, chartElevationFt = match.chartElevationFt) }
+        }
     }
 
     /** Changes what a named point is: `target`, `ip` or `turn`. */

@@ -1,6 +1,7 @@
 package app.ezpztac.data
 
 import app.ezpztac.model.PointSet
+import app.ezpztac.sync.SyncStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onEach
@@ -12,6 +13,8 @@ data class LoadedPointSet(
     val set: PointSet,
     val color: String,
     val visible: Boolean,
+    /** Whether the server has this version, is yet to be told, or the record is the copy kept beside a conflict. */
+    val sync: SyncStatus,
     /** The record this is a conflict copy of, if it is one. */
     val conflictOf: String?,
 )
@@ -35,7 +38,7 @@ class LocalPoints @Inject constructor(
         stored.map { s ->
             val view = views.viewOf(s.set.id, placed)
             placed = placed + (s.set.id to view)
-            LoadedPointSet(s.set, view.color, view.visible, s.conflictOf)
+            LoadedPointSet(s.set, view.color, view.visible, s.sync, s.conflictOf)
         }
     }.onEach { loaded -> views.settle(loaded.map { it.set.id }) }
 }

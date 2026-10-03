@@ -51,6 +51,7 @@ import app.ezpztac.workspace.BoundaryHost
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsHost
 import app.ezpztac.workspace.GraphicsHost
+import app.ezpztac.workspace.PointsHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesHost
 import kotlinx.coroutines.flow.filterNotNull
@@ -125,6 +126,7 @@ fun MapHome(
                         },
                     )
                     RoutesHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center, crosshairGrid = state.readout?.mgrs)
+                    PointsHost()
                     AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

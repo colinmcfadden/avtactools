@@ -17,6 +17,7 @@ dependencies {
     implementation(project(":core-planning"))
     implementation(project(":core-symbols"))
 
+    implementation(libs.androidx.activity.compose)               // the file picker for an .LPS
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

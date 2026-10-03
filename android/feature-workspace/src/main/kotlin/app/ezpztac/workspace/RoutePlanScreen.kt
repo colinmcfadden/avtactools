@@ -187,11 +187,15 @@ private fun PointForm(routeId: String, point: PlanPointUi, crosshairGrid: String
     var name by remember(point.id, point.name) { mutableStateOf(point.name) }
     var moving by rememberSaveable(point.id) { mutableStateOf(false) }
     fun change(next: PointDraft) { typed = next; problem = null }
+    // A name that is a local point's puts the point on it when it is saved: said before it is, so a move is never a surprise.
+    val local = if (name != point.name) actions.localPointNamed(name) else null
+    val nameHint = local?.let { "Matches a local point: saving puts this point on it${it.chartElevationFt?.let { ft -> ", at ${withCommas(Math.round(ft))} ft" }.orEmpty()}." }
+        ?: "Shown in AMPS. Left blank, the point is known by its place in the route."
 
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         EzpzTextField(
             name, { name = it }, "Name", capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done, onImeAction = { actions.renamePoint(routeId, point.id, name) },
-            hint = "Shown in AMPS. Left blank, the point is known by its place in the route.",
+            hint = nameHint,
         )
         if (name != point.name) TextAction("Save name", onClick = { actions.renamePoint(routeId, point.id, name) })
         Choice("Type", label(TYPE_CHOICES, point.ptType.orEmpty()), TYPE_CHOICES) { actions.setPointType(routeId, point.id, it) }
