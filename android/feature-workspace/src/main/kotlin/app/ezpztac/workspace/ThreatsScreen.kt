@@ -83,8 +83,8 @@ class ThreatsActions(
 fun ThreatsHost(
     onExport: (ExportFile) -> Unit,
     crosshair: LatLon?,
-    crosshairGrid: String? = null,
     modifier: Modifier = Modifier,
+    crosshairGrid: String? = null,
     viewModel: ThreatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()

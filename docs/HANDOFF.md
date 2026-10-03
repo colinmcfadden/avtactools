@@ -22,21 +22,14 @@ Last refreshed: 2026-10-03.
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output,
   `FLAG_SECURE` and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
   "not verifiable here" in AGENTS.md). The first device run is the first real test of all of them.
-- **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`) was green at the last push
-  (`f88531f`). The commit after it and the working tree on top of it (below) were in verification when this was written —
-  run the command in §3 before trusting them.
+- **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`, §3) was **green on the pushed head**
+  (the commit that added this note and the one before it). Re-run it after any change before pushing.
 
-### Uncommitted / unpushed when this was written
+### Working tree
 
-| What | State |
-|---|---|
-| `6404151` — range rings continuous across the antimeridian; a threat marker is never blank | committed locally, **not pushed** |
-| Threat UI additions on Codex's base: held-threat card (details, Edit/Move/Remove, nudge pad, typed grid, put at crosshair), in-form errors, *Remove all*, mission export offers the matching `.ths` (`ShareExport` multi-file, `ExportCleaner`), 7 tap-order tests, `ThreatsScreenshotTest` | working tree, **not committed** |
-| `AGENTS.md` — restored the detailed module rows, rewrote the Threats section, noted the `.db` fixture exception | working tree, **not committed** |
-| `docs/HANDOFF.md` (this file) | working tree |
-
-`git status` and `git log origin/claude/jolly-wozniak-i7rlrq..HEAD` show the truth; if the verification in §3 is green, commit
-(conventional, lowercase subject, scope `android`, the two trailers below) and push.
+Clean and pushed at the time of writing (check `git status` and `git log origin/claude/jolly-wozniak-i7rlrq..HEAD`).
+The threat slice (task #51) is committed: Codex's UI (`bd43777`), the ring/marker fix (`6404151`) and the held-threat card,
+remove-all and mission-with-threats export on top of them.
 
 Housekeeping to finish: `git stash drop` (`stash@{0}` is my parallel threat UI, superseded by Codex's plus the additions
 above) and `git worktree remove /home/user/codex-wt` once nothing is needed from them.
@@ -45,8 +38,8 @@ above) and `git worktree remove /home/user/codex-wt` once nothing is needed from
 
 ## 2. Next work, in order
 
-1. **Land the threat slice** (task #51): verify (§3), commit, push, optionally a mutation pass over
-   `HomeViewModel.mapTapped` ordering, `ThreatStore`, `ShareExport` retention and `ThreatsViewModel`.
+1. **Optionally mutation-check the threat slice** (task #51 is landed): `HomeViewModel.mapTapped` ordering, `ThreatStore`,
+   `ShareExport` retention and `ThreatsViewModel`, the way the weather code was (surviving mutants become tests).
 2. **Open files from outside the app** (#52): `.LPS` and `.ths` (and later `.msnx`) from Files, mail and the share sheet.
    Design settled, not started:
    - Manifest: VIEW and SEND/SEND_MULTIPLE filters, `content` scheme only, mime `application/octet-stream`,
