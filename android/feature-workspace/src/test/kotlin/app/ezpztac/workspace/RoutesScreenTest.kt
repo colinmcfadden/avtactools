@@ -47,18 +47,23 @@ class RoutesScreenTest {
             applyPoint = { route, point, typed, before, first -> points += Applied(route, point, typed, before, first); log += "applyPoint:$route:$point"; problem },
             selectPoint = { log += "selectPoint:$it" }, renamePoint = { r, p, n -> log += "renamePoint:$r:$p:$n" },
             setPointType = { r, p, t -> log += "type:$r:$p:$t" }, makeShaping = { r, p -> log += "shaping:$r:$p" }, makeNamed = { r, p -> log += "named:$r:$p" },
+            nudgePoint = { r, p, n, e -> log += "nudge:$r:$p:${n.toLong()}:${e.toLong()}" }, pointToCrosshair = { r, p -> log += "crosshair:$r:$p" },
+            pointToText = { r, p, t -> log += "pointTo:$r:$p:$t"; textProblem }, addShapingPoint = { log += "addShaping:$it" },
             fetchWinds = { log += "winds" }, fetchElevations = { log += "elevations" }, dismissNote = { log += "dismissNote" },
             exportSet = { log += "exportSet" }, exportRoute = { log += "exportRoute:$it" }, dismissExportWarning = { log += "dismissExportWarning" },
         )
         var problem: String? = null
+        var textProblem: String? = null
         val applied = mutableListOf<Pair<String, PlanDraft>>()
         class Applied(val route: String, val point: String, val typed: PointDraft, val before: PointDraft, val first: Boolean)
         val points = mutableListOf<Applied>()
     }
 
-    private fun content(state: RoutesUiState): Recorder {
-        val r = Recorder()
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(state, r.actions) } } }
+    private fun content(state: RoutesUiState, crosshairGrid: String? = null, configure: Recorder.() -> Unit = {}): Recorder {
+        val r = Recorder().apply(configure)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(state, r.actions, crosshairGrid = crosshairGrid) } }
+        }
         return r
     }
 
@@ -304,13 +309,14 @@ class RoutesScreenTest {
 
     private fun values() = PointDraft("50", "agl", "100", "ground", "0", "0")
 
-    private fun point(id: String, name: String, type: String?, first: Boolean = false, held: Boolean = false, hasClock: Boolean = false, clock: String = "--:--:--", facts: String = "3.1 nm · 045°T · 98 kt · 1320' MSL") =
-        PlanPointUi(id, name, type, first, values(), clock, hasClock, if (first) "START" else facts, if (first) "0:00" else "1:52", held)
+    private fun point(id: String, name: String, type: String?, first: Boolean = false, held: Boolean = false, hasClock: Boolean = false, clock: String = "--:--:--", facts: String = "3.1 nm · 045°T · 98 kt · 1320' MSL", grid: String = "16S GD 66993 52949") =
+        PlanPointUi(id, name, type, first, values(), clock, hasClock, if (first) "START" else facts, if (first) "0:00" else "1:52", held, grid)
 
     private fun detail(vararg points: PlanPointUi, shaping: Int = 0, heldShaping: ShapingPointUi? = null, warnings: List<String> = emptyList(), totals: String? = "Total 12.3 nm · 8:15 · 640 lb") =
         RouteDetailUi("r1", "ROUTE 1", "UH-60L Black Hawk", PlanDraft(date = "2026-10-03"), points.toList(), shaping, heldShaping, totals, warnings, hasElevations = false)
 
-    private fun withDetail(detail: RouteDetailUi): Recorder = content(RoutesUiState(open = open(one), detail = detail))
+    private fun withDetail(detail: RouteDetailUi, crosshairGrid: String? = null, configure: Recorder.() -> Unit = {}): Recorder =
+        content(RoutesUiState(open = open(one), detail = detail), crosshairGrid, configure)
 
     private val log = arrayOf(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip"), point("p3", ".TGT", "target", hasClock = true, clock = "12:30:00"))
 
@@ -439,6 +445,86 @@ class RoutesScreenTest {
         compose.onNodeWithText("Make it a route point").performScrollTo().performClick()
         assertEquals(listOf("named:r1:s1"), r.log)
         compose.onNodeWithText("1 shaping point bends the line between named points.").performScrollTo().assertIsDisplayed()
+    }
+
+    // -- Where a point is, and moving it -------------------------------------------------------------------------
+
+    private val held2 = arrayOf(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true, grid = "16S GD 12345 67890"))
+
+    @Test
+    fun `a point that is not held has no position controls, and a held one offers them`() {
+        withDetail(detail(*log))
+        assertEquals(0, count("Move this point"))
+        assertEquals(0, count("Position"))
+    }
+
+    @Test
+    fun `the held point's position controls are folded away until asked for, and can be put away again`() {
+        withDetail(detail(*held2))
+        compose.onNodeWithText("Move this point").performScrollTo().assertIsDisplayed()
+        assertEquals(0, count("Position"))
+        compose.onNodeWithText("Move this point").performScrollTo().performClick()
+        compose.onNodeWithText("Position").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Point position 16S GD 12345 67890").performScrollTo().assertIsDisplayed()
+        assertEquals(0, count("Move this point"))
+        compose.onNodeWithText("Hide position controls").performScrollTo().performClick()
+        assertEquals(0, count("Position"))
+        compose.onNodeWithText("Move this point").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `the arrows nudge the held point by the chosen step, 50 feet to begin with`() {
+        val r = withDetail(detail(*held2))
+        compose.onNodeWithText("Move this point").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Move north 50 feet").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Move west 50 feet").performScrollTo().performClick()
+        compose.onNodeWithText("200 ft").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Move east 200 feet").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Move south 200 feet").performScrollTo().performClick()
+        compose.onNodeWithText("10 ft").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Move north 10 feet").performScrollTo().performClick()
+        assertEquals(listOf("nudge:r1:p2:50:0", "nudge:r1:p2:0:-50", "nudge:r1:p2:0:200", "nudge:r1:p2:-200:0", "nudge:r1:p2:10:0"), r.log)
+    }
+
+    @Test
+    fun `the held point can be put at the crosshair, which says where that is when it knows`() {
+        val r = withDetail(detail(*held2), crosshairGrid = "16S GD 11111 22222")
+        compose.onNodeWithText("Move this point").performScrollTo().performClick()
+        compose.onNodeWithText("Put at the crosshair · 16S GD 11111 22222").performScrollTo().performClick()
+        assertEquals(listOf("crosshair:r1:p2"), r.log)
+    }
+
+    @Test
+    fun `with no crosshair grid the button still says what it does`() {
+        withDetail(detail(*held2))
+        compose.onNodeWithText("Move this point").performScrollTo().performClick()
+        compose.onNodeWithText("Put at the crosshair").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `a grid typed for the held point is sent, and what is wrong with it is said at the field`() {
+        val r = withDetail(detail(*held2)) { textProblem = "I could not read that as a grid." }
+        compose.onNodeWithText("Move this point").performScrollTo().performClick()
+        compose.onNodeWithText("Move to a grid").performScrollTo().performTextInput("nonsense")
+        compose.onNodeWithText("Go").performScrollTo().performClick()
+        assertEquals(listOf("pointTo:r1:p2:nonsense"), r.log)
+        compose.onNodeWithText("I could not read that as a grid.").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `a held point that only shapes the line shows its position controls without being asked`() {
+        val r = withDetail(detail(*log, shaping = 1, heldShaping = ShapingPointUi("s1", held = true, grid = "16S GD 55555 44444")))
+        compose.onNodeWithContentDescription("Point position 16S GD 55555 44444").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Move east 50 feet").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Put this point at the crosshair").performScrollTo().performClick()
+        assertEquals(listOf("nudge:r1:s1:0:50", "crosshair:r1:s1"), r.log)
+    }
+
+    @Test
+    fun `a shaping point can be added at the crosshair, whichever point is held`() {
+        val r = withDetail(detail(*log), crosshairGrid = "16S GD 11111 22222")
+        compose.onNodeWithText("Add a shaping point at the crosshair · 16S GD 11111 22222").performScrollTo().performClick()
+        assertEquals(listOf("addShaping:r1"), r.log)
     }
 
     @Test

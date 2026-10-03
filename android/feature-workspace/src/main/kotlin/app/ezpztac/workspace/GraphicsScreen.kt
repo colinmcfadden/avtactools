@@ -221,15 +221,7 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
 
             // Move: a pad of four arrows and a step, because dragging a symbol with gloves on a bouncing phone is not a plan.
             Text("Move", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                NUDGE_STEPS_FT.forEachIndexed { i, ft ->
-                    val chosen = i == step
-                    val chooseStep = { step = i }
-                    val label = "$ft ft"
-                    if (chosen) PrimaryButton(label, onClick = chooseStep, modifier = Modifier.weight(1f).semantics { selected = true })
-                    else SecondaryButton(label, onClick = chooseStep, modifier = Modifier.weight(1f))
-                }
-            }
+            NudgeSteps(step) { step = it }
             NudgePad(feet, actions.nudge)
             SecondaryButton("Put at the crosshair", onClick = actions.moveToCrosshair)
             EntryRow("Move to a grid", "16S GD 66993 52949", "Go", KeyboardType.Ascii, onSubmit = { actions.moveToText(it); null })
@@ -245,8 +237,20 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
     }
 }
 
+/** The choice of how far a nudge goes: [chosen] is an index into [NUDGE_STEPS_FT]. */
 @Composable
-private fun NudgePad(feet: Double, nudge: (Double, Double) -> Unit) {
+internal fun NudgeSteps(chosen: Int, choose: (Int) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+        NUDGE_STEPS_FT.forEachIndexed { i, ft ->
+            val label = "$ft ft"
+            if (i == chosen) PrimaryButton(label, onClick = { choose(i) }, modifier = Modifier.weight(1f).semantics { selected = true })
+            else SecondaryButton(label, onClick = { choose(i) }, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+internal fun NudgePad(feet: Double, nudge: (Double, Double) -> Unit) {
     val steps = feet.toLong()
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         PadButton("↑", "Move north $steps feet") { nudge(feet, 0.0) }
@@ -336,7 +340,7 @@ private fun DirectionControls(direction: String, setDirection: (String) -> Unit)
 
 /** A line to type into and a button to send it. [onSubmit] answers with what is wrong with the entry, or null when it was taken. */
 @Composable
-private fun EntryRow(label: String, hint: String, action: String, keyboardType: KeyboardType, onSubmit: (String) -> String?) {
+internal fun EntryRow(label: String, hint: String, action: String, keyboardType: KeyboardType, onSubmit: (String) -> String?) {
     var text by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     val submit = {

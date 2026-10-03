@@ -62,8 +62,8 @@ class RoutesScreenshotTest {
 
     private fun values() = PointDraft("50", "agl", "100", "ground", "0", "0")
 
-    private fun point(id: String, name: String, type: String?, first: Boolean = false, held: Boolean = false, hasClock: Boolean = false, clock: String = "--:--:--", facts: String = "3.1 nm · 045°T · 98 kt · 1320' MSL", elapsed: String = "1:52") =
-        PlanPointUi(id, name, type, first, values(), clock, hasClock, if (first) "START" else facts, if (first) "0:00" else elapsed, held)
+    private fun point(id: String, name: String, type: String?, first: Boolean = false, held: Boolean = false, hasClock: Boolean = false, clock: String = "--:--:--", facts: String = "3.1 nm · 045°T · 98 kt · 1320' MSL", elapsed: String = "1:52", grid: String = "16S GD 66993 52949") =
+        PlanPointUi(id, name, type, first, values(), clock, hasClock, if (first) "START" else facts, if (first) "0:00" else elapsed, held, grid)
 
     private val log = listOf(
         point("p1", ".TGT", "target", first = true, clock = "12:21:40"),
@@ -80,4 +80,10 @@ class RoutesScreenshotTest {
     @Test fun plan() = shot("plan") { RoutesContent(RoutesUiState(open = open(one), detail = detail(listOf("Route needs at least two route points."))), RoutesActions()) }
 
     @Test fun planLight() = shot("plan-light", ThemeMode.Light) { RoutesContent(RoutesUiState(open = open(one), detail = detail()), RoutesActions()) }
+
+    private fun withShaping() = detail().copy(points = log.map { it.copy(held = false) }.take(2), shapingPoints = 3, heldShaping = ShapingPointUi("s1", held = true, grid = "16S GD 66993 52949"))
+
+    @Test fun shapingPointHeld() = shot("shaping-held") {
+        RoutesContent(RoutesUiState(open = open(one), detail = withShaping()), RoutesActions(), crosshairGrid = "16S GD 66100 52100")
+    }
 }

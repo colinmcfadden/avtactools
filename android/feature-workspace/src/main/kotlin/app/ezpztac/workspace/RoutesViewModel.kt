@@ -4,6 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.ExportResult
+import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.geo.PlaceResult
+import app.ezpztac.geo.PlaceSearch
+import app.ezpztac.model.Units
+import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.data.PlanningOutcome
 import app.ezpztac.data.RouteExport
 import app.ezpztac.data.RoutePlanning
@@ -105,10 +110,12 @@ data class PlanPointUi(
     val elapsed: String,
     /** The point the person is holding (on the map, or by tapping its row): its form is open. */
     val held: Boolean,
+    /** Where it is, as the grid crews read it (or its degrees where there is no grid). */
+    val grid: String,
 )
 
 /** A held point that only shapes the line: it can be made a named point. */
-data class ShapingPointUi(val id: String, val held: Boolean)
+data class ShapingPointUi(val id: String, val held: Boolean, val grid: String = "")
 
 /** The route the person is working on: its plan, its nav log, and what is wrong with it. */
 data class RouteDetailUi(
@@ -222,7 +229,7 @@ class RoutesViewModel @Inject constructor(
             PlanPointUi(
                 id = id, name = p.name.orEmpty(), ptType = p.ptType, first = i == 0, values = PointDraft.of(route.plan, id),
                 clock = RouteCalc.formatClock(p.clockTime), hasClock = p.hasClock,
-                facts = if (i == 0) "START" else legFacts(p), elapsed = RouteCalc.formatDuration(p.elapsedSec), held = id == held.pointId,
+                facts = if (i == 0) "START" else legFacts(p), elapsed = RouteCalc.formatDuration(p.elapsedSec), held = id == held.pointId, grid = gridOf(p.lat, p.lon),
             )
         }
         val shaping = route.points.filter { it.kind == RoutePoint.KIND_SHAPING }
@@ -231,10 +238,13 @@ class RoutesViewModel @Inject constructor(
         }
         return RouteDetailUi(
             routeId = route.id, name = route.name, aircraft = route.plan.aircraft, plan = PlanDraft.of(route.plan), points = rows,
-            shapingPoints = shaping.size, heldShaping = shaping.firstOrNull { it.id != null && it.id == held.pointId }?.let { ShapingPointUi(it.id.orEmpty(), held = true) },
+            shapingPoints = shaping.size, heldShaping = shaping.firstOrNull { it.id != null && it.id == held.pointId }?.let { ShapingPointUi(it.id.orEmpty(), held = true, grid = gridOf(it.lat, it.lon)) },
             totals = totals, warnings = result.warnings, hasElevations = route.elevations.isNotEmpty(),
         )
     }
+
+    /** The MGRS grid of a position, computed on the device, or its degrees where there is none (the poles). */
+    private fun gridOf(lat: Double, lon: Double): String = MgrsConverter.toMgrs(lat, lon)?.format() ?: "${oneDecimal(lat)}, ${oneDecimal(lon)}"
 
     /** The web's line for the leg that arrives at [p]: distance, course, ground speed and altitude, `--` where it cannot say. */
     private fun legFacts(p: app.ezpztac.model.PlanPoint): String {
@@ -451,6 +461,52 @@ class RoutesViewModel @Inject constructor(
             return fail("A route needs at least two named points.")
         }
         session.edit("Make shaping point") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_SHAPING)) } }
+    }
+
+    /** Moves a point of the held route [northFt] feet north and [eastFt] east (negative: south, west), as a drag would: it forgets a charted elevation it had snapped to. */
+    fun nudgePoint(routeId: String, pointId: String, northFt: Double, eastFt: Double) = movePoint(routeId, pointId) { at ->
+        GraphicEdits.offset(at, northFt / Units.METERS_TO_FEET, eastFt / Units.METERS_TO_FEET)
+    }
+
+    /** Puts a point at the crosshair, [at]. */
+    fun pointToCrosshair(routeId: String, pointId: String, at: LatLon?) {
+        if (at == null) return fail("Move the map to where the point should go first.")
+        fail(null)
+        movePoint(routeId, pointId) { at }
+    }
+
+    /** Puts a point at a grid or coordinate the person typed. Null when it is moved, else the words for the field. */
+    fun pointToText(routeId: String, pointId: String, text: String): String? = when (val place = PlaceSearch.resolve(text)) {
+        is PlaceResult.Found -> { movePoint(routeId, pointId) { place.at }; null }
+        is PlaceResult.NotUnderstood -> place.message
+    }
+
+    private fun movePoint(routeId: String, pointId: String, to: (LatLon) -> LatLon) {
+        val route = session.active.value?.route(routeId) ?: return
+        if (route.points.none { it.id == pointId }) return
+        session.edit("Move point") { set ->
+            set.mapRoute(routeId) { r ->
+                val p = r.points.firstOrNull { it.id == pointId } ?: return@mapRoute r
+                val moved = to(LatLon(p.lat, p.lon))
+                // The ground elevation fetched for the old place is not this place's: AGL would be measured from the wrong ground. The web keeps it (a
+                // drag leaves `elevations` alone); here it is dropped until the next fetch, and the altitudes say they have no ground to go by.
+                SketchOps.move(r, pointId, moved.lat, moved.lon, null).let { m -> if (pointId in m.elevations) m.copy(elevations = m.elevations - pointId) else m }
+            }
+        }
+    }
+
+    /** Where a new point's id comes from. A test sets its own. */
+    internal var newPointId: () -> String = { java.util.UUID.randomUUID().toString() }
+
+    /** Adds a point that only shapes the line at the crosshair, [at], in the leg it is nearest to, and holds it so it can be moved into place. */
+    fun addShapingPoint(routeId: String, at: LatLon?) {
+        if (at == null) return fail("Move the map to where the point should go first.")
+        val route = session.active.value?.route(routeId) ?: return
+        val id = newPointId()
+        if (SketchOps.insertShaping(route, at.lat, at.lon) { id } == route) return fail("A route needs two points before the line can be bent.")
+        fail(null)
+        session.edit("Add shaping point") { set -> set.mapRoute(routeId) { SketchOps.insertShaping(it, at.lat, at.lon) { id } } }
+        selection.holdPoint(id)
     }
 
     /** Makes a point that only shaped the line a named one: a turn point, called `.CP` until it is named. */

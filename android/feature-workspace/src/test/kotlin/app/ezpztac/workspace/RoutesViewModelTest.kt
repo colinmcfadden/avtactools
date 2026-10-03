@@ -21,6 +21,8 @@ import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.RoutePoint
+import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.model.AltitudeSetting
 import app.ezpztac.model.Airspeed
 import app.ezpztac.model.Wind
@@ -652,8 +654,165 @@ class RoutesViewModelTest {
         r.model.makeShaping(id, log[1].id); settle()
         assertNull(r.state.detail!!.heldShaping)
         r.selection.holdPoint(log[1].id); settle()
-        assertEquals(ShapingPointUi(log[1].id, held = true), r.state.detail!!.heldShaping)
+        val held = r.state.detail!!.heldShaping!!
+        assertEquals(log[1].id, held.id)
+        assertTrue(held.held)
+        assertEquals(log[1].grid, held.grid)                                                    // it is where it was, whether it is named or not
         assertEquals(listOf(false, false, false), r.state.detail!!.points.map { it.held })      // a named row is not the held one
+    }
+
+    // -- Moving and adding points ------------------------------------------------------------------------------
+
+    private fun Rig.where(routeId: String, pointId: String) = route(routeId).points.single { it.id == pointId }.let { LatLon(it.lat, it.lon) }
+
+    @Test
+    fun `a point is nudged in feet, north and east, each nudge one undo step`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val second = r.state.detail!!.points[1].id
+        val start = r.where(id, second)
+        val depth = r.session.undoDepth.value
+
+        r.model.nudgePoint(id, second, 100.0, 0.0); settle()
+        val (north, east) = GraphicEdits.metresBetween(start, r.where(id, second))
+        assertEquals(30.48, north, 0.01)                                                        // 100 ft
+        assertEquals(0.0, east, 0.01)
+
+        r.model.nudgePoint(id, second, 0.0, -200.0); settle()
+        val (north2, east2) = GraphicEdits.metresBetween(start, r.where(id, second))
+        assertEquals(30.48, north2, 0.01)
+        assertEquals(-60.96, east2, 0.02)                                                       // 200 ft west
+        assertEquals(depth + 2, r.session.undoDepth.value)
+
+        r.model.undo(); r.model.undo(); settle()
+        assertEquals(start, r.where(id, second))
+    }
+
+    @Test
+    fun `a nudge moves only that point and changes the grid it is read at`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val log = r.state.detail!!.points
+        r.model.nudgePoint(id, log[1].id, 500.0, 500.0); settle()
+        val after = r.state.detail!!.points
+        assertEquals(log[0].grid, after[0].grid)
+        assertEquals(log[2].grid, after[2].grid)
+        assertTrue(after[1].grid != log[1].grid)
+        assertTrue(after[1].grid, after[1].grid.matches(Regex("""\d\d[A-Z] [A-Z]{2} \d{5} \d{5}""")))
+    }
+
+    @Test
+    fun `a nudge of a point that is not there, or in a route that is not, does nothing`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val depth = r.session.undoDepth.value
+        r.model.nudgePoint(id, "nope", 100.0, 0.0)
+        r.model.nudgePoint("no route", r.state.detail!!.points[0].id, 100.0, 0.0)
+        settle()
+        assertEquals(depth, r.session.undoDepth.value)
+        assertNull(r.state.error)
+    }
+
+    @Test
+    fun `a nudge forgets the ground elevation fetched for the old place, and no other`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val ids = r.state.detail!!.points.map { it.id }
+        r.session.edit("Elevations") { set -> set.mapRoute(id) { it.copy(elevations = ids.associateWith { 1000.0 }) } }; settle()
+        r.model.nudgePoint(id, ids[1], 50.0, 0.0); settle()
+        assertEquals(ids.filter { it != ids[1] }.toSet(), r.route(id).elevations.keys)
+        assertTrue(r.state.detail!!.hasElevations)                                              // the others still have theirs
+        r.model.undo(); settle()
+        assertEquals(ids.toSet(), r.route(id).elevations.keys)                                  // undo brings back what the move took away
+    }
+
+    @Test
+    fun `a point is put at the crosshair, and with no crosshair the person is told to move the map`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val second = r.state.detail!!.points[1].id
+        r.model.pointToCrosshair(id, second, null); settle()
+        assertEquals("Move the map to where the point should go first.", r.state.error)
+
+        val crosshair = LatLon(34.7512, -84.0512)
+        r.model.pointToCrosshair(id, second, crosshair); settle()
+        assertEquals(crosshair, r.where(id, second))
+        assertTrue(r.state.detail!!.points[1].grid.startsWith("16S "))                          // the grid it is now read at is the crosshair's
+        assertNull(r.state.error)
+    }
+
+    @Test
+    fun `a point is moved to a grid or to a coordinate that was typed, and what is not understood is said and leaves it alone`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val second = r.state.detail!!.points[1].id
+        val start = r.where(id, second)
+
+        assertNull(r.model.pointToText(id, second, "34.75, -84.05")); settle()
+        assertEquals(34.75, r.where(id, second).lat, 1e-9)
+        assertEquals(-84.05, r.where(id, second).lon, 1e-9)
+
+        val moved = r.where(id, second)
+        val words = r.model.pointToText(id, second, "not a place at all"); settle()
+        assertNotNull(words)
+        assertTrue(words!!.isNotBlank())
+        assertEquals(moved, r.where(id, second))
+        assertTrue(start != moved)
+
+        val grid = r.state.detail!!.points[1].grid
+        assertNull(r.model.pointToText(id, second, grid)); settle()                              // its own grid, as it is shown: a place it can be sent back to
+    }
+
+    @Test
+    fun `a shaping point is added at the crosshair on the nearest leg, and held`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val ids = r.state.detail!!.points.map { it.id }
+        r.model.newPointId = { "shape-1" }
+        r.model.addShapingPoint(id, LatLon(34.705, -84.0970)); settle()                         // beside the first leg (a to b)
+        val points = r.route(id).points
+        assertEquals(listOf(ids[0], "shape-1", ids[1], ids[2], ids[3]), points.map { it.id })
+        assertEquals(RoutePoint.KIND_SHAPING, points[1].kind)
+        assertEquals(RouteHeld(id, "shape-1"), r.selection.held.value)
+        assertEquals("shape-1", r.state.detail!!.heldShaping!!.id)
+        assertEquals(1, r.state.detail!!.shapingPoints)
+        assertEquals(4, r.state.detail!!.points.size)                                           // the nav log is still the named ones
+
+        r.model.undo(); settle()
+        assertEquals(ids, r.route(id).points.map { it.id })
+    }
+
+    @Test
+    fun `a shaping point needs a crosshair and a leg to bend`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val depth = r.session.undoDepth.value
+        r.model.addShapingPoint(id, null); settle()
+        assertEquals("Move the map to where the point should go first.", r.state.error)
+        assertEquals(depth, r.session.undoDepth.value)
+
+        r.model.addShapingPoint(id, LatLon(34.705, -84.0970)); settle()                          // a crosshair arrives: the complaint goes
+        assertNull(r.state.error)
+        val added = r.session.undoDepth.value
+        assertEquals(depth + 1, added)
+
+        r.model.addShapingPoint("no route", a); settle()                                         // a route that is not there: nothing to bend, nothing said
+        assertEquals(added, r.session.undoDepth.value)
+        assertNull(r.state.error)
+    }
+
+    @Test
+    fun `a shaping point that is added can be moved, and named when it is made a route point`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        r.model.newPointId = { "shape-2" }
+        r.model.addShapingPoint(id, LatLon(34.705, -84.0970)); settle()
+        r.model.nudgePoint(id, "shape-2", 0.0, 100.0); settle()
+        val east = GraphicEdits.metresBetween(LatLon(34.705, -84.0970), r.where(id, "shape-2")).second
+        assertEquals(30.48, east, 0.02)
+        r.model.makeNamed(id, "shape-2"); settle()
+        assertEquals(5, r.state.detail!!.points.size)
+        assertNull(r.state.detail!!.heldShaping)
     }
 
     @Test

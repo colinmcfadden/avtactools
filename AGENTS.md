@@ -1099,6 +1099,16 @@ client is built around not losing one:
       are not an undo step and are applied to that route's record even if another set has been opened while the server answered), one fetch at a time. A failure is the app's words,
       never the server's (the 500 text names a Python type). A time is asked for as an instant in the device's zone (`RouteWinds.instantText`); the question and the merge are held to
       `routes/winds.json`, whose times are wall-clock to the millisecond so the fixture does not depend on the zone it was made in (a Date holds milliseconds, and the request carries them).
+  - **Moving and adding points from the sheet** (`RoutesViewModel`: `nudgePoint`, `pointToCrosshair`, `pointToText`, `addShapingPoint`; `RoutePlanScreen`: `PointPosition`). The same controls a held
+    graphic has (`NudgeSteps`/`NudgePad`/`EntryRow` are shared with `GraphicsScreen`), because dragging a point in gloves is not a plan: a pad of four arrows with a 10/50/200 ft step, *put at the
+    crosshair*, and a grid or coordinate typed in (`PlaceSearch`, so the words for a refusal are the search field's). A named point's controls are folded behind *Move this point*; a held shaping
+    point, which exists to be placed, shows them at once. *Add a shaping point at the crosshair* is `SketchOps.insertShaping` (the nearest pair of consecutive drawn points) and holds the new
+    point so it can be moved into place. Each move is one undo step ("Move point"), and the position text beside the arrows is the point's grid, computed on the device.
+    - **Not like the web:** moving a point **drops the ground elevation fetched for it**. Elevations are keyed by point id and the web leaves a point's old one in place after a drag, so AGL
+      altitudes would be measured from the wrong ground; here the point has none until the next fetch (the others keep theirs), and undo brings it back. A *wind* fetched for the point is not
+      dropped: winds are saved as plan values with nothing to say they were fetched, so a typed one could not be told apart. Fetch again after moving a point far.
+    - The crosshair is `state.center` (the middle of the map above the sheet, §17 *The map*), passed down as `RoutesHost(crosshair, crosshairGrid)`; the complaint "Move the map to where the point
+      should go first." is cleared when the next one succeeds.
   - **Export for AMPS** (`core-data`: `RouteExport`, `MissionTemplate`; `app`: `ShareExport`, `AssetMissionTemplate`). A set's routes, or one route, are built into a `.msnx` with `MsnxWriter` on the
     bundled template (the web's `frontend/public/msnx_template.msnx`, copied into the app's assets at build by `copyMissionTemplate`, not committed twice; a test holds the asset to the web's
     bytes) and handed to the system share sheet. The file is named for the routes (names joined with `_`, the web's rule) with anything a file system or a chat app trips over made an
@@ -1109,7 +1119,7 @@ client is built around not losing one:
       after a day, and a name is cut to a plain file name again at the last step so a crafted route name cannot leave the folder. A test asks the provider for `exports/../secret.txt` and
       is refused. `FileProvider` keeps a static cache of its folders, so Robolectric tests clear it (`sCache`) between tests; a real process has one cache directory.
     - **Not verifiable here:** that the share sheet opens and hands the file to a real app, and that AMPS opens what is exported (the web's export is the reference; the writer is held to its files).
-  - **Not yet built:** moving or inserting a point by dragging on the map, reopening the last set at launch, choosing the template for an aircraft (an admin-attached package), mutating an
+  - **Not yet built:** dragging a point on the map (the sheet does everything a drag would), reopening the last set at launch, choosing the template for an aircraft (an admin-attached package), mutating an
     imported mission, saved *mission* routes, and the ForeFlight / ATAK hand-off.
 - **Aircraft profiles** (`core-data`: `AircraftProfiles`; `core-model`: `AircraftDraft`; `feature-workspace`: `AircraftViewModel`,
   `AircraftScreen`, `AircraftPicker`; `app`: `AircraftChoicePreferences`).

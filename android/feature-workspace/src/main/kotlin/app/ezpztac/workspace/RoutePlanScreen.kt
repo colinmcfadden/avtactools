@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
+import app.ezpztac.designsystem.EzpzText
 import app.ezpztac.designsystem.EzpzTextField
 import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
@@ -47,7 +49,9 @@ private fun label(choices: List<Pair<String, String>>, value: String) = choices.
 
 /** The route being worked on: its plan, its nav log (a row for each named point, the held one open for editing), its totals and what is wrong with it. */
 @Composable
-internal fun RouteDetailCard(detail: RouteDetailUi, fetching: PlanningKind?, note: PlanningNote?, exporting: Boolean, actions: RoutesActions, modifier: Modifier = Modifier) {
+internal fun RouteDetailCard(
+    detail: RouteDetailUi, fetching: PlanningKind?, note: PlanningNote?, exporting: Boolean, actions: RoutesActions, modifier: Modifier = Modifier, crosshairGrid: String? = null,
+) {
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = modifier.fillMaxWidth(),
@@ -63,15 +67,20 @@ internal fun RouteDetailCard(detail: RouteDetailUi, fetching: PlanningKind?, not
             detail.warnings.forEach { Banner(it, BannerKind.Warning) }
             if (detail.points.isNotEmpty()) {
                 Text("Nav log", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                detail.points.forEach { PointRow(detail.routeId, it, actions) }
+                detail.points.forEach { PointRow(detail.routeId, it, crosshairGrid, actions) }
             }
-            detail.heldShaping?.let { ShapingPointStrip(detail.routeId, it, actions) }
+            detail.heldShaping?.let { ShapingPointStrip(detail.routeId, it, crosshairGrid, actions) }
             if (detail.shapingPoints > 0) {
                 Text(
                     if (detail.shapingPoints == 1) "1 shaping point bends the line between named points." else "${detail.shapingPoints} shaping points bend the line between named points.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            SecondaryButton(
+                if (crosshairGrid != null) "Add a shaping point at the crosshair · $crosshairGrid" else "Add a shaping point at the crosshair",
+                onClick = { actions.addShapingPoint(detail.routeId) },
+                modifier = Modifier.semantics { contentDescription = "Add a point that bends the line at the crosshair" },
+            )
             detail.totals?.let { Text(it, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface) }
             if (exporting) PrimaryButton("Export this route", onClick = {}, busy = true, busyText = "Building the mission…")
             else SecondaryButton("Export this route for AMPS", onClick = { actions.exportRoute(detail.routeId) })
@@ -133,7 +142,7 @@ private fun FetchControls(hasElevations: Boolean, fetching: PlanningKind?, note:
 // -- The nav log ---------------------------------------------------------------------------------------------------
 
 @Composable
-private fun PointRow(routeId: String, point: PlanPointUi, actions: RoutesActions) {
+private fun PointRow(routeId: String, point: PlanPointUi, crosshairGrid: String?, actions: RoutesActions) {
     val border = if (point.held) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant, border = BorderStroke(if (point.held) 2.dp else 1.dp, border),
@@ -161,7 +170,7 @@ private fun PointRow(routeId: String, point: PlanPointUi, actions: RoutesActions
                     Text(point.elapsed, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (point.held) PointForm(routeId, point, actions)
+            if (point.held) PointForm(routeId, point, crosshairGrid, actions)
         }
     }
 }
@@ -172,10 +181,11 @@ private fun pointTitle(point: PlanPointUi): String {
 }
 
 @Composable
-private fun PointForm(routeId: String, point: PlanPointUi, actions: RoutesActions) {
+private fun PointForm(routeId: String, point: PlanPointUi, crosshairGrid: String?, actions: RoutesActions) {
     var typed by remember(point.id, point.values) { mutableStateOf(point.values) }
     var problem by remember(point.id, point.values) { mutableStateOf<String?>(null) }
     var name by remember(point.id, point.name) { mutableStateOf(point.name) }
+    var moving by rememberSaveable(point.id) { mutableStateOf(false) }
     fun change(next: PointDraft) { typed = next; problem = null }
 
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
@@ -205,17 +215,48 @@ private fun PointForm(routeId: String, point: PlanPointUi, actions: RoutesAction
         )
         problem?.let { Banner(it, BannerKind.Error) }
         PrimaryButton("Apply point", onClick = { problem = actions.applyPoint(routeId, point.id, typed, point.values, point.first) }, enabled = typed != point.values)
+        if (moving) {
+            PointPosition(routeId, point.id, point.grid, crosshairGrid, actions)
+            TextAction("Hide position controls", onClick = { moving = false })
+        } else {
+            SecondaryButton("Move this point", onClick = { moving = true }, modifier = Modifier.semantics { contentDescription = "Show controls to move this point" })
+        }
         SecondaryButton("Make it only shape the line", onClick = { actions.makeShaping(routeId, point.id) })
     }
 }
 
 @Composable
-private fun ShapingPointStrip(routeId: String, point: ShapingPointUi, actions: RoutesActions) {
+private fun ShapingPointStrip(routeId: String, point: ShapingPointUi, crosshairGrid: String?, actions: RoutesActions) {
     Surface(shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant, border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
         Column(Modifier.fillMaxWidth().padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             Text("Shaping point", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
             Text("It only bends the line. Make it a route point to give it a name, an altitude or a time.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            PointPosition(routeId, point.id, point.grid, crosshairGrid, actions)
             PrimaryButton("Make it a route point", onClick = { actions.makeNamed(routeId, point.id) })
         }
+    }
+}
+
+/**
+ * Where a point is and how to move it: the grid it is at, a pad of four arrows with a step, the crosshair, or a grid typed in. The same controls as a
+ * held graphic has, because dragging a point on a bouncing phone in gloves is not a plan.
+ */
+@Composable
+private fun PointPosition(routeId: String, pointId: String, grid: String, crosshairGrid: String?, actions: RoutesActions) {
+    var step by rememberSaveable { mutableIntStateOf(1) }
+    val feet = NUDGE_STEPS_FT[step.coerceIn(NUDGE_STEPS_FT.indices)].toDouble()
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+        Text("Position", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            grid, style = EzpzText.grid.copy(fontSize = MaterialTheme.typography.bodyMedium.fontSize), color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.semantics { contentDescription = "Point position $grid" },
+        )
+        NudgeSteps(step) { step = it }
+        NudgePad(feet) { north, east -> actions.nudgePoint(routeId, pointId, north, east) }
+        SecondaryButton(
+            if (crosshairGrid != null) "Put at the crosshair · $crosshairGrid" else "Put at the crosshair",
+            onClick = { actions.pointToCrosshair(routeId, pointId) }, modifier = Modifier.semantics { contentDescription = "Put this point at the crosshair" },
+        )
+        EntryRow("Move to a grid", "16S GD 66993 52949", "Go", KeyboardType.Ascii, onSubmit = { actions.pointToText(routeId, pointId, it) })
     }
 }

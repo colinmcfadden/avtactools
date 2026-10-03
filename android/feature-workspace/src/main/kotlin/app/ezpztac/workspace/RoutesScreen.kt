@@ -78,6 +78,13 @@ class RoutesActions(
     val setPointType: (routeId: String, pointId: String, ptType: String) -> Unit = { _, _, _ -> },
     val makeShaping: (routeId: String, pointId: String) -> Unit = { _, _ -> },
     val makeNamed: (routeId: String, pointId: String) -> Unit = { _, _ -> },
+    /** Move a point [northFt] feet north and [eastFt] east (negative: south, west). */
+    val nudgePoint: (routeId: String, pointId: String, northFt: Double, eastFt: Double) -> Unit = { _, _, _, _ -> },
+    val pointToCrosshair: (routeId: String, pointId: String) -> Unit = { _, _ -> },
+    /** Put a point at a grid or coordinate that was typed: null when it was moved, else the words for the field. */
+    val pointToText: (routeId: String, pointId: String, text: String) -> String? = { _, _, _ -> null },
+    /** Add a point that only shapes the line, at the crosshair. */
+    val addShapingPoint: (routeId: String) -> Unit = {},
     val fetchWinds: () -> Unit = {},
     val fetchElevations: () -> Unit = {},
     val dismissNote: () -> Unit = {},
@@ -94,18 +101,29 @@ private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = R
     addAtCrosshair = { viewModel.addAtCrosshair(crosshair) }, undoPoint = viewModel::undoPoint, finishDrawing = { viewModel.finishDrawing() },
     cancelDrawing = viewModel::cancelDrawing, applyPlan = viewModel::applyPlan, applyPoint = viewModel::applyPoint, selectPoint = viewModel::selectPoint,
     renamePoint = viewModel::renamePoint, setPointType = viewModel::setPointType, makeShaping = viewModel::makeShaping, makeNamed = viewModel::makeNamed,
+    nudgePoint = viewModel::nudgePoint, pointToCrosshair = { routeId, pointId -> viewModel.pointToCrosshair(routeId, pointId, crosshair) },
+    pointToText = viewModel::pointToText, addShapingPoint = { routeId -> viewModel.addShapingPoint(routeId, crosshair) },
     fetchWinds = viewModel::fetchWinds, fetchElevations = viewModel::fetchElevations, dismissNote = viewModel::dismissNote,
     exportSet = viewModel::exportSet, exportRoute = viewModel::exportRoute, dismissExportWarning = viewModel::dismissExportWarning,
 )
 
-/** The Routes part of the sheet: the saved sets, and the routes of the open one. */
+/**
+ * The Routes part of the sheet: the saved sets, and the routes of the open one. [crosshair] is where the map is looking, which is where a new shaping
+ * point is put and where a held point is brought to; [crosshairGrid] is the same place in words.
+ */
 @Composable
-fun RoutesHost(onExport: (ExportFile) -> Unit, modifier: Modifier = Modifier, viewModel: RoutesViewModel = hiltViewModel()) {
+fun RoutesHost(
+    onExport: (ExportFile) -> Unit,
+    modifier: Modifier = Modifier,
+    crosshair: LatLon? = null,
+    crosshairGrid: String? = null,
+    viewModel: RoutesViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val share by rememberUpdatedState(onExport)
     // A mission built is handed to the app that can send it (the system share sheet); this module knows nothing of that.
     LaunchedEffect(viewModel) { viewModel.exports.collect { share(it) } }
-    RoutesContent(state, actionsOf(viewModel), modifier)
+    RoutesContent(state, actionsOf(viewModel, crosshair), modifier, crosshairGrid)
 }
 
 /** The toolbar over the map, shown only while a route is being drawn. Over the sheet's peek, so it is reachable with the sheet down. */
@@ -116,7 +134,7 @@ fun RouteToolbarHost(crosshair: LatLon?, modifier: Modifier = Modifier, viewMode
 }
 
 @Composable
-fun RoutesContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier) {
+fun RoutesContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier, crosshairGrid: String? = null) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Routes", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
@@ -125,7 +143,7 @@ fun RoutesContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifi
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
         state.open?.let { OpenSetCard(it, state.drawing, state.exporting, actions) }
         state.exportWarning?.let { Banner(it, BannerKind.Warning, actionLabel = "Dismiss", onAction = actions.dismissExportWarning) }
-        state.detail?.let { RouteDetailCard(it, state.fetching, state.note, state.exporting, actions) }
+        state.detail?.let { RouteDetailCard(it, state.fetching, state.note, state.exporting, actions, crosshairGrid = crosshairGrid) }
         if (state.creating) NewSetForm(actions)
         if (state.sets.isEmpty() && state.open == null && !state.creating) {
             Text(

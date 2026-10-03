@@ -121,7 +121,7 @@ fun MapHome(
                             GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs)
                         },
                     )
-                    RoutesHost(onExport = { ShareExport.share(context, it) })
+                    RoutesHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center, crosshairGrid = state.readout?.mgrs)
                     AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
