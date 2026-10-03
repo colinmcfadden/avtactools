@@ -208,8 +208,8 @@ class DiagramsScreenTest {
 
     private fun open(
         status: DiagramStatus = DiagramStatus.TARGETED, analysis: AnalysisUi = AnalysisUi.Idle, summary: SummaryUi? = null, canAnalyze: Boolean = true,
-        sync: SyncStatus? = SyncStatus.SYNCED, conflictOf: String? = null, aircraft: AircraftUi = AircraftUi.UH60L,
-    ) = ActiveDiagramUi("u1", "LZ HAWK", status, "16S GD 66993 52949", canAnalyze, analysis, summary, sync, conflictOf, aircraft)
+        sync: SyncStatus? = SyncStatus.SYNCED, conflictOf: String? = null, aircraft: AircraftUi = AircraftUi.UH60L, weather: WeatherUi? = null,
+    ) = ActiveDiagramUi("u1", "LZ HAWK", status, "16S GD 66993 52949", canAnalyze, analysis, summary, weather, sync, conflictOf, aircraft)
 
     private fun tiles(slope: SlopeTileUi = SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2), "local_highres_cog", 10.2)) =
         SummaryUi("UH-60L", 13, 854_831, "4050", slope)

@@ -8,6 +8,7 @@ import app.ezpztac.auth.AuthRoute
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.RouteSession
+import app.ezpztac.data.WeatherService
 import app.ezpztac.data.Ownership
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.AppConfig
@@ -37,6 +38,7 @@ class AppViewModel @Inject constructor(
     private val sync: SyncScheduler,
     private val session: DiagramSession,
     private val routeSession: RouteSession,
+    private val weather: WeatherService,
     private val mapTokens: MapTokenSink,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
@@ -72,6 +74,7 @@ class AppViewModel @Inject constructor(
             if (auth is AuthState.SignedOut) {
                 sync.cancelAll()
                 closeOpenDocuments()
+                weather.clear()                                                  // where this account's landing zones are does not stay for the next person
             }
             return
         }

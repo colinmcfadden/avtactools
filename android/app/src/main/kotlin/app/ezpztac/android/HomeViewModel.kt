@@ -13,6 +13,7 @@ import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SlopeState
+import app.ezpztac.data.WeatherService
 import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.LzScene
@@ -63,6 +64,7 @@ class HomeViewModel @Inject constructor(
     private val lastSet: LastRouteSet,
     private val localPoints: LocalPoints,
     private val pointSelection: PointSelection,
+    private val weather: WeatherService,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -114,6 +116,16 @@ class HomeViewModel @Inject constructor(
         // An analysed diagram that is opened (or whose boundary changes) has its slope measured, if it has not been already.
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id to it.analysis.detectedLZ }.collect(analysis::ensureSlope)
+        }
+        // The weather at an analysed diagram's target is fetched when it opens, and when it is analysed or its target moves, as the web does when the analysis
+        // finishes; only if what is held is missing, old or for somewhere else (the service decides), so reopening a diagram does not ask again and again.
+        viewModelScope.launch {
+            session.active.filterNotNull()
+                .distinctUntilChangedBy { d -> Triple(d.id, d.canEditGraphics, d.target?.let { it.lat to it.lon }) }
+                .collect { d ->
+                    val target = d.target ?: return@collect
+                    if (d.canEditGraphics) weather.ensureFresh(d.id, LatLon(target.lat, target.lon))
+                }
         }
         // The diagram the person had open comes back at launch. It waits until the map is listening, because opening one is what takes the map to it
         // (and restores its base map), and an event nobody is listening to is lost.

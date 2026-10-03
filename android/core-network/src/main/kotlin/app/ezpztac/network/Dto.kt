@@ -154,6 +154,29 @@ public data class RouteFull(
     @SerialName("route_data") val routeData: JsonObject,
 )
 
+/**
+ * What `/api/weather` says about a position. The services behind it are other people's, so it always answers with what could be had: no station is
+ * `station_id` `TIMEOUT` with null numbers, and the NOTAMs are either an object of lists by feature or a sentence. A number is a whole number or a
+ * decimal as the station wrote it (`18`, `16.5`), and a few fields are a number or text (a variable wind is `VRB`, a visibility `10+`, an altimeter `--`
+ * when there is none), so they are all [JsonElement]s here, exactly as sent; `core-model` reads them.
+ */
+@Serializable
+public data class WeatherReportDto(
+    @SerialName("station_id") val stationId: String,
+    val name: String,
+    @SerialName("temp_c") val tempC: JsonElement? = null,
+    @SerialName("dewp_c") val dewpC: JsonElement? = null,
+    @SerialName("wind_spd_kts") val windSpeedKts: JsonElement? = null,
+    @SerialName("wind_dir") val windDir: JsonElement? = null,
+    @SerialName("wind_gust_kts") val windGustKts: JsonElement? = null,
+    @SerialName("vis_sm") val visSm: JsonElement? = null,
+    val pressure: JsonElement? = null,
+    @SerialName("flight_category") val flightCategory: String? = null,
+    @SerialName("raw_metar") val rawMetar: String? = null,
+    @SerialName("distance_miles") val distanceMiles: JsonElement? = null,
+    val notams: JsonElement? = null,
+)
+
 /** A saved set of local points without its points. The colour and whether it is shown are not saved: each device keeps its own. */
 @Serializable
 public data class PointSetSummary(

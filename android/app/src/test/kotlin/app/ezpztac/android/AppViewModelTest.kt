@@ -26,6 +26,16 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.WeatherCache
+import app.ezpztac.data.WeatherService
+import app.ezpztac.model.LatLon
+import app.ezpztac.model.WeatherSnapshot
+import app.ezpztac.network.WeatherReportDto
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -105,9 +115,20 @@ class AppViewModelTest {
         override fun update(token: String?) { written += token }
     }
 
+    private class FakeWeather : WeatherApi {
+        override suspend fun weather(at: LatLon) = WeatherReportDto("KRYY", "Cobb County Airport", windSpeedKts = JsonPrimitive(10), notams = JsonObject(emptyMap()))
+    }
+
+    private class KeptWeather : WeatherCache {
+        var kept: Map<String, WeatherSnapshot> = emptyMap()
+        override fun load() = kept
+        override fun save(snapshots: Map<String, WeatherSnapshot>) { kept = snapshots }
+    }
+
     private class Rig(
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
+        val weather: WeatherService, val weatherCache: KeptWeather,
     )
 
     private fun TestScope.rig(
@@ -126,9 +147,11 @@ class AppViewModelTest {
         val session = DiagramSession(repository, backgroundScope)
         val routes = RouteRepository(SyncRepository(store, SequentialIds("r")), store, RecordingScheduler())
         val routeSession = RouteSession(routes, backgroundScope)
-        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, tokens, version)
+        val weatherCache = KeptWeather()
+        val weather = WeatherService(FakeWeather(), weatherCache, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)))
+        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, tokens, version)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession)
+        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache)
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -281,6 +304,19 @@ class AppViewModelTest {
         advanceUntilIdle()
         assertNull(r.session.active.value)
         assertEquals("LZ CROW", r.repository.open(made.id)!!.name)                           // saved first, for when this person comes back
+    }
+
+    @Test
+    fun `signing out forgets the weather, here and on disk, so where this account's landing zones are does not stay for the next`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.weather.refresh("d1", LatLon(34.78, -84.08))
+        advanceUntilIdle()
+        assertNotNull(r.weather.stateOf("d1").snapshot)
+        assertEquals(setOf("d1"), r.weatherCache.kept.keys)
+        r.model.signOut()
+        advanceUntilIdle()
+        assertNull(r.weather.stateOf("d1").snapshot)
+        assertTrue(r.weatherCache.kept.isEmpty())
     }
 
     @Test

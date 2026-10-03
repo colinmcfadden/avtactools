@@ -20,6 +20,11 @@ import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
 import app.ezpztac.android.export.AssetMissionTemplate
 import app.ezpztac.data.ApiClientPlanningApi
+import app.ezpztac.data.ApiClientWeatherApi
+import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.WeatherCache
+import app.ezpztac.data.WeatherService
+import app.ezpztac.android.WeatherFileCache
 import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.ApiClientTerrainApi
 import app.ezpztac.data.PlanningApi
@@ -115,6 +120,16 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun weatherApi(client: ApiClient): WeatherApi = ApiClientWeatherApi(client)
+
+    /** The weather outlives any screen (a fetch finishes with the sheet closed), so it runs in a scope of its own that is never cancelled with one. */
+    @Provides
+    @Singleton
+    fun weatherService(api: WeatherApi, cache: WeatherCache): WeatherService =
+        WeatherService(api, cache, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default))
+
+    @Provides
+    @Singleton
     fun missionTemplate(@ApplicationContext context: Context): MissionTemplate = AssetMissionTemplate(context)
 
     /** Symbols: the pre-rendered presets first, then milsymbol in the system JavaScript sandbox, which starts when a symbol that needs it is first asked for. */
@@ -157,6 +172,9 @@ interface AppBindings {
 
     @Binds
     fun pointSetViews(impl: PointSetViewPreferences): PointSetViewStore
+
+    @Binds
+    fun weatherCache(impl: WeatherFileCache): WeatherCache
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner

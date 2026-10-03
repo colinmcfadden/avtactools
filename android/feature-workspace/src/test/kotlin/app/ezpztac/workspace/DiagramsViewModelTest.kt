@@ -8,8 +8,12 @@ import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.TerrainApi
+import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.WeatherCache
+import app.ezpztac.data.WeatherService
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.WeatherSnapshot
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.DirectionalSlope
 import app.ezpztac.network.FieldAnalysis
@@ -17,6 +21,7 @@ import app.ezpztac.network.SlopeStats
 import app.ezpztac.network.SlopeThresholds
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.network.Uh60Limits
+import app.ezpztac.network.WeatherReportDto
 import app.ezpztac.planning.LzSummary
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +47,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,6 +86,27 @@ class DiagramsViewModelTest {
         override suspend fun terrainAnalysis(polygon: List<LatLon>, landingHeadingDeg: Double?): TerrainAnalysis = measure(polygon)
     }
 
+    /** A weather service whose answers a test chooses; `answer` throws to make a failure. */
+    private class Weather : WeatherApi {
+        val calls = mutableListOf<LatLon>()
+        var answer: suspend (LatLon) -> WeatherReportDto = {
+            WeatherReportDto(
+                "KRYY", "Cobb County Airport", distanceMiles = JsonPrimitive(0.7), windDir = JsonPrimitive(310), windSpeedKts = JsonPrimitive(12),
+                windGustKts = JsonPrimitive(20), tempC = JsonPrimitive(18.5), pressure = JsonPrimitive(29.92), flightCategory = "VFR", notams = buildJsonObject {},
+            )
+        }
+        override suspend fun weather(at: LatLon): WeatherReportDto {
+            calls += at
+            return answer(at)
+        }
+    }
+
+    private class MemoryWeatherCache : WeatherCache {
+        var kept: Map<String, WeatherSnapshot> = emptyMap()
+        override fun load() = kept
+        override fun save(snapshots: Map<String, WeatherSnapshot>) { kept = snapshots }
+    }
+
     /** One device with the real repository, session and engine over an in-memory store; only the servers are stand-ins. */
     private class Rig(
         scope: TestScope, label: String = "A", val server: FakeServer = FakeServer(), realEngine: Boolean = false, resolver: ConflictResolver? = null,
@@ -98,10 +125,13 @@ class DiagramsViewModelTest {
         val choice = InMemoryAircraftChoice()
         val master = InMemoryMasterProfileStore(masterList)
         val aircraft = AircraftProfiles(device.store as InMemorySyncStore, master, { emptyList() }, choice, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), device.repository, scheduler)
+        val weatherApi = Weather()
+        var clock = 1_000_000L
+        val weather = WeatherService(weatherApi, MemoryWeatherCache(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler))) { clock }
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            analysis, aircraft,
+            analysis, aircraft, weather,
         )
         val rows get() = model.state.value.rows
     }
@@ -671,5 +701,100 @@ class DiagramsViewModelTest {
         assertEquals("SCT — Scout (yours)", aircraft.options.last().label)
         assertEquals(4, aircraft.options.size)
         assertEquals(listOf("Draft"), aircraft.waiting)
+    }
+
+    // -- The weather ---------------------------------------------------------------------------------------------------------
+
+    private fun TestScope.analysed(r: Rig = rig()): Rig {
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        return r
+    }
+
+    @Test
+    fun `a diagram that is not analysed shows no weather`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.refreshWeather()
+        advanceUntilIdle()
+        assertNull(r.model.state.value.current!!.weather)           // the web shows the weather once there is an analysis
+    }
+
+    @Test
+    fun `an analysed diagram with nothing fetched yet has no report and no age`() = runTest(dispatcher) {
+        val r = analysed()
+        val weather = r.model.state.value.current!!.weather!!
+        assertFalse(weather.hasReport)
+        assertNull(weather.fetchedAtMillis)
+        assertEquals("--", weather.windSpeed)
+        assertNull(weather.notams)
+    }
+
+    @Test
+    fun `refreshing asks for the weather at the target and shows the report as a station would say it`() = runTest(dispatcher) {
+        val r = analysed()
+        r.model.refreshWeather()
+        advanceUntilIdle()
+        val at = r.weatherApi.calls.single()
+        assertEquals(34.783, at.lat, 0.01)
+        val weather = r.model.state.value.current!!.weather!!
+        assertTrue(weather.hasReport)
+        assertEquals("12", weather.windSpeed)
+        assertEquals("G20", weather.windGust)
+        assertEquals(310, weather.windFrom)
+        assertEquals("18.5", weather.temp)
+        assertEquals("29.92", weather.altimeter)
+        assertEquals("KRYY · Cobb County Airport · 0.7 mi", weather.station)
+        assertEquals("VFR", weather.category)
+        assertEquals(1_000_000L, weather.fetchedAtMillis)
+        assertFalse(weather.fetching)
+        assertNull(weather.failure)
+    }
+
+    @Test
+    fun `a failed refresh keeps the old report and says why in the app's words`() = runTest(dispatcher) {
+        val r = analysed()
+        r.model.refreshWeather()
+        advanceUntilIdle()
+        r.clock += 3_600_000L
+        r.weatherApi.answer = { throw ApiException(500, null, "Traceback: KeyError 'metar'") }
+        r.model.refreshWeather()
+        advanceUntilIdle()
+        val weather = r.model.state.value.current!!.weather!!
+        assertTrue(weather.hasReport)                                   // what was known is not taken away
+        assertEquals(1_000_000L, weather.fetchedAtMillis)               // and keeps its own time, so it reads as old
+        val failure = weather.failure!!
+        assertFalse(failure.contains("KeyError"))                       // the server's internals are never shown
+        assertFalse(failure.contains("Traceback"))
+    }
+
+    @Test
+    fun `a refresh asked for while one is running makes one call`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val r = analysed()
+        r.weatherApi.answer = { gate.await(); WeatherReportDto("KRYY", "Cobb", notams = buildJsonObject {}) }
+        r.model.refreshWeather()
+        advanceUntilIdle()
+        assertTrue(r.model.state.value.current!!.weather!!.fetching)
+        r.model.refreshWeather()
+        advanceUntilIdle()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, r.weatherApi.calls.size)
+        assertFalse(r.model.state.value.current!!.weather!!.fetching)
+    }
+
+    @Test
+    fun `another diagram's weather is not shown on this one`() = runTest(dispatcher) {
+        val r = analysed()
+        r.model.refreshWeather()
+        advanceUntilIdle()
+        r.model.create("two", "16S GD 67993 52949")
+        advanceUntilIdle()
+        assertNull(r.model.state.value.current!!.weather)               // the new diagram is not analysed
+        assertEquals(1, r.weatherApi.calls.size)
     }
 }

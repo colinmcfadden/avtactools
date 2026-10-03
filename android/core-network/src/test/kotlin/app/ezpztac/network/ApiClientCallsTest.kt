@@ -1,5 +1,6 @@
 package app.ezpztac.network
 
+import app.ezpztac.model.LatLon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -249,6 +250,60 @@ class ApiClientCallsTest {
             assertEquals("DELETE", sent.method)
             assertEquals("\"2\"", sent.getHeader("If-Match"))
             assertEquals("key-r3", sent.getHeader("Idempotency-Key"))
+        }
+    }
+
+    // -- Weather ----------------------------------------------------------------------
+
+    @Test
+    fun `the weather is asked for by latitude and longitude, and a station's report comes back as it was written`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("weather") }
+            val report = rig.client.weather(LatLon(34.0, -84.6))
+            val sent = rig.requests.single()
+            assertEquals("GET", sent.method)
+            assertEquals("/api/weather", sent.requestUrl!!.encodedPath)
+            assertEquals("34.0", sent.requestUrl!!.queryParameter("lat"))
+            assertEquals("-84.6", sent.requestUrl!!.queryParameter("lng"))
+            assertEquals("KRYY", report.stationId)
+            assertEquals(JsonPrimitive(12), report.windSpeedKts)
+            assertEquals(JsonPrimitive(270), report.windDir)
+            assertEquals(JsonPrimitive(20), report.windGustKts)
+            assertEquals("VFR", report.flightCategory)
+            assertTrue(report.notams is JsonObject)
+        }
+    }
+
+    @Test
+    fun `a variable wind and a visibility in text are kept as text, and a station with no altimeter says so`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("weather: the second station is nearer") }
+            val report = rig.client.weather(LatLon(34.3, -84.4))
+            assertEquals(JsonPrimitive("VRB"), report.windDir)
+            assertEquals(JsonPrimitive("10+"), report.visSm)
+            assertEquals(JsonPrimitive("--"), report.pressure)
+        }
+    }
+
+    @Test
+    fun `when no station answers the report is still an answer, with nothing in it`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("weather: both services down") }
+            val report = rig.client.weather(LatLon(34.3, -84.4))
+            assertEquals("TIMEOUT", report.stationId)
+            assertNull(report.tempC)
+            assertNull(report.windSpeedKts)
+            assertEquals(JsonPrimitive("NOTAM fetch failed."), report.notams)
+        }
+    }
+
+    @Test
+    fun `a position the server cannot read is an error with its status`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("weather: no position") }
+            assertEquals(400, assertThrows<ApiException> { rig.client.weather(LatLon(1.0, 2.0)) }.status)
+            rig.serve { Recorded.mock("weather: a position that is not one") }
+            assertEquals(500, assertThrows<ApiException> { rig.client.weather(LatLon(1.0, 2.0)) }.status)
         }
     }
 

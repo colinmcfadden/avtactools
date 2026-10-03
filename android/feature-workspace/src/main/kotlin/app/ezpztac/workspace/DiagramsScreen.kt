@@ -14,6 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +43,7 @@ import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.planning.LzSummary
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
+import kotlinx.coroutines.delay
 
 class DiagramsActions(
     val startCreating: () -> Unit = {},
@@ -56,6 +58,7 @@ class DiagramsActions(
     val stopAnalysis: () -> Unit = {},
     val dismissAnalysis: () -> Unit = {},
     val selectAircraft: (String) -> Unit = {},
+    val refreshWeather: () -> Unit = {},
 )
 
 /**
@@ -70,14 +73,17 @@ fun DiagramsHost(
     openDiagramExtras: (@Composable () -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // How old the weather is is measured to this, moved on a minute at a time: the view model does not tick (an endless timer would never let a test settle).
+    val now by produceState(System.currentTimeMillis()) { while (true) { delay(60_000); value = System.currentTimeMillis() } }
     DiagramsContent(
         state = state, suggestedTarget = suggestedTarget, modifier = modifier, openDiagramExtras = openDiagramExtras,
         actions = DiagramsActions(
             startCreating = viewModel::startCreating, cancelCreating = viewModel::cancelCreating, create = viewModel::create, open = viewModel::open,
             rename = viewModel::rename, delete = viewModel::delete, resolve = viewModel::resolve, dismissError = viewModel::dismissError,
             analyze = viewModel::analyze, stopAnalysis = viewModel::stopAnalysis, dismissAnalysis = viewModel::dismissAnalysisError,
-            selectAircraft = viewModel::selectAircraft,
+            selectAircraft = viewModel::selectAircraft, refreshWeather = viewModel::refreshWeather,
         ),
+        nowMillis = now,
     )
 }
 
@@ -88,6 +94,8 @@ fun DiagramsContent(
     actions: DiagramsActions,
     modifier: Modifier = Modifier,
     openDiagramExtras: (@Composable () -> Unit)? = null,
+    /** The time the weather's age is measured to. */
+    nowMillis: Long = 0L,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -95,7 +103,7 @@ fun DiagramsContent(
             if (!state.creating) TextAction("New diagram", onClick = actions.startCreating)
         }
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
-        state.current?.let { ActiveDiagramCard(it, actions, openDiagramExtras) }
+        state.current?.let { ActiveDiagramCard(it, actions, nowMillis, openDiagramExtras) }
         if (state.creating) NewDiagramForm(suggestedTarget, state.busy, actions)
         if (state.rows.isEmpty() && !state.creating) {
             Text(
@@ -117,7 +125,7 @@ fun DiagramsContent(
  * [extras] (the planning graphics, which live in this module's other screen but belong in this card, between the summary and rename/delete).
  */
 @Composable
-private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions, extras: (@Composable () -> Unit)?) {
+private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions, nowMillis: Long, extras: (@Composable () -> Unit)?) {
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), modifier = Modifier.fillMaxWidth(),
@@ -139,6 +147,7 @@ private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions
             AnalysisControls(current, actions)
             AircraftPicker(current.aircraft, actions.selectAircraft)
             current.summary?.let { SummaryTiles(it) }
+            current.weather?.let { WeatherSection(it, nowMillis, actions.refreshWeather) }
             extras?.invoke()
             ManageControls(current.uuid, current.name, actions)
         }

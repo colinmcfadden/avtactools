@@ -62,6 +62,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import app.ezpztac.testing.Fixtures
+import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.WeatherCache
+import app.ezpztac.data.WeatherService
+import app.ezpztac.model.WeatherSnapshot
+import app.ezpztac.network.WeatherReportDto
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -114,6 +119,21 @@ class HomeViewModelTest {
         }
     }
 
+    private class CountingWeather : WeatherApi {
+        val asked = mutableListOf<LatLon>()
+
+        override suspend fun weather(at: LatLon): WeatherReportDto {
+            asked += at
+            return WeatherReportDto("KRYY", "Cobb County Airport", windSpeedKts = JsonPrimitive(10), notams = JsonObject(emptyMap()))
+        }
+    }
+
+    private class KeptWeather : WeatherCache {
+        private var kept: Map<String, WeatherSnapshot> = emptyMap()
+        override fun load() = kept
+        override fun save(snapshots: Map<String, WeatherSnapshot>) { kept = snapshots }
+    }
+
     private class MemoryViews : PointSetViewStore {
         override fun load() = emptyMap<String, PointSetView>()
 
@@ -153,7 +173,9 @@ class HomeViewModelTest {
         val pointViews = PointSetViews(MemoryViews())
         val localPoints = LocalPoints(pointSets, pointViews)
         val pointSelection = PointSelection()
-        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
+        val weatherApi = CountingWeather()
+        val weather = WeatherService(weatherApi, KeptWeather(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)))
+        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection, weather, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
 
@@ -453,6 +475,45 @@ class HomeViewModelTest {
         val id = repository.create(target, "LZ HAWK").id
         session.update(id) { DiagramOps.afterAnalysis(it, kotlinx.serialization.json.JsonObject(mapOf("detectedLZ" to lz))) }
         return id
+    }
+
+    // -- The weather at the target -------------------------------------------------------------------------------------------
+
+    @Test
+    fun `opening an analysed diagram fetches the weather at its target, once`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.analysed()
+        r.session.open(id)
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(34.783817, -84.08219)), r.weatherApi.asked)
+        assertEquals("KRYY", r.weather.stateOf(id).snapshot!!.observation!!.stationId)
+
+        r.session.close(); r.session.open(id); advanceUntilIdle()                              // reopened: what is held is fresh, so it is not asked again
+        assertEquals(1, r.weatherApi.asked.size)
+    }
+
+    @Test
+    fun `a diagram that has not been analysed has no weather asked for, until it is`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.repository.create(target, "LZ HAWK").id
+        r.session.open(id)
+        advanceUntilIdle()
+        assertTrue(r.weatherApi.asked.isEmpty())                                                // the web shows the weather only once there is an analysis
+
+        r.session.update(id) { DiagramOps.afterAnalysis(it, kotlinx.serialization.json.JsonObject(mapOf("detectedLZ" to lz))) }
+        advanceUntilIdle()
+        assertEquals(1, r.weatherApi.asked.size)                                                // analysed while open: now it is
+    }
+
+    @Test
+    fun `a diagram that is not open has no weather asked for`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.analysed()
+        advanceUntilIdle()
+        assertTrue(r.weatherApi.asked.isEmpty())
     }
 
     @Test

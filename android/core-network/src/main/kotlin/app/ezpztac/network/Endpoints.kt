@@ -227,6 +227,15 @@ public suspend fun ApiClient.deleteRoute(id: Int, baseRevision: Int? = null, ide
     )
 }
 
+// -- Weather ------------------------------------------------------------------------
+
+/**
+ * The nearest station's report and the NOTAMs around [at]. Always an answer when the server is reached: what its services could not give is null in
+ * it, never an error, so a caller shows what there is. A position the server cannot read (a 400 or 500) is an [ApiException].
+ */
+public suspend fun ApiClient.weather(at: LatLon): WeatherReportDto =
+    decode(execute(ApiClient.Call("GET", "/api/weather", query = mapOf("lat" to at.lat.toString(), "lng" to at.lon.toString()))))
+
 // -- Saved point sets -------------------------------------------------------------
 //
 // A saved point set is the points of one `.LPS` import under a name. The server takes JSON, never looks inside the points, and refuses a set with

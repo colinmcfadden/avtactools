@@ -9,6 +9,11 @@ import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.DiagramSummary
+import app.ezpztac.data.WeatherService
+import app.ezpztac.data.WeatherState
+import app.ezpztac.model.JsNumber
+import app.ezpztac.model.LatLon
+import app.ezpztac.model.Notams
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.geo.PlaceResult
 import app.ezpztac.geo.PlaceSearch
@@ -103,6 +108,37 @@ data class SummaryUi(
     val slope: SlopeTileUi,
 )
 
+/**
+ * What the weather tiles say about an analysed landing zone: the nearest station's report as it was last fetched, with when, and whether a new one is
+ * being fetched or could not be. A number the station did not report is `--`, never a zero. How old it is is worked out by the screen from [fetchedAtMillis],
+ * so this does not change as time passes.
+ */
+data class WeatherUi(
+    /** False when no station answered, or nothing has been fetched yet. */
+    val hasReport: Boolean,
+    /** Whole knots, or one decimal (`12`, `3.5`), or `--`. */
+    val windSpeed: String,
+    /** `G20`, when the station reported gusts. */
+    val windGust: String?,
+    /** Degrees true the wind is from, for the arrow; null when it is variable or not reported. */
+    val windFrom: Int?,
+    val windVariable: Boolean,
+    val temp: String,
+    /** Inches of mercury to hundredths, or `--`. */
+    val altimeter: String,
+    /** `KRYY · Cobb County Airport · 0.7 mi`, or null with no report. */
+    val station: String?,
+    /** VFR, MVFR, IFR or LIFR. */
+    val category: String?,
+    /** When it was fetched, or null when it has not been. */
+    val fetchedAtMillis: Long?,
+    val fetching: Boolean,
+    /** Why the last update failed, in words, when it did. The old report, if there is one, is still shown. */
+    val failure: String?,
+    /** Null until a fetch has answered. */
+    val notams: Notams?,
+)
+
 /** The open diagram, with what can be done to it from here. */
 data class ActiveDiagramUi(
     val uuid: String,
@@ -113,6 +149,8 @@ data class ActiveDiagramUi(
     val canAnalyze: Boolean,
     val analysis: AnalysisUi,
     val summary: SummaryUi?,
+    /** The weather at the target, for an analysed diagram. */
+    val weather: WeatherUi? = null,
     /** Whether the server has this version; null in the moment before the list has caught up with a diagram just made. */
     val sync: SyncStatus?,
     /** The diagram this is a conflict copy of, if it is one. */
@@ -141,18 +179,30 @@ class DiagramsViewModel @Inject constructor(
     private val conflicts: ConflictResolver,
     private val analysis: AnalysisService,
     private val aircraft: AircraftProfiles,
+    private val weather: WeatherService,
 ) : ViewModel() {
     private val local = MutableStateFlow(DiagramsUiState())
     private val analyses = combine(analysis.status, analysis.slopes) { status, slopes -> status to slopes }
     private val airframes = combine(aircraft.entries, aircraft.active) { entries, active -> entries to active }
 
+    private val inputs = combine(repository.observe(), session.active, local) { summaries, active, local -> Triple(summaries, active, local) }
+
     val state: StateFlow<DiagramsUiState> =
-        combine(repository.observe(), session.active, local, analyses, airframes) { summaries, active, local, (status, slopes), (entries, chosen) ->
+        combine(inputs, analyses, airframes, weather.states) { (summaries, active, local), (status, slopes), (entries, chosen), weatherStates ->
             local.copy(
-                current = active?.let { currentOf(it, status, slopes, summaries.firstOrNull { row -> row.uuid == it.id }, aircraftOf(entries, chosen), chosen) },
+                current = active?.let {
+                    currentOf(it, status, slopes, summaries.firstOrNull { row -> row.uuid == it.id }, aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState())
+                },
                 rows = summaries.map { it.toRow(isActive = it.uuid == active?.id) },
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, DiagramsUiState())
+
+    /** Fetches the weather at the open diagram's target again, now. */
+    fun refreshWeather() {
+        val diagram = session.active.value ?: return
+        val target = diagram.target ?: return
+        weather.refresh(diagram.id, LatLon(target.lat, target.lon))
+    }
 
     /** Chooses the mission aircraft. An airframe the list does not have (or one with no slug yet) is not chosen. */
     fun selectAircraft(slug: String) {
@@ -242,6 +292,7 @@ class DiagramsViewModel @Inject constructor(
 
     private fun currentOf(
         diagram: Diagram, status: AnalysisStatus, slopes: Map<String, SlopeState>, listed: DiagramSummary?, airframes: AircraftUi, chosen: AircraftProfile,
+        weatherState: WeatherState,
     ): ActiveDiagramUi = ActiveDiagramUi(
         uuid = diagram.id,
         name = diagram.name,
@@ -254,6 +305,7 @@ class DiagramsViewModel @Inject constructor(
             else -> AnalysisUi.Idle
         },
         summary = summaryOf(diagram, slopes[diagram.id], chosen),
+        weather = if (diagram.canEditGraphics) weatherOf(weatherState) else null,           // the web shows the weather once there is an analysis
         aircraft = airframes,
         sync = listed?.sync,
         conflictOf = listed?.conflictOf,
@@ -276,6 +328,27 @@ class DiagramsViewModel @Inject constructor(
         val elevation = (diagram.analysis.gridElevation as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
         return SummaryUi(aircraft = aircraft.designation, capacity = fit.capacity, areaSqFt = fit.areaSqFt, elevation = elevation, slope = tile)
     }
+
+    private fun weatherOf(state: WeatherState): WeatherUi {
+        val snapshot = state.snapshot
+        val o = snapshot?.observation
+        return WeatherUi(
+            hasReport = o != null,
+            windSpeed = o?.windSpeedKt?.let(::plain) ?: "--",
+            windGust = o?.windGustKt?.let { "G${plain(it)}" },
+            windFrom = o?.windFromDegrees, windVariable = o?.windVariable ?: false,
+            temp = o?.tempC?.let(::plain) ?: "--",
+            altimeter = o?.altimeterInHg?.let { "%.2f".format(java.util.Locale.ROOT, it) } ?: "--",
+            station = o?.let { "${it.stationId} · ${it.stationName.ifBlank { it.stationId }} · ${oneDecimal(it.distanceMiles)} mi" },
+            category = o?.flightCategory,
+            fetchedAtMillis = snapshot?.fetchedAtMillis,
+            fetching = state.fetching, failure = state.failure,
+            notams = snapshot?.notams,
+        )
+    }
+
+    /** A reading as the station would say it: whole numbers without a decimal point, the rest to one place (no locale: a phone's can write other digits). */
+    private fun plain(value: Double): String = JsNumber.toText(Math.round(value * 10) / 10.0)
 
     private fun fail(message: String) = local.update { it.copy(error = message) }
 
