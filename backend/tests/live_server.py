@@ -52,6 +52,7 @@ from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.auth import auth_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
+from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
 from token_revocation import is_revoked  # noqa: E402
@@ -94,7 +95,7 @@ def create_app():
         return is_revoked(payload)
 
     app.before_request(enforce_affiliation_gate)
-    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, sync_bp, aircraft_bp):
+    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, sync_bp, aircraft_bp):
         app.register_blueprint(blueprint)
 
     @app.post("/__test__/account")

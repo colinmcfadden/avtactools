@@ -784,6 +784,145 @@ paths:
         "409":
           $ref: "#/components/responses/RouteConflict"
 
+  /api/pointsets:
+    get:
+      operationId: listPointSets
+      summary: The caller's saved local point sets (summaries, without deleted ones)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PointSetSummary"
+    post:
+      operationId: createPointSet
+      summary: Save a set of local points
+      description: |
+        A set has at least one point. Send `client_uuid`, a UUID the device chose, so a retry after a lost
+        response returns the first record (200) instead of making a second (201). The colour and whether a
+        set is shown on the map are not saved: each device keeps its own.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, points]
+              properties:
+                name: { type: string }
+                points: { $ref: "#/components/schemas/PointList" }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointSetSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointSetSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/pointsets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getPointSet
+      summary: One saved point set, with its points
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointSetFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updatePointSet
+      summary: Edit a saved point set
+      description: |
+        Only what is sent is changed (a name or points that are empty are ignored). Send `If-Match: "<revision>"`
+        with the revision the edit was based on: if the server has moved on, nothing is overwritten and the
+        server's copy comes back with 409 (`revision_conflict`). Without `If-Match` the last writer wins, as the
+        web app always has.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                points: { $ref: "#/components/schemas/PointList" }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointSetSummary"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/PointSetConflict"
+    delete:
+      operationId: deletePointSet
+      summary: Delete a saved point set
+      description: |
+        Leaves a tombstone, with the points gone, so devices learn of the deletion through
+        `/api/sync/changes`. Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/PointSetConflict"
+
   /api/aircraft-profiles:
     get:
       operationId: listAircraftProfiles
@@ -1206,6 +1345,23 @@ components:
               server:
                 $ref: "#/components/schemas/RouteFull"
 
+    PointSetConflict:
+      description: |
+        The point set changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/PointSetFull"
+
     AircraftConflict:
       description: |
         The profile changed on the server since the revision the edit was based on.
@@ -1387,6 +1543,39 @@ components:
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
         route_data: { type: object, description: "A sketch's `{ version: 1, routes: [...] }`; a mission's is a display summary." }
+
+    PointList:
+      type: array
+      minItems: 1
+      description: |
+        The points of a local point set as the web keeps them: `{ id, name, description, group, icon, elevationFt, lat, lon }`,
+        read from an AMPS `.LPS` file. The server does not look inside.
+      items: { type: object }
+
+    PointSetSummary:
+      type: object
+      required: [id, name, point_count, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        point_count: { type: integer, minimum: 0 }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+
+    PointSetFull:
+      type: object
+      required: [id, name, point_count, created_at, updated_at, client_uuid, revision, points]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        point_count: { type: integer, minimum: 0 }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        points: { type: array, items: { type: object } }
 
     AircraftProfile:
       type: object

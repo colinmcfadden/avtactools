@@ -40,6 +40,7 @@ from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
+from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
 from routes.weather_routes import weather_bp  # noqa: E402
@@ -100,7 +101,7 @@ def documented(method, path, status):
 
 
 class NetworkFixtureTests(NativeAuthCase):
-    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, aircraft_bp, sync_bp, terrain_bp, weather_bp)
+    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, weather_bp)
 
     def setUp(self):
         super().setUp()
@@ -206,6 +207,25 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("route: update on a stale revision", self.client.put(f"/api/routes/{route_id}", headers={**head, "If-Match": '"1"'}, data={"name": "mine"}, **form), "ETag")
         self.rec("route: not found", self.client.get("/api/routes/9999", headers=head))
 
+        # Saved point sets: the points of an .LPS import, as the web parses them (the server does not look inside)
+        set_uuid = "9e41d6a3-7b20-4c58-b3f1-0a6d82c5e9b4"
+        KEPT_UUIDS.add(set_uuid)
+        points = [
+            {"id": "lps-0-ab12cd", "name": "BLUE 1", "description": "Landing zone", "group": "LZ", "icon": "lz", "elevationFt": 1730.0, "lat": 34.5123, "lon": -84.2231},
+            {"id": "lps-1-ef34gh", "name": "FARP", "description": "", "group": "Default", "icon": "", "elevationFt": None, "lat": 34.601, "lon": -84.119},
+        ]
+        self.rec("pointset: create", self.client.post("/api/pointsets", headers=head, json={"name": "NORTH GA", "points": points, "client_uuid": set_uuid}), "ETag")
+        self.rec("pointset: create again with the same identity", self.client.post("/api/pointsets", headers=head, json={"name": "NORTH GA", "points": points, "client_uuid": set_uuid}), "ETag")
+        self.rec("pointset: no points", self.client.post("/api/pointsets", headers=head, json={"name": "EMPTY", "points": []}))
+        self.rec("pointset: no name", self.client.post("/api/pointsets", headers=head, json={"points": points}))
+        self.rec("pointset: not a UUID", self.client.post("/api/pointsets", headers=head, json={"name": "x", "points": points, "client_uuid": "nope"}))
+        set_id = self.client.get("/api/pointsets", headers=head).get_json()[0]["id"]
+        self.rec("pointset: list", self.client.get("/api/pointsets", headers=head))
+        self.rec("pointset: get", self.client.get(f"/api/pointsets/{set_id}", headers=head), "ETag")
+        self.rec("pointset: update", self.client.put(f"/api/pointsets/{set_id}", headers={**head, "If-Match": '"1"'}, json={"name": "NORTH GA 2"}), "ETag")
+        self.rec("pointset: update on a stale revision", self.client.put(f"/api/pointsets/{set_id}", headers={**head, "If-Match": '"1"'}, json={"name": "mine"}), "ETag")
+        self.rec("pointset: not found", self.client.get("/api/pointsets/9999", headers=head))
+
         # Aircraft profiles
         self.rec("aircraft: list with no profiles of my own", self.client.get("/api/aircraft-profiles", headers=head))
         profile = self.client.post("/api/aircraft-profiles", headers=head, json={"name": "My Hawk", "designation": "MH-60", "client_uuid": str(uuid.uuid4())})
@@ -225,6 +245,7 @@ class NetworkFixtureTests(NativeAuthCase):
 
         self.rec("lz: delete", self.client.delete(f"/api/lz/{lz_id}", headers={**head, "If-Match": '"2"'}))
         self.rec("route: delete", self.client.delete(f"/api/routes/{route_id}", headers={**head, "If-Match": '"2"'}))
+        self.rec("pointset: delete", self.client.delete(f"/api/pointsets/{set_id}", headers={**head, "If-Match": '"2"'}))
         self.rec("aircraft: delete", self.client.delete(f"/api/aircraft-profiles/{pid}", headers={**head, "If-Match": '"2"'}))
 
         # Sessions, sign-out and account deletion
