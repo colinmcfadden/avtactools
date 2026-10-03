@@ -133,11 +133,14 @@ fun EzpzMap(
     /** The strip at the bottom that something else covers (the sheet's peek): the crosshair is the middle of the map above it. */
     bottomInset: Dp = 0.dp,
     onLongPress: (LatLon) -> Unit = {},
+    /** A tap on the map, where it landed. Not told of a drag or a pinch. */
+    onTap: (LatLon) -> Unit = {},
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val view = remember(context) { createMapView(context) }
     val longPress by rememberUpdatedState(onLongPress)
+    val tap by rememberUpdatedState(onTap)
 
     DisposableEffect(owner, view) {
         view.onCreate(Bundle())
@@ -164,6 +167,7 @@ fun EzpzMap(
             map.addOnCameraMoveListener { host.publishCamera(map) }
             map.addOnCameraIdleListener { host.publishCamera(map) }
             map.addOnMapLongClickListener { at -> longPress(LatLon(at.latitude, at.longitude)); true }
+            map.addOnMapClickListener { at -> tap(LatLon(at.latitude, at.longitude)); false }   // false: the map's own handling of a tap goes on
             host.attach(map)
             host.jumpTo(initial)
         }

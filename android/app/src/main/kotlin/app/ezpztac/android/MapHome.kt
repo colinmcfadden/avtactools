@@ -17,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -32,6 +33,7 @@ import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.GraphicLabelsLayer
 import app.ezpztac.map.MapCommand
+import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.rememberMapHost
@@ -40,6 +42,9 @@ import app.ezpztac.workspace.GraphicsHost
 import kotlinx.coroutines.flow.filterNotNull
 
 private val PEEK = 112.dp
+
+/** How far from a graphic's point a finger still counts as on it: the platform's minimum touch target is 48 dp across, so 24 dp each way. */
+private const val TOUCH_RADIUS_DP = 24.0
 
 /**
  * The signed-in app: the map is the root, with a bottom sheet over it (docs/NATIVE_APPS_PLAN.md, "Mobile UX"). The sheet holds the
@@ -58,6 +63,7 @@ fun MapHome(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scene by home.scene.collectAsStateWithLifecycle()
     val host = rememberMapHost()
+    val density = LocalDensity.current
     val scaffold = rememberBottomSheetScaffoldState()
 
     LaunchedEffect(host) {
@@ -105,7 +111,13 @@ fun MapHome(
             modifier = Modifier.fillMaxSize(),
         ) {
             // The sheet's peek is reserved from the map, so the camera's centre is the crosshair, which is drawn above the sheet.
-            EzpzMap(host = host, style = state.style, initial = viewModel.initialCamera, bottomInset = PEEK, modifier = Modifier.fillMaxSize())
+            EzpzMap(
+                host = host, style = state.style, initial = viewModel.initialCamera, bottomInset = PEEK, modifier = Modifier.fillMaxSize(),
+                onTap = { at ->
+                    // Distances between points on the screen do not depend on where its middle is, so the size of the view is not needed here.
+                    host.camera?.let { camera -> home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) }
+                },
+            )
             DiagramLayer(host, scene)                       // under the GPS dot, which stays on top
             GpsLayer(host, state.gps)
             GraphicLabelsLayer(host, scene.graphics)

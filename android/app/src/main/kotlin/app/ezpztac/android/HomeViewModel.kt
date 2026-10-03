@@ -6,7 +6,9 @@ import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.SlopeState
+import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.LzScene
+import app.ezpztac.map.MapProjection
 import app.ezpztac.map.SlopeImage
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.LatLon
@@ -68,6 +70,15 @@ class HomeViewModel @Inject constructor(
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))
             }
         }
+    }
+
+    /**
+     * A tap on the map at [at], seen through [view]: the graphic under the finger is held, and a tap on nothing puts the held one down.
+     * [touchRadiusPx] is how far from a graphic's point a finger still counts as on it.
+     */
+    fun mapTapped(at: LatLon, view: MapProjection, touchRadiusPx: Double) {
+        val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx)
+        if (hit != null) selection.select(hit) else selection.clear()
     }
 
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */

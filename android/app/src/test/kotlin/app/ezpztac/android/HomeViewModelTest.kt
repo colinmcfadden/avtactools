@@ -6,7 +6,9 @@ import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.network.FieldAnalysis
+import app.ezpztac.map.CameraState
 import app.ezpztac.map.LzScene
+import app.ezpztac.map.MapProjection
 import app.ezpztac.map.SlopeImage
 import app.ezpztac.network.NetworkException
 import app.ezpztac.network.SlopeStats
@@ -337,5 +339,39 @@ class HomeViewModelTest {
         r.session.edit("Move") { DiagramOps.patchGraphic(it, "pzMarkers", JsonPrimitive("pz-1"), JsonObject(mapOf("lat" to JsonPrimitive(34.79)))) }
         advanceUntilIdle()
         assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+    }
+
+    // -- Tapping the map -----------------------------------------------------------------------------------------------
+
+    private fun view() = MapProjection(CameraState(LatLon(34.7838, -84.0822), 18.0), 0.0, 0.0, 1.0)
+
+    @Test
+    fun `a tap on a graphic holds it, a tap on another changes to it, and a tap on nothing puts it down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        r.session.edit("Place PZ marker") {
+            DiagramOps.upsertGraphic(it, "pzMarkers", JsonObject(pzMarker("pz-2") + mapOf("lat" to JsonPrimitive(34.7848), "tipLat" to JsonPrimitive(34.7848))))
+        }
+        advanceUntilIdle()
+
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+
+        r.model.mapTapped(LatLon(34.7848, -84.0822), view(), touchRadiusPx = 24.0)               // the other, about 110 m north
+        assertEquals(GraphicRef("pzMarkers", "pz-2"), r.selection.selected.value)
+
+        r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)               // empty ground
+        assertEquals(null, r.selection.selected.value)
+    }
+
+    @Test
+    fun `tapping the map with nothing drawn changes nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.78, -84.08), view(), touchRadiusPx = 24.0)
+        assertEquals(null, r.selection.selected.value)
     }
 }
