@@ -923,6 +923,37 @@ paths:
         "409":
           $ref: "#/components/responses/PointSetConflict"
 
+  /api/weather:
+    get:
+      operationId: weather
+      summary: "The weather at a position, from the nearest station's report and the NOTAMs around it"
+      description: |
+        Looks up the nearest METAR within a degree or so of the position and the FAA NOTAMs within 10 nm. The services behind it are other people's, so
+        the answer is **always 200** with what could be had: when no station answers, `station_id` is `TIMEOUT`, the numbers are null and `pressure` is
+        `"--"`; when the NOTAM search is down, `notams` is a sentence instead of an object. A caller shows both without treating them as errors.
+      security:
+        - bearer: []
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: { type: number }
+        - name: lng
+          in: query
+          required: true
+          schema: { type: number }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeatherReport"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "500":
+          $ref: "#/components/responses/SimpleError"
+
   /api/aircraft-profiles:
     get:
       operationId: listAircraftProfiles
@@ -1576,6 +1607,27 @@ components:
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
         points: { type: array, items: { type: object } }
+
+    WeatherReport:
+      type: object
+      required: [station_id, name, temp_c, dewp_c, wind_spd_kts, wind_dir, wind_gust_kts, vis_sm, pressure, flight_category, raw_metar, distance_miles, notams]
+      properties:
+        station_id: { type: string, description: "The ICAO id, `UNKNOWN` when the report has none, `TIMEOUT` when no station answered." }
+        name: { type: string, description: "The station's name; `AviationWeather API Offline` when none answered." }
+        temp_c: { type: number, nullable: true }
+        dewp_c: { type: number, nullable: true }
+        wind_spd_kts: { type: number, nullable: true }
+        wind_dir: { nullable: true, description: "Degrees true the wind is from, a number; `VRB` (text) for a variable wind; null with no report." }
+        wind_gust_kts: { type: number, nullable: true }
+        vis_sm: { nullable: true, description: "Statute miles: a number, or text such as `10+`; null with no report." }
+        pressure: { description: "Altimeter in inches of mercury, a number rounded to hundredths, or the text `--` when there is none." }
+        flight_category: { type: string, nullable: true, description: "VFR, MVFR, IFR or LIFR." }
+        raw_metar: { type: string, nullable: true }
+        distance_miles: { type: number, description: "How far the station is from the position, in statute miles; 0 when none answered." }
+        notams:
+          description: |
+            An object of lists of NOTAM text by the feature they are about (`{"Obstruction": ["…"]}`, or `{"Clear": ["No active NOTAMs in LZ area."]}` when
+            there are none), or a sentence when the search could not be done (`NOTAM fetch failed.` or `NOTAMs currently unavailable.`).
 
     AircraftProfile:
       type: object

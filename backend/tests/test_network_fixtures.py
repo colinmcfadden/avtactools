@@ -30,6 +30,7 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 
 import cv2  # noqa: E402
 import mercantile  # noqa: E402
+import requests  # noqa: E402
 import numpy as np  # noqa: E402
 import rasterio  # noqa: E402
 from rasterio.transform import from_origin  # noqa: E402
@@ -404,11 +405,67 @@ class NetworkFixtureTests(NativeAuthCase):
             self.rec("route-winds: no station answers", self.client.post("/api/route-winds", headers=head, json={"points": asked}))
         self.rec("route-winds: not a list of points", self.client.post("/api/route-winds", headers=head, json={"points": "oops"}))
 
+    def weather_summary(self):
+        """The weather at a landing zone: the nearest station's report and the NOTAMs around it. The METAR service and the FAA's NOTAM search are
+        other people's, so what they answer is stood in for; which station is nearest, the numbers kept, the defaults when nobody answers, and the
+        two shapes the NOTAMs come back in (grouped by feature, or a sentence) are the server's own."""
+        self.make_account(email="weather@example.com")
+        head = self.bearer(self.login(ANDROID, "weather@example.com")["access_token"])
+
+        class Reply:
+            def __init__(self, status=200, body=None):
+                self.status_code, self._body = status, body
+
+            def json(self):
+                return self._body
+
+        stations = [
+            {"icaoId": "KRYY", "name": "Cobb County Airport", "lat": 34.01, "lon": -84.6, "temp": 18, "dewp": 9, "wspd": 12, "wdir": 270, "wgst": 20,
+             "visib": 10, "altim": 1015.9, "fltcat": "VFR", "rawOb": "KRYY 031655Z 27012G20KT 10SM CLR 18/09 A3000"},
+            {"icaoId": "KCNI", "name": "Cherokee County", "lat": 34.31, "lon": -84.42, "temp": 16.5, "dewp": 12.2, "wspd": 3, "wdir": "VRB", "visib": "10+",
+             "fltcat": "MVFR", "rawOb": "KCNI 031655Z VRB03KT 10SM SCT025 17/12 A2995"},
+        ]
+        notams = {"notamList": [
+            {"featureName": "Obstruction", "traditionalMessage": "  !FDC 6/1234 CRANE 340FT AGL 3NM N  "},
+            {"featureName": "Obstruction", "traditionalMessage": "!FDC 6/2222 TOWER LGT OTS"},
+            {"featureName": "Airspace", "traditionalMessage": "!ZTL 10/044 TEMPORARY FLIGHT RESTRICTION"},
+            {"featureName": "Airspace", "traditionalMessage": ""},
+            "not an item",
+        ]}
+
+        def metar(reports=None, raises=False, status=200):
+            def get(url, **_kw):
+                if raises:
+                    raise requests.exceptions.ConnectionError("no route to host")
+                return Reply(status, stations if reports is None else reports)
+            return patch("routes.weather_routes.requests.get", side_effect=get)
+
+        def faa(body=None, status=200, raises=False):
+            def post(url, **_kw):
+                if raises:
+                    raise RuntimeError("the NOTAM search fell over")
+                return Reply(status, notams if body is None else body)
+            return patch("routes.weather_routes.requests.post", side_effect=post)
+
+        near_second = {"lat": "34.3", "lng": "-84.4"}
+        with metar(), faa():
+            self.rec("weather", self.client.get("/api/weather", headers=head, query_string={"lat": "34.0", "lng": "-84.6"}))
+            self.rec("weather: the second station is nearer", self.client.get("/api/weather", headers=head, query_string=near_second))
+        with metar(reports=[]), faa(body=[]):
+            self.rec("weather: no station and no NOTAMs", self.client.get("/api/weather", headers=head, query_string=near_second))
+        with metar(raises=True), faa(status=503):
+            self.rec("weather: both services down", self.client.get("/api/weather", headers=head, query_string=near_second))
+        with metar(), faa(raises=True):
+            self.rec("weather: the NOTAM search fails", self.client.get("/api/weather", headers=head, query_string=near_second))
+        self.rec("weather: no position", self.client.get("/api/weather", headers=head))
+        self.rec("weather: a position that is not one", self.client.get("/api/weather", headers=head, query_string={"lat": "x", "lng": "1"}))
+
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
         self.accounts()
         self.terrain()
         self.planning()
+        self.weather_summary()
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "
                            "generated ids and the server version replaced by placeholders. The native apps decode each body "
