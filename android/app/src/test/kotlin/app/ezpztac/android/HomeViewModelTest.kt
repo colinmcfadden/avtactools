@@ -106,6 +106,14 @@ class HomeViewModelTest {
         }
     }
 
+    private class FakeLastRouteSet(var stored: String? = null) : LastRouteSet {
+        override fun id() = stored
+
+        override fun remember(id: String) {
+            stored = id
+        }
+    }
+
     private class Rig(scope: TestScope, val server: SlopeServer = SlopeServer(), listening: Boolean = true) {
         val store = Flaky()
         val sync = SyncRepository(store, SequentialIds("t"))
@@ -126,7 +134,8 @@ class HomeViewModelTest {
         val routeSelection = RouteSelection()
         val sketching = RouteSketching(routeSession, aircraft, mode)
         val last = FakeLastDiagram()
-        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
+        val lastSet = FakeLastRouteSet()
+        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
 
@@ -211,6 +220,99 @@ class HomeViewModelTest {
         r.session.open(chosen.id)
         advanceUntilIdle()
         assertEquals(chosen.id, r.session.active.value?.id)
+    }
+
+    // -- Coming back to the set of routes that was open ------------------------------------------------------------------
+
+    @Test
+    fun `the set of routes that was open is open again at launch`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.routes.create("MISSION 1")
+        r.lastSet.stored = made.id
+        advanceUntilIdle()
+        assertEquals(made.id, r.routeSession.active.value?.id)
+    }
+
+    @Test
+    fun `it does not need the map to be listening, and it leaves the diagram alone`() = runTest(dispatcher) {
+        val r = Rig(this, listening = false)
+        val made = r.routes.create("MISSION 1")
+        r.lastSet.stored = made.id
+        advanceUntilIdle()
+        assertEquals(made.id, r.routeSession.active.value?.id)
+        assertEquals(null, r.session.active.value)
+    }
+
+    @Test
+    fun `nothing remembered opens no set`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.routes.create("MISSION 1")
+        advanceUntilIdle()
+        assertEquals(null, r.routeSession.active.value)
+    }
+
+    @Test
+    fun `a set that is gone is not opened, and is not an error`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.routes.create("MISSION 1")
+        r.routes.delete(made.id)
+        r.lastSet.stored = made.id
+        val never = Rig(this)
+        never.lastSet.stored = "never-existed"                                              // an id this account never had, as after another signs in
+        advanceUntilIdle()
+        assertEquals(null, r.routeSession.active.value)
+        assertEquals(null, never.routeSession.active.value)
+    }
+
+    @Test
+    fun `a set that will not open leaves the app running, and can be opened afterwards`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.routes.create("MISSION 1")
+        r.lastSet.stored = made.id
+        r.store.failing = true
+        advanceUntilIdle()                                                                  // an uncaught failure here would fail the test
+        assertEquals(null, r.routeSession.active.value)
+        r.store.failing = false
+        r.routeSession.open(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.routeSession.active.value?.id)
+    }
+
+    @Test
+    fun `a set opened in the meantime is not replaced by the remembered one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val old = r.routes.create("OLD")
+        val chosen = r.routes.create("CHOSEN")
+        r.lastSet.stored = old.id
+        r.routeSession.open(chosen.id)
+        advanceUntilIdle()
+        assertEquals(chosen.id, r.routeSession.active.value?.id)
+    }
+
+    @Test
+    fun `opening a set remembers it, and closing the session does not forget it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.routes.create("MISSION 1")
+        r.routeSession.open(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.lastSet.stored)
+        r.routeSession.close()                                                              // as at sign-out: the same account is back next time
+        advanceUntilIdle()
+        assertEquals(made.id, r.lastSet.stored)
+    }
+
+    @Test
+    fun `the diagram and the set are remembered apart`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val diagram = r.repository.create(target, "LZ HAWK")
+        val set = r.routes.create("MISSION 1")
+        r.session.open(diagram.id)
+        r.routeSession.open(set.id)
+        advanceUntilIdle()
+        assertEquals(diagram.id, r.last.stored)
+        assertEquals(set.id, r.lastSet.stored)
     }
 
     @Test

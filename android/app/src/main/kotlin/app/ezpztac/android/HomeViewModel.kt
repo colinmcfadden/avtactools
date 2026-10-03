@@ -55,6 +55,7 @@ class HomeViewModel @Inject constructor(
     private val routeSelection: RouteSelection,
     private val sketching: RouteSketching,
     private val last: LastDiagram,
+    private val lastSet: LastRouteSet,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -112,6 +113,21 @@ class HomeViewModel @Inject constructor(
             } catch (_: Exception) {
                 // A diagram that will not open is not a reason to stop the app: the person starts from the list.
             }
+        }
+        // The set of routes the person had open comes back too. Nothing waits on the map here: a set takes the map nowhere, so there is no event to lose.
+        viewModelScope.launch {
+            if (routeSession.active.value != null) return@launch                          // something was opened in the meantime: it stays
+            val id = lastSet.id() ?: return@launch
+            try {
+                routeSession.open(id)                                                     // false when it is gone (deleted, or another account's)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // A set that will not open is not a reason to stop the app: the person starts from the list.
+            }
+        }
+        viewModelScope.launch {
+            routeSession.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { lastSet.remember(it.id) }    // kept when the session closes (sign-out), as the diagram is
         }
         // What was held on a set of routes, and a route half drawn, belonged to the set before: another set, or none, starts clean.
         viewModelScope.launch {

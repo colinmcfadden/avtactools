@@ -40,6 +40,8 @@ import app.ezpztac.data.FileMasterProfileStore
 import app.ezpztac.android.AircraftChoicePreferences
 import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastDiagramPreferences
+import app.ezpztac.android.LastRouteSet
+import app.ezpztac.android.LastRouteSetPreferences
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.symbols.DefaultSymbolRenderer
 import app.ezpztac.symbols.JavaScriptSymbolSource
@@ -147,6 +149,9 @@ interface AppBindings {
 
     @Binds
     fun lastDiagram(impl: LastDiagramPreferences): LastDiagram
+
+    @Binds
+    fun lastRouteSet(impl: LastRouteSetPreferences): LastRouteSet
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner

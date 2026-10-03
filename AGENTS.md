@@ -1081,6 +1081,9 @@ client is built around not losing one:
       counts and `12.3 nm · 8:15` once it has two named points; Hide/Show, Rename, Delete with its asks; undo and redo; rename, delete and close the set), the other
       sets, a new-set form (a blank name is `MISSION n`), and a toolbar over the map while drawing. Conflicts use the same panel as diagrams (`ConflictPanel`, also keep-both
       primary). A new route, once finished, is the one held. Names are upper-cased as the web does.
+    - **The set that was open comes back at launch** (`HomeViewModel`, `LastRouteSet`), as the diagram does (`LastDiagram`): its id (a uuid, nothing about the routes) is kept in a plain
+      preference each time a set opens and is *not* forgotten when the session closes at sign-out; a set that is gone (deleted, another account's) or will not open is "start from the
+      list". Unlike the diagram it does **not** wait for the map to listen: opening a set takes the map nowhere, so there is no event to lose. One opened in the meantime stays.
     - **Signing out closes the open set** as it closes the open diagram (`AppViewModel.closeOpenDocuments`); one that will not save does not keep the other from closing.
   - **The held route's plan** (`feature-workspace`: `RoutePlanScreen`, `RoutesViewModel.detail`; `core-planning`: `PlanDraft`, `PointDraft`). The route-wide form (date, airspeed and
     its reference, altitude and its reference, wind, temperature, fuel flow) and a row for each named point (the nav log, the web's `RoutePlanSection`: name, type, the leg that
@@ -1119,7 +1122,7 @@ client is built around not losing one:
       after a day, and a name is cut to a plain file name again at the last step so a crafted route name cannot leave the folder. A test asks the provider for `exports/../secret.txt` and
       is refused. `FileProvider` keeps a static cache of its folders, so Robolectric tests clear it (`sCache`) between tests; a real process has one cache directory.
     - **Not verifiable here:** that the share sheet opens and hands the file to a real app, and that AMPS opens what is exported (the web's export is the reference; the writer is held to its files).
-  - **Not yet built:** dragging a point on the map (the sheet does everything a drag would), reopening the last set at launch, choosing the template for an aircraft (an admin-attached package), mutating an
+  - **Not yet built:** dragging a point on the map (the sheet does everything a drag would), choosing the template for an aircraft (an admin-attached package), mutating an
     imported mission, saved *mission* routes, and the ForeFlight / ATAK hand-off.
 - **Aircraft profiles** (`core-data`: `AircraftProfiles`; `core-model`: `AircraftDraft`; `feature-workspace`: `AircraftViewModel`,
   `AircraftScreen`, `AircraftPicker`; `app`: `AircraftChoicePreferences`).
