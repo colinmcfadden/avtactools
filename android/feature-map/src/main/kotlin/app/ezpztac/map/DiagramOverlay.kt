@@ -51,6 +51,13 @@ class DiagramOverlay {
                 PropertyFactory.lineColor(DRAWN_COLOR), PropertyFactory.lineWidth(2.5f), PropertyFactory.lineDasharray(arrayOf(2f, 2f)),
             ),
         )
+        // The points of a boundary being drawn: a dot each, so the first (which has no line to it yet) is seen.
+        style.addLayer(
+            CircleLayer(VERTEX_LAYER, SOURCE).withFilter(role("vertex")).withProperties(
+                PropertyFactory.circleRadius(5f), PropertyFactory.circleColor(DRAWN_COLOR),
+                PropertyFactory.circleStrokeColor("#FFFFFF"), PropertyFactory.circleStrokeWidth(2f),
+            ),
+        )
         installGraphics(style, role)
         style.addLayer(
             CircleLayer(TARGET_LAYER, SOURCE).withFilter(role("target")).withProperties(
@@ -184,6 +191,7 @@ class DiagramOverlay {
         const val FILL_LAYER = "lz-fill"
         const val OUTLINE_LAYER = "lz-outline"
         const val DRAWN_LAYER = "lz-drawn"
+        const val VERTEX_LAYER = "lz-vertex"
         const val TARGET_LAYER = "lz-target"
         const val SECTOR_FILL_LAYER = "lz-sector-fill"
         const val SECTOR_LINE_LAYER = "lz-sector-line"

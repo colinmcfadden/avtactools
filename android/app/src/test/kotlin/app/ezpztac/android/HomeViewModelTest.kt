@@ -2,6 +2,7 @@ package app.ezpztac.android
 
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.InMemoryAircraftChoice
 import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.DiagramRepository
@@ -103,7 +104,8 @@ class HomeViewModelTest {
             store, InMemoryMasterProfileStore(listOf(AircraftProfile(), AircraftProfile(id = 2, slug = "ch47f", name = "CH-47F Chinook", designation = "CH-47F", iconKey = "ch47", rotorDiameterM = 18.29))),
             { emptyList() }, InMemoryAircraftChoice(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), sync, scheduler,
         )
-        val model = HomeViewModel(session, analysis, selection, aircraft, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
+        val drawing = BoundaryDrawing(session)
+        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
         val seen = mutableListOf<OpenedDiagram>()
 
         init {
@@ -388,6 +390,100 @@ class HomeViewModelTest {
         r.model.mapTapped(LatLon(34.78, -84.08), view(), touchRadiusPx = 24.0)
         assertEquals(null, r.selection.selected.value)
     }
+    // -- Drawing a boundary -----------------------------------------------------------------------------------------------
+
+    @Test
+    fun `while a boundary is being drawn a tap is a corner of it, wherever it falls`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.drawing.start()
+        r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)
+        r.model.mapTapped(LatLon(34.7900, -84.0700), view(), touchRadiusPx = 24.0)
+        assertEquals(listOf(LatLon(34.78, -84.09), LatLon(34.79, -84.07)), r.drawing.draft.value!!.points)
+    }
+
+    @Test
+    fun `a tap on a graphic while drawing is a corner and does not hold the graphic`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.drawing.start()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)                  // right on the PZ marker
+        assertEquals(null, r.selection.selected.value)
+        assertEquals(1, r.drawing.draft.value!!.points.size)
+        r.drawing.cancel()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)                  // and once drawing is over, it is a tap on a graphic again
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+    }
+
+    @Test
+    fun `the map draws the corners put down on the diagram they belong to`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertEquals(emptyList<LatLon>(), r.model.scene.value.draft)
+        r.drawing.start()
+        r.drawing.addPoint(LatLon(34.78, -84.09))
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(34.78, -84.09)), r.model.scene.value.draft)
+    }
+
+    @Test
+    fun `the sheet is told when drawing starts and stops`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertEquals(false, r.model.isDrawing.value)
+        r.drawing.start()
+        advanceUntilIdle()
+        assertEquals(true, r.model.isDrawing.value)
+        r.drawing.cancel()
+        advanceUntilIdle()
+        assertEquals(false, r.model.isDrawing.value)
+    }
+
+    @Test
+    fun `the map never draws one diagram's corners on another, not even for the moment before they are dropped`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.drawing.start()
+        r.drawing.addPoint(LatLon(34.78, -84.09))
+        advanceUntilIdle()
+        val seen = mutableListOf<LzScene>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.scene.collect { seen += it } }
+        val other = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
+        r.session.open(other.id)
+        advanceUntilIdle()
+        val onOther = seen.filter { it.target == LatLon(35.0, -85.0) }
+        assertTrue("the other diagram was shown", onOther.isNotEmpty())
+        assertTrue("no corner of the first was drawn on it", onOther.all { it.draft.isEmpty() })
+    }
+
+    @Test
+    fun `opening another diagram drops a boundary half drawn`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val first = r.analysed()
+        r.session.open(first)
+        advanceUntilIdle()
+        r.drawing.start()
+        r.drawing.addPoint(LatLon(34.78, -84.09))
+        advanceUntilIdle()
+        val other = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
+        r.session.open(other.id)
+        advanceUntilIdle()
+        assertEquals(null, r.drawing.draft.value)
+        assertEquals(emptyList<LatLon>(), r.model.scene.value.draft)
+    }
+
 // -- Aircraft on the map -----------------------------------------------------------------------------------------------
 
     private fun helo(id: Int, profile: String) = JsonObject(

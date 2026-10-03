@@ -82,6 +82,45 @@ class LzSceneTest {
         assertEquals(emptyList<LatLon>(), LzScene.of(diagram(analysis = DiagramAnalysis(customLZ = ring(34.7 to -84.1)))).drawn)
     }
 
+    // -- The boundary being drawn ---------------------------------------------------------------------------------
+
+    private val a = LatLon(34.70, -84.10)
+    private val b = LatLon(34.80, -84.00)
+    private val c = LatLon(34.80, -84.10)
+
+    @Test
+    fun `the first point of a boundary being drawn is a dot, with no line yet`() {
+        val scene = LzScene.of(diagram(), draft = listOf(a))
+        assertEquals(listOf(a), scene.draft)
+        assertEquals(listOf("vertex", "target"), features(scene).map(::role))
+        assertEquals(listOf(-84.10, 34.70), geometry(features(scene).first()).getValue("coordinates").jsonArray.map { it.jsonPrimitive.content.toDouble() })
+    }
+
+    @Test
+    fun `a boundary being drawn is an open line with a dot at each point, in the order they were put down`() {
+        val scene = LzScene.of(diagram(), draft = listOf(a, b, c))
+        val line = features(scene).single { role(it) == "drawn" }
+        assertEquals("LineString", geometry(line).getValue("type").jsonPrimitive.content)                 // open: it is not a polygon until finished
+        val coordinates = geometry(line).getValue("coordinates").jsonArray.map { it.jsonArray.map { v -> v.jsonPrimitive.content.toDouble() } }
+        assertEquals(listOf(listOf(-84.10, 34.70), listOf(-84.00, 34.80), listOf(-84.10, 34.80)), coordinates)
+        assertEquals(3, features(scene).count { role(it) == "vertex" })
+    }
+
+    @Test
+    fun `two corners already make a line`() {
+        val scene = LzScene.of(diagram(), draft = listOf(a, b))
+        assertEquals(1, features(scene).count { role(it) == "drawn" })
+        assertEquals(2, features(scene).count { role(it) == "vertex" })
+    }
+
+    @Test
+    fun `a draft is something to draw, and no draft is none`() {
+        assertEquals(false, LzScene(null, emptyList(), emptyList(), null, draft = listOf(a)).isEmpty)
+        assertEquals(true, LzScene(null, emptyList(), emptyList(), null).isEmpty)
+        assertEquals(emptyList<LatLon>(), LzScene.of(diagram()).draft)
+        assertEquals(emptyList<LatLon>(), LzScene.of(null, draft = listOf(a)).draft)                         // nothing open, nothing to draw it on
+    }
+
     @Test
     fun `a point that is not a pair of numbers is left out, and a boundary of nothing but rubbish is none`() {
         val rubbish = JsonArray(listOf(JsonPrimitive("x"), JsonArray(listOf(JsonPrimitive(1))), JsonArray(listOf(JsonPrimitive("a"), JsonPrimitive("b"))), JsonNull))

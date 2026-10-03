@@ -23,7 +23,7 @@ android/
 ├─ core-symbols/    MIL-STD-2525C symbols as bitmaps: pre-rendered presets, milsymbol in the system JS sandbox, AndroidSVG
 ├─ feature-map/     the 2D map: MapLibre, base maps, crosshair readout, search, GPS, the diagram and its planning graphics
 ├─ feature-auth/    sign-in, sign-up, verify, reset and the .mil gate: screens and their view models
-├─ feature-workspace/ the Diagrams tab: list, make from a target, open, rename, delete, settle a conflict, analyze, the planning graphics and the aircraft
+├─ feature-workspace/ the Diagrams tab: list, make from a target, open, rename, delete, settle a conflict, analyze, the planning graphics, the aircraft and a hand-drawn boundary
 ├─ app/             the application: Hilt, Compose, manifest, the shell and the map with its sheet
 └─ build-logic/     the convention plugins every module uses
 ```

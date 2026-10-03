@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.SlopeState
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -42,6 +44,7 @@ class HomeViewModel @Inject constructor(
     private val analysis: AnalysisService,
     private val selection: GraphicSelection,
     private val aircraft: AircraftProfiles,
+    private val drawing: BoundaryDrawing,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -58,10 +61,15 @@ class HomeViewModel @Inject constructor(
      * the slope raster. The raster is shown only while the boundary is still the one it was measured for. Each aircraft is drawn as the
      * airframe it was placed as, the same as the sheet measures it; one placed with a profile that is not known here is drawn as the chosen one.
      */
-    val scene: StateFlow<LzScene> = combine(session.active, analysis.slopes, selection.selected, aircraft.profiles, aircraft.active) { diagram, slopes, selected, profiles, active ->
+    val scene: StateFlow<LzScene> = combine(session.active, analysis.slopes, combine(selection.selected, drawing.draft) { held, draft -> held to draft }, aircraft.profiles, aircraft.active) { diagram, slopes, (selected, draft), profiles, active ->
         val measured = diagram?.let { d -> (slopes[d.id] as? SlopeState.Ready)?.takeIf { it.boundaryKey == analysis.boundaryKey(d) } }
-        LzScene.of(diagram, measured?.analysis?.toSlopeImage(), profiles = profiles, active = active, selected = selected)
+        // A boundary being drawn belongs to the diagram it was started on: on another one it is not drawn (and is dropped when that one opens).
+        val corners = draft?.takeIf { it.diagramId == diagram?.id }?.points.orEmpty()
+        LzScene.of(diagram, measured?.analysis?.toSlopeImage(), profiles = profiles, active = active, selected = selected, draft = corners)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
+
+    /** Whether a boundary is being drawn: the sheet goes down to its peek so the map is there to tap. */
+    val isDrawing: StateFlow<Boolean> = drawing.draft.map { it != null }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
         // The master list of airframes is the admin's and changes now and then: asked for when the map comes up, and kept for when there is no signal.
@@ -73,6 +81,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { diagram ->
                 selection.clear()                                                          // what was held belonged to the diagram before
+                drawing.cancel()                                                           // and so did a boundary half drawn
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))
             }
         }
@@ -80,9 +89,14 @@ class HomeViewModel @Inject constructor(
 
     /**
      * A tap on the map at [at], seen through [view]: the graphic under the finger is held, and a tap on nothing puts the held one down.
-     * [touchRadiusPx] is how far from a graphic's point a finger still counts as on it.
+     * [touchRadiusPx] is how far from a graphic's point a finger still counts as on it. While a boundary is being drawn a tap is a corner of it,
+     * wherever it falls: nothing else on the map can be held until the person finishes or cancels.
      */
     fun mapTapped(at: LatLon, view: MapProjection, touchRadiusPx: Double) {
+        if (drawing.draft.value != null) {
+            drawing.addPoint(at)
+            return
+        }
         val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx)
         if (hit != null) selection.select(hit) else selection.clear()
     }

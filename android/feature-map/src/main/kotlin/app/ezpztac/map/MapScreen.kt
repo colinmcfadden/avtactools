@@ -67,6 +67,8 @@ fun MapScreen(
     modifier: Modifier = Modifier,
     /** Space the bottom sheet takes, so the crosshair stays in the middle of what is still showing. */
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
+    /** Anything that floats over the map and the readout, placed in the screen's own box (so `Modifier.align` works): a tool that is only there while it is in use. */
+    overlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
     map: @Composable () -> Unit,
 ) {
     Box(modifier.fillMaxSize()) {
@@ -91,6 +93,7 @@ fun MapScreen(
         state.readout?.let { readout ->
             ReadoutPill(readout, Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = bottomInset + Tokens.Spacing.lg.dp))
         }
+        overlay()
     }
 }
 

@@ -2,6 +2,7 @@ package app.ezpztac.android
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,6 +18,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -40,11 +42,16 @@ import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.workspace.AircraftHost
+import app.ezpztac.workspace.BoundaryHost
+import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsHost
 import app.ezpztac.workspace.GraphicsHost
 import kotlinx.coroutines.flow.filterNotNull
 
 private val PEEK = 112.dp
+
+/** The boundary toolbar sits this far above the sheet's peek, which clears the position readout beneath it. */
+private val TOOLBAR_ABOVE_READOUT = 56.dp
 
 /** How far from a graphic's point a finger still counts as on it: the platform's minimum touch target is 48 dp across, so 24 dp each way. */
 private const val TOUCH_RADIUS_DP = 24.0
@@ -66,6 +73,7 @@ fun MapHome(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scene by home.scene.collectAsStateWithLifecycle()
+    val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
     val scaffold = rememberBottomSheetScaffoldState()
@@ -79,6 +87,8 @@ fun MapHome(
         }
     }
     LaunchedEffect(host) { snapshotFlow { host.camera }.filterNotNull().collect(viewModel::onCamera) }
+    // The buttons that start drawing a boundary are in the sheet and the corners are put down on the map: down to the peek, so the map is there.
+    LaunchedEffect(drawing) { if (drawing) scaffold.bottomSheetState.partialExpand() }
     LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
     // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { home.appStopped() }
@@ -98,8 +108,11 @@ fun MapHome(
                     // A new diagram starts at the middle of the map: the grid under the crosshair, or its degrees where there is no grid.
                     DiagramsHost(
                         suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon },
-                        // The planning graphics sit in the open diagram's card: they are put at, and brought to, the crosshair.
-                        openDiagramExtras = { GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs) },
+                        // The boundary and the planning graphics sit in the open diagram's card: the graphics are put at, and brought to, the crosshair.
+                        openDiagramExtras = {
+                            BoundaryHost(crosshair = state.center)
+                            GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs)
+                        },
                     )
                     AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
@@ -115,6 +128,8 @@ fun MapHome(
                 onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                 onFaceNorth = viewModel::faceNorth,
                 bottomInset = PEEK,
+                // Over the readout, above the sheet's peek: only there while a boundary is being drawn.
+                overlay = { BoundaryToolbarHost(crosshair = state.center, modifier = Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = PEEK + TOOLBAR_ABOVE_READOUT)) },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 // The sheet's peek is reserved from the map, so the camera's centre is the crosshair, which is drawn above the sheet.

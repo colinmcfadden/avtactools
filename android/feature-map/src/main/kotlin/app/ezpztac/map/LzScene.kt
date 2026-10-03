@@ -32,8 +32,13 @@ data class LzScene(
     val drawn: List<LatLon>,
     val slope: SlopeImage?,
     val graphics: GraphicsScene = GraphicsScene.EMPTY,
+    /**
+     * The points of a boundary being drawn right now, in order: an open dashed line from the second point on, with a dot at each so the first
+     * point is seen too. Not the diagram's: it is kept only while the person is drawing, and becomes [drawn] when they finish.
+     */
+    val draft: List<LatLon> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = target == null && boundary.isEmpty() && drawn.isEmpty() && slope == null && graphics.isEmpty
+    val isEmpty: Boolean get() = target == null && boundary.isEmpty() && drawn.isEmpty() && slope == null && graphics.isEmpty && draft.isEmpty()
 
     /**
      * The vector part as GeoJSON, for the map's source. Coordinates are `[longitude, latitude]`, as GeoJSON has them (the diagram stores
@@ -47,6 +52,8 @@ data class LzScene(
                 drawn.size >= 3 -> add(feature("drawn", polygon(drawn)))
                 drawn.size == 2 -> add(feature("drawn", line(drawn)))
             }
+            if (draft.size >= 2) add(feature("drawn", line(draft)))
+            draft.forEach { add(feature("vertex", point(it))) }
             graphics.sectors.forEach { add(feature("sector", polygon(it.ring), "selected" to JsonPrimitive(it.selected))) }
             // The keep-out ring round the aircraft that is held: another aircraft's rotor tip should stay outside it.
             graphics.aircraft.filter { it.selected }.forEach { a ->
@@ -115,7 +122,7 @@ data class LzScene(
 
         /**
          * The scene of [diagram] (nothing for none), with [slope] if it has been measured. [profiles] and [active] say what each placed
-         * aircraft is, and [selected] is the graphic the person is holding.
+         * aircraft is, [selected] is the graphic the person is holding, and [draft] the points of a boundary being drawn.
          */
         fun of(
             diagram: Diagram?,
@@ -123,6 +130,7 @@ data class LzScene(
             profiles: List<AircraftProfile> = emptyList(),
             active: AircraftProfile = AircraftProfile.FALLBACK,
             selected: GraphicRef? = null,
+            draft: List<LatLon> = emptyList(),
         ): LzScene {
             if (diagram == null) return EMPTY
             return LzScene(
@@ -131,6 +139,7 @@ data class LzScene(
                 drawn = DiagramGeometry.drawn(diagram),
                 slope = slope,
                 graphics = GraphicsScene.of(diagram, profiles, active, selected),
+                draft = draft,
             )
         }
     }
