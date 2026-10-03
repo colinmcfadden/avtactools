@@ -100,6 +100,9 @@ public data class RoutePoint(
 ) {
     public companion object {
         public const val KIND_SHAPING: String = "shaping"
+
+        /** A designated AMPS point: it becomes a real route point, and legs run between these. */
+        public const val KIND_AMPS: String = "amps"
     }
 }
 
