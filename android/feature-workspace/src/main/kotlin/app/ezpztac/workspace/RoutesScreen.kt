@@ -42,6 +42,8 @@ import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.model.LatLon
+import app.ezpztac.planning.PlanDraft
+import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.SyncEngine
 
 class RoutesActions(
@@ -65,6 +67,18 @@ class RoutesActions(
     val undoPoint: () -> Unit = {},
     val finishDrawing: () -> Unit = {},
     val cancelDrawing: () -> Unit = {},
+    /** Apply the route-wide plan form: null when it is applied, else the words for the form. */
+    val applyPlan: (routeId: String, PlanDraft) -> String? = { _, _ -> null },
+    /** Apply a point's form (route, point, what was typed, what was shown, whether it is the first point): null when applied, else the words for the row. */
+    val applyPoint: (routeId: String, pointId: String, typed: PointDraft, before: PointDraft, first: Boolean) -> String? = { _, _, _, _, _ -> null },
+    val selectPoint: (String) -> Unit = {},
+    val renamePoint: (routeId: String, pointId: String, name: String) -> Unit = { _, _, _ -> },
+    val setPointType: (routeId: String, pointId: String, ptType: String) -> Unit = { _, _, _ -> },
+    val makeShaping: (routeId: String, pointId: String) -> Unit = { _, _ -> },
+    val makeNamed: (routeId: String, pointId: String) -> Unit = { _, _ -> },
+    val fetchWinds: () -> Unit = {},
+    val fetchElevations: () -> Unit = {},
+    val dismissNote: () -> Unit = {},
 )
 
 private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = RoutesActions(
@@ -73,7 +87,9 @@ private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = R
     dismissError = viewModel::dismissError, selectRoute = viewModel::selectRoute, toggleVisible = viewModel::toggleVisible, renameRoute = viewModel::renameRoute,
     deleteRoute = viewModel::deleteRoute, undo = viewModel::undo, redo = viewModel::redo, startDrawing = viewModel::startDrawing,
     addAtCrosshair = { viewModel.addAtCrosshair(crosshair) }, undoPoint = viewModel::undoPoint, finishDrawing = { viewModel.finishDrawing() },
-    cancelDrawing = viewModel::cancelDrawing,
+    cancelDrawing = viewModel::cancelDrawing, applyPlan = viewModel::applyPlan, applyPoint = viewModel::applyPoint, selectPoint = viewModel::selectPoint,
+    renamePoint = viewModel::renamePoint, setPointType = viewModel::setPointType, makeShaping = viewModel::makeShaping, makeNamed = viewModel::makeNamed,
+    fetchWinds = viewModel::fetchWinds, fetchElevations = viewModel::fetchElevations, dismissNote = viewModel::dismissNote,
 )
 
 /** The Routes part of the sheet: the saved sets, and the routes of the open one. */
@@ -99,6 +115,7 @@ fun RoutesContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifi
         }
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
         state.open?.let { OpenSetCard(it, state.drawing, actions) }
+        state.detail?.let { RouteDetailCard(it, state.fetching, state.note, actions) }
         if (state.creating) NewSetForm(actions)
         if (state.sets.isEmpty() && state.open == null && !state.creating) {
             Text(

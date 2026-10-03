@@ -3,6 +3,9 @@ package app.ezpztac.workspace
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.RouteRepository
+import app.ezpztac.data.PlanningOutcome
+import app.ezpztac.data.RoutePlanning
+import app.ezpztac.data.RouteHeld
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSetSummary
@@ -12,7 +15,11 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.RouteSet
 import app.ezpztac.model.SketchRoute
+import app.ezpztac.planning.PlanDraft
+import app.ezpztac.planning.PointDraft
+import app.ezpztac.planning.PointSpec
 import app.ezpztac.planning.RouteCalc
+import app.ezpztac.planning.SketchOps
 import app.ezpztac.sync.ConflictResolver
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncEngine
@@ -69,10 +76,66 @@ data class OpenSetUi(
 /** A route being drawn. */
 data class RouteDrawingUi(val points: Int, val canFinish: Boolean)
 
+/** One named point of the held route, as the nav log shows it: what it is, when and how far, and what can be changed about it. */
+data class PlanPointUi(
+    val id: String,
+    val name: String,
+    /** `target`, `ip` or `turn` (anything else a mission file carries is shown as it is). */
+    val ptType: String?,
+    val first: Boolean,
+    /** The values in force at this point, as the row's form starts: the point's own override, else the route's. */
+    val values: PointDraft,
+    /** `12:30:00`, or `--:--:--` when no point of the route carries a clock. */
+    val clock: String,
+    /** This point holds the clock the others are timed from (the TOT). */
+    val hasClock: Boolean,
+    /** `START`, or `3.1 nm · 045°T · 98 kt · 1320' MSL`: the leg that arrives here, the web's line. */
+    val facts: String,
+    /** `1:52`: the time since the first point. */
+    val elapsed: String,
+    /** The point the person is holding (on the map, or by tapping its row): its form is open. */
+    val held: Boolean,
+)
+
+/** A held point that only shapes the line: it can be made a named point. */
+data class ShapingPointUi(val id: String, val held: Boolean)
+
+/** The route the person is working on: its plan, its nav log, and what is wrong with it. */
+data class RouteDetailUi(
+    val routeId: String,
+    val name: String,
+    val aircraft: String,
+    /** The route-wide values as the plan form starts. */
+    val plan: PlanDraft,
+    val points: List<PlanPointUi>,
+    /** How many points only shape the line. */
+    val shapingPoints: Int,
+    /** The held point, when it is one that only shapes the line. */
+    val heldShaping: ShapingPointUi?,
+    /** `Total 12.3 nm · 8:15 · 640 lb`, once there are two named points. */
+    val totals: String?,
+    /** What the planner says is wrong with the route, in its words. */
+    val warnings: List<String>,
+    /** Ground elevations have been fetched for this route. */
+    val hasElevations: Boolean,
+)
+
+/** What a route can ask the server for. */
+enum class PlanningKind { WINDS, ELEVATIONS }
+
+/** What fetching came to, for a line under the buttons: what was found, or why not. */
+data class PlanningNote(val text: String, val failed: Boolean)
+
 data class RoutesUiState(
     val sets: List<RouteSetRow> = emptyList(),
     val open: OpenSetUi? = null,
     val drawing: RouteDrawingUi? = null,
+    /** The route being worked on, when the open set has one held. */
+    val detail: RouteDetailUi? = null,
+    /** Winds or elevations are being fetched for the held route (one at a time). */
+    val fetching: PlanningKind? = null,
+    /** What the last fetch came to, until it is dismissed or the route held changes. */
+    val note: PlanningNote? = null,
     /** The form for a new set is open. */
     val creating: Boolean = false,
     val error: String? = null,
@@ -90,8 +153,11 @@ class RoutesViewModel @Inject constructor(
     private val selection: RouteSelection,
     private val sketching: RouteSketching,
     private val conflicts: ConflictResolver,
+    private val planning: RoutePlanning,
 ) : ViewModel() {
-    private data class Local(val creating: Boolean = false, val error: String? = null)
+    private data class Local(
+        val creating: Boolean = false, val error: String? = null, val fetching: PlanningKind? = null, val note: PlanningNote? = null, val noteFor: String? = null,
+    )
 
     private val local = MutableStateFlow(Local())
     private val depths = combine(session.undoDepth, session.redoDepth) { undo, redo -> undo to redo }
@@ -101,6 +167,10 @@ class RoutesViewModel @Inject constructor(
             sets = summaries.map { it.toRow(isOpen = it.uuid == set?.id) },
             open = set?.let { openOf(it, held?.routeId, summaries.firstOrNull { s -> s.uuid == it.id }) },
             drawing = draft?.takeIf { it.setId == set?.id }?.let { RouteDrawingUi(it.points.size, it.canFinish) },
+            detail = set?.let { detailOf(it, held) },
+            fetching = local.fetching.takeIf { local.noteFor == held?.routeId },
+            // A line about one route's winds is not shown under another route.
+            note = local.note.takeIf { local.noteFor == held?.routeId },
             creating = local.creating,
             error = local.error,
         )
@@ -115,6 +185,37 @@ class RoutesViewModel @Inject constructor(
         canUndo = false, canRedo = false, sync = listed?.sync, conflictOf = listed?.conflictOf,
     )
 
+    private fun detailOf(set: RouteSet, held: RouteHeld?): RouteDetailUi? {
+        val route = held?.routeId?.let(set::route) ?: return null
+        val result = RouteCalc.computeRoutePlan(route.points, route.plan, route.elevations)
+        val rows = result.points.mapIndexed { i, p ->
+            val id = p.id.orEmpty()
+            PlanPointUi(
+                id = id, name = p.name.orEmpty(), ptType = p.ptType, first = i == 0, values = PointDraft.of(route.plan, id),
+                clock = RouteCalc.formatClock(p.clockTime), hasClock = p.hasClock,
+                facts = if (i == 0) "START" else legFacts(p), elapsed = RouteCalc.formatDuration(p.elapsedSec), held = id == held.pointId,
+            )
+        }
+        val shaping = route.points.filter { it.kind == RoutePoint.KIND_SHAPING }
+        val totals = result.totals?.let { t ->
+            "Total ${oneDecimal(t.distNm)} nm · ${RouteCalc.formatDuration(t.timeSec)} · ${t.fuelLb?.let { "${RouteCalc.jsRound(it).toLong()} lb" } ?: "-- lb"}"
+        }
+        return RouteDetailUi(
+            routeId = route.id, name = route.name, aircraft = route.plan.aircraft, plan = PlanDraft.of(route.plan), points = rows,
+            shapingPoints = shaping.size, heldShaping = shaping.firstOrNull { it.id != null && it.id == held.pointId }?.let { ShapingPointUi(it.id.orEmpty(), held = true) },
+            totals = totals, warnings = result.warnings, hasElevations = route.elevations.isNotEmpty(),
+        )
+    }
+
+    /** The web's line for the leg that arrives at [p]: distance, course, ground speed and altitude, `--` where it cannot say. */
+    private fun legFacts(p: app.ezpztac.model.PlanPoint): String {
+        val distance = p.legDistNm?.let(::oneDecimal) ?: "--"
+        val course = p.legCourseTrueDeg?.let { RouteCalc.jsRound(it).toLong().toString().padStart(3, '0') } ?: "---"
+        val speed = p.legGsKts?.let { RouteCalc.jsRound(it).toLong().toString() } ?: "--"
+        val altitude = p.mslFt?.let { " · ${RouteCalc.jsRound(it).toLong()}' MSL" }.orEmpty()
+        return "$distance nm · $course°T · $speed kt$altitude"
+    }
+
     private fun rowOf(route: SketchRoute, selected: Boolean) = RouteRowUi(
         id = route.id, name = route.name, color = route.color, visible = route.visible, pointCount = route.points.size,
         routePointCount = route.points.count { it.kind != RoutePoint.KIND_SHAPING && !it.id.isNullOrEmpty() },
@@ -128,6 +229,8 @@ class RoutesViewModel @Inject constructor(
     fun cancelCreating() = local.update { it.copy(creating = false, error = null) }
 
     fun dismissError() = local.update { it.copy(error = null) }
+
+    fun dismissNote() = local.update { it.copy(note = null) }
 
     /** Makes an empty set and opens it. A blank [name] is `MISSION n`, n counting the sets there are, upper-cased as the web names routes. */
     fun createSet(name: String) {
@@ -191,6 +294,106 @@ class RoutesViewModel @Inject constructor(
     fun deleteRoute(routeId: String) {
         if (selection.held.value?.routeId == routeId) selection.clear()
         session.edit("Delete route") { it.without(routeId) }
+    }
+
+    // -- Winds and ground elevations ---------------------------------------------------------------------------------
+
+    /** Fetches the wind at each named point of the held route and merges it into the plan. */
+    fun fetchWinds() = fetch(PlanningKind.WINDS) { set, route -> planning.fetchWinds(set, route) }
+
+    /** Fetches the ground elevation at each named point of the held route, so altitudes can be read AGL and MSL. */
+    fun fetchElevations() = fetch(PlanningKind.ELEVATIONS) { set, route -> planning.fetchElevations(set, route) }
+
+    private fun fetch(kind: PlanningKind, ask: suspend (setId: String, routeId: String) -> PlanningOutcome) {
+        val set = session.active.value ?: return
+        val routeId = selection.held.value?.routeId?.takeIf { set.route(it) != null } ?: return
+        if (local.value.fetching != null) return                                          // one at a time: the server's answers would otherwise cross
+        local.update { it.copy(fetching = kind, note = null, noteFor = routeId) }
+        viewModelScope.launch {
+            val note = try {
+                when (val outcome = ask(set.id, routeId)) {
+                    is PlanningOutcome.Done -> PlanningNote(outcome.message, failed = false)
+                    is PlanningOutcome.Failed -> PlanningNote(outcome.message, failed = true)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                PlanningNote("That could not be fetched.", failed = true)
+            }
+            local.update { it.copy(fetching = null, note = note) }
+        }
+    }
+
+    // -- The held route's plan and points ------------------------------------------------------------------------
+
+    /**
+     * Applies the route-wide plan form to [routeId]. Null when it is applied (one undo step); else why not, in words for the form itself: the screen
+     * shows it beside the fields, because a banner at the top of the sheet can be scrolled out of sight while typing.
+     */
+    fun applyPlan(routeId: String, draft: PlanDraft): String? {
+        if (session.active.value?.route(routeId) == null) return "That route is no longer here."
+        return when (val checked = draft.check()) {
+            is PlanDraft.Checked.Refused -> checked.message
+            is PlanDraft.Checked.Valid -> {
+                session.edit("Change plan") { set -> set.mapRoute(routeId) { SketchOps.withPlan(it, checked.patch) } }
+                null
+            }
+        }
+    }
+
+    /**
+     * Applies what was typed for one point (altitude, speed and wind to it, and its clock) to [routeId]: only what was changed from [before], in one undo step.
+     * Null when it is applied (or nothing was changed); else why not, in words for the row.
+     */
+    fun applyPoint(routeId: String, pointId: String, typed: PointDraft, before: PointDraft, first: Boolean): String? {
+        if (session.active.value?.route(routeId) == null) return "That route is no longer here."
+        return when (val checked = typed.check(before, first)) {
+            is PointDraft.Checked.Refused -> checked.message
+            is PointDraft.Checked.Valid -> {
+                if (!checked.isEmpty) {
+                    session.edit("Change point") { set ->
+                        set.mapRoute(routeId) { route ->
+                            var next = route
+                            val patch = checked.patch
+                            if (patch.altitude != null || patch.airspeed != null || patch.wind != null) next = SketchOps.withOverride(next, pointId, patch)
+                            if (checked.clock != null) next = SketchOps.withClock(next, pointId, checked.clock)
+                            next
+                        }
+                    }
+                }
+                null
+            }
+        }
+    }
+
+    /** Holds [pointId] of the held route (its form opens, and the map marks it), or puts it down when it is held already. */
+    fun selectPoint(pointId: String) {
+        val held = selection.held.value ?: return
+        selection.holdPoint(if (held.pointId == pointId) null else pointId)
+    }
+
+    /** Renames a point, in capitals as the web does. An empty name is allowed (the point is then known by its place in the route). */
+    fun renamePoint(routeId: String, pointId: String, name: String) {
+        session.edit("Rename point") { set -> set.mapRoute(routeId) { SketchOps.rename(it, pointId, name.uppercase()) } }
+    }
+
+    /** Changes what a named point is: `target`, `ip` or `turn`. */
+    fun setPointType(routeId: String, pointId: String, ptType: String) {
+        session.edit("Change point type") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_AMPS, ptType = ptType)) } }
+    }
+
+    /** Makes a named point only shape the line. Refused (in words) for one of the last two named points: a leg needs two ends. */
+    fun makeShaping(routeId: String, pointId: String) {
+        val route = session.active.value?.route(routeId) ?: return
+        if (SketchOps.designate(route, pointId, PointSpec(RoutePoint.KIND_SHAPING)) == route) {
+            return fail("A route needs at least two named points.")
+        }
+        session.edit("Make shaping point") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_SHAPING)) } }
+    }
+
+    /** Makes a point that only shaped the line a named one: a turn point, called `.CP` until it is named. */
+    fun makeNamed(routeId: String, pointId: String) {
+        session.edit("Make route point") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_AMPS, ptType = "turn")) } }
     }
 
     fun undo() {

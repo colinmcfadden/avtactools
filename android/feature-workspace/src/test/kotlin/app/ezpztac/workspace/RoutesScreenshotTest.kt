@@ -11,6 +11,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
+import app.ezpztac.planning.PlanDraft
+import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.SyncStatus
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -23,7 +25,7 @@ import org.robolectric.annotation.GraphicsMode
 /** The routes tab drawn, for someone to look at: `-Pezpz.screenshots` writes them to build/screenshots. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [36], qualifiers = "w411dp-h900dp-xxhdpi")
+@Config(sdk = [36], qualifiers = "w411dp-h2000dp-xxhdpi")
 class RoutesScreenshotTest {
     @get:Rule
     val compose = createComposeRule()
@@ -57,4 +59,25 @@ class RoutesScreenshotTest {
     }
 
     @Test fun toolbar() = shot("toolbar") { RouteToolbar(RouteDrawingUi(2, true), null, RoutesActions()) }
+
+    private fun values() = PointDraft("50", "agl", "100", "ground", "0", "0")
+
+    private fun point(id: String, name: String, type: String?, first: Boolean = false, held: Boolean = false, hasClock: Boolean = false, clock: String = "--:--:--", facts: String = "3.1 nm · 045°T · 98 kt · 1320' MSL", elapsed: String = "1:52") =
+        PlanPointUi(id, name, type, first, values(), clock, hasClock, if (first) "START" else facts, if (first) "0:00" else elapsed, held)
+
+    private val log = listOf(
+        point("p1", ".TGT", "target", first = true, clock = "12:21:40"),
+        point("p2", ".SP", "ip", clock = "12:24:10", elapsed = "2:30"),
+        point("p3", ".RP", "ip", held = true, clock = "12:27:55", facts = "4.4 nm · 078°T · 101 kt · 1480' MSL", elapsed = "6:15"),
+        point("p4", ".TGT", "target", hasClock = true, clock = "12:30:00", facts = "2.2 nm · 112°T · 99 kt · 1390' MSL", elapsed = "8:20"),
+    )
+
+    private fun detail(warnings: List<String> = emptyList()) = RouteDetailUi(
+        "r1", "ROUTE 1", "UH-60L Black Hawk", PlanDraft(date = "2026-10-03", airspeedType = "indicated", altitudeRef = "msl", windDir = "270", windSpeed = "15"), log,
+        shapingPoints = 2, heldShaping = null, totals = "Total 12.3 nm · 8:20 · 640 lb", warnings = warnings, hasElevations = true,
+    )
+
+    @Test fun plan() = shot("plan") { RoutesContent(RoutesUiState(open = open(one), detail = detail(listOf("Route needs at least two route points."))), RoutesActions()) }
+
+    @Test fun planLight() = shot("plan-light", ThemeMode.Light) { RoutesContent(RoutesUiState(open = open(one), detail = detail()), RoutesActions()) }
 }

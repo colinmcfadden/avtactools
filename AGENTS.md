@@ -1082,10 +1082,25 @@ client is built around not losing one:
       sets, a new-set form (a blank name is `MISSION n`), and a toolbar over the map while drawing. Conflicts use the same panel as diagrams (`ConflictPanel`, also keep-both
       primary). A new route, once finished, is the one held. Names are upper-cased as the web does.
     - **Signing out closes the open set** as it closes the open diagram (`AppViewModel.closeOpenDocuments`); one that will not save does not keep the other from closing.
-  - **Not yet built:** editing a route's plan (airspeed, altitude, wind, date, a point's clock) and the nav log, a point's designation, name, move, insert and delete, bending a
-    line by dragging, reopening the last set at launch, forecast winds and ground elevations (the calls are in `contracts/openapi.yaml` and recorded from the real server; the pure
-    parts are pinned by `contracts/fixtures/routes/winds.json`), choosing the template for an aircraft (`resolveExportTemplate`: an admin-attached package, else the bundled UH-60L),
-    mutating an imported mission, saved *mission* routes, and the ForeFlight / ATAK hand-off.
+  - **The held route's plan** (`feature-workspace`: `RoutePlanScreen`, `RoutesViewModel.detail`; `core-planning`: `PlanDraft`, `PointDraft`). The route-wide form (date, airspeed and
+    its reference, altitude and its reference, wind, temperature, fuel flow) and a row for each named point (the nav log, the web's `RoutePlanSection`: name, type, the leg that
+    arrives there, the clock time and the time since the start; the held point's row opens its form: altitude, speed and wind *to* it, its clock, make it shape the line). Things that
+    are easy to get wrong:
+    - **Typed text is a draft until it is checked**, and a refusal is *words for the form* (`applyPlan` and `applyPoint` return them), not the sheet's banner, which can be scrolled
+      out of sight while typing. **Not like the web:** the web's `num` turns an unreadable number into 0 (15 for the temperature) silently; here it is refused with the field named,
+      and a wind direction outside 0–360 is refused too. The ranges are the planner's, not the web's.
+    - **Only what was changed is applied** (`PointDraft.check(before, first)`): the altitude and its reference together, the speed and its reference together, the wind's direction and
+      speed together, as the web writes them, and only a group whose text changed. Looking at a point and pressing Apply does not turn the route's values into the point's own.
+      The first point has no arriving leg, so its speed and wind are never read.
+    - **The nav log lists only named points and only once there are two** (it is the planner's `points`, empty until then): a route with fewer shows the planner's warning instead.
+    - **The plan form starts again whenever the plan changes under it** (an undo, a fetched wind): what is typed is never applied to a plan it was not typed against.
+    - **Dates and times are typed on a text keyboard**, and so are altitudes and temperatures: Android's number pads have no hyphen, colon or minus sign.
+    - **Winds and ground elevations** (`core-data`: `RoutePlanning`) are *fetched data*: they land in the route they were asked for through `RouteSession.update` (so, like an analysis, they
+      are not an undo step and are applied to that route's record even if another set has been opened while the server answered), one fetch at a time. A failure is the app's words,
+      never the server's (the 500 text names a Python type). A time is asked for as an instant in the device's zone (`RouteWinds.instantText`); the question and the merge are held to
+      `routes/winds.json`, whose times are wall-clock to the millisecond so the fixture does not depend on the zone it was made in (a Date holds milliseconds, and the request carries them).
+  - **Not yet built:** moving or inserting a point by dragging on the map, reopening the last set at launch, `.msnx` export and the share sheet, choosing the template for an aircraft
+    (`resolveExportTemplate`: an admin-attached package, else the bundled UH-60L), mutating an imported mission, saved *mission* routes, and the ForeFlight / ATAK hand-off.
 - **Aircraft profiles** (`core-data`: `AircraftProfiles`; `core-model`: `AircraftDraft`; `feature-workspace`: `AircraftViewModel`,
   `AircraftScreen`, `AircraftPicker`; `app`: `AircraftChoicePreferences`).
   - **Two sources, one list.** The admin's master list comes from `GET /api/aircraft-profiles` (`is_system`), is kept in a file

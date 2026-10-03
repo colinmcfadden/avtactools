@@ -9,11 +9,15 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
+import app.ezpztac.planning.PlanDraft
+import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import org.junit.Assert.assertEquals
@@ -39,7 +43,16 @@ class RoutesScreenTest {
             selectRoute = { log += "select:$it" }, toggleVisible = { log += "toggle:$it" }, renameRoute = { id, name -> log += "renameRoute:$id:$name" },
             deleteRoute = { log += "deleteRoute:$it" }, undo = { log += "undo" }, redo = { log += "redo" }, startDrawing = { log += "draw" },
             addAtCrosshair = { log += "add" }, undoPoint = { log += "undoPoint" }, finishDrawing = { log += "finish" }, cancelDrawing = { log += "cancelDrawing" },
+            applyPlan = { route, draft -> applied += route to draft; log += "applyPlan:$route"; problem },
+            applyPoint = { route, point, typed, before, first -> points += Applied(route, point, typed, before, first); log += "applyPoint:$route:$point"; problem },
+            selectPoint = { log += "selectPoint:$it" }, renamePoint = { r, p, n -> log += "renamePoint:$r:$p:$n" },
+            setPointType = { r, p, t -> log += "type:$r:$p:$t" }, makeShaping = { r, p -> log += "shaping:$r:$p" }, makeNamed = { r, p -> log += "named:$r:$p" },
+            fetchWinds = { log += "winds" }, fetchElevations = { log += "elevations" }, dismissNote = { log += "dismissNote" },
         )
+        var problem: String? = null
+        val applied = mutableListOf<Pair<String, PlanDraft>>()
+        class Applied(val route: String, val point: String, val typed: PointDraft, val before: PointDraft, val first: Boolean)
+        val points = mutableListOf<Applied>()
     }
 
     private fun content(state: RoutesUiState): Recorder {
@@ -284,5 +297,220 @@ class RoutesScreenTest {
     fun `the toolbar is there while a route is being drawn`() {
         compose.setContent { EzpzTheme(ThemeMode.Dark) { Box { RouteToolbarWhileDrawing(RoutesUiState(drawing = RouteDrawingUi(2, true)), Recorder().actions) } } }
         compose.onNodeWithText("Finish").assertIsDisplayed()
+    }
+
+    // -- The held route's plan ---------------------------------------------------------------------------------
+
+    private fun values() = PointDraft("50", "agl", "100", "ground", "0", "0")
+
+    private fun point(id: String, name: String, type: String?, first: Boolean = false, held: Boolean = false, hasClock: Boolean = false, clock: String = "--:--:--", facts: String = "3.1 nm · 045°T · 98 kt · 1320' MSL") =
+        PlanPointUi(id, name, type, first, values(), clock, hasClock, if (first) "START" else facts, if (first) "0:00" else "1:52", held)
+
+    private fun detail(vararg points: PlanPointUi, shaping: Int = 0, heldShaping: ShapingPointUi? = null, warnings: List<String> = emptyList(), totals: String? = "Total 12.3 nm · 8:15 · 640 lb") =
+        RouteDetailUi("r1", "ROUTE 1", "UH-60L Black Hawk", PlanDraft(date = "2026-10-03"), points.toList(), shaping, heldShaping, totals, warnings, hasElevations = false)
+
+    private fun withDetail(detail: RouteDetailUi): Recorder = content(RoutesUiState(open = open(one), detail = detail))
+
+    private val log = arrayOf(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip"), point("p3", ".TGT", "target", hasClock = true, clock = "12:30:00"))
+
+    @Test
+    fun `the held route shows its plan, its aircraft and its totals`() {
+        withDetail(detail(*log))
+        compose.onNodeWithText("Plan").assertIsDisplayed()
+        compose.onNodeWithText("UH-60L Black Hawk").assertIsDisplayed()
+        compose.onNodeWithText("Total 12.3 nm · 8:15 · 640 lb").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `with no route held there is no plan`() {
+        content(RoutesUiState(open = open(one)))
+        assertEquals(0, count("Apply plan"))
+        assertEquals(0, count("Nav log"))
+    }
+
+    @Test
+    fun `the plan form starts as the plan, and Apply is there only once something has changed`() {
+        val r = withDetail(detail(*log))
+        compose.onNodeWithText("Apply plan").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Date (YYYY-MM-DD)").performScrollTo()
+        compose.onNodeWithText("2026-10-03").assertIsDisplayed()
+        compose.onNodeWithText("Wind (kt)").performScrollTo().performTextInput("5")
+        compose.onNodeWithText("Apply plan").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf("applyPlan:r1"), r.log)
+        assertEquals("50", r.applied.single().second.windSpeed)                                     // "0" with the 5 typed at the front
+    }
+
+    @Test
+    fun `a plan the form refuses shows the words beside the fields, and typing again clears them`() {
+        val r = Recorder().also { it.problem = "Wind speed is not a number." }
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), detail = detail(*log)), r.actions) } } }
+        compose.onNodeWithText("Wind (kt)").performScrollTo().performTextInput("x")
+        compose.onNodeWithText("Apply plan").performScrollTo().performClick()
+        compose.onNodeWithText("Wind speed is not a number.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Wind (kt)").performScrollTo().performTextInput("1")
+        assertEquals(0, count("Wind speed is not a number."))
+    }
+
+    @Test
+    fun `the nav log has a row for each named point with its leg, its time and the time since the start`() {
+        withDetail(detail(*log))
+        compose.onNodeWithText("Nav log").performScrollTo().assertIsDisplayed()
+        assertEquals(2, count("▲ .TGT"))                                                              // the first point and the last
+        assertEquals(1, count("■ .SP"))
+        compose.onNodeWithText("START").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("12:30:00 TOT").performScrollTo().assertIsDisplayed()                  // the TOT says so in words
+        assertEquals(2, count("3.1 nm · 045°T · 98 kt · 1320' MSL"))
+        assertEquals(1, count("0:00"))
+        assertEquals(2, count("1:52"))
+    }
+
+    @Test
+    fun `an unnamed point is called what it is`() {
+        withDetail(detail(point("p1", "", "turn", first = true), point("p2", "", "turn")))
+        compose.onNodeWithText("● .SP").performScrollTo().assertIsDisplayed()                         // the first point is the start
+        compose.onNodeWithText("● (unnamed)").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `tapping a row holds the point`() {
+        val r = withDetail(detail(*log))
+        compose.onNodeWithText("● .SP", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("■ .SP").performScrollTo().performClick()
+        assertEquals(listOf("selectPoint:p2"), r.log)
+    }
+
+    @Test
+    fun `only the held point has its form, and the first point has no speed or wind`() {
+        withDetail(detail(point("p1", ".TGT", "target", first = true, held = true), point("p2", ".SP", "ip"), point("p3", ".TGT", "target")))
+        compose.onNodeWithText("Start altitude (ft)").performScrollTo().assertIsDisplayed()
+        assertEquals(0, count("Speed to"))
+        assertEquals(0, count("Altitude to (ft)"))
+        assertEquals(1, count("Time to be here (HH:MM:SS)"))
+    }
+
+    @Test
+    fun `a later point has the legs speed and wind as well`() {
+        withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true)))
+        compose.onNodeWithText("Altitude to (ft)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Speed to").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("Wind from (°T)")[1].performScrollTo().assertIsDisplayed()          // the plan has one, and so has the point
+    }
+
+    @Test
+    fun `applying a point passes what was typed, what was shown and whether it is the first`() {
+        val r = withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true)))
+        compose.onNodeWithText("Apply point").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Time to be here (HH:MM:SS)").performScrollTo().performTextInput("12:30")
+        compose.onNodeWithText("Apply point").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf("applyPoint:r1:p2"), r.log)
+        val applied = r.points.single()
+        assertEquals("12:30", applied.typed.clock)
+        assertEquals("", applied.before.clock)
+        assertEquals(false, applied.first)
+    }
+
+    @Test
+    fun `a point the form refuses shows the words in its row`() {
+        val r = Recorder().also { it.problem = "The time must be written hours:minutes, like 09:15 or 09:15:30." }
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), detail = detail(point("p1", ".TGT", "target", first = true, held = true), point("p2", ".SP", "ip"))), r.actions) } }
+        }
+        compose.onNodeWithText("Time to be here (HH:MM:SS)").performScrollTo().performTextInput("noon")
+        compose.onNodeWithText("Apply point").performScrollTo().performClick()
+        compose.onNodeWithText("The time must be written hours:minutes, like 09:15 or 09:15:30.").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `the held point can be renamed, and can be made a different type or only a shaping point`() {
+        val r = withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true)))
+        compose.onNodeWithText("Name").performScrollTo().performTextInput("X")
+        compose.onNodeWithText("Save name").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Type: IP").performScrollTo().performClick()
+        compose.onNodeWithText("Target").performClick()
+        compose.onNodeWithText("Make it only shape the line").performScrollTo().performClick()
+        assertEquals(listOf("renamePoint:r1:p2:X.SP", "type:r1:p2:target", "shaping:r1:p2"), r.log)
+    }
+
+    @Test
+    fun `a held point that only shapes the line is offered as a route point`() {
+        val r = withDetail(detail(*log, shaping = 1, heldShaping = ShapingPointUi("s1", held = true)))
+        compose.onNodeWithText("Shaping point").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Make it a route point").performScrollTo().performClick()
+        assertEquals(listOf("named:r1:s1"), r.log)
+        compose.onNodeWithText("1 shaping point bends the line between named points.").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `several shaping points are counted`() {
+        withDetail(detail(*log, shaping = 3))
+        compose.onNodeWithText("3 shaping points bend the line between named points.").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `what the planner says is wrong is shown, and with no totals nothing is totalled`() {
+        withDetail(detail(warnings = listOf("Route needs at least two route points."), totals = null))
+        compose.onNodeWithText("Route needs at least two route points.").performScrollTo().assertIsDisplayed()
+        assertEquals(0, count("Total ", substring = true))
+        assertEquals(0, count("Nav log"))
+    }
+
+    // -- Winds and elevations -------------------------------------------------------------------------------------
+
+    private fun fetching(kind: PlanningKind? = null, note: PlanningNote? = null, hasElevations: Boolean = false): Recorder {
+        val r = Recorder()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                Box(Modifier.verticalScroll(rememberScrollState())) {
+                    RoutesContent(RoutesUiState(open = open(one), detail = detail(*log).copy(hasElevations = hasElevations), fetching = kind, note = note), r.actions)
+                }
+            }
+        }
+        return r
+    }
+
+    @Test
+    fun `winds and elevations can be fetched, and the elevation button says whether they are already there`() {
+        val r = fetching()
+        compose.onNodeWithText("Fetch winds").performScrollTo().performClick()
+        compose.onNodeWithText("Fetch elevations").performScrollTo().performClick()
+        assertEquals(listOf("winds", "elevations"), r.log)
+        assertEquals(0, count("Refresh elevations"))
+    }
+
+    @Test
+    fun `with elevations already fetched the button offers to refresh them`() {
+        fetching(hasElevations = true)
+        compose.onNodeWithText("Refresh elevations").performScrollTo().assertIsDisplayed()
+        assertEquals(0, count("Fetch elevations"))
+    }
+
+    @Test
+    fun `while winds are being fetched the button says so and the other cannot be pressed`() {
+        val r = fetching(PlanningKind.WINDS)
+        compose.onNodeWithText("Fetching winds…").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Fetch elevations").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Fetching winds…").performClick()
+        assertEquals(emptyList<String>(), r.log)
+    }
+
+    @Test
+    fun `while elevations are being fetched the other button cannot be pressed`() {
+        fetching(PlanningKind.ELEVATIONS)
+        compose.onNodeWithText("Fetching…").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Fetch winds").performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test
+    fun `what a fetch found is shown, and can be dismissed`() {
+        val r = fetching(note = PlanningNote("3 points · 2 METAR, 1 TAF", failed = false))
+        compose.onNodeWithText("3 points · 2 METAR, 1 TAF").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Dismiss").performScrollTo().performClick()
+        assertEquals(listOf("dismissNote"), r.log)
+    }
+
+    @Test
+    fun `a fetch that failed is shown as an error`() {
+        fetching(note = PlanningNote("There is no connection to the server, so the winds could not be fetched.", failed = true))
+        compose.onNodeWithText("There is no connection to the server, so the winds could not be fetched.").performScrollTo().assertIsDisplayed()
     }
 }

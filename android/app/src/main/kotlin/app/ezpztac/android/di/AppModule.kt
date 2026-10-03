@@ -18,7 +18,9 @@ import app.ezpztac.map.CameraMemory
 import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
+import app.ezpztac.data.ApiClientPlanningApi
 import app.ezpztac.data.ApiClientTerrainApi
+import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ClientInfo
@@ -100,6 +102,10 @@ object AppModule {
     @Provides
     @Singleton
     fun terrainApi(client: ApiClient): TerrainApi = ApiClientTerrainApi(client)
+
+    @Provides
+    @Singleton
+    fun planningApi(client: ApiClient): PlanningApi = ApiClientPlanningApi(client)
 
     /** Symbols: the pre-rendered presets first, then milsymbol in the system JavaScript sandbox, which starts when a symbol that needs it is first asked for. */
     @Provides
