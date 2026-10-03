@@ -194,6 +194,18 @@ class GraphicsViewModelTest {
     }
 
     @Test
+    fun `an edit that works clears the complaint an earlier one left`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        r.model.moveToCrosshair(null)
+        advanceUntilIdle()
+        assertNotNull(r.state.error)
+        r.model.nudge(10.0, 0.0)
+        advanceUntilIdle()
+        assertNull(r.state.error)
+    }
+
+    @Test
     fun `a second aircraft at the same place is set clear of the first`() = runTest(dispatcher) {
         val r = opened()
         r.model.place(GraphicKind.HELICOPTER, crosshair)

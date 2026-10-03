@@ -55,6 +55,20 @@ class MapLabelsTest {
         assertEquals(1, MapLabels.separations(scene(line(80.0)), view()).size)
     }
 
+    /** A line whose middle is at ([x], [y]) on the screen of [view]. */
+    private fun lineAt(view: MapProjection, x: Double, y: Double) = line(80.0, at = view.toLatLon(x, y))
+
+    @Test
+    fun `a label just off any edge is kept, so one sliding in is not missing for a frame, and one well off is not`() {
+        val v = view()                                                                        // 1000 by 2000 pixels
+        for ((x, y) in listOf(-30.0 to 800.0, 1030.0 to 800.0, 500.0 to -30.0, 500.0 to 2030.0)) {
+            assertEquals("kept at ($x, $y)", 1, MapLabels.separations(scene(lineAt(v, x, y)), v).size)
+        }
+        for ((x, y) in listOf(-70.0 to 800.0, 1070.0 to 800.0, 500.0 to -70.0, 500.0 to 2070.0)) {
+            assertTrue("dropped at ($x, $y)", MapLabels.separations(scene(lineAt(v, x, y)), v).isEmpty())
+        }
+    }
+
     @Test
     fun `labels follow the camera`() {
         val moved = MapProjection(CameraState(LatLon(here.lat, here.lon - 0.0002), 18.0), 1000.0, 2000.0)
