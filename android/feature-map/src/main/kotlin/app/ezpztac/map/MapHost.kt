@@ -7,12 +7,16 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -42,6 +46,20 @@ class MapHost {
     /** The current camera, once there is a map. Compose reads this, so the readout follows the crosshair. */
     var camera: CameraState? by mutableStateOf(null)
         private set
+
+    /**
+     * How far up from the bottom edge the map's logical viewport ends, in pixels. The bottom sheet covers that strip, so the camera's centre (the
+     * crosshair, the readout, where a graphic is put) is the middle of what is still showing, which is where the crosshair is drawn.
+     */
+    var bottomPaddingPx: Int by mutableIntStateOf(0)
+        private set
+
+    /** Reserves the bottom [px] pixels for the sheet. MapLibre then reports the centre of the rest as the camera's target. */
+    internal fun setBottomPadding(px: Int) = whenReady { map ->
+        bottomPaddingPx = px
+        map.moveCamera(CameraUpdateFactory.paddingTo(0.0, 0.0, 0.0, px.toDouble()))
+        publishCamera(map)
+    }
 
     internal fun attach(map: MapLibreMap) {
         this.map = map
@@ -112,6 +130,8 @@ fun EzpzMap(
     style: MapBaseStyle,
     initial: CameraState,
     modifier: Modifier = Modifier,
+    /** The strip at the bottom that something else covers (the sheet's peek): the crosshair is the middle of the map above it. */
+    bottomInset: Dp = 0.dp,
     onLongPress: (LatLon) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -157,6 +177,8 @@ fun EzpzMap(
     }
 
     LaunchedEffect(style.id, style.tiles) { host.applyStyle(style) }
+    val insetPx = with(LocalDensity.current) { bottomInset.roundToPx() }
+    LaunchedEffect(host, insetPx) { host.setBottomPadding(insetPx) }
 
     AndroidView(factory = { view }, modifier = modifier)
 }

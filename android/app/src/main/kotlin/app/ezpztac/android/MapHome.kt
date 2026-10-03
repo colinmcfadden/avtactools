@@ -30,11 +30,13 @@ import app.ezpztac.designsystem.Tokens
 import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
+import app.ezpztac.map.GraphicLabelsLayer
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.workspace.DiagramsHost
+import app.ezpztac.workspace.GraphicsHost
 import kotlinx.coroutines.flow.filterNotNull
 
 private val PEEK = 112.dp
@@ -82,7 +84,11 @@ fun MapHome(
             ) {
                 if (maintenance != null) Banner(maintenance, BannerKind.Warning)
                 // A new diagram starts at the middle of the map: the grid under the crosshair, or its degrees where there is no grid.
-                DiagramsHost(suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon })
+                DiagramsHost(
+                    suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon },
+                    // The planning graphics sit in the open diagram's card: they are put at, and brought to, the crosshair.
+                    openDiagramExtras = { GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs) },
+                )
                 Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                 Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(stringResource(R.string.classification_notice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -98,9 +104,11 @@ fun MapHome(
             bottomInset = PEEK,
             modifier = Modifier.fillMaxSize(),
         ) {
-            EzpzMap(host = host, style = state.style, initial = viewModel.initialCamera, modifier = Modifier.fillMaxSize())
+            // The sheet's peek is reserved from the map, so the camera's centre is the crosshair, which is drawn above the sheet.
+            EzpzMap(host = host, style = state.style, initial = viewModel.initialCamera, bottomInset = PEEK, modifier = Modifier.fillMaxSize())
             DiagramLayer(host, scene)                       // under the GPS dot, which stays on top
             GpsLayer(host, state.gps)
+            GraphicLabelsLayer(host, scene.graphics)
         }
     }
 }

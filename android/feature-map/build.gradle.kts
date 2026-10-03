@@ -14,6 +14,7 @@ dependencies {
     implementation(project(":core-designsystem"))
     api(project(":core-model"))
     api(project(":core-geo"))
+    api(project(":core-planning"))
     api(libs.maplibre.android)
 
     implementation(libs.kotlinx.serialization.json)

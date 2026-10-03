@@ -62,10 +62,15 @@ class DiagramsActions(
  * to make one is to pan to the landing zone and tap New.
  */
 @Composable
-fun DiagramsHost(suggestedTarget: String?, modifier: Modifier = Modifier, viewModel: DiagramsViewModel = hiltViewModel()) {
+fun DiagramsHost(
+    suggestedTarget: String?,
+    modifier: Modifier = Modifier,
+    viewModel: DiagramsViewModel = hiltViewModel(),
+    openDiagramExtras: (@Composable () -> Unit)? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     DiagramsContent(
-        state = state, suggestedTarget = suggestedTarget, modifier = modifier,
+        state = state, suggestedTarget = suggestedTarget, modifier = modifier, openDiagramExtras = openDiagramExtras,
         actions = DiagramsActions(
             startCreating = viewModel::startCreating, cancelCreating = viewModel::cancelCreating, create = viewModel::create, open = viewModel::open,
             rename = viewModel::rename, delete = viewModel::delete, resolve = viewModel::resolve, dismissError = viewModel::dismissError,
@@ -75,14 +80,20 @@ fun DiagramsHost(suggestedTarget: String?, modifier: Modifier = Modifier, viewMo
 }
 
 @Composable
-fun DiagramsContent(state: DiagramsUiState, suggestedTarget: String?, actions: DiagramsActions, modifier: Modifier = Modifier) {
+fun DiagramsContent(
+    state: DiagramsUiState,
+    suggestedTarget: String?,
+    actions: DiagramsActions,
+    modifier: Modifier = Modifier,
+    openDiagramExtras: (@Composable () -> Unit)? = null,
+) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Diagrams", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
             if (!state.creating) TextAction("New diagram", onClick = actions.startCreating)
         }
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
-        state.current?.let { ActiveDiagramCard(it, actions) }
+        state.current?.let { ActiveDiagramCard(it, actions, openDiagramExtras) }
         if (state.creating) NewDiagramForm(suggestedTarget, state.busy, actions)
         if (state.rows.isEmpty() && !state.creating) {
             Text(
@@ -99,9 +110,12 @@ fun DiagramsContent(state: DiagramsUiState, suggestedTarget: String?, actions: D
 
 // -- The open diagram: analysis and its summary ------------------------------------------------------------------
 
-/** The open diagram, with the one thing worth doing next: analyse it. Once analysed, what the web's mission summary says about it. */
+/**
+ * The open diagram, with the one thing worth doing next: analyse it. Once analysed, what the web's mission summary says about it, and
+ * [extras] (the planning graphics, which live in this module's other screen but belong in this card, between the summary and rename/delete).
+ */
 @Composable
-private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions) {
+private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions, extras: (@Composable () -> Unit)?) {
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), modifier = Modifier.fillMaxWidth(),
@@ -122,6 +136,7 @@ private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions
             }
             AnalysisControls(current, actions)
             current.summary?.let { SummaryTiles(it) }
+            extras?.invoke()
             ManageControls(current.uuid, current.name, actions)
         }
     }

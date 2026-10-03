@@ -175,6 +175,23 @@ public object DiagramOps {
         return diagram.copy(graphics = withItems(diagram.graphics, collection, current.filterNot { sameId(it, id) }))
     }
 
+    /**
+     * The id of a saved graphic as JavaScript writes it as text (`String(id)`): `"1700000000000"` for the number the web makes from the
+     * clock, `"pz-17"` for text, `"null"` for none. It is how the app names a graphic it holds (a selection), and the same text is what the
+     * web builds a pair's id from.
+     */
+    public fun idText(id: JsonElement?): String {
+        if (id == null) return "undefined"
+        val primitive = id as? JsonPrimitive ?: return id.toString()
+        if (primitive is JsonNull) return "null"
+        val number = primitive.takeIf { !it.isString }?.doubleOrNull
+        return if (number != null && number == Math.rint(number) && Math.abs(number) < 1e21) number.toLong().toString() else primitive.content
+    }
+
+    /** The saved graphic in [collection] whose id reads as [idText], if there is one. */
+    public fun graphic(diagram: Diagram, collection: String, idText: String): JsonObject? =
+        items(diagram.graphics, collection)?.firstNotNullOfOrNull { (it as? JsonObject)?.takeIf { o -> idText(o["id"]) == idText } }
+
     /** `item?.id === id`: only an object with that very id, as JavaScript's strict equality sees it (the number 1 is not the text "1"). */
     private fun sameId(item: JsonElement, id: JsonElement): Boolean {
         val own = (item as? JsonObject)?.get("id") ?: return false

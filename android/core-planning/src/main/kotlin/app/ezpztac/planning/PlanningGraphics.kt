@@ -2,13 +2,13 @@ package app.ezpztac.planning
 
 import app.ezpztac.geo.GreatCircle
 import app.ezpztac.model.AircraftProfile
+import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.LatLon
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
-import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -136,21 +136,13 @@ public object PlanningGraphics {
                     val pair = if (profileA.slug == profileB.slug) profileA.designation else "${profileA.designation}/${profileB.designation}"
                     val metres = RouteCalc.jsRound(max(profileA.rotorTipClearanceM, profileB.rotorTipClearanceM)).toLong()
                     alerts += SeparationAlert(
-                        id = "${text(a.id)}-${text(b.id)}", first = a.id, second = b.id, gapFt = gap, requiredFt = required,
+                        id = "${DiagramOps.idText(a.id)}-${DiagramOps.idText(b.id)}", first = a.id, second = b.id, gapFt = gap, requiredFt = required,
                         message = "Separation Alert ($pair): Rotor edges are only $shown ft apart (Min: ${RouteCalc.jsRound(required).toLong()} ft / $metres m).",
                     )
                 }
             }
         }
         return alerts
-    }
-
-    /** `String(id)`: text as it is, a whole number without a fraction, anything else as JSON writes it. */
-    private fun text(id: JsonElement): String {
-        val primitive = id as? JsonPrimitive ?: return id.toString()
-        if (primitive is JsonNull) return "null"
-        val number = primitive.takeIf { !it.isString }?.doubleOrNull
-        return if (number != null && number == Math.rint(number) && abs(number) < 1e21) number.toLong().toString() else primitive.content
     }
 
     private fun number(value: JsonElement?): Double? = (value as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() }

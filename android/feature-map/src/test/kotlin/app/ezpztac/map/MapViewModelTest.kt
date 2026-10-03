@@ -140,13 +140,16 @@ class MapViewModelTest {
     fun `the readout follows the camera, and a camera that did not move changes nothing`() = runTest(dispatcher) {
         val (vm, _) = model()
         assertNull(vm.state.value.readout)
+        assertNull(vm.state.value.center)
         vm.onCamera(CameraState(LatLon(34.783817, -84.08219), 16.0))
         assertEquals("16S GD 66993 52949", vm.state.value.readout!!.mgrs)
+        assertEquals(LatLon(34.783817, -84.08219), vm.state.value.center)                  // the same place, as a position, for placing a graphic
         val before = vm.state.value
         vm.onCamera(CameraState(LatLon(34.783817, -84.08219), 16.0))
         assertTrue(before === vm.state.value)
         vm.onCamera(CameraState(LatLon(34.596407, -84.128098), 16.0))
         assertEquals("16S GD 63385 32037", vm.state.value.readout!!.mgrs)
+        assertEquals(LatLon(34.596407, -84.128098), vm.state.value.center)
     }
 
     @Test

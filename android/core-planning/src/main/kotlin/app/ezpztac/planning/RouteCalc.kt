@@ -32,7 +32,7 @@ import kotlin.math.sin
  */
 public object RouteCalc {
     /** JavaScript's `Math.round`: halves go up (`kotlin.math.round` goes to even). */
-    internal fun jsRound(x: Double): Double = floor(x + 0.5)
+    public fun jsRound(x: Double): Double = floor(x + 0.5)
 
     private fun toRad(deg: Double) = deg * Math.PI / 180
     private fun toDeg(rad: Double) = rad * 180 / Math.PI

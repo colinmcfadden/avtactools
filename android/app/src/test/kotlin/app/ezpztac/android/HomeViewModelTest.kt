@@ -3,6 +3,7 @@ package app.ezpztac.android
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.network.FieldAnalysis
 import app.ezpztac.map.LzScene
@@ -15,6 +16,7 @@ import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
+import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
 import app.ezpztac.sync.InMemorySyncStore
 import app.ezpztac.sync.RecordFeed
@@ -36,6 +38,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -85,7 +88,8 @@ class HomeViewModelTest {
         val session = DiagramSession(repository, scope.backgroundScope)
         // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and a slope being measured is work a test waits for.
         val analysis = AnalysisService(server, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
-        val model = HomeViewModel(session, analysis)
+        val selection = GraphicSelection()
+        val model = HomeViewModel(session, analysis, selection)
         val seen = mutableListOf<OpenedDiagram>()
 
         init {
@@ -269,5 +273,69 @@ class HomeViewModelTest {
         assertEquals(1, r.server.slopeCalls.size)                                            // only the first diagram's
         assertEquals(DiagramStatus.TARGETED, r.session.active.value!!.status)
         assertEquals(LzScene.of(r.session.active.value).copy(), r.model.scene.value)
+    }
+
+    // -- Planning graphics on the map ----------------------------------------------------------------------------------
+
+    private fun pzMarker(id: String) = JsonObject(
+        mapOf(
+            "id" to JsonPrimitive(id), "lat" to JsonPrimitive(34.7838), "lon" to JsonPrimitive(-84.0822),
+            "tipLat" to JsonPrimitive(34.7838), "tipLon" to JsonPrimitive(-84.0832),
+        ),
+    )
+
+    @Test
+    fun `graphics placed on the open diagram are drawn, and the one that is held has a halo`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.analysed()
+        r.session.open(id)
+        advanceUntilIdle()
+        assertTrue(r.model.scene.value.graphics.isEmpty)
+
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertEquals(1, r.model.scene.value.graphics.pzMarkers.size)
+        assertEquals(null, r.model.scene.value.graphics.selectedAt)
+
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        advanceUntilIdle()
+        assertEquals(LatLon(34.7838, -84.0822), r.model.scene.value.graphics.selectedAt)
+
+        r.selection.clear()
+        advanceUntilIdle()
+        assertEquals(null, r.model.scene.value.graphics.selectedAt)
+    }
+
+    @Test
+    fun `opening another diagram lets go of what was held in the first`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val first = r.analysed()
+        r.session.open(first)
+        advanceUntilIdle()                                                                    // opening is heard before the person can hold anything
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        advanceUntilIdle()
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+
+        val second = r.repository.create(DiagramTarget(35.0, -85.0, "16S FD 00000 00000"), "B").id
+        r.session.open(second)
+        advanceUntilIdle()
+        assertEquals(null, r.selection.selected.value)
+    }
+
+    @Test
+    fun `editing the open diagram keeps what is held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        advanceUntilIdle()
+        r.session.edit("Move") { DiagramOps.patchGraphic(it, "pzMarkers", JsonPrimitive("pz-1"), JsonObject(mapOf("lat" to JsonPrimitive(34.79)))) }
+        advanceUntilIdle()
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
     }
 }

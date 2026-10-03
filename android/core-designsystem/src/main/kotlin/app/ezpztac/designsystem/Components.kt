@@ -218,7 +218,8 @@ fun SecondaryButton(
         shape = RoundedCornerShape(Tokens.Radius.md.dp),
         // A disabled one often carries words that have to be read (a countdown), so its text stays at the secondary-text contrast
         // the palettes are tested to; only the border and the missing tap say it is off.
-        colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+        // Named, not left to the default: the default drew the label in the muted grey of a disabled button (seen in a screenshot).
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary, disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant),
     ) { Text(text) }
 }
 

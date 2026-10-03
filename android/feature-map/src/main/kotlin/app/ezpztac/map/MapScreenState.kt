@@ -53,6 +53,8 @@ data class MapUiState(
     val readout: Readout? = null,
     val searchError: String? = null,
     val gps: GpsState = GpsState.Off,
+    /** What the crosshair is over, as a position: where a graphic is placed. Null until the map has reported where it is looking. */
+    val center: LatLon? = null,
 )
 
 /** Things the map has to do that are not state: look somewhere, turn north. */
@@ -105,7 +107,7 @@ class MapViewModel @Inject constructor(
     fun onCamera(camera: CameraState) {
         if (lastCamera?.sameView(camera) == true) return
         lastCamera = camera
-        _state.update { it.copy(readout = Readout.of(camera.center)) }
+        _state.update { it.copy(readout = Readout.of(camera.center), center = camera.center) }
         // Written once the camera has been still for a moment, not on every frame of a pan.
         saving?.cancel()
         saving = viewModelScope.launch {

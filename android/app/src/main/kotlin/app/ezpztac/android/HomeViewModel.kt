@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.SlopeState
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.SlopeImage
+import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,6 +37,7 @@ data class OpenedDiagram(val id: String, val at: LatLon?, val baseMap: String?)
 class HomeViewModel @Inject constructor(
     private val session: DiagramSession,
     private val analysis: AnalysisService,
+    private val selection: GraphicSelection,
 ) : ViewModel() {
     private val _opened = MutableSharedFlow<OpenedDiagram>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
@@ -45,12 +48,13 @@ class HomeViewModel @Inject constructor(
     val opened: SharedFlow<OpenedDiagram> = _opened.asSharedFlow()
 
     /**
-     * What the map draws for the open diagram: its target, boundary and, once measured, the slope raster. The raster is shown only while
-     * the boundary is still the one it was measured for.
+     * What the map draws for the open diagram: its target, boundary, planning graphics (the one being held with a halo) and, once measured,
+     * the slope raster. The raster is shown only while the boundary is still the one it was measured for. Aircraft are drawn as UH-60Ls
+     * until aircraft profiles can be chosen, the same as the sheet measures them.
      */
-    val scene: StateFlow<LzScene> = combine(session.active, analysis.slopes) { diagram, slopes ->
+    val scene: StateFlow<LzScene> = combine(session.active, analysis.slopes, selection.selected) { diagram, slopes, selected ->
         val measured = diagram?.let { d -> (slopes[d.id] as? SlopeState.Ready)?.takeIf { it.boundaryKey == analysis.boundaryKey(d) } }
-        LzScene.of(diagram, measured?.analysis?.toSlopeImage())
+        LzScene.of(diagram, measured?.analysis?.toSlopeImage(), profiles = listOf(AircraftProfile.FALLBACK), active = AircraftProfile.FALLBACK, selected = selected)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
 
     init {
@@ -60,6 +64,7 @@ class HomeViewModel @Inject constructor(
         }
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { diagram ->
+                selection.clear()                                                          // what was held belonged to the diagram before
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))
             }
         }
