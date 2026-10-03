@@ -49,6 +49,17 @@
             </intent-filter>
         </activity>
 
+        <!-- Hands an exported mission to the share sheet. Not exported: another app is given one file by a temporary grant on one URI, never the folder. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.exports"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/export_paths" />
+        </provider>
+
         <!-- WorkManager starts on demand with Hilt's worker factory (EzpzApplication), so its own initializer is removed. -->
         <provider
             android:name="androidx.startup.InitializationProvider"

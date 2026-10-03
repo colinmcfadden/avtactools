@@ -18,7 +18,9 @@ import app.ezpztac.map.CameraMemory
 import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
+import app.ezpztac.android.export.AssetMissionTemplate
 import app.ezpztac.data.ApiClientPlanningApi
+import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.ApiClientTerrainApi
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.TerrainApi
@@ -106,6 +108,10 @@ object AppModule {
     @Provides
     @Singleton
     fun planningApi(client: ApiClient): PlanningApi = ApiClientPlanningApi(client)
+
+    @Provides
+    @Singleton
+    fun missionTemplate(@ApplicationContext context: Context): MissionTemplate = AssetMissionTemplate(context)
 
     /** Symbols: the pre-rendered presets first, then milsymbol in the system JavaScript sandbox, which starts when a symbol that needs it is first asked for. */
     @Provides

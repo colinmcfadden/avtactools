@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.ezpztac.android.export.ShareExport
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.TextAction
@@ -80,6 +82,7 @@ fun MapHome(
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
+    val context = LocalContext.current
     val scaffold = rememberBottomSheetScaffoldState()
 
     LaunchedEffect(host) {
@@ -118,7 +121,7 @@ fun MapHome(
                             GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs)
                         },
                     )
-                    RoutesHost()
+                    RoutesHost(onExport = { ShareExport.share(context, it) })
                     AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

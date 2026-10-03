@@ -61,4 +61,18 @@ dependencies {
 
     testImplementation(libs.androidx.work.testing)
     testImplementation(testFixtures(project(":core-sync")))
+    testImplementation(project(":core-testing"))
+}
+
+// The mission an export is built on is the web's own bundled template (frontend/public/msnx_template.msnx), so a mission exported here and on the web start
+// from the same AMPS-authored package. It is copied into the app's assets at build, not committed a second time.
+val copyMissionTemplate = tasks.register<Copy>("copyMissionTemplate") {
+    from(rootProject.layout.projectDirectory.file("../frontend/public/msnx_template.msnx"))
+    into(layout.buildDirectory.dir("generated/missionAssets"))
+}
+extensions.getByType(com.android.build.api.variant.ApplicationAndroidComponentsExtension::class.java).onVariants { variant ->
+    variant.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/missionAssets").get().asFile.path)
+}
+tasks.matching { it.name.matches(Regex("(merge|generate|package|lint).*(Assets|Resources)")) || it.name.startsWith("process") }.configureEach {
+    dependsOn(copyMissionTemplate)
 }

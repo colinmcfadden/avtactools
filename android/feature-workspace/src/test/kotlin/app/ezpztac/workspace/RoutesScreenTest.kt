@@ -48,6 +48,7 @@ class RoutesScreenTest {
             selectPoint = { log += "selectPoint:$it" }, renamePoint = { r, p, n -> log += "renamePoint:$r:$p:$n" },
             setPointType = { r, p, t -> log += "type:$r:$p:$t" }, makeShaping = { r, p -> log += "shaping:$r:$p" }, makeNamed = { r, p -> log += "named:$r:$p" },
             fetchWinds = { log += "winds" }, fetchElevations = { log += "elevations" }, dismissNote = { log += "dismissNote" },
+            exportSet = { log += "exportSet" }, exportRoute = { log += "exportRoute:$it" }, dismissExportWarning = { log += "dismissExportWarning" },
         )
         var problem: String? = null
         val applied = mutableListOf<Pair<String, PlanDraft>>()
@@ -512,5 +513,51 @@ class RoutesScreenTest {
     fun `a fetch that failed is shown as an error`() {
         fetching(note = PlanningNote("There is no connection to the server, so the winds could not be fetched.", failed = true))
         compose.onNodeWithText("There is no connection to the server, so the winds could not be fetched.").performScrollTo().assertIsDisplayed()
+    }
+
+    // -- Export for AMPS -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `a set with routes can be exported, and one with none cannot`() {
+        val r = content(RoutesUiState(open = open(one, two)))
+        compose.onNodeWithText("Export for AMPS").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf("exportSet"), r.log)
+    }
+
+    @Test
+    fun `an empty set has nothing to export`() {
+        content(RoutesUiState(open = open()))
+        assertEquals(0, count("Export for AMPS"))
+    }
+
+    @Test
+    fun `while a mission is being built the buttons say so and take no taps`() {
+        val r = Recorder()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), detail = detail(*log), exporting = true), r.actions) } }
+        }
+        assertEquals(2, count("Building the mission…"))                                          // the set's button and the route's
+        compose.onAllNodesWithText("Building the mission…")[0].performScrollTo().performClick()
+        assertEquals(emptyList<String>(), r.log)
+    }
+
+    @Test
+    fun `the held route can be exported on its own`() {
+        val r = withDetail(detail(*log))
+        compose.onNodeWithText("Export this route for AMPS").performScrollTo().performClick()
+        assertEquals(listOf("exportRoute:r1"), r.log)
+    }
+
+    @Test
+    fun `a warning about the file is shown until it is dismissed`() {
+        val r = Recorder()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), exportWarning = "This mission will open in AMPS as a UH-60L, not a CH-47F Chinook."), r.actions) }
+            }
+        }
+        compose.onNodeWithText("This mission will open in AMPS as a UH-60L, not a CH-47F Chinook.").assertIsDisplayed()
+        compose.onNodeWithText("Dismiss").performClick()
+        assertEquals(listOf("dismissExportWarning"), r.log)
     }
 }

@@ -3,7 +3,12 @@ package app.ezpztac.workspace
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.ActiveAircraftChoice
 import app.ezpztac.data.MasterProfileStore
+import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.PlanningApi
+import app.ezpztac.data.RouteExport
+import app.ezpztac.testing.Fixtures
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.launch
 import app.ezpztac.data.RouteHeld
 import app.ezpztac.data.RoutePlanning
 import app.ezpztac.network.NetworkException
@@ -93,7 +98,13 @@ class RoutesViewModelTest {
         )
         val sketching = RouteSketching(session, profiles)
         val api = FakeApi()
-        val model = RoutesViewModel(repository, session, selection, sketching, resolver ?: ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) }, RoutePlanning(api, session))
+        var template: () -> ByteArray = { Fixtures.repoBytes("frontend/public/msnx_template.msnx") }
+        val model = RoutesViewModel(
+            repository, session, selection, sketching, resolver ?: ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
+            RoutePlanning(api, session), RouteExport { template() },
+        ).also { it.worker = StandardTestDispatcher(scope.testScheduler) }
+        val shared = mutableListOf<ExportFile>()
+        init { scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.exports.collect { shared += it } } }
         val state get() = model.state.value
     }
 
@@ -755,5 +766,105 @@ class RoutesViewModelTest {
         held.complete(listOf(1.0, 2.0, 3.0, 4.0)); settle()
         assertEquals(0, r.state.open!!.routes.size)
         assertNull(r.state.fetching)
+    }
+
+    // -- Export for AMPS ----------------------------------------------------------------------------------------
+
+    @Test
+    fun `exporting the set builds a mission named for its routes and hands it over once`() = runTest(dispatcher) {
+        val r = rig()
+        openWithPlannedRoute(r)
+        val work = kotlinx.coroutines.test.TestCoroutineScheduler()                          // the building waits here until it is let go
+        r.model.worker = StandardTestDispatcher(work)
+        r.model.exportSet()
+        testScheduler.runCurrent()
+        assertTrue(r.state.exporting)
+        assertTrue(r.shared.isEmpty())
+        work.advanceUntilIdle()
+        settle()
+        assertFalse(r.state.exporting)
+        val file = r.shared.single()
+        assertEquals("ROUTE 1.msnx", file.fileName)
+        assertTrue(file.bytes.size > 1000)
+        assertEquals('P'.code.toByte(), file.bytes[0])                                        // a zip: it starts "PK"
+        assertEquals('K'.code.toByte(), file.bytes[1])
+        assertNull(r.state.error)
+        assertNull(r.state.exportWarning)
+    }
+
+    @Test
+    fun `one route can be exported on its own, named for it`() = runTest(dispatcher) {
+        val r = rig()
+        val first = openWithPlannedRoute(r)
+        r.model.startDrawing()
+        for (at in listOf(a, b)) r.model.addAtCrosshair(at)
+        r.model.finishDrawing(); settle()
+        r.model.exportRoute(first); settle()
+        assertEquals("ROUTE 1.msnx", r.shared.single().fileName)
+        r.model.exportSet(); settle()
+        assertEquals("ROUTE 1_ROUTE 2.msnx", r.shared.last().fileName)
+    }
+
+    @Test
+    fun `a route planned for another airframe is exported with a warning that can be dismissed`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        r.session.edit("Airframe") { set -> set.mapRoute(id) { it.copy(plan = it.plan.copy(aircraft = "CH-47F Chinook", aircraftProfile = "ch47f")) } }
+        r.model.exportSet(); settle()
+        assertTrue(r.state.exportWarning!!.startsWith("This mission will open in AMPS as a UH-60L, not a CH-47F Chinook."))
+        assertEquals(1, r.shared.size)                                                         // the file is made all the same
+        r.model.dismissExportWarning(); settle()
+        assertNull(r.state.exportWarning)
+    }
+
+    @Test
+    fun `a route with too few named points is refused by name, and nothing is handed over`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        r.session.edit("Shape") { set -> set.mapRoute(id) { route -> route.copy(points = route.points.mapIndexed { i, p -> if (i >= 1) p.copy(kind = "shaping") else p }) } }
+        r.model.exportSet(); settle()
+        assertEquals("ROUTE 1 needs at least two named points before it can be exported.", r.state.error)
+        assertTrue(r.shared.isEmpty())
+        assertFalse(r.state.exporting)
+    }
+
+    @Test
+    fun `a template that will not open is a refusal and not a crash`() = runTest(dispatcher) {
+        val r = rig()
+        openWithPlannedRoute(r)
+        r.template = { "not a mission".toByteArray() }
+        r.model.exportSet(); settle()
+        assertTrue(r.state.error!!.startsWith("The mission could not be built"))
+        assertTrue(r.shared.isEmpty())
+        r.template = { error("the asset is gone") }
+        r.model.exportSet(); settle()
+        assertEquals("The mission could not be built.", r.state.error)
+        assertFalse(r.state.exporting)
+    }
+
+    @Test
+    fun `with no set open, or no routes in it, there is nothing to export`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.exportSet(); settle()
+        assertTrue(r.shared.isEmpty())
+        r.model.createSet(""); settle()
+        r.model.exportSet(); settle()
+        assertEquals("There is no route to export.", r.state.error)
+        assertTrue(r.shared.isEmpty())
+    }
+
+    @Test
+    fun `a second export while one is being built is ignored`() = runTest(dispatcher) {
+        val r = rig()
+        openWithPlannedRoute(r)
+        val work = kotlinx.coroutines.test.TestCoroutineScheduler()
+        r.model.worker = StandardTestDispatcher(work)
+        r.model.exportSet()
+        testScheduler.runCurrent()
+        r.model.exportSet()                                                                    // while the first is still being built
+        testScheduler.runCurrent()
+        work.advanceUntilIdle()
+        settle()
+        assertEquals(1, r.shared.size)
     }
 }

@@ -3,7 +3,9 @@ package app.ezpztac.workspace
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.RouteRepository
+import app.ezpztac.data.ExportResult
 import app.ezpztac.data.PlanningOutcome
+import app.ezpztac.data.RouteExport
 import app.ezpztac.data.RoutePlanning
 import app.ezpztac.data.RouteHeld
 import app.ezpztac.data.RouteSelection
@@ -25,6 +27,14 @@ import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -120,6 +130,9 @@ data class RouteDetailUi(
     val hasElevations: Boolean,
 )
 
+/** A mission built for AMPS, ready to be handed to another app: the screen that has a context shares it. */
+class ExportFile(val fileName: String, val bytes: ByteArray)
+
 /** What a route can ask the server for. */
 enum class PlanningKind { WINDS, ELEVATIONS }
 
@@ -136,6 +149,10 @@ data class RoutesUiState(
     val fetching: PlanningKind? = null,
     /** What the last fetch came to, until it is dismissed or the route held changes. */
     val note: PlanningNote? = null,
+    /** A mission is being built for AMPS. */
+    val exporting: Boolean = false,
+    /** Something to know about the file just made before it is sent (it will open as another airframe than the one planned), until dismissed. */
+    val exportWarning: String? = null,
     /** The form for a new set is open. */
     val creating: Boolean = false,
     val error: String? = null,
@@ -154,10 +171,20 @@ class RoutesViewModel @Inject constructor(
     private val sketching: RouteSketching,
     private val conflicts: ConflictResolver,
     private val planning: RoutePlanning,
+    private val export: RouteExport,
 ) : ViewModel() {
     private data class Local(
         val creating: Boolean = false, val error: String? = null, val fetching: PlanningKind? = null, val note: PlanningNote? = null, val noteFor: String? = null,
+        val exporting: Boolean = false, val exportWarning: String? = null,
     )
+
+    /** Where a mission is built: building one takes a moment of work on the whole template, so it is not done on the main thread. A test sets its own. */
+    internal var worker: CoroutineDispatcher = Dispatchers.Default
+
+    private val _exports = MutableSharedFlow<ExportFile>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** A mission that has been built, once for each: the screen shares it. */
+    val exports: SharedFlow<ExportFile> = _exports.asSharedFlow()
 
     private val local = MutableStateFlow(Local())
     private val depths = combine(session.undoDepth, session.redoDepth) { undo, redo -> undo to redo }
@@ -171,6 +198,8 @@ class RoutesViewModel @Inject constructor(
             fetching = local.fetching.takeIf { local.noteFor == held?.routeId },
             // A line about one route's winds is not shown under another route.
             note = local.note.takeIf { local.noteFor == held?.routeId },
+            exporting = local.exporting,
+            exportWarning = local.exportWarning,
             creating = local.creating,
             error = local.error,
         )
@@ -231,6 +260,39 @@ class RoutesViewModel @Inject constructor(
     fun dismissError() = local.update { it.copy(error = null) }
 
     fun dismissNote() = local.update { it.copy(note = null) }
+
+    fun dismissExportWarning() = local.update { it.copy(exportWarning = null) }
+
+    // -- Export for AMPS ---------------------------------------------------------------------------------------------
+
+    /** Builds the AMPS mission of every route in the open set. */
+    fun exportSet() = exportRoutes(routeId = null)
+
+    /** Builds the AMPS mission of one route of the open set. */
+    fun exportRoute(routeId: String) = exportRoutes(routeId)
+
+    private fun exportRoutes(routeId: String?) {
+        val set = session.active.value ?: return
+        if (local.value.exporting) return
+        val routes = export.routesOf(set, routeId)
+        local.update { it.copy(exporting = true, error = null, exportWarning = null) }
+        viewModelScope.launch {
+            val result = try {
+                withContext(worker) { export.build(routes, LocalDate.now()) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                ExportResult.Refused("The mission could not be built.")
+            }
+            when (result) {
+                is ExportResult.Ready -> {
+                    local.update { it.copy(exporting = false, exportWarning = result.warning) }
+                    _exports.emit(ExportFile(result.fileName, result.bytes))
+                }
+                is ExportResult.Refused -> local.update { it.copy(exporting = false, error = result.message) }
+            }
+        }
+    }
 
     /** Makes an empty set and opens it. A blank [name] is `MISSION n`, n counting the sets there are, upper-cased as the web names routes. */
     fun createSet(name: String) {

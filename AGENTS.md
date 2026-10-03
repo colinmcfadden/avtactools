@@ -1099,8 +1099,18 @@ client is built around not losing one:
       are not an undo step and are applied to that route's record even if another set has been opened while the server answered), one fetch at a time. A failure is the app's words,
       never the server's (the 500 text names a Python type). A time is asked for as an instant in the device's zone (`RouteWinds.instantText`); the question and the merge are held to
       `routes/winds.json`, whose times are wall-clock to the millisecond so the fixture does not depend on the zone it was made in (a Date holds milliseconds, and the request carries them).
-  - **Not yet built:** moving or inserting a point by dragging on the map, reopening the last set at launch, `.msnx` export and the share sheet, choosing the template for an aircraft
-    (`resolveExportTemplate`: an admin-attached package, else the bundled UH-60L), mutating an imported mission, saved *mission* routes, and the ForeFlight / ATAK hand-off.
+  - **Export for AMPS** (`core-data`: `RouteExport`, `MissionTemplate`; `app`: `ShareExport`, `AssetMissionTemplate`). A set's routes, or one route, are built into a `.msnx` with `MsnxWriter` on the
+    bundled template (the web's `frontend/public/msnx_template.msnx`, copied into the app's assets at build by `copyMissionTemplate`, not committed twice; a test holds the asset to the web's
+    bytes) and handed to the system share sheet. The file is named for the routes (names joined with `_`, the web's rule) with anything a file system or a chat app trips over made an
+    underscore. A route with fewer than two named points is refused *by name* before the writer is asked. **A route planned for another airframe still opens in AMPS as a UH-60L** (the
+    vehicle model is AMPS's and cannot be faked); the person is told in a dismissible banner — the web's text, except that an airframe with no name reads "the selected aircraft", not "a the
+    selected aircraft". An admin-attached package (`resolveExportTemplate`) is not used yet. Building runs off the main thread (`RoutesViewModel.worker`), once at a time.
+    - **The share sheet** gets one file by a temporary read grant on one URI of a `FileProvider` that is not exported and may read only `cache/exports/` (`export_paths.xml`); files are cleared out
+      after a day, and a name is cut to a plain file name again at the last step so a crafted route name cannot leave the folder. A test asks the provider for `exports/../secret.txt` and
+      is refused. `FileProvider` keeps a static cache of its folders, so Robolectric tests clear it (`sCache`) between tests; a real process has one cache directory.
+    - **Not verifiable here:** that the share sheet opens and hands the file to a real app, and that AMPS opens what is exported (the web's export is the reference; the writer is held to its files).
+  - **Not yet built:** moving or inserting a point by dragging on the map, reopening the last set at launch, choosing the template for an aircraft (an admin-attached package), mutating an
+    imported mission, saved *mission* routes, and the ForeFlight / ATAK hand-off.
 - **Aircraft profiles** (`core-data`: `AircraftProfiles`; `core-model`: `AircraftDraft`; `feature-workspace`: `AircraftViewModel`,
   `AircraftScreen`, `AircraftPicker`; `app`: `AircraftChoicePreferences`).
   - **Two sources, one list.** The admin's master list comes from `GET /api/aircraft-profiles` (`is_system`), is kept in a file

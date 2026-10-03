@@ -17,6 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -79,6 +81,9 @@ class RoutesActions(
     val fetchWinds: () -> Unit = {},
     val fetchElevations: () -> Unit = {},
     val dismissNote: () -> Unit = {},
+    val exportSet: () -> Unit = {},
+    val exportRoute: (routeId: String) -> Unit = {},
+    val dismissExportWarning: () -> Unit = {},
 )
 
 private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = RoutesActions(
@@ -90,12 +95,16 @@ private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = R
     cancelDrawing = viewModel::cancelDrawing, applyPlan = viewModel::applyPlan, applyPoint = viewModel::applyPoint, selectPoint = viewModel::selectPoint,
     renamePoint = viewModel::renamePoint, setPointType = viewModel::setPointType, makeShaping = viewModel::makeShaping, makeNamed = viewModel::makeNamed,
     fetchWinds = viewModel::fetchWinds, fetchElevations = viewModel::fetchElevations, dismissNote = viewModel::dismissNote,
+    exportSet = viewModel::exportSet, exportRoute = viewModel::exportRoute, dismissExportWarning = viewModel::dismissExportWarning,
 )
 
 /** The Routes part of the sheet: the saved sets, and the routes of the open one. */
 @Composable
-fun RoutesHost(modifier: Modifier = Modifier, viewModel: RoutesViewModel = hiltViewModel()) {
+fun RoutesHost(onExport: (ExportFile) -> Unit, modifier: Modifier = Modifier, viewModel: RoutesViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val share by rememberUpdatedState(onExport)
+    // A mission built is handed to the app that can send it (the system share sheet); this module knows nothing of that.
+    LaunchedEffect(viewModel) { viewModel.exports.collect { share(it) } }
     RoutesContent(state, actionsOf(viewModel), modifier)
 }
 
@@ -114,8 +123,9 @@ fun RoutesContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifi
             if (!state.creating) TextAction("New set", onClick = actions.startCreating)
         }
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
-        state.open?.let { OpenSetCard(it, state.drawing, actions) }
-        state.detail?.let { RouteDetailCard(it, state.fetching, state.note, actions) }
+        state.open?.let { OpenSetCard(it, state.drawing, state.exporting, actions) }
+        state.exportWarning?.let { Banner(it, BannerKind.Warning, actionLabel = "Dismiss", onAction = actions.dismissExportWarning) }
+        state.detail?.let { RouteDetailCard(it, state.fetching, state.note, state.exporting, actions) }
         if (state.creating) NewSetForm(actions)
         if (state.sets.isEmpty() && state.open == null && !state.creating) {
             Text(
@@ -133,7 +143,7 @@ fun RoutesContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifi
 // -- The open set ------------------------------------------------------------------------------------------------
 
 @Composable
-private fun OpenSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, actions: RoutesActions) {
+private fun OpenSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, exporting: Boolean, actions: RoutesActions) {
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), modifier = Modifier.fillMaxWidth(),
@@ -159,6 +169,10 @@ private fun OpenSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, actions: Rout
                 if (drawing == null) Text("This set has no routes yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 open.routes.forEach { RouteRow(it, actions) }
+            }
+            if (open.routes.isNotEmpty()) {
+                if (exporting) PrimaryButton("Export for AMPS", onClick = {}, busy = true, busyText = "Building the mission…")
+                else SecondaryButton("Export for AMPS", onClick = actions.exportSet)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                 TextAction("Undo", onClick = actions.undo, enabled = open.canUndo)

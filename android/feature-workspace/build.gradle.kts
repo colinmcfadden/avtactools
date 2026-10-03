@@ -23,4 +23,5 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     testImplementation(testFixtures(project(":core-sync")))
+    testImplementation(project(":core-testing"))
 }

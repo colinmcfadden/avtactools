@@ -47,7 +47,7 @@ private fun label(choices: List<Pair<String, String>>, value: String) = choices.
 
 /** The route being worked on: its plan, its nav log (a row for each named point, the held one open for editing), its totals and what is wrong with it. */
 @Composable
-internal fun RouteDetailCard(detail: RouteDetailUi, fetching: PlanningKind?, note: PlanningNote?, actions: RoutesActions, modifier: Modifier = Modifier) {
+internal fun RouteDetailCard(detail: RouteDetailUi, fetching: PlanningKind?, note: PlanningNote?, exporting: Boolean, actions: RoutesActions, modifier: Modifier = Modifier) {
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = modifier.fillMaxWidth(),
@@ -73,6 +73,8 @@ internal fun RouteDetailCard(detail: RouteDetailUi, fetching: PlanningKind?, not
                 )
             }
             detail.totals?.let { Text(it, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface) }
+            if (exporting) PrimaryButton("Export this route", onClick = {}, busy = true, busyText = "Building the mission…")
+            else SecondaryButton("Export this route for AMPS", onClick = { actions.exportRoute(detail.routeId) })
         }
     }
 }
