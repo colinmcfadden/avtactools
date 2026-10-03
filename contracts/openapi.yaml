@@ -639,6 +639,151 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /api/routes:
+    get:
+      operationId: listRoutes
+      summary: The caller's saved routes (summaries, without deleted ones)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RouteSummary"
+    post:
+      operationId: createRoute
+      summary: Save a set of sketched routes
+      description: |
+        `multipart/form-data`, as the web sends it: `name`, `route_data` (a JSON document, as text) and
+        `kind` (`sketch`, the default). A `mission` save also needs the `msnx` file part, which the apps
+        do not send yet. Send `client_uuid`, a UUID the device chose, so a retry after a lost response
+        returns the first record (200) instead of making a second (201).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, route_data]
+              properties:
+                name: { type: string }
+                kind: { type: string, enum: [sketch, mission] }
+                route_data: { type: string, description: "A JSON document: `{ version: 1, routes: [...] }`, the sketched routes (see contracts/fixtures/routes)." }
+                client_uuid: { type: string }
+                msnx: { type: string, format: binary, description: "Mission saves only." }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/routes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getRoute
+      summary: One saved route set, with its routes
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateRoute
+      summary: Edit a saved route set
+      description: |
+        `multipart/form-data` with the same fields as a create; only what is sent is changed, and the kind is
+        fixed at creation. Send `If-Match: "<revision>"` with the revision the edit was based on: if the server
+        has moved on, nothing is overwritten and the server's copy comes back with 409 (`revision_conflict`).
+        Without `If-Match` the last writer wins, as the web app always has.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                route_data: { type: string }
+                msnx: { type: string, format: binary }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/RouteConflict"
+    delete:
+      operationId: deleteRoute
+      summary: Delete a saved route set
+      description: |
+        Leaves a tombstone, with the content (and the mission file) gone, so devices learn of the deletion
+        through `/api/sync/changes`. Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/RouteConflict"
+
   /api/aircraft-profiles:
     get:
       operationId: listAircraftProfiles
@@ -949,6 +1094,23 @@ components:
               server:
                 $ref: "#/components/schemas/LzFull"
 
+    RouteConflict:
+      description: |
+        The route set changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/RouteFull"
+
     AircraftConflict:
       description: |
         The profile changed on the server since the revision the edit was based on.
@@ -1089,6 +1251,35 @@ components:
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
         lz_data: { type: object, description: "The diagram document, schema 2 (see contracts/fixtures/workspace)." }
+
+    RouteSummary:
+      type: object
+      required: [id, name, kind, has_file, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        kind: { type: string, enum: [sketch, mission], description: "A sketch is routes drawn in the app; a mission also holds the AMPS file the web imported." }
+        file_name: { type: string, nullable: true }
+        has_file: { type: boolean }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+
+    RouteFull:
+      type: object
+      required: [id, name, kind, has_file, created_at, updated_at, client_uuid, revision, route_data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        kind: { type: string, enum: [sketch, mission] }
+        file_name: { type: string, nullable: true }
+        has_file: { type: boolean }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        route_data: { type: object, description: "A sketch's `{ version: 1, routes: [...] }`; a mission's is a display summary." }
 
     AircraftProfile:
       type: object

@@ -39,6 +39,7 @@ from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
+from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
 from terrain_provider import LocalRasterCatalog  # noqa: E402
 
@@ -97,7 +98,7 @@ def documented(method, path, status):
 
 
 class NetworkFixtureTests(NativeAuthCase):
-    extra_blueprints = (config_bp, lz_bp, aircraft_bp, sync_bp, terrain_bp)
+    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, aircraft_bp, sync_bp, terrain_bp)
 
     def setUp(self):
         super().setUp()
@@ -183,6 +184,26 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("lz: malformed If-Match", self.client.put(f"/api/lz/{lz_id}", headers={**head, "If-Match": "x"}, json={}))
         self.rec("lz: not found", self.client.get("/api/lz/9999", headers=head))
 
+        # Saved routes: a set of sketched routes under one name, sent as multipart/form-data as the web does
+        route_uuid = "5c2b7e90-1d3a-4f6b-8a21-3e9d0c4b7a18"
+        KEPT_UUIDS.add(route_uuid)
+        sketches = json.dumps({"version": 1, "routes": [{"id": "sketch-1", "name": "ROUTE 1", "color": "#FF453A", "visible": True, "points": [
+            {"id": "p1", "lat": 34.5, "lon": -84.2, "ele": None, "kind": "amps", "ptType": "target", "name": ".TGT", "role": "start"},
+            {"id": "p2", "lat": 34.6, "lon": -84.0, "ele": None, "kind": "amps", "ptType": "target", "name": ".TGT", "role": "waypoint"}]}]})
+        form = {"content_type": "multipart/form-data"}
+        self.rec("route: create", self.client.post("/api/routes", headers=head, data={"name": "ROUTES", "kind": "sketch", "route_data": sketches, "client_uuid": route_uuid}, **form), "ETag")
+        self.rec("route: create again with the same identity", self.client.post("/api/routes", headers=head, data={"name": "ROUTES", "kind": "sketch", "route_data": "{}", "client_uuid": route_uuid}, **form), "ETag")
+        self.rec("route: a mission needs its file", self.client.post("/api/routes", headers=head, data={"name": "m", "kind": "mission", "route_data": "{}"}, **form))
+        self.rec("route: not a kind", self.client.post("/api/routes", headers=head, data={"name": "m", "kind": "other", "route_data": "{}"}, **form))
+        self.rec("route: not JSON", self.client.post("/api/routes", headers=head, data={"name": "m", "route_data": "{"}, **form))
+        self.rec("route: nothing sent", self.client.post("/api/routes", headers=head, data={}, **form))
+        route_id = self.client.get("/api/routes", headers=head).get_json()[0]["id"]
+        self.rec("route: list", self.client.get("/api/routes", headers=head))
+        self.rec("route: get", self.client.get(f"/api/routes/{route_id}", headers=head), "ETag")
+        self.rec("route: update", self.client.put(f"/api/routes/{route_id}", headers={**head, "If-Match": '"1"'}, data={"name": "ROUTES 2"}, **form), "ETag")
+        self.rec("route: update on a stale revision", self.client.put(f"/api/routes/{route_id}", headers={**head, "If-Match": '"1"'}, data={"name": "mine"}, **form), "ETag")
+        self.rec("route: not found", self.client.get("/api/routes/9999", headers=head))
+
         # Aircraft profiles
         self.rec("aircraft: list with no profiles of my own", self.client.get("/api/aircraft-profiles", headers=head))
         profile = self.client.post("/api/aircraft-profiles", headers=head, json={"name": "My Hawk", "designation": "MH-60", "client_uuid": str(uuid.uuid4())})
@@ -201,6 +222,7 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("sync: bad cursor", self.client.get("/api/sync/changes?since=x", headers=head))
 
         self.rec("lz: delete", self.client.delete(f"/api/lz/{lz_id}", headers={**head, "If-Match": '"2"'}))
+        self.rec("route: delete", self.client.delete(f"/api/routes/{route_id}", headers={**head, "If-Match": '"2"'}))
         self.rec("aircraft: delete", self.client.delete(f"/api/aircraft-profiles/{pid}", headers={**head, "If-Match": '"2"'}))
 
         # Sessions, sign-out and account deletion
