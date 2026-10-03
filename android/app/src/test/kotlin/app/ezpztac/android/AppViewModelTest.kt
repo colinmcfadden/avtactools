@@ -8,6 +8,7 @@ import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSession
@@ -142,7 +143,7 @@ class AppViewModelTest {
     private class Rig(
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
-        val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val exportsCleared: () -> Int,
+        val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val incoming: IncomingFiles, val exportsCleared: () -> Int,
     )
 
     private fun TestScope.rig(
@@ -167,9 +168,10 @@ class AppViewModelTest {
         val clock = MutableClock()
         val threats = ThreatStore(threatVault, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), StandardTestDispatcher(testScheduler)) { clock.now }
         var cleared = 0
-        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, tokens, version)
+        val incoming = IncomingFiles()
+        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, version)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock) { cleared }
+        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock, incoming) { cleared }
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -357,6 +359,18 @@ class AppViewModelTest {
         r.model.signOut()
         advanceUntilIdle()
         assertEquals(1, r.exportsCleared())
+    }
+
+    @Test
+    fun `signing out forgets a file another app handed over and nobody has answered, and being signed in keeps it`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.incoming.offer("SA-6 site.ths", byteArrayOf(1))
+        r.incoming.refuse("gone.lps", "That file could not be read.")
+        advanceUntilIdle()
+        assertEquals(2, r.incoming.files.value.size)                                          // being signed in leaves them for the person to answer
+        r.model.signOut()
+        advanceUntilIdle()
+        assertTrue(r.incoming.files.value.isEmpty())
     }
 
     @Test

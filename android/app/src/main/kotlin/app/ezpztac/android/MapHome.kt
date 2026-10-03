@@ -53,6 +53,7 @@ import app.ezpztac.workspace.BoundaryHost
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsHost
 import app.ezpztac.workspace.GraphicsHost
+import app.ezpztac.workspace.IncomingHost
 import app.ezpztac.workspace.PointsHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesHost
@@ -107,6 +108,8 @@ fun MapHome(
     // The buttons that start drawing a boundary are in the sheet and the corners are put down on the map: down to the peek, so the map is there.
     LaunchedEffect(drawing) { if (drawing) scaffold.bottomSheetState.partialExpand() }
     LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
+    // A file another app opened with this one (Files, a mail, the share sheet) is put to the person here: nothing is imported until they accept.
+    IncomingHost()
     // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { home.appStopped() }
 

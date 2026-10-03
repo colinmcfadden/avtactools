@@ -47,6 +47,32 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="ezpztac.app" android:path="/" />
             </intent-filter>
+
+            <!-- Files another app opens with this one: an AMPS local points (.LPS), threat (.ths) or mission (.msnx) file, from Files, a mail or the share sheet.
+                 They have no media type of their own, so senders say "octet-stream" (or SQLite, for the two databases); nothing broader is declared, so the app is
+                 not offered for every file on the phone. Only content addresses are accepted, and nothing is imported without the person saying so (app/.../incoming). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/x-sqlite3" />
+                <data android:mimeType="application/vnd.sqlite3" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/x-sqlite3" />
+                <data android:mimeType="application/vnd.sqlite3" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/x-sqlite3" />
+                <data android:mimeType="application/vnd.sqlite3" />
+            </intent-filter>
         </activity>
 
         <!-- Hands an exported mission to the share sheet. Not exported: another app is given one file by a temporary grant on one URI, never the folder. -->

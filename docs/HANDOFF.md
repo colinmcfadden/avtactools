@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-03.
+Last refreshed: 2026-10-03 (after the open-files slice).
 
 ---
 
@@ -31,29 +31,15 @@ Clean and pushed at the time of writing (check `git status` and `git log origin/
 The threat slice (task #51) is committed: Codex's UI (`bd43777`), the ring/marker fix (`6404151`) and the held-threat card,
 remove-all and mission-with-threats export on top of them.
 
-Housekeeping to finish: `git stash drop` (`stash@{0}` is my parallel threat UI, superseded by Codex's plus the additions
-above) and `git worktree remove /home/user/codex-wt` once nothing is needed from them.
-
 ---
 
 ## 2. Next work, in order
 
 1. **Optionally mutation-check the threat slice** (task #51 is landed): `HomeViewModel.mapTapped` ordering, `ThreatStore`,
    `ShareExport` retention and `ThreatsViewModel`, the way the weather code was (surviving mutants become tests).
-2. **Open files from outside the app** (#52): `.LPS` and `.ths` (and later `.msnx`) from Files, mail and the share sheet.
-   Design settled, not started:
-   - Manifest: VIEW and SEND/SEND_MULTIPLE filters, `content` scheme only, mime `application/octet-stream`,
-     `application/x-sqlite3`, `application/vnd.sqlite3` (these formats have no media type of their own; no `*/*`).
-   - **Untrusted by construction.** Accept only `content://` (a `file://` to the app's own private files is the classic attack),
-     refuse the app's own `FileProvider` authority, read bounded (32 MB, at most 5 files) **immediately** in
-     `onCreate`/`onNewIntent` because the grant ends with the task, and word every failure as the app's own.
-   - **Never imported without asking.** A pure `IncomingFiles` holder in `core-data` (a `StateFlow` of name + bytes, like
-     `ThreatSelection`) feeds an offer card in `feature-workspace` ("Add 12 threats from X.ths?" / "Save 340 local points
-     from X.LPS as a set?" — *Not now* prominent only if it discards nothing). Sniff the kind by name, then by magic bytes
-     (SQLite header → try `ThsReader` then `LpsReader`; zip → `.msnx`). Pending files are dropped at sign-out
-     (`AppViewModel`), like threats and exports. A `.msnx` is answered "can't be opened yet" until #53.
-   - Tests: a pure intent parser (scheme, authority, SEND vs VIEW, EXTRA_STREAM list), Robolectric `ContentResolver` reads,
-     kind sniffing against `contracts/fixtures/sqlite/*` and `contracts/fixtures/msnx/*`, the offer card as a screenshot.
+2. **Open files from outside the app** (#52): **built** — `.LPS` and `.ths` from Files, mail and the share sheet, asked about before anything is
+   imported (AGENTS.md §17, *Files from other apps*). Still to do on a device: confirm Files/Gmail/the share sheet offer the app and hand over a
+   readable address, and what media type real senders use (the manifest declares octet-stream and the two SQLite types, nothing broader).
 3. **Mission import** (#53): an `.msnx` opens as routes (`MsnxReader` exists), saved *mission-kind* routes (the file part of
    `/api/routes`, which sync currently passes over), and the `mutateMsnx` port (writing a plan edit back into the file it came from).
 4. **Drag and rotate on the map** (#29, optional — the inspector already does everything), ForeFlight/ATAK hand-off, the

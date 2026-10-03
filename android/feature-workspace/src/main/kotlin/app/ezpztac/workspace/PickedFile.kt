@@ -9,7 +9,7 @@ import java.io.ByteArrayOutputStream
  * A file the person chose in the system's picker, read for importing. The picker hands over an address, not a file: the name is asked for, and the
  * bytes are read here, bounded, because a file from anywhere may be anything.
  */
-internal object PickedFile {
+object PickedFile {
     /** A set of local points is some tens of kilobytes to a few megabytes; anything past this is not one, and is not read into memory. */
     const val MAX_BYTES: Long = 32L * 1024 * 1024
 
@@ -23,7 +23,7 @@ internal object PickedFile {
     const val UNREADABLE = "That file could not be read."
     const val TOO_BIG = "That file is too large to be a set of local points."
 
-    fun read(resolver: ContentResolver, uri: Uri, maxBytes: Long = MAX_BYTES): Result {
+    fun read(resolver: ContentResolver, uri: Uri, maxBytes: Long = MAX_BYTES, tooBig: String = TOO_BIG): Result {
         val name = nameOf(resolver, uri)
         val bytes = try {
             resolver.openInputStream(uri)?.use { input ->
@@ -32,7 +32,7 @@ internal object PickedFile {
                 while (true) {
                     val n = input.read(buffer)
                     if (n < 0) break
-                    if (out.size() + n > maxBytes) return Result.Failed(TOO_BIG)
+                    if (out.size() + n > maxBytes) return Result.Failed(tooBig)
                     out.write(buffer, 0, n)
                 }
                 out.toByteArray()
