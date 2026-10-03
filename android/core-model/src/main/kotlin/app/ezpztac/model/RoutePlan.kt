@@ -2,6 +2,7 @@ package app.ezpztac.model
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
 import java.time.LocalDateTime
 
 /*
@@ -65,6 +66,8 @@ public data class RoutePlan(
     /** `YYYY-MM-DD`, the day every clock time falls on; empty means today. */
     val date: String = "",
     val perPoint: Map<String, PointOverride> = emptyMap(),
+    /** Fields a newer release wrote that this one does not know, kept so saving does not drop them ([RouteSets]). Never part of the model's own JSON. */
+    @Transient val extras: JsonObject = JsonObject(emptyMap()),
 ) {
     public companion object {
         /** `defaultRoutePlan(profile)`: a fresh plan seeded from an aircraft profile. */
@@ -99,6 +102,8 @@ public data class RoutePoint(
     val ele: Double? = null,
     /** What the point's name says it is (`start`, `release`, `target`, `waypoint`). Imported points only. */
     val role: String? = null,
+    /** Fields a newer release wrote that this one does not know, kept so saving does not drop them ([RouteSets]). Never part of the model's own JSON. */
+    @Transient val extras: JsonObject = JsonObject(emptyMap()),
 ) {
     public companion object {
         public const val KIND_SHAPING: String = "shaping"

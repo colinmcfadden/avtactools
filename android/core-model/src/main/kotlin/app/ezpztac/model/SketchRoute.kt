@@ -1,6 +1,8 @@
 package app.ezpztac.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonObject
 
 /**
  * A route the person sketched on the map, in the shape the web keeps it (`useRouteSketch`): its points in flight order (the AMPS points that
@@ -21,4 +23,6 @@ public data class SketchRoute(
     val plan: RoutePlan = RoutePlan(),
     /** Ground elevation in feet by point id. */
     val elevations: Map<String, Double> = emptyMap(),
+    /** Fields a newer release wrote that this one does not know, kept so saving does not drop them ([RouteSets]). Never part of the model's own JSON. */
+    @Transient val extras: JsonObject = JsonObject(emptyMap()),
 )

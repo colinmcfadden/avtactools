@@ -17,3 +17,10 @@ fun DiagramLayer(host: MapHost, scene: LzScene) {
     val overlay = remember(host) { DiagramOverlay().also { host.onStyle(it::install) } }
     LaunchedEffect(overlay, scene) { overlay.show(scene) }
 }
+
+/** Draws the open set of routes on [host]'s map: each route's line and named points, and a route being drawn. An empty scene takes them off. */
+@Composable
+fun RouteLayer(host: MapHost, scene: RouteScene) {
+    val overlay = remember(host) { RouteOverlay().also { host.onStyle(it::install) } }
+    LaunchedEffect(overlay, scene) { overlay.show(scene) }
+}

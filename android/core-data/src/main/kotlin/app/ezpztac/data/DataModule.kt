@@ -48,6 +48,12 @@ internal object DataModule {
     fun diagramSession(repository: DiagramRepository): DiagramSession =
         DiagramSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default))
 
+    /** The open set of routes outlives any screen too, for the same reason. */
+    @Provides
+    @Singleton
+    fun routeSession(repository: RouteRepository): RouteSession =
+        RouteSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+
     /** An analysis outlives the screen that asked for it (the person may leave while the server works), and applies its result on the main thread, where edits are made. */
     @Provides
     @Singleton

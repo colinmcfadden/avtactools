@@ -14,6 +14,7 @@ android {
 dependencies {
     api(project(":core-model"))
     api(project(":core-sync"))
+    api(project(":core-planning"))                               // a route being drawn is made by its SketchOps
     implementation(project(":core-geo"))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
