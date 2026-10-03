@@ -1,5 +1,6 @@
 package app.ezpztac.map
 
+import app.ezpztac.model.LatLon
 import app.ezpztac.model.Radars
 import app.ezpztac.model.Threat
 import app.ezpztac.model.ThreatEntry
@@ -62,5 +63,42 @@ class ThreatSceneTest {
             )))
         }
         assertTrue(ThreatScene.of(listOf(threat)).rings.isEmpty())
+    }
+
+    // -- The rings themselves ---------------------------------------------------------------------------------------------------
+
+    private fun haversineNmi(a: LatLon, b: LatLon): Double {
+        val dLat = Math.toRadians(b.lat - a.lat)
+        val dLon = Math.toRadians(b.lon - a.lon)
+        val h = Math.pow(Math.sin(dLat / 2), 2.0) + Math.cos(Math.toRadians(a.lat)) * Math.cos(Math.toRadians(b.lat)) * Math.pow(Math.sin(dLon / 2), 2.0)
+        return 2 * 3440.065 * Math.asin(Math.sqrt(h))
+    }
+
+    @Test
+    fun `a ring is a closed loop whose every point is the range from the threat, anywhere on the earth`() {
+        for (center in listOf(LatLon(34.75, -84.05), LatLon(0.0, 0.0), LatLon(64.5, 10.0), LatLon(-33.9, 151.2))) {
+            val loop = ThreatScene.circle(center, 25.0)
+            assertEquals(ThreatScene.RING_SEGMENTS + 1, loop.size)
+            assertEquals(loop.first().lat, loop.last().lat, 1e-9)
+            assertEquals(loop.first().lon, loop.last().lon, 1e-9)
+            for (p in loop) assertEquals("at $center", 25.0, haversineNmi(center, p), 25.0 * 0.0005)
+        }
+    }
+
+    @Test
+    fun `a ring starts due north and goes round clockwise`() {
+        val center = LatLon(34.75, -84.05)
+        val loop = ThreatScene.circle(center, 5.0)
+        assertTrue(loop[0].lat > center.lat)
+        assertEquals(center.lon, loop[0].lon, 1e-9)
+        assertTrue(loop[ThreatScene.RING_SEGMENTS / 4].lon > center.lon)                              // a quarter of the way round is east
+        assertTrue(loop[ThreatScene.RING_SEGMENTS * 3 / 4].lon < center.lon)
+    }
+
+    @Test
+    fun `a ring across the antimeridian stays one continuous line, with longitudes past 180 and no jump across the map`() {
+        val loop = ThreatScene.circle(LatLon(10.0, 179.9), 30.0)
+        for (i in 1 until loop.size) assertTrue("jump at $i", Math.abs(loop[i].lon - loop[i - 1].lon) < 1.0)
+        assertTrue(loop.any { it.lon > 180.0 })
     }
 }

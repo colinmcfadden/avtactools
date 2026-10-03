@@ -63,7 +63,7 @@ fun ThreatLabelsLayer(host: MapHost, scene: ThreatScene, modifier: Modifier = Mo
 }
 
 @Composable
-private fun ThreatMarker(placed: PlacedThreat) {
+internal fun ThreatMarker(placed: PlacedThreat) {
     val pin = placed.pin
     if (pin.selected) {
         Box(
@@ -79,8 +79,9 @@ private fun ThreatMarker(placed: PlacedThreat) {
             bitmap = result.symbol.bitmap.asImageBitmap(), contentDescription = "Threat ${pin.name}",
             modifier = Modifier.offset { IntOffset((placed.at.x - result.symbol.anchorX).roundToInt(), (placed.at.y - result.symbol.anchorY).roundToInt()) },
         )
-        SymbolOutcome.Invalid, SymbolOutcome.Unavailable -> ThreatFallback(placed)
-        null -> Unit
+        // A threat is never missing from the map: the diamond stands in while the symbol is being drawn, and where it cannot be (no JavaScript sandbox and not a
+        // preset, or not a symbol). A crew that sees nothing where a threat is would plan through it.
+        null, SymbolOutcome.Invalid, SymbolOutcome.Unavailable -> ThreatFallback(placed)
     }
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surface,

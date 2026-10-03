@@ -54,24 +54,26 @@ data class ThreatScene(val pins: List<ThreatPin> = emptyList(), val rings: List<
         putJsonArray("coordinates") { points.forEach { point -> add(buildJsonArray { add(JsonPrimitive(point.lon)); add(JsonPrimitive(point.lat)) }) } }
     }
 
-    private fun circle(center: LatLon, radiusNmi: Double): List<LatLon> = (0..RING_SEGMENTS).map { i ->
-        destination(center, radiusNmi, i * 360.0 / RING_SEGMENTS)
-    }
-
-    private fun destination(from: LatLon, distanceNmi: Double, bearingDeg: Double): LatLon {
-        val angular = distanceNmi / EARTH_RADIUS_NMI
-        val bearing = Math.toRadians(bearingDeg)
-        val lat1 = Math.toRadians(from.lat)
-        val lon1 = Math.toRadians(from.lon)
-        val lat2 = asin(sin(lat1) * cos(angular) + cos(lat1) * sin(angular) * cos(bearing))
-        val lon2 = lon1 + atan2(sin(bearing) * sin(angular) * cos(lat1), cos(angular) - sin(lat1) * sin(lat2))
-        return LatLon(Math.toDegrees(lat2), ((Math.toDegrees(lon2) + 540.0) % 360.0) - 180.0)
-    }
-
     companion object {
         val EMPTY = ThreatScene()
         private const val EARTH_RADIUS_NMI = 3440.065
-        private const val RING_SEGMENTS = 96
+        internal const val RING_SEGMENTS = 96
+
+        /** A closed loop of points [radiusNmi] from [center] along the surface, starting due north and going clockwise. */
+        internal fun circle(center: LatLon, radiusNmi: Double): List<LatLon> = (0..RING_SEGMENTS).map { i ->
+            destination(center, radiusNmi, i * 360.0 / RING_SEGMENTS)
+        }
+
+        private fun destination(from: LatLon, distanceNmi: Double, bearingDeg: Double): LatLon {
+            val angular = distanceNmi / EARTH_RADIUS_NMI
+            val bearing = Math.toRadians(bearingDeg)
+            val lat1 = Math.toRadians(from.lat)
+            val lon1 = Math.toRadians(from.lon)
+            val lat2 = asin(sin(lat1) * cos(angular) + cos(lat1) * sin(angular) * cos(bearing))
+            val lon2 = lon1 + atan2(sin(bearing) * sin(angular) * cos(lat1), cos(angular) - sin(lat1) * sin(lat2))
+            // Not wrapped into ±180: a ring that crosses the antimeridian must stay one continuous line (a wrapped longitude jumps across the whole map).
+            return LatLon(Math.toDegrees(lat2), Math.toDegrees(lon2))
+        }
 
         fun of(entries: List<ThreatEntry>, selectedId: String? = null): ThreatScene {
             val visible = entries.filter { it.visible && it.threat.lat.isFinite() && it.threat.lon.isFinite() }
