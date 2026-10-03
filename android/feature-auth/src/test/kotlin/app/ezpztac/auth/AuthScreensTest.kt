@@ -11,6 +11,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.isNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -63,6 +64,36 @@ class AuthScreensTest {
         field("Password").performTextInput("a secure flight password")
         compose.onNode(hasText("Sign in") and hasClickAction()).performClick()
         assertEquals(listOf("signIn pilot@example.com a secure flight password"), r.log)
+    }
+
+    // -- Debug diagnostics ---------------------------------------------------------------------------
+
+    private fun showWithDiagnostics(state: AuthUiState, server: String?) {
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { AuthContent(state, false, Recorder().actions, diagnostics = server) } }
+    }
+
+    @Test
+    fun `a debug build says which server it talks to, and what the last failure was`() {
+        showWithDiagnostics(AuthUiState(error = "Invalid email or password.", detail = "HTTP 401 · invalid_credentials"), "Server: http://127.0.0.1:5000/")
+        compose.onNodeWithText("Server: http://127.0.0.1:5000/").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Last failure: HTTP 401 · invalid_credentials").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("DEBUG BUILD").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `with no failure yet only the server is shown`() {
+        showWithDiagnostics(AuthUiState(), "Server: http://10.0.2.2:5000/")
+        compose.onNodeWithText("Server: http://10.0.2.2:5000/").performScrollTo().assertIsDisplayed()
+        assertEquals(0, compose.onAllNodesWithText("Last failure", substring = true).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `a release build passes nothing, and nothing about the server or a failure is drawn`() {
+        showWithDiagnostics(AuthUiState(error = "Invalid email or password.", detail = "HTTP 401 · invalid_credentials"), null)
+        assertEquals(0, compose.onAllNodesWithText("DEBUG BUILD").fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodesWithText("Last failure", substring = true).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodesWithText("Server:", substring = true).fetchSemanticsNodes().size)
+        compose.onNodeWithText("Invalid email or password.").assertIsDisplayed()                  // the person's words are unchanged
     }
 
     /** What the field actually shows: dots while hidden, the text once revealed. */

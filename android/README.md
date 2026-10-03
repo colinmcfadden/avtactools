@@ -50,6 +50,12 @@ compile here rather than on CI or a device.
 Tests read `../contracts/fixtures` and Gradle re-runs them when a fixture
 changes. To see one fail, edit a number in a fixture and run the tests.
 
+### Against a backend on your own PC
+
+A local backend has its own empty database, so sign in with an account made there: `python backend/dev_user.py you@example.com`
+(see `docs/HANDOFF.md` §4 for the whole procedure, `adb reverse` and the emulator address). Debug builds show the server they talk to and
+the last failure on the sign-in screen.
+
 ## The Android modules
 
 Needs the Android SDK (`platforms;android-37.0`, `build-tools;37.0.0`) and Gradle 9, which the

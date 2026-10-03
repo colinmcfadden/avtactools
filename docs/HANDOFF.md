@@ -82,25 +82,54 @@ python contracts/scripts/mgrs_fixtures.py check     # fixtures vs PyGeodesy
 
 ---
 
-## 4. For the dev-environment / device-login session
+## 4. Running the app against a backend on the owner's PC
 
-The owner tried the debug build on a phone and **sign-in fails**. Known facts, from the code:
+**Why a local sign-in says "user/password incorrect".** A local backend uses its **own database** (`backend/ezpz.db`, SQLite, unless
+`DATABASE_URL` is set), which does not hold the production accounts. The login route answers *"Invalid email or password."* (401
+`invalid_credentials`) for a wrong password, for an address it has never seen, and for an account registered but not yet verified,
+and deliberately says the same for all three so an address cannot be probed. So a refusal from a fresh local backend means the app
+**reached it** (a wrong or unreachable server shows "There is no connection to the server" instead): the account is just not in that
+database. Reproduced against the real auth routes (`backend/tests/live_server.py`): fresh database, any login → exactly that 401;
+after the account exists → success with a refresh token.
 
-- The default server is `https://prod-ezpz-api.mcfadd.in/` (`-Pezpz.apiUrl=<root>`; the root, *not* ending in `/api`).
-  That host sits behind Cloudflare; an **Access policy** or a tunnel that is down answers with an HTML page, which the client
-  reads as a failed call. Ask for the exact on-screen message and `adb logcat` before guessing.
-- A debug build allows cleartext only to `10.0.2.2`, `localhost` and `127.0.0.1`
-  (`app/src/debug/res/xml/network_security_config.xml`). To use a backend on the owner's PC from a **real phone**:
-  `adb reverse tcp:5000 tcp:5000` and build with `-Pezpz.apiUrl=http://127.0.0.1:5000/`.
-- The native-auth backend (`refresh_tokens.py`, `config_routes.py`, the `X-EZPZ-Client` header, `/api/auth/refresh`) exists
-  **only on this branch**. A server deployed from `develop`/`main` does not have it, so the app's refresh, sessions and
-  `/api/config` calls fail against it. This is the most likely cause; it needs the backend side deployed (**the owner deploys**).
-- Sign-in needs the response to carry `access_ok`, `is_active`, `is_admin`, `features` and `role` on the user; `refreshToken` is
-  optional in the DTO. Google sign-in additionally needs `-Pezpz.googleClientId`, an Android OAuth client for
-  `app.ezpztac.unreleased.debug` + the debug SHA-1 in the same Google Cloud project, and the client ID in the backend's
-  `GOOGLE_CLIENT_IDS`.
-- Offered, not built: a debug-only line on the sign-in screen saying which server the build targets, and a clearer message
-  when the server answers HTML.
+Make an account in the local database (PowerShell; the password must be 15+ characters and not a common one):
+
+```powershell
+cd backend
+.\venv\Scripts\Activate.ps1
+python dev_user.py you@example.com --admin     # asks for the password; --admin is optional
+python app.py                                   # http://127.0.0.1:5000
+```
+
+`dev_user.py` makes the account verified, active and past the `.mil` gate, and signs out anything issued before if it already
+existed. It refuses a non-SQLite `DATABASE_URL` or anything that looks like a deployment (`TRUSTED_PROXY`, `FLY_APP_NAME`,
+`APP_ENV=production`), because it writes a password.
+
+Point the build at it, and **rebuild** (the URL is a `BuildConfig` field, fixed at build time):
+
+| Where the app runs | URL | Also |
+|---|---|---|
+| A real phone on USB | `http://127.0.0.1:5000/` | `adb reverse tcp:5000 tcp:5000` once per connection |
+| The emulator | `http://10.0.2.2:5000/` | nothing |
+
+Pass it as `-Pezpz.apiUrl=<url>` on the command line, or put `ezpz.apiUrl=<url>` in `%USERPROFILE%\.gradle\gradle.properties`
+(what Android Studio's Run button needs), then sync and rebuild. A debug build allows cleartext **only** to `10.0.2.2`,
+`localhost` and `127.0.0.1` (`app/src/debug/res/xml/network_security_config.xml`), so a LAN address will not work: use `adb reverse`.
+
+**A debug build says what it is doing.** The sign-in screen shows `Server: <url>` (so a build that did not pick up `-Pezpz.apiUrl` is
+obvious) and, after a failure, `Last failure: HTTP 401 · invalid_credentials · "Invalid email or password."`, or what the network said
+(`ConnectException: Failed to connect to /127.0.0.1:5000`), or the exception's type. A release build passes nothing and draws nothing
+(`AuthScreensTest` holds both).
+
+Other things that stop a sign-in, in the order they usually bite:
+- **The default server** (`https://prod-ezpz-api.mcfadd.in/`) sits behind Cloudflare; an *Access* policy or a down tunnel answers
+  with HTML, which the client reports as an unreadable answer (`Last failure: HTTP 200 · unreadable_response`, or a 403).
+- **The native-auth backend** (`refresh_tokens.py`, `config_routes.py`, the `X-EZPZ-Client` header, `/api/auth/refresh`) exists **only on this
+  branch**. A server run from `develop`/`main` signs in but sends no refresh token (the session then lapses after 24 h) and has no
+  `/api/config`. Run the backend from this branch locally; a deployed one is **the owner's** to deploy.
+- **Too many attempts** (429) after repeated failures for one address: the screen says so; wait or restart the local backend.
+- **Google sign-in** needs `-Pezpz.googleClientId`, an Android OAuth client for `app.ezpztac.unreleased.debug` + the debug SHA-1 in the
+  same Google Cloud project, and that client ID in the backend's `GOOGLE_CLIENT_IDS`.
 
 ---
 

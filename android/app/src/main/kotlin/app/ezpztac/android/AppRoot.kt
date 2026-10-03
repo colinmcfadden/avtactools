@@ -39,6 +39,9 @@ import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
 
+/** Debug builds say which server they talk to on the sign-in screen (and the last failure there); a release build says nothing. */
+private val DEBUG_SERVER: String? = if (BuildConfig.DEBUG) "Server: ${BuildConfig.API_URL}" else null
+
 /** The app: whichever screen the [Gate] says the person is at. A link from an email outranks everything but a needed update. */
 @Composable
 fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
@@ -63,11 +66,12 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 onRouteChanged = { route ->
                     if (route == link) opened = true else if (opened && route == AuthRoute.SignIn) viewModel.linkHandled()
                 },
+                diagnostics = DEBUG_SERVER,
             )
         }
         else -> when (current) {
             Gate.Starting -> StartingScreen()
-            is Gate.SignedOut -> AuthHost(google = google, notice = signedOutNotice(current.reason, current.code))
+            is Gate.SignedOut -> AuthHost(google = google, notice = signedOutNotice(current.reason, current.code), diagnostics = DEBUG_SERVER)
             is Gate.NeedsAffiliation -> AffiliationHost(
                 signedInAs = current.user.email, pendingMilEmail = current.user.milEmail, onSignOut = viewModel::signOut,
             )
