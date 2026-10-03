@@ -31,3 +31,10 @@ fun PointLayer(host: MapHost, scene: PointScene) {
     val overlay = remember(host) { PointOverlay().also { host.onStyle(it::install) } }
     LaunchedEffect(overlay, scene) { overlay.show(scene) }
 }
+
+/** Draws the visible threats' detection and engagement range rings. Their MIL-STD symbols are [ThreatLabelsLayer]. */
+@Composable
+fun ThreatLayer(host: MapHost, scene: ThreatScene) {
+    val overlay = remember(host) { ThreatOverlay().also { host.onStyle(it::install) } }
+    LaunchedEffect(overlay, scene) { overlay.show(scene) }
+}

@@ -44,6 +44,8 @@ import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.RouteLayer
+import app.ezpztac.map.ThreatLayer
+import app.ezpztac.map.ThreatLabelsLayer
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.workspace.AircraftHost
@@ -54,6 +56,7 @@ import app.ezpztac.workspace.GraphicsHost
 import app.ezpztac.workspace.PointsHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesHost
+import app.ezpztac.workspace.ThreatsHost
 import kotlinx.coroutines.flow.filterNotNull
 
 private val PEEK = 112.dp
@@ -83,6 +86,7 @@ fun MapHome(
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
+    val threatScene by home.threatScene.collectAsStateWithLifecycle()
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
@@ -127,6 +131,7 @@ fun MapHome(
                     )
                     RoutesHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center, crosshairGrid = state.readout?.mgrs)
                     PointsHost()
+                    ThreatsHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center)
                     AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -160,9 +165,11 @@ fun MapHome(
                 DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
                 PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's
                 RouteLayer(host, routeScene)
+                ThreatLayer(host, threatScene)                  // range rings; symbols and names are Compose below
                 GpsLayer(host, state.gps)
                 GraphicLabelsLayer(host, scene.graphics)
                 PinLabelsLayer(host, routeScene, pointScene)
+                ThreatLabelsLayer(host, threatScene)
             }
         }
     }

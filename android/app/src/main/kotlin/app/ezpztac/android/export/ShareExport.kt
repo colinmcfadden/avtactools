@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
 import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.ThsTemplate
 import app.ezpztac.workspace.ExportFile
 import java.io.File
 
@@ -16,6 +17,17 @@ class AssetMissionTemplate(private val context: Context) : MissionTemplate {
 
     private companion object {
         const val ASSET = "msnx_template.msnx"
+    }
+}
+
+/** The backend's cleaned AMPS threat database, bundled once and copied before each export. */
+class AssetThsTemplate(private val context: Context) : ThsTemplate {
+    private val bytes: ByteArray by lazy { context.assets.open(ASSET).use { it.readBytes() } }
+
+    override fun bytes(): ByteArray = bytes
+
+    private companion object {
+        const val ASSET = "threat_template.ths"
     }
 }
 
@@ -52,11 +64,19 @@ object ShareExport {
         context.startActivity(chooser)
     }
 
-    /** A file name with no folder in it, ending `.msnx`, never empty. */
+    /** A file name with no folder in it, preserving a threat `.ths`; every other export is an AMPS mission `.msnx`. */
     internal fun plainName(name: String): String {
         val last = name.substringAfterLast('/').substringAfterLast('\\').trim().trim('.')
-        val stem = last.removeSuffix(".msnx").trim().ifEmpty { "ROUTES" }
-        return "$stem.msnx"
+        val threat = last.endsWith(".ths", ignoreCase = true)
+        val extension = if (threat) ".ths" else ".msnx"
+        val stem = when {
+            threat -> last.dropLast(4)
+            last.endsWith(".msnx", ignoreCase = true) -> last.dropLast(5)
+            else -> last
+        }.trim().ifEmpty {
+            if (threat) "threats" else "ROUTES"
+        }
+        return "$stem$extension"
     }
 
     private const val MIME = "application/octet-stream"

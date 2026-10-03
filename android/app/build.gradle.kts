@@ -64,10 +64,11 @@ dependencies {
     testImplementation(project(":core-testing"))
 }
 
-// The mission an export is built on is the web's own bundled template (frontend/public/msnx_template.msnx), so a mission exported here and on the web start
-// from the same AMPS-authored package. It is copied into the app's assets at build, not committed a second time.
+// AMPS exports start from the repository's real, cleaned templates, so Android and the web/backend preserve the same native package and SQLite schema.
+// They are copied into the app's assets at build, not committed a second time.
 val copyMissionTemplate = tasks.register<Copy>("copyMissionTemplate") {
     from(rootProject.layout.projectDirectory.file("../frontend/public/msnx_template.msnx"))
+    from(rootProject.layout.projectDirectory.file("../backend/threat_template.ths"))
     into(layout.buildDirectory.dir("generated/missionAssets"))
 }
 extensions.getByType(com.android.build.api.variant.ApplicationAndroidComponentsExtension::class.java).onVariants { variant ->

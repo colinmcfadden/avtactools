@@ -83,6 +83,7 @@ class ShareExportTest {
         assertEquals("ROUTES.msnx", ShareExport.plainName("/"))
         assertEquals("A B.msnx", ShareExport.plainName("A B"))                                 // the extension is added when it is missing
         assertEquals("A.msnx", ShareExport.plainName("A.msnx"))                                // and not doubled
+        assertEquals("MISSION 1.ths", ShareExport.plainName("../../MISSION 1.ths"))             // threat files keep their own type
         ShareExport.prepare(context, ExportFile("../../escape.msnx", bytes))
         assertTrue(File(exports(), "escape.msnx").exists())
         assertFalse(File(context.cacheDir.parentFile, "escape.msnx").exists())
@@ -112,5 +113,10 @@ class ShareExportTest {
         val template = AssetMissionTemplate(context).bytes()
         assertNotNull(template)
         assertArrayEquals(Fixtures.repoBytes("frontend/public/msnx_template.msnx"), template)
+    }
+
+    @Test
+    fun `the bundled threat database is the backend's template`() {
+        assertArrayEquals(Fixtures.repoBytes("backend/threat_template.ths"), AssetThsTemplate(context).bytes())
     }
 }

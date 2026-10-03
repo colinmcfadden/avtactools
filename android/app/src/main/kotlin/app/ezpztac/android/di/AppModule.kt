@@ -19,6 +19,7 @@ import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
 import app.ezpztac.android.export.AssetMissionTemplate
+import app.ezpztac.android.export.AssetThsTemplate
 import app.ezpztac.data.ApiClientPlanningApi
 import app.ezpztac.data.ApiClientWeatherApi
 import app.ezpztac.data.WeatherApi
@@ -29,6 +30,7 @@ import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.ThreatVault
 import app.ezpztac.android.WeatherFileCache
 import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.ThsTemplate
 import app.ezpztac.data.ApiClientTerrainApi
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.TerrainApi
@@ -149,6 +151,10 @@ object AppModule {
     @Provides
     @Singleton
     fun missionTemplate(@ApplicationContext context: Context): MissionTemplate = AssetMissionTemplate(context)
+
+    @Provides
+    @Singleton
+    fun thsTemplate(@ApplicationContext context: Context): ThsTemplate = AssetThsTemplate(context)
 
     /** Symbols: the pre-rendered presets first, then milsymbol in the system JavaScript sandbox, which starts when a symbol that needs it is first asked for. */
     @Provides

@@ -322,7 +322,7 @@ The planner keeps its existing terrain source on purpose. Route elevations offli
 
 **Threats on the device**
 
-Threats never reach the server, unchanged. In the app they live in memory. iOS and Android can end a backgrounded app at any time, which would lose a crew's threat picture mid-planning. So they are also held in one encrypted file that is excluded from device backups, wiped on sign-out and after 48 hours, and never leaves the device except by an explicit export. The owner approved this.
+Threats are never synced or persisted server-side. In the app they live in memory. iOS and Android can end a backgrounded app at any time, which would lose a crew's threat picture mid-planning. So they are also held in one encrypted file that is excluded from device backups, wiped on sign-out and 48 hours after the last change. An explicit online viewshed, KMZ or QR action may send the needed threat coordinates to the existing backend transiently; the backend must not retain them. Otherwise they leave the device only by an explicit export. The owner approved this.
 
 **Signing in while offline**
 
@@ -486,7 +486,7 @@ Each feature below names the screens it needs, the web code its logic is ported 
 - **Viewshed:** `/api/threat-mask` online. On device in P3, a port of `viewshed()` in `threat_routes.py` over pack Terrarium tiles at the same zoom rule: radial line of sight, curvature with refraction k = 0.13, the 3 × 3 smoothing and the 3 × 3 observer footprint. Parity: band masks overlap the server's by at least 99% (intersection over union) on fixtures.
 - **`.ths`:** import with platform SQLite (port `parseThs.js`); export by copying the bundled `threat_template.ths` and inserting rows (port `build_ths_bytes`).
 - **KMZ:** the server builds it in P2. In P3 the device does: contour tracing and simplification of the masks into vector polygons (ForeFlight won't render rasters), with range rings and markers. Can be directly exported to foreflight on iOS.
-- **Never synced;** device retention as set out in Offline strategy.
+- **Never synced or persisted server-side;** online viewshed/KMZ/QR processing is transient and user-initiated. Device retention is as set out in Offline strategy.
 
 ### Weather
 
@@ -619,7 +619,7 @@ The apps hold the same posture as the web: unclassified only, no CUI, threats ne
 - **Tokens.** Held in the Keychain and Keystore and never logged. Refresh tokens rotate on use. Sign-out wipes tokens, the threat file and caches.
 - **Lost device.** App-private storage under OS encryption, an optional biometric lock, and remote revoke from the device-sessions list.
 - **Location privacy.** GPS position never leaves the device. There is no third-party SDK with telemetry, and MapLibre has none. Online Mapbox tiles reveal the area being viewed to Mapbox, as the web does today; offline packs avoid it. Pack requests follow the LiDAR rules: coordinates in POST bodies, opaque keys, nothing logged, 7-day expiry.
-- **Threats.** Memory, plus the approved encrypted file: never backed up, wiped on sign-out and after 48 hours. Android sets `FLAG_SECURE` on threat screens so they stay out of the app switcher and screenshots; iOS has no equivalent, so the app blurs its snapshot when backgrounded.
+- **Threats.** Memory, plus the approved encrypted file: never backed up, wiped on sign-out and 48 hours after the last change. Never synced or persisted server-side; explicit online viewshed/KMZ/QR requests are processed transiently. Android sets `FLAG_SECURE` on threat screens so they stay out of the app switcher and screenshots; iOS has no equivalent, so the app blurs its snapshot when backgrounded.
 - **Supply chain.** Gradle dependency verification metadata and a committed `Package.resolved`. Renovate opens update PRs, and every release gets a CycloneDX SBOM.
 
 **Store obligations**

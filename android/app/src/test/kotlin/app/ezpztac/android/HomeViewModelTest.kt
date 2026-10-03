@@ -65,6 +65,10 @@ import app.ezpztac.testing.Fixtures
 import app.ezpztac.data.WeatherApi
 import app.ezpztac.data.WeatherCache
 import app.ezpztac.data.WeatherService
+import app.ezpztac.data.ThreatPicture
+import app.ezpztac.data.ThreatSelection
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
 import app.ezpztac.model.WeatherSnapshot
 import app.ezpztac.network.WeatherReportDto
 import org.junit.After
@@ -140,6 +144,13 @@ class HomeViewModelTest {
         override fun save(views: Map<String, PointSetView>) {}
     }
 
+    private class MemoryThreats : ThreatVault {
+        private var kept: ThreatPicture? = null
+        override fun load() = kept
+        override fun save(picture: ThreatPicture) { kept = picture }
+        override fun wipe() { kept = null }
+    }
+
     private class FakeLastRouteSet(var stored: String? = null) : LastRouteSet {
         override fun id() = stored
 
@@ -173,9 +184,14 @@ class HomeViewModelTest {
         val pointViews = PointSetViews(MemoryViews())
         val localPoints = LocalPoints(pointSets, pointViews)
         val pointSelection = PointSelection()
+        val threats = ThreatStore(MemoryThreats(), scope.backgroundScope)
+        val threatSelection = ThreatSelection()
         val weatherApi = CountingWeather()
         val weather = WeatherService(weatherApi, KeptWeather(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)))
-        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection, weather, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
+        val model = HomeViewModel(
+            session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection,
+            threats, threatSelection, weather, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
+        )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
 
