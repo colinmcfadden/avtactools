@@ -27,6 +27,13 @@ public object Fixtures {
 
     public fun text(name: String): String = File(directory, name).readText()
 
+    /** A file elsewhere in the repository, by its path from the root: the bundled mission template the writer is built from lives with the web app. */
+    public fun repoBytes(relative: String): ByteArray {
+        val file = File(directory.parentFile.parentFile, relative)
+        check(file.isFile) { "$relative is missing at ${file.path}" }
+        return file.readBytes()
+    }
+
     /** A binary fixture, such as a `.msnx` mission file. */
     public fun bytes(name: String): ByteArray {
         val file = File(directory, name)

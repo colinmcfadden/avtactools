@@ -6,5 +6,7 @@ plugins {
 // Android also provides, so everything here runs in plain JVM tests.
 dependencies {
     api(project(":core-model"))
+    // The writer plans the route it exports (the airspeeds, altitudes and clock times AMPS is given are the planner's).
+    api(project(":core-planning"))
     testImplementation(project(":core-testing"))
 }

@@ -44,6 +44,8 @@ tasks.withType<Test>().configureEach {
     // it reports a warning and moves on, so the test counts as present and never executes. Make that a failure.
     systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
     inputs.dir(contractsDir).withPropertyName("contractFixtures")
+    // The mission template the web app bundles is what the `.msnx` writer is built from, and its tests read it from there.
+    inputs.file(rootProject.layout.projectDirectory.file("../frontend/public/msnx_template.msnx")).withPropertyName("missionTemplate").optional()
     testLogging {
         events("failed", "skipped")
         showStandardStreams = false

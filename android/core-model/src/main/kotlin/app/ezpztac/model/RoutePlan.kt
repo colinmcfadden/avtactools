@@ -1,6 +1,8 @@
 package app.ezpztac.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
+import java.time.LocalDateTime
 
 /*
  * Route planning settings and results, in the shape the web saves them
@@ -153,6 +155,11 @@ public data class PlanPoint(
     val clock: String?,
     val hasClock: Boolean,
     val isTotAnchor: Boolean,
+    /**
+     * The same moment with its date (the web's `clockTime`, a `Date`), which an AMPS file records; a route that runs past midnight is on the next day.
+     * Not part of the saved plan or the fixture, which hold only [clock].
+     */
+    @Transient val clockTime: LocalDateTime? = null,
 )
 
 @Serializable

@@ -230,10 +230,12 @@ public object RouteCalc {
 
         val planned = amps.mapIndexed { i, p ->
             var clock: String? = null
+            var clockTime: LocalDateTime? = null
             if (anchorTime != null && cumSec[i] != null && cumSec[anchorIdx] != null) {
                 // JavaScript Dates hold whole milliseconds, and floor the sum.
                 val millis = floor((cumSec[i]!! - cumSec[anchorIdx]!!) * 1000).toLong()
-                clock = formatClock(anchorTime.plusNanos(millis * 1_000_000))
+                clockTime = anchorTime.plusNanos(millis * 1_000_000)
+                clock = formatClock(clockTime)
             }
             // The leg arriving at this point supplies its "to" speed/wind (the first point has none).
             val legTo = if (i > 0) legs[i - 1] else null
@@ -261,6 +263,7 @@ public object RouteCalc {
                 clock = clock,
                 hasClock = !plan.perPoint[p.id]?.clock.isNullOrEmpty(),
                 isTotAnchor = i == anchorIdx,
+                clockTime = clockTime,
             )
         }
 
