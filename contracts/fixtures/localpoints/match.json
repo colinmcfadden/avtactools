@@ -1,0 +1,38 @@
+{
+  "description": "What typing a name on a route point does with the loaded local points.",
+  "generatedBy": "frontend/src/contracts/localPointMatchFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "points": [
+    {"name":"BLUE 1","lat":34.5123,"lon":-84.2231,"elevationFt":1730},
+    {"name":"Farp","lat":34.601,"lon":-84.119,"elevationFt":null},
+    {"name":"SEA","lat":34.7,"lon":-84.3,"elevationFt":0},
+    {"name":"DUP","lat":35,"lon":-84,"elevationFt":100},
+    {"name":"DUP","lat":35.1,"lon":-84.1,"elevationFt":200},
+    {"name":".DOTTED","lat":34.8,"lon":-84.4,"elevationFt":900},
+    {"name":"","lat":34.9,"lon":-84.5,"elevationFt":500},
+    {"name":"STRASSE","lat":36,"lon":-85,"elevationFt":1},
+    {"name":"ISTANBUL","lat":36.1,"lon":-85.1,"elevationFt":2},
+    {"name":"NOELEV","lat":36.2,"lon":-85.2}
+  ],
+  "cases": [
+    {"typed":"BLUE 1","name":"BLUE 1","lat":34.5123,"lon":-84.2231,"chartElevationFt":1730},
+    {"typed":"blue 1","name":"BLUE 1","lat":34.5123,"lon":-84.2231,"chartElevationFt":1730},
+    {"typed":".BLUE 1","name":".BLUE 1","lat":34.5123,"lon":-84.2231,"chartElevationFt":1730},
+    {"typed":".blue 1","name":".BLUE 1","lat":34.5123,"lon":-84.2231,"chartElevationFt":1730},
+    {"typed":"..BLUE 1","name":"..BLUE 1","lat":null,"lon":null,"chartElevationFt":null},
+    {"typed":"BLUE 1 ","name":"BLUE 1 ","lat":null,"lon":null,"chartElevationFt":null},
+    {"typed":" BLUE 1","name":" BLUE 1","lat":null,"lon":null,"chartElevationFt":null},
+    {"typed":"farp","name":"FARP","lat":34.601,"lon":-84.119,"chartElevationFt":null},
+    {"typed":".Farp","name":".FARP","lat":34.601,"lon":-84.119,"chartElevationFt":null},
+    {"typed":"SEA","name":"SEA","lat":34.7,"lon":-84.3,"chartElevationFt":0},
+    {"typed":"DUP","name":"DUP","lat":35.1,"lon":-84.1,"chartElevationFt":200},
+    {"typed":".DOTTED","name":".DOTTED","lat":null,"lon":null,"chartElevationFt":null},
+    {"typed":"DOTTED","name":"DOTTED","lat":null,"lon":null,"chartElevationFt":null},
+    {"typed":"..DOTTED","name":"..DOTTED","lat":34.8,"lon":-84.4,"chartElevationFt":900},
+    {"typed":"","name":"","lat":null,"lon":null,"chartElevationFt":null},
+    {"typed":".","name":".","lat":null,"lon":null,"chartElevationFt":null},
+    {"typed":"NOPE","name":"NOPE","lat":null,"lon":null,"chartElevationFt":null},
+    {"typed":"straße","name":"STRASSE","lat":36,"lon":-85,"chartElevationFt":1},
+    {"typed":"ıstanbul","name":"ISTANBUL","lat":36.1,"lon":-85.1,"chartElevationFt":2},
+    {"typed":"noelev","name":"NOELEV","lat":36.2,"lon":-85.2,"chartElevationFt":null}
+  ]
+}

@@ -7,6 +7,7 @@ import {
   formatDuration,
 } from "./routeCalc";
 import { AIRSPEED_TYPES, FALLBACK_PROFILE } from "../aircraft/aircraftProfiles";
+import { indexLocalPointsByName, matchLocalPointName } from "../localPoints/localPointMatch";
 
 const num = (value, fallback = 0) => {
   const parsed = parseFloat(value);
@@ -70,13 +71,7 @@ const RoutePlanSection = ({
   const [windStatus, setWindStatus] = useState("");
   const datalistId = useId();
 
-  const localByName = useMemo(() => {
-    const map = new Map();
-    for (const lp of localPointNames) {
-      if (lp?.name) map.set(lp.name.toUpperCase(), lp);
-    }
-    return map;
-  }, [localPointNames]);
+  const localByName = useMemo(() => indexLocalPointsByName(localPointNames), [localPointNames]);
 
   const hasElevations = Object.keys(route.elevations || {}).length > 0;
 
@@ -93,15 +88,8 @@ const RoutePlanSection = ({
   };
 
   const handleNameChange = (pointId, raw) => {
-    const name = raw.toUpperCase();
-    const match = localByName.get(name.replace(/^\./, ""));
-    updatePointName(
-      route.id,
-      pointId,
-      name,
-      match ? { lat: match.lat, lon: match.lon } : undefined,
-      match && typeof match.elevationFt === "number" ? match.elevationFt : undefined,
-    );
+    const { name, coords, chartElevationFt } = matchLocalPointName(localByName, raw);
+    updatePointName(route.id, pointId, name, coords, chartElevationFt);
   };
 
   const handleClockClick = (pointId, current) => {
