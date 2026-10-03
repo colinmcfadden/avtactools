@@ -2,6 +2,7 @@ package app.ezpztac.network
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -151,6 +152,31 @@ public data class RouteFull(
     val revision: Int,
     /** A sketch's `{ version: 1, routes: [...] }`; a mission's is a display summary. Opaque here; `core-model` reads it. */
     @SerialName("route_data") val routeData: JsonObject,
+)
+
+/** A saved set of local points without its points. The colour and whether it is shown are not saved: each device keeps its own. */
+@Serializable
+public data class PointSetSummary(
+    val id: Int,
+    val name: String,
+    @SerialName("point_count") val pointCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class PointSetFull(
+    val id: Int,
+    val name: String,
+    @SerialName("point_count") val pointCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** The points as the web keeps them (`{ id, name, description, group, icon, elevationFt, lat, lon }`). Opaque here; `core-model` reads them. */
+    val points: JsonArray,
 )
 
 /** An airframe profile: the admin's master list, or one of the caller's own. */

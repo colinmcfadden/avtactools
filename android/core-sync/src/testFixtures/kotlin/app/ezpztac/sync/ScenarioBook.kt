@@ -1,9 +1,13 @@
 package app.ezpztac.sync
 
 import app.ezpztac.network.SyncChange
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -24,15 +28,30 @@ public fun content(kind: RecordKind, tag: String): JsonObject = when (kind) {
     RecordKind.LZ -> doc("schema" to 2, "note" to tag)
     RecordKind.AIRCRAFT -> doc("designation" to tag, "rotor_diameter_m" to 14.0)
     RecordKind.ROUTE -> doc("version" to 1, "note" to tag)
+    // The server refuses a set with no points and does not look inside them, so the tag is a point's name.
+    RecordKind.POINT_SET -> JsonObject(mapOf("points" to JsonArray(listOf(buildJsonObject { put("id", "p1"); put("name", tag); put("lat", 34.5); put("lon", -84.2) }))))
 }
 
 /** The field of a kind's document the scenarios write their tag into. */
 private fun tagKey(kind: RecordKind) = if (kind == RecordKind.AIRCRAFT) "designation" else "note"
 
-public fun tagOf(kind: RecordKind, record: LocalRecord): String? = (record.data[tagKey(kind)] as? JsonPrimitive)?.contentOrNull
+/**
+ * The tag a scenario wrote into a kind's document, from the document as a device holds it or as the change feed carries it (a point set's
+ * points arrive as a bare list there).
+ */
+public fun tagIn(kind: RecordKind, data: JsonElement?): String? {
+    if (kind == RecordKind.POINT_SET) {
+        val points = (data as? JsonObject)?.get("points") ?: data
+        return (((points as? JsonArray)?.firstOrNull() as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull
+    }
+    return ((data as? JsonObject)?.get(tagKey(kind)) as? JsonPrimitive)?.contentOrNull
+}
 
-public suspend fun Env.live(kind: RecordKind): List<SyncChange> =
-    serverView().filter { it.type == when (kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE -> "route" } && !it.deleted }
+public fun tagOf(kind: RecordKind, record: LocalRecord): String? = tagIn(kind, record.data)
+
+public suspend fun Env.live(kind: RecordKind): List<SyncChange> = serverView().filter {
+    it.type == when (kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE -> "route"; RecordKind.POINT_SET -> "pointset" } && !it.deleted
+}
 
 /** One rule of sync, as a scenario between devices. [perKind] ones run once for each kind of record that syncs. */
 public class Scenario(
@@ -110,7 +129,7 @@ public object ScenarioBook {
             assertEquals(1, a.outbox().size)
             a.sync()
             assertEquals(2, env.live(kind).single().revision)                         // one bump, not three
-            assertEquals("edit 2", (env.live(kind).single().data as JsonObject).let { (it["note"] ?: it["designation"]) as JsonPrimitive }.content)
+            assertEquals("edit 2", tagIn(kind, env.live(kind).single().data))
         },
         Scenario("a record made and deleted before any sync is never sent", perKind = true) { env, kind ->
             val a = env.device("A")
@@ -239,13 +258,16 @@ public object ScenarioBook {
             repeat(3) { a.repository.create(RecordKind.LZ, "LZ $it", content(RecordKind.LZ, "$it")) }
             a.repository.create(RecordKind.AIRCRAFT, "My Hawk", content(RecordKind.AIRCRAFT, "MH-60"))
             a.repository.create(RecordKind.ROUTE, "ROUTES", content(RecordKind.ROUTE, "r"))
+            a.repository.create(RecordKind.POINT_SET, "POINTS", content(RecordKind.POINT_SET, "p"))
             a.sync()
 
             val fresh = env.device("fresh")
-            assertEquals(5, fresh.sync().pulled)
+            assertEquals(6, fresh.sync().pulled)
             assertEquals(listOf("LZ 0", "LZ 1", "LZ 2"), fresh.names(RecordKind.LZ))
             assertEquals(listOf("My Hawk"), fresh.names(RecordKind.AIRCRAFT))
             assertEquals(listOf("ROUTES"), fresh.names(RecordKind.ROUTE))
+            assertEquals(listOf("POINTS"), fresh.names(RecordKind.POINT_SET))
+            assertEquals("p", tagOf(RecordKind.POINT_SET, fresh.repository.records(RecordKind.POINT_SET).single()))     // the bare list the server sends is the document's points again
             assertEquals(0, fresh.sync().pulled)                                       // nothing new
             a.repository.create(RecordKind.LZ, "LZ 3", content(RecordKind.LZ, "3")); a.sync()
             assertEquals(1, fresh.sync().pulled)

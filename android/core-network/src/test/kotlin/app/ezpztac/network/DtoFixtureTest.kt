@@ -39,6 +39,11 @@ class DtoFixtureTest {
         "route: list" to ListSerializer(RouteSummary.serializer()),
         "route: get" to RouteFull.serializer(),
         "route: update" to RouteSummary.serializer(),
+        "pointset: create" to PointSetSummary.serializer(),
+        "pointset: create again with the same identity" to PointSetSummary.serializer(),
+        "pointset: list" to ListSerializer(PointSetSummary.serializer()),
+        "pointset: get" to PointSetFull.serializer(),
+        "pointset: update" to PointSetSummary.serializer(),
         "aircraft: list with no profiles of my own" to ListSerializer(AircraftProfileDto.serializer()),
         "aircraft: create" to AircraftProfileDto.serializer(),
         "aircraft: list" to ListSerializer(AircraftProfileDto.serializer()),
@@ -85,7 +90,7 @@ class DtoFixtureTest {
             .filter { it.status in 200..202 && it.body != null && it.name !in decoders }
             .map { it.name }
             // Bodies that are a status word only, not a record.
-            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "aircraft: delete", "account deletion") }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
     }
 

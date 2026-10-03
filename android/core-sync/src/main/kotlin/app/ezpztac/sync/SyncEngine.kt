@@ -357,7 +357,8 @@ public class SyncEngine(
             // A saved route the web made from an AMPS mission also holds the mission file, which the app does not fetch or send yet: it is left
             // where it is (the cursor still moves past it). Sets of sketched routes sync like any record.
             "route" -> if (change.kind == "mission") return SyncReport() else RecordKind.ROUTE
-            else -> return SyncReport()                                    // point sets: not synced by this engine yet
+            "pointset" -> RecordKind.POINT_SET
+            else -> return SyncReport()                                    // a collection a newer server adds: not ours to read
         }
         val local = record(kind, change.clientUuid)
 
@@ -383,7 +384,8 @@ public class SyncEngine(
             return SyncReport()
         }
 
-        val data = change.data as? JsonObject ?: return SyncReport()
+        // A point set's points arrive as a bare list; every other document is an object already.
+        val data = (if (kind == RecordKind.POINT_SET) pointSetDocument(change.data) else change.data as? JsonObject) ?: return SyncReport()
         when {
             local == null -> put(LocalRecord(kind, change.clientUuid, change.id, change.revision, change.name, data))
             // Changes here that the server has not seen: never overwritten by a pull. The push will find out (409) and keep both.

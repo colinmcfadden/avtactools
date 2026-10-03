@@ -252,6 +252,79 @@ class ApiClientCallsTest {
         }
     }
 
+    // -- Saved point sets -------------------------------------------------------------
+
+    private val points = kotlinx.serialization.json.JsonArray(listOf(buildJsonObject { put("id", "lps-0-ab12cd"); put("name", "BLUE 1"); put("lat", 34.5123); put("lon", -84.2231) }))
+
+    @Test
+    fun `saving a set of points is a JSON body with its identity, and says whether it was new`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("pointset: create") }
+            val first = rig.client.createPointSet("NORTH GA", points, uuid, idempotencyKey = "key-s1")
+            assertTrue(first.created)
+            assertEquals(2, first.value.pointCount)
+            val sent = rig.requests.single()
+            assertEquals("POST", sent.method)
+            assertEquals("/api/pointsets", sent.requestUrl!!.encodedPath)
+            assertEquals("key-s1", sent.getHeader("Idempotency-Key"))
+            val body = ApiClient.JSON.parseToJsonElement(sent.body.readUtf8()) as kotlinx.serialization.json.JsonObject
+            assertEquals(setOf("name", "points", "client_uuid"), body.keys)
+            assertEquals(points, body["points"])
+            assertEquals(uuid, (body["client_uuid"] as kotlinx.serialization.json.JsonPrimitive).content)
+
+            rig.serve { Recorded.mock("pointset: create again with the same identity") }
+            assertFalse(rig.client.createPointSet("NORTH GA", points, uuid).created)           // a repeat of a lost response: 200
+        }
+    }
+
+    @Test
+    fun `an edit of a set of points says which revision it was made on, and sends only what changed`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("pointset: update") }
+            val updated = rig.client.updatePointSet(1, baseRevision = 1, name = "NORTH GA 2", idempotencyKey = "key-s2")
+            assertEquals(2, updated.revision)
+            val sent = rig.requests.single()
+            assertEquals("PUT", sent.method)
+            assertEquals("/api/pointsets/1", sent.requestUrl!!.encodedPath)
+            assertEquals("\"1\"", sent.getHeader("If-Match"))
+            assertEquals(setOf("name"), (ApiClient.JSON.parseToJsonElement(sent.body.readUtf8()) as kotlinx.serialization.json.JsonObject).keys)
+
+            rig.serve { Recorded.mock("pointset: update") }
+            rig.client.updatePointSet(1, baseRevision = null, points = points)
+            val second = rig.requests.last()
+            assertNull(second.getHeader("If-Match"))
+            assertEquals(setOf("points"), (ApiClient.JSON.parseToJsonElement(second.body.readUtf8()) as kotlinx.serialization.json.JsonObject).keys)
+        }
+    }
+
+    @Test
+    fun `a conflict on a set of points carries the server's copy, points and all`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("pointset: update on a stale revision") }
+            val e = assertThrows<RevisionConflictException> { rig.client.updatePointSet(1, baseRevision = 1, name = "mine") }
+            val server = ApiClient.JSON.decodeFromJsonElement(PointSetFull.serializer(), e.server)
+            assertEquals("NORTH GA 2", server.name)
+            assertEquals(2, server.revision)
+            assertEquals(2, server.points.size)
+        }
+    }
+
+    @Test
+    fun `listing, reading and deleting a set of points`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("pointset: list") }
+            assertEquals("NORTH GA", rig.client.listPointSets().single().name)
+            rig.serve { Recorded.mock("pointset: get") }
+            assertEquals(2, rig.client.getPointSet(1).points.size)
+            rig.serve { Recorded.mock("pointset: delete") }
+            rig.client.deletePointSet(1, baseRevision = 2, idempotencyKey = "key-s3")
+            val sent = rig.requests.last()
+            assertEquals("DELETE", sent.method)
+            assertEquals("\"2\"", sent.getHeader("If-Match"))
+            assertEquals("key-s3", sent.getHeader("Idempotency-Key"))
+        }
+    }
+
     // -- Aircraft profiles ------------------------------------------------------------
 
     @Test
@@ -301,9 +374,9 @@ class ApiClientCallsTest {
             val sent = rig.requests.single()
             assertEquals("0", sent.requestUrl!!.queryParameter("since"))
             assertEquals("50", sent.requestUrl!!.queryParameter("limit"))
-            assertEquals(listOf("lz", "route", "aircraft", "lz"), feed.changes.map { it.type })
-            assertEquals(listOf(false, false, false, true), feed.changes.map { it.deleted })
-            assertEquals(8, feed.cursor)
+            assertEquals(listOf("lz", "route", "pointset", "aircraft", "lz"), feed.changes.map { it.type })
+            assertEquals(listOf(false, false, false, false, true), feed.changes.map { it.deleted })
+            assertEquals(10, feed.cursor)
             assertFalse(feed.hasMore)
             assertEquals(JsonObject(emptyMap()), feed.changes.last().data)
             // A route set arrives with its kind and its routes, so a device can read it without asking again.
@@ -311,6 +384,9 @@ class ApiClientCallsTest {
             assertEquals("sketch", route.kind)
             assertEquals(false, route.hasFile)
             assertEquals(1, (route.data as kotlinx.serialization.json.JsonObject).getValue("routes").let { (it as kotlinx.serialization.json.JsonArray).size })
+            // A point set's points arrive as a bare list, not an object like every other document.
+            val set = feed.changes.single { it.type == "pointset" }
+            assertEquals(2, (set.data as kotlinx.serialization.json.JsonArray).size)
 
             rig.serve { Recorded.mock("sync: nothing new") }
             assertEquals(999, rig.client.changes(since = 999).cursor)

@@ -2,9 +2,12 @@ package app.ezpztac.sync
 
 import kotlinx.serialization.json.JsonObject
 
-/** What is synced. Routes and point sets join when their API is typed. */
-/** The kinds of saved record that sync. A [ROUTE] record is a *set* of sketched routes under one name (the server's `kind: sketch` saved route). */
-public enum class RecordKind { LZ, AIRCRAFT, ROUTE }
+/**
+ * The kinds of saved record that sync. A [ROUTE] record is a *set* of sketched routes under one name (the server's `kind: sketch` saved route). A
+ * [POINT_SET] record is the points of one `.LPS` import; its document is `{"points": [...]}`, the server's list of points in an object so it is held
+ * like every other record's document.
+ */
+public enum class RecordKind { LZ, AIRCRAFT, ROUTE, POINT_SET }
 
 /**
  * One saved record on this device. Its identity is [uuid], chosen here when it is made (so it has one before the

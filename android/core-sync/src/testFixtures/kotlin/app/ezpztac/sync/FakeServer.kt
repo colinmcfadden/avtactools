@@ -5,6 +5,7 @@ import app.ezpztac.network.ChangeFeed
 import app.ezpztac.network.NetworkException
 import app.ezpztac.network.RevisionConflictException
 import app.ezpztac.network.SyncChange
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -51,7 +52,7 @@ public class FakeServer : SyncApi {
     /** Rewrites the changes the feed returns, for tests that need it to say something out of date. */
     var feedTransform: ((List<SyncChange>) -> List<SyncChange>)? = null
 
-    /** Changes of a kind this engine does not handle (routes, point sets), placed in the feed's order. */
+    /** Changes of a kind this engine does not handle (a mission route, a collection a newer server adds), placed in the feed's order. */
     private val foreign = mutableListOf<SyncChange>()
 
     fun addForeignChange(type: String, kind: String? = null) {
@@ -77,6 +78,8 @@ public class FakeServer : SyncApi {
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision)))
         RecordKind.ROUTE -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "kind" to JsonPrimitive("sketch"),
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data))
+        RecordKind.POINT_SET -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
+            "revision" to JsonPrimitive(r.revision), "points" to (r.data["points"] ?: JsonArray(emptyList()))))
     }
 
     private fun conflict(r: Rec) = RevisionConflictException("The record changed on the server. Nothing was overwritten.", snapshot(r))
@@ -120,16 +123,23 @@ public class FakeServer : SyncApi {
         failAll?.let { throw it }
         val ours = records.filter { it.seq > since }.map {
             SyncChange(
-                type = when (it.kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE -> "route" },
+                type = when (it.kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE -> "route"; RecordKind.POINT_SET -> "pointset" },
                 id = it.serverId, clientUuid = it.uuid, revision = it.revision, deleted = it.deleted, name = it.name,
                 kind = if (it.kind == RecordKind.ROUTE) "sketch" else null,
-                // The feed carries an LZ's diagram and a route's routes as they are, and a profile as the whole record.
-                seq = it.seq, data = if (it.deleted) JsonObject(emptyMap()) else (if (it.kind == RecordKind.AIRCRAFT) snapshot(it) else it.data) as JsonElement,
+                // The feed carries an LZ's diagram and a route's routes as they are, a profile as the whole record, and a point set's points as a bare list.
+                seq = it.seq, data = feedData(it),
             )
         }
         val after = (ours + foreign.filter { it.seq > since }).sortedBy { it.seq }
         val page = after.take(pageSize)
         return ChangeFeed(cursor = page.lastOrNull()?.seq ?: since, hasMore = after.size > page.size, changes = feedTransform?.invoke(page) ?: page)
+    }
+
+    private fun feedData(r: Rec): JsonElement = when {
+        r.kind == RecordKind.POINT_SET -> if (r.deleted) JsonArray(emptyList()) else r.data["points"] ?: JsonArray(emptyList())
+        r.deleted -> JsonObject(emptyMap())
+        r.kind == RecordKind.AIRCRAFT -> snapshot(r)
+        else -> r.data
     }
 
     override fun copyFromConflict(kind: RecordKind, server: JsonObject): ServerCopy? = serverCopyOf(kind, server)

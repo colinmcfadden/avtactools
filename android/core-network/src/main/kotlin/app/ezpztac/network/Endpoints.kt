@@ -227,6 +227,67 @@ public suspend fun ApiClient.deleteRoute(id: Int, baseRevision: Int? = null, ide
     )
 }
 
+// -- Saved point sets -------------------------------------------------------------
+//
+// A saved point set is the points of one `.LPS` import under a name. The server takes JSON, never looks inside the points, and refuses a set with
+// none: a set with no points is deleted, not saved.
+
+public suspend fun ApiClient.listPointSets(): List<PointSetSummary> =
+    decode(execute(ApiClient.Call("GET", "/api/pointsets")))
+
+public suspend fun ApiClient.getPointSet(id: Int): PointSetFull =
+    decode(execute(ApiClient.Call("GET", "/api/pointsets/$id")))
+
+/**
+ * Saves a new set of points. Pass the [clientUuid] the device chose and a retry after a lost response returns the first
+ * record ([Saved.created] false) instead of making a second.
+ */
+public suspend fun ApiClient.createPointSet(
+    name: String,
+    points: JsonArray,
+    clientUuid: String,
+    idempotencyKey: String = newKey(),
+): Saved<PointSetSummary> {
+    val response = execute(
+        ApiClient.Call(
+            "POST", "/api/pointsets",
+            body = buildJsonObject { put("name", name); put("points", points); put("client_uuid", clientUuid) },
+            headers = mapOf("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+    return Saved(decode(response), created = response.status == 201)
+}
+
+/**
+ * Edits a saved set on top of [baseRevision], the revision the edit was made against. Only what is given is sent and changed (an empty list of points
+ * is ignored by the server). If the server has moved on, nothing is overwritten and [RevisionConflictException] carries the server's copy.
+ */
+public suspend fun ApiClient.updatePointSet(
+    id: Int,
+    baseRevision: Int?,
+    name: String? = null,
+    points: JsonArray? = null,
+    idempotencyKey: String = newKey(),
+): PointSetSummary = decode(
+    execute(
+        ApiClient.Call(
+            "PUT", "/api/pointsets/$id",
+            body = buildJsonObject { if (name != null) put("name", name); if (points != null) put("points", points) },
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    ),
+)
+
+/** Deletes a saved set. The server keeps a tombstone (and drops the points) so other devices learn of it. Deleting twice is not an error. */
+public suspend fun ApiClient.deletePointSet(id: Int, baseRevision: Int? = null, idempotencyKey: String = newKey()) {
+    execute(
+        ApiClient.Call(
+            "DELETE", "/api/pointsets/$id",
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+}
+
 // -- Aircraft profiles ------------------------------------------------------------
 
 /** The master list, then the caller's own profiles. */

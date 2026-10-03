@@ -433,7 +433,7 @@ internal class SyncFailureTest {
     @Test
     fun `a change of a kind this engine does not handle is passed over, and the cursor still moves`() = rig {
         server.addForeignChange("route", kind = "mission")                           // a mission the web imported: it carries a file this engine does not fetch
-        server.addForeignChange("pointset")
+        server.addForeignChange("a-collection-from-a-newer-server")                  // not ours to read
         server.createElsewhere(kind, "web-1", "LZ", lz("x"))
         val report = b.sync()
         assertEquals(listOf("LZ"), b.names(kind))
@@ -448,6 +448,28 @@ internal class SyncFailureTest {
         b.sync()
         assertEquals(listOf("ROUTES"), b.names(RecordKind.ROUTE))
         assertEquals(JsonPrimitive(1), b.record(RecordKind.ROUTE, "web-r1")!!.data["version"])
+    }
+
+    @Test
+    fun `a point set made on the web arrives as a bare list of points and is held as a document`() = rig {
+        val points = JsonArray(listOf(JsonObject(mapOf("id" to JsonPrimitive("lps-0"), "name" to JsonPrimitive("BLUE 1"), "lat" to JsonPrimitive(34.5), "lon" to JsonPrimitive(-84.2),
+            "aFieldFromANewerRelease" to JsonPrimitive(true)))))
+        server.createElsewhere(RecordKind.POINT_SET, "web-p1", "NORTH GA", JsonObject(mapOf("points" to points)))
+        b.sync()
+        assertEquals(listOf("NORTH GA"), b.names(RecordKind.POINT_SET))
+        assertEquals(points, b.record(RecordKind.POINT_SET, "web-p1")!!.data["points"])               // what the web wrote is kept as it was
+    }
+
+    @Test
+    fun `an edited point set goes up as its list of points, and what a newer release added to a point goes with it`() = rig {
+        val points = JsonArray(listOf(JsonObject(mapOf("id" to JsonPrimitive("p1"), "name" to JsonPrimitive("A"), "extra" to JsonPrimitive(1)))))
+        val made = a.repository.create(RecordKind.POINT_SET, "SET", JsonObject(mapOf("points" to points)))
+        a.sync()
+        assertEquals(points, server.live(RecordKind.POINT_SET).single().data["points"])
+        a.repository.edit(RecordKind.POINT_SET, made.uuid, name = "SET 2")
+        a.sync()
+        assertEquals("SET 2", server.live(RecordKind.POINT_SET).single().name)
+        assertEquals(points, server.live(RecordKind.POINT_SET).single().data["points"])
     }
 
     @Test
