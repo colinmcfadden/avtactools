@@ -20,6 +20,7 @@ android/
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
 ├─ core-data/       Room database and the SyncStore on it (schemas in core-data/schemas, committed)
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
+├─ core-symbols/    MIL-STD-2525C symbols as bitmaps: pre-rendered presets, milsymbol in the system JS sandbox, AndroidSVG
 ├─ feature-map/     the 2D map: MapLibre, base maps, crosshair readout, search, GPS, the diagram and its planning graphics
 ├─ feature-auth/    sign-in, sign-up, verify, reset and the .mil gate: screens and their view models
 ├─ feature-workspace/ the Diagrams tab: list, make from a target, open, rename, delete, settle a conflict, analyze, and the planning graphics
@@ -27,7 +28,7 @@ android/
 └─ build-logic/     the convention plugins every module uses
 ```
 
-Not here yet: `core-symbols`, `core-packs`, and the other `feature-*` modules (routes, threats, weather, exports, 3D).
+Not here yet: `core-packs`, and the other `feature-*` modules (routes, threats, weather, exports, 3D).
 
 Every module is tested against the golden fixtures in [`../contracts`](../contracts/README.md),
 the same files the web app's tests read, so the app cannot quietly disagree with

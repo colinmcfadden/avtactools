@@ -37,9 +37,22 @@ data class MapLabel(val text: String, val at: ScreenPoint, val violating: Boolea
 /** A doghouse and where its middle is on the screen. */
 data class PlacedDoghouse(val box: SceneDoghouse, val at: ScreenPoint)
 
+/** A unit and where its position is on the screen (the symbol's own anchor goes there). */
+data class PlacedUnit(val unit: SceneUnit, val at: ScreenPoint)
+
 object MapLabels {
     /** A doghouse is about 60 by 90 dp: it is kept while any of it may be on the screen. */
     private const val DOGHOUSE_MARGIN_PX = 160.0
+
+    /** A unit's symbol and labels reach some way from its position (a designation is drawn beside it). */
+    private const val UNIT_MARGIN_PX = 200.0
+
+    /** The units whose symbol may be on the screen, each with its position there. */
+    fun units(graphics: GraphicsScene, view: MapProjection): List<PlacedUnit> = graphics.units.mapNotNull { unit ->
+        val at = view.toScreen(unit.at)
+        if (at.x < -UNIT_MARGIN_PX || at.x > view.widthPx + UNIT_MARGIN_PX || at.y < -UNIT_MARGIN_PX || at.y > view.heightPx + UNIT_MARGIN_PX) null
+        else PlacedUnit(unit, at)
+    }
 
     /** The doghouses whose box may be on the screen, each with the place of its middle. */
     fun doghouses(graphics: GraphicsScene, view: MapProjection): List<PlacedDoghouse> = graphics.doghouses.mapNotNull { box ->
@@ -66,15 +79,16 @@ object MapLabels {
     }
 }
 
-/** Draws what is written over the map: the feet between aircraft, and the doghouse boxes. It takes no touches: what is under one is still tapped. */
+/** Draws what is written over the map: units' symbols, the doghouse boxes and the feet between aircraft. It takes no touches: what is under one is still tapped. */
 @Composable
 fun GraphicLabelsLayer(host: MapHost, graphics: GraphicsScene, modifier: Modifier = Modifier) {
     val camera = host.camera
     val density = LocalDensity.current.density.toDouble()
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
-        if (camera == null || size == IntSize.Zero || (graphics.separations.isEmpty() && graphics.doghouses.isEmpty())) return@Box
+        if (camera == null || size == IntSize.Zero || (graphics.separations.isEmpty() && graphics.doghouses.isEmpty() && graphics.units.isEmpty())) return@Box
         val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density, host.bottomPaddingPx.toDouble())
+        MapLabels.units(graphics, view).forEach { placed -> UnitMarker(placed) }
         MapLabels.doghouses(graphics, view).forEach { placed -> PlacedDoghouse(placed, camera.bearingDegrees) }
         MapLabels.separations(graphics, view).forEach { label -> SeparationBadge(label) }
     }

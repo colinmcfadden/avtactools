@@ -12,6 +12,7 @@ import app.ezpztac.planning.PlanningGraphics
 import app.ezpztac.planning.RouteCalc
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
@@ -66,6 +67,19 @@ data class SceneDoghouse(
 )
 
 /**
+ * A unit: a MIL-STD-2525C symbol with the labels round it, standing at [at]. [sidc] is null for an older unit that was an image rather than a
+ * symbol, which is drawn as a plain marker.
+ */
+data class SceneUnit(
+    val ref: GraphicRef,
+    val at: LatLon,
+    val sidc: String?,
+    val uniqueDesignation: String,
+    val higherFormation: String,
+    val selected: Boolean,
+)
+
+/**
  * What is drawn for a diagram's planning graphics, as plain data (see [LzScene]). Aircraft are drawn to scale, separation lines run between
  * rotor tips, and an aircraft that is too close to another is red. The aircraft are measured as the web measures them (each by its own
  * profile), so what is drawn is what the alerts say.
@@ -77,13 +91,14 @@ data class GraphicsScene(
     val sectors: List<SceneSector> = emptyList(),
     val goArounds: List<SceneGoAround> = emptyList(),
     val doghouses: List<SceneDoghouse> = emptyList(),
+    val units: List<SceneUnit> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = aircraft.isEmpty() && pzMarkers.isEmpty() && sectors.isEmpty() && goArounds.isEmpty() && doghouses.isEmpty()
+    val isEmpty: Boolean get() = aircraft.isEmpty() && pzMarkers.isEmpty() && sectors.isEmpty() && goArounds.isEmpty() && doghouses.isEmpty() && units.isEmpty()
 
     /** The graphic that is selected, as a position the selection halo sits on. Null when nothing is selected. */
     val selectedAt: LatLon?
         get() = aircraft.firstOrNull { it.selected }?.at ?: pzMarkers.firstOrNull { it.selected }?.anchor
-            ?: goArounds.firstOrNull { it.selected }?.at ?: doghouses.firstOrNull { it.selected }?.at
+            ?: goArounds.firstOrNull { it.selected }?.at ?: doghouses.firstOrNull { it.selected }?.at ?: units.firstOrNull { it.selected }?.at
             ?: sectors.firstOrNull { it.selected }?.ring?.let(::centroid)
 
     private fun centroid(ring: List<LatLon>) = LatLon(ring.sumOf { it.lat } / ring.size, ring.sumOf { it.lon } / ring.size)
@@ -165,8 +180,20 @@ data class GraphicsScene(
                     distanceKm = shown.distanceText, airspeedKts = shown.airspeedText, selected = ref == selected,
                 )
             }
-            return GraphicsScene(aircraft, separations, pz, sectors, goArounds, doghouses)
+            val units = g.units.mapNotNull { saved ->
+                val o = saved as? JsonObject ?: return@mapNotNull null
+                val at = LatLon(number(o["lat"]) ?: return@mapNotNull null, number(o["lon"]) ?: return@mapNotNull null)
+                val ref = GraphicRef("units", DiagramOps.idText(o["id"]))
+                SceneUnit(
+                    ref = ref, at = at, sidc = (o["sidc"] as? JsonPrimitive)?.takeIf { it.isString && it.content.isNotEmpty() }?.content,
+                    uniqueDesignation = text(o["uniqueDesignation"]), higherFormation = text(o["higherFormation"]), selected = ref == selected,
+                )
+            }
+            return GraphicsScene(aircraft, separations, pz, sectors, goArounds, doghouses, units)
         }
+
+        /** A label as written, as text (a designation of 5 is "5"); nothing for null or absent. */
+        private fun text(value: JsonElement?): String = (value as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content.orEmpty()
 
         private fun number(value: JsonElement?): Double? = (value as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() }
 

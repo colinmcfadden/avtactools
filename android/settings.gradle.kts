@@ -54,6 +54,9 @@ include(":core-sync")
 include(":core-designsystem")
 include(":core-data")
 
+// MIL-STD-2525C symbols: pre-rendered presets, and milsymbol in the system JavaScript sandbox for the rest, drawn to bitmaps.
+include(":core-symbols")
+
 // One module per screen family; features never depend on each other, `app` wires them (docs/NATIVE_APPS_PLAN.md).
 include(":feature-auth")
 include(":feature-map")

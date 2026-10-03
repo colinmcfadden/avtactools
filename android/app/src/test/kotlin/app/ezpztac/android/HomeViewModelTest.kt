@@ -20,6 +20,8 @@ import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
+import app.ezpztac.symbols.SymbolOutcome
+import app.ezpztac.symbols.SymbolRenderer
 import app.ezpztac.sync.InMemorySyncStore
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.RecordingScheduler
@@ -91,7 +93,7 @@ class HomeViewModelTest {
         // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and a slope being measured is work a test waits for.
         val analysis = AnalysisService(server, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
         val selection = GraphicSelection()
-        val model = HomeViewModel(session, analysis, selection)
+        val model = HomeViewModel(session, analysis, selection, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
         val seen = mutableListOf<OpenedDiagram>()
 
         init {

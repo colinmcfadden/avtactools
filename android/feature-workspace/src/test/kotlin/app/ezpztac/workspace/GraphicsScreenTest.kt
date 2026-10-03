@@ -21,6 +21,13 @@ import androidx.compose.ui.semantics.getOrNull
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.GraphicRef
+import app.ezpztac.model.UnitDraft
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.test.core.app.ApplicationProvider
+import app.ezpztac.symbols.DefaultSymbolRenderer
+import app.ezpztac.symbols.LocalSymbolRenderer
+import app.ezpztac.symbols.PresetSymbols
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -53,6 +60,8 @@ class GraphicsScreenTest {
             changeReach = { log += "reach $it" },
             tipToCrosshair = { log += "tip" },
             setDirection = { log += "direction $it" },
+            addUnit = { log += "add unit ${it.sidc} [${it.uniqueDesignation}] [${it.higherFormation}]" },
+            updateUnit = { log += "update unit ${it.sidc} [${it.uniqueDesignation}] [${it.higherFormation}]" },
             setDoghouseLabel = { log += "label [$it]"; problem(it) },
             setDoghouseTime = { log += "time [$it]"; problem(it) },
             setDoghouseDistance = { log += "distance [$it]"; problem(it) },
@@ -399,6 +408,107 @@ class GraphicsScreenTest {
         show(doghouseHeld())
         compose.onNodeWithText("Set time").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Set label").performScrollTo().assertIsNotEnabled()
+    }
+
+    // -- Units -----------------------------------------------------------------------------------------------------------
+
+    private val unitRef = GraphicRef("units", "unit-1")
+
+    private fun unitHeld(draft: UnitDraft = UnitDraft("H", "UCA---", "-", "A/1-171", "")) = editable(
+        row(unitRef, GraphicKind.UNIT, "Unit · A/1-171", "Hostile · Armor", selected = true),
+        inspector = held(unitRef, GraphicKind.UNIT, "Unit · A/1-171").copy(unit = draft),
+    )
+
+    @Test
+    fun `a unit is made in the builder, which a button opens, and is added with what was chosen`() {
+        val r = show(editable())
+        compose.onNodeWithText("New unit").assertDoesNotExist()
+        tapDescribed("Make a unit to place at the crosshair")
+        compose.onNodeWithText("New unit").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("SIDC SFGPUCI--------").performScrollTo().assertIsDisplayed()          // friendly infantry, as the web starts
+
+        tap("Hostile")
+        tapDescribed("Function: Infantry")
+        compose.onNodeWithText("Armor").performScrollTo().performClick()
+        tapDescribed("Echelon: —")
+        compose.onNodeWithText("Platoon").performScrollTo().performClick()
+        compose.onNode(hasSetTextAction() and hasText("Designation")).performScrollTo().performTextInput("A/1-171")
+        compose.onNode(hasSetTextAction() and hasText("Higher formation")).performScrollTo().performTextInput("2-101")
+        compose.onNodeWithText("SIDC SHGPUCA---D----").performScrollTo().assertIsDisplayed()
+        tap("Add at the crosshair")
+        assertEquals(listOf("add unit SHGPUCA---D---- [A/1-171] [2-101]"), r.log)
+        compose.onNodeWithText("New unit").assertDoesNotExist()                                        // the builder closes once it has added
+    }
+
+    @Test
+    fun `the builder can be cancelled, and the button opens and closes it`() {
+        val r = show(editable())
+        tapDescribed("Make a unit to place at the crosshair")
+        tap("Cancel")
+        compose.onNodeWithText("New unit").assertDoesNotExist()
+        tapDescribed("Make a unit to place at the crosshair")
+        compose.onNodeWithText("New unit").performScrollTo().assertIsDisplayed()
+        tapDescribed("Make a unit to place at the crosshair")
+        compose.onNodeWithText("New unit").assertDoesNotExist()
+        assertEquals(emptyList<String>(), r.log)
+    }
+
+    @Test
+    fun `the chosen affiliation says it is chosen`() {
+        show(editable())
+        tapDescribed("Make a unit to place at the crosshair")
+        compose.onNodeWithContentDescription("Friendly, chosen").performScrollTo().assertIsDisplayed()
+        tap("Neutral")
+        compose.onNodeWithContentDescription("Neutral, chosen").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `the held unit is in the builder, and Apply is there only once something differs`() {
+        val r = show(unitHeld())
+        compose.onNodeWithText("SIDC SHGPUCA--------").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Apply").performScrollTo().assertIsNotEnabled()
+        compose.onNode(hasSetTextAction() and hasText("Designation")).performScrollTo().performTextInput("9")
+        compose.onNodeWithText("Apply").performScrollTo().assertIsEnabled()
+        tap("Apply")
+        assertEquals(listOf("update unit SHGPUCA-------- [9A/1-171] []"), r.log)                      // typed in at the start, where the cursor was
+    }
+
+    @Test
+    fun `a function the builder has no name for is shown as it is`() {
+        show(unitHeld(UnitDraft(functionId = "UXXXXX")))
+        compose.onNodeWithContentDescription("Function: Other (UXXXXX)").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `without a JavaScript engine the preview says so, and the unit can still be added`() {
+        val r = show(editable())
+        tapDescribed("Make a unit to place at the crosshair")
+        compose.waitForIdle()
+        compose.onNodeWithText("The preview needs this device's JavaScript engine", substring = true).performScrollTo().assertIsDisplayed()
+        tap("Add at the crosshair")
+        assertEquals(1, r.log.size)
+    }
+
+    @Test
+    fun `with a renderer the preview is the symbol`() {
+        val renderer = DefaultSymbolRenderer(listOf(PresetSymbols(ApplicationProvider.getApplicationContext<android.content.Context>().assets)))
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                CompositionLocalProvider(LocalSymbolRenderer provides renderer) {
+                    Box(Modifier.verticalScroll(rememberScrollState())) { GraphicsContent(editable(), "16S GD 66993 52949", GraphicsActions()) }
+                }
+            }
+        }
+        tapDescribed("Make a unit to place at the crosshair")
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Symbol preview").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `a unit is listed with what it is, and is not offered a heading`() {
+        show(unitHeld())
+        compose.onNodeWithText("Heading", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Hostile · Armor", substring = true).assertIsDisplayed()
     }
 }
 

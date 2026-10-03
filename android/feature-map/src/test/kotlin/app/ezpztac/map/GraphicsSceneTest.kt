@@ -307,4 +307,48 @@ class GraphicsSceneTest {
         assertTrue(held.doghouses.single().selected)
         assertNull(sceneOf(graphics).selectedAt)
     }
+
+
+    // -- Units -----------------------------------------------------------------------------------------------------------
+
+    private fun unit(id: String, lat: Double, lon: Double, sidc: String? = "SFGPUCI--------", designation: String? = null, higher: String? = null) =
+        obj("id" to id, "sidc" to sidc, "uniqueDesignation" to designation, "higherFormation" to higher, "lat" to lat, "lon" to lon)
+
+    @Test
+    fun `a unit is a symbol with its labels at its position`() {
+        val scene = sceneOf(DiagramGraphics(units = listOf(unit("u1", 34.5, -84.1, "SHGPUCI--------", "A/1-171", "2-101"))))
+        val u = scene.units.single()
+        assertEquals(GraphicRef("units", "u1"), u.ref)
+        assertEquals(LatLon(34.5, -84.1), u.at)
+        assertEquals("SHGPUCI--------", u.sidc)
+        assertEquals("A/1-171", u.uniqueDesignation)
+        assertEquals("2-101", u.higherFormation)
+        assertFalse(scene.isEmpty)
+    }
+
+    @Test
+    fun `a unit with no labels has blank ones, and an older image unit has no symbol`() {
+        val scene = sceneOf(DiagramGraphics(units = listOf(unit("u1", 34.5, -84.1), obj("id" to "old", "path" to "/units/tank.svg", "lat" to 34.5, "lon" to -84.1), unit("u3", 1.0, 2.0, sidc = ""))))
+        assertEquals("", scene.units[0].uniqueDesignation)
+        assertEquals("", scene.units[0].higherFormation)
+        assertNull(scene.units[1].sidc)
+        assertNull(scene.units[2].sidc)                                                     // an empty code is no code
+    }
+
+    @Test
+    fun `a label that is not text is drawn as the text it is`() {
+        val u = sceneOf(DiagramGraphics(units = listOf(obj("id" to "u", "sidc" to "SFGPUCI--------", "uniqueDesignation" to 5, "higherFormation" to null, "lat" to 34.5, "lon" to -84.1)))).units.single()
+        assertEquals("5", u.uniqueDesignation)
+        assertEquals("", u.higherFormation)
+    }
+
+    @Test
+    fun `a unit with no position is not drawn, and the held one has the halo`() {
+        val graphics = DiagramGraphics(units = listOf(obj("id" to "x", "sidc" to "SFGPUCI--------"), unit("u2", 34.5, -84.1)))
+        assertEquals(1, sceneOf(graphics).units.size)
+        val held = sceneOf(graphics, GraphicRef("units", "u2"))
+        assertEquals(LatLon(34.5, -84.1), held.selectedAt)
+        assertTrue(held.units.single().selected)
+        assertNull(sceneOf(graphics).selectedAt)
+    }
 }

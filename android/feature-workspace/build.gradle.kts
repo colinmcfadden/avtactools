@@ -15,6 +15,7 @@ dependencies {
     api(project(":core-data"))
     api(project(":core-geo"))
     implementation(project(":core-planning"))
+    implementation(project(":core-symbols"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.hilt.navigation.compose)

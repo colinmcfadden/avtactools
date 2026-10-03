@@ -117,4 +117,23 @@ class MapLabelsTest {
     fun `doghouses are placed for the view above the sheet`() {
         assertEquals(800.0, MapLabels.doghouses(GraphicsScene(doghouses = listOf(box("a", here))), view(inset = 400.0)).single().at.y, 0.5)
     }
+// -- Units -----------------------------------------------------------------------------------------------------
+
+    private fun unit(id: String, at: LatLon) = SceneUnit(GraphicRef("units", id), at, "SFGPUCI--------", "A/1-171", "", false)
+
+    @Test
+    fun `a unit is placed at its position, and kept while any of its symbol may show`() {
+        val v = view()
+        val placed = MapLabels.units(GraphicsScene(units = listOf(unit("a", here))), v).single()
+        assertEquals(500.0, placed.at.x, 0.5)
+        assertEquals(1000.0, placed.at.y, 0.5)
+        fun at(x: Double, y: Double) = GraphicsScene(units = listOf(unit("a", v.toLatLon(x, y))))
+        for ((x, y) in listOf(-180.0 to 800.0, 1180.0 to 800.0, 500.0 to -180.0, 500.0 to 2180.0)) assertEquals("kept at ($x, $y)", 1, MapLabels.units(at(x, y), v).size)
+        for ((x, y) in listOf(-260.0 to 800.0, 1260.0 to 800.0, 500.0 to -260.0, 500.0 to 2260.0)) assertTrue("dropped at ($x, $y)", MapLabels.units(at(x, y), v).isEmpty())
+    }
+
+    @Test
+    fun `units are placed for the view above the sheet`() {
+        assertEquals(800.0, MapLabels.units(GraphicsScene(units = listOf(unit("a", here))), view(inset = 400.0)).single().at.y, 0.5)
+    }
 }

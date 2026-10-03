@@ -41,6 +41,7 @@ dependencies {
     implementation(project(":core-designsystem"))
     implementation(project(":core-network"))
     implementation(project(":core-data"))
+    implementation(project(":core-symbols"))
     implementation(project(":feature-auth"))
     implementation(project(":feature-map"))
     implementation(project(":feature-workspace"))

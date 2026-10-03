@@ -13,6 +13,7 @@ import app.ezpztac.map.SlopeImage
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
+import app.ezpztac.symbols.SymbolRenderer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
@@ -40,6 +41,8 @@ class HomeViewModel @Inject constructor(
     private val session: DiagramSession,
     private val analysis: AnalysisService,
     private val selection: GraphicSelection,
+    /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
+    val symbols: SymbolRenderer,
 ) : ViewModel() {
     private val _opened = MutableSharedFlow<OpenedDiagram>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 

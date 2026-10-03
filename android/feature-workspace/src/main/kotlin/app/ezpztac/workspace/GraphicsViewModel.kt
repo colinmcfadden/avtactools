@@ -13,6 +13,8 @@ import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.Doghouses
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.UnitDraft
+import app.ezpztac.model.UnitMarkers
 import app.ezpztac.model.Units
 import app.ezpztac.planning.AircraftLookup
 import app.ezpztac.planning.GraphicEdits
@@ -37,7 +39,10 @@ enum class GraphicKind(val collection: String, val label: String, val placeable:
     GO_AROUND("goArounds", "Go-around"),
 
     /** The two standard doghouses (SP and RP) are made once, by the first analysis; the web has no way to add more, so neither does this. */
-    DOGHOUSE("doghouses", "Doghouse", placeable = false);
+    DOGHOUSE("doghouses", "Doghouse", placeable = false),
+
+    /** A unit is made in the unit builder, which says what symbol it is, so it is added by [GraphicsViewModel.addUnit] and not by a button of its own. */
+    UNIT("units", "Unit", placeable = false);
 
     companion object {
         fun of(collection: String): GraphicKind? = entries.firstOrNull { it.collection == collection }
@@ -74,6 +79,8 @@ data class InspectorUi(
     val direction: String?,
     /** What a doghouse says besides its heading. */
     val doghouse: DoghouseUi? = null,
+    /** The held unit as the unit builder shows it, and null for anything else. */
+    val unit: UnitDraft? = null,
 )
 
 data class GraphicsUiState(
@@ -125,13 +132,30 @@ class GraphicsViewModel @Inject constructor(
             GraphicKind.PZ_MARKER -> PlanningGraphics.createPzMarker(at.lat, at.lon, newTextId("pz", existing))
             GraphicKind.SECTOR_OF_FIRE -> PlanningGraphics.createSectorOfFire(at.lat, at.lon, newTextId("sec", existing))
             GraphicKind.GO_AROUND -> PlanningGraphics.createGoAround(at.lat, at.lon, direction ?: "left", newTextId("ga", existing))
-            GraphicKind.DOGHOUSE -> null
+            GraphicKind.DOGHOUSE, GraphicKind.UNIT -> null
         }
         if (made == null) return fail("That is not a position.")
         error.value = null
         session.edit("Place ${kind.label.lowercase()}") { DiagramOps.upsertGraphic(it, kind.collection, made) }
         selection.select(GraphicRef(kind.collection, DiagramOps.idText(made["id"])))
     }
+
+    /**
+     * Adds a unit made in the unit builder, standing at [at] (the crosshair), and holds it. The web puts a new unit a little off the target at
+     * random; here it is where the person pointed, so it can be found.
+     */
+    fun addUnit(draft: UnitDraft, at: LatLon?) {
+        val diagram = session.active.value ?: return
+        if (!diagram.canEditGraphics) return
+        if (at == null) return fail("Move the map to where it should go first.")
+        val id = newTextId("unit", existingKeys(diagram, "units"))
+        error.value = null
+        session.edit("Place unit") { DiagramOps.upsertGraphic(it, "units", UnitMarkers.create(draft.config, at, 0.0, id)) }
+        selection.select(GraphicRef("units", id))
+    }
+
+    /** Applies what the unit builder holds to the held unit: its symbol and labels, nothing else. */
+    fun updateUnit(draft: UnitDraft) = edit("Unit") { c, _ -> if (c == "units") draft.patch else null }
 
     /** The web makes a helicopter's id from the clock; the same here, nudged past any that is taken. */
     private fun newNumericId(taken: Set<String>): Long {
@@ -152,6 +176,7 @@ class GraphicsViewModel @Inject constructor(
         "sectorsOfFire" -> diagram.graphics.sectorsOfFire
         "goArounds" -> diagram.graphics.goArounds
         "doghouses" -> diagram.graphics.doghouses
+        "units" -> diagram.graphics.units
         else -> emptyList()
     }.mapNotNull { (it as? JsonObject)?.get("id") }.map { DiagramOps.idText(it) }.toSet()
 
@@ -277,6 +302,7 @@ class GraphicsViewModel @Inject constructor(
                 rotation = GraphicEdits.rotation(row.ref.collection, o), reachFt = if (row.kind == GraphicKind.PZ_MARKER) GraphicEdits.pzReachM(o)?.let(::feetOf) else null,
                 direction = if (row.kind == GraphicKind.GO_AROUND) (o["direction"] as? JsonPrimitive)?.content else null,
                 doghouse = if (row.kind == GraphicKind.DOGHOUSE) doghouseUi(o) else null,
+                unit = if (row.kind == GraphicKind.UNIT) UnitDraft.of(o) else null,
             )
         }
         return GraphicsUiState(canEdit = true, rows = rows, inspector = held, alerts = alerts.map { it.message }, undoDepth = undo, redoDepth = redo, error = error)
@@ -288,6 +314,7 @@ class GraphicsViewModel @Inject constructor(
         "sectorsOfFire" -> diagram.graphics.sectorsOfFire
         "goArounds" -> diagram.graphics.goArounds
         "doghouses" -> diagram.graphics.doghouses
+        "units" -> diagram.graphics.units
         else -> emptyList()
     }
 
@@ -303,12 +330,26 @@ class GraphicsViewModel @Inject constructor(
         )
     }
 
+    /** `Unit · A/1-171`, or the function when there is no designation; an older unit that was an image says so. */
+    private fun unitTitle(saved: JsonObject): String {
+        if ((saved["sidc"] as? JsonPrimitive)?.content.isNullOrEmpty()) return "Unit (image)"
+        val draft = UnitDraft.of(saved)
+        return "Unit · ${draft.uniqueDesignation.ifBlank { draft.functionLabel ?: draft.functionId }}"
+    }
+
+    private fun unitDetail(saved: JsonObject): String? {
+        if ((saved["sidc"] as? JsonPrimitive)?.content.isNullOrEmpty()) return null
+        val draft = UnitDraft.of(saved)
+        return listOfNotNull(draft.affiliationLabel, draft.functionLabel, draft.echelonLabel).joinToString(" · ").ifEmpty { null }
+    }
+
     private fun feetOf(meters: Double): Long = RouteCalc.jsRound(meters * Units.METERS_TO_FEET).toLong()
 
     private fun gridOf(at: LatLon): String? = MgrsConverter.toMgrs(at.lat, at.lon)?.format()
 
     private fun titleOf(kind: GraphicKind, saved: JsonObject, aircraft: List<PlanningGraphics.Aircraft>, resolve: (PlanningGraphics.Aircraft) -> AircraftProfile): String = when (kind) {
         GraphicKind.DOGHOUSE -> Doghouses.display(saved, 0.0).id?.takeIf { it.isNotBlank() }?.let { "Doghouse · $it" } ?: kind.label
+        GraphicKind.UNIT -> unitTitle(saved)
         GraphicKind.HELICOPTER -> {
             val key = DiagramOps.idText(saved["id"])
             val own = aircraft.firstOrNull { DiagramOps.idText(it.id) == key }
@@ -321,6 +362,7 @@ class GraphicsViewModel @Inject constructor(
         GraphicKind.HELICOPTER, GraphicKind.GO_AROUND -> GraphicEdits.rotation(kind.collection, saved)?.let { "heading ${it.toLong()}°" }
         GraphicKind.PZ_MARKER -> GraphicEdits.pzReachM(saved)?.let { "reach ${feetOf(it)} ft" }
         GraphicKind.SECTOR_OF_FIRE -> null
+        GraphicKind.UNIT -> unitDetail(saved)
         GraphicKind.DOGHOUSE -> Doghouses.display(saved, Doghouses.rotation(saved)).let { "${it.heading}° · ${it.minutes}+${it.seconds} · ${it.distanceText} km · ${it.airspeedText} kts" }
     }?.let { text -> if (kind == GraphicKind.GO_AROUND) (saved["direction"] as? JsonPrimitive)?.content?.let { "$it · $text" } ?: text else text }
 }

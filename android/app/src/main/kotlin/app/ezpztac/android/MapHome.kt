@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
@@ -37,6 +38,7 @@ import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.rememberMapHost
+import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.workspace.DiagramsHost
 import app.ezpztac.workspace.GraphicsHost
 import kotlinx.coroutines.flow.filterNotNull
@@ -79,48 +81,51 @@ fun MapHome(
     // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { home.appStopped() }
 
-    BottomSheetScaffold(
-        scaffoldState = scaffold,
-        sheetPeekHeight = PEEK,
-        sheetContainerColor = MaterialTheme.colorScheme.surface,
-        sheetContent = {
-            Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.xl.dp, vertical = Tokens.Spacing.md.dp),
-                verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+    // Units' symbols are drawn the same way on the map and in the sheet's builder: one renderer, and its cache, for both.
+    CompositionLocalProvider(LocalSymbolRenderer provides home.symbols) {
+        BottomSheetScaffold(
+            scaffoldState = scaffold,
+            sheetPeekHeight = PEEK,
+            sheetContainerColor = MaterialTheme.colorScheme.surface,
+            sheetContent = {
+                Column(
+                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.xl.dp, vertical = Tokens.Spacing.md.dp),
+                    verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+                ) {
+                    if (maintenance != null) Banner(maintenance, BannerKind.Warning)
+                    // A new diagram starts at the middle of the map: the grid under the crosshair, or its degrees where there is no grid.
+                    DiagramsHost(
+                        suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon },
+                        // The planning graphics sit in the open diagram's card: they are put at, and brought to, the crosshair.
+                        openDiagramExtras = { GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs) },
+                    )
+                    Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.classification_notice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextAction("Sign out", onClick = onSignOut)
+                }
+            },
+        ) { _ ->
+            MapScreen(
+                state = state, camera = host.camera, gps = state.gps,
+                onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
+                onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
+                onFaceNorth = viewModel::faceNorth,
+                bottomInset = PEEK,
+                modifier = Modifier.fillMaxSize(),
             ) {
-                if (maintenance != null) Banner(maintenance, BannerKind.Warning)
-                // A new diagram starts at the middle of the map: the grid under the crosshair, or its degrees where there is no grid.
-                DiagramsHost(
-                    suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon },
-                    // The planning graphics sit in the open diagram's card: they are put at, and brought to, the crosshair.
-                    openDiagramExtras = { GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs) },
+                // The sheet's peek is reserved from the map, so the camera's centre is the crosshair, which is drawn above the sheet.
+                EzpzMap(
+                    host = host, style = state.style, initial = viewModel.initialCamera, bottomInset = PEEK, modifier = Modifier.fillMaxSize(),
+                    onTap = { at ->
+                        // Distances between points on the screen do not depend on where its middle is, so the size of the view is not needed here.
+                        host.camera?.let { camera -> home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) }
+                    },
                 )
-                Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
-                Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(stringResource(R.string.classification_notice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextAction("Sign out", onClick = onSignOut)
+                DiagramLayer(host, scene)                       // under the GPS dot, which stays on top
+                GpsLayer(host, state.gps)
+                GraphicLabelsLayer(host, scene.graphics)
             }
-        },
-    ) { _ ->
-        MapScreen(
-            state = state, camera = host.camera, gps = state.gps,
-            onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
-            onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
-            onFaceNorth = viewModel::faceNorth,
-            bottomInset = PEEK,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            // The sheet's peek is reserved from the map, so the camera's centre is the crosshair, which is drawn above the sheet.
-            EzpzMap(
-                host = host, style = state.style, initial = viewModel.initialCamera, bottomInset = PEEK, modifier = Modifier.fillMaxSize(),
-                onTap = { at ->
-                    // Distances between points on the screen do not depend on where its middle is, so the size of the view is not needed here.
-                    host.camera?.let { camera -> home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) }
-                },
-            )
-            DiagramLayer(host, scene)                       // under the GPS dot, which stays on top
-            GpsLayer(host, state.gps)
-            GraphicLabelsLayer(host, scene.graphics)
         }
     }
 }

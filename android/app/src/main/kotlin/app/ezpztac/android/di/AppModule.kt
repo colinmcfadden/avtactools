@@ -29,6 +29,10 @@ import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStore
 import dagger.Binds
 import dagger.Module
+import app.ezpztac.symbols.DefaultSymbolRenderer
+import app.ezpztac.symbols.JavaScriptSymbolSource
+import app.ezpztac.symbols.PresetSymbols
+import app.ezpztac.symbols.SymbolRenderer
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -85,6 +89,12 @@ object AppModule {
     @Provides
     @Singleton
     fun terrainApi(client: ApiClient): TerrainApi = ApiClientTerrainApi(client)
+
+    /** Symbols: the pre-rendered presets first, then milsymbol in the system JavaScript sandbox, which starts when a symbol that needs it is first asked for. */
+    @Provides
+    @Singleton
+    fun symbolRenderer(@ApplicationContext context: Context): SymbolRenderer =
+        DefaultSymbolRenderer(listOf(PresetSymbols(context.assets), JavaScriptSymbolSource(context)))
 
     @Provides
     @Singleton

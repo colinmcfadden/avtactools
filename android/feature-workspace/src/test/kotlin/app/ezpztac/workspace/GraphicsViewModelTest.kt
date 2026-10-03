@@ -7,6 +7,7 @@ import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.GraphicRef
+import app.ezpztac.model.UnitDraft
 import app.ezpztac.model.LatLon
 import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.sync.Device
@@ -761,5 +762,144 @@ class GraphicsViewModelTest {
         r.model.undo()
         advanceUntilIdle()
         assertEquals(2, r.state.rows.size)
+    }
+// -- Units -----------------------------------------------------------------------------------------------------------
+
+    private val hostileArmor = UnitDraft("H", "UCA---", "D", "A/1-171", "2-101")
+
+    @Test
+    fun `a unit made in the builder is added where the crosshair is, held, and listed with what it is`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.addUnit(hostileArmor, crosshair)
+        advanceUntilIdle()
+
+        val row = r.state.rows.single()
+        assertEquals(GraphicKind.UNIT, row.kind)
+        assertEquals("Unit · A/1-171", row.title)
+        assertEquals("Hostile · Armor · Platoon", row.detail)
+        assertTrue(row.selected)
+        assertEquals(hostileArmor, r.state.inspector!!.unit)
+        assertNull(r.state.inspector!!.rotation)                                           // a unit stays upright
+        val saved = r.graphic(row.ref)
+        assertEquals("SHGPUCA---D----", text(saved, "sidc"))
+        assertEquals("A/1-171", text(saved, "uniqueDesignation"))
+        assertEquals("2-101", text(saved, "higherFormation"))
+        assertEquals(crosshair, GraphicEdits.position("units", saved))                      // where it was pointed, not off at random as on the web
+        assertEquals(setOf("id", "sidc", "uniqueDesignation", "higherFormation", "lat", "lon"), saved.keys)
+        assertTrue(row.ref.key.startsWith("unit-"))
+        assertEquals(1, r.state.undoDepth)
+    }
+
+    @Test
+    fun `a unit with no designation is named for what it is`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.addUnit(UnitDraft(), crosshair)
+        r.model.addUnit(UnitDraft(functionId = "UXXXXX"), crosshair)
+        advanceUntilIdle()
+        assertEquals(listOf("Unit · Infantry", "Unit · UXXXXX"), r.state.rows.map { it.title })
+        assertEquals("Friendly · Infantry", r.state.rows[0].detail)
+        assertEquals("Friendly", r.state.rows[1].detail)
+    }
+
+    @Test
+    fun `units placed in the same instant do not share an id`() = runTest(dispatcher) {
+        val r = opened()
+        repeat(4) { r.model.addUnit(UnitDraft(), crosshair) }
+        advanceUntilIdle()
+        assertEquals(4, r.state.rows.map { it.ref }.toSet().size)
+    }
+
+    @Test
+    fun `a unit is not added before the diagram is analysed, or with the map not showing a position`() = runTest(dispatcher) {
+        val bare = opened(analysed = false)
+        bare.model.addUnit(UnitDraft(), crosshair)
+        advanceUntilIdle()
+        assertEquals(0, bare.state.undoDepth)
+        assertNull("nothing was made, so nothing is held", bare.selection.selected.value)
+
+        val r = opened()
+        r.model.addUnit(UnitDraft(), at = null)
+        advanceUntilIdle()
+        assertTrue(r.state.rows.isEmpty())
+        assertEquals("Move the map to where it should go first.", r.state.error)
+    }
+
+    @Test
+    fun `applying the builder to the held unit changes its symbol and labels and nothing else, as one step`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.addUnit(UnitDraft(), crosshair)
+        advanceUntilIdle()
+        val ref = r.state.rows.single().ref
+        // A unit may carry what a newer release of the web added; applying the builder must not lose it.
+        r.session.setQuietly { DiagramOps.patchGraphic(it, "units", r.graphic(ref)["id"], JsonObject(mapOf("callsign" to JsonPrimitive("DOG 6")))) }
+        val before = r.graphic(ref)
+
+        r.model.updateUnit(hostileArmor)
+        advanceUntilIdle()
+        val saved = r.graphic(ref)
+        assertEquals("SHGPUCA---D----", text(saved, "sidc"))
+        assertEquals("A/1-171", text(saved, "uniqueDesignation"))
+        assertEquals("DOG 6", text(saved, "callsign"))
+        assertEquals(text(before, "lat"), text(saved, "lat"))
+        assertEquals(2, r.state.undoDepth)
+
+        r.model.undo()
+        advanceUntilIdle()
+        assertEquals("SFGPUCI--------", text(r.graphic(ref), "sidc"))
+    }
+
+    @Test
+    fun `the builder cannot be applied to what is not a unit`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.PZ_MARKER, crosshair)
+        advanceUntilIdle()
+        r.model.updateUnit(UnitDraft())
+        advanceUntilIdle()
+        assertEquals("That cannot be done to this graphic.", r.state.error)
+        assertEquals(1, r.state.undoDepth)
+    }
+
+    @Test
+    fun `a unit can be moved, turned down for a heading, and deleted like any graphic`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.addUnit(UnitDraft(), crosshair)
+        advanceUntilIdle()
+        val ref = r.state.rows.single().ref
+        val before = GraphicEdits.position("units", r.graphic(ref))!!
+        r.model.nudge(northFt = 100.0, eastFt = 0.0)
+        advanceUntilIdle()
+        assertEquals(100.0 * 0.3048, GraphicEdits.metresBetween(before, GraphicEdits.position("units", r.graphic(ref))!!).first, 0.01)
+
+        r.model.rotateBy(90.0)
+        advanceUntilIdle()
+        assertEquals("That cannot be done to this graphic.", r.state.error)
+
+        r.model.delete()
+        advanceUntilIdle()
+        assertTrue(r.state.rows.isEmpty())
+        r.model.undo()
+        advanceUntilIdle()
+        assertEquals(1, r.state.rows.size)
+    }
+
+    @Test
+    fun `an older unit that was an image is listed as one, and applying the builder makes it a symbol`() = runTest(dispatcher) {
+        val r = opened()
+        val old = JsonObject(mapOf("id" to JsonPrimitive("old"), "type" to JsonPrimitive("tank"), "path" to JsonPrimitive("/units/tank.svg"), "lat" to JsonPrimitive(34.78), "lon" to JsonPrimitive(-84.08)))
+        r.session.setQuietly { DiagramOps.upsertGraphic(it, "units", old) }
+        advanceUntilIdle()
+        val row = r.state.rows.single()
+        assertEquals("Unit (image)", row.title)
+        assertNull(row.detail)
+        r.model.select(row.ref)
+        advanceUntilIdle()
+        assertEquals(UnitDraft(), r.state.inspector!!.unit)                                 // the builder starts from its defaults
+
+        r.model.updateUnit(UnitDraft("F", "UCA---", "-", "TANK", ""))
+        advanceUntilIdle()
+        val saved = r.graphic(row.ref)
+        assertEquals("SFGPUCA--------", text(saved, "sidc"))
+        assertEquals("/units/tank.svg", text(saved, "path"))                                // what the unit already had is kept
+        assertEquals("Unit · TANK", r.state.rows.single().title)
     }
 }

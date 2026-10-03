@@ -163,4 +163,21 @@ class GraphicHitTestTest {
         assertEquals(ref("doghouses", "d"), pick(scene, north(12.0)))
         assertEquals(ref("sectorsOfFire", "s"), pick(scene, north(-30.0)))
     }
+// -- Units -----------------------------------------------------------------------------------------------------
+
+    private fun unit(id: String, at: LatLon) = SceneUnit(GraphicRef("units", id), at, "SFGPUCI--------", "", "", false)
+
+    @Test
+    fun `a unit is held within the finger's reach of its position`() {
+        val scene = GraphicsScene(units = listOf(unit("u", here)))
+        assertEquals(ref("units", "u"), pick(scene, north(4.0)))                              // 16 px
+        assertNull(pick(scene, north(9.0)))                                                   // 37 px: out
+    }
+
+    @Test
+    fun `of two units the nearer is held`() {
+        val scene = GraphicsScene(units = listOf(unit("a", here), unit("b", north(0.0, 10.0))))
+        assertEquals(ref("units", "a"), pick(scene, north(0.0, 3.0)))
+        assertEquals(ref("units", "b"), pick(scene, north(0.0, 7.0)))
+    }
 }

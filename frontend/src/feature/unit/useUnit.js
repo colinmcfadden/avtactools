@@ -1,6 +1,21 @@
 import { useState } from "react";
 
 /**
+ * A new unit from what the unit builder (or a preset) gives: it sits [offset] degrees north and east of [center], so it does not land on
+ * the target itself. Pass the offset and the id in, so the result does not depend on the clock or on chance.
+ */
+export const createUnit = (unitConfig, center, offset, id) => ({
+  id,
+  type: unitConfig.id,
+  path: unitConfig.path,
+  sidc: unitConfig.sidc,
+  uniqueDesignation: unitConfig.uniqueDesignation,
+  higherFormation: unitConfig.higherFormation,
+  lat: center[0] + offset,
+  lon: center[1] + offset,
+});
+
+/**
  * Optional controlled-state shape:
  *   { units: Unit[], setUnits: React.Dispatch<React.SetStateAction<Unit[]>> }
  */
@@ -24,17 +39,7 @@ export const useUnit = (targetLocation, options = {}) => {
     const centerLon = Number(targetLocation[1]);
     if (!Number.isFinite(centerLat) || !Number.isFinite(centerLon)) return;
 
-    const offset = Math.random() * 0.001;
-    const newUnit = {
-      id: `unit-${Date.now()}`,
-      type: unitConfig.id,
-      path: unitConfig.path,
-      sidc: unitConfig.sidc,
-      uniqueDesignation: unitConfig.uniqueDesignation,
-      higherFormation: unitConfig.higherFormation,
-      lat: centerLat + offset,
-      lon: centerLon + offset,
-    };
+    const newUnit = createUnit(unitConfig, [centerLat, centerLon], Math.random() * 0.001, `unit-${Date.now()}`);
 
     setUnits((previous) => [
       ...(Array.isArray(previous) ? previous : []),
