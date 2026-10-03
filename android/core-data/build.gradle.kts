@@ -17,6 +17,7 @@ dependencies {
     api(project(":core-planning"))                               // a route being drawn is made by its SketchOps
     implementation(project(":core-formats"))                     // a set of routes is exported as an AMPS mission
     implementation(project(":core-geo"))
+    implementation(libs.androidx.core.ktx)                       // the platform SQLite helpers a .ths is written with
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
 

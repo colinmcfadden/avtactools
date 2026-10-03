@@ -65,16 +65,7 @@ public class RouteExport @Inject constructor(private val template: MissionTempla
     }
 
     public companion object {
-        private const val MAX_NAME = 80
-
         /** `NAME_NAME.msnx`: the routes' names joined, with anything a file system or a chat app would trip over made an underscore. */
-        public fun fileName(routes: List<SketchRoute>): String {
-            val base = routes.joinToString("_") { it.name }
-                .map { if (it.isLetterOrDigit() || it in " -_.") it else '_' }.joinToString("")
-                .replace(Regex("""\.{2,}"""), "_")
-                .trim(' ', '.', '_')
-                .take(MAX_NAME).trim(' ', '.', '_')
-            return (base.ifEmpty { "ROUTES" }) + ".msnx"
-        }
+        public fun fileName(routes: List<SketchRoute>): String = ExportNames.stem(routes.joinToString("_") { it.name }, "ROUTES") + ".msnx"
     }
 }

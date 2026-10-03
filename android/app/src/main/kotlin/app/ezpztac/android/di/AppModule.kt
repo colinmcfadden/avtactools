@@ -24,6 +24,9 @@ import app.ezpztac.data.ApiClientWeatherApi
 import app.ezpztac.data.WeatherApi
 import app.ezpztac.data.WeatherCache
 import app.ezpztac.data.WeatherService
+import app.ezpztac.data.EncryptedThreatVault
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
 import app.ezpztac.android.WeatherFileCache
 import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.ApiClientTerrainApi
@@ -127,6 +130,21 @@ object AppModule {
     @Singleton
     fun weatherService(api: WeatherApi, cache: WeatherCache): WeatherService =
         WeatherService(api, cache, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default))
+
+    /**
+     * The threat picture, sealed by its own Keystore key and kept where backups do not reach. Threats are sensitive and never persisted in the
+     * usual sense (`AGENTS.md` §2): this is the one short-lived file the owner approved, wiped at sign-out and 48 hours after the last change.
+     */
+    @Provides
+    @Singleton
+    fun threatVault(@ApplicationContext context: Context): ThreatVault =
+        EncryptedThreatVault(File(context.noBackupFilesDir, "threats.bin"), KeystoreSecretBox(alias = "ezpz.threats", purpose = "ezpz-threats-v1"))
+
+    /** Threats outlive any screen (a write finishes with the sheet closed), so they run in a scope of their own that is never cancelled with one. */
+    @Provides
+    @Singleton
+    fun threatStore(vault: ThreatVault): ThreatStore =
+        ThreatStore(vault, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default))
 
     @Provides
     @Singleton

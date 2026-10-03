@@ -27,9 +27,14 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.ThreatPicture
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
 import app.ezpztac.data.WeatherCache
 import app.ezpztac.data.WeatherService
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.Radars
+import app.ezpztac.model.Threat
 import app.ezpztac.model.WeatherSnapshot
 import app.ezpztac.network.WeatherReportDto
 import kotlinx.coroutines.CoroutineScope
@@ -125,10 +130,19 @@ class AppViewModelTest {
         override fun save(snapshots: Map<String, WeatherSnapshot>) { kept = snapshots }
     }
 
+    private class KeptThreats : ThreatVault {
+        var kept: ThreatPicture? = null
+        override fun load() = kept
+        override fun save(picture: ThreatPicture) { kept = picture }
+        override fun wipe() { kept = null }
+    }
+
+    private class MutableClock(var now: Long = 1_000_000L)
+
     private class Rig(
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
-        val weather: WeatherService, val weatherCache: KeptWeather,
+        val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock,
     )
 
     private fun TestScope.rig(
@@ -149,9 +163,12 @@ class AppViewModelTest {
         val routeSession = RouteSession(routes, backgroundScope)
         val weatherCache = KeptWeather()
         val weather = WeatherService(FakeWeather(), weatherCache, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)))
-        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, tokens, version)
+        val threatVault = KeptThreats()
+        val clock = MutableClock()
+        val threats = ThreatStore(threatVault, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), StandardTestDispatcher(testScheduler)) { clock.now }
+        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, tokens, version)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache)
+        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock)
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -317,6 +334,43 @@ class AppViewModelTest {
         advanceUntilIdle()
         assertNull(r.weather.stateOf("d1").snapshot)
         assertTrue(r.weatherCache.kept.isEmpty())
+    }
+
+    @Test
+    fun `signing out forgets the threats, here and in their file, so a crew's threat picture does not stay for the next person`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.threats.add(Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = Radars.defaultPair()))
+        advanceUntilIdle()
+        assertEquals(1, r.threats.entries.value.size)
+        assertNotNull(r.threatVault.kept)
+        r.model.signOut()
+        advanceUntilIdle()
+        assertTrue(r.threats.entries.value.isEmpty())
+        assertNull(r.threatVault.kept)
+    }
+
+    @Test
+    fun `the app coming to the front forgets a threat picture that has not been changed in 48 hours, and keeps a newer one`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.threats.add(Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = Radars.defaultPair()))
+        advanceUntilIdle()
+        r.clock.now += ThreatStore.RETAIN_MS
+        r.model.appStarted()
+        assertEquals(1, r.threats.entries.value.size)                                         // exactly 48 hours: still kept
+        r.clock.now += 1
+        r.model.appStarted()
+        advanceUntilIdle()
+        assertTrue(r.threats.entries.value.isEmpty())
+        assertNull(r.threatVault.kept)
+    }
+
+    @Test
+    fun `being signed in does not touch the threats`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.threats.add(Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = Radars.defaultPair()))
+        advanceUntilIdle()
+        assertEquals(1, r.threats.entries.value.size)
+        assertNotNull(r.threatVault.kept)
     }
 
     @Test

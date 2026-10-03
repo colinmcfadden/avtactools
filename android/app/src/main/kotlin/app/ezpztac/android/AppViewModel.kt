@@ -8,6 +8,7 @@ import app.ezpztac.auth.AuthRoute
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.RouteSession
+import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.Ownership
 import app.ezpztac.network.ApiException
@@ -39,6 +40,7 @@ class AppViewModel @Inject constructor(
     private val session: DiagramSession,
     private val routeSession: RouteSession,
     private val weather: WeatherService,
+    private val threats: ThreatStore,
     private val mapTokens: MapTokenSink,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
@@ -68,6 +70,11 @@ class AppViewModel @Inject constructor(
         }
     }
 
+    /** The app has come to the front. Nothing runs while it is not, so a threat picture that went 48 hours unchanged is forgotten now. */
+    fun appStarted() {
+        threats.expireIfOld()
+    }
+
     private suspend fun onAuth(auth: AuthState) {
         ownership.value = null
         if (auth !is AuthState.SignedIn) {
@@ -75,6 +82,7 @@ class AppViewModel @Inject constructor(
                 sync.cancelAll()
                 closeOpenDocuments()
                 weather.clear()                                                  // where this account's landing zones are does not stay for the next person
+                threats.wipe()                                                   // nor does the threat picture: it is the most sensitive thing on the device
             }
             return
         }

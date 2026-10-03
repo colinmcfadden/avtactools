@@ -3,7 +3,6 @@ package app.ezpztac.model
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.math.BigDecimal
 
 /**
  * What the aircraft form holds while a profile is being made or changed (the web's `AircraftProfileModal`): the words and numbers as typed,
@@ -105,17 +104,13 @@ public data class AircraftDraft(
             NumberField("default_gross_weight_lb", "Gross weight", 0.0, 200000.0) { it.defaultGrossWeightLb },
         )
 
-        private val NUMBER = Regex("""[+-]?(?:\d+\.?\d*|\.\d+)""")
-
-        /** A typed number: digits with an optional point and sign, and nothing else ("12 kt", "1e3" and "1,5" are not numbers here). */
-        private fun parse(text: String): Double? = text.trim().takeIf { NUMBER.matches(it) }?.toDouble()
+        private fun parse(text: String): Double? = TypedNumber.parse(text)
 
         /** At most [max] characters, counted as the server counts them (code points), so an emoji at the end is never split. */
-        private fun cut(text: String, max: Int): String =
-            if (text.codePointCount(0, text.length) <= max) text else text.substring(0, text.offsetByCodePoints(0, max))
+        private fun cut(text: String, max: Int): String = TypedNumber.cut(text, max)
 
         /** A number as it is typed back into a field: no trailing ".0", no exponent, no locale. */
-        internal fun plain(value: Double): String = BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
+        internal fun plain(value: Double): String = TypedNumber.plain(value)
 
         /** The draft for a saved profile, to change it: the form's fields as it has them (a profile read with `normalize` is never missing one). */
         public fun of(profile: AircraftProfile): AircraftDraft = AircraftDraft(

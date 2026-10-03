@@ -24,6 +24,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.auth.AffiliationHost
 import app.ezpztac.auth.AuthHost
@@ -43,6 +45,8 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
     val gate by viewModel.gate.collectAsStateWithLifecycle()
     val link by viewModel.pendingLink.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // Nothing runs while the app is out of sight, so what has expired meanwhile (a threat picture left for 48 hours) is dealt with as it comes back.
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.appStarted() }
     val google = remember(context) {
         BuildConfig.GOOGLE_SERVER_CLIENT_ID.takeIf { it.isNotBlank() }?.let<String, GoogleSignInProvider> { CredentialManagerGoogleSignIn(context, it) }
     }
