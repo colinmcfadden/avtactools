@@ -9,6 +9,8 @@ import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.Ownership
+import app.ezpztac.data.RouteRepository
+import app.ezpztac.data.RouteSession
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AppConfig
@@ -105,7 +107,7 @@ class AppViewModelTest {
 
     private class Rig(
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
-        val repository: DiagramRepository, val session: DiagramSession,
+        val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
     )
 
     private fun TestScope.rig(
@@ -122,9 +124,11 @@ class AppViewModelTest {
         val store = InMemorySyncStore()
         val repository = DiagramRepository(SyncRepository(store, SequentialIds("t")), store, RecordingScheduler())
         val session = DiagramSession(repository, backgroundScope)
-        val model = AppViewModel(backend, accounts, scheduler, session, tokens, version)
+        val routes = RouteRepository(SyncRepository(store, SequentialIds("r")), store, RecordingScheduler())
+        val routeSession = RouteSession(routes, backgroundScope)
+        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, tokens, version)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens, repository, session)
+        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession)
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -277,6 +281,29 @@ class AppViewModelTest {
         advanceUntilIdle()
         assertNull(r.session.active.value)
         assertEquals("LZ CROW", r.repository.open(made.id)!!.name)                           // saved first, for when this person comes back
+    }
+
+    @Test
+    fun `signing out saves and closes the open set of routes too`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val made = r.routes.create("MISSION 1")
+        r.routeSession.open(made.id)
+        r.routeSession.edit("Rename set") { it.copy(name = "MISSION 2") }                   // not yet saved: the pause has not passed
+        r.model.signOut()
+        advanceUntilIdle()
+        assertNull(r.routeSession.active.value)
+        assertEquals("MISSION 2", r.routes.open(made.id)!!.name)
+    }
+
+    @Test
+    fun `a session that ends on its own closes the set of routes too`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val made = r.routes.create("MISSION 1")
+        r.routeSession.open(made.id)
+        r.backend.state.value = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long")
+        advanceUntilIdle()
+        assertNull(r.session.active.value)
+        assertNull(r.routeSession.active.value)
     }
 
     @Test

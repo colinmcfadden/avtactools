@@ -52,6 +52,7 @@ internal interface RouteIds {
 class RouteSketching @Inject constructor(
     private val session: RouteSession,
     private val aircraft: AircraftProfiles,
+    private val mode: DrawingMode = DrawingMode(),
 ) {
     internal var ids: RouteIds = RouteIds.Random
 
@@ -64,6 +65,7 @@ class RouteSketching @Inject constructor(
     fun start(): String? {
         val open = session.active.value ?: return "Open a set of routes first."
         if (_draft.value?.setId == open.id) return null                                 // already drawing here: the points so far stay
+        mode.begin(DrawingMode.Kind.ROUTE)?.let { return it }                           // a boundary being drawn has the map's taps
         _draft.value = RouteDraft(open.id, emptyList())
         return null
     }
@@ -83,9 +85,16 @@ class RouteSketching @Inject constructor(
         _draft.value = current.copy(points = current.points.dropLast(1))
     }
 
+    /** Drops a draft that belongs to a set other than [setId] (null for none), as when another set is opened or the open one is closed. One on [setId] stays. */
+    fun dropDraftNotOn(setId: String?) {
+        val current = _draft.value ?: return
+        if (current.setId != setId) cancel()
+    }
+
     /** Stops drawing and forgets the points. */
     fun cancel() {
         _draft.value = null
+        mode.end(DrawingMode.Kind.ROUTE)
     }
 
     /**
@@ -97,7 +106,7 @@ class RouteSketching @Inject constructor(
         if (!current.canFinish) return SketchFinish.Refused("A route needs at least $MIN_POINTS points.")
         val open = session.active.value
         if (open == null || open.id != current.setId) {
-            _draft.value = null
+            cancel()
             return SketchFinish.Refused("The set this was drawn on is no longer open.")
         }
         val route = SketchOps.build(
@@ -109,7 +118,7 @@ class RouteSketching @Inject constructor(
             newPointId = ids::point,
         ) ?: return SketchFinish.Refused("A route needs at least $MIN_POINTS points.")
         session.edit("Draw route") { it.plus(route) }
-        _draft.value = null
+        cancel()
         return SketchFinish.Done(route.id)
     }
 

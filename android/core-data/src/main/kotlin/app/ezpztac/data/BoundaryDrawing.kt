@@ -31,7 +31,10 @@ data class BoundaryDraft(val diagramId: String, val points: List<LatLon>) {
  * web, that is one step of the diagram's own undo, so it can be taken back.
  */
 @Singleton
-class BoundaryDrawing @Inject constructor(private val session: DiagramSession) {
+class BoundaryDrawing @Inject constructor(
+    private val session: DiagramSession,
+    private val mode: DrawingMode = DrawingMode(),
+) {
     private val _draft = MutableStateFlow<BoundaryDraft?>(null)
 
     /** The boundary being drawn, or null when nothing is. */
@@ -45,6 +48,7 @@ class BoundaryDrawing @Inject constructor(private val session: DiagramSession) {
         val open = session.active.value ?: return "Open a diagram first."
         if (open.target == null) return "Set a target before drawing a boundary."
         if (_draft.value?.diagramId == open.id) return null                           // already drawing here: the points so far stay
+        mode.begin(DrawingMode.Kind.BOUNDARY)?.let { return it }                      // a route being drawn has the map's taps
         session.edit("Draw boundary") { d ->
             val cleared = if (d.status == DiagramStatus.ANALYZED) DiagramOps.resetAnalysis(d) else d
             DiagramOps.setAnalysisDraft(cleared, JsonObject(mapOf("customLZ" to JsonNull)))
@@ -71,6 +75,7 @@ class BoundaryDrawing @Inject constructor(private val session: DiagramSession) {
     /** Stops drawing and forgets the points. The diagram is as [start] left it. */
     fun cancel() {
         _draft.value = null
+        mode.end(DrawingMode.Kind.BOUNDARY)
     }
 
     /**
@@ -81,12 +86,12 @@ class BoundaryDrawing @Inject constructor(private val session: DiagramSession) {
         val current = _draft.value ?: return "Nothing is being drawn."
         if (!current.canFinish) return "A boundary needs at least $MIN_POINTS points."
         if (session.active.value?.id != current.diagramId) {
-            _draft.value = null
+            cancel()
             return "The diagram this was drawn on is no longer open."
         }
         val ring = JsonArray(current.points.map { JsonArray(listOf(JsonPrimitive(it.lat), JsonPrimitive(it.lon))) })
         session.edit("Draw boundary") { d -> DiagramOps.setAnalysisDraft(d, JsonObject(mapOf("customLZ" to ring))) }
-        _draft.value = null
+        cancel()
         return null
     }
 

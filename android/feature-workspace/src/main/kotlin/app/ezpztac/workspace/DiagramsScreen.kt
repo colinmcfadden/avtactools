@@ -271,7 +271,7 @@ private fun statusLabel(status: DiagramStatus) = when (status) {
     DiagramStatus.ANALYZED -> "Analyzed"
 }
 
-private fun syncLabel(sync: SyncStatus?, conflictOf: String?) = when {
+internal fun syncLabel(sync: SyncStatus?, conflictOf: String?) = when {
     conflictOf != null -> "Conflict copy"
     sync == SyncStatus.SYNCED -> "Synced"
     else -> "Waiting to sync"
@@ -342,7 +342,7 @@ private fun DiagramListItem(row: DiagramRow, actions: DiagramsActions) {
 }
 
 @Composable
-private fun SyncChip(sync: SyncStatus?, conflictOf: String?) {
+internal fun SyncChip(sync: SyncStatus?, conflictOf: String?) {
     val (color, container) = when {
         conflictOf != null -> EzpzTheme.status.warning to MaterialTheme.colorScheme.background
         sync == SyncStatus.SYNCED -> MaterialTheme.colorScheme.onSurfaceVariant to MaterialTheme.colorScheme.surface
@@ -355,12 +355,20 @@ private fun SyncChip(sync: SyncStatus?, conflictOf: String?) {
 
 /** The three ways to settle a conflict, each with what it does, because losing a planning document is the worst thing this app can do. */
 @Composable
-private fun ConflictChoices(row: DiagramRow, actions: DiagramsActions) {
+private fun ConflictChoices(row: DiagramRow, actions: DiagramsActions) =
+    ConflictPanel("diagram") { actions.resolve(row.uuid, it) }
+
+/**
+ * What a conflict copy of a [noun] ("diagram", "set of routes") says and offers. Keeping both is the primary choice; the two that throw something away
+ * say what they discard.
+ */
+@Composable
+internal fun ConflictPanel(noun: String, resolve: (SyncEngine.Resolution) -> Unit) {
     Banner(
-        "This is your version, kept because another device changed the same diagram. Nothing was overwritten.",
+        "This is your version, kept because another device changed the same $noun. Nothing was overwritten.",
         BannerKind.Info,
     )
-    PrimaryButton("Keep both", onClick = { actions.resolve(row.uuid, SyncEngine.Resolution.KEEP_BOTH) })
-    SecondaryButton("Keep mine (replaces the other version)", onClick = { actions.resolve(row.uuid, SyncEngine.Resolution.KEEP_MINE) })
-    SecondaryButton("Keep theirs (discard mine)", onClick = { actions.resolve(row.uuid, SyncEngine.Resolution.KEEP_THEIRS) })
+    PrimaryButton("Keep both", onClick = { resolve(SyncEngine.Resolution.KEEP_BOTH) })
+    SecondaryButton("Keep mine (replaces the other version)", onClick = { resolve(SyncEngine.Resolution.KEEP_MINE) })
+    SecondaryButton("Keep theirs (discard mine)", onClick = { resolve(SyncEngine.Resolution.KEEP_THEIRS) })
 }

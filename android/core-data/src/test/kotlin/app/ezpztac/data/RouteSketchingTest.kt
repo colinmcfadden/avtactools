@@ -278,4 +278,20 @@ class RouteSketchingTest {
         assertEquals(0, r.set.routes.size)
         assertNull(r.sketching.start().also { assertEquals(other.id, r.sketching.draft.value!!.setId) })   // and a new draft starts on the one that is open
     }
+
+    @Test
+    fun `a draft is dropped when it is not on the set asked about, and kept when it is`() = runTest {
+        val r = rig()
+        val id = r.open()
+        r.sketching.start()
+        r.draw(a, b)
+        r.sketching.dropDraftNotOn(id)
+        assertEquals(2, r.sketching.draft.value!!.points.size)
+        r.sketching.dropDraftNotOn("another")
+        assertNull(r.sketching.draft.value)
+        r.sketching.dropDraftNotOn(null)                                                    // nothing drawn: nothing to drop
+        r.sketching.start()
+        r.sketching.dropDraftNotOn(null)
+        assertNull(r.sketching.draft.value)
+    }
 }

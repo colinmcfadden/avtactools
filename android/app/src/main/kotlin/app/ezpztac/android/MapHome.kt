@@ -39,6 +39,7 @@ import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
+import app.ezpztac.map.RouteLayer
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.workspace.AircraftHost
@@ -46,6 +47,8 @@ import app.ezpztac.workspace.BoundaryHost
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsHost
 import app.ezpztac.workspace.GraphicsHost
+import app.ezpztac.workspace.RouteToolbarHost
+import app.ezpztac.workspace.RoutesHost
 import kotlinx.coroutines.flow.filterNotNull
 
 private val PEEK = 112.dp
@@ -73,6 +76,7 @@ fun MapHome(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scene by home.scene.collectAsStateWithLifecycle()
+    val routeScene by home.routes.collectAsStateWithLifecycle()
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
@@ -114,6 +118,7 @@ fun MapHome(
                             GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs)
                         },
                     )
+                    RoutesHost()
                     AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -128,8 +133,12 @@ fun MapHome(
                 onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                 onFaceNorth = viewModel::faceNorth,
                 bottomInset = PEEK,
-                // Over the readout, above the sheet's peek: only there while a boundary is being drawn.
-                overlay = { BoundaryToolbarHost(crosshair = state.center, modifier = Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = PEEK + TOOLBAR_ABOVE_READOUT)) },
+                // Over the readout, above the sheet's peek: only there while a boundary or a route is being drawn (never both: drawing one refuses the other).
+                overlay = {
+                    val toolbar = Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = PEEK + TOOLBAR_ABOVE_READOUT)
+                    BoundaryToolbarHost(crosshair = state.center, modifier = toolbar)
+                    RouteToolbarHost(crosshair = state.center, modifier = toolbar)
+                },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 // The sheet's peek is reserved from the map, so the camera's centre is the crosshair, which is drawn above the sheet.
@@ -140,7 +149,8 @@ fun MapHome(
                         host.camera?.let { camera -> home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) }
                     },
                 )
-                DiagramLayer(host, scene)                       // under the GPS dot, which stays on top
+                DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
+                RouteLayer(host, routeScene)
                 GpsLayer(host, state.gps)
                 GraphicLabelsLayer(host, scene.graphics)
             }

@@ -7,10 +7,15 @@ import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.RouteSelection
+import app.ezpztac.data.RouteSession
+import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SlopeState
 import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapProjection
+import app.ezpztac.map.RouteHitTest
+import app.ezpztac.map.RouteScene
 import app.ezpztac.map.SlopeImage
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
@@ -46,6 +51,9 @@ class HomeViewModel @Inject constructor(
     private val selection: GraphicSelection,
     private val aircraft: AircraftProfiles,
     private val drawing: BoundaryDrawing,
+    private val routeSession: RouteSession,
+    private val routeSelection: RouteSelection,
+    private val sketching: RouteSketching,
     private val last: LastDiagram,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
@@ -70,8 +78,19 @@ class HomeViewModel @Inject constructor(
         LzScene.of(diagram, measured?.analysis?.toSlopeImage(), profiles = profiles, active = active, selected = selected, draft = corners)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
 
-    /** Whether a boundary is being drawn: the sheet goes down to its peek so the map is there to tap. */
-    val isDrawing: StateFlow<Boolean> = drawing.draft.map { it != null }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /**
+     * What the map draws for the open set of routes: each visible route as a line with its named points, the one being worked on heavier, and a route
+     * being drawn. A selection that names a route no longer there is not drawn, and a draft belongs to the set it was started on.
+     */
+    val routes: StateFlow<RouteScene> = combine(routeSession.active, routeSelection.held, sketching.draft) { set, held, draft ->
+        val chosen = held?.routeId?.takeIf { set?.route(it) != null }
+        val points = draft?.takeIf { it.setId == set?.id }?.points.orEmpty().map { LatLon(it.lat, it.lon) }
+        RouteScene.of(set, selectedRouteId = chosen, selectedPointId = held?.takeIf { it.routeId == chosen }?.pointId, draft = points)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, RouteScene.EMPTY)
+
+    /** Whether a boundary or a route is being drawn: the sheet goes down to its peek so the map is there to tap. */
+    val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft) { boundary, route -> boundary != null || route != null }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
         // The master list of airframes is the admin's and changes now and then: asked for when the map comes up, and kept for when there is no signal.
@@ -94,6 +113,13 @@ class HomeViewModel @Inject constructor(
                 // A diagram that will not open is not a reason to stop the app: the person starts from the list.
             }
         }
+        // What was held on a set of routes, and a route half drawn, belonged to the set before: another set, or none, starts clean.
+        viewModelScope.launch {
+            routeSession.active.distinctUntilChangedBy { it?.id }.collect { set ->
+                routeSelection.clear()
+                sketching.dropDraftNotOn(set?.id)                                         // not one begun on this very set while this was being heard
+            }
+        }
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { diagram ->
                 last.remember(diagram.id)                                                // not forgotten when the session closes (sign-out): the same account is back
@@ -107,15 +133,27 @@ class HomeViewModel @Inject constructor(
     /**
      * A tap on the map at [at], seen through [view]: the graphic under the finger is held, and a tap on nothing puts the held one down.
      * [touchRadiusPx] is how far from a graphic's point a finger still counts as on it. While a boundary is being drawn a tap is a corner of it,
-     * wherever it falls: nothing else on the map can be held until the person finishes or cancels.
+     * and while a route is being drawn a point of it, wherever it falls: nothing else on the map can be held until the person finishes or cancels.
+     * Otherwise a planning graphic is held first; failing that a route or one of its points; a tap on nothing puts down the graphic and the route's point
+     * (the route being worked on stays, so drawing and editing it carry on).
      */
     fun mapTapped(at: LatLon, view: MapProjection, touchRadiusPx: Double) {
         if (drawing.draft.value != null) {
             drawing.addPoint(at)
             return
         }
+        if (sketching.draft.value != null) {
+            sketching.addPoint(at)
+            return
+        }
         val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx)
-        if (hit != null) selection.select(hit) else selection.clear()
+        if (hit != null) {
+            selection.select(hit)
+            return
+        }
+        selection.clear()
+        val route = RouteHitTest.pick(routes.value, view, at, touchRadiusPx)
+        if (route != null) routeSelection.select(route.routeId, route.pointId) else routeSelection.releasePoint()
     }
 
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */

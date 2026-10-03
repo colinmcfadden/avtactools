@@ -7,7 +7,12 @@ import app.ezpztac.data.InMemoryAircraftChoice
 import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.DrawingMode
 import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.RouteRepository
+import app.ezpztac.data.RouteSelection
+import app.ezpztac.data.RouteSession
+import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.network.FieldAnalysis
 import app.ezpztac.map.CameraState
@@ -51,6 +56,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -112,9 +119,14 @@ class HomeViewModelTest {
             store, InMemoryMasterProfileStore(listOf(AircraftProfile(), AircraftProfile(id = 2, slug = "ch47f", name = "CH-47F Chinook", designation = "CH-47F", iconKey = "ch47", rotorDiameterM = 18.29))),
             { emptyList() }, InMemoryAircraftChoice(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), sync, scheduler,
         )
-        val drawing = BoundaryDrawing(session)
+        val mode = DrawingMode()
+        val drawing = BoundaryDrawing(session, mode)
+        val routes = RouteRepository(sync, store, scheduler)
+        val routeSession = RouteSession(routes, scope.backgroundScope)
+        val routeSelection = RouteSelection()
+        val sketching = RouteSketching(routeSession, aircraft, mode)
         val last = FakeLastDiagram()
-        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, last, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
+        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
 
@@ -609,5 +621,213 @@ class HomeViewModelTest {
         r.aircraft.select("ch47f")
         advanceUntilIdle()
         assertEquals(listOf("CH-47F", "UH-60L", "CH-47F"), r.model.scene.value.graphics.aircraft.map { it.designation })   // and follows the choice
+    }
+
+    // -- Routes -----------------------------------------------------------------------------------------------------------
+
+    private fun point(id: String, at: LatLon, name: String = ".TGT", kind: String = "amps") =
+        app.ezpztac.model.RoutePoint(id = id, lat = at.lat, lon = at.lon, kind = kind, ptType = "target", name = name)
+
+    private val here = LatLon(34.7838, -84.0822)
+    private val north = LatLon(34.7848, -84.0822)                                   // about 110 m north: far apart on the screen at zoom 18
+
+    private fun route(id: String, vararg points: app.ezpztac.model.RoutePoint, visible: Boolean = true) =
+        app.ezpztac.model.SketchRoute(id = id, name = "R-$id", color = "#FF453A", visible = visible, points = points.toList())
+
+    /** A set with one route running from [here] to [north], open. */
+    private suspend fun Rig.openRoute(): String {
+        val made = routes.create("MISSION", listOf(route("r1", point("p1", here), point("p2", north))))
+        routeSession.open(made.id)
+        return made.id
+    }
+
+    @Test
+    fun `with no set of routes open the map draws no routes`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.isEmpty)
+    }
+
+    @Test
+    fun `the routes of the open set are drawn, the one being worked on heavier and its point marked`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        assertEquals(listOf("r1"), r.model.routes.value.routes.map { it.id })
+        assertFalse(r.model.routes.value.routes.single().selected)
+        r.routeSelection.select("r1", "p2")
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.routes.single().selected)
+        assertEquals(listOf("p2"), r.model.routes.value.routes.single().pins.filter { it.selected }.map { it.id })
+    }
+
+    @Test
+    fun `a held route that is no longer in the set is not drawn as held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.routeSelection.select("gone", "p1")
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.routes.none { it.selected })
+        assertTrue(r.model.routes.value.routes.flatMap { it.pins }.none { it.selected })
+    }
+
+    @Test
+    fun `a point held on another route is not marked on this one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.routes.create("MISSION", listOf(route("r1", point("p1", here), point("p2", north)), route("r2", point("q1", here), point("q2", north))))
+        r.routeSession.open(made.id)
+        r.routeSelection.select("r2", "p1")                                                   // p1 belongs to r1, not r2
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.routes.flatMap { it.pins }.none { it.selected })
+    }
+
+    @Test
+    fun `a route being drawn is drawn with the set it belongs to, and not on another`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.sketching.start()
+        r.sketching.addPoint(LatLon(34.70, -84.10))
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(34.70, -84.10)), r.model.routes.value.draft)
+        r.routeSession.open(r.routes.create("OTHER").id)
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.draft.isEmpty())
+    }
+
+    @Test
+    fun `while a route is being drawn a tap is a point of it, wherever it falls, and the sheet goes down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertFalse(r.model.isDrawing.value)
+        r.sketching.start()
+        advanceUntilIdle()
+        assertTrue(r.model.isDrawing.value)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)           // right on the PZ marker and on a route point
+        r.model.mapTapped(LatLon(34.7900, -84.0700), view(), touchRadiusPx = 24.0)
+        assertEquals(2, r.sketching.draft.value!!.points.size)
+        assertNull(r.selection.selected.value)
+        assertNull(r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on a route's named point holds the route and the point`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.data.RouteHeld("r1", "p2"), r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on the line holds the route and no point`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7843, -84.0822), view(), touchRadiusPx = 24.0)           // half way between the two points
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on nothing puts the point down and keeps the route`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p2")
+        r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+        r.routeSelection.clear()
+        r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)           // and nothing held stays nothing held
+        assertNull(r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on a graphic holds the graphic and not the route under it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.model.mapTapped(here, view(), touchRadiusPx = 24.0)                                   // the PZ marker and the route's first point are both here
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+        assertNull(r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on a route holds it and lets go of a graphic that was held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)
+        assertNull(r.selection.selected.value)
+        assertEquals("r1", r.routeSelection.held.value!!.routeId)
+    }
+
+    @Test
+    fun `opening another set, or closing the set, puts down what was held and drops a route half drawn`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p1")
+        r.sketching.start()
+        r.sketching.addPoint(LatLon(34.70, -84.10))
+        r.routeSession.open(r.routes.create("OTHER").id)
+        advanceUntilIdle()
+        assertNull(r.routeSelection.held.value)
+        assertNull(r.sketching.draft.value)
+        assertFalse(r.model.isDrawing.value)
+
+        r.routeSelection.select("x", null)
+        r.sketching.start()
+        r.routeSession.close()
+        advanceUntilIdle()
+        assertNull(r.routeSelection.held.value)
+        assertNull(r.sketching.draft.value)
+    }
+
+    @Test
+    fun `editing the open set does not put down what is held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p1")
+        r.routeSession.edit("Hide") { set -> set.mapRoute("r1") { it.copy(visible = false) } }
+        advanceUntilIdle()
+        assertEquals(app.ezpztac.data.RouteHeld("r1", "p1"), r.routeSelection.held.value)
+        assertTrue(r.model.routes.value.routes.isEmpty())                                      // a hidden route is not drawn
+    }
+
+    @Test
+    fun `a boundary being drawn still has the map's taps when a route is also open`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.drawing.start()
+        advanceUntilIdle()
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)                                   // on a route's point: still a corner
+        assertEquals(1, r.drawing.draft.value!!.points.size)
+        assertNull(r.routeSelection.held.value)
+        assertEquals("Finish or cancel the boundary first.", r.sketching.start())
+        assertTrue(r.model.isDrawing.value)
     }
 }

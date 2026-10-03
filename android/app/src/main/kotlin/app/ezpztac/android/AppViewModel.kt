@@ -7,6 +7,7 @@ import app.ezpztac.auth.AuthLinks
 import app.ezpztac.auth.AuthRoute
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.RouteSession
 import app.ezpztac.data.Ownership
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.AppConfig
@@ -35,6 +36,7 @@ class AppViewModel @Inject constructor(
     private val accounts: AccountScope,
     private val sync: SyncScheduler,
     private val session: DiagramSession,
+    private val routeSession: RouteSession,
     private val mapTokens: MapTokenSink,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
@@ -69,7 +71,7 @@ class AppViewModel @Inject constructor(
         if (auth !is AuthState.SignedIn) {
             if (auth is AuthState.SignedOut) {
                 sync.cancelAll()
-                closeDiagram()
+                closeOpenDocuments()
             }
             return
         }
@@ -84,14 +86,24 @@ class AppViewModel @Inject constructor(
         if (ownership.value == Ownership.Yours) startSyncing()
     }
 
-    /** Whoever signs in next must not find this account's open diagram on the map. It is saved first; if that fails the person is signed out anyway. */
-    private suspend fun closeDiagram() {
+    /**
+     * Whoever signs in next must not find this account's open diagram, or open set of routes, on the map. Each is saved first; if that fails the person is
+     * signed out anyway, and one that will not save does not keep the other from closing.
+     */
+    private suspend fun closeOpenDocuments() {
         try {
             session.close()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            // The diagram is closed regardless ([DiagramSession.close]); a change that could not be written is lost with the sign-out.
+            // The diagram is closed regardless ([DocumentSession.close]); a change that could not be written is lost with the sign-out.
+        }
+        try {
+            routeSession.close()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Likewise the set of routes.
         }
     }
 
