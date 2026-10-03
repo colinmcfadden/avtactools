@@ -299,3 +299,30 @@ public data class TerrainAnalysis(
     val directional: DirectionalSlope? = null,
     val thresholds: SlopeThresholds,
 )
+
+/** What `/api/elevations` answered: one elevation in whole feet for each point asked about, in order, `null` where its tile could not be read. */
+@Serializable
+public data class ElevationsResponse(
+    val elevationsFt: List<Int?>,
+    /** Set when sampling failed outright (the server still answers 200, with every elevation null); words for a log, not for a person. */
+    val error: String? = null,
+)
+
+/** The wind the server found for one point of a route. */
+@Serializable
+public data class PointWindDto(
+    /** Whole degrees true the wind blows FROM; 0 when it is variable. */
+    val dirTrue: Int,
+    val speedKts: Double,
+    val variable: Boolean,
+    /** The nearest observation's temperature, if it had one. */
+    val tempC: Double? = null,
+    val station: String? = null,
+    /** `METAR` (an observation) or `TAF` (a forecast). */
+    val source: String,
+    val distanceMiles: Double,
+)
+
+/** What `/api/route-winds` answered: the wind for each point it could find one for, by the id the point was sent with. A point with no station in reach is not in it. */
+@Serializable
+public data class WindsResponse(val winds: Map<String, PointWindDto>)

@@ -57,6 +57,12 @@ class DtoFixtureTest {
         "analyze-field" to FieldAnalysis.serializer(),
         "terrain-analysis" to TerrainAnalysis.serializer(),
         "terrain-analysis: no landing heading" to TerrainAnalysis.serializer(),
+        "elevations" to ElevationsResponse.serializer(),
+        "elevations: no points" to ElevationsResponse.serializer(),
+        "elevations: sampling fails" to ElevationsResponse.serializer(),
+        "route-winds" to WindsResponse.serializer(),
+        "route-winds: no points" to WindsResponse.serializer(),
+        "route-winds: no station answers" to WindsResponse.serializer(),
         "sync: changes" to ChangeFeed.serializer(),
         "sync: nothing new" to ChangeFeed.serializer(),
     )

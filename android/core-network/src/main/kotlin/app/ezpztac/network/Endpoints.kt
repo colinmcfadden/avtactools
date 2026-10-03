@@ -320,3 +320,54 @@ public suspend fun ApiClient.terrainAnalysis(polygon: List<LatLon>, landingHeadi
         ),
     ),
 )
+
+/**
+ * Ground elevation in feet at each of [points], in the same order, `null` where the server could not read the ground there. A failure while
+ * sampling comes back as a 200 with every elevation null, which reads here as no answer, and an empty list asks nothing.
+ */
+public suspend fun ApiClient.elevations(points: List<LatLon>): List<Double?> {
+    if (points.isEmpty()) return emptyList()
+    val answer: ElevationsResponse = decode(
+        execute(
+            ApiClient.Call(
+                "POST", "/api/elevations",
+                body = buildJsonObject {
+                    put("points", JsonArray(points.map { buildJsonObject { put("lat", it.lat); put("lon", it.lon) } }))
+                },
+            ),
+        ),
+    )
+    return answer.elevationsFt.map { it?.toDouble() }
+}
+
+/** A point of a route, asked about for its wind. [time] is the instant the wind is wanted for, as `2026-10-03T16:30:00.000Z`, or null for now. */
+public data class WindQuestion(val id: String, val lat: Double, val lon: Double, val time: String?)
+
+/**
+ * The wind at each of [points], from the nearest weather station: the latest observation, or the forecast for a point wanted more than about half an
+ * hour ahead. A point the server could find no station for is not in the answer.
+ */
+public suspend fun ApiClient.routeWinds(points: List<WindQuestion>): Map<String, PointWindDto> {
+    if (points.isEmpty()) return emptyMap()
+    val answer: WindsResponse = decode(
+        execute(
+            ApiClient.Call(
+                "POST", "/api/route-winds",
+                body = buildJsonObject {
+                    put(
+                        "points",
+                        JsonArray(
+                            points.map {
+                                buildJsonObject {
+                                    put("id", it.id); put("lat", it.lat); put("lon", it.lon)
+                                    if (it.time != null) put("time", it.time)
+                                }
+                            },
+                        ),
+                    )
+                },
+            ),
+        ),
+    )
+    return answer.winds
+}
