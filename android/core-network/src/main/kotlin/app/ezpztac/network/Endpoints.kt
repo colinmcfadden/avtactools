@@ -163,6 +163,70 @@ public suspend fun ApiClient.deleteLz(id: Int, baseRevision: Int? = null, idempo
     )
 }
 
+// -- Saved routes -----------------------------------------------------------------
+//
+// A saved route is a *set* of sketched routes under one name. The server takes it as `multipart/form-data` (the web's form), with the routes as a
+// JSON document in a text field. Only `sketch` sets are made here: a `mission` save also carries the AMPS file, which the apps do not send yet.
+
+public suspend fun ApiClient.listRoutes(): List<RouteSummary> =
+    decode(execute(ApiClient.Call("GET", "/api/routes")))
+
+public suspend fun ApiClient.getRoute(id: Int): RouteFull =
+    decode(execute(ApiClient.Call("GET", "/api/routes/$id")))
+
+/**
+ * Saves a new set of sketched routes. Pass the [clientUuid] the device chose and a retry after a lost response returns the first
+ * record ([Saved.created] false) instead of making a second.
+ */
+public suspend fun ApiClient.createRoute(
+    name: String,
+    routeData: JsonObject,
+    clientUuid: String,
+    idempotencyKey: String = newKey(),
+): Saved<RouteSummary> {
+    val response = execute(
+        ApiClient.Call(
+            "POST", "/api/routes",
+            form = mapOf("name" to name, "kind" to "sketch", "route_data" to routeData.toString(), "client_uuid" to clientUuid),
+            headers = mapOf("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+    return Saved(decode(response), created = response.status == 201)
+}
+
+/**
+ * Edits a saved set on top of [baseRevision], the revision the edit was made against. Only what is given is sent and changed. If the server
+ * has moved on, nothing is overwritten and [RevisionConflictException] carries the server's copy.
+ */
+public suspend fun ApiClient.updateRoute(
+    id: Int,
+    baseRevision: Int?,
+    name: String? = null,
+    routeData: JsonObject? = null,
+    idempotencyKey: String = newKey(),
+): RouteSummary = decode(
+    execute(
+        ApiClient.Call(
+            "PUT", "/api/routes/$id",
+            form = buildMap {
+                if (name != null) put("name", name)
+                if (routeData != null) put("route_data", routeData.toString())
+            },
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    ),
+)
+
+/** Deletes a saved set. The server keeps a tombstone (and drops the content) so other devices learn of it. Deleting twice is not an error. */
+public suspend fun ApiClient.deleteRoute(id: Int, baseRevision: Int? = null, idempotencyKey: String = newKey()) {
+    execute(
+        ApiClient.Call(
+            "DELETE", "/api/routes/$id",
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+}
+
 // -- Aircraft profiles ------------------------------------------------------------
 
 /** The master list, then the caller's own profiles. */

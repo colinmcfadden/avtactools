@@ -54,9 +54,9 @@ public class FakeServer : SyncApi {
     /** Changes of a kind this engine does not handle (routes, point sets), placed in the feed's order. */
     private val foreign = mutableListOf<SyncChange>()
 
-    fun addForeignChange(type: String) {
+    fun addForeignChange(type: String, kind: String? = null) {
         foreign += SyncChange(type = type, id = nextId++, clientUuid = "foreign-$seq", revision = 1, deleted = false, name = "a $type", seq = ++seq,
-            data = JsonObject(emptyMap()))
+            kind = kind, data = JsonObject(emptyMap()))
     }
 
     private fun check(op: String) {
@@ -75,6 +75,8 @@ public class FakeServer : SyncApi {
             "revision" to JsonPrimitive(r.revision), "lz_data" to r.data))
         RecordKind.AIRCRAFT -> JsonObject(r.data + mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name),
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision)))
+        RecordKind.ROUTE -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "kind" to JsonPrimitive("sketch"),
+            "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data))
     }
 
     private fun conflict(r: Rec) = RevisionConflictException("The record changed on the server. Nothing was overwritten.", snapshot(r))
@@ -118,9 +120,11 @@ public class FakeServer : SyncApi {
         failAll?.let { throw it }
         val ours = records.filter { it.seq > since }.map {
             SyncChange(
-                type = when (it.kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft" },
+                type = when (it.kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE -> "route" },
                 id = it.serverId, clientUuid = it.uuid, revision = it.revision, deleted = it.deleted, name = it.name,
-                seq = it.seq, data = if (it.deleted) JsonObject(emptyMap()) else (if (it.kind == RecordKind.LZ) it.data else snapshot(it)) as JsonElement,
+                kind = if (it.kind == RecordKind.ROUTE) "sketch" else null,
+                // The feed carries an LZ's diagram and a route's routes as they are, and a profile as the whole record.
+                seq = it.seq, data = if (it.deleted) JsonObject(emptyMap()) else (if (it.kind == RecordKind.AIRCRAFT) snapshot(it) else it.data) as JsonElement,
             )
         }
         val after = (ours + foreign.filter { it.seq > since }).sortedBy { it.seq }

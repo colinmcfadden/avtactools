@@ -23,13 +23,16 @@ public interface Env : AutoCloseable {
 public fun content(kind: RecordKind, tag: String): JsonObject = when (kind) {
     RecordKind.LZ -> doc("schema" to 2, "note" to tag)
     RecordKind.AIRCRAFT -> doc("designation" to tag, "rotor_diameter_m" to 14.0)
+    RecordKind.ROUTE -> doc("version" to 1, "note" to tag)
 }
 
-public fun tagOf(kind: RecordKind, record: LocalRecord): String? =
-    (record.data[if (kind == RecordKind.LZ) "note" else "designation"] as? JsonPrimitive)?.contentOrNull
+/** The field of a kind's document the scenarios write their tag into. */
+private fun tagKey(kind: RecordKind) = if (kind == RecordKind.AIRCRAFT) "designation" else "note"
+
+public fun tagOf(kind: RecordKind, record: LocalRecord): String? = (record.data[tagKey(kind)] as? JsonPrimitive)?.contentOrNull
 
 public suspend fun Env.live(kind: RecordKind): List<SyncChange> =
-    serverView().filter { it.type == (if (kind == RecordKind.LZ) "lz" else "aircraft") && !it.deleted }
+    serverView().filter { it.type == when (kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE -> "route" } && !it.deleted }
 
 /** One rule of sync, as a scenario between devices. [perKind] ones run once for each kind of record that syncs. */
 public class Scenario(
@@ -235,12 +238,14 @@ public object ScenarioBook {
             val a = env.device("A")
             repeat(3) { a.repository.create(RecordKind.LZ, "LZ $it", content(RecordKind.LZ, "$it")) }
             a.repository.create(RecordKind.AIRCRAFT, "My Hawk", content(RecordKind.AIRCRAFT, "MH-60"))
+            a.repository.create(RecordKind.ROUTE, "ROUTES", content(RecordKind.ROUTE, "r"))
             a.sync()
 
             val fresh = env.device("fresh")
-            assertEquals(4, fresh.sync().pulled)
+            assertEquals(5, fresh.sync().pulled)
             assertEquals(listOf("LZ 0", "LZ 1", "LZ 2"), fresh.names(RecordKind.LZ))
             assertEquals(listOf("My Hawk"), fresh.names(RecordKind.AIRCRAFT))
+            assertEquals(listOf("ROUTES"), fresh.names(RecordKind.ROUTE))
             assertEquals(0, fresh.sync().pulled)                                       // nothing new
             a.repository.create(RecordKind.LZ, "LZ 3", content(RecordKind.LZ, "3")); a.sync()
             assertEquals(1, fresh.sync().pulled)

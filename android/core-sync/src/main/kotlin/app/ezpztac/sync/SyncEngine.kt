@@ -354,7 +354,10 @@ public class SyncEngine(
         val kind = when (change.type) {
             "lz" -> RecordKind.LZ
             "aircraft" -> RecordKind.AIRCRAFT
-            else -> return SyncReport()                                    // routes and point sets: not synced by this engine yet
+            // A saved route the web made from an AMPS mission also holds the mission file, which the app does not fetch or send yet: it is left
+            // where it is (the cursor still moves past it). Sets of sketched routes sync like any record.
+            "route" -> if (change.kind == "mission") return SyncReport() else RecordKind.ROUTE
+            else -> return SyncReport()                                    // point sets: not synced by this engine yet
         }
         val local = record(kind, change.clientUuid)
 

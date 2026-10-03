@@ -9,7 +9,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -430,13 +432,22 @@ internal class SyncFailureTest {
 
     @Test
     fun `a change of a kind this engine does not handle is passed over, and the cursor still moves`() = rig {
-        server.addForeignChange("route")
+        server.addForeignChange("route", kind = "mission")                           // a mission the web imported: it carries a file this engine does not fetch
         server.addForeignChange("pointset")
         server.createElsewhere(kind, "web-1", "LZ", lz("x"))
         val report = b.sync()
         assertEquals(listOf("LZ"), b.names(kind))
+        assertEquals(emptyList<String>(), b.names(RecordKind.ROUTE))
         assertEquals(3, report.pulled)
         assertEquals(0, b.sync().pulled)
+    }
+
+    @Test
+    fun `a set of sketched routes made on the web is applied like any record`() = rig {
+        server.createElsewhere(RecordKind.ROUTE, "web-r1", "ROUTES", JsonObject(mapOf("version" to JsonPrimitive(1), "routes" to JsonArray(emptyList()))))
+        b.sync()
+        assertEquals(listOf("ROUTES"), b.names(RecordKind.ROUTE))
+        assertEquals(JsonPrimitive(1), b.record(RecordKind.ROUTE, "web-r1")!!.data["version"])
     }
 
     @Test

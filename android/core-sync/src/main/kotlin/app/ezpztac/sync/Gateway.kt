@@ -7,10 +7,13 @@ import app.ezpztac.network.ChangeFeed
 import app.ezpztac.network.changes
 import app.ezpztac.network.createAircraftProfile
 import app.ezpztac.network.createLz
+import app.ezpztac.network.createRoute
 import app.ezpztac.network.deleteAircraftProfile
 import app.ezpztac.network.deleteLz
+import app.ezpztac.network.deleteRoute
 import app.ezpztac.network.updateAircraftProfile
 import app.ezpztac.network.updateLz
+import app.ezpztac.network.updateRoute
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -56,6 +59,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
         RecordKind.LZ -> client.createLz(record.name, record.data, record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
         RecordKind.AIRCRAFT -> client.createAircraftProfile(aircraftInput(record, includeIdentity = true), key)
             .let { Remote(it.value.id, it.value.revision ?: 1, it.created) }
+        RecordKind.ROUTE -> client.createRoute(record.name, record.data, record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
     }
 
     override suspend fun update(record: LocalRecord, baseRevision: Int, key: String): Remote {
@@ -64,6 +68,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
             RecordKind.LZ -> client.updateLz(id, baseRevision, record.name, record.data, key).let { Remote(it.id, it.revision, created = false) }
             RecordKind.AIRCRAFT -> client.updateAircraftProfile(id, baseRevision, aircraftInput(record, includeIdentity = false), key)
                 .let { Remote(it.id, it.revision ?: baseRevision + 1, created = false) }
+            RecordKind.ROUTE -> client.updateRoute(id, baseRevision, record.name, record.data, key).let { Remote(it.id, it.revision, created = false) }
         }
     }
 
@@ -72,6 +77,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
         when (record.kind) {
             RecordKind.LZ -> client.deleteLz(id, baseRevision, key)
             RecordKind.AIRCRAFT -> client.deleteAircraftProfile(id, baseRevision, key)
+            RecordKind.ROUTE -> client.deleteRoute(id, baseRevision, key)
         }
     }
 
@@ -103,6 +109,7 @@ public fun serverCopyOf(kind: RecordKind, server: JsonObject): ServerCopy? {
     val data = when (kind) {
         RecordKind.LZ -> server["lz_data"] as? JsonObject ?: return null
         RecordKind.AIRCRAFT -> server
+        RecordKind.ROUTE -> server["route_data"] as? JsonObject ?: return null
     }
     return ServerCopy(id, revision, name, data)
 }

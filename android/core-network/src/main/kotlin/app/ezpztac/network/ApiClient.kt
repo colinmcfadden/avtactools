@@ -22,6 +22,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
@@ -250,6 +251,8 @@ public class ApiClient(
         val path: String,
         val query: Map<String, String> = emptyMap(),
         val body: JsonElement? = null,
+        /** Text fields of a `multipart/form-data` body, which is how the web sends a saved route; used instead of [body]. */
+        val form: Map<String, String>? = null,
         /** Whether the call needs the access token. */
         val auth: Boolean = true,
         val headers: Map<String, String> = emptyMap(),
@@ -304,8 +307,12 @@ public class ApiClient(
             call.path.trimStart('/').split('/').forEach { addPathSegment(it) }
             call.query.forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
-        val body = call.body?.let { JSON.encodeToString(JsonElement.serializer(), it).toRequestBody(JSON_TYPE) }
-            ?: if (call.method == "GET" || call.method == "HEAD") null else EMPTY_BODY
+        val body = when {
+            call.form != null -> MultipartBody.Builder().setType(MultipartBody.FORM).apply { call.form.forEach { (k, v) -> addFormDataPart(k, v) } }.build()
+            call.body != null -> JSON.encodeToString(JsonElement.serializer(), call.body).toRequestBody(JSON_TYPE)
+            call.method == "GET" || call.method == "HEAD" -> null
+            else -> EMPTY_BODY
+        }
         val request = Request.Builder().url(url).method(call.method, body)
             .header(ClientInfo.HEADER, clientInfo.header)
             .header("Accept", "application/json")

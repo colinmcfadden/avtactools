@@ -124,6 +124,35 @@ public data class LzFull(
     @SerialName("lz_data") val lzData: JsonObject,
 )
 
+/** A saved set of sketched routes without its routes (`kind` is `sketch`; a `mission` also holds the AMPS file the web imported). */
+@Serializable
+public data class RouteSummary(
+    val id: Int,
+    val name: String,
+    val kind: String,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("has_file") val hasFile: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class RouteFull(
+    val id: Int,
+    val name: String,
+    val kind: String,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("has_file") val hasFile: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** A sketch's `{ version: 1, routes: [...] }`; a mission's is a display summary. Opaque here; `core-model` reads it. */
+    @SerialName("route_data") val routeData: JsonObject,
+)
+
 /** An airframe profile: the admin's master list, or one of the caller's own. */
 @Serializable
 public data class AircraftProfileDto(

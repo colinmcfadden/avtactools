@@ -3,7 +3,8 @@ package app.ezpztac.sync
 import kotlinx.serialization.json.JsonObject
 
 /** What is synced. Routes and point sets join when their API is typed. */
-public enum class RecordKind { LZ, AIRCRAFT }
+/** The kinds of saved record that sync. A [ROUTE] record is a *set* of sketched routes under one name (the server's `kind: sketch` saved route). */
+public enum class RecordKind { LZ, AIRCRAFT, ROUTE }
 
 /**
  * One saved record on this device. Its identity is [uuid], chosen here when it is made (so it has one before the

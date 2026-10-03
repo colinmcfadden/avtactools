@@ -174,6 +174,84 @@ class ApiClientCallsTest {
         }
     }
 
+    // -- Saved routes -----------------------------------------------------------------
+
+    private val routeData = buildJsonObject { put("version", 1); put("routes", kotlinx.serialization.json.JsonArray(emptyList())) }
+
+    /** A multipart body's text fields by name: the part's name is in its Content-Disposition, and its text follows the blank line. */
+    private fun fields(body: String): Map<String, String> =
+        Regex("""name="([^"]+)"\r\n(?:Content-[^\r]*\r\n)*\r\n(.*?)\r\n--""", RegexOption.DOT_MATCHES_ALL).findAll(body).associate { it.groupValues[1] to it.groupValues[2] }
+
+    @Test
+    fun `saving a set of routes is a multipart form with its identity, and says whether it was new`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("route: create") }
+            val first = rig.client.createRoute("ROUTES", routeData, uuid, idempotencyKey = "key-r1")
+            assertTrue(first.created)
+            assertEquals("sketch", first.value.kind)
+            val sent = rig.requests.single()
+            assertEquals("POST", sent.method)
+            assertTrue(sent.getHeader("Content-Type")!!.startsWith("multipart/form-data"), sent.getHeader("Content-Type"))
+            assertEquals("key-r1", sent.getHeader("Idempotency-Key"))
+            assertEquals(
+                mapOf("name" to "ROUTES", "kind" to "sketch", "route_data" to """{"version":1,"routes":[]}""", "client_uuid" to uuid),
+                fields(sent.body.readUtf8()),
+            )
+
+            rig.serve { Recorded.mock("route: create again with the same identity") }
+            assertFalse(rig.client.createRoute("ROUTES", routeData, uuid).created)           // a repeat of a lost response: 200
+        }
+    }
+
+    @Test
+    fun `an edit of a set says which revision it was made on, and sends only what changed`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("route: update") }
+            val updated = rig.client.updateRoute(1, baseRevision = 1, name = "ROUTES 2", idempotencyKey = "key-r2")
+            assertEquals(2, updated.revision)
+            val sent = rig.requests.single()
+            assertEquals("PUT", sent.method)
+            assertEquals("/api/routes/1", sent.requestUrl!!.encodedPath)
+            assertEquals("\"1\"", sent.getHeader("If-Match"))
+            assertEquals(mapOf("name" to "ROUTES 2"), fields(sent.body.readUtf8()))
+
+            rig.serve { Recorded.mock("route: update") }
+            rig.client.updateRoute(1, baseRevision = null, routeData = routeData)
+            val second = rig.requests.last()
+            assertNull(second.getHeader("If-Match"))
+            assertEquals(mapOf("route_data" to """{"version":1,"routes":[]}"""), fields(second.body.readUtf8()))
+        }
+    }
+
+    @Test
+    fun `a conflict on a set carries the server's copy`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("route: update on a stale revision") }
+            val e = assertThrows<RevisionConflictException> { rig.client.updateRoute(1, baseRevision = 1, name = "mine") }
+            val server = ApiClient.JSON.decodeFromJsonElement(RouteFull.serializer(), e.server)
+            assertEquals("ROUTES 2", server.name)
+            assertEquals(2, server.revision)
+            assertEquals("sketch", server.kind)
+        }
+    }
+
+    @Test
+    fun `listing, reading and deleting a set`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("route: list") }
+            assertEquals("ROUTES", rig.client.listRoutes().single().name)
+            rig.serve { Recorded.mock("route: get") }
+            val full = rig.client.getRoute(1)
+            assertEquals(1, (full.routeData["routes"] as kotlinx.serialization.json.JsonArray).size)
+            rig.serve { Recorded.mock("route: delete") }
+            rig.client.deleteRoute(1, baseRevision = 2, idempotencyKey = "key-r3")
+            val sent = rig.requests.last()
+            assertEquals("DELETE", sent.method)
+            assertEquals("\"2\"", sent.getHeader("If-Match"))
+            assertEquals("key-r3", sent.getHeader("Idempotency-Key"))
+        }
+    }
+
     // -- Aircraft profiles ------------------------------------------------------------
 
     @Test
@@ -223,11 +301,16 @@ class ApiClientCallsTest {
             val sent = rig.requests.single()
             assertEquals("0", sent.requestUrl!!.queryParameter("since"))
             assertEquals("50", sent.requestUrl!!.queryParameter("limit"))
-            assertEquals(listOf("lz", "aircraft", "lz"), feed.changes.map { it.type })
-            assertEquals(listOf(false, false, true), feed.changes.map { it.deleted })
-            assertEquals(6, feed.cursor)
+            assertEquals(listOf("lz", "route", "aircraft", "lz"), feed.changes.map { it.type })
+            assertEquals(listOf(false, false, false, true), feed.changes.map { it.deleted })
+            assertEquals(8, feed.cursor)
             assertFalse(feed.hasMore)
             assertEquals(JsonObject(emptyMap()), feed.changes.last().data)
+            // A route set arrives with its kind and its routes, so a device can read it without asking again.
+            val route = feed.changes.single { it.type == "route" }
+            assertEquals("sketch", route.kind)
+            assertEquals(false, route.hasFile)
+            assertEquals(1, (route.data as kotlinx.serialization.json.JsonObject).getValue("routes").let { (it as kotlinx.serialization.json.JsonArray).size })
 
             rig.serve { Recorded.mock("sync: nothing new") }
             assertEquals(999, rig.client.changes(since = 999).cursor)
