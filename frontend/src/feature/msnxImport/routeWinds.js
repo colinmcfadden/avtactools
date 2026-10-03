@@ -8,11 +8,11 @@ import { computeRoutePlan, defaultRoutePlan, planPoints } from "./routeCalc";
  */
 
 /**
- * Fetches per-point winds for a route. Each point's target time is its computed
- * clock time (when a TOT is set) or the plan date at midday, so future points
- * pull from the TAF. Returns { winds, amps } or { error }.
+ * The request for a route's winds: one entry per AMPS point, each with the time its wind is wanted at (its computed clock time when a TOT is set, else
+ * the plan date at local midday, else none). Pure: no network, so a fixture can hold the native apps to it. Returns { amps, points } or { error }.
+ * Times are ISO strings in UTC; a clock time is read in the device's local zone, which is why the same route asks for different instants in different zones.
  */
-export async function fetchForecastWinds(route) {
+export function windRequest(route) {
   const plan = { ...defaultRoutePlan(), ...route.plan };
   const amps = planPoints(route);
   if (amps.length === 0) return { error: "Route has no points." };
@@ -26,10 +26,21 @@ export async function fetchForecastWinds(route) {
     else if (midday && !Number.isNaN(midday.getTime())) time = midday.toISOString();
     return { id: p.id, lat: p.lat, lon: p.lon, time };
   });
+  return { amps, points };
+}
+
+/**
+ * Fetches per-point winds for a route. Each point's target time is its computed
+ * clock time (when a TOT is set) or the plan date at midday, so future points
+ * pull from the TAF. Returns { winds, amps } or { error }.
+ */
+export async function fetchForecastWinds(route) {
+  const request = windRequest(route);
+  if (request.error) return { error: request.error };
 
   try {
-    const res = await api.post("/route-winds", { points });
-    return { winds: res.data?.winds || {}, amps };
+    const res = await api.post("/route-winds", { points: request.points });
+    return { winds: res.data?.winds || {}, amps: request.amps };
   } catch (err) {
     return { error: err.response?.data?.error || err.message };
   }
