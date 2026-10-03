@@ -1,9 +1,19 @@
 import { useCallback, useState } from "react";
 import { nextRouteColor } from "./colorPalette";
-import { findNearestAdjacentIndex } from "./mutateMsnx";
 import { buildSketchMsnx } from "./createMsnx";
 import { defaultRoutePlan, ensureRoutePlan, fetchPointElevationsFt } from "./routeCalc";
 import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
+import {
+  appendAmpsPoint,
+  buildSketchRoute,
+  designatePoint,
+  insertShapingPoint,
+  movePoint,
+  renamePoint,
+  withPlanPatch,
+  withPointClock,
+  withPointOverride,
+} from "./sketchOps";
 
 const generateId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -41,51 +51,15 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     // AMPS model: only designated points ("amps") become real route points;
     // everything else exports as serpentine shaping geometry on the leg
     // between them. Points designated during drawing keep their type/name;
-    // otherwise the standard attack profile is applied automatically — the
-    // first two points become Target then IP, and the last two become RP
-    // (IP) then Target. Everything in the middle is shaping.
-    const lastIndex = draftPoints.length - 1;
-    const autoDesignation = (i) => {
-      if (i === 0) return { ptType: "target", name: ".TGT" };
-      if (i === lastIndex) return { ptType: "target", name: ".TGT" };
-      if (i === 1) return { ptType: "ip", name: ".SP" };
-      if (i === lastIndex - 1) return { ptType: "ip", name: ".RP" };
-      return null;
-    };
-
-    const route = {
-      id: generateId("sketch"),
+    // otherwise the standard attack profile is applied automatically (see
+    // sketchOps.autoDesignation).
+    const route = buildSketchRoute(draftPoints, {
       name,
+      id: generateId("sketch"),
       color: nextRouteColor(),
-      visible: true,
       plan: defaultRoutePlan(aircraftProfile),
-      elevations: {},
-      points: draftPoints.map((p, i) => {
-        const base = {
-          id: crypto.randomUUID(),
-          lat: p.lat,
-          lon: p.lon,
-          ele: null,
-          role: i === 0 ? "start" : "waypoint",
-        };
-        // A designation set during drawing (right-click menu, or "+" from a
-        // local point) always wins.
-        if (p.designation) {
-          return {
-            ...base,
-            kind: "amps",
-            ptType: p.designation.ptType || "turn",
-            name: p.designation.name || (i === 0 ? ".SP" : `.CP${i}`),
-            chartElevationFt: p.designation.chartElevationFt,
-          };
-        }
-        const auto = autoDesignation(i);
-        if (auto) {
-          return { ...base, kind: "amps", ptType: auto.ptType, name: auto.name };
-        }
-        return { ...base, kind: "shaping", ptType: null, name: "" };
-      }),
-    };
+      newPointId: () => crypto.randomUUID(),
+    });
 
     setSketchedRoutes((prev) => [...prev, route]);
     setDraftPoints([]);
@@ -96,34 +70,9 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    * Changes a point's designation. Demoting one of a route's two remaining
    * AMPS points to shaping is refused — legs need at least two endpoints.
    */
-  const designateSketchPoint = (routeId, pointId, { kind, ptType, name }) => {
+  const designateSketchPoint = (routeId, pointId, designation) => {
     setSketchedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
-
-        if (kind === "shaping") {
-          const ampsCount = route.points.filter((p) => p.kind === "amps").length;
-          const target = route.points.find((p) => p.id === pointId);
-          if (target?.kind === "amps" && ampsCount <= 2) return route;
-        }
-
-        return {
-          ...route,
-          points: route.points.map((p) => {
-            if (p.id !== pointId) return p;
-            if (kind === "shaping") {
-              return { ...p, kind: "shaping", ptType: null, name: "", role: "waypoint" };
-            }
-            return {
-              ...p,
-              kind: "amps",
-              ptType: ptType ?? p.ptType ?? "turn",
-              name: name !== undefined ? name : p.name || ".CP",
-              role: p.role === "start" ? "start" : "waypoint",
-            };
-          }),
-        };
-      }),
+      prev.map((route) => (route.id === routeId ? designatePoint(route, pointId, designation) : route)),
     );
   };
 
@@ -132,70 +81,27 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   // to the DEM elevation when moved off a known point.
   const updateSketchPointPosition = useCallback((routeId, pointId, lat, lon, chartElevationFt) => {
     setSketchedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
-        return {
-          ...route,
-          points: route.points.map((p) =>
-            p.id === pointId ? { ...p, lat, lon, chartElevationFt } : p,
-          ),
-        };
-      }),
+      prev.map((route) =>
+        route.id === routeId ? movePoint(route, pointId, lat, lon, chartElevationFt) : route,
+      ),
     );
   }, []);
 
   const insertSketchPoint = (routeId, lat, lon) => {
     setSketchedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
-        const index = findNearestAdjacentIndex(route, lat, lon);
-        if (index === -1) return route;
-
-        const points = [...route.points];
-        points.splice(index + 1, 0, {
-          id: crypto.randomUUID(),
-          lat,
-          lon,
-          ele: null,
-          kind: "shaping",
-          ptType: null,
-          name: "",
-          role: "waypoint",
-        });
-        return { ...route, points };
-      }),
+      prev.map((route) =>
+        route.id === routeId ? insertShapingPoint(route, lat, lon, () => crypto.randomUUID()) : route,
+      ),
     );
   };
 
   /** Appends a designated AMPS point to the end of a route (used to snap the
    *  route line onto a named local point, carrying its charted elevation). */
-  const appendSketchPoint = (
-    routeId,
-    lat,
-    lon,
-    { name = "", ptType = "turn", chartElevationFt } = {},
-  ) => {
+  const appendSketchPoint = (routeId, lat, lon, options = {}) => {
     setSketchedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
-        return {
-          ...route,
-          points: [
-            ...route.points,
-            {
-              id: crypto.randomUUID(),
-              lat,
-              lon,
-              ele: null,
-              kind: "amps",
-              ptType,
-              name,
-              role: "waypoint",
-              chartElevationFt,
-            },
-          ],
-        };
-      }),
+      prev.map((route) =>
+        route.id === routeId ? appendAmpsPoint(route, lat, lon, options, () => crypto.randomUUID()) : route,
+      ),
     );
   };
 
@@ -220,28 +126,14 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   /** Merges plan settings (airspeed, altitude, wind, TOT, ...) into a route. */
   const updateRoutePlan = (routeId, patch) => {
     setSketchedRoutes((prev) =>
-      prev.map((route) =>
-        route.id === routeId
-          ? { ...route, plan: { ...defaultRoutePlan(), ...route.plan, ...patch } }
-          : route,
-      ),
+      prev.map((route) => (route.id === routeId ? withPlanPatch(route, patch) : route)),
     );
   };
 
   /** Merges a per-point "to" override (altitude/airspeed/wind). Pass null to clear the point. */
   const updatePointPlanOverride = (routeId, pointId, patch) => {
     setSketchedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
-        const plan = { ...defaultRoutePlan(), ...route.plan };
-        const perPoint = { ...plan.perPoint };
-        if (patch === null) {
-          delete perPoint[pointId];
-        } else {
-          perPoint[pointId] = { ...perPoint[pointId], ...patch };
-        }
-        return { ...route, plan: { ...plan, perPoint } };
-      }),
+      prev.map((route) => (route.id === routeId ? withPointOverride(route, pointId, patch) : route)),
     );
   };
 
@@ -251,20 +143,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    */
   const setSketchPointClock = (routeId, pointId, clock) => {
     setSketchedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
-        const plan = { ...defaultRoutePlan(), ...route.plan };
-        const perPoint = {};
-        // Drop every other point's clock; keep their other overrides.
-        for (const [id, over] of Object.entries(plan.perPoint || {})) {
-          const { clock: _clock, ...rest } = over;
-          if (Object.keys(rest).length) perPoint[id] = rest;
-        }
-        if (clock) {
-          perPoint[pointId] = { ...perPoint[pointId], clock };
-        }
-        return { ...route, plan: { ...plan, perPoint } };
-      }),
+      prev.map((route) => (route.id === routeId ? withPointClock(route, pointId, clock) : route)),
     );
   };
 
@@ -272,23 +151,9 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    *  coords + charted elevation. */
   const updateSketchPointName = (routeId, pointId, name, coords, chartElevationFt) => {
     setSketchedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
-        return {
-          ...route,
-          points: route.points.map((p) =>
-            p.id === pointId
-              ? {
-                  ...p,
-                  name,
-                  ...(coords
-                    ? { lat: coords.lat, lon: coords.lon, chartElevationFt }
-                    : {}),
-                }
-              : p,
-          ),
-        };
-      }),
+      prev.map((route) =>
+        route.id === routeId ? renamePoint(route, pointId, name, coords, chartElevationFt) : route,
+      ),
     );
   };
 

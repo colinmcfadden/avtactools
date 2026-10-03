@@ -15,6 +15,7 @@ contracts/
 │  ├─ coords/       parse.json                      reference: the web app
 │  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
+│  ├─ routes/       sketch.json                     reference: the web app (sketchOps)
 │  ├─ aircraft/     limits.json                     reference: the backend (`_apply_fields`, probed)
 │  ├─ symbols/      sidc.json, presets.json, script.json, svg/*.svg   reference: the web app (milsymbol)
 │  ├─ msnx/         template.msnx, parse.json, ...  reference: the web app
@@ -46,6 +47,7 @@ reference is.
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `workspace/ops.json` | `frontend/src/contracts/workspaceOpsFixtures.test.js` | — | `core-model` (`DiagramOps`) |
 | `workspace/doghouses.json` | `frontend/src/contracts/doghouseFixtures.test.js` | — | `core-model` (`Doghouses`, `JsValue.parseInt` / `parseFloat`) |
+| `routes/sketch.json` | `frontend/src/contracts/sketchFixtures.test.js` | — | `core-planning` (`SketchOps`) |
 | `aircraft/limits.json` | — | `backend/tests/test_contract_fixtures.py` (`AircraftLimitsTests`; `UPDATE_CONTRACTS=1` regenerates) | `core-model` (`AircraftDraft`) |
 | `symbols/*` | `frontend/src/contracts/symbolFixtures.test.js` | — | `core-model` (`Sidc`, `SymbolPresets`, `UnitMarkers`), `core-symbols` (`ScriptAnswer`, `PresetSymbols`; the `svg/` files are the app's assets) |
 | `msnx/*` | `frontend/src/contracts/msnxFixtures.test.js` | — | `core-formats` |
