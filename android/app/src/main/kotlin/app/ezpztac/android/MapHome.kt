@@ -57,6 +57,7 @@ import app.ezpztac.workspace.PointsHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesHost
 import app.ezpztac.workspace.ThreatsHost
+import app.ezpztac.workspace.ThreatsViewModel
 import kotlinx.coroutines.flow.filterNotNull
 
 private val PEEK = 112.dp
@@ -87,6 +88,7 @@ fun MapHome(
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
     val threatScene by home.threatScene.collectAsStateWithLifecycle()
+    val threatsModel: ThreatsViewModel = hiltViewModel()                  // the sheet's threats section and the mission export share one
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
@@ -129,9 +131,13 @@ fun MapHome(
                             GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs)
                         },
                     )
-                    RoutesHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center, crosshairGrid = state.readout?.mgrs)
+                    // A mission goes to AMPS with the threats it was planned against: the .ths named for it travels beside it when there are any.
+                    RoutesHost(
+                        onExport = { mission -> threatsModel.shareWithThreats(mission) { files -> ShareExport.share(context, files) } },
+                        crosshair = state.center, crosshairGrid = state.readout?.mgrs,
+                    )
                     PointsHost()
-                    ThreatsHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center)
+                    ThreatsHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center, crosshairGrid = state.readout?.mgrs, viewModel = threatsModel)
                     AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

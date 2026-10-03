@@ -119,4 +119,64 @@ class ShareExportTest {
     fun `the bundled threat database is the backend's template`() {
         assertArrayEquals(Fixtures.repoBytes("backend/threat_template.ths"), AssetThsTemplate(context).bytes())
     }
+
+    // -- A threat file beside the mission ------------------------------------------------------------------------------------
+
+    @Test
+    fun `a ths keeps its own extension, whatever the folder it came with`() {
+        assertEquals("MISSION 1.ths", ShareExport.plainName("MISSION 1.ths"))
+        assertEquals("MISSION 1.ths", ShareExport.plainName("MISSION 1.THS"))
+        assertEquals("x.ths", ShareExport.plainName("/data/user/0/x.ths"))
+        assertEquals("x.ths", ShareExport.plainName("..\\..\\x.ths"))
+    }
+
+    @Test
+    fun `the mission and its threat file go out together, each readable through its own URI`() {
+        val ths = byteArrayOf(83, 81, 76, 105, 116, 101)
+        val chooser = ShareExport.prepare(context, listOf(ExportFile("MISSION 1.msnx", bytes), ExportFile("MISSION 1.ths", ths)))
+        val send = sent(chooser)
+        assertEquals(Intent.ACTION_SEND_MULTIPLE, send.action)
+        assertEquals("application/octet-stream", send.type)
+        @Suppress("DEPRECATION") val uris = send.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)!!
+        assertEquals(listOf("MISSION 1.msnx", "MISSION 1.ths"), uris.map { it.lastPathSegment })
+        assertArrayEquals(bytes, context.contentResolver.openInputStream(uris[0])!!.use { it.readBytes() })
+        assertArrayEquals(ths, context.contentResolver.openInputStream(uris[1])!!.use { it.readBytes() })
+        val clip: ClipData = send.clipData!!
+        assertEquals(uris, (0 until clip.itemCount).map { clip.getItemAt(it).uri })            // the grant covers every one
+        assertTrue(send.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+    }
+
+    @Test
+    fun `one file is still a plain send`() {
+        val send = sent(ShareExport.prepare(context, listOf(ExportFile("threats.ths", bytes))))
+        assertEquals(Intent.ACTION_SEND, send.action)
+    }
+
+    @Test
+    fun `nothing to share is not a share`() {
+        val failure = runCatching { ShareExport.prepare(context, emptyList()) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
+    fun `a threat file is cleared after an hour, where a mission is kept a day`() {
+        exports().mkdirs()
+        val now = System.currentTimeMillis()
+        val oldThs = File(exports(), "OLD.ths").apply { writeBytes(bytes); setLastModified(now - 2 * 60 * 60 * 1000) }
+        val freshThs = File(exports(), "FRESH.ths").apply { writeBytes(bytes); setLastModified(now - 30 * 60 * 1000) }
+        val twoHourMission = File(exports(), "TWO.msnx").apply { writeBytes(bytes); setLastModified(now - 2 * 60 * 60 * 1000) }
+        ShareExport.prepare(context, ExportFile("NEW.msnx", bytes), now)
+        assertFalse("a two-hour-old .ths is still there", oldThs.exists())
+        assertTrue(freshThs.exists())
+        assertTrue("a mission is kept a day", twoHourMission.exists())
+    }
+
+    @Test
+    fun `clearing removes everything exported, a mission and a threat file alike, and is fine with nothing there`() {
+        ShareExport.clear(context)                                                             // no folder yet: no complaint
+        ShareExport.prepare(context, listOf(ExportFile("A.msnx", bytes), ExportFile("A.ths", bytes)))
+        assertEquals(2, exports().listFiles()!!.size)
+        ShareExport.clear(context)
+        assertEquals(0, exports().listFiles()!!.size)
+    }
 }

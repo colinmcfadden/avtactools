@@ -6,6 +6,7 @@ import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.ThreatTransfer
 import app.ezpztac.data.ThreatVault
 import app.ezpztac.data.ThsWriter
+import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.Radars
 import app.ezpztac.model.Threat
@@ -77,7 +78,8 @@ class ThreatsViewModelTest {
         assertEquals("Threat 1", r.state.editing!!.draft.name)
         r.model.updateDraft(r.state.editing!!.draft.copy(name = "   "))
         r.model.saveEdit(); advanceUntilIdle()
-        assertEquals("A threat needs a name.", r.state.error)
+        assertEquals("A threat needs a name.", r.state.editing!!.error)                  // said in the form, where Save is
+        assertNull(r.state.error)                                                         // not in the sheet's banner, which can be scrolled out of sight
         assertTrue(r.state.threats.isEmpty())
 
         r.model.updateDraft(r.state.editing!!.draft.copy(name = "SA-8"))
@@ -151,5 +153,124 @@ class ThreatsViewModelTest {
         assertEquals("Threat file ready to share.", r.state.note)
         assertFalse(r.state.exporting)
         assertNotNull(file.bytes)
+    }
+
+    // -- What the form says ---------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `typing again takes the refusal away, and a form that is then right saves`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.beginAdd(LatLon(34.75, -84.05)); advanceUntilIdle()
+        val draft = r.state.editing!!.draft
+        r.model.updateDraft(draft.copy(radars = draft.radars.mapIndexed { i, rd -> if (i == 0) rd.copy(rangeNmi = "far") else rd }))
+        r.model.saveEdit(); advanceUntilIdle()
+        assertEquals("Detection range is not a number.", r.state.editing!!.error)
+        r.model.updateDraft(draft); advanceUntilIdle()
+        assertNull(r.state.editing!!.error)
+        r.model.saveEdit(); advanceUntilIdle()
+        assertEquals(1, r.state.threats.size)
+    }
+
+    @Test
+    fun `a threat deleted while its form was open is not brought back`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.model.beginEdit(id); advanceUntilIdle()
+        r.store.remove(id)
+        r.model.saveEdit(); advanceUntilIdle()
+        assertTrue(r.store.entries.value.isEmpty())
+        assertNull(r.state.editing)
+        assertEquals("That threat is no longer here.", r.state.error)
+    }
+
+    // -- The list and the held threat ----------------------------------------------------------------------------------------
+
+    @Test
+    fun `a row says what the threat is, how far each radar reaches and where it is`() = runTest(dispatcher) {
+        val r = rig()
+        r.store.add(threat("SA-8"))
+        r.store.add(Threat("Odd one", "SHAPMFF-------", 34.75, -84.05, "", "SOF", radars = listOf(Radars.default(Radars.ENGAGEMENT).copy(rangeNmi = 12.5))))
+        advanceUntilIdle()
+        val rows = r.state.threats
+        assertEquals(listOf("SAM Launcher", "Custom symbol"), rows.map { it.symbol })
+        assertEquals("Detection 25 nm · Engagement 15 nm", rows[0].ranges)
+        assertEquals("Engagement 12.5 nm", rows[1].ranges)
+        assertEquals(MgrsConverter.toMgrs(34.75, -84.05)!!.format(), rows[0].grid)
+    }
+
+    @Test
+    fun `the held threat is told in full, a radar to a line, and a hidden one is not held`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat().copy(information = "Seen at 0300", source = "HUMINT",
+            radars = listOf(Radars.default(Radars.DETECTION), Radars.default(Radars.ENGAGEMENT).copy(aglNotMsl = false, showRangeRings = false))))
+        r.model.select(id); advanceUntilIdle()
+        val held = r.state.held!!
+        assertEquals("SA-8", held.name)
+        assertEquals("HUMINT", held.source)
+        assertEquals("Seen at 0300", held.information)
+        assertEquals("34.75000, -84.05000", held.latLon)
+        assertEquals(listOf("Detection · 25 nm · antenna 20 ft AGL · rings on", "Engagement · 15 nm · antenna 20 ft MSL · rings off"), held.radars)
+        r.model.toggleVisible(id); advanceUntilIdle()
+        assertNull(r.state.held)
+        r.selection.select("not-there"); advanceUntilIdle()
+        assertNull(r.state.held)                                                           // a selection that names nothing shows nothing
+    }
+
+    // -- Moving ----------------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `a nudge moves the threat that many feet, and a typed grid puts it there or says what is wrong`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.model.nudge(id, 200.0, -50.0)
+        val moved = r.store.entries.value.single().threat
+        val expected = app.ezpztac.planning.GraphicEdits.offset(LatLon(34.75, -84.05), 200.0 * 0.3048, -50.0 * 0.3048)
+        assertEquals(expected.lat, moved.lat, 1e-9)
+        assertEquals(expected.lon, moved.lon, 1e-9)
+        assertNull(r.model.moveToText(id, "16S GD 66993 52949"))
+        assertEquals(34.78, r.store.entries.value.single().threat.lat, 0.01)
+        val before = r.store.entries.value.single().threat
+        assertNotNull(r.model.moveToText(id, "not a place"))
+        assertEquals(before, r.store.entries.value.single().threat)                       // a refusal moves nothing
+        r.model.nudge("nope", 10.0, 10.0)
+        assertEquals(1, r.store.entries.value.size)
+    }
+
+    @Test
+    fun `removing all forgets every threat, here and in the file`() = runTest(dispatcher) {
+        val r = rig()
+        r.store.add(threat("A")); r.store.add(threat("B")); advanceUntilIdle()
+        r.model.select(r.store.entries.value.first().id)
+        r.model.beginAdd(LatLon(34.0, -84.0))
+        r.model.removeAll(); advanceUntilIdle()
+        assertTrue(r.store.entries.value.isEmpty())
+        assertNull(r.selection.held.value)
+        assertNull(r.state.editing)
+    }
+
+    // -- A mission and its threats -----------------------------------------------------------------------------------------------
+
+    @Test
+    fun `with no threats a mission is shared as it is`() = runTest(dispatcher) {
+        val r = rig()
+        val mission = ExportFile("MISSION 1.msnx", byteArrayOf(1, 2, 3))
+        var shared: List<ExportFile>? = null
+        r.model.shareWithThreats(mission) { shared = it }
+        advanceUntilIdle()
+        assertEquals(listOf("MISSION 1.msnx"), shared!!.map { it.fileName })
+        assertNull(r.state.error)
+    }
+
+    @Test
+    fun `with threats the mission goes out with the ths that travels with it, named for it`() = runTest(dispatcher) {
+        val r = rig()
+        r.store.add(threat("A")); r.store.add(threat("B")); advanceUntilIdle()
+        val mission = ExportFile("MISSION 1.msnx", byteArrayOf(1, 2, 3))
+        var shared: List<ExportFile>? = null
+        r.model.shareWithThreats(mission) { shared = it }
+        advanceUntilIdle()
+        assertEquals(listOf("MISSION 1.msnx", "MISSION 1.ths"), shared!!.map { it.fileName })
+        assertTrue(shared[1].bytes.size > 1_000)
+        assertNull(r.state.error)
     }
 }

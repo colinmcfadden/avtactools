@@ -37,6 +37,8 @@ import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.Radars
+import app.ezpztac.model.Threat
 import app.ezpztac.symbols.SymbolOutcome
 import app.ezpztac.symbols.SymbolRenderer
 import app.ezpztac.sync.InMemorySyncStore
@@ -1009,6 +1011,114 @@ class HomeViewModelTest {
         r.model.mapTapped(north, view(), touchRadiusPx = 24.0)                                // the route's point p2, nothing else near
         assertEquals(app.ezpztac.data.RouteHeld("r1", "p2"), r.routeSelection.held.value)
         assertNull(r.pointSelection.held.value)                                                // choosing a route point puts the local point down
+    }
+
+    // -- Threats on the map -------------------------------------------------------------------------------------------------
+
+    private fun Rig.threat(at: LatLon, name: String = "SA-6") =
+        threats.add(Threat(name, "SHGPEWRR------", at.lat, at.lon, "", "SOF", radars = Radars.defaultPair()))
+
+    @Test
+    fun `the map draws the threats that are shown, the held one marked`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val a = r.threat(LatLon(34.78, -84.08), "A")
+        val b = r.threat(LatLon(34.79, -84.09), "B")
+        val hidden = r.threat(LatLon(34.80, -84.10), "H")
+        r.threats.setVisible(hidden, false)
+        r.threatSelection.select(b)
+        advanceUntilIdle()
+        val drawn = r.model.threatScene.value.pins
+        assertEquals(listOf("A", "B"), drawn.map { it.name })
+        assertEquals(listOf(false, true), drawn.map { it.selected })
+        assertEquals(listOf(a, b), drawn.map { it.id })
+        r.threatSelection.select(hidden)                                                       // a held threat that is hidden marks nothing
+        advanceUntilIdle()
+        assertTrue(r.model.threatScene.value.pins.none { it.selected })
+    }
+
+    @Test
+    fun `a tap on a threat holds it, and the same tap again puts it down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threat(LatLon(34.7838, -84.0822))
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertEquals(id, r.threatSelection.held.value)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertNull(r.threatSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on nothing puts a held threat down, and a tap on a hidden threat does not hold it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threat(LatLon(34.7838, -84.0822))
+        advanceUntilIdle()
+        r.threatSelection.select(id)
+        r.model.mapTapped(LatLon(10.0, 10.0), view(), touchRadiusPx = 24.0)
+        assertNull(r.threatSelection.held.value)
+        r.threats.setVisible(id, false)
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertNull(r.threatSelection.held.value)
+    }
+
+    @Test
+    fun `a threat wins the tap over a local point on the same place, and holding it puts the point down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        val pin = r.model.points.value.pins.first()
+        val id = r.threat(pin.at)
+        advanceUntilIdle()
+        r.pointSelection.select(set.id, pin.pointId)
+        r.model.mapTapped(pin.at, view(pin.at), touchRadiusPx = 24.0)
+        assertEquals(id, r.threatSelection.held.value)
+        assertNull(r.pointSelection.held.value)
+    }
+
+    @Test
+    fun `a threat wins the tap over a route point under it, which is let go while the route stays held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        val id = r.threat(north)
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p2")
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)
+        assertEquals(id, r.threatSelection.held.value)
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a route point is still reached where no threat is, and holding it puts a held threat down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        val id = r.threat(LatLon(34.7800, -84.0900))                                            // elsewhere
+        advanceUntilIdle()
+        r.threatSelection.select(id)
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.data.RouteHeld("r1", "p2"), r.routeSelection.held.value)
+        assertNull(r.threatSelection.held.value)
+    }
+
+    @Test
+    fun `a graphic wins the tap over a threat, and holding it puts the threat down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val id = r.threat(LatLon(34.7838, -84.0822))                                           // right on the PZ marker
+        advanceUntilIdle()
+        r.threatSelection.select(id)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)             // the graphic is held, not the threat
+        assertNull(r.threatSelection.held.value)
     }
 
     @Test

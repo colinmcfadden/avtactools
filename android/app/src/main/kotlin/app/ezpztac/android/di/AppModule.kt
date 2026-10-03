@@ -20,6 +20,8 @@ import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
 import app.ezpztac.android.export.AssetMissionTemplate
 import app.ezpztac.android.export.AssetThsTemplate
+import app.ezpztac.android.export.ExportCleaner
+import app.ezpztac.android.export.ShareExport
 import app.ezpztac.data.ApiClientPlanningApi
 import app.ezpztac.data.ApiClientWeatherApi
 import app.ezpztac.data.WeatherApi
@@ -151,6 +153,11 @@ object AppModule {
     @Provides
     @Singleton
     fun missionTemplate(@ApplicationContext context: Context): MissionTemplate = AssetMissionTemplate(context)
+
+    /** Sign-out clears what was exported: a shared `.ths` holds a crew's threats in the clear. */
+    @Provides
+    @Singleton
+    fun exportCleaner(@ApplicationContext context: Context): ExportCleaner = ExportCleaner { ShareExport.clear(context) }
 
     @Provides
     @Singleton

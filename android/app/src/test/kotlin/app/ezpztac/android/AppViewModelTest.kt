@@ -142,7 +142,7 @@ class AppViewModelTest {
     private class Rig(
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
-        val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock,
+        val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val exportsCleared: () -> Int,
     )
 
     private fun TestScope.rig(
@@ -166,9 +166,10 @@ class AppViewModelTest {
         val threatVault = KeptThreats()
         val clock = MutableClock()
         val threats = ThreatStore(threatVault, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), StandardTestDispatcher(testScheduler)) { clock.now }
-        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, tokens, version)
+        var cleared = 0
+        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, tokens, version)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock)
+        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock) { cleared }
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -347,6 +348,15 @@ class AppViewModelTest {
         advanceUntilIdle()
         assertTrue(r.threats.entries.value.isEmpty())
         assertNull(r.threatVault.kept)
+    }
+
+    @Test
+    fun `signing out clears what was exported, and being signed in does not`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        assertEquals(0, r.exportsCleared())
+        r.model.signOut()
+        advanceUntilIdle()
+        assertEquals(1, r.exportsCleared())
     }
 
     @Test

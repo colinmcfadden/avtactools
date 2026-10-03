@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.auth.AuthLinks
 import app.ezpztac.auth.AuthRoute
+import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.RouteSession
@@ -41,6 +42,7 @@ class AppViewModel @Inject constructor(
     private val routeSession: RouteSession,
     private val weather: WeatherService,
     private val threats: ThreatStore,
+    private val exports: ExportCleaner,
     private val mapTokens: MapTokenSink,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
@@ -83,6 +85,7 @@ class AppViewModel @Inject constructor(
                 closeOpenDocuments()
                 weather.clear()                                                  // where this account's landing zones are does not stay for the next person
                 threats.wipe()                                                   // nor does the threat picture: it is the most sensitive thing on the device
+                exports.clear()                                                  // nor a .ths or mission that was shared: they are in the clear in the cache
             }
             return
         }
