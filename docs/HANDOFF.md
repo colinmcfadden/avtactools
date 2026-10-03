@@ -45,8 +45,9 @@ remove-all and mission-with-threats export on top of them.
    **Still to do — the web's file-authoritative round trip** (task #54): keep the `.msnx` as the saved document (`kind: mission`), which needs (a) the sync engine to carry a file part
    (outbox, push, pull, conflicts), (b) a memory-safe port of `mutateMsnx` (plan, point move/rename/insert written back into the XML parts; a real `legs.xml` is tens of MB, so not a DOM on a
    phone), and (c) real unclassified AMPS missions from the owner to test with (`contracts/fixtures/msnx/plan-edited.msnx` exists from the web's own tests).
-4. **Drag and rotate on the map** (#29, optional — the inspector already does everything), ForeFlight/ATAK hand-off, the
-   admin-attached AMPS template (`resolveExportTemplate`).
+4. **Route hand-off**: **GPX and Garmin FPL built** (a route shared from its card; AGENTS.md §17, *Sharing a route with another app*). Not built: an ATAK data package (a zip with a
+   manifest) or KML/KMZ, and threats to ATAK; both want the owner's say on what ATAK crews expect. **Drag and rotate on the map** (#29, optional — the inspector already does
+   everything), and the admin-attached AMPS template (`resolveExportTemplate`).
 5. **Later phases** (plan): P3 offline packs / on-device viewshed / the remaining exports; P4 the 3D view. Online viewshed, KMZ and
    QR calls exist on the backend but **no Android call is made**; the owner approved a transient send *only when the person
    explicitly asks* and the server must not retain it.

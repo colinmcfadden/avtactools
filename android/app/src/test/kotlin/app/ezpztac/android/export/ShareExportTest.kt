@@ -179,4 +179,51 @@ class ShareExportTest {
         ShareExport.clear(context)
         assertEquals(0, exports().listFiles()!!.size)
     }
+
+    // -- A route for another app ---------------------------------------------------------------------------
+
+    @Test
+    fun `a GPX and a flight plan keep their own extensions`() {
+        assertEquals("NEPTUNE_RUN.gpx", ShareExport.plainName("NEPTUNE_RUN.gpx"))
+        assertEquals("NEPTUNE_RUN.fpl", ShareExport.plainName("../../NEPTUNE_RUN.fpl"))
+        assertEquals("A.gpx", ShareExport.plainName("A.GPX"))                                  // the extension is written in lower case
+    }
+
+    @Test
+    fun `the file is told to the other app as what it is`() {
+        assertEquals("application/gpx+xml", ShareExport.mimeOf("NEPTUNE.gpx"))
+        assertEquals("application/gpx+xml", ShareExport.mimeOf("NEPTUNE.GPX"))
+        assertEquals("application/xml", ShareExport.mimeOf("NEPTUNE.fpl"))
+        assertEquals("application/octet-stream", ShareExport.mimeOf("NEPTUNE.msnx"))
+        assertEquals("application/octet-stream", ShareExport.mimeOf("MISSION 1.ths"))
+    }
+
+    @Test
+    fun `a GPX is sent as one file with its own type and a title that is not about AMPS`() {
+        val chooser = ShareExport.prepare(context, ExportFile("NEPTUNE.gpx", "<gpx/>".toByteArray()))
+        val send = sent(chooser)
+        assertEquals(Intent.ACTION_SEND, send.action)
+        assertEquals("application/gpx+xml", send.type)
+        assertEquals("Share route", chooser.getCharSequenceExtra(Intent.EXTRA_TITLE).toString())
+        assertTrue(File(exports(), "NEPTUNE.gpx").exists())
+    }
+
+    @Test
+    fun `a mission keeps its title and type, and a mixed send is any type`() {
+        val mission = ShareExport.prepare(context, ExportFile("A.msnx", bytes))
+        assertEquals("Export for AMPS", mission.getCharSequenceExtra(Intent.EXTRA_TITLE).toString())
+        assertEquals("application/octet-stream", sent(mission).type)
+        val mixed = sent(ShareExport.prepare(context, listOf(ExportFile("A.msnx", bytes), ExportFile("A.gpx", bytes))))
+        assertEquals("*/*", mixed.type)
+        val two = sent(ShareExport.prepare(context, listOf(ExportFile("A.gpx", bytes), ExportFile("B.gpx", bytes))))
+        assertEquals("application/gpx+xml", two.type)
+    }
+
+    @Test
+    fun `a GPX is cleared after a day like a mission, not after an hour like a threat file`() {
+        exports().mkdirs()
+        val hourOld = File(exports(), "HOUR.gpx").apply { writeBytes(bytes); setLastModified(System.currentTimeMillis() - 2 * 60 * 60 * 1000) }
+        ShareExport.prepare(context, ExportFile("NEW.gpx", bytes))
+        assertTrue(hourOld.exists())
+    }
 }

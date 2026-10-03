@@ -69,11 +69,11 @@ object ShareExport {
             Intent(Intent.ACTION_SEND_MULTIPLE).apply { putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris)) }
         }
         send.apply {
-            type = MIME
+            type = mimeOf(files)
             clipData = ClipData.newRawUri(files.first().fileName, uris.first()).also { clip -> uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) } }
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        return Intent.createChooser(send, "Export for AMPS").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return Intent.createChooser(send, titleOf(files)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
     /** Writes the files and opens the share sheet. */
@@ -93,20 +93,37 @@ object ShareExport {
 
     private fun keepFor(name: String) = if (name.endsWith(".ths", ignoreCase = true)) KEEP_THREATS_MS else KEEP_MS
 
-    /** A file name with no folder in it, preserving a threat `.ths`; every other export is an AMPS mission `.msnx`. */
+    /**
+     * A file name with no folder in it, keeping one of the four extensions the app exports (`.msnx` mission, `.ths` threats, `.gpx` and `.fpl` for another app) and giving
+     * anything else `.msnx`, which is what most exports are.
+     */
     internal fun plainName(name: String): String {
         val last = name.substringAfterLast('/').substringAfterLast('\\').trim().trim('.')
-        val threat = last.endsWith(".ths", ignoreCase = true)
-        val extension = if (threat) ".ths" else ".msnx"
-        val stem = when {
-            threat -> last.dropLast(4)
-            last.endsWith(".msnx", ignoreCase = true) -> last.dropLast(5)
-            else -> last
-        }.trim().ifEmpty {
-            if (threat) "threats" else "ROUTES"
+        val extension = EXTENSIONS.firstOrNull { last.endsWith(it, ignoreCase = true) } ?: ".msnx"
+        val stem = (if (last.endsWith(extension, ignoreCase = true)) last.dropLast(extension.length) else last).trim().ifEmpty {
+            when (extension) {
+                ".ths" -> "threats"
+                ".gpx", ".fpl" -> "route"
+                else -> "ROUTES"
+            }
         }
         return "$stem$extension"
     }
+
+    /** What the other app is told the file is: a GPX and an FPL by their own types (the extension alone is not what every app goes by), the rest as bytes; a mix is anything. */
+    internal fun mimeOf(files: List<ExportFile>): String =
+        files.map { mimeOf(it.fileName) }.distinct().singleOrNull() ?: "*/*"
+
+    internal fun mimeOf(fileName: String): String = when {
+        fileName.endsWith(".gpx", ignoreCase = true) -> "application/gpx+xml"
+        fileName.endsWith(".fpl", ignoreCase = true) -> "application/xml"
+        else -> MIME
+    }
+
+    private fun titleOf(files: List<ExportFile>): String =
+        if (files.all { it.fileName.endsWith(".gpx", ignoreCase = true) || it.fileName.endsWith(".fpl", ignoreCase = true) }) "Share route" else "Export for AMPS"
+
+    private val EXTENSIONS = listOf(".ths", ".gpx", ".fpl", ".msnx")
 
     private const val MIME = "application/octet-stream"
 }

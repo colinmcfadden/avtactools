@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import app.ezpztac.data.HandoffFormat
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzText
@@ -84,6 +85,16 @@ internal fun RouteDetailCard(
             detail.totals?.let { Text(it, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface) }
             if (exporting) PrimaryButton("Export this route", onClick = {}, busy = true, busyText = "Building the mission…")
             else SecondaryButton("Export this route for AMPS", onClick = { actions.exportRoute(detail.routeId) })
+            // To other apps: every point of the route, shaping points too, so the path is the one flown. Nothing is sent by the app; the share sheet is the person's.
+            Text("Share with another app", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                SecondaryButton("GPX", onClick = { actions.shareRoute(detail.routeId, HandoffFormat.GPX) }, enabled = !exporting, modifier = Modifier.weight(1f))
+                SecondaryButton("Garmin FPL", onClick = { actions.shareRoute(detail.routeId, HandoffFormat.FPL) }, enabled = !exporting, modifier = Modifier.weight(1f))
+            }
+            Text(
+                "GPX opens in ATAK, Garmin Pilot and most map apps. FPL is a Garmin flight plan.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -10,7 +10,9 @@ import app.ezpztac.data.PointSetView
 import app.ezpztac.data.PointSetViewStore
 import app.ezpztac.data.PointSetViews
 import app.ezpztac.data.PlanningApi
+import app.ezpztac.data.HandoffFormat
 import app.ezpztac.data.RouteExport
+import app.ezpztac.data.RouteHandoffExport
 import app.ezpztac.testing.Fixtures
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.launch
@@ -118,7 +120,7 @@ class RoutesViewModelTest {
         var template: () -> ByteArray = { Fixtures.repoBytes("frontend/public/msnx_template.msnx") }
         val model = RoutesViewModel(
             repository, session, selection, sketching, resolver ?: ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            RoutePlanning(api, session), RouteExport { template() }, LocalPoints(pointSets, pointViews),
+            RoutePlanning(api, session), RouteExport { template() }, RouteHandoffExport(), LocalPoints(pointSets, pointViews),
         ).also { it.worker = StandardTestDispatcher(scope.testScheduler) }
         val shared = mutableListOf<ExportFile>()
         init { scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.exports.collect { shared += it } } }
@@ -1096,6 +1098,91 @@ class RoutesViewModelTest {
         assertEquals("ROUTE 1.msnx", r.shared.single().fileName)
         r.model.exportSet(); settle()
         assertEquals("ROUTE 1_ROUTE 2.msnx", r.shared.last().fileName)
+    }
+
+    // -- A route for another app -------------------------------------------------------------------------------
+
+    @Test
+    fun `one route is shared as a GPX of all its points, named for it`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        r.model.shareRoute(id, HandoffFormat.GPX); settle()
+        val file = r.shared.single()
+        assertEquals("ROUTE 1.gpx".replace(' ', '_'), file.fileName)
+        val text = String(file.bytes, Charsets.UTF_8)
+        assertTrue(text.startsWith("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\""))
+        val route = r.session.active.value!!.route(id)!!
+        assertEquals(route.points.size, Regex("<rtept ").findAll(text).count())                  // every point, shaping points included
+        assertNull(r.state.error)
+        assertFalse(r.state.exporting)
+    }
+
+    @Test
+    fun `a Garmin flight plan is made the same way, with its own extension`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        r.model.shareRoute(id, HandoffFormat.FPL); settle()
+        val file = r.shared.single()
+        assertEquals("ROUTE_1.fpl", file.fileName)
+        assertTrue(String(file.bytes, Charsets.UTF_8).contains("<flight-plan xmlns=\"http://www8.garmin.com/xmlschemas/FlightPlan/v1\">"))
+    }
+
+    @Test
+    fun `sharing waits on the work and takes no second tap meanwhile`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val work = kotlinx.coroutines.test.TestCoroutineScheduler()
+        r.model.worker = StandardTestDispatcher(work)
+        r.model.shareRoute(id, HandoffFormat.GPX)
+        testScheduler.runCurrent()
+        assertTrue(r.state.exporting)
+        r.model.shareRoute(id, HandoffFormat.FPL)                                                // a second tap while one is being built does nothing
+        r.model.exportRoute(id)
+        testScheduler.runCurrent()                                                               // (so that a second job, if there were one, would have started and be waiting too)
+        work.advanceUntilIdle(); settle()
+        assertEquals(1, r.shared.size)
+        assertFalse(r.state.exporting)
+    }
+
+    @Test
+    fun `a route that is no longer in the set is said so, and nothing is shared`() = runTest(dispatcher) {
+        val r = rig()
+        openWithPlannedRoute(r)
+        r.model.shareRoute("gone", HandoffFormat.GPX); settle()
+        assertEquals("That route is no longer in this set.", r.state.error)
+        assertTrue(r.shared.isEmpty())
+        assertFalse(r.state.exporting)
+    }
+
+    @Test
+    fun `with no set open there is nothing to share`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.shareRoute("anything", HandoffFormat.GPX); settle()
+        assertTrue(r.shared.isEmpty())
+        assertNull(r.state.error)
+    }
+
+    @Test
+    fun `a route with no points is refused by name`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        r.session.edit("Clear") { set -> set.mapRoute(id) { it.copy(points = emptyList()) } }
+        r.model.shareRoute(id, HandoffFormat.GPX); settle()
+        assertEquals("ROUTE 1 has no points to share.", r.state.error)
+        assertTrue(r.shared.isEmpty())
+    }
+
+    @Test
+    fun `a warning from an earlier mission export is not carried over, and sharing leaves the mission export working`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        r.session.edit("Airframe") { set -> set.mapRoute(id) { it.copy(plan = it.plan.copy(aircraft = "CH-47F Chinook", aircraftProfile = "ch47f")) } }
+        r.model.exportSet(); settle()
+        assertTrue(r.state.exportWarning != null)
+        r.model.shareRoute(id, HandoffFormat.GPX); settle()
+        assertNull(r.state.exportWarning)                                                          // that warning was about the mission, not this file
+        r.model.exportSet(); settle()
+        assertEquals("ROUTE 1.msnx", r.shared.last().fileName)
     }
 
     @Test

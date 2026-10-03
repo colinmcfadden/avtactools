@@ -46,6 +46,7 @@ import app.ezpztac.designsystem.EzpzTextField
 import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
+import app.ezpztac.data.HandoffFormat
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.LocalPointMatch
@@ -99,6 +100,7 @@ class RoutesActions(
     val dismissNote: () -> Unit = {},
     val exportSet: () -> Unit = {},
     val exportRoute: (routeId: String) -> Unit = {},
+    val shareRoute: (routeId: String, format: HandoffFormat) -> Unit = { _, _ -> },
     val dismissExportWarning: () -> Unit = {},
     /** The local point a name typed on a route point would put it on, or null when it names none. */
     val localPointNamed: (typed: String) -> LocalPointMatch? = { null },
@@ -116,7 +118,7 @@ private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null, imp
     nudgePoint = viewModel::nudgePoint, pointToCrosshair = { routeId, pointId -> viewModel.pointToCrosshair(routeId, pointId, crosshair) },
     pointToText = viewModel::pointToText, addShapingPoint = { routeId -> viewModel.addShapingPoint(routeId, crosshair) },
     fetchWinds = viewModel::fetchWinds, fetchElevations = viewModel::fetchElevations, dismissNote = viewModel::dismissNote,
-    exportSet = viewModel::exportSet, exportRoute = viewModel::exportRoute, dismissExportWarning = viewModel::dismissExportWarning,
+    exportSet = viewModel::exportSet, exportRoute = viewModel::exportRoute, shareRoute = viewModel::shareRoute, dismissExportWarning = viewModel::dismissExportWarning,
     localPointNamed = viewModel::localPointNamed,
 )
 

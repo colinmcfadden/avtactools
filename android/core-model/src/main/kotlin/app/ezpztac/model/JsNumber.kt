@@ -21,6 +21,19 @@ public object JsNumber {
     private val PLAIN_DECIMAL = Regex("""\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*""")
 
     /**
+     * `value.toFixed(places)` as JavaScript writes it: the exact binary value rounded half up (so `1.005.toFixed(2)` is `1.00`, and Java's `%.2f`, which rounds the shortest
+     * decimal, says `1.01`), a sign kept on a negative that rounds to zero (`(-1e-7).toFixed(6)` is `-0.000000`) and none on `-0`, the words for NaN and the infinities, and
+     * past 1e21 the number's own text. Never uses the device's locale, whose digits may not be ASCII.
+     */
+    public fun toFixed(value: Double, places: Int): String {
+        if (value.isNaN()) return "NaN"
+        if (value.isInfinite()) return if (value > 0) "Infinity" else "-Infinity"
+        if (kotlin.math.abs(value) >= 1e21) return toText(value)
+        val body = java.math.BigDecimal(kotlin.math.abs(value)).setScale(places, java.math.RoundingMode.HALF_UP).toPlainString()
+        return if (value < 0) "-$body" else body
+    }
+
+    /**
      * `String(value)` as JavaScript writes it (ECMAScript `Number::toString`): the shortest digits that read back as the same number, in plain form
      * from 1e-6 up to (not including) 1e21 and as `1e+21` / `1e-7` outside it; `-0` is `0`. A template literal is what the AMPS writers build their
      * values with (`raw${valueFt * 0.3048} m Foot AGL`), so a native writer must produce the same digits. Java's `Double.toString` writes `100.0` and
