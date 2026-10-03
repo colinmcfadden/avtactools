@@ -148,6 +148,16 @@ class WeatherMappingTest {
     }
 
     @Test
+    fun `a number that is not finite is none, not a reading`() {
+        // Python's json writes NaN and Infinity for a float that has none, and kotlinx reads them as number literals.
+        val o = snapshot(report("temp_c" to Double.NaN, "wind_spd_kts" to Double.POSITIVE_INFINITY, "pressure" to Double.NEGATIVE_INFINITY, "distance_miles" to Double.NaN)).observation!!
+        assertNull(o.tempC)
+        assertNull(o.windSpeedKt)
+        assertNull(o.altimeterInHg)
+        assertEquals(0.0, o.distanceMiles, 0.0)                                              // and a distance that is not a number is the same as a missing one
+    }
+
+    @Test
     fun `a variable wind is recognised in any case, and only that word`() {
         assertTrue(snapshot(report("wind_dir" to "vrb")).observation!!.windVariable)
         assertFalse(snapshot(report("wind_dir" to "VARIABLE")).observation!!.windVariable)

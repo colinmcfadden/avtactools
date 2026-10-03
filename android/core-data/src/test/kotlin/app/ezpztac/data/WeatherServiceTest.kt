@@ -140,6 +140,33 @@ class WeatherServiceTest {
     }
 
     @Test
+    fun `a degree of longitude is shorter toward the pole, so the same step east is a smaller move there`() = runTest {
+        val api = Api(); val service = service(api)
+        val north = LatLon(60.0, 10.0)
+        service.ensureFresh("d1", north); advanceUntilIdle()
+        service.ensureFresh("d1", LatLon(60.0, 10.012)); advanceUntilIdle()                   // 0.012 degrees east is about 670 m at 60 north (1.3 km at the equator)
+        assertEquals(1, api.calls.size)
+        service.ensureFresh("d1", LatLon(60.0, 10.025)); advanceUntilIdle()                   // about 1.4 km
+        assertEquals(2, api.calls.size)
+    }
+
+    @Test
+    fun `a new fetch does not show the last failure while it is running`() = runTest {
+        val api = Api(); val service = service(api)
+        api.answer = { throw NetworkException("no signal", null, requestMayHaveBeenSent = false) }
+        service.refresh("d1", here); advanceUntilIdle()
+        assertNotNull(service.stateOf("d1").failure)
+        val gate = CompletableDeferred<Unit>()
+        api.answer = { gate.await(); report("KRYY") }
+        service.refresh("d1", here); runCurrent()
+        val running = service.stateOf("d1")
+        assertTrue(running.fetching)
+        assertNull(running.failure)                                                           // it is being tried again: the last answer is not the news
+        gate.complete(Unit); advanceUntilIdle()
+        assertNull(service.stateOf("d1").failure)
+    }
+
+    @Test
     fun `a target that has moved a block is the same place, and one that has moved a kilometre and more is another`() = runTest {
         val api = Api(); val service = service(api)
         service.ensureFresh("d1", here); advanceUntilIdle()
