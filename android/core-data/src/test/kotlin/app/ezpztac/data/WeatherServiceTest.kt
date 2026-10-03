@@ -201,7 +201,13 @@ class WeatherServiceTest {
         assertNull(service.stateOf("d1").failure)
         assertNotNull(service.stateOf("d1").snapshot)
         service.ensureFresh("d1", here); advanceUntilIdle()
-        assertEquals(2, api.calls.size)                                                       // and the old failure no longer holds anything back
+        assertEquals(2, api.calls.size)                                                       // fresh and the same place: nothing to fetch
+        // The old failure no longer holds anything back: a target that moves a kilometre is fetched at once, inside the minute the failure would have held it.
+        // (Without this the test above cannot tell, because a fresh report for the same place is not fetched again whatever failed before.)
+        val elsewhere = LatLon(here.lat + 0.02, here.lon)
+        service.ensureFresh("d1", elsewhere); advanceUntilIdle()
+        assertEquals(3, api.calls.size)
+        assertEquals(elsewhere, api.calls.last())
     }
 
     @Test
