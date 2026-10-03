@@ -91,7 +91,15 @@ class HomeViewModelTest {
         }
     }
 
-    private class Rig(scope: TestScope, val server: SlopeServer = SlopeServer()) {
+    private class FakeLastDiagram(var stored: String? = null) : LastDiagram {
+        override fun id() = stored
+
+        override fun remember(id: String) {
+            stored = id
+        }
+    }
+
+    private class Rig(scope: TestScope, val server: SlopeServer = SlopeServer(), listening: Boolean = true) {
         val store = Flaky()
         val sync = SyncRepository(store, SequentialIds("t"))
         val scheduler = RecordingScheduler()
@@ -105,13 +113,105 @@ class HomeViewModelTest {
             { emptyList() }, InMemoryAircraftChoice(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), sync, scheduler,
         )
         val drawing = BoundaryDrawing(session)
-        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
+        val last = FakeLastDiagram()
+        val model = HomeViewModel(session, analysis, selection, aircraft, drawing, last, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
         val seen = mutableListOf<OpenedDiagram>()
+        private val testScope = scope
 
         init {
-            // Unconfined, so the collector is subscribed the moment it starts and nothing emitted after is missed.
-            scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.opened.collect { seen += it } }
+            if (listening) listen()
         }
+
+        /** The map starts listening for the diagrams that open. Unconfined, so the collector is subscribed the moment it starts and nothing emitted after is missed. */
+        fun listen() {
+            testScope.backgroundScope.launch(UnconfinedTestDispatcher(testScope.testScheduler)) { model.opened.collect { seen += it } }
+        }
+    }
+
+    // -- Coming back to the diagram that was open --------------------------------------------------------------------------
+
+    @Test
+    fun `the diagram that was open is open again at launch, and the map is taken to it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.last.stored = made.id
+        advanceUntilIdle()
+        assertEquals(made.id, r.session.active.value?.id)
+        assertEquals(listOf(OpenedDiagram(made.id, LatLon(34.783817, -84.08219), "satellite")), r.seen)
+    }
+
+    @Test
+    fun `it waits until the map is listening, so the event that takes the map there is not lost`() = runTest(dispatcher) {
+        val r = Rig(this, listening = false)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.last.stored = made.id
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)                                          // nobody to tell yet: nothing opened
+        r.listen()
+        advanceUntilIdle()
+        assertEquals(made.id, r.session.active.value?.id)
+        assertEquals(1, r.seen.size)
+    }
+
+    @Test
+    fun `nothing remembered opens nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.repository.create(target, "LZ HAWK")
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)
+        assertEquals(emptyList<OpenedDiagram>(), r.seen)
+    }
+
+    @Test
+    fun `a diagram that is gone is not opened, and is not an error`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.repository.delete(made.id)
+        r.last.stored = made.id
+        val never = Rig(this)
+        never.last.stored = "never-existed"                                                 // an id this account never had, as after another signs in
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)
+        assertEquals(null, never.session.active.value)
+        assertEquals(emptyList<OpenedDiagram>(), r.seen + never.seen)
+    }
+
+    @Test
+    fun `a diagram that will not open leaves the app running, with nothing open`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.last.stored = made.id
+        r.store.failing = true                                                              // the database is busy at launch
+        advanceUntilIdle()                                                                  // an uncaught failure here would fail the test
+        assertEquals(null, r.session.active.value)
+        r.store.failing = false
+        r.session.open(made.id)                                                             // and the person can open it from the list afterwards
+        advanceUntilIdle()
+        assertEquals(made.id, r.session.active.value?.id)
+    }
+
+    @Test
+    fun `a diagram opened in the meantime is not replaced by the remembered one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val old = r.repository.create(target, "LZ HAWK")
+        val chosen = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
+        r.last.stored = old.id
+        r.session.open(chosen.id)
+        advanceUntilIdle()
+        assertEquals(chosen.id, r.session.active.value?.id)
+    }
+
+    @Test
+    fun `opening a diagram remembers it, and closing the session does not forget it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.last.stored)
+        r.session.close()                                                                   // as at sign-out: the same account is back next time
+        advanceUntilIdle()
+        assertEquals(made.id, r.last.stored)
     }
 
     @Test

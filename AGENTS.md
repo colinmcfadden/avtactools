@@ -991,7 +991,12 @@ client is built around not losing one:
       distances do not depend on where the middle of the screen is.
     - **The inspector is in the sheet, which rests at its peek**, so a graphic held from the map shows its halo but its controls need the sheet
       pulled up (the sheet has no half-way stop). A held-graphic strip in the peek would fix it; not built.
-  - **Not done:** reopening the last diagram at launch; moving or deleting a corner of a boundary once drawn (draw it again); drag and rotate on the map (the inspector does everything
+  - **The diagram that was open comes back at launch** (`HomeViewModel`, `LastDiagram`): its id (a uuid, nothing about the place) is kept in a plain preference
+    each time a diagram opens, and is *not* forgotten when the session closes at sign-out, so the same account finds it again. The restore waits until the map
+    is listening to `opened` (a `SharedFlow` with no replay: an event nobody hears is lost, and it is what takes the map to the diagram and restores its base
+    map), does nothing if the person has already opened something, and treats a diagram that is gone (deleted, another account's) or will not open as
+    "start from the list".
+  - **Not done:** moving or deleting a corner of a boundary once drawn (draw it again); drag and rotate on the map (the inspector does everything
     they would, and works with gloves and a screen reader — they are shortcuts); the
     heading-aware slope.
 - **Boundary drawing** (`core-data`: `BoundaryDrawing`; `feature-workspace`: `BoundaryViewModel`, `BoundaryScreen`; `feature-map`: `LzScene.draft`;

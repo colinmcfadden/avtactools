@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -45,6 +46,7 @@ class HomeViewModel @Inject constructor(
     private val selection: GraphicSelection,
     private val aircraft: AircraftProfiles,
     private val drawing: BoundaryDrawing,
+    private val last: LastDiagram,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -78,8 +80,23 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id to it.analysis.detectedLZ }.collect(analysis::ensureSlope)
         }
+        // The diagram the person had open comes back at launch. It waits until the map is listening, because opening one is what takes the map to it
+        // (and restores its base map), and an event nobody is listening to is lost.
+        viewModelScope.launch {
+            _opened.subscriptionCount.first { it > 0 }
+            if (session.active.value != null) return@launch                              // something was opened in the meantime: it stays
+            val id = last.id() ?: return@launch
+            try {
+                session.open(id)                                                         // false when it is gone (deleted, or another account's)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // A diagram that will not open is not a reason to stop the app: the person starts from the list.
+            }
+        }
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { diagram ->
+                last.remember(diagram.id)                                                // not forgotten when the session closes (sign-out): the same account is back
                 selection.clear()                                                          // what was held belonged to the diagram before
                 drawing.cancel()                                                           // and so did a boundary half drawn
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))

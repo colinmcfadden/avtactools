@@ -34,6 +34,8 @@ import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.ApiClientMasterProfileSource
 import app.ezpztac.data.FileMasterProfileStore
 import app.ezpztac.android.AircraftChoicePreferences
+import app.ezpztac.android.LastDiagram
+import app.ezpztac.android.LastDiagramPreferences
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.symbols.DefaultSymbolRenderer
 import app.ezpztac.symbols.JavaScriptSymbolSource
@@ -130,6 +132,9 @@ interface AppBindings {
 
     @Binds
     fun syncScheduler(impl: WorkManagerSyncScheduler): SyncScheduler
+
+    @Binds
+    fun lastDiagram(impl: LastDiagramPreferences): LastDiagram
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner
