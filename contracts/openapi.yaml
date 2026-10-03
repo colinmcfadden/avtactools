@@ -996,6 +996,101 @@ paths:
         "502":
           $ref: "#/components/responses/SimpleError"
 
+  /api/elevations:
+    post:
+      operationId: elevations
+      summary: Ground elevation at each of a route's points
+      description: |
+        Samples the open Terrarium elevation tiles on the server, in whole feet, one answer for each point in
+        the order sent. A point whose tile could not be read is `null`. A failure while sampling is
+        still a 200 with `error` set and every elevation `null`, which an app treats the same as no
+        answer: planning goes on without ground elevations. No points is an empty list.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points:
+                  type: array
+                  items:
+                    type: object
+                    required: [lat, lon]
+                    properties:
+                      lat: { type: number }
+                      lon: { type: number }
+      responses:
+        "200":
+          description: The elevations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [elevationsFt]
+                properties:
+                  elevationsFt:
+                    type: array
+                    items: { type: integer, nullable: true }
+                  error:
+                    type: string
+                    description: Set when sampling failed; every elevation is then null.
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/route-winds:
+    post:
+      operationId: routeWinds
+      summary: Wind at each of a route's points, from the nearest weather station
+      description: |
+        For each point the nearest station is used. A point wanted more than about 30 minutes from now
+        takes its wind from that station's forecast (`source: TAF`); any other point from the latest
+        observation (`METAR`). A point with no station in reach is left out of `winds`. `time` is an ISO
+        instant in UTC, or absent. `dirTrue` is where the wind blows FROM, 0 when it is variable (then
+        `variable` is true).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, lat, lon]
+                    properties:
+                      id: { type: string }
+                      lat: { type: number }
+                      lon: { type: number }
+                      time: { type: string, nullable: true }
+      responses:
+        "200":
+          description: The winds, by point id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [winds]
+                properties:
+                  winds:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/PointWind"
+        "500":
+          $ref: "#/components/responses/SimpleError"
+
 components:
   parameters:
     ClientHeader:
@@ -1141,6 +1236,18 @@ components:
               code: { type: string, enum: [invalid_client_uuid, invalid_if_match] }
 
   schemas:
+    PointWind:
+      type: object
+      required: [dirTrue, speedKts, variable, station, source, distanceMiles]
+      properties:
+        dirTrue: { type: integer, description: Whole degrees true the wind blows from; 0 when variable. }
+        speedKts: { type: number }
+        variable: { type: boolean }
+        tempC: { type: number, nullable: true, description: The nearest observation's temperature. }
+        station: { type: string, nullable: true }
+        source: { type: string, enum: [METAR, TAF] }
+        distanceMiles: { type: number }
+
     SimpleError:
       type: object
       required: [error]

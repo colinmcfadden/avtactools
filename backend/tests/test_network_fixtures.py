@@ -29,6 +29,7 @@ if str(BACKEND_DIR) not in sys.path:
 from unittest.mock import MagicMock, patch  # noqa: E402
 
 import cv2  # noqa: E402
+import mercantile  # noqa: E402
 import numpy as np  # noqa: E402
 import rasterio  # noqa: E402
 from rasterio.transform import from_origin  # noqa: E402
@@ -41,6 +42,7 @@ from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
+from routes.weather_routes import weather_bp  # noqa: E402
 from terrain_provider import LocalRasterCatalog  # noqa: E402
 
 # The terrain blueprint loads the SAM model when it is imported, which downloads 350 MB when the weights are missing. The model is
@@ -98,7 +100,7 @@ def documented(method, path, status):
 
 
 class NetworkFixtureTests(NativeAuthCase):
-    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, aircraft_bp, sync_bp, terrain_bp)
+    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, aircraft_bp, sync_bp, terrain_bp, weather_bp)
 
     def setUp(self):
         super().setUp()
@@ -325,10 +327,67 @@ class NetworkFixtureTests(NativeAuthCase):
                          self.client.post("/api/terrain-analysis", headers=head, json={"polygon": [[40.0, -100.0], [40.0, -99.99], [40.01, -99.99]]}))
         self.rec("terrain-analysis: too few points", self.client.post("/api/terrain-analysis", headers=head, json={"polygon": [[1, 2], [3, 4]]}))
 
+    def planning(self):
+        """Planning a route: ground elevations and the wind at each point. The elevation tiles and the weather service are other people's, so
+        what they answer is stood in for; the routes, the choice of station and of observation or forecast, and the responses are the server's own."""
+        self.make_account(email="planner@example.com")
+        head = self.bearer(self.login(ANDROID, "planner@example.com")["access_token"])
+
+        class Reply:
+            def __init__(self, status=200, body=None, content=b""):
+                self.status_code, self._body, self.content = status, body, content
+
+            def json(self):
+                return self._body
+
+        # Terrarium encodes metres as R*256 + G + B/256 - 32768: this tile is 400 m (1312 ft) everywhere. OpenCV writes blue, green, red.
+        tile = cv2.imencode(".png", np.full((256, 256, 3), (0, 144, 129), np.uint8))[1].tobytes()
+        unreadable = mercantile.tile(-100.0, 40.0, 13)
+
+        def tiles(url, **_kw):
+            return Reply(404) if f"/13/{unreadable.x}/{unreadable.y}.png" in url else Reply(200, content=tile)
+
+        points = [{"lat": 34.7, "lon": -84.1}, {"lat": 40.0, "lon": -100.0}]
+        with patch("routes.terrain_routes.requests.get", side_effect=tiles):
+            self.rec("elevations", self.client.post("/api/elevations", headers=head, json={"points": points}))
+            self.rec("elevations: no points", self.client.post("/api/elevations", headers=head, json={"points": []}))
+            self.rec("elevations: a point that is not one", self.client.post("/api/elevations", headers=head, json={"points": [{"lat": "x", "lon": 1}]}))
+        with patch("routes.terrain_routes._sample_elevations_ft", side_effect=RuntimeError("the tile service fell over")):
+            self.rec("elevations: sampling fails", self.client.post("/api/elevations", headers=head, json={"points": points}))
+
+        # Two stations: the first reports 270 at 12 kt, the second a variable wind. Only the first has a forecast, for a time far in the future.
+        far = 4_070_908_800                                                       # 2099-01-01T00:00:00Z
+        metars = [
+            {"icaoId": "KRYY", "lat": 34.01, "lon": -84.6, "wdir": 270, "wspd": 12, "temp": 18},
+            {"icaoId": "KCNI", "lat": 34.31, "lon": -84.42, "wdir": "VRB", "wspd": 3, "temp": 16},
+        ]
+        tafs = [{"icaoId": "KRYY", "lat": 34.01, "lon": -84.6, "fcsts": [{"timeFrom": far - 86400, "timeTo": far + 86400, "wdir": 300, "wspd": 20}]}]
+
+        def weather(observed=True):
+            def get(url, **_kw):
+                if "/metar" in url:
+                    return Reply(200, metars if observed else [])
+                return Reply(200, tafs if observed else [])
+            return patch("routes.weather_routes.requests.get", side_effect=get)
+
+        asked = [
+            {"id": "p1", "lat": 34.0, "lon": -84.6},                                             # no time: the observation
+            {"id": "p2", "lat": 34.05, "lon": -84.55, "time": "2099-01-01T00:00:00.000Z"},       # far ahead: the forecast
+            {"id": "p3", "lat": 34.3, "lon": -84.4, "time": "2020-01-01T00:00:00.000Z"},         # in the past: the observation, the second station
+            {"id": "p4", "lat": 34.3, "lon": -84.4, "time": "2099-01-01T00:00:00.000Z"},         # far ahead, but the nearest forecast is the first station's
+        ]
+        with weather():
+            self.rec("route-winds", self.client.post("/api/route-winds", headers=head, json={"points": asked}))
+            self.rec("route-winds: no points", self.client.post("/api/route-winds", headers=head, json={"points": []}))
+        with weather(observed=False):
+            self.rec("route-winds: no station answers", self.client.post("/api/route-winds", headers=head, json={"points": asked}))
+        self.rec("route-winds: not a list of points", self.client.post("/api/route-winds", headers=head, json={"points": "oops"}))
+
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
         self.accounts()
         self.terrain()
+        self.planning()
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "
                            "generated ids and the server version replaced by placeholders. The native apps decode each body "
