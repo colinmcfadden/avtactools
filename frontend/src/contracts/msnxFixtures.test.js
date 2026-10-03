@@ -19,7 +19,7 @@ const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 // rebuilding the file with today's web exporter still does. The second is what notices
 // the exporter changing.
 //
-// Files are cut down to the five parts the reader uses (the template's 650 KB .vidx
+// Files are cut down to the five parts the reader uses, plus the three the writer changes (the template's 650 KB .vidx
 // vehicle model is never read), about 100 KB each.
 
 jest.setTimeout(180000);
@@ -27,6 +27,8 @@ jest.setTimeout(180000);
 const TEMPLATE = fs.readFileSync(path.join(__dirname, "../../public/msnx_template.msnx"));
 const KEEP = [
   "mission.gpx", "mission/points.xml", "mission/legs.xml", "mission/segments.xml", "mission/vehicles.xml",
+  // The three parts only the writer touches (the reader does not read them), so a native writer can be held to every part it changes.
+  "mission/routes.xml", "mission/mission.xml", "mission/missionsummary.xml",
 ];
 
 const reduce = async (bytes) => {
@@ -95,6 +97,43 @@ const SECOND = {
   plan: { ...defaultRoutePlan(), airspeed: { value: 90, type: "ground" }, altitude: { value: 200, ref: "agl" }, date: "2026-07-15" },
 };
 
+// The edges the two sketches above do not reach: a point with no name, no kind or an unknown type, shaping points before the first and after the last AMPS
+// point (dropped), the equator and the meridian, a southern and an eastern hemisphere, special characters in names, a charted elevation, an unknown airspeed
+// type, MSL altitudes, and clock times either side of noon and midnight (and into the next day).
+const EDGES = {
+  name: 'R&D <TEST> "edges"',
+  points: [
+    point("e0", 34.1, -84.1, "shaping", null, ""),
+    { ...point("e1", 0, 0, "amps", "weird", ""), ele: 12.5 },
+    { ...point("e2", -12.5, -84.2, "shaping", null, ""), ele: 7 },
+    { id: "e3", lat: -12.4, lon: 20.5, name: ".A&B" },
+    { ...point("e4", -12.3, 20.6, "amps", "target", ".LZ2"), chartElevationFt: 800 },
+    point("e5", -12.2, 20.7, "shaping", null, ""),
+  ],
+  elevations: { e1: 500, e3: 1500 },
+  plan: {
+    ...defaultRoutePlan(),
+    airspeed: { value: 95, type: "true" },
+    altitude: { value: 300, ref: "msl" },
+    wind: { dirTrue: 90, speedKts: 5 },
+    date: "2026-12-31",
+    perPoint: {
+      e3: { airspeed: { value: 70, type: "weird" }, altitude: { value: 200, ref: "agl" } },
+      e1: { clock: "23:50:00" },
+    },
+  },
+};
+
+// Short legs at 60 knots (a minute a mile, give or take a rounding) so the clock walks across noon, and across midnight into the next day.
+const clockWalk = (name, first) => ({
+  name,
+  points: [0, 1, 2, 3].map((i) => point(`${name[0]}${i}`, 34.5 + i * 0.05, -84.2, "amps", i === 3 ? "target" : "turn", `.${name[0]}${i}`)),
+  elevations: {},
+  plan: { ...defaultRoutePlan(), airspeed: { value: 60, type: "ground" }, wind: { dirTrue: 0, speedKts: 0 }, date: "2026-07-15", perPoint: { [`${name[0]}0`]: { clock: first } } },
+});
+const NOON = clockWalk("NOON", "11:58:30");
+const MIDNIGHT = clockWalk("MIDNIGHT", "23:58:30");
+
 const CASES = [
   {
     name: "template",
@@ -139,6 +178,13 @@ const CASES = [
     description: "A sketched route exported by the web: shaping points, an IP and a target, indicated airspeed, winds and a time-on-target.",
     build: () => withDeterministicIds(async () => reduce(
       await (await buildSketchMsnxZip(TEMPLATE, [SKETCH], "Fixture mission")).generateAsync({ type: "nodebuffer" }),
+    )),
+  },
+  {
+    name: "sketch-edges",
+    description: "Sketched routes with the cases the others do not reach: unnamed points, an unknown type, dropped shaping points, both hemispheres, special characters, MSL, and clock times around noon and midnight.",
+    build: () => withDeterministicIds(async () => reduce(
+      await (await buildSketchMsnxZip(TEMPLATE, [EDGES, NOON, MIDNIGHT], 'Edges & <more>')).generateAsync({ type: "nodebuffer" }),
     )),
   },
   {
