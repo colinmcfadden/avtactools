@@ -2,7 +2,12 @@ package app.ezpztac.data
 
 import app.ezpztac.formats.FormatException
 import app.ezpztac.formats.LpsReader
+import app.ezpztac.formats.MsnxReader
 import app.ezpztac.formats.ThsReader
+import app.ezpztac.model.Mission
+import app.ezpztac.model.MissionRoute
+import app.ezpztac.model.RoutePlan
+import app.ezpztac.model.RoutePoint
 import app.ezpztac.testing.Fixtures
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -42,8 +47,33 @@ class FileInspectorTest {
     }
 
     @Test
-    fun `a mission is recognised, and is not opened`() {
-        assertEquals(FilePreview.Mission, inspector.inspect("plan.msnx", Fixtures.bytes("msnx/sketch-export.msnx")))
+    fun `a mission says how many routes and named points would come in, and what it was planned for`() {
+        val preview = inspector.inspect("plan.msnx", Fixtures.bytes("msnx/template.msnx")) as FilePreview.Mission
+        assertEquals(1, preview.routes)
+        assertEquals("UH-60L", preview.aircraft)
+        val route = MsnxReader.read(Fixtures.bytes("msnx/template.msnx")).routes.single()
+        assertEquals(route.points.count { it.kind == RoutePoint.KIND_AMPS }, preview.namedPoints)
+        assertTrue(preview.namedPoints in 1 until route.points.size)                          // shaping points are not counted
+    }
+
+    @Test
+    fun `a mission with several routes counts each`() {
+        val preview = inspector.inspect("two.msnx", Fixtures.bytes("msnx/sketch-two-routes.msnx")) as FilePreview.Mission
+        assertEquals(MsnxReader.read(Fixtures.bytes("msnx/sketch-two-routes.msnx")).routes.count { it.points.isNotEmpty() }, preview.routes)
+    }
+
+    @Test
+    fun `a zip that is not a mission is refused in the reader's words`() {
+        val zip = java.io.ByteArrayOutputStream().also { out ->
+            java.util.zip.ZipOutputStream(out).use { it.putNextEntry(java.util.zip.ZipEntry("readme.txt")); it.write("hi".toByteArray()); it.closeEntry() }
+        }.toByteArray()
+        val words = try { MsnxReader.read(zip); null } catch (e: FormatException) { e.message }!!
+        assertEquals(FilePreview.Problem(words), inspector.inspect("x.zip", zip))
+    }
+
+    @Test
+    fun `a file named dot msnx that is not a zip is refused rather than read`() {
+        assertTrue(inspector.inspect("x.msnx", "not a zip".toByteArray()) is FilePreview.Problem)
     }
 
     @Test
@@ -70,6 +100,29 @@ class FileInspectorTest {
         assertTrue(inspector.inspect("x.ths", "not a database".toByteArray()) is FilePreview.Problem)
         assertTrue(inspector.inspect("x.lps", threats.copyOf(120)) is FilePreview.Problem)
         assertTrue(inspector.inspect("x.ths", ByteArray(0)) is FilePreview.Problem)
+    }
+
+    @Test
+    fun `a mission whose routes have no points has nothing to bring in`() {
+        val empty = Mission(listOf(MissionRoute("A", points = emptyList(), plan = RoutePlan()), MissionRoute("B", points = emptyList(), plan = RoutePlan())))
+        assertEquals(FilePreview.Problem("This mission has no routes with points to bring in."), inspector.missionPreview(empty))
+        assertEquals(FilePreview.Problem("This mission has no routes with points to bring in."), inspector.missionPreview(Mission(emptyList())))
+    }
+
+    @Test
+    fun `only routes with points are counted, and shaping points are not named points`() {
+        val point = { id: String, kind: String -> RoutePoint(id = id, lat = 1.0, lon = 1.0, kind = kind, name = id) }
+        val mission = Mission(
+            listOf(
+                MissionRoute("EMPTY", points = emptyList(), plan = RoutePlan()),
+                MissionRoute("A", points = listOf(point("a", RoutePoint.KIND_AMPS), point("s", RoutePoint.KIND_SHAPING), point("b", RoutePoint.KIND_AMPS)), plan = RoutePlan()),
+            ),
+            aircraft = app.ezpztac.model.MissionAircraft("Air:Rotary Wing:H60:9856:Default:1.0014:UH-60L", "UH-60L"),
+        )
+        val preview = inspector.missionPreview(mission) as FilePreview.Mission
+        assertEquals(1, preview.routes)
+        assertEquals(2, preview.namedPoints)
+        assertEquals("UH-60L", preview.aircraft)
     }
 
     private fun refusalOf(block: () -> Unit): String? = try {

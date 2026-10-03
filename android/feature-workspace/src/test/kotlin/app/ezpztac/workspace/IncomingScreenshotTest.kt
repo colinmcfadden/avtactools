@@ -43,5 +43,7 @@ class IncomingScreenshotTest {
 
     @Test fun problem() = shot("problem", IncomingUiState(IncomingOfferUi.Problem("notes.txt", "EZ/PZ opens AMPS local points (.LPS), threat (.ths) and mission (.msnx) files. This is none of them.")), mode = ThemeMode.Night)
 
+    @Test fun mission() = shot("mission", IncomingUiState(IncomingOfferUi.Mission("NEPTUNE RUN.msnx", routes = 2, namedPoints = 14, aircraft = "UH-60L")))
+
     @Test fun savedThenNext() = shot("saved-then-next", IncomingUiState(IncomingOfferUi.Threats("b.ths", 2), result = "Saved NORTH GA with 1,234 points."))
 }

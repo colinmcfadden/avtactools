@@ -76,9 +76,15 @@ fun IncomingOfferContent(state: IncomingUiState, actions: IncomingActions, modif
                 SecondaryButton("Not now", onClick = actions.decline, enabled = !state.busy)
             }
             is IncomingOfferUi.Mission -> {
-                Heading("Missions can't be opened yet")
-                Body("${offer.fileName} is an AMPS mission. EZ/PZ can't open missions yet; local points (.LPS) and threat (.ths) files open here.")
-                PrimaryButton("Close", onClick = actions.decline)
+                Heading("Bring in the routes?")
+                Body(
+                    "${offer.fileName} has ${plural(offer.routes, "route")} with ${plural(offer.namedPoints, "named point")}" +
+                        (offer.aircraft?.let { ", planned for the $it" } ?: "") + ". " +
+                        "They come in as a new set of routes you can change and send on. The mission file itself is not changed or kept, and what only AMPS holds " +
+                        "(its vehicle model, anything that is not a route) does not come with them: exporting makes a new mission from the routes.",
+                )
+                PrimaryButton("Bring in ${plural(offer.routes, "route")}", onClick = actions.accept, busy = state.busy, busyText = "Bringing in")
+                SecondaryButton("Not now", onClick = actions.decline, enabled = !state.busy)
             }
             is IncomingOfferUi.Problem -> {
                 Heading("Can't open ${offer.fileName}")

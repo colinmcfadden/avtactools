@@ -4,6 +4,9 @@ import app.ezpztac.formats.FileKind
 import app.ezpztac.formats.FileKinds
 import app.ezpztac.formats.FormatException
 import app.ezpztac.formats.LpsReader
+import app.ezpztac.formats.MsnxReader
+import app.ezpztac.model.Mission
+import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.Threat
 import javax.inject.Inject
 
@@ -15,8 +18,13 @@ public sealed interface FilePreview {
     /** A local-points file: [count] points would be saved as a set called [setName]. */
     public data class Points(val setName: String, val count: Int) : FilePreview
 
-    /** An AMPS mission. */
-    public data object Mission : FilePreview
+    /** An AMPS mission: its [routes] (with points to draw) and [namedPoints] would come in as a new set of routes. [aircraft] is the designation AMPS planned it for, if it says. */
+    public class Mission(
+        public val mission: app.ezpztac.model.Mission,
+        public val routes: Int,
+        public val namedPoints: Int,
+        public val aircraft: String?,
+    ) : FilePreview
 
     /** Not something that can be opened; [message] says why, in words for the person. */
     public data class Problem(val message: String) : FilePreview
@@ -39,8 +47,23 @@ public class FileInspector @Inject constructor(private val threats: ThreatTransf
         } catch (e: FormatException) {
             FilePreview.Problem(e.message ?: "This doesn't look like an .LPS local points file.")
         }
-        FileKind.MISSION -> FilePreview.Mission
+        FileKind.MISSION -> try {
+            missionPreview(MsnxReader.read(bytes))
+        } catch (e: FormatException) {
+            FilePreview.Problem(e.message ?: "This doesn't look like an AMPS mission (.msnx) file.")
+        }
         FileKind.UNKNOWN -> FilePreview.Problem("EZ/PZ opens AMPS local points (.LPS), threat (.ths) and mission (.msnx) files. This is none of them.")
+    }
+
+    /** What bringing [mission] in would do: only a route with a point has anything to draw, so only those count. */
+    internal fun missionPreview(mission: Mission): FilePreview {
+        val withPoints = mission.routes.filter { it.points.isNotEmpty() }
+        if (withPoints.isEmpty()) return FilePreview.Problem("This mission has no routes with points to bring in.")
+        return FilePreview.Mission(
+            mission, routes = withPoints.size,
+            namedPoints = withPoints.sumOf { r -> r.points.count { it.kind == RoutePoint.KIND_AMPS } },
+            aircraft = mission.aircraft?.designation,
+        )
     }
 
     private companion object {

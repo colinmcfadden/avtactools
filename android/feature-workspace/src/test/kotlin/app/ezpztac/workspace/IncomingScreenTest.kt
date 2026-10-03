@@ -66,12 +66,29 @@ class IncomingScreenTest {
     }
 
     @Test
-    fun `a mission says it cannot be opened yet and offers only to close`() {
-        show(IncomingUiState(IncomingOfferUi.Mission("plan.msnx")))
-        compose.onNodeWithText("Missions can't be opened yet").assertIsDisplayed()
-        assertTrue(!present("Add", substring = true) && !present("Save", substring = true))
-        compose.onNodeWithText("Close").performClick()
-        assertEquals(listOf("decline"), log)
+    fun `a mission asks before bringing its routes in, and says the file itself is not changed`() {
+        show(IncomingUiState(IncomingOfferUi.Mission("plan.msnx", routes = 2, namedPoints = 14, aircraft = "UH-60L")))
+        compose.onNodeWithText("Bring in the routes?").assertIsDisplayed()
+        assertTrue(present("plan.msnx has 2 routes with 14 named points, planned for the UH-60L.", substring = true))
+        assertTrue(present("not changed or kept", substring = true))
+        assertTrue(present("exporting makes a new mission", substring = true))
+        compose.onNodeWithText("Bring in 2 routes").performClick()
+        compose.onNodeWithText("Not now").performClick()
+        assertEquals(listOf("accept", "decline"), log)
+    }
+
+    @Test
+    fun `a mission with one route and no stated aircraft reads plainly`() {
+        show(IncomingUiState(IncomingOfferUi.Mission("a.msnx", routes = 1, namedPoints = 1, aircraft = null)))
+        assertTrue(present("a.msnx has 1 route with 1 named point. ", substring = true))
+        compose.onNodeWithText("Bring in 1 route").assertIsDisplayed()
+    }
+
+    @Test
+    fun `while a mission is being brought in it cannot be declined`() {
+        show(IncomingUiState(IncomingOfferUi.Mission("a.msnx", 1, 1, null), busy = true))
+        compose.onNodeWithText("Not now").assertIsNotEnabled()
+        compose.onNodeWithText("Bringing in").assertIsDisplayed()
     }
 
     @Test

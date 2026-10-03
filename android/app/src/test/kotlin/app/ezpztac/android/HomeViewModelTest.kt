@@ -4,6 +4,7 @@ import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.MapFocus
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetView
@@ -190,9 +191,10 @@ class HomeViewModelTest {
         val threatSelection = ThreatSelection()
         val weatherApi = CountingWeather()
         val weather = WeatherService(weatherApi, KeptWeather(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)))
+        val mapFocus = MapFocus()
         val model = HomeViewModel(
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection,
-            threats, threatSelection, weather, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
+            threats, threatSelection, weather, mapFocus, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
@@ -205,6 +207,17 @@ class HomeViewModelTest {
         fun listen() {
             testScope.backgroundScope.launch(UnconfinedTestDispatcher(testScope.testScheduler)) { model.opened.collect { seen += it } }
         }
+    }
+
+    @Test
+    fun `a request to show somewhere reaches the map, once, and is not kept for a map that comes later`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val seen = mutableListOf<MapFocus.Request>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.focus.collect { seen += it } }
+        r.mapFocus.show(LatLon(34.5, -84.5), 11.0)
+        assertEquals(listOf(MapFocus.Request(LatLon(34.5, -84.5), 11.0)), seen)
+        r.mapFocus.show(LatLon(35.0, -85.0), 9.0)
+        assertEquals(2, seen.size)
     }
 
     // -- Coming back to the diagram that was open --------------------------------------------------------------------------

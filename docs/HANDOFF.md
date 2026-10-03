@@ -40,8 +40,11 @@ remove-all and mission-with-threats export on top of them.
 2. **Open files from outside the app** (#52): **built** — `.LPS` and `.ths` from Files, mail and the share sheet, asked about before anything is
    imported (AGENTS.md §17, *Files from other apps*). Still to do on a device: confirm Files/Gmail/the share sheet offer the app and hand over a
    readable address, and what media type real senders use (the manifest declares octet-stream and the two SQLite types, nothing broader).
-3. **Mission import** (#53): an `.msnx` opens as routes (`MsnxReader` exists), saved *mission-kind* routes (the file part of
-   `/api/routes`, which sync currently passes over), and the `mutateMsnx` port (writing a plan edit back into the file it came from).
+3. **Mission import**: **built as a copy** (task #53): an `.msnx` opened from outside, or chosen with the Routes tab's *Import mission*, is offered ("Bring in 2 routes?") and
+   makes a new set of routes (points, recorded plan, elevations), opens it and takes the map there. The file is not kept or changed; exporting builds a new mission from the template.
+   **Still to do — the web's file-authoritative round trip** (task #54): keep the `.msnx` as the saved document (`kind: mission`), which needs (a) the sync engine to carry a file part
+   (outbox, push, pull, conflicts), (b) a memory-safe port of `mutateMsnx` (plan, point move/rename/insert written back into the XML parts; a real `legs.xml` is tens of MB, so not a DOM on a
+   phone), and (c) real unclassified AMPS missions from the owner to test with (`contracts/fixtures/msnx/plan-edited.msnx` exists from the web's own tests).
 4. **Drag and rotate on the map** (#29, optional — the inspector already does everything), ForeFlight/ATAK hand-off, the
    admin-attached AMPS template (`resolveExportTemplate`).
 5. **Later phases** (plan): P3 offline packs / on-device viewshed / the remaining exports; P4 the 3D view. Online viewshed, KMZ and

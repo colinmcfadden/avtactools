@@ -8,6 +8,7 @@ import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.MapFocus
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
@@ -71,6 +72,7 @@ class HomeViewModel @Inject constructor(
     private val threats: ThreatStore,
     private val threatSelection: ThreatSelection,
     private val weather: WeatherService,
+    mapFocus: MapFocus,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -81,6 +83,9 @@ class HomeViewModel @Inject constructor(
      * turn of the phone must not throw the person's view back to the diagram's target).
      */
     val opened: SharedFlow<OpenedDiagram> = _opened.asSharedFlow()
+
+    /** Somewhere the person has just brought in (a mission's routes) that the map should go to. */
+    val focus: SharedFlow<MapFocus.Request> = mapFocus.requests
 
     /**
      * What the map draws for the open diagram: its target, boundary, planning graphics (the one being held with a halo) and, once measured,

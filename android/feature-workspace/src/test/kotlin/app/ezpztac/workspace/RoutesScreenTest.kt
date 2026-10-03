@@ -53,6 +53,7 @@ class RoutesScreenTest {
             pointToText = { r, p, t -> log += "pointTo:$r:$p:$t"; textProblem }, addShapingPoint = { log += "addShaping:$it" },
             fetchWinds = { log += "winds" }, fetchElevations = { log += "elevations" }, dismissNote = { log += "dismissNote" },
             exportSet = { log += "exportSet" }, exportRoute = { log += "exportRoute:$it" }, dismissExportWarning = { log += "dismissExportWarning" },
+            importMission = { log += "importMission" },
             localPointNamed = { typed -> if (typed.startsWith("BLUE")) LocalPointMatch(typed.uppercase(), LatLon(34.9, -84.9), elevation) else null },
         )
         var elevation: Double? = 1730.0
@@ -89,6 +90,28 @@ class RoutesScreenTest {
     private val setRow = RouteSetRow("s2", "NIGHT RUN", 3, SyncStatus.SYNCED, null, isOpen = false)
 
     // -- Empty -----------------------------------------------------------------------------------------------
+
+    @Test
+    fun `Import mission asks for a mission file, with sets or without`() {
+        val r = content(RoutesUiState())
+        compose.onNodeWithText("Import mission").performClick()
+        assertEquals(listOf("importMission"), r.log)
+    }
+
+    @Test
+    fun `Import mission is offered beside New set while sets are listed, and not while a new one is being named`() {
+        content(RoutesUiState(sets = listOf(setRow)))
+        assertEquals(1, count("Import mission"))
+        assertEquals(1, count("New set"))
+    }
+
+    @Test
+    fun `neither is offered while a new set is being named`() {
+        content(RoutesUiState(creating = true))
+        assertEquals(0, count("Import mission"))
+        assertEquals(0, count("New set"))
+    }
+
 
     @Test
     fun `with nothing saved it says how to begin, and New set starts the form`() {

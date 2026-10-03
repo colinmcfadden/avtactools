@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.FileInspector
 import app.ezpztac.data.FilePreview
 import app.ezpztac.data.ImportOutcome
+import app.ezpztac.data.MissionImportOutcome
+import app.ezpztac.data.MissionImporter
 import app.ezpztac.data.IncomingFile
 import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.PointSetRepository
@@ -37,8 +39,8 @@ sealed interface IncomingOfferUi {
     /** A local-points file: its [count] points would be saved, and synced, as a set called [setName]. */
     data class Points(override val fileName: String, val setName: String, val count: Int) : IncomingOfferUi
 
-    /** An AMPS mission, which the app cannot open yet. */
-    data class Mission(override val fileName: String) : IncomingOfferUi
+    /** An AMPS mission: its [routes] and [namedPoints] would come in as a new set of routes, a copy. [aircraft] is what AMPS planned it for, if it says. */
+    data class Mission(override val fileName: String, val routes: Int, val namedPoints: Int, val aircraft: String?) : IncomingOfferUi
 
     /** Not something that can be opened, or could not be read; [message] says why, in words. */
     data class Problem(override val fileName: String, val message: String) : IncomingOfferUi
@@ -71,6 +73,7 @@ class IncomingViewModel @Inject constructor(
     private val threats: ThreatStore,
     private val threatSelection: ThreatSelection,
     private val points: PointSetRepository,
+    private val missions: MissionImporter,
 ) : ViewModel() {
     internal var worker: CoroutineDispatcher = Dispatchers.IO
 
@@ -115,7 +118,7 @@ class IncomingViewModel @Inject constructor(
             null -> IncomingOfferUi.Reading(file.name)
             is FilePreview.Threats -> IncomingOfferUi.Threats(file.name, seen.threats.size)
             is FilePreview.Points -> IncomingOfferUi.Points(file.name, seen.setName, seen.count)
-            FilePreview.Mission -> IncomingOfferUi.Mission(file.name)
+            is FilePreview.Mission -> IncomingOfferUi.Mission(file.name, seen.routes, seen.namedPoints, seen.aircraft)
             is FilePreview.Problem -> IncomingOfferUi.Problem(file.name, seen.message)
         }
     }
@@ -150,7 +153,28 @@ class IncomingViewModel @Inject constructor(
                     }
                 }
             }
-            else -> {}                                                                              // a mission, a problem or a file still being read has nothing to accept
+            is FilePreview.Mission -> {
+                local.update { it.copy(busy = true, result = null, error = null) }
+                viewModelScope.launch {
+                    val outcome = try {
+                        withContext(worker) { missions.import(seen.mission, file.name) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        MissionImportOutcome.Refused("That mission could not be brought in.")
+                    }
+                    incoming.dismiss(file.id)
+                    local.update {
+                        when (outcome) {
+                            is MissionImportOutcome.Imported -> it.copy(
+                                busy = false, result = missionResult(outcome.set.routes.size, file.name, outcome.set.name, outcome.opened),
+                            )
+                            is MissionImportOutcome.Refused -> it.copy(busy = false, error = outcome.message)
+                        }
+                    }
+                }
+            }
+            else -> {}                                                                              // a problem or a file still being read has nothing to accept
         }
     }
 
@@ -159,11 +183,32 @@ class IncomingViewModel @Inject constructor(
         incoming.files.value.firstOrNull()?.let { incoming.dismiss(it.id) }
     }
 
+    /** A file the person chose in a section's own picker: put to them like any other, so the same question is asked however a file arrives. */
+    fun offer(name: String, bytes: ByteArray) {
+        if (!incoming.offer(name, bytes)) incoming.refuse(name, FULL)
+    }
+
+    /** A chosen file that could not be read ([reason] is in words): told to the person in the same place. */
+    fun refuse(name: String, reason: String) {
+        incoming.refuse(name, reason)
+    }
+
     /** Closes the result or the error shown after a file was accepted. */
     fun closeResult() = local.update { it.copy(result = null, error = null) }
 
     private fun threatCount(n: Int) = if (n == 1) "1 threat" else "${withCommas(n.toLong())} threats"
 
+    private fun routeCount(n: Int) = if (n == 1) "1 route" else "${withCommas(n.toLong())} routes"
+
+    /** What the person is told once a mission's routes are in. A set that could not be opened (another one open could not be saved first) is where to find it. */
+    internal fun missionResult(routes: Int, fileName: String, setName: String, opened: Boolean): String =
+        "Brought in ${routeCount(routes)} from $fileName as $setName." + if (opened) "" else " It is in your list of route sets."
+
     private fun pointCount(n: Int) = if (n == 1) "1 point" else "${withCommas(n.toLong())} points"
 
+
+    companion object {
+        const val TOO_BIG = "That file is too large to be a local points, threat or mission file."
+        const val FULL = "EZ/PZ is already holding as many files as it can. Deal with those first, then open this one again."
+    }
 }

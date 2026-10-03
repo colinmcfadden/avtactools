@@ -3,6 +3,7 @@ package app.ezpztac.android.incoming
 import android.content.Context
 import android.content.Intent
 import app.ezpztac.data.IncomingFiles
+import app.ezpztac.workspace.IncomingViewModel
 import app.ezpztac.workspace.PickedFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -53,8 +54,8 @@ class IncomingIntake @Inject constructor(
     }
 
     companion object {
-        const val TOO_BIG = "That file is too large to be a local points, threat or mission file."
-        const val FULL = "EZ/PZ is already holding as many files as it can. Deal with those first, then open this one again."
+        const val TOO_BIG = IncomingViewModel.TOO_BIG
+        const val FULL = IncomingViewModel.FULL
         const val NOT_SHARED = "EZ/PZ only opens files another app shares with it. Open it from Files or a mail, or share it to EZ/PZ."
     }
 }
