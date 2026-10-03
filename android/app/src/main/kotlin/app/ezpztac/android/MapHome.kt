@@ -39,6 +39,7 @@ import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.symbols.LocalSymbolRenderer
+import app.ezpztac.workspace.AircraftHost
 import app.ezpztac.workspace.DiagramsHost
 import app.ezpztac.workspace.GraphicsHost
 import kotlinx.coroutines.flow.filterNotNull
@@ -50,7 +51,7 @@ private const val TOUCH_RADIUS_DP = 24.0
 
 /**
  * The signed-in app: the map is the root, with a bottom sheet over it (docs/NATIVE_APPS_PLAN.md, "Mobile UX"). The sheet holds the
- * diagrams, with the version and a sign-out below; the planning tools go into it as they are built. Opening a diagram takes the map to it.
+ * diagrams, the aircraft, with the version and a sign-out below; the planning tools go into it as they are built. Opening a diagram takes the map to it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +60,7 @@ fun MapHome(
     build: Int,
     maintenance: String?,
     onSignOut: () -> Unit,
+    canMakeAircraft: Boolean = true,
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
 ) {
@@ -99,6 +101,7 @@ fun MapHome(
                         // The planning graphics sit in the open diagram's card: they are put at, and brought to, the crosshair.
                         openDiagramExtras = { GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs) },
                     )
+                    AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(stringResource(R.string.classification_notice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -9,6 +9,7 @@ import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
+import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.android.sync.WorkManagerSyncScheduler
 import app.ezpztac.data.session.EncryptedSessionStore
@@ -29,6 +30,11 @@ import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStore
 import dagger.Binds
 import dagger.Module
+import app.ezpztac.data.AircraftProfiles
+import app.ezpztac.data.ApiClientMasterProfileSource
+import app.ezpztac.data.FileMasterProfileStore
+import app.ezpztac.android.AircraftChoicePreferences
+import app.ezpztac.sync.RecordFeed
 import app.ezpztac.symbols.DefaultSymbolRenderer
 import app.ezpztac.symbols.JavaScriptSymbolSource
 import app.ezpztac.symbols.PresetSymbols
@@ -37,6 +43,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -95,6 +104,17 @@ object AppModule {
     @Singleton
     fun symbolRenderer(@ApplicationContext context: Context): SymbolRenderer =
         DefaultSymbolRenderer(listOf(PresetSymbols(context.assets), JavaScriptSymbolSource(context)))
+
+    /** The admin's airframes (refreshed from the server, kept in a file so they are there offline), the user's own (synced), and the one chosen. */
+    @Provides
+    @Singleton
+    fun aircraftProfiles(
+        @ApplicationContext context: Context, feed: RecordFeed, client: ApiClient, choice: AircraftChoicePreferences, sync: SyncRepository, scheduler: SyncScheduler,
+    ): AircraftProfiles =
+        AircraftProfiles(
+            feed, FileMasterProfileStore(File(context.noBackupFilesDir, "aircraft-master.json")), ApiClientMasterProfileSource(client), choice,
+            CoroutineScope(SupervisorJob() + Dispatchers.Default), sync, scheduler,
+        )
 
     @Provides
     @Singleton

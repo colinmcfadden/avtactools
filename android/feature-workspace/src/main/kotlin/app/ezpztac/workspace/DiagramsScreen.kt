@@ -55,6 +55,7 @@ class DiagramsActions(
     val analyze: () -> Unit = {},
     val stopAnalysis: () -> Unit = {},
     val dismissAnalysis: () -> Unit = {},
+    val selectAircraft: (String) -> Unit = {},
 )
 
 /**
@@ -75,6 +76,7 @@ fun DiagramsHost(
             startCreating = viewModel::startCreating, cancelCreating = viewModel::cancelCreating, create = viewModel::create, open = viewModel::open,
             rename = viewModel::rename, delete = viewModel::delete, resolve = viewModel::resolve, dismissError = viewModel::dismissError,
             analyze = viewModel::analyze, stopAnalysis = viewModel::stopAnalysis, dismissAnalysis = viewModel::dismissAnalysisError,
+            selectAircraft = viewModel::selectAircraft,
         ),
     )
 }
@@ -135,6 +137,7 @@ private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions
                 }
             }
             AnalysisControls(current, actions)
+            AircraftPicker(current.aircraft, actions.selectAircraft)
             current.summary?.let { SummaryTiles(it) }
             extras?.invoke()
             ManageControls(current.uuid, current.name, actions)

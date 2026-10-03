@@ -1,10 +1,14 @@
 package app.ezpztac.workspace
 
+import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.InMemoryAircraftChoice
+import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.TerrainApi
+import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.DirectionalSlope
@@ -77,7 +81,10 @@ class DiagramsViewModelTest {
     }
 
     /** One device with the real repository, session and engine over an in-memory store; only the servers are stand-ins. */
-    private class Rig(scope: TestScope, label: String = "A", val server: FakeServer = FakeServer(), realEngine: Boolean = false, resolver: ConflictResolver? = null) {
+    private class Rig(
+        scope: TestScope, label: String = "A", val server: FakeServer = FakeServer(), realEngine: Boolean = false, resolver: ConflictResolver? = null,
+        masterList: List<AircraftProfile> = emptyList(),
+    ) {
         val terrain = Terrain()
         val device = Device(label, server)
         val scheduler = RecordingScheduler()
@@ -88,10 +95,13 @@ class DiagramsViewModelTest {
         val analysis = AnalysisService(
             terrain, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler),
         )
+        val choice = InMemoryAircraftChoice()
+        val master = InMemoryMasterProfileStore(masterList)
+        val aircraft = AircraftProfiles(device.store as InMemorySyncStore, master, { emptyList() }, choice, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), device.repository, scheduler)
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            analysis,
+            analysis, aircraft,
         )
         val rows get() = model.state.value.rows
     }
@@ -571,5 +581,95 @@ class DiagramsViewModelTest {
         r.model.create("two", "16S GD 67993 52949")
         advanceUntilIdle()
         assertEquals(AnalysisUi.Idle, r.model.state.value.current!!.analysis)
+    }
+// -- The mission aircraft ----------------------------------------------------------------------------------------------
+
+    private val blackHawk = AircraftProfile(id = 1, slug = "uh60l", name = "UH-60L Black Hawk", designation = "UH-60L")
+    private val chinook = AircraftProfile(id = 2, slug = "ch47f", name = "CH-47F Chinook", designation = "CH-47F", iconKey = "ch47", rotorDiameterM = 18.29, rotorTipClearanceM = 75.0, defaultAirspeedKts = 130.0, perfSource = "published")
+    private val littleBird = AircraftProfile(id = 3, slug = "mh6", name = "MH-6 Little Bird", designation = "MH-6", iconKey = "mh6", rotorDiameterM = 8.33, rotorTipClearanceM = 30.0, defaultAirspeedKts = 110.0)
+
+    private fun TestScope.rigWithAircraft() = Rig(this, masterList = listOf(blackHawk, chinook, littleBird)).also { advanceUntilIdle() }
+
+    @Test
+    fun `before the list of airframes has loaded the UH-60L is the mission aircraft`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        val aircraft = r.model.state.value.current!!.aircraft
+        assertEquals(AircraftUi.UH60L, aircraft)
+        assertEquals(listOf("uh60l"), aircraft.options.map { it.slug })
+    }
+
+    @Test
+    fun `the picker offers every airframe that can be chosen, as the web words them, and says which is the mission aircraft`() = runTest(dispatcher) {
+        val r = rigWithAircraft()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        val aircraft = r.model.state.value.current!!.aircraft
+        assertEquals(listOf("UH-60L — UH-60L Black Hawk", "CH-47F — CH-47F Chinook", "MH-6 — MH-6 Little Bird"), aircraft.options.map { it.label })
+        assertEquals("uh60l", aircraft.activeSlug)
+        assertEquals(76L, aircraft.spacingM)                                                // 16.357 + 60 m, rounded
+        assertEquals(100L, aircraft.cruiseKts)
+        assertFalse(aircraft.unverified)
+    }
+
+    @Test
+    fun `choosing an airframe changes the mission aircraft, its numbers and how many fit`() = runTest(dispatcher) {
+        val r = rigWithAircraft()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        val blackHawkFit = r.model.state.value.current!!.summary!!.capacity
+        assertEquals("UH-60L", r.model.state.value.current!!.summary!!.aircraft)
+
+        r.model.selectAircraft("ch47f")
+        advanceUntilIdle()
+        val current = r.model.state.value.current!!
+        assertEquals("ch47f", current.aircraft.activeSlug)
+        assertEquals(93L, current.aircraft.spacingM)                                        // 18.29 + 75 m
+        assertEquals(130L, current.aircraft.cruiseKts)
+        assertEquals("CH-47F", current.summary!!.aircraft)
+        assertTrue("a bigger aircraft with more clearance fits fewer: $blackHawkFit then ${current.summary.capacity}", current.summary.capacity < blackHawkFit)
+
+        r.model.selectAircraft("mh6")
+        advanceUntilIdle()
+        assertTrue(r.model.state.value.current!!.summary!!.capacity > blackHawkFit)         // a smaller one fits more
+    }
+
+    @Test
+    fun `an airframe whose numbers are only a spec sheet's is flagged while it is the mission aircraft`() = runTest(dispatcher) {
+        val r = rigWithAircraft()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.selectAircraft("ch47f")
+        advanceUntilIdle()
+        assertTrue(r.model.state.value.current!!.aircraft.unverified)
+        r.model.selectAircraft("mh6")
+        advanceUntilIdle()
+        assertFalse(r.model.state.value.current!!.aircraft.unverified)
+    }
+
+    @Test
+    fun `an airframe nobody knows is not chosen`() = runTest(dispatcher) {
+        val r = rigWithAircraft()
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.selectAircraft("nonesuch")
+        advanceUntilIdle()
+        assertEquals("uh60l", r.model.state.value.current!!.aircraft.activeSlug)
+    }
+
+    @Test
+    fun `the user's own airframes are in the list marked as theirs, and one not yet named by the server waits`() = runTest(dispatcher) {
+        val r = rigWithAircraft()
+        r.model.create("LZ HAWK", grid)
+        r.device.repository.create(RecordKind.AIRCRAFT, "Scout", JsonObject(mapOf("designation" to JsonPrimitive("SCT"), "slug" to JsonPrimitive("sct"), "icon_key" to JsonPrimitive("generic"))))
+        r.device.repository.create(RecordKind.AIRCRAFT, "Draft", JsonObject(mapOf("designation" to JsonPrimitive("DFT"))))
+        advanceUntilIdle()
+        val aircraft = r.model.state.value.current!!.aircraft
+        assertEquals("SCT — Scout (yours)", aircraft.options.last().label)
+        assertEquals(4, aircraft.options.size)
+        assertEquals(listOf("Draft"), aircraft.waiting)
     }
 }

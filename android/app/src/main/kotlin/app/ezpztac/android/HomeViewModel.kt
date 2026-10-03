@@ -2,6 +2,7 @@ package app.ezpztac.android
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
@@ -10,7 +11,6 @@ import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.SlopeImage
-import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.symbols.SymbolRenderer
@@ -41,6 +41,7 @@ class HomeViewModel @Inject constructor(
     private val session: DiagramSession,
     private val analysis: AnalysisService,
     private val selection: GraphicSelection,
+    private val aircraft: AircraftProfiles,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -54,15 +55,17 @@ class HomeViewModel @Inject constructor(
 
     /**
      * What the map draws for the open diagram: its target, boundary, planning graphics (the one being held with a halo) and, once measured,
-     * the slope raster. The raster is shown only while the boundary is still the one it was measured for. Aircraft are drawn as UH-60Ls
-     * until aircraft profiles can be chosen, the same as the sheet measures them.
+     * the slope raster. The raster is shown only while the boundary is still the one it was measured for. Each aircraft is drawn as the
+     * airframe it was placed as, the same as the sheet measures it; one placed with a profile that is not known here is drawn as the chosen one.
      */
-    val scene: StateFlow<LzScene> = combine(session.active, analysis.slopes, selection.selected) { diagram, slopes, selected ->
+    val scene: StateFlow<LzScene> = combine(session.active, analysis.slopes, selection.selected, aircraft.profiles, aircraft.active) { diagram, slopes, selected, profiles, active ->
         val measured = diagram?.let { d -> (slopes[d.id] as? SlopeState.Ready)?.takeIf { it.boundaryKey == analysis.boundaryKey(d) } }
-        LzScene.of(diagram, measured?.analysis?.toSlopeImage(), profiles = listOf(AircraftProfile.FALLBACK), active = AircraftProfile.FALLBACK, selected = selected)
+        LzScene.of(diagram, measured?.analysis?.toSlopeImage(), profiles = profiles, active = active, selected = selected)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
 
     init {
+        // The master list of airframes is the admin's and changes now and then: asked for when the map comes up, and kept for when there is no signal.
+        viewModelScope.launch { aircraft.refreshQuietly() }
         // An analysed diagram that is opened (or whose boundary changes) has its slope measured, if it has not been already.
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id to it.analysis.detectedLZ }.collect(analysis::ensureSlope)

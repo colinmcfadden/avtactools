@@ -2,6 +2,8 @@ package app.ezpztac.workspace
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.AircraftEntry
+import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
@@ -15,7 +17,9 @@ import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramGeometry
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
+import app.ezpztac.planning.AircraftGeometry
 import app.ezpztac.planning.LzSummary
+import app.ezpztac.planning.RouteCalc
 import app.ezpztac.data.SlopeState
 import kotlinx.serialization.json.JsonPrimitive
 import app.ezpztac.sync.ConflictResolver
@@ -61,6 +65,34 @@ sealed interface SlopeTileUi {
     data class Measured(val call: LzSummary.SlopeCall, val source: String, val resolutionM: Double) : SlopeTileUi
 }
 
+/** One airframe in the picker: the web's `DESIGNATION — Name`, and `(yours)` for one the user made. */
+data class AircraftOptionUi(val slug: String, val label: String)
+
+/**
+ * The mission aircraft, as the picker shows it. It drives what a new aircraft on the map is placed as, how many fit in the landing zone and
+ * the separation alerts; an aircraft already on the diagram keeps the airframe it was placed as. The meta line is the web's: the spacing from
+ * rotor to rotor centre (rotor diameter and tip clearance), the cruise speed and, where the numbers are only a spec sheet's, a warning.
+ */
+data class AircraftUi(
+    val options: List<AircraftOptionUi>,
+    val activeSlug: String,
+    val activeLabel: String,
+    val spacingM: Long,
+    val cruiseKts: Long,
+    /** The performance numbers come from published specifications, not from an AMPS vehicle model: do not plan fuel on them unchecked. */
+    val unverified: Boolean,
+    /** The user's own profiles that the server has not yet given a name to (a slug) and so cannot be chosen yet. */
+    val waiting: List<String>,
+) {
+    companion object {
+        /** The built-in UH-60L alone: what is shown until the list of airframes has loaded. */
+        val UH60L = AircraftUi(
+            options = listOf(AircraftOptionUi("uh60l", "UH-60L — UH-60L Black Hawk")), activeSlug = "uh60l", activeLabel = "UH-60L — UH-60L Black Hawk",
+            spacingM = 76, cruiseKts = 100, unverified = false, waiting = emptyList(),
+        )
+    }
+}
+
 /** What the mission summary tiles say about an analysed landing zone. */
 data class SummaryUi(
     val aircraft: String,
@@ -85,6 +117,8 @@ data class ActiveDiagramUi(
     val sync: SyncStatus?,
     /** The diagram this is a conflict copy of, if it is one. */
     val conflictOf: String?,
+    /** The mission aircraft and the airframes to choose from. */
+    val aircraft: AircraftUi = AircraftUi.UH60L,
 )
 
 data class DiagramsUiState(
@@ -106,16 +140,38 @@ class DiagramsViewModel @Inject constructor(
     private val session: DiagramSession,
     private val conflicts: ConflictResolver,
     private val analysis: AnalysisService,
+    private val aircraft: AircraftProfiles,
 ) : ViewModel() {
     private val local = MutableStateFlow(DiagramsUiState())
+    private val analyses = combine(analysis.status, analysis.slopes) { status, slopes -> status to slopes }
+    private val airframes = combine(aircraft.entries, aircraft.active) { entries, active -> entries to active }
 
     val state: StateFlow<DiagramsUiState> =
-        combine(repository.observe(), session.active, local, analysis.status, analysis.slopes) { summaries, active, local, status, slopes ->
+        combine(repository.observe(), session.active, local, analyses, airframes) { summaries, active, local, (status, slopes), (entries, chosen) ->
             local.copy(
-                current = active?.let { currentOf(it, status, slopes, summaries.firstOrNull { row -> row.uuid == it.id }) },
+                current = active?.let { currentOf(it, status, slopes, summaries.firstOrNull { row -> row.uuid == it.id }, aircraftOf(entries, chosen), chosen) },
                 rows = summaries.map { it.toRow(isActive = it.uuid == active?.id) },
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, DiagramsUiState())
+
+    /** Chooses the mission aircraft. An airframe the list does not have (or one with no slug yet) is not chosen. */
+    fun selectAircraft(slug: String) {
+        aircraft.select(slug)
+    }
+
+    private fun aircraftOf(entries: List<AircraftEntry>, chosen: AircraftProfile): AircraftUi {
+        fun label(p: AircraftProfile) = "${p.designation} — ${p.name}${if (p.isSystem) "" else " (yours)"}"
+        // Until the list arrives the chosen airframe is the only one, so the menu is never blank (the web's rule too).
+        val usable = entries.filter { it.usable }.map { it.profile }.ifEmpty { listOf(chosen) }
+        return AircraftUi(
+            options = usable.map { AircraftOptionUi(it.slug, label(it)) },
+            activeSlug = chosen.slug, activeLabel = label(chosen),
+            spacingM = RouteCalc.jsRound(AircraftGeometry.centerSpacingM(chosen)).toLong(),
+            cruiseKts = RouteCalc.jsRound(chosen.defaultAirspeedKts).toLong(),
+            unverified = chosen.perfSource == "published",
+            waiting = entries.filter { !it.usable }.map { it.profile.name },
+        )
+    }
 
     fun startCreating() = local.update { it.copy(creating = true, error = null) }
 
@@ -184,7 +240,9 @@ class DiagramsViewModel @Inject constructor(
 
     fun dismissAnalysisError() = analysis.dismiss()
 
-    private fun currentOf(diagram: Diagram, status: AnalysisStatus, slopes: Map<String, SlopeState>, listed: DiagramSummary?): ActiveDiagramUi = ActiveDiagramUi(
+    private fun currentOf(
+        diagram: Diagram, status: AnalysisStatus, slopes: Map<String, SlopeState>, listed: DiagramSummary?, airframes: AircraftUi, chosen: AircraftProfile,
+    ): ActiveDiagramUi = ActiveDiagramUi(
         uuid = diagram.id,
         name = diagram.name,
         status = diagram.status,
@@ -195,16 +253,16 @@ class DiagramsViewModel @Inject constructor(
             status is AnalysisStatus.Failed && status.diagramId == diagram.id -> AnalysisUi.Failed(status.message)
             else -> AnalysisUi.Idle
         },
-        summary = summaryOf(diagram, slopes[diagram.id]),
+        summary = summaryOf(diagram, slopes[diagram.id], chosen),
+        aircraft = airframes,
         sync = listed?.sync,
         conflictOf = listed?.conflictOf,
     )
 
-    /** The tiles for an analysed diagram. The aircraft is the UH-60L until aircraft profiles are chosen per diagram. */
-    private fun summaryOf(diagram: Diagram, slope: SlopeState?): SummaryUi? {
+    /** The tiles for an analysed diagram, for the mission aircraft ([aircraft]): how many of them fit is what the capacity tile says. */
+    private fun summaryOf(diagram: Diagram, slope: SlopeState?, aircraft: AircraftProfile): SummaryUi? {
         val boundary = DiagramGeometry.boundary(diagram)
         if (diagram.status != DiagramStatus.ANALYZED || boundary.isEmpty()) return null
-        val aircraft = AircraftProfile.FALLBACK
         val fit = LzSummary.areaAndCapacity(boundary, aircraft)
         val key = analysis.boundaryKey(diagram)
         val tile = when {

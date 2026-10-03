@@ -1,6 +1,9 @@
 package app.ezpztac.workspace
 
+import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.DiagramRepository
+import app.ezpztac.data.InMemoryAircraftChoice
+import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.model.Diagram
@@ -14,7 +17,9 @@ import app.ezpztac.sync.Device
 import app.ezpztac.sync.FakeServer
 import app.ezpztac.sync.InMemorySyncStore
 import app.ezpztac.sync.RecordingScheduler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -47,12 +52,15 @@ class GraphicsViewModelTest {
     private val grid = "16S GD 66993 52949"
     private val crosshair = LatLon(34.78382, -84.08219)
 
-    private class Rig(scope: TestScope) {
+    private class Rig(scope: TestScope, masterList: List<app.ezpztac.model.AircraftProfile> = emptyList()) {
         val device = Device("A", FakeServer())
         val repository = DiagramRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler())
         val session = DiagramSession(repository, scope.backgroundScope)
         val selection = GraphicSelection()
-        val model = GraphicsViewModel(session, selection)
+        val choice = InMemoryAircraftChoice()
+        val master = InMemoryMasterProfileStore(masterList)
+        val aircraft = AircraftProfiles(device.store as InMemorySyncStore, master, { emptyList() }, choice, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), device.repository, RecordingScheduler())
+        val model = GraphicsViewModel(session, selection, aircraft)
         val state get() = model.state.value
         val diagram: Diagram get() = checkNotNull(session.active.value)
 
@@ -67,7 +75,7 @@ class GraphicsViewModelTest {
         fun graphic(ref: GraphicRef): JsonObject = checkNotNull(DiagramOps.graphic(diagram, ref.collection, ref.key))
     }
 
-    private suspend fun TestScope.opened(analysed: Boolean = true, doghouses: Boolean = false): Rig = Rig(this).also {
+    private suspend fun TestScope.opened(analysed: Boolean = true, doghouses: Boolean = false, fleet: List<app.ezpztac.model.AircraftProfile> = emptyList()): Rig = Rig(this, fleet).also {
         it.open(analysed, grid, doghouses)
         advanceUntilIdle()
     }
@@ -901,5 +909,78 @@ class GraphicsViewModelTest {
         assertEquals("SFGPUCA--------", text(saved, "sidc"))
         assertEquals("/units/tank.svg", text(saved, "path"))                                // what the unit already had is kept
         assertEquals("Unit · TANK", r.state.rows.single().title)
+    }
+// -- The mission aircraft --------------------------------------------------------------------------------------------
+
+    private val blackHawk = app.ezpztac.model.AircraftProfile()
+    private val chinook = app.ezpztac.model.AircraftProfile(id = 2, slug = "ch47f", name = "CH-47F Chinook", designation = "CH-47F", iconKey = "ch47", rotorDiameterM = 18.29, rotorTipClearanceM = 75.0)
+
+    @Test
+    fun `an aircraft is placed as the mission aircraft, and keeps that when the mission aircraft changes`() = runTest(dispatcher) {
+        val r = opened(fleet = listOf(blackHawk, chinook))
+        r.aircraft.select("ch47f")
+        advanceUntilIdle()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        val first = r.state.rows.single()
+        assertEquals("Helicopter · CH-47F", first.title)
+        assertEquals("ch47f", text(r.graphic(first.ref), "profileId"))
+
+        r.aircraft.select("uh60l")
+        advanceUntilIdle()
+        r.model.place(GraphicKind.HELICOPTER, GraphicEdits.offset(crosshair, 300.0, 0.0))
+        advanceUntilIdle()
+        assertEquals(listOf("Helicopter · CH-47F", "Helicopter · UH-60L"), r.state.rows.map { it.title })     // the first keeps what it was placed as
+        assertEquals("uh60l", text(r.graphic(r.state.rows[1].ref), "profileId"))
+    }
+
+    @Test
+    fun `separation is measured with each aircraft's own airframe`() = runTest(dispatcher) {
+        val r = opened(fleet = listOf(blackHawk, chinook))
+        r.aircraft.select("ch47f")
+        advanceUntilIdle()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        val big = r.state.rows.single().ref
+        val bigAt = GraphicEdits.position("helicopters", r.graphic(big))!!
+        r.aircraft.select("uh60l")
+        advanceUntilIdle()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)                                   // placed clear of the Chinook, wherever that is
+        advanceUntilIdle()
+
+        // 80 m from the Chinook's middle: the rotor edges are 62.7 m apart, short of the 75 m a CH-47F asks for, so there is an alert...
+        r.model.moveToCrosshair(GraphicEdits.offset(bigAt, 80.0, 0.0))
+        advanceUntilIdle()
+        assertEquals(1, r.state.alerts.size)
+        assertTrue(r.state.alerts.single().contains("75 m") || r.state.alerts.single().contains("246 ft"))
+
+        // ...and 100 m away it is clear.
+        r.model.moveToCrosshair(GraphicEdits.offset(bigAt, 100.0, 0.0))
+        advanceUntilIdle()
+        assertTrue(r.state.alerts.isEmpty())
+    }
+
+    @Test
+    fun `two UH-60Ls the same 80 m apart are clear, because their clearance is 60 m`() = runTest(dispatcher) {
+        val r = opened(fleet = listOf(blackHawk, chinook))
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        val first = GraphicEdits.position("helicopters", r.graphic(r.state.rows.single().ref))!!
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        r.model.moveToCrosshair(GraphicEdits.offset(first, 80.0, 0.0))
+        advanceUntilIdle()
+        assertTrue(r.state.alerts.isEmpty())
+    }
+
+    @Test
+    fun `an aircraft placed as an airframe this device does not know is shown as the mission aircraft`() = runTest(dispatcher) {
+        val r = opened(fleet = listOf(blackHawk, chinook))
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        val ref = r.state.rows.single().ref
+        r.session.setQuietly { DiagramOps.patchGraphic(it, "helicopters", r.graphic(ref)["id"], JsonObject(mapOf("profileId" to JsonPrimitive("gone-from-the-list")))) }
+        advanceUntilIdle()
+        assertEquals("Helicopter · UH-60L", r.state.rows.single().title)
     }
 }

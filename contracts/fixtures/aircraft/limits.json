@@ -1,0 +1,53 @@
+{
+  "generatedBy": "backend/tests/test_contract_fixtures.py (UPDATE_CONTRACTS=1)",
+  "numbers": {
+    "rotor_diameter_m": {
+      "min": 1.0,
+      "max": 60.0
+    },
+    "rotor_tip_clearance_m": {
+      "min": 0.0,
+      "max": 1000.0
+    },
+    "default_airspeed_kts": {
+      "min": 1.0,
+      "max": 400.0
+    },
+    "max_indicated_kts": {
+      "min": 1.0,
+      "max": 400.0
+    },
+    "default_altitude_ft": {
+      "min": -2000.0,
+      "max": 30000.0
+    },
+    "min_altitude_ft_msl": {
+      "min": -2000.0,
+      "max": 30000.0
+    },
+    "max_altitude_ft_msl": {
+      "min": -2000.0,
+      "max": 30000.0
+    },
+    "default_fuel_flow_lb_hr": {
+      "min": 0.0,
+      "max": 20000.0
+    },
+    "default_gross_weight_lb": {
+      "min": 0.0,
+      "max": 200000.0
+    }
+  },
+  "airspeedTypes": [
+    "ground",
+    "indicated",
+    "true"
+  ],
+  "altitudeRefs": [
+    "agl",
+    "msl"
+  ],
+  "maxName": 120,
+  "maxDesignation": 40,
+  "maxIconKey": 40
+}

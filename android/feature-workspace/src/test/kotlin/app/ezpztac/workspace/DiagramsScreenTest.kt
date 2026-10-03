@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
@@ -49,6 +50,7 @@ class DiagramsScreenTest {
             analyze = { log += "analyze" },
             stopAnalysis = { log += "stop" },
             dismissAnalysis = { log += "dismiss analysis" },
+            selectAircraft = { log += "aircraft $it" },
         )
     }
 
@@ -206,8 +208,8 @@ class DiagramsScreenTest {
 
     private fun open(
         status: DiagramStatus = DiagramStatus.TARGETED, analysis: AnalysisUi = AnalysisUi.Idle, summary: SummaryUi? = null, canAnalyze: Boolean = true,
-        sync: SyncStatus? = SyncStatus.SYNCED, conflictOf: String? = null,
-    ) = ActiveDiagramUi("u1", "LZ HAWK", status, "16S GD 66993 52949", canAnalyze, analysis, summary, sync, conflictOf)
+        sync: SyncStatus? = SyncStatus.SYNCED, conflictOf: String? = null, aircraft: AircraftUi = AircraftUi.UH60L,
+    ) = ActiveDiagramUi("u1", "LZ HAWK", status, "16S GD 66993 52949", canAnalyze, analysis, summary, sync, conflictOf, aircraft)
 
     private fun tiles(slope: SlopeTileUi = SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2), "local_highres_cog", 10.2)) =
         SummaryUi("UH-60L", 13, 854_831, "4050", slope)
@@ -348,5 +350,41 @@ class DiagramsScreenTest {
     fun `an open conflict copy keeps its row, so its choices are not lost`() {
         show(DiagramsUiState(current = open(conflictOf = "u0"), rows = listOf(row("u1", "LZ HAWK (from this device)", conflictOf = "u0", isActive = true))))
         compose.onNodeWithText("Keep both").performScrollTo().assertIsDisplayed()
+    }
+// -- The mission aircraft ----------------------------------------------------------------------------------------------
+
+    private val fleet = AircraftUi(
+        options = listOf(AircraftOptionUi("uh60l", "UH-60L — UH-60L Black Hawk"), AircraftOptionUi("ch47f", "CH-47F — CH-47F Chinook"), AircraftOptionUi("sct", "SCT — Scout (yours)")),
+        activeSlug = "uh60l", activeLabel = "UH-60L — UH-60L Black Hawk", spacingM = 76, cruiseKts = 100, unverified = false, waiting = emptyList(),
+    )
+
+    @Test
+    fun `the open diagram shows its mission aircraft with its spacing and speed`() {
+        show(DiagramsUiState(current = open(aircraft = fleet), rows = listOf(row(isActive = true))))
+        compose.onNodeWithContentDescription("Mission aircraft: UH-60L — UH-60L Black Hawk").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("76 m spacing").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("100 kt").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Unverified performance").assertDoesNotExist()
+    }
+
+    @Test
+    fun `another airframe is chosen from the menu`() {
+        val r = show(DiagramsUiState(current = open(aircraft = fleet), rows = listOf(row(isActive = true))))
+        compose.onNodeWithContentDescription("Mission aircraft: UH-60L — UH-60L Black Hawk").performScrollTo().performClick()
+        compose.onNodeWithText("CH-47F — CH-47F Chinook").performClick()
+        assertEquals(listOf("aircraft ch47f"), r.log)
+    }
+
+    @Test
+    fun `a spec sheet's numbers are called that, in words`() {
+        show(DiagramsUiState(current = open(aircraft = fleet.copy(activeSlug = "ch47f", activeLabel = "CH-47F — CH-47F Chinook", unverified = true)), rows = listOf(row(isActive = true))))
+        compose.onNodeWithText("Unverified performance").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("These numbers are from published specifications", substring = true).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `an own profile waiting for the server is named, and cannot be chosen`() {
+        show(DiagramsUiState(current = open(aircraft = fleet.copy(waiting = listOf("Draft", "Other"))), rows = listOf(row(isActive = true))))
+        compose.onNodeWithText("Waiting to sync before it can be chosen: Draft, Other").performScrollTo().assertIsDisplayed()
     }
 }

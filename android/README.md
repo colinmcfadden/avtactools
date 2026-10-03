@@ -11,19 +11,19 @@ requires of the domain layer. The modules that need the Android framework sit be
 
 ```
 android/
-├─ core-model/      LatLon, Mgrs, AircraftProfile, route plan and result — in the web's saved-JSON shape
+├─ core-model/      LatLon, Mgrs, AircraftProfile and the aircraft form's draft, route plan and result — in the web's saved-JSON shape
 ├─ core-geo/        MGRS both ways, coordinate parsing, great-circle distance and course
 ├─ core-planning/   aircraft geometry, capacity, separation, the route planner
 ├─ core-formats/    reads AMPS .msnx, .LPS and .ths files; the rows of a .ths export
 ├─ core-network/    the API client: transport, sign-in, token refresh, typed routes, request priority
 ├─ core-sync/       the sync engine: outbox, pull by cursor, conflicts kept side by side
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
-├─ core-data/       Room database and the SyncStore on it (schemas in core-data/schemas, committed)
+├─ core-data/       Room database and the SyncStore on it (schemas in core-data/schemas, committed); the diagrams and the aircraft profiles
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
 ├─ core-symbols/    MIL-STD-2525C symbols as bitmaps: pre-rendered presets, milsymbol in the system JS sandbox, AndroidSVG
 ├─ feature-map/     the 2D map: MapLibre, base maps, crosshair readout, search, GPS, the diagram and its planning graphics
 ├─ feature-auth/    sign-in, sign-up, verify, reset and the .mil gate: screens and their view models
-├─ feature-workspace/ the Diagrams tab: list, make from a target, open, rename, delete, settle a conflict, analyze, and the planning graphics
+├─ feature-workspace/ the Diagrams tab: list, make from a target, open, rename, delete, settle a conflict, analyze, the planning graphics and the aircraft
 ├─ app/             the application: Hilt, Compose, manifest, the shell and the map with its sheet
 └─ build-logic/     the convention plugins every module uses
 ```

@@ -74,6 +74,8 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
             is Gate.Ready -> MapHome(
                 version = BuildConfig.VERSION_NAME, build = BuildConfig.VERSION_CODE,
                 maintenance = current.maintenance, onSignOut = viewModel::signOut,
+                // An administrator can switch own aircraft off for an account; the server would refuse what it made.
+                canMakeAircraft = current.user.hasFeature("aircraft_profiles"),
             )
             is Gate.UpdateRequired -> UpdateRequiredScreen(current.minimum)
         }

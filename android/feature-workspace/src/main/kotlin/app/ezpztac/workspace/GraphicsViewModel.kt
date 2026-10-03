@@ -2,6 +2,7 @@ package app.ezpztac.workspace
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.geo.MgrsConverter
@@ -104,17 +105,20 @@ data class GraphicsUiState(
 class GraphicsViewModel @Inject constructor(
     private val session: DiagramSession,
     private val selection: GraphicSelection,
+    private val aircraft: AircraftProfiles,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
-    /** Aircraft are measured as UH-60Ls until aircraft profiles can be chosen. */
-    private val profiles = listOf(AircraftProfile.FALLBACK)
-    private val active = AircraftProfile.FALLBACK
+    /** The airframes an aircraft on the map can be, and the mission aircraft a new one is placed as (the chosen one; the UH-60L until one is). */
+    private val profiles: List<AircraftProfile> get() = aircraft.profiles.value
+    private val active: AircraftProfile get() = aircraft.active.value
 
-    val state: StateFlow<GraphicsUiState> = combine(
-        session.active, selection.selected, session.undoDepth, session.redoDepth, error,
-    ) { diagram, selected, undo, redo, error -> uiStateOf(diagram, selected, undo, redo, error) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, GraphicsUiState())
+    private val depths = combine(session.undoDepth, session.redoDepth, error) { undo, redo, error -> Triple(undo, redo, error) }
+    private val airframes = combine(aircraft.profiles, aircraft.active) { list, chosen -> list to chosen }
+
+    val state: StateFlow<GraphicsUiState> = combine(session.active, selection.selected, depths, airframes) { diagram, selected, (undo, redo, error), (list, chosen) ->
+        uiStateOf(diagram, selected, undo, redo, error, list, chosen)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, GraphicsUiState())
 
     // -- Placing -----------------------------------------------------------------------------------------------------------
 
@@ -276,7 +280,9 @@ class GraphicsViewModel @Inject constructor(
 
     // -- What the sheet shows ---------------------------------------------------------------------------------------------
 
-    private fun uiStateOf(diagram: Diagram?, selected: GraphicRef?, undo: Int, redo: Int, error: String?): GraphicsUiState {
+    private fun uiStateOf(
+        diagram: Diagram?, selected: GraphicRef?, undo: Int, redo: Int, error: String?, profiles: List<AircraftProfile>, active: AircraftProfile,
+    ): GraphicsUiState {
         if (diagram == null || !diagram.canEditGraphics) return GraphicsUiState(undoDepth = undo, redoDepth = redo, error = error)
         val resolve = { a: PlanningGraphics.Aircraft -> AircraftLookup.profileForAsset(a.profileRef, profiles, active) }
         val aircraft = diagram.graphics.helicopters.mapNotNull(PlanningGraphics.Aircraft::of)
@@ -289,7 +295,7 @@ class GraphicsViewModel @Inject constructor(
                 val ref = GraphicRef(kind.collection, DiagramOps.idText(o["id"]))
                 val at = GraphicEdits.position(kind.collection, o)
                 GraphicRowUi(
-                    ref = ref, kind = kind, title = titleOf(kind, o, aircraft, resolve), grid = at?.let(::gridOf), detail = detailOf(kind, o),
+                    ref = ref, kind = kind, title = titleOf(kind, o, aircraft, resolve, active), grid = at?.let(::gridOf), detail = detailOf(kind, o),
                     warning = kind == GraphicKind.HELICOPTER && ref.key in violating, selected = ref == selected,
                 )
             }
@@ -347,7 +353,7 @@ class GraphicsViewModel @Inject constructor(
 
     private fun gridOf(at: LatLon): String? = MgrsConverter.toMgrs(at.lat, at.lon)?.format()
 
-    private fun titleOf(kind: GraphicKind, saved: JsonObject, aircraft: List<PlanningGraphics.Aircraft>, resolve: (PlanningGraphics.Aircraft) -> AircraftProfile): String = when (kind) {
+    private fun titleOf(kind: GraphicKind, saved: JsonObject, aircraft: List<PlanningGraphics.Aircraft>, resolve: (PlanningGraphics.Aircraft) -> AircraftProfile, active: AircraftProfile): String = when (kind) {
         GraphicKind.DOGHOUSE -> Doghouses.display(saved, 0.0).id?.takeIf { it.isNotBlank() }?.let { "Doghouse · $it" } ?: kind.label
         GraphicKind.UNIT -> unitTitle(saved)
         GraphicKind.HELICOPTER -> {

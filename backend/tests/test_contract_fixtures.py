@@ -73,6 +73,65 @@ class SqliteFixtureTests(unittest.TestCase):
         self.assertGreater(len(tables["THREATS"]["rows"]), 5)
 
 
+class AircraftLimitsTests(unittest.TestCase):
+    """`aircraft/limits.json`: what the server accepts in a user's own aircraft profile, probed through `_apply_fields` itself.
+
+    The native apps check the aircraft form against this file, so a profile made with no signal is one the server will take. A
+    change to the server's limits fails here until the file is regenerated (`UPDATE_CONTRACTS=1`), and then the apps' tests
+    show what they have to follow.
+    """
+
+    FIXTURE = Path(__file__).resolve().parents[2] / "contracts" / "fixtures" / "aircraft" / "limits.json"
+
+    @staticmethod
+    def accepts(body):
+        from models import AircraftProfile
+        from routes import aircraft_routes
+
+        errors = []
+        profile = AircraftProfile(user_id=1, perf_source="custom", name="Custom aircraft", designation="CUSTOM")
+        aircraft_routes._apply_fields(profile, body, errors)
+        return not errors, profile
+
+    def probe(self):
+        from routes import aircraft_routes
+
+        numbers = {}
+        for field, (low, high) in aircraft_routes._NUMERIC_FIELDS.items():
+            numbers[field] = {"min": low, "max": high}
+        long_name = "n" * 500
+        return {
+            "numbers": numbers,
+            "airspeedTypes": list(aircraft_routes.AIRSPEED_TYPES),
+            "altitudeRefs": list(aircraft_routes.ALTITUDE_REFS),
+            "maxName": len(self.accepts({"name": long_name})[1].name),
+            "maxDesignation": len(self.accepts({"designation": long_name})[1].designation),
+            "maxIconKey": len(self.accepts({"icon_key": long_name})[1].icon_key),
+        }
+
+    def test_the_committed_limits_are_the_servers(self):
+        import json
+        import os
+
+        current = self.probe()
+        if os.environ.get("UPDATE_CONTRACTS") == "1":
+            self.FIXTURE.parent.mkdir(parents=True, exist_ok=True)
+            document = {"generatedBy": "backend/tests/test_contract_fixtures.py (UPDATE_CONTRACTS=1)", **current}
+            self.FIXTURE.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        self.assertTrue(self.FIXTURE.exists(), f"{self.FIXTURE} is missing; run with UPDATE_CONTRACTS=1")
+        committed = json.loads(self.FIXTURE.read_text(encoding="utf-8"))
+        committed.pop("generatedBy", None)
+        self.assertEqual(committed, current)
+
+    def test_each_limit_is_where_the_server_draws_it(self):
+        """The file says min and max; this is the server agreeing, at the edge and one step beyond it."""
+        for field, limit in self.probe()["numbers"].items():
+            for value in (limit["min"], limit["max"]):
+                self.assertTrue(self.accepts({field: value})[0], f"{field}={value} should be accepted")
+            for value in (limit["min"] - 0.01, limit["max"] + 0.01):
+                self.assertFalse(self.accepts({field: value})[0], f"{field}={value} should be refused")
+
+
 class ThsExportTests(unittest.TestCase):
     """`build_ths_bytes` moved out of the routes so it can be tested without Flask or numpy."""
 

@@ -102,23 +102,3 @@ private fun SymbolPreview(draft: UnitDraft) {
         }
     }
 }
-
-/** A choice from a list, shown as a button with the choice on it and a menu of the rest. */
-@Composable
-private fun Choice(label: String, chosen: String, options: List<Pair<String, String>>, onChoose: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Box {
-            OutlinedButton(
-                onClick = { open = true }, shape = RoundedCornerShape(Tokens.Radius.md.dp),
-                modifier = Modifier.fillMaxWidth().heightIn(min = Tokens.Size.touchTarget.dp).semantics { contentDescription = "$label: $chosen" },
-            ) { Text("$chosen  ▾") }
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                options.forEach { (text, value) ->
-                    DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onChoose(value) })
-                }
-            }
-        }
-    }
-}

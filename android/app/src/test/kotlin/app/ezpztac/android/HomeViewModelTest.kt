@@ -1,6 +1,9 @@
 package app.ezpztac.android
 
+import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.InMemoryAircraftChoice
+import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
@@ -15,6 +18,7 @@ import app.ezpztac.network.SlopeStats
 import app.ezpztac.network.SlopeThresholds
 import app.ezpztac.network.Uh60Limits
 import app.ezpztac.network.TerrainAnalysis
+import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
@@ -88,12 +92,18 @@ class HomeViewModelTest {
 
     private class Rig(scope: TestScope, val server: SlopeServer = SlopeServer()) {
         val store = Flaky()
-        val repository = DiagramRepository(SyncRepository(store, SequentialIds("t")), store, RecordingScheduler())
+        val sync = SyncRepository(store, SequentialIds("t"))
+        val scheduler = RecordingScheduler()
+        val repository = DiagramRepository(sync, store, scheduler)
         val session = DiagramSession(repository, scope.backgroundScope)
         // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and a slope being measured is work a test waits for.
         val analysis = AnalysisService(server, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
         val selection = GraphicSelection()
-        val model = HomeViewModel(session, analysis, selection, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
+        val aircraft = AircraftProfiles(
+            store, InMemoryMasterProfileStore(listOf(AircraftProfile(), AircraftProfile(id = 2, slug = "ch47f", name = "CH-47F Chinook", designation = "CH-47F", iconKey = "ch47", rotorDiameterM = 18.29))),
+            { emptyList() }, InMemoryAircraftChoice(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), sync, scheduler,
+        )
+        val model = HomeViewModel(session, analysis, selection, aircraft, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable })
         val seen = mutableListOf<OpenedDiagram>()
 
         init {
@@ -377,5 +387,31 @@ class HomeViewModelTest {
         advanceUntilIdle()
         r.model.mapTapped(LatLon(34.78, -84.08), view(), touchRadiusPx = 24.0)
         assertEquals(null, r.selection.selected.value)
+    }
+// -- Aircraft on the map -----------------------------------------------------------------------------------------------
+
+    private fun helo(id: Int, profile: String) = JsonObject(
+        mapOf(
+            "id" to JsonPrimitive(id), "lat" to JsonPrimitive(34.7838), "lon" to JsonPrimitive(-84.0822), "rotation" to JsonPrimitive(0),
+            "type" to JsonPrimitive("helo"), "profileId" to JsonPrimitive(profile),
+        ),
+    )
+
+    @Test
+    fun `each aircraft is drawn as the airframe it was placed as, and one this device does not know as the mission aircraft`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place") { DiagramOps.upsertGraphic(it, "helicopters", helo(1, "ch47f")) }
+        r.session.edit("Place") { DiagramOps.upsertGraphic(it, "helicopters", helo(2, "uh60l")) }
+        r.session.edit("Place") { DiagramOps.upsertGraphic(it, "helicopters", helo(3, "not-in-the-list")) }
+        advanceUntilIdle()
+        assertEquals(listOf("CH-47F", "UH-60L", "UH-60L"), r.model.scene.value.graphics.aircraft.map { it.designation })   // the UH-60L is the mission aircraft
+        assertEquals(18.29, r.model.scene.value.graphics.aircraft[0].diameterM, 1e-9)
+
+        r.aircraft.select("ch47f")
+        advanceUntilIdle()
+        assertEquals(listOf("CH-47F", "UH-60L", "CH-47F"), r.model.scene.value.graphics.aircraft.map { it.designation })   // and follows the choice
     }
 }
