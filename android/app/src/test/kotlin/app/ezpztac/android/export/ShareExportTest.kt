@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -38,9 +39,14 @@ class ShareExportTest {
 
     private fun exports() = File(context.cacheDir, "exports")
 
+    private fun prepare(file: ExportFile, now: Long = System.currentTimeMillis()): Intent =
+        ShareExport.prepare(context, file, now) { _, authority, target ->
+            Uri.Builder().scheme("content").authority(authority).appendPath("exports").appendPath(target.name).build()
+        }
+
     @Test
     fun `the mission is written to the exports folder and offered to the share sheet`() {
-        val chooser = ShareExport.prepare(context, ExportFile("ROUTE 1.msnx", bytes))
+        val chooser = prepare(ExportFile("ROUTE 1.msnx", bytes))
         assertEquals(Intent.ACTION_CHOOSER, chooser.action)
         val send = sent(chooser)
         assertEquals(Intent.ACTION_SEND, send.action)
@@ -52,6 +58,7 @@ class ShareExportTest {
 
     @Test
     fun `what the other app is given is one URI of this app's provider, which reads back the file`() {
+        assumeTrue("AndroidX FileProvider uses Android path separators, unlike Robolectric on Windows", File.separatorChar == '/')
         val send = sent(ShareExport.prepare(context, ExportFile("ROUTE 1.msnx", bytes)))
         @Suppress("DEPRECATION") val uri = send.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)!!
         assertEquals("content", uri.scheme)
@@ -64,6 +71,7 @@ class ShareExportTest {
 
     @Test
     fun `a file outside the exports folder cannot be reached through the provider`() {
+        assumeTrue("AndroidX FileProvider uses Android path separators, unlike Robolectric on Windows", File.separatorChar == '/')
         val secret = File(context.cacheDir, "secret.txt").apply { writeText("not for sharing") }
         val send = sent(ShareExport.prepare(context, ExportFile("ROUTE 1.msnx", bytes)))
         @Suppress("DEPRECATION") val uri = send.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)!!
@@ -83,7 +91,7 @@ class ShareExportTest {
         assertEquals("ROUTES.msnx", ShareExport.plainName("/"))
         assertEquals("A B.msnx", ShareExport.plainName("A B"))                                 // the extension is added when it is missing
         assertEquals("A.msnx", ShareExport.plainName("A.msnx"))                                // and not doubled
-        ShareExport.prepare(context, ExportFile("../../escape.msnx", bytes))
+        prepare(ExportFile("../../escape.msnx", bytes))
         assertTrue(File(exports(), "escape.msnx").exists())
         assertFalse(File(context.cacheDir.parentFile, "escape.msnx").exists())
     }
@@ -93,7 +101,7 @@ class ShareExportTest {
         exports().mkdirs()
         val old = File(exports(), "OLD.msnx").apply { writeBytes(bytes); setLastModified(1_000_000L) }
         val recent = File(exports(), "RECENT.msnx").apply { writeBytes(bytes); setLastModified(System.currentTimeMillis() - 60 * 60 * 1000) }
-        ShareExport.prepare(context, ExportFile("NEW.msnx", bytes))
+        prepare(ExportFile("NEW.msnx", bytes))
         assertFalse(old.exists())
         assertTrue(recent.exists())
         assertTrue(File(exports(), "NEW.msnx").exists())
@@ -101,8 +109,8 @@ class ShareExportTest {
 
     @Test
     fun `exporting the same mission again replaces the file`() {
-        ShareExport.prepare(context, ExportFile("ROUTE 1.msnx", bytes))
-        ShareExport.prepare(context, ExportFile("ROUTE 1.msnx", byteArrayOf(1, 2)))
+        prepare(ExportFile("ROUTE 1.msnx", bytes))
+        prepare(ExportFile("ROUTE 1.msnx", byteArrayOf(1, 2)))
         assertArrayEquals(byteArrayOf(1, 2), File(exports(), "ROUTE 1.msnx").readBytes())
         assertEquals(1, exports().listFiles()!!.count { it.name == "ROUTE 1.msnx" })
     }

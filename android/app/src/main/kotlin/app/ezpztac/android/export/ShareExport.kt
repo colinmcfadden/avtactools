@@ -3,6 +3,7 @@ package app.ezpztac.android.export
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import app.ezpztac.data.MissionTemplate
 import app.ezpztac.workspace.ExportFile
@@ -30,12 +31,21 @@ object ShareExport {
     private const val KEEP_MS = 24L * 60 * 60 * 1000
 
     /** Writes [file] and returns the share intent for it, to be started. [now] is the time, for clearing out old files. */
-    fun prepare(context: Context, file: ExportFile, now: Long = System.currentTimeMillis()): Intent {
+    fun prepare(context: Context, file: ExportFile, now: Long = System.currentTimeMillis()): Intent =
+        prepare(context, file, now, FileProvider::getUriForFile)
+
+    /** The URI factory is replaceable in local tests because AndroidX FileProvider compares paths with Android separators, which do not match Robolectric's paths on Windows. */
+    internal fun prepare(
+        context: Context,
+        file: ExportFile,
+        now: Long,
+        uriForFile: (Context, String, File) -> Uri,
+    ): Intent {
         val folder = File(context.cacheDir, FOLDER).apply { mkdirs() }
         folder.listFiles()?.filter { now - it.lastModified() > KEEP_MS }?.forEach { it.delete() }
         val target = File(folder, plainName(file.fileName))
         target.writeBytes(file.bytes)
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.exports", target)
+        val uri = uriForFile(context, "${context.packageName}.exports", target)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = MIME
             putExtra(Intent.EXTRA_STREAM, uri)

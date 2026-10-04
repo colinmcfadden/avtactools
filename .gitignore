@@ -25,6 +25,7 @@ dist/
 
 # --- PYTHON / FLASK SPECIFIC ---
 *.db
+!contracts/fixtures/sqlite/*.db
 instance/
 .pytest_cache/
 .coverage

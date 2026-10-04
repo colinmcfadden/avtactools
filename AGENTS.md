@@ -395,6 +395,13 @@ python -m venv venv; .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt pytest        # pytest is not in requirements.txt
 $env:TERRAIN_DATA_DIR="C:\_dev\avtactools\topo"; $env:PROJ_NETWORK="ON"; python app.py
 
+# Optional local login — prompts for a password and seeds only local SQLite.
+# It refuses production signals and every non-SQLite database.
+python -m flask --app app create-dev-user
+
+# Android emulator against that backend (10.0.2.2 is the host from the emulator).
+cd ..\android; .\gradlew.bat installDebug "-Pezpz.apiUrl=http://10.0.2.2:5000/"
+
 # Frontend — http://localhost:3000
 cd frontend
 npm install

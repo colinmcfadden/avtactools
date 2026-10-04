@@ -7,14 +7,33 @@ terrain, weather, coordinate, export, threat, and saved-data endpoints.
 
 ## Local setup
 
-1. Copy `backend/.env.example` to `backend/.env` and
-   `frontend/.env.example` to `frontend/.env`.
-2. Generate a unique `JWT_SECRET_KEY`. Never reuse the example value or commit
+1. Put any local settings in the gitignored `backend/.env` and `frontend/.env`
+   files. There are no checked-in example files; `AGENTS.md` lists the settings.
+2. Generate a unique `JWT_SECRET_KEY`. Never reuse a deployed value or commit
    the resulting `.env` file.
 3. Start Flask on port 5000 and React on port 3000.
 4. Keep `EMAIL_DELIVERY_MODE=console` locally. Verification and reset links are
    written to the Flask development log so the flow can be tested without an
    email account.
+
+For a repeatable local account without completing email and affiliation flows,
+seed the local SQLite database explicitly. The command prompts for a password,
+uses the normal password-login/session path afterward, and refuses to run when
+production is declared or when the database is not SQLite:
+
+```powershell
+cd backend
+python -m flask --app app create-dev-user
+```
+
+The default address is `pilot@local.ezpz.test`. For the Android emulator, build
+the debug app against the local backend (the production API remains the default
+when this property is omitted):
+
+```powershell
+cd android
+.\gradlew.bat installDebug "-Pezpz.apiUrl=http://10.0.2.2:5000/"
+```
 
 Manual accounts cannot sign in until their email is verified. Verification
 links expire after 24 hours. Password-reset links expire after 60 minutes. Both
