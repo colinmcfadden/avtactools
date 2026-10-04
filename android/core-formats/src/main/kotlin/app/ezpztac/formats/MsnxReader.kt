@@ -337,8 +337,10 @@ public object MsnxReader {
     private fun newBuilderFactory(): DocumentBuilderFactory = DocumentBuilderFactory.newInstance().apply {
         // Names stay as written ("msnx:point"), which is how the reader looks them up.
         isNamespaceAware = false
-        isXIncludeAware = false
-        isExpandEntityReferences = false
+        // Best effort, like the features below: Android's parser throws UnsupportedOperationException for *turning XInclude off* (it supports no XInclude to turn on),
+        // which refused every mission on a device until a real one was tried. The text check in parseXml is what holds.
+        try { isXIncludeAware = false } catch (_: UnsupportedOperationException) { /* this parser has none */ }
+        try { isExpandEntityReferences = false } catch (_: UnsupportedOperationException) { /* nor does it expand any */ }
         // Best effort: not every XML runtime (Android's among them) knows every flag. The text
         // check in parseXml is what holds on all of them.
         if (hardenXmlFactory) for ((feature, value) in listOf(
