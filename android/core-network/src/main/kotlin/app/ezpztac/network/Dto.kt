@@ -375,3 +375,11 @@ public data class PointWindDto(
 /** What `/api/route-winds` answered: the wind for each point it could find one for, by the id the point was sent with. A point with no station in reach is not in it. */
 @Serializable
 public data class WindsResponse(val winds: Map<String, PointWindDto>)
+
+/** One radar's terrain mask: a `data:image/png;base64,` raster over the response's `bounds`, in the colours of the radar's altitude bands. */
+@Serializable
+public data class ThreatMaskRadarDto(val type: Int, val png: String)
+
+/** What `/api/threat-mask` answered: where the masks are (`[[south, west], [north, east]]`) and a mask for each radar that had something to show (none, when nothing is visible). */
+@Serializable
+public data class ThreatMaskDto(val bounds: List<List<Double>>, val radars: List<ThreatMaskRadarDto>)

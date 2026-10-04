@@ -71,6 +71,12 @@ import app.ezpztac.data.WeatherApi
 import app.ezpztac.data.WeatherCache
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.ThreatPicture
+import app.ezpztac.data.MaskState
+import app.ezpztac.model.Radar
+import app.ezpztac.network.ThreatMaskRadarDto
+import app.ezpztac.network.ThreatMaskDto
+import app.ezpztac.data.ThreatMasks
+import app.ezpztac.data.ThreatMaskApi
 import app.ezpztac.data.ThreatSelection
 import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.ThreatVault
@@ -156,6 +162,20 @@ class HomeViewModelTest {
         override fun wipe() { kept = null }
     }
 
+    /** The server's answer to a mask, scripted: what it said, and what it was asked. */
+    private class FakeMaskApi : ThreatMaskApi {
+        var answer = ThreatMaskDto(
+            listOf(listOf(34.0, -85.0), listOf(35.0, -84.0)),
+            listOf(ThreatMaskRadarDto(0, "data:image/png;base64,AAAA"), ThreatMaskRadarDto(1, "data:image/png;base64,BBBB")),
+        )
+        val asked = mutableListOf<Pair<LatLon, List<Radar>>>()
+
+        override suspend fun mask(at: LatLon, radars: List<Radar>): ThreatMaskDto {
+            asked += at to radars
+            return answer
+        }
+    }
+
     private class FakeLastRouteSet(var stored: String? = null) : LastRouteSet {
         override fun id() = stored
 
@@ -191,12 +211,14 @@ class HomeViewModelTest {
         val pointSelection = PointSelection()
         val threats = ThreatStore(MemoryThreats(), scope.backgroundScope)
         val threatSelection = ThreatSelection()
+        val maskApi = FakeMaskApi()
+        val masks = ThreatMasks(maskApi, threats, scope.backgroundScope)
         val weatherApi = CountingWeather()
         val weather = WeatherService(weatherApi, KeptWeather(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)))
         val mapFocus = MapFocus()
         val model = HomeViewModel(
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection,
-            threats, threatSelection, weather, MapDrag(session, routeSession, threats), mapFocus, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
+            threats, threatSelection, weather, MapDrag(session, routeSession, threats), masks, mapFocus, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
@@ -1252,7 +1274,7 @@ class HomeViewModelTest {
     // -- Long press and drag ------------------------------------------------------------------------------------------
 
     @Test
-    fun `a long press on a graphic holds it and picks it up, and the finger then moves it as one undo step`() = runTest(dispatcher) {
+    fun `a long press on a graphic picks it up without holding it or opening anything, and the finger moves it as one undo step`() = runTest(dispatcher) {
         val r = Rig(this)
         advanceUntilIdle()
         r.session.open(r.analysed())
@@ -1263,7 +1285,7 @@ class HomeViewModelTest {
 
         val finger = LatLon(34.7838, -84.0822)
         assertTrue(r.model.dragStarted(finger, view(), touchRadiusPx = 24.0))
-        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)           // held, as a tap would hold it
+        assertNull(r.selection.selected.value)                                                // nothing is held: the information bar is for a tap
         repeat(10) { i -> r.model.dragMoved(LatLon(34.7838 + i * 0.00002, -84.0822)) }
         r.model.dragEnded(LatLon(34.7842, -84.0822))
         advanceUntilIdle()
@@ -1330,5 +1352,44 @@ class HomeViewModelTest {
         assertNull(r.selection.selected.value)
         assertNull(r.threatSelection.held.value)
         assertEquals(RouteHeld("route", null), r.routeSelection.held.value)
+    }
+
+    // -- Terrain masks on the map ---------------------------------------------------------------------------------------
+
+    private fun sa8(lat: Double = 34.7838, lon: Double = -84.0822) = Threat("SA-8", "SHGPEWRR------", lat, lon, "", "SOF", radars = Radars.defaultPair())
+
+    @Test
+    fun `a terrain mask is on the map only after it is asked for, only for as long as the threat has not moved, and is gone when hidden`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threats.add(sa8())
+        advanceUntilIdle()
+        assertTrue(r.model.threatScene.value.masks.isEmpty())                                   // making a threat asks for nothing
+        assertTrue(r.maskApi.asked.isEmpty())
+
+        r.masks.request(id); advanceUntilIdle()
+        val masks = r.model.threatScene.value.masks
+        assertEquals(listOf("$id-0", "$id-1"), masks.map { it.id })
+        assertEquals(34.0, masks.first().south, 0.0)
+        assertEquals(-84.0, masks.first().east, 0.0)
+
+        r.threats.move(id, 34.79, -84.0822); advanceUntilIdle()                                  // moved: it is not what this threat sees now
+        assertTrue(r.model.threatScene.value.masks.isEmpty())
+        assertEquals(1, r.maskApi.asked.size)                                                    // and nothing asked again by itself
+
+        r.masks.request(id); advanceUntilIdle()
+        assertEquals(2, r.model.threatScene.value.masks.size)
+        r.masks.hide(id); advanceUntilIdle()
+        assertTrue(r.model.threatScene.value.masks.isEmpty())
+    }
+
+    @Test
+    fun `a hidden threat's mask is not drawn`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threats.add(sa8())
+        r.masks.request(id); advanceUntilIdle()
+        r.threats.setVisible(id, false); advanceUntilIdle()
+        assertTrue(r.model.threatScene.value.masks.isEmpty())
     }
 }

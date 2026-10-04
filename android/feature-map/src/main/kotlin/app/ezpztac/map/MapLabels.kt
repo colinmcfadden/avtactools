@@ -81,14 +81,14 @@ object MapLabels {
 
 /** Draws what is written over the map: units' symbols, the doghouse boxes and the feet between aircraft. It takes no touches: what is under one is still tapped. */
 @Composable
-fun GraphicLabelsLayer(host: MapHost, graphics: GraphicsScene, modifier: Modifier = Modifier) {
+fun GraphicLabelsLayer(host: MapHost, graphics: GraphicsScene, modifier: Modifier = Modifier, footprints: UnitFootprints? = null) {
     val camera = host.camera
     val density = LocalDensity.current.density.toDouble()
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
         if (camera == null || size == IntSize.Zero || (graphics.separations.isEmpty() && graphics.doghouses.isEmpty() && graphics.units.isEmpty())) return@Box
         val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density, host.bottomPaddingPx.toDouble())
-        MapLabels.units(graphics, view).forEach { placed -> UnitMarker(placed) }
+        MapLabels.units(graphics, view).forEach { placed -> UnitMarker(placed, footprints) }
         MapLabels.doghouses(graphics, view).forEach { placed -> PlacedDoghouse(placed, camera.bearingDegrees) }
         MapLabels.separations(graphics, view).forEach { label -> SeparationBadge(label) }
     }

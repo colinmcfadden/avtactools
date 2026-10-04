@@ -23,6 +23,7 @@ import app.ezpztac.android.export.AssetThsTemplate
 import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.android.export.ShareExport
 import app.ezpztac.data.ApiClientPlanningApi
+import app.ezpztac.data.ApiClientThreatMaskApi
 import app.ezpztac.data.ApiClientWeatherApi
 import app.ezpztac.data.WeatherApi
 import app.ezpztac.data.WeatherCache
@@ -35,6 +36,7 @@ import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.ThsTemplate
 import app.ezpztac.data.ApiClientTerrainApi
 import app.ezpztac.data.PlanningApi
+import app.ezpztac.data.ThreatMaskApi
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ClientInfo
@@ -124,6 +126,10 @@ object AppModule {
     @Provides
     @Singleton
     fun planningApi(client: ApiClient): PlanningApi = ApiClientPlanningApi(client)
+
+    @Provides
+    @Singleton
+    fun threatMaskApi(client: ApiClient): ThreatMaskApi = ApiClientThreatMaskApi(client)
 
     @Provides
     @Singleton

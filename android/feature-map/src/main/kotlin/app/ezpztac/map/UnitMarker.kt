@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,7 +42,7 @@ import kotlin.math.roundToInt
  * is not a symbol) a plain marker in the affiliation's colour stands in, so the unit is never missing from the map.
  */
 @Composable
-internal fun UnitMarker(placed: PlacedUnit) {
+internal fun UnitMarker(placed: PlacedUnit, footprints: UnitFootprints? = null) {
     val unit = placed.unit
     val sidc = unit.sidc
     if (sidc == null) {                                                    // an older unit that was an image, not a symbol
@@ -53,6 +54,13 @@ internal fun UnitMarker(placed: PlacedUnit) {
         null -> Unit
         is SymbolOutcome.Drawn -> {
             val symbol = result.symbol
+            // Where the picture is, for a finger to hit: the unit's position is the symbol's anchor, which is often well away from the frame a person presses.
+            SideEffect {
+                footprints?.report(
+                    unit.ref,
+                    UnitFootprints.Box(-symbol.anchorX.toDouble(), -symbol.anchorY.toDouble(), symbol.bitmap.width - symbol.anchorX.toDouble(), symbol.bitmap.height - symbol.anchorY.toDouble()),
+                )
+            }
             Image(
                 bitmap = symbol.bitmap.asImageBitmap(), contentDescription = describe(unit),
                 modifier = Modifier.offset { IntOffset((placed.at.x - symbol.anchorX).roundToInt(), (placed.at.y - symbol.anchorY).roundToInt()) },

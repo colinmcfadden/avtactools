@@ -40,7 +40,7 @@ class ThreatsScreenTest {
             updateDraft = { drafts += it; log += "updateDraft" }, saveEdit = { log += "save" }, cancelEdit = { log += "cancel" },
             select = { log += "select:$it" }, deselect = { log += "deselect" }, toggleVisible = { log += "visible:$it" },
             moveToCrosshair = { log += "crosshair:$it" }, nudge = { id, n, e -> log += "nudge:$id:$n:$e" }, moveToText = { id, text -> log += "text:$id:$text"; moveProblem },
-            remove = { log += "remove:$it" }, removeAll = { log += "removeAll" }, dismissError = { log += "dismissError" }, dismissNote = { log += "dismissNote" },
+            remove = { log += "remove:$it" }, showMask = { log += "showMask:$it" }, hideMask = { log += "hideMask:$it" }, removeAll = { log += "removeAll" }, dismissError = { log += "dismissError" }, dismissNote = { log += "dismissNote" },
         )
     }
 
@@ -227,5 +227,52 @@ class ThreatsScreenTest {
         compose.onNodeWithText("Name").performTextInput("SA-6 ")
         assertEquals("SA-6 Threat 1", r.drafts.last().name)
         assertEquals(ThreatDraft.forNew(0).radars, r.drafts.last().radars)
+    }
+
+    // -- The terrain mask ----------------------------------------------------------------------------------------------------
+
+    private fun withMask(status: ThreatMaskUi.Status, message: String? = null) =
+        ThreatsUiState(threats = listOf(sa8.copy(held = true)), held = held().copy(mask = ThreatMaskUi(status, message)))
+
+    @Test
+    fun `before the mask is asked for, the card offers it and says exactly what is sent`() {
+        val r = show(withMask(ThreatMaskUi.Status.OFF))
+        assertTrue(count("Terrain mask") >= 1)
+        assertEquals(1, count("sends this threat's position and radar settings to the server once", substring = true))
+        assertEquals(1, count("The server keeps nothing.", substring = true))
+        compose.onNodeWithText("Show terrain mask").performClick()
+        assertEquals(listOf("showMask:t1"), r.log)
+    }
+
+    @Test
+    fun `a mask being worked out shows it, and the button is not offered again`() {
+        show(withMask(ThreatMaskUi.Status.WORKING))
+        assertTrue(count("Working out the mask", substring = true) >= 1)
+        assertEquals(0, count("Show terrain mask"))
+    }
+
+    @Test
+    fun `a mask on the map can be hidden or updated`() {
+        val r = show(withMask(ThreatMaskUi.Status.SHOWING))
+        assertEquals(1, count("Shown on the map", substring = true))
+        compose.onNodeWithText("Hide mask").performClick()
+        compose.onNodeWithText("Update").performClick()
+        assertEquals(listOf("hideMask:t1", "showMask:t1"), r.log)
+    }
+
+    @Test
+    fun `a mask that is out of date says why and offers to update it`() {
+        val r = show(withMask(ThreatMaskUi.Status.OUT_OF_DATE, "This threat was moved or its radars changed after this mask was made, so it is not shown."))
+        assertEquals(1, count("was moved or its radars changed", substring = true))
+        compose.onNodeWithText("Update mask").performClick()
+        assertEquals(listOf("showMask:t1"), r.log)
+    }
+
+    @Test
+    fun `a failure is in words and can be tried again`() {
+        val r = show(withMask(ThreatMaskUi.Status.FAILED, "There is no terrain data for this area."))
+        assertEquals(1, count("There is no terrain data for this area."))
+        compose.onNodeWithText("Try the terrain mask again").performClick()
+        assertEquals(listOf("showMask:t1"), r.log)
     }
 }

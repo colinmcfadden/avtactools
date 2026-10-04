@@ -73,6 +73,9 @@ class ThreatsActions(
     /** Null when the threat is moved, else the words for the field. */
     val moveToText: (id: String, text: String) -> String? = { _, _ -> null },
     val remove: (String) -> Unit = {},
+    /** Ask the server what this threat's radars can see over the terrain (the one thing that sends a threat anywhere). */
+    val showMask: (String) -> Unit = {},
+    val hideMask: (String) -> Unit = {},
     val removeAll: () -> Unit = {},
     val dismissError: () -> Unit = {},
     val dismissNote: () -> Unit = {},
@@ -112,7 +115,7 @@ fun ThreatsHost(
             beginEdit = viewModel::beginEdit, updateDraft = viewModel::updateDraft, saveEdit = viewModel::saveEdit, cancelEdit = viewModel::cancelEdit,
             select = viewModel::select, deselect = viewModel::deselect, toggleVisible = viewModel::toggleVisible,
             moveToCrosshair = { viewModel.moveToCrosshair(it, crosshair) }, nudge = viewModel::nudge, moveToText = viewModel::moveToText,
-            remove = viewModel::remove, removeAll = viewModel::removeAll, dismissError = viewModel::dismissError, dismissNote = viewModel::dismissNote,
+            remove = viewModel::remove, showMask = viewModel::showMask, hideMask = viewModel::hideMask, removeAll = viewModel::removeAll, dismissError = viewModel::dismissError, dismissNote = viewModel::dismissNote,
         ),
         modifier, crosshairGrid,
     )
@@ -224,6 +227,8 @@ private fun HeldThreatCard(held: HeldThreatUi, crosshairGrid: String?, actions: 
             Text("Source: ${held.source}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (held.information.isNotBlank()) Text(held.information, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+            TerrainMaskControls(held, actions)
+
             Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                 TextAction("Edit", onClick = { actions.beginEdit(held.id) })
                 TextAction(if (moving) "Done moving" else "Move", onClick = { moving = !moving })
@@ -247,6 +252,44 @@ private fun HeldThreatCard(held: HeldThreatUi, crosshairGrid: String?, actions: 
                 }
             }
         }
+    }
+}
+
+/**
+ * The terrain mask of the held threat: where its radars can see over the terrain, as the web draws it. It is worked out by the server, so it is asked for with a button and the
+ * card says what is sent: nothing about a threat leaves the device otherwise.
+ */
+@Composable
+private fun TerrainMaskControls(held: HeldThreatUi, actions: ThreatsActions) {
+    val mask = held.mask
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+        Text("Terrain mask", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        when (mask.status) {
+            ThreatMaskUi.Status.OFF, ThreatMaskUi.Status.FAILED -> {
+                mask.message?.let { Banner(it, BannerKind.Warning) }
+                SecondaryButton(if (mask.status == ThreatMaskUi.Status.FAILED) "Try the terrain mask again" else "Show terrain mask", onClick = { actions.showMask(held.id) })
+            }
+            ThreatMaskUi.Status.WORKING -> PrimaryButton("Working out the mask…", onClick = {}, busy = true, busyText = "Working out the mask…")
+            ThreatMaskUi.Status.SHOWING -> {
+                Text("Shown on the map: where an aircraft at each altitude set is in sight of the radar over the terrain.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                    TextAction("Hide mask", onClick = { actions.hideMask(held.id) })
+                    TextAction("Update", onClick = { actions.showMask(held.id) })
+                }
+            }
+            ThreatMaskUi.Status.OUT_OF_DATE, ThreatMaskUi.Status.NOTHING_VISIBLE -> {
+                mask.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface) }
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                    TextAction("Update mask", onClick = { actions.showMask(held.id) })
+                    TextAction("Hide", onClick = { actions.hideMask(held.id) })
+                }
+            }
+        }
+        // Said wherever the button is, because the rest of the threat picture never leaves the device.
+        Text(
+            "Showing it sends this threat's position and radar settings to the server once, to work the mask out. The server keeps nothing. Nothing else about the threat is sent.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

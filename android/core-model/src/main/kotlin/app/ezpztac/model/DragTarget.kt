@@ -7,6 +7,9 @@ package app.ezpztac.model
 public sealed interface DragTarget {
     public data class Graphic(val ref: GraphicRef) : DragTarget
 
+    /** The end of a PZ marker's arrow: dragged on its own, it sets how far the marker reaches and which way it points. The marker's anchor stays. */
+    public data class PzTip(val ref: GraphicRef) : DragTarget
+
     /** A point of a route of the open set, named or shaping. */
     public data class RoutePoint(val routeId: String, val pointId: String) : DragTarget
 

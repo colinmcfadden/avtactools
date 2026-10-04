@@ -282,4 +282,31 @@ class MapDragTest {
         assertEquals(0.0, metres(home, LatLon(back.lat, back.lon)).first, 0.05)
         assertEquals(0.0, metres(home, LatLon(r.vault.kept!!.entries.single().threat.lat, r.vault.kept!!.entries.single().threat.lon)).first, 0.05)
     }
+
+    @Test
+    fun `dragging the end of a PZ marker's arrow moves the tip alone, so the reach and the bearing change and the anchor stays`() = runTest {
+        val r = rig(); r.openDiagram()
+        val tip = GraphicEdits.offset(home, 0.0, 200.0)
+        r.place("pzMarkers", buildJsonObject { put("id", 7); put("lat", home.lat); put("lon", home.lon); put("tipLat", tip.lat); put("tipLon", tip.lon) })
+        val before = r.session.undoDepth.value
+        assertTrue(r.drag.start(DragTarget.PzTip(GraphicRef("pzMarkers", "7")), tip))
+        repeat(10) { i -> r.drag.move(GraphicEdits.offset(tip, i * 10.0, 0.0)) }
+        r.drag.end(GraphicEdits.offset(tip, 200.0, 0.0))                                      // 200 m further north: the arrow now points north-east
+        val marker = checkNotNull(DiagramOps.graphic(r.diagram, "pzMarkers", "7"))
+        assertEquals(0.0, metres(home, GraphicEdits.position("pzMarkers", marker)!!).first, 0.01)      // the anchor did not move
+        assertEquals(Math.hypot(200.0, 200.0), GraphicEdits.pzReachM(marker)!!, 0.5)
+        assertEquals(45.0, GraphicEdits.rotation("pzMarkers", marker)!!, 0.5)
+        assertEquals(before + 1, r.session.undoDepth.value)
+        r.session.undo()
+        assertEquals(200.0, GraphicEdits.pzReachM(checkNotNull(DiagramOps.graphic(r.diagram, "pzMarkers", "7")))!!, 0.05)
+    }
+
+    @Test
+    fun `a PZ marker with no tip can be picked up by its tip, where it is drawn`() = runTest {
+        val r = rig(); r.openDiagram()
+        r.place("pzMarkers", buildJsonObject { put("id", 9); put("lat", home.lat); put("lon", home.lon) })
+        assertTrue(r.drag.start(DragTarget.PzTip(GraphicRef("pzMarkers", "9")), home))
+        r.drag.end(GraphicEdits.offset(home, 50.0, 0.0))
+        assertNotNull(DiagramOps.graphic(r.diagram, "pzMarkers", "9")!!["tipLat"])
+    }
 }

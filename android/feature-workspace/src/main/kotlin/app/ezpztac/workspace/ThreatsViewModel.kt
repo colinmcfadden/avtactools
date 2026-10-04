@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.ExportResult
 import app.ezpztac.data.ThreatSelection
+import app.ezpztac.data.MaskState
+import app.ezpztac.data.ThreatMasks
 import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.ThreatTransfer
 import app.ezpztac.geo.MgrsConverter
@@ -50,6 +52,29 @@ data class ThreatRowUi(
     val held: Boolean,
 )
 
+/** Where a threat's terrain mask is, for the held threat's card. */
+data class ThreatMaskUi(val status: Status = Status.OFF, val message: String? = null) {
+    enum class Status {
+        /** Not asked for. */
+        OFF,
+
+        /** Asked for; the server is working. */
+        WORKING,
+
+        /** On the map. */
+        SHOWING,
+
+        /** Asked for, and the threat has been moved or its radars changed since: not drawn, because it is no longer what this threat sees. */
+        OUT_OF_DATE,
+
+        /** The server answered, and none of the radars sees anything over the terrain. */
+        NOTHING_VISIBLE,
+
+        /** It could not be had. */
+        FAILED,
+    }
+}
+
 /** The threat being held (tapped on the map, or chosen in the list): everything the file knows of it, in words. */
 data class HeldThreatUi(
     val id: String,
@@ -61,6 +86,7 @@ data class HeldThreatUi(
     val information: String,
     /** One line for each radar: `Detection · 25 nm · antenna 20 ft AGL · rings on`. */
     val radars: List<String>,
+    val mask: ThreatMaskUi = ThreatMaskUi(),
 )
 
 /** The form for a threat being made ([id] null) or changed. [error] is what is wrong with it, in words for the form itself (the sheet's banner can be scrolled out of sight). */
@@ -84,6 +110,7 @@ class ThreatsViewModel @Inject constructor(
     private val store: ThreatStore,
     private val selection: ThreatSelection,
     private val transfer: ThreatTransfer,
+    private val masks: ThreatMasks,
 ) : ViewModel() {
     private data class Local(
         val editing: ThreatEditUi? = null,
@@ -98,9 +125,9 @@ class ThreatsViewModel @Inject constructor(
     private val _exports = MutableSharedFlow<ExportFile>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val exports: SharedFlow<ExportFile> = _exports.asSharedFlow()
 
-    val state: StateFlow<ThreatsUiState> = combine(store.entries, selection.held, local) { entries, held, local ->
+    val state: StateFlow<ThreatsUiState> = combine(store.entries, selection.held, local, masks.states) { entries, held, local, maskStates ->
         ThreatsUiState(
-            threats = entries.map { it.toRow(held) }, held = entries.firstOrNull { it.id == held && it.visible }?.let(::heldOf),
+            threats = entries.map { it.toRow(held) }, held = entries.firstOrNull { it.id == held && it.visible }?.let { heldOf(it, maskStates[it.id]) },
             editing = local.editing, importing = local.importing, exporting = local.exporting, error = local.error, note = local.note,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatsUiState())
@@ -262,13 +289,35 @@ class ThreatsViewModel @Inject constructor(
         visible = visible, held = id == heldId,
     )
 
-    private fun heldOf(entry: ThreatEntry): HeldThreatUi {
+    private fun heldOf(entry: ThreatEntry, mask: MaskState?): HeldThreatUi {
         val t = entry.threat
         return HeldThreatUi(
             id = entry.id, name = t.name, symbol = symbolName(t.milstdId), grid = gridOf(t), latLon = "%.5f, %.5f".format(java.util.Locale.ROOT, t.lat, t.lon),
-            source = t.source, information = t.information, radars = t.radars.map(::radarLine),
+            source = t.source, information = t.information, radars = t.radars.map(::radarLine), mask = maskOf(entry, mask),
         )
     }
+
+    private fun maskOf(entry: ThreatEntry, state: MaskState?): ThreatMaskUi = when (state) {
+        null -> ThreatMaskUi()
+        MaskState.Working -> ThreatMaskUi(ThreatMaskUi.Status.WORKING)
+        is MaskState.Failed -> ThreatMaskUi(ThreatMaskUi.Status.FAILED, state.message)
+        is MaskState.Ready -> when {
+            !state.mask.isFor(entry.threat) -> ThreatMaskUi(ThreatMaskUi.Status.OUT_OF_DATE, "This threat was moved or its radars changed after this mask was made, so it is not shown.")
+            state.mask.images.isEmpty() -> ThreatMaskUi(ThreatMaskUi.Status.NOTHING_VISIBLE, "Over the terrain, none of this threat's radars can see anything at the altitudes set.")
+            else -> ThreatMaskUi(ThreatMaskUi.Status.SHOWING)
+        }
+    }
+
+    /**
+     * Asks the server what the held threat's radars can see over the terrain. **This is the one thing that sends a threat anywhere**, and it is the person pressing a button: the
+     * threat's place and radar settings go up once for this answer (the server keeps nothing), and nothing else about it does.
+     */
+    fun showMask(id: String) {
+        viewModelScope.launch { masks.request(id) }
+    }
+
+    /** Takes a threat's mask off the map. */
+    fun hideMask(id: String) = masks.hide(id)
 
     private fun gridOf(t: Threat) = MgrsConverter.toMgrs(t.lat, t.lon)?.format() ?: "%.5f, %.5f".format(java.util.Locale.ROOT, t.lat, t.lon)
 

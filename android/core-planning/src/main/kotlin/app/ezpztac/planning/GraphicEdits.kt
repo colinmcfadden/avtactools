@@ -126,6 +126,12 @@ public object GraphicEdits {
         return JsonObject(mapOf("tipLat" to num(tip.lat), "tipLon" to num(tip.lon)))
     }
 
+    /** Where a PZ marker's arrow ends (a marker with no tip is drawn pointing west of its anchor). Null for anything that is not one. */
+    public fun pzTip(graphic: JsonObject): LatLon? {
+        val anchor = position("pzMarkers", graphic) ?: return null
+        return LatLon(number(graphic["tipLat"]) ?: anchor.lat, number(graphic["tipLon"]) ?: (anchor.lon - 0.001))
+    }
+
     /** The tip's offset from the anchor, metres north and east. */
     private fun pzVector(graphic: JsonObject): Pair<Double, Double>? {
         val anchor = position("pzMarkers", graphic) ?: return null

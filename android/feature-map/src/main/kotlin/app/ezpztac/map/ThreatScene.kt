@@ -25,11 +25,22 @@ data class ThreatRing(val threatId: String, val type: Int, val at: LatLon, val r
 }
 
 /**
- * The local threat picture as the map draws it. Hidden threats contribute nothing. Markers are Compose symbols, while range rings are GeoJSON lines so
- * MapLibre keeps them geodesically anchored while the camera moves. No mask or server response is kept here.
+ * One radar's terrain mask to lay over the map: a PNG (`dataUri`) that covers the box from ([south], [west]) to ([north], [east]). [id] names it (the threat and the radar),
+ * so a mask that has not changed is not drawn again.
  */
-data class ThreatScene(val pins: List<ThreatPin> = emptyList(), val rings: List<ThreatRing> = emptyList()) {
-    val isEmpty: Boolean get() = pins.isEmpty() && rings.isEmpty()
+data class ThreatMaskPicture(val id: String, val south: Double, val west: Double, val north: Double, val east: Double, val dataUri: String)
+
+/**
+ * The local threat picture as the map draws it. Hidden threats contribute nothing. Markers are Compose symbols, while range rings are GeoJSON lines so
+ * MapLibre keeps them geodesically anchored while the camera moves. A terrain mask is here only for a threat the person asked for one of, and only while it is still the mask of
+ * that threat (see `ThreatMask.isFor`); it is a picture the server made, and is drawn under the rings.
+ */
+data class ThreatScene(
+    val pins: List<ThreatPin> = emptyList(),
+    val rings: List<ThreatRing> = emptyList(),
+    val masks: List<ThreatMaskPicture> = emptyList(),
+) {
+    val isEmpty: Boolean get() = pins.isEmpty() && rings.isEmpty() && masks.isEmpty()
 
     fun geoJson(): String = buildJsonObject {
         put("type", "FeatureCollection")
@@ -75,9 +86,11 @@ data class ThreatScene(val pins: List<ThreatPin> = emptyList(), val rings: List<
             return LatLon(Math.toDegrees(lat2), Math.toDegrees(lon2))
         }
 
-        fun of(entries: List<ThreatEntry>, selectedId: String? = null): ThreatScene {
+        /** [masks] are the masks asked for and still current, by the threat's id; a hidden threat's is not drawn. */
+        fun of(entries: List<ThreatEntry>, selectedId: String? = null, masks: Map<String, List<ThreatMaskPicture>> = emptyMap()): ThreatScene {
             val visible = entries.filter { it.visible && it.threat.lat.isFinite() && it.threat.lon.isFinite() }
             return ThreatScene(
+                masks = visible.flatMap { masks[it.id].orEmpty() },
                 pins = visible.map { ThreatPin(it.id, it.threat.name, it.threat.milstdId, LatLon(it.threat.lat, it.threat.lon), it.id == selectedId) },
                 rings = visible.flatMap { entry ->
                     entry.threat.radars.filter { it.showRangeRings && it.rangeNmi.isFinite() && it.rangeNmi > 0 }.map {

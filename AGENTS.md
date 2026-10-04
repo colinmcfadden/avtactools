@@ -638,6 +638,9 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **After a mutation run, rebuild clean.** `org.gradle.caching` is on, and a restored source file can leave a *mutated* class in a
   module's outputs: a test then fails for no visible reason (one did: "expected NO DATA but was LANDING"). Touch the restored file
   (the harness does) and confirm with `./gradlew :<module>:clean :<module>:test --no-build-cache` before believing a failure.
+- **A call resumes on the thread that made it, and Android forbids reading a response there.** `ApiClient` read the body after `await()`, on the main thread when a view model started the call, so the
+  first call made from a screen (the threat mask) failed with `NetworkOnMainThreadException` while every JVM test passed. The whole exchange is now on `Dispatchers.IO` inside `send`, and
+  `ApiClientThreadTest` fails without that (it records the thread that reads the body). Calls from a worker or a service scope never showed it.
 - **Android's XML parser throws where the JVM's does not.** `DocumentBuilderFactory.setXIncludeAware(false)` is `UnsupportedOperationException` on Android, so the mission reader refused *every*
   mission on a device while every JVM test passed; nothing had run on a device until a real file was tried. Any parser setting is best effort (`try`), the text check is what holds, and a
   feature that reads a file needs one trial on a device, not only under Robolectric.
@@ -1201,6 +1204,10 @@ client is built around not losing one:
     takes the step away. The document is changed at once, so the map and what depends on it (aircraft separation) follow the finger, and it is **saved once**, after the pause.
   - **A route point forgets the ground elevation fetched for the old place** (as a nudge does). In an imported mission its twin in another route moves with it.
   - **A threat is shown at once but written to its sealed file when the finger lifts** (`ThreatStore.previewMove`/`settle`): that file is rewritten whole for every change.
+  - **A long press holds and opens nothing**: the bar with an object's information is for a tap. A press on a unit is tested against where its **picture** is drawn, not only its point: a hostile unit
+    stands on the end of a staff under its frame, so the frame a person presses is well away from the point (`UnitFootprints`, reported by the Compose layer that draws each symbol, in pixels). The end of
+    a PZ marker's **arrow is its own handle** (a blue ring on the tip): a long press there drags the tip alone, so the marker's reach and bearing change and its anchor stays
+    (`DragTarget.PzTip`, `GraphicEdits.setPzTip`); a press anywhere else on the marker moves it whole.
   - **Turning** is the bar's: −15°, −1°, +1°, +15° for what turns (an aircraft, a go-around, a doghouse, a PZ marker); the sheet's inspector has the typed heading. Local points are imported data and
     are not dragged. Tried on an emulator against a real mission: a long press and a drag moved a route point (its grid changed, the map did not pan) and the move reached the file on the server. A
     boundary's corners are still not draggable.
@@ -1310,8 +1317,17 @@ client is built around not losing one:
     tapping the held threat, or nothing, puts it down. `ThreatSelection` is view state and is never retained or exported. Not verifiable here: the rings (`ThreatOverlay` is GL and compile-only).
   - While a threat picture or editor is present, `ThreatsHost` sets Android's `FLAG_SECURE` (so the recents screen, screenshots and screen recording show nothing of it); it restores the prior window
     state when the threat UI is empty or leaves composition. Not verifiable here: what a device does with it.
-  - **Not built yet:** a threat's terrain mask (online viewshed first, then on-device), KMZ and QR, and the Threats section's own sharing beside a *saved* mission (the Routes export offers the matching
-    `.ths` for a sketch, not for an imported mission).
+  - **The terrain mask** (`core-network`: `threatMask`; `core-data`: `ThreatMasks`; `feature-map`: `ThreatScene.masks`, `ThreatOverlay`; `feature-workspace`: `TerrainMaskControls`): where a threat's
+    radars can see over the terrain, as on the web, from `POST /api/threat-mask` (described in `contracts/openapi.yaml` and recorded from the real route). **It is the one thing that sends a threat
+    anywhere, and only when the person presses *Show terrain mask* on the held threat's card**: the position and the radars (nothing else: not the name or the notes) go up once for that answer and
+    the server keeps nothing. Nothing asks by itself: not when a threat is made, moved, edited or at launch, and the card says what is sent beside the button. A mask is a picture held **in memory
+    only** (not in the sealed file), gone when the threat is removed or at sign-out; a threat moved or whose radars were changed after its mask was made has a mask that is **out of date and not
+    drawn** (`ThreatMask.isFor`), and the card says so and offers *Update mask*. A failure is the app's own words (the server's text, which can be a Python exception's, is never shown). The
+    server returns a coloured PNG per radar over one box, the bands' colours and transparency already in it; the app lays it under the range rings. **Not verifiable by a screenshot:** the window
+    is `FLAG_SECURE` while threats are on it, so `adb screencap` is black. On an emulator, `adb emu screenrecord screenshot <dir>` captures the framebuffer. An on-device viewshed (offline) is
+    not built.
+  - **Not built yet:** KMZ and QR, an on-device (offline) terrain mask, and the Threats section's own sharing beside a *saved* mission (the Routes export offers the matching `.ths` for a sketch,
+    not for an imported mission).
 - **Files from other apps** (`core-formats`: `FileKinds`; `core-data`: `IncomingFiles`, `FileInspector`; `feature-workspace`: `IncomingViewModel`, `IncomingHost`;
   `app`: `incoming/IncomingIntents`, `IncomingIntake`, `MainActivity`). An `.LPS` or `.ths` opened with the app from Files or a mail, or shared to it, is read, shown to the person, and
   imported only if they say yes. The manifest declares VIEW (content scheme) and SEND / SEND_MULTIPLE for `application/octet-stream`, `application/x-sqlite3` and `application/vnd.sqlite3`

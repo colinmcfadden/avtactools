@@ -153,8 +153,9 @@ class GraphicHitTestTest {
     fun `a doghouse is a box, so a finger a little further from its middle than a point's reach still holds it`() {
         val scene = GraphicsScene(doghouses = listOf(box("d", here)))
         assertEquals(ref("doghouses", "d"), pick(scene, north(4.0)))                         // 16 px: inside the finger's reach
-        assertEquals(ref("doghouses", "d"), pick(scene, north(8.0)))                         // 33 px: past a point's 24 px, inside a box's 36
-        assertNull(pick(scene, north(12.0)))                                                // 49 px: out
+        assertEquals(ref("doghouses", "d"), pick(scene, north(8.0)))                         // 33 px: past a point's 24 px, inside a box's reach
+        assertEquals(ref("doghouses", "d"), pick(scene, north(12.0)))                        // 49 px: the box is about 60 by 90 dp, so its edge is well past a point's reach
+        assertNull(pick(scene, north(20.0)))                                                // 81 px: out
     }
 
     @Test

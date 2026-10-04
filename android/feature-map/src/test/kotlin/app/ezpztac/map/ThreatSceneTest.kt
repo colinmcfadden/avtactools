@@ -101,4 +101,14 @@ class ThreatSceneTest {
         for (i in 1 until loop.size) assertTrue("jump at $i", Math.abs(loop[i].lon - loop[i - 1].lon) < 1.0)
         assertTrue(loop.any { it.lon > 180.0 })
     }
+
+    @Test
+    fun `a terrain mask is in the scene only for a visible threat it was given for, and is a picture over a box`() {
+        val shown = entry("a", visible = true, lat = 34.7, lon = -84.1)
+        val hidden = entry("b", visible = false, lat = 34.8, lon = -84.2)
+        val picture = ThreatMaskPicture("a-0", 34.0, -85.0, 35.0, -84.0, "data:image/png;base64,AAAA")
+        val scene = ThreatScene.of(listOf(shown, hidden), null, mapOf("a" to listOf(picture), "b" to listOf(picture.copy(id = "b-0"))))
+        assertEquals(listOf(picture), scene.masks)
+        assertTrue(ThreatScene.of(listOf(shown)).masks.isEmpty())                       // none unless one was asked for
+    }
 }

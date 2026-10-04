@@ -54,6 +54,12 @@ internal object DataModule {
     fun routeSession(repository: RouteRepository): RouteSession =
         RouteSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default))
 
+    /** A threat's mask is asked for by a press and answered later, and is held in memory with the threats: it is not tied to a screen. */
+    @Provides
+    @Singleton
+    fun threatMasks(api: ThreatMaskApi, store: ThreatStore): ThreatMasks =
+        ThreatMasks(api, store, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+
     /** An analysis outlives the screen that asked for it (the person may leave while the server works), and applies its result on the main thread, where edits are made. */
     @Provides
     @Singleton

@@ -49,9 +49,9 @@ remove-all and mission-with-threats export on top of them.
 4. **Route hand-off**: **GPX and Garmin FPL built** (a route shared from its card; AGENTS.md §17, *Sharing a route with another app*). Not built: an ATAK data package (a zip with a
    manifest) or KML/KMZ, and threats to ATAK; both want the owner's say on what ATAK crews expect. **Dragging on the map is built** (a long press picks up a graphic, a threat or a route
    point; a tap holds it and shows the bar with the turn buttons); boundary corners are not draggable yet. The admin-attached AMPS template (`resolveExportTemplate`) is not built.
-5. **Later phases** (plan): P3 offline packs / on-device viewshed / the remaining exports; P4 the 3D view. Online viewshed, KMZ and
-   QR calls exist on the backend but **no Android call is made**; the owner approved a transient send *only when the person
-   explicitly asks* and the server must not retain it.
+5. **Later phases** (plan): P3 offline packs / on-device viewshed / the remaining exports; P4 the 3D view. The online terrain mask is built (the held
+   threat's *Show terrain mask*; AGENTS.md §17, *The terrain mask*); KMZ and QR calls exist on the backend but **no Android call is made**. The owner approved a transient send *only when the person
+   explicitly asks* and the server must not retain it; an offline viewshed is not built.
 6. **When the initial build is done: the dev environment / device login session** the owner asked for (§4).
 
 ---
@@ -155,8 +155,8 @@ Other things that stop a sign-in, in the order they usually bite:
 Full list in AGENTS.md; the ones that matter most for a fresh agent:
 
 - **Unclassified only.** Threats are never synced or persisted server-side; on the device they live in memory plus a sealed
-  no-backup file for at most 48 h after the last change, wiped at sign-out. **No Android threat network call exists** — do not add
-  one without the person asking for it.
+  no-backup file for at most 48 h after the last change, wiped at sign-out. **The only Android threat network call is the terrain mask, made
+  when the person presses its button**: do not add another, or make this one on its own, without the person asking for it.
 - **Agents do not deploy.** Never push `main`, run `fly deploy`, or trigger production. No new major dependency without asking.
 - **The web is the reference; `contracts/` fixtures are the contract.** Never hand-edit a fixture; change the web (or backend)
   first, regenerate, review the diff, then follow in the clients.

@@ -198,7 +198,7 @@ fun MapHome(
                 RouteLayer(host, routeScene)
                 ThreatLayer(host, threatScene)                  // range rings; symbols and names are Compose below
                 GpsLayer(host, state.gps)
-                GraphicLabelsLayer(host, scene.graphics)
+                GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
                 PinLabelsLayer(host, routeScene, pointScene)
                 ThreatLabelsLayer(host, threatScene)
             }

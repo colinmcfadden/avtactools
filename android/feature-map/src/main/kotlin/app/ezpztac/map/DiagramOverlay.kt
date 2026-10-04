@@ -110,6 +110,13 @@ class DiagramOverlay {
                 PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP), PropertyFactory.iconAllowOverlap(true), PropertyFactory.iconIgnorePlacement(true), PropertyFactory.iconSize(0.5f),
             ),
         )
+        // The handle at the end of the arrow, over its head: a long press here drags the tip alone (how far the marker reaches and which way it points).
+        style.addLayer(
+            CircleLayer(PZ_TIP_HANDLE_LAYER, SOURCE).withFilter(role("pz-tip")).withProperties(
+                PropertyFactory.circleRadius(9f), PropertyFactory.circleColor("#2F5BFF"), PropertyFactory.circleOpacity(0.55f),
+                PropertyFactory.circleStrokeColor("#FFFFFF"), PropertyFactory.circleStrokeWidth(2f),
+            ),
+        )
         style.addLayer(
             SymbolLayer(GO_AROUND_LAYER, SOURCE).withFilter(role("ga")).withProperties(
                 PropertyFactory.iconImage(Expression.get("icon")), PropertyFactory.iconRotate(Expression.get("rotation")),
@@ -202,6 +209,7 @@ class DiagramOverlay {
         const val PZ_LINE_LAYER = "lz-pz-line"
         const val PZ_ANCHOR_LAYER = "lz-pz-anchor"
         const val PZ_TIP_LAYER = "lz-pz-tip"
+        const val PZ_TIP_HANDLE_LAYER = "lz-pz-tip-handle"
         const val GO_AROUND_LAYER = "lz-go-around"
         const val AIRCRAFT_LAYER = "lz-aircraft"
         const val HALO_LAYER = "lz-halo"

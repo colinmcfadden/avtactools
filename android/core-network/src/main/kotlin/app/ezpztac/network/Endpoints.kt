@@ -1,6 +1,7 @@
 package app.ezpztac.network
 
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.Radar
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -281,6 +282,24 @@ public suspend fun ApiClient.updateMission(
 /** The `.msnx` bytes of a saved mission. A background call: it waits while the server is busy with an analysis. */
 public suspend fun ApiClient.routeFile(id: Int): ByteArray =
     execute(ApiClient.Call("GET", "/api/routes/$id/file", binary = true, callPriority = CallPriority.BACKGROUND)).bytes
+
+// -- Threat terrain masks ------------------------------------------------------------
+//
+// **Threats are never sent to the server on their own.** This is one call, made only when the person presses "Show terrain mask" for one threat: its position and radar settings
+// go up once, for this answer, and the server keeps nothing (`contracts/openapi.yaml`, `threatMask`).
+
+/**
+ * What the radars of a threat at [at] can see over the terrain: a mask for each radar that asks for one ([Radar.showMask]) and has a viewable altitude band. A heavy call (a
+ * viewshed over the terrain tiles), so it waits behind nothing and holds off the background sync.
+ */
+public suspend fun ApiClient.threatMask(at: LatLon, radars: List<Radar>): ThreatMaskDto {
+    val body = buildJsonObject {
+        put("lat", at.lat)
+        put("lon", at.lon)
+        put("radars", JsonArray(radars.map { ApiClient.JSON.encodeToJsonElement(Radar.serializer(), it) }))
+    }
+    return decode(execute(ApiClient.Call("POST", "/api/threat-mask", body = body)))
+}
 
 // -- Weather ------------------------------------------------------------------------
 

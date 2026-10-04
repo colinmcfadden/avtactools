@@ -38,6 +38,7 @@ class MapDrag @Inject constructor(
 ) {
     private sealed interface Origin {
         class OfGraphic(val ref: GraphicRef, val graphic: JsonObject) : Origin
+        class OfPzTip(val ref: GraphicRef, val graphic: JsonObject, val tip: LatLon) : Origin
         class OfPoint(val routeId: String, val moves: List<Pair<String, RoutePointAt>>) : Origin
         class OfThreat(val id: String, val at: LatLon) : Origin
     }
@@ -64,6 +65,12 @@ class MapDrag @Inject constructor(
                 if (GraphicEdits.position(target.ref.collection, graphic) == null) return false
                 Origin.OfGraphic(target.ref, graphic)
             }
+            is DragTarget.PzTip -> {
+                val diagram = session.active.value ?: return false
+                val graphic = DiagramOps.graphic(diagram, target.ref.collection, target.ref.key) ?: return false
+                val tip = GraphicEdits.pzTip(graphic) ?: return false
+                Origin.OfPzTip(target.ref, graphic, tip)
+            }
             is DragTarget.RoutePoint -> {
                 val set = routeSession.active.value ?: return false
                 val route = set.route(target.routeId) ?: return false
@@ -88,6 +95,12 @@ class MapDrag @Inject constructor(
             is Origin.OfGraphic -> {
                 val patch = GraphicEdits.nudge(origin.ref.collection, origin.graphic, northM, eastM) ?: return
                 session.edit("Move", d.key) { DiagramOps.patchGraphic(it, origin.ref.collection, origin.graphic["id"], patch) }
+            }
+            is Origin.OfPzTip -> {
+                // Only the tip: the anchor stays, so the marker's reach and bearing change.
+                val tip = GraphicEdits.offset(origin.tip, northM, eastM)
+                val patch = GraphicEdits.setPzTip(origin.graphic, tip) ?: return
+                session.edit("PZ tip", d.key) { DiagramOps.patchGraphic(it, origin.ref.collection, origin.graphic["id"], patch) }
             }
             is Origin.OfPoint -> routeSession.edit("Move point", d.key) { set ->
                 origin.moves.fold(set) { acc, (routeId, point) ->

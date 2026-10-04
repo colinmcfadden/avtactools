@@ -33,6 +33,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import app.ezpztac.data.ThreatMaskApi
+import app.ezpztac.data.ThreatMasks
+import app.ezpztac.network.ThreatMaskDto
+import app.ezpztac.network.ThreatMaskRadarDto
+import app.ezpztac.network.ApiException
+import app.ezpztac.network.NetworkException
+import app.ezpztac.model.Radar
 import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -54,11 +61,26 @@ class ThreatsViewModelTest {
         override fun wipe() { picture = null }
     }
 
+    /** The server, scripted: what it answers to a mask, and what it was asked. */
+    private class FakeMaskApi : ThreatMaskApi {
+        var answer: () -> ThreatMaskDto = {
+            ThreatMaskDto(listOf(listOf(34.0, -85.0), listOf(35.0, -84.0)), listOf(ThreatMaskRadarDto(0, "data:image/png;base64,AAAA")))
+        }
+        val asked = mutableListOf<Pair<LatLon, List<Radar>>>()
+
+        override suspend fun mask(at: LatLon, radars: List<Radar>): ThreatMaskDto {
+            asked += at to radars
+            return answer()
+        }
+    }
+
     private class Rig(scope: TestScope) {
         val selection = ThreatSelection()
         val store = ThreatStore(Memory(), scope.backgroundScope, StandardTestDispatcher(scope.testScheduler)) { 1_000L }
+        val maskApi = FakeMaskApi()
+        val masks = ThreatMasks(maskApi, store, scope.backgroundScope)
         private val template = File("../../backend/threat_template.ths").readBytes()
-        val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template })).also {
+        val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template }), masks).also {
             it.worker = StandardTestDispatcher(scope.testScheduler)
         }
         val state get() = model.state.value
@@ -272,5 +294,89 @@ class ThreatsViewModelTest {
         assertEquals(listOf("MISSION 1.msnx", "MISSION 1.ths"), shared!!.map { it.fileName })
         assertTrue(shared[1].bytes.size > 1_000)
         assertNull(r.state.error)
+    }
+
+    // -- The terrain mask ----------------------------------------------------------------------------------------------
+
+    private fun TestScope.held(r: Rig, t: Threat = threat()): String {
+        val id = r.store.add(t)
+        r.selection.select(id)
+        advanceUntilIdle()
+        return id
+    }
+
+    @Test
+    fun `nothing is sent to the server by making, holding, moving or editing a threat`() = runTest(dispatcher) {
+        val r = rig()
+        val id = held(r)
+        r.model.nudge(id, 100.0, 100.0); advanceUntilIdle()
+        r.store.replace(id, threat("SA-8 changed")); advanceUntilIdle()
+        assertTrue(r.maskApi.asked.isEmpty())
+        assertEquals(ThreatMaskUi.Status.OFF, r.state.held!!.mask.status)
+    }
+
+    @Test
+    fun `pressing show asks the server once, with the place and the radars and nothing else, and then the mask is shown`() = runTest(dispatcher) {
+        val r = rig()
+        val id = held(r)
+        r.model.showMask(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.SHOWING, r.state.held!!.mask.status)
+        val (at, radars) = r.maskApi.asked.single()
+        assertEquals(LatLon(34.75, -84.05), at)
+        assertEquals(threat().radars, radars)
+    }
+
+    @Test
+    fun `a threat with no radar that shows a mask is told so without the server being asked`() = runTest(dispatcher) {
+        val r = rig()
+        val id = held(r, threat().copy(radars = Radars.defaultPair().map { it.copy(showMask = false) }))
+        r.model.showMask(id); advanceUntilIdle()
+        assertTrue(r.maskApi.asked.isEmpty())
+        assertEquals(ThreatMaskUi.Status.FAILED, r.state.held!!.mask.status)
+        assertTrue(r.state.held!!.mask.message!!.contains("shows a mask"))
+    }
+
+    @Test
+    fun `a mask the threat has moved away from is out of date, is not asked for again by itself, and can be updated`() = runTest(dispatcher) {
+        val r = rig()
+        val id = held(r)
+        r.model.showMask(id); advanceUntilIdle()
+        r.model.nudge(id, 500.0, 0.0); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.OUT_OF_DATE, r.state.held!!.mask.status)
+        assertEquals(1, r.maskApi.asked.size)                                          // moving it did not ask
+        r.model.showMask(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.SHOWING, r.state.held!!.mask.status)
+        assertEquals(2, r.maskApi.asked.size)
+    }
+
+    @Test
+    fun `when nothing is visible over the terrain it says so, and a failure is in the app's words and can be tried again`() = runTest(dispatcher) {
+        val r = rig()
+        val id = held(r)
+        r.maskApi.answer = { ThreatMaskDto(listOf(listOf(34.0, -85.0), listOf(35.0, -84.0)), emptyList()) }
+        r.model.showMask(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.NOTHING_VISIBLE, r.state.held!!.mask.status)
+        r.maskApi.answer = { throw ApiException(500, null, "Traceback (most recent call last): ValueError in viewshed") }
+        r.model.showMask(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.FAILED, r.state.held!!.mask.status)
+        assertEquals(ThreatMasks.COULD_NOT, r.state.held!!.mask.message)             // the server's own text is never shown
+        r.maskApi.answer = { throw NetworkException("offline", null, requestMayHaveBeenSent = false) }
+        r.model.showMask(id); advanceUntilIdle()
+        assertTrue(r.state.held!!.mask.message!!.contains("no connection"))
+        r.maskApi.answer = { throw ApiException(502, null, "Terrain data unavailable for this area") }
+        r.model.showMask(id); advanceUntilIdle()
+        assertTrue(r.state.held!!.mask.message!!.contains("no terrain data"))
+    }
+
+    @Test
+    fun `hiding the mask takes it off, and removing the threat takes its mask with it`() = runTest(dispatcher) {
+        val r = rig()
+        val id = held(r)
+        r.model.showMask(id); advanceUntilIdle()
+        r.model.hideMask(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.OFF, r.state.held!!.mask.status)
+        r.model.showMask(id); advanceUntilIdle()
+        r.store.remove(id); advanceUntilIdle()
+        assertTrue(r.masks.states.value.isEmpty())
     }
 }

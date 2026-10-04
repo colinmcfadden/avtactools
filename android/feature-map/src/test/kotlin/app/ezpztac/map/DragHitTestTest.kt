@@ -74,4 +74,36 @@ class DragHitTestTest {
         val scene = RouteScene(listOf(route("a", false, pin(null, here), pin(null, at(100.0)))))
         assertNull(pick(routes = scene))
     }
+
+    // -- The arrow's tip, and a unit's picture ---------------------------------------------------------------------------
+
+    private fun pz(id: String, anchor: LatLon, tip: LatLon) = ScenePz(GraphicRef("pzMarkers", id), anchor, tip, false)
+
+    @Test
+    fun `the end of a PZ marker's arrow is its own handle, and the rest of the marker moves it whole`() {
+        val scene = GraphicsScene(pzMarkers = listOf(pz("7", here, at(0.0, 200.0))))
+        assertEquals(DragTarget.PzTip(GraphicRef("pzMarkers", "7")), pick(graphics = scene, at = at(0.0, 200.0)))
+        assertEquals(DragTarget.PzTip(GraphicRef("pzMarkers", "7")), pick(graphics = scene, at = at(0.0, 195.0)))    // a few metres short of it
+        assertEquals(DragTarget.Graphic(GraphicRef("pzMarkers", "7")), pick(graphics = scene, at = at(0.0, 100.0)))  // the shaft
+        assertEquals(DragTarget.Graphic(GraphicRef("pzMarkers", "7")), pick(graphics = scene, at = here))            // the anchor
+    }
+
+    @Test
+    fun `where the tip and another marker's anchor are close, the nearer tip wins`() {
+        val scene = GraphicsScene(pzMarkers = listOf(pz("a", here, at(0.0, 100.0)), pz("b", at(0.0, 102.0), at(0.0, 300.0))))
+        assertEquals(DragTarget.PzTip(GraphicRef("pzMarkers", "a")), pick(graphics = scene, at = at(0.0, 99.0)))
+    }
+
+    private fun unit(id: String, at: LatLon) = SceneUnit(GraphicRef("units", id), at, "SHGPUCI----K---", "", "", false)
+
+    @Test
+    fun `a unit is picked up by its picture, which is drawn away from the point it stands on`() {
+        val scene = GraphicsScene(units = listOf(unit("u1", here)))
+        val footprints = UnitFootprints().apply { report(GraphicRef("units", "u1"), UnitFootprints.Box(-70.0, -300.0, 70.0, 40.0)) }   // a frame well above its staff
+        val onTheFrame = at(60.0, 0.0)                                                                                                    // about 240 px north of the point at this zoom
+        assertNull(DragHitTest.pick(scene.let { GraphicsScene(units = it.units) }, ThreatScene(), RouteScene(emptyList()), view, onTheFrame, 24.0))
+        assertEquals(DragTarget.Graphic(GraphicRef("units", "u1")), DragHitTest.pick(scene, ThreatScene(), RouteScene(emptyList()), view, onTheFrame, 24.0, footprints))
+        assertEquals(DragTarget.Graphic(GraphicRef("units", "u1")), DragHitTest.pick(scene, ThreatScene(), RouteScene(emptyList()), view, here, 24.0, footprints))    // and still by its point
+        assertNull(DragHitTest.pick(scene, ThreatScene(), RouteScene(emptyList()), view, at(60.0, 40.0), 24.0, footprints))                                       // beside the picture: no
+    }
 }

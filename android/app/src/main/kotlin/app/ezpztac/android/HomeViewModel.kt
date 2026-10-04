@@ -10,12 +10,14 @@ import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
 import app.ezpztac.data.MapFocus
+import app.ezpztac.data.MaskState
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SlopeState
 import app.ezpztac.data.WeatherService
+import app.ezpztac.data.ThreatMasks
 import app.ezpztac.data.ThreatSelection
 import app.ezpztac.data.ThreatStore
 import app.ezpztac.map.DragHitTest
@@ -27,7 +29,9 @@ import app.ezpztac.map.PointHitTest
 import app.ezpztac.map.PointScene
 import app.ezpztac.map.RouteHitTest
 import app.ezpztac.map.RouteScene
+import app.ezpztac.map.UnitFootprints
 import app.ezpztac.map.ThreatHitTest
+import app.ezpztac.map.ThreatMaskPicture
 import app.ezpztac.map.ThreatScene
 import app.ezpztac.map.SlopeImage
 import app.ezpztac.model.DragTarget
@@ -76,6 +80,7 @@ class HomeViewModel @Inject constructor(
     private val threatSelection: ThreatSelection,
     private val weather: WeatherService,
     private val mapDrag: MapDrag,
+    private val threatMasks: ThreatMasks,
     mapFocus: MapFocus,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
@@ -87,6 +92,9 @@ class HomeViewModel @Inject constructor(
      * turn of the phone must not throw the person's view back to the diagram's target).
      */
     val opened: SharedFlow<OpenedDiagram> = _opened.asSharedFlow()
+
+    /** Where each unit's picture is on the screen, which the map's drawing reports and a tap or a long press is tested against. */
+    val unitFootprints = UnitFootprints()
 
     /** Somewhere the person has just brought in (a mission's routes) that the map should go to. */
     val focus: SharedFlow<MapFocus.Request> = mapFocus.requests
@@ -122,8 +130,14 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PointScene.EMPTY)
 
     /** The local-only threat picture: visible markers and their range rings, with the held threat marked. */
-    val threatScene: StateFlow<ThreatScene> = combine(threats.entries, threatSelection.held) { entries, held -> ThreatScene.of(entries, held) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, ThreatScene.EMPTY)
+    val threatScene: StateFlow<ThreatScene> = combine(threats.entries, threatSelection.held, threatMasks.states) { entries, held, masks ->
+        // A terrain mask is drawn only for a threat the person asked for one of, and only while it is still that threat's: one moved since is not what it shows.
+        val pictures = entries.associate { entry ->
+            val mask = (masks[entry.id] as? MaskState.Ready)?.mask?.takeIf { it.isFor(entry.threat) }
+            entry.id to mask?.images.orEmpty().map { ThreatMaskPicture("${entry.id}-${it.type}", mask!!.south, mask.west, mask.north, mask.east, it.dataUri) }
+        }
+        ThreatScene.of(entries, held, pictures)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatScene.EMPTY)
 
     /** Whether a boundary or a route is being drawn: the sheet goes down to its peek so the map is there to tap. */
     val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft) { boundary, route -> boundary != null || route != null }
@@ -208,7 +222,7 @@ class HomeViewModel @Inject constructor(
             sketching.addPoint(at)
             return
         }
-        val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx)
+        val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx, unitFootprints)
         if (hit != null) {
             pointSelection.clear()
             threatSelection.clear()
@@ -239,33 +253,15 @@ class HomeViewModel @Inject constructor(
     // -- Picking something up with a long press and dragging it ---------------------------------------------------------------
 
     /**
-     * A long press at [at]: if there is something there that can be moved (a planning graphic, a threat, a point of a route: what [DragHitTest] finds), it is held as a tap
-     * would hold it and picked up, and this answers true so the finger drags it and the map does not pan. False for anything else (the line between two points, the ground,
-     * a local point), and while a boundary or a route is being drawn: taps are corners then.
+     * A long press at [at]: if there is something there that can be moved (a planning graphic, the tip of a PZ marker's arrow, a threat, a point of a route: what
+     * [DragHitTest] finds), it is picked up, and this answers true so the finger drags it and the map does not pan. **Nothing is held or opened by a long press**: the bar with
+     * the object's information is for a tap. False for anything else (the line between two points, the ground, a local point), and while a boundary or a route is being drawn:
+     * taps are corners then.
      */
     fun dragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
         if (drawing.draft.value != null || sketching.draft.value != null) return false
-        val target = DragHitTest.pick(scene.value.graphics, threatScene.value, routes.value, view, at, touchRadiusPx) ?: return false
-        if (!mapDrag.start(target, at)) return false
-        // What is being moved is held, so its halo shows and the sheet's inspector is about it.
-        pointSelection.clear()
-        when (target) {
-            is DragTarget.Graphic -> {
-                threatSelection.clear()
-                selection.select(target.ref)
-            }
-            is DragTarget.Threat -> {
-                selection.clear()
-                routeSelection.releasePoint()
-                threatSelection.select(target.id)
-            }
-            is DragTarget.RoutePoint -> {
-                selection.clear()
-                threatSelection.clear()
-                routeSelection.select(target.routeId, target.pointId)
-            }
-        }
-        return true
+        val target = DragHitTest.pick(scene.value.graphics, threatScene.value, routes.value, view, at, touchRadiusPx, unitFootprints) ?: return false
+        return mapDrag.start(target, at)
     }
 
     /** Puts down whatever is held on the map (the bar's Done): a graphic, a threat, a point of a route, a local point. A route being worked on stays the route. */

@@ -19,9 +19,21 @@ import kotlin.math.max
  */
 object GraphicHitTest {
     /** A doghouse is a box, not a point: it is hit this many times the finger's reach from its middle. */
-    private const val DOGHOUSE_REACH = 1.5
+    private const val DOGHOUSE_REACH = 2.25
 
-    fun pick(graphics: GraphicsScene, view: MapProjection, tap: LatLon, touchRadiusPx: Double): GraphicRef? {
+    /** A finger this far (as a fraction of its reach) outside a unit's picture still counts as on it: the symbol's edge is thin. */
+    private const val UNIT_SLOP = 0.4
+
+    /**
+     * The PZ marker whose arrow's **tip** a finger is on, within [touchRadiusPx]: the nearest. The tip is the end of the arrow, which is dragged on its own (it sets how far the
+     * marker reaches and which way it points), so it is looked at before the marker as a whole.
+     */
+    fun pickPzTip(graphics: GraphicsScene, view: MapProjection, tap: LatLon, touchRadiusPx: Double): GraphicRef? {
+        val finger = view.toScreen(tap)
+        return graphics.pzMarkers.map { it.ref to distance(finger, view.toScreen(it.tip)) }.filter { it.second <= touchRadiusPx }.minByOrNull { it.second }?.first
+    }
+
+    fun pick(graphics: GraphicsScene, view: MapProjection, tap: LatLon, touchRadiusPx: Double, footprints: UnitFootprints? = null): GraphicRef? {
         val finger = view.toScreen(tap)
         var best: GraphicRef? = null
         var bestDistance = Double.MAX_VALUE
@@ -46,8 +58,18 @@ object GraphicHitTest {
             if (distance <= touchRadiusPx) consider(goAround.ref, distance)
         }
         for (unit in graphics.units) {
-            val distance = distance(finger, view.toScreen(unit.at))
-            if (distance <= touchRadiusPx) consider(unit.ref, distance)
+            val at = view.toScreen(unit.at)
+            val distance = distance(finger, at)
+            if (distance <= touchRadiusPx) {
+                consider(unit.ref, distance)
+                continue
+            }
+            // Where the picture is drawn, which is not where the unit stands (see [UnitFootprints]): a press on the symbol itself is a press on the unit.
+            val box = footprints?.of(unit.ref) ?: continue
+            val slop = touchRadiusPx * UNIT_SLOP
+            if (finger.x in (at.x + box.left - slop)..(at.x + box.right + slop) && finger.y in (at.y + box.top - slop)..(at.y + box.bottom + slop)) {
+                consider(unit.ref, hypot(finger.x - (at.x + (box.left + box.right) / 2), finger.y - (at.y + (box.top + box.bottom) / 2)))
+            }
         }
         for (doghouse in graphics.doghouses) {
             // The box is drawn about 60 by 90 dp: a finger anywhere near its middle is on it.
