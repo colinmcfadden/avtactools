@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-03 (after the route hand-off slice; the initial build, P0–P2, is complete apart from the items above).
+Last refreshed: 2026-10-04 (after saved missions and drag on the map; the initial build, P0–P2, is complete apart from the ATAK package).
 
 ---
 
@@ -16,8 +16,11 @@ Last refreshed: 2026-10-03 (after the route hand-off slice; the initial build, P
   `feat/android-threat-ui` (`bd43777`) is already merged into this branch.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
-  state is in AGENTS.md §17's table. **Not in P2 yet:** the web's file-authoritative imported missions (task #54), an ATAK data package, drag/rotate on the map (#29).
-- **Everything is compiled and unit-tested on a JVM; nothing has ever run on a device or emulator.** The map layers (MapLibre),
+  state is in AGENTS.md §17's table. **Not in P2 yet:** an ATAK data package. (Saved missions, which keep the `.msnx` as the document and write edits back into it, and dragging and turning on the map are built: AGENTS.md §17, *Saved missions* and *Dragging and turning on the map*.)
+- **First device run, 2026-10-04 (emulator):** sign-in, the map, the sheet, the system picker, importing a real AMPS mission (GOAT SUCKER.msnx), tapping and long-press-dragging a route point
+  all worked, the upgrade of an existing database to version 2 kept its data, and the move reached the mission file on the server (one point of 91 changed, every other part byte for byte).
+  It also found a bug no JVM test could: Android's XML parser throws on `setXIncludeAware(false)`, so **every mission import had been refused on a device**. Fixed (AGENTS.md §14).
+- **Everything else is still compiled and unit-tested on a JVM only.** The map layers (MapLibre),
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output,
   `FLAG_SECURE` and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
   "not verifiable here" in AGENTS.md). The first device run is the first real test of all of them.
@@ -39,14 +42,13 @@ remove-all and mission-with-threats export on top of them.
 2. **Open files from outside the app** (#52): **built** — `.LPS` and `.ths` from Files, mail and the share sheet, asked about before anything is
    imported (AGENTS.md §17, *Files from other apps*). Still to do on a device: confirm Files/Gmail/the share sheet offer the app and hand over a
    readable address, and what media type real senders use (the manifest declares octet-stream and the two SQLite types, nothing broader).
-3. **Mission import**: **built as a copy** (task #53): an `.msnx` opened from outside, or chosen with the Routes tab's *Import mission*, is offered ("Bring in 2 routes?") and
-   makes a new set of routes (points, recorded plan, elevations), opens it and takes the map there. The file is not kept or changed; exporting builds a new mission from the template.
-   **Still to do — the web's file-authoritative round trip** (task #54): keep the `.msnx` as the saved document (`kind: mission`), which needs (a) the sync engine to carry a file part
-   (outbox, push, pull, conflicts), (b) a memory-safe port of `mutateMsnx` (plan, point move/rename/insert written back into the XML parts; a real `legs.xml` is tens of MB, so not a DOM on a
-   phone), and (c) real unclassified AMPS missions from the owner to test with (`contracts/fixtures/msnx/plan-edited.msnx` exists from the web's own tests).
+3. **Mission import and saved missions** (#53, #54): **built.** An `.msnx` opened from outside, or chosen with the Routes tab's *Import mission*, is offered and **kept as the saved document**
+   (`kind: mission`, with its file, synced); the person's changes are written back into the file (AGENTS.md §17, *Saved missions*). Tried against a real AMPS mission on an emulator. Still to
+   do: the sheet and the file picker on the *tablet* with real missions of other shapes (one with a point moved, inserted and renamed, then opened in AMPS to confirm it opens), and what an
+   open mission does when a pull replaces its record while it is open (it is overwritten by the next save, as for sets).
 4. **Route hand-off**: **GPX and Garmin FPL built** (a route shared from its card; AGENTS.md §17, *Sharing a route with another app*). Not built: an ATAK data package (a zip with a
-   manifest) or KML/KMZ, and threats to ATAK; both want the owner's say on what ATAK crews expect. **Drag and rotate on the map** (#29, optional — the inspector already does
-   everything), and the admin-attached AMPS template (`resolveExportTemplate`).
+   manifest) or KML/KMZ, and threats to ATAK; both want the owner's say on what ATAK crews expect. **Dragging on the map is built** (a long press picks up a graphic, a threat or a route
+   point; a tap holds it and shows the bar with the turn buttons); boundary corners are not draggable yet. The admin-attached AMPS template (`resolveExportTemplate`) is not built.
 5. **Later phases** (plan): P3 offline packs / on-device viewshed / the remaining exports; P4 the 3D view. Online viewshed, KMZ and
    QR calls exist on the backend but **no Android call is made**; the owner approved a transient send *only when the person
    explicitly asks* and the server must not retain it.

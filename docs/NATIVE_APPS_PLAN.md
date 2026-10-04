@@ -717,6 +717,18 @@ Fixtures change only when someone reruns the generator scripts, and the diff is 
 - Server-side flags and entitlements can switch off a broken feature without waiting for store review.
 - Crash symbols: dSYMs stay in App Store Connect; R8 mapping files are uploaded to Play.
 
+### Testing on a device against a local backend
+
+The server address is fixed when the app is **built**, from the Gradle property `ezpz.apiUrl`. The default is the production server, which has none of your local accounts, so a build that never got the property answers every sign-in with "Invalid email or password". A debug build shows the address it was built with on the sign-in screen ("DEBUG BUILD / Server: ..."): check that first.
+
+1. **Backend:** run it as in AGENTS.md section 11 (`python app.py`, port 5000).
+2. **Account:** a local backend has its own empty SQLite database. From `backend/`, make a verified account with `python dev_user.py you@example.com --password "a few words as a passphrase"` (a phrase is easier to type on a device than a random string; it must satisfy the server's password rules). Run it again to reset the password.
+3. **Reach the backend from the device:**
+   - **Emulator:** `10.0.2.2` is the host machine. Build with `-Pezpz.apiUrl=http://10.0.2.2:5000/`.
+   - **Physical phone or tablet:** tunnel the port over adb and build against loopback: `adb -s <serial> reverse tcp:5000 tcp:5000`, then `-Pezpz.apiUrl=http://127.0.0.1:5000/`. The debug network config already allows plain HTTP to `127.0.0.1`, `localhost` and `10.0.2.2`, and nothing else, so no config change is needed. For a wireless device, `adb devices -l` lists the serial (the `adb-...._adb-tls-connect._tcp` name); the tunnel lasts only while adb stays connected, so repeat the `reverse` after a reconnect or reboot.
+4. **Build and install to that one device** (with an emulator and a device both attached, Gradle would install to both, and one of them cannot reach the address): `$env:ANDROID_SERIAL="<serial>"; .\gradlew.bat installDebug "-Pezpz.apiUrl=http://127.0.0.1:5000/"`.
+5. **Android Studio** ignores the command line. To make its builds use the same address, add `ezpz.apiUrl=...` to your user-level `~/.gradle/gradle.properties` (not the repository's), or Studio goes back to production.
+
 ## Roadmap
 
 Android reaches 1.0 about 32 weeks after kickoff, and iOS and iPadOS about 42, with native 3D on both by week 52. That assumes one engineer per platform and the owner on the backend, ±30%. Android leads: it builds on the owner's Windows machine, it is where ATAK runs, and Play testing turns builds around faster than App Review. iOS trails one phase and reuses the contracts, fixtures and backend work Android proved.
