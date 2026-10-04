@@ -4,6 +4,7 @@ import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.MapDrag
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.PointSetRepository
@@ -17,6 +18,7 @@ import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.DrawingMode
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.RouteRepository
+import app.ezpztac.data.RouteHeld
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
@@ -194,7 +196,7 @@ class HomeViewModelTest {
         val mapFocus = MapFocus()
         val model = HomeViewModel(
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection,
-            threats, threatSelection, weather, mapFocus, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
+            threats, threatSelection, weather, MapDrag(session, routeSession, threats), mapFocus, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
@@ -1245,5 +1247,88 @@ class HomeViewModelTest {
         assertNull(r.routeSelection.held.value)
         assertEquals("Finish or cancel the boundary first.", r.sketching.start())
         assertTrue(r.model.isDrawing.value)
+    }
+
+    // -- Long press and drag ------------------------------------------------------------------------------------------
+
+    @Test
+    fun `a long press on a graphic holds it and picks it up, and the finger then moves it as one undo step`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val before = r.session.undoDepth.value
+
+        val finger = LatLon(34.7838, -84.0822)
+        assertTrue(r.model.dragStarted(finger, view(), touchRadiusPx = 24.0))
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)           // held, as a tap would hold it
+        repeat(10) { i -> r.model.dragMoved(LatLon(34.7838 + i * 0.00002, -84.0822)) }
+        r.model.dragEnded(LatLon(34.7842, -84.0822))
+        advanceUntilIdle()
+
+        val moved = r.session.active.value!!.graphics.pzMarkers.single() as JsonObject
+        assertEquals(34.7842, (moved["lat"] as JsonPrimitive).content.toDouble(), 1e-6)
+        assertEquals(before + 1, r.session.undoDepth.value)
+        // The map's own scene follows: what is drawn is where it was put.
+        assertEquals(34.7842, r.model.scene.value.graphics.pzMarkers.single().anchor.lat, 1e-6)
+    }
+
+    @Test
+    fun `a long press on nothing picks nothing up, so the map pans`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertFalse(r.model.dragStarted(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0))
+        assertNull(r.selection.selected.value)
+    }
+
+    @Test
+    fun `nothing is picked up while a boundary or a route is being drawn, since a press is a corner then`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.drawing.start()
+        assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        r.drawing.cancel()
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+    }
+
+    @Test
+    fun `a cancelled drag puts the graphic back`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val before = r.session.undoDepth.value
+        r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        r.model.dragMoved(LatLon(34.7900, -84.0822))
+        r.model.dragCancelled()
+        val back = r.session.active.value!!.graphics.pzMarkers.single() as JsonObject
+        assertEquals(34.7838, (back["lat"] as JsonPrimitive).content.toDouble(), 1e-9)
+        assertEquals(before, r.session.undoDepth.value)
+    }
+
+    @Test
+    fun `releasing what is held puts down a graphic, a threat and a route point, and keeps the route`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        r.routeSelection.select("route", "point")
+        r.threatSelection.select("t")
+        r.model.releaseHeld()
+        assertNull(r.selection.selected.value)
+        assertNull(r.threatSelection.held.value)
+        assertEquals(RouteHeld("route", null), r.routeSelection.held.value)
     }
 }

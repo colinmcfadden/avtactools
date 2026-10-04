@@ -8,6 +8,7 @@ import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.MapDrag
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.RouteSelection
@@ -17,6 +18,7 @@ import app.ezpztac.data.SlopeState
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.ThreatSelection
 import app.ezpztac.data.ThreatStore
+import app.ezpztac.map.DragHitTest
 import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.LzScene
@@ -28,6 +30,7 @@ import app.ezpztac.map.RouteScene
 import app.ezpztac.map.ThreatHitTest
 import app.ezpztac.map.ThreatScene
 import app.ezpztac.map.SlopeImage
+import app.ezpztac.model.DragTarget
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.symbols.SymbolRenderer
@@ -72,6 +75,7 @@ class HomeViewModel @Inject constructor(
     private val threats: ThreatStore,
     private val threatSelection: ThreatSelection,
     private val weather: WeatherService,
+    private val mapDrag: MapDrag,
     mapFocus: MapFocus,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
@@ -231,6 +235,55 @@ class HomeViewModel @Inject constructor(
         val point = PointHitTest.pick(points.value, view, at, touchRadiusPx)
         if (point != null) pointSelection.toggle(point.setId, point.pointId) else pointSelection.clear()
     }
+
+    // -- Picking something up with a long press and dragging it ---------------------------------------------------------------
+
+    /**
+     * A long press at [at]: if there is something there that can be moved (a planning graphic, a threat, a point of a route: what [DragHitTest] finds), it is held as a tap
+     * would hold it and picked up, and this answers true so the finger drags it and the map does not pan. False for anything else (the line between two points, the ground,
+     * a local point), and while a boundary or a route is being drawn: taps are corners then.
+     */
+    fun dragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
+        if (drawing.draft.value != null || sketching.draft.value != null) return false
+        val target = DragHitTest.pick(scene.value.graphics, threatScene.value, routes.value, view, at, touchRadiusPx) ?: return false
+        if (!mapDrag.start(target, at)) return false
+        // What is being moved is held, so its halo shows and the sheet's inspector is about it.
+        pointSelection.clear()
+        when (target) {
+            is DragTarget.Graphic -> {
+                threatSelection.clear()
+                selection.select(target.ref)
+            }
+            is DragTarget.Threat -> {
+                selection.clear()
+                routeSelection.releasePoint()
+                threatSelection.select(target.id)
+            }
+            is DragTarget.RoutePoint -> {
+                selection.clear()
+                threatSelection.clear()
+                routeSelection.select(target.routeId, target.pointId)
+            }
+        }
+        return true
+    }
+
+    /** Puts down whatever is held on the map (the bar's Done): a graphic, a threat, a point of a route, a local point. A route being worked on stays the route. */
+    fun releaseHeld() {
+        selection.clear()
+        threatSelection.clear()
+        pointSelection.clear()
+        routeSelection.releasePoint()
+    }
+
+    /** The finger holding what was picked up is now at [at]. */
+    fun dragMoved(at: LatLon) = mapDrag.move(at)
+
+    /** The finger lifted at [at]: what was picked up is put down there. */
+    fun dragEnded(at: LatLon) = mapDrag.end(at)
+
+    /** The touch was taken from the drag: what was picked up goes back where it was. */
+    fun dragCancelled() = mapDrag.cancel()
 
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */
     fun baseMapChosen(id: String) = session.setQuietly { it.copy(view = it.view.copy(mapStyle = id)) }

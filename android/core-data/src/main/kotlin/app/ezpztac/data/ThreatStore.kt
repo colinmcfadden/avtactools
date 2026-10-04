@@ -99,6 +99,22 @@ public class ThreatStore(
     /** Moves a threat. False if there is no such threat. */
     public fun move(id: String, lat: Double, lon: Double): Boolean = edit(id) { it.copy(threat = it.threat.copy(lat = lat, lon = lon)) }
 
+    /**
+     * Moves a threat as a finger drags it: shown at once but not yet written to the sealed file, which is rewritten whole for every change and would be written
+     * dozens of times a second. [settle] writes it when the finger lifts.
+     */
+    public fun previewMove(id: String, lat: Double, lon: Double): Boolean {
+        if (_entries.value.none { it.id == id }) return false
+        lock.withLock { _entries.update { list -> list.map { if (it.id == id) it.copy(threat = it.threat.copy(lat = lat, lon = lon)) else it } } }
+        return true
+    }
+
+    /** Writes the picture as it is now, after a drag ([previewMove]); the 48 hours run from here, as for any change. */
+    public fun settle() {
+        lock.withLock { lastChangeAt = clock() }
+        scope.launch(io) { write() }
+    }
+
     /** Shows or hides a threat on the map. False if there is no such threat. */
     public fun setVisible(id: String, visible: Boolean): Boolean = edit(id) { it.copy(visible = visible) }
 

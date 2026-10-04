@@ -3,6 +3,7 @@ package app.ezpztac.android
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,6 +18,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +56,7 @@ import app.ezpztac.workspace.BoundaryHost
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsHost
 import app.ezpztac.workspace.GraphicsHost
+import app.ezpztac.workspace.HeldObjectBarHost
 import app.ezpztac.workspace.IncomingHost
 import app.ezpztac.workspace.PointsHost
 import app.ezpztac.workspace.RouteToolbarHost
@@ -68,6 +72,9 @@ private val TOOLBAR_ABOVE_READOUT = 56.dp
 
 /** How far from a graphic's point a finger still counts as on it: the platform's minimum touch target is 48 dp across, so 24 dp each way. */
 private const val TOUCH_RADIUS_DP = 24.0
+
+/** The bar for what is held does not stretch across a tablet. */
+private val HELD_BAR_MAX_WIDTH = 460.dp
 
 /**
  * The signed-in app: the map is the root, with a bottom sheet over it (docs/NATIVE_APPS_PLAN.md, "Mobile UX"). The sheet holds the
@@ -95,6 +102,7 @@ fun MapHome(
     val density = LocalDensity.current
     val context = LocalContext.current
     val scaffold = rememberBottomSheetScaffoldState()
+    val sheetScope = rememberCoroutineScope()
 
     LaunchedEffect(host) {
         viewModel.commands.collect { command ->
@@ -161,6 +169,14 @@ fun MapHome(
                     val toolbar = Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = PEEK + TOOLBAR_ABOVE_READOUT)
                     BoundaryToolbarHost(crosshair = state.center, modifier = toolbar)
                     RouteToolbarHost(crosshair = state.center, modifier = toolbar)
+                    // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
+                    if (!drawing) {
+                        HeldObjectBarHost(
+                            onOptions = { sheetScope.launch { scaffold.bottomSheetState.expand() } },
+                            onDone = home::releaseHeld,
+                            modifier = toolbar.widthIn(max = HELD_BAR_MAX_WIDTH),
+                        )
+                    }
                 },
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -171,6 +187,11 @@ fun MapHome(
                         // Distances between points on the screen do not depend on where its middle is, so the size of the view is not needed here.
                         host.camera?.let { camera -> home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) }
                     },
+                    // A long press on a graphic, a threat or a point of a route picks it up; the finger then moves it, and lifting puts it down.
+                    onPickUp = { at ->
+                        host.camera?.let { camera -> home.dragStarted(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) } ?: false
+                    },
+                    onDrag = home::dragMoved, onDrop = home::dragEnded, onDragCancelled = home::dragCancelled,
                 )
                 DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
                 PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's

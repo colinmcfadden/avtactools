@@ -264,7 +264,7 @@ internal fun NudgePad(feet: Double, nudge: (Double, Double) -> Unit) {
 
 /** A square button of the smallest comfortable size, with its meaning in words for a screen reader. */
 @Composable
-private fun PadButton(label: String, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun PadButton(label: String, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick, shape = RoundedCornerShape(Tokens.Radius.md.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
         modifier = modifier.size(width = Tokens.Size.touchTarget.dp + 16.dp, height = Tokens.Size.touchTarget.dp).semantics { contentDescription = description },

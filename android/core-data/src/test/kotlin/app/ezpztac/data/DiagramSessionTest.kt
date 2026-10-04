@@ -536,4 +536,59 @@ class DiagramSessionTest {
         r.session.flush()
         assertEquals(updatedAt, r.saved(made.id).updatedAt)                                 // looking at a diagram does not write it
     }
+
+    // -- Edits that are one step ---------------------------------------------------------------------------------
+
+    @Test
+    fun `edits with the same key, one after another, are one step to undo`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        repeat(30) { i -> r.session.edit("Move", coalesce = "drag-1") { it.copy(name = "at $i") } }
+        assertEquals(1, r.session.undoDepth.value)
+        assertEquals("at 29", r.session.active.value!!.name)
+        r.session.undo()
+        assertEquals("LZ HAWK", r.session.active.value!!.name)                              // all the way back, in one
+        assertEquals(0, r.session.undoDepth.value)
+    }
+
+    @Test
+    fun `a different key, no key, or an edit in between is a step of its own`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        r.session.edit("Move", coalesce = "a") { it.copy(name = "1") }
+        r.session.edit("Move", coalesce = "b") { it.copy(name = "2") }
+        r.session.edit("Rename") { it.copy(name = "3") }
+        r.session.edit("Move", coalesce = "b") { it.copy(name = "4") }                      // "b" again, but something else came between
+        assertEquals(4, r.session.undoDepth.value)
+    }
+
+    @Test
+    fun `an edit that brings the document back to where the merged step began takes the step away`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        r.session.edit("Move", coalesce = "a") { it.copy(name = "elsewhere") }
+        assertEquals(1, r.session.undoDepth.value)
+        r.session.edit("Move", coalesce = "a") { it.copy(name = "LZ HAWK") }
+        assertEquals(0, r.session.undoDepth.value)
+        assertEquals("LZ HAWK", r.session.active.value!!.name)
+    }
+
+    @Test
+    fun `a merged step is saved once, after the pause`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.device.sync()
+        r.session.open(made.id)
+        repeat(50) { i ->
+            r.session.edit("Move", coalesce = "a") { it.copy(name = "step $i") }
+            advanceTimeBy(10)
+        }
+        advanceTimeBy(DiagramSession.SAVE_AFTER_STILL_MS + 1)
+        runCurrent()
+        assertEquals("step 49", r.saved(made.id).name)
+        assertEquals(1, r.device.outbox().size)
+    }
 }

@@ -132,15 +132,25 @@ fun EzpzMap(
     modifier: Modifier = Modifier,
     /** The strip at the bottom that something else covers (the sheet's peek): the crosshair is the middle of the map above it. */
     bottomInset: Dp = 0.dp,
-    onLongPress: (LatLon) -> Unit = {},
     /** A tap on the map, where it landed. Not told of a drag or a pinch. */
     onTap: (LatLon) -> Unit = {},
+    /** A long press at this place: true when something there was picked up, so the finger now drags it (the map does not pan). */
+    onPickUp: (LatLon) -> Boolean = { false },
+    /** The finger holding what was picked up is now here. */
+    onDrag: (LatLon) -> Unit = {},
+    /** The finger lifted here: what was picked up is put down. */
+    onDrop: (LatLon) -> Unit = {},
+    /** The touch was taken from the drag: what was picked up goes back. */
+    onDragCancelled: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val view = remember(context) { createMapView(context) }
-    val longPress by rememberUpdatedState(onLongPress)
     val tap by rememberUpdatedState(onTap)
+    val pickUp by rememberUpdatedState(onPickUp)
+    val drag by rememberUpdatedState(onDrag)
+    val drop by rememberUpdatedState(onDrop)
+    val cancelled by rememberUpdatedState(onDragCancelled)
 
     DisposableEffect(owner, view) {
         view.onCreate(Bundle())
@@ -157,6 +167,13 @@ fun EzpzMap(
         // Join in at the owner's current state: the observer only hears what happens next.
         if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) view.onStart()
         if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onResume()
+        view.listener = object : DragMapView.Listener {
+            private fun at(x: Float, y: Float) = host.screenToLatLon(x, y)
+            override fun onPickUp(x: Float, y: Float) = at(x, y)?.let(pickUp) ?: false
+            override fun onDrag(x: Float, y: Float) { at(x, y)?.let(drag) }
+            override fun onDrop(x: Float, y: Float) { at(x, y)?.let(drop) ?: cancelled() }
+            override fun onDragCancelled() = cancelled()
+        }
         view.getMapAsync { map ->
             map.uiSettings.apply {
                 isTiltGesturesEnabled = false
@@ -166,12 +183,12 @@ fun EzpzMap(
             }
             map.addOnCameraMoveListener { host.publishCamera(map) }
             map.addOnCameraIdleListener { host.publishCamera(map) }
-            map.addOnMapLongClickListener { at -> longPress(LatLon(at.latitude, at.longitude)); true }
             map.addOnMapClickListener { at -> tap(LatLon(at.latitude, at.longitude)); false }   // false: the map's own handling of a tap goes on
             host.attach(map)
             host.jumpTo(initial)
         }
         onDispose {
+            view.listener = null
             owner.lifecycle.removeObserver(observer)
             host.detach()
             view.onPause()
@@ -189,10 +206,10 @@ fun EzpzMap(
 
 private var libraryReady = false
 
-private fun createMapView(context: Context): MapView {
+private fun createMapView(context: Context): DragMapView {
     if (!libraryReady) {
         MapLibre.getInstance(context.applicationContext)
         libraryReady = true
     }
-    return MapView(context)
+    return DragMapView(context)
 }
