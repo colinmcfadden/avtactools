@@ -84,6 +84,49 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun `a refusal also carries what the server said, for a developer, the status and its code`() = runTest(dispatcher) {
+        val (vm, api) = model()
+        api.failure = ApiException(401, "invalid_credentials", "Invalid email or password.")
+        vm.signIn("pilot@example.com", pass)
+        advanceUntilIdle()
+        assertEquals("HTTP 401 · invalid_credentials · \"Invalid email or password.\"", vm.state.value.detail)
+    }
+
+    @Test
+    fun `no answer says what the network said, and an unexpected failure its own type`() = runTest(dispatcher) {
+        val (vm, api) = model()
+        api.failure = NetworkException("Unable to connect", java.net.ConnectException("Failed to connect to /127.0.0.1:5000"), requestMayHaveBeenSent = false)
+        vm.signIn("pilot@example.com", pass)
+        advanceUntilIdle()
+        assertEquals("no answer: ConnectException: Failed to connect to /127.0.0.1:5000", vm.state.value.detail)
+        api.failure = IllegalStateException("decoded nothing")
+        vm.signIn("pilot@example.com", pass)
+        advanceUntilIdle()
+        assertEquals("IllegalStateException: decoded nothing", vm.state.value.detail)
+        assertEquals("Unable to sign in. Check your credentials.", vm.state.value.error)           // the person's words are the fallback, as before
+    }
+
+    @Test
+    fun `the detail goes with the error, so dismissing, moving on, a new try and a local refusal all clear it`() = runTest(dispatcher) {
+        val (vm, api) = model()
+        api.failure = ApiException(401, "invalid_credentials", "Invalid email or password.")
+        vm.signIn("pilot@example.com", pass); advanceUntilIdle()
+        vm.dismissError()
+        assertNull(vm.state.value.detail)
+        vm.signIn("pilot@example.com", pass); advanceUntilIdle()
+        vm.open(AuthRoute.Register)
+        assertNull(vm.state.value.detail)
+        vm.open(AuthRoute.SignIn)
+        vm.signIn("pilot@example.com", pass); advanceUntilIdle()
+        vm.signIn("not an address", pass)                                                          // refused before anything is sent
+        assertNull(vm.state.value.detail)
+        assertNotNull(vm.state.value.error)
+        api.failure = null
+        vm.signIn("pilot@example.com", pass)
+        assertNull(vm.state.value.detail)                                                          // a new try starts clean
+    }
+
+    @Test
     fun `no signal is explained, not blamed on the password`() = runTest(dispatcher) {
         val (vm, api) = model()
         api.failure = NetworkException("timeout", null, requestMayHaveBeenSent = false)

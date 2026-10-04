@@ -17,16 +17,16 @@ terrain, weather, coordinate, export, threat, and saved-data endpoints.
    email account.
 
 For a repeatable local account without completing email and affiliation flows,
-seed the local SQLite database explicitly. The command prompts for a password,
+seed the local SQLite database explicitly. The script prompts for a password,
 uses the normal password-login/session path afterward, and refuses to run when
 production is declared or when the database is not SQLite:
 
 ```powershell
 cd backend
-python -m flask --app app create-dev-user
+python dev_user.py pilot@local.ezpz.test
 ```
 
-The default address is `pilot@local.ezpz.test`. For the Android emulator, build
+For the Android emulator, build
 the debug app against the local backend (the production API remains the default
 when this property is omitted):
 

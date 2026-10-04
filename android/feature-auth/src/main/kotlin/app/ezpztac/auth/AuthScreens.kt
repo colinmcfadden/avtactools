@@ -30,6 +30,7 @@ import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +70,7 @@ fun AuthHost(
     initialRoute: AuthRoute? = null,
     notice: String? = null,
     onRouteChanged: (AuthRoute) -> Unit = {},
+    diagnostics: String? = null,
     viewModel: AuthViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -94,11 +96,12 @@ fun AuthHost(
             },
         ),
         modifier = modifier,
+        diagnostics = diagnostics,
     )
 }
 
 @Composable
-fun AuthContent(state: AuthUiState, googleEnabled: Boolean, actions: AuthActions, modifier: Modifier = Modifier) {
+fun AuthContent(state: AuthUiState, googleEnabled: Boolean, actions: AuthActions, modifier: Modifier = Modifier, diagnostics: String? = null) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -117,12 +120,28 @@ fun AuthContent(state: AuthUiState, googleEnabled: Boolean, actions: AuthActions
                     AuthRoute.Forgot -> Forgot(state, actions)
                     is AuthRoute.Reset -> Reset(state, route, actions)
                 }
+                if (diagnostics != null) Diagnostics(diagnostics, state.detail)
             }
         }
     }
 }
 
 // -- Shared pieces -------------------------------------------------------------------------------------------------
+
+/**
+ * For debug builds, which pass [server] (a release build passes nothing, and this draws nothing): which server the build talks to, and what the last failure was. A sign-in that
+ * "doesn't work" is most often a build pointed somewhere other than where the account is, and the server's sentence for that is the same as for a wrong password.
+ */
+@Composable
+private fun Diagnostics(server: String, lastFailure: String?) {
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+        Text("DEBUG BUILD", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(server, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        lastFailure?.let {
+            Text("Last failure: $it", style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
 
 @Composable
 private fun Feedback(state: AuthUiState, actions: AuthActions) {

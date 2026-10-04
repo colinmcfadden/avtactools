@@ -24,5 +24,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     testImplementation(testFixtures(project(":core-sync")))
+    testImplementation(project(":core-formats"))                // the readers a test counts a fixture's contents with
     testImplementation(project(":core-testing"))
 }

@@ -15,7 +15,7 @@ contracts/
 │  ├─ coords/       parse.json                      reference: the web app
 │  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
-│  ├─ routes/       sketch.json, winds.json         reference: the web app (sketchOps, routeWinds)
+│  ├─ routes/       sketch.json, winds.json, handoff.json   reference: the web app (sketchOps, routeWinds, foreflight.js)
 │  ├─ formats/      number_text.json                reference: the web app (JavaScript's `String(n)`)
 │  ├─ aircraft/     limits.json                     reference: the backend (`_apply_fields`, probed)
 │  ├─ symbols/      sidc.json, presets.json, script.json, svg/*.svg   reference: the web app (milsymbol)
@@ -51,6 +51,7 @@ reference is.
 | `formats/number_text.json` | `frontend/src/contracts/numberTextFixtures.test.js` | — | `core-model` (`JsNumber.toText`) |
 | `routes/sketch.json` | `frontend/src/contracts/sketchFixtures.test.js` | — | `core-planning` (`SketchOps`) |
 | `routes/winds.json` | `frontend/src/contracts/routeWindsFixtures.test.js` | — | `core-planning` (`RouteWinds`: the question a route asks for winds and how the answer is merged into the plan; times are wall-clock to the millisecond, so the fixture does not depend on the zone it was made in) |
+| `routes/handoff.json` | `frontend/src/contracts/handoffFixtures.test.js` | — | `core-formats` (`RouteHandoff`: the Garmin FPL, the GPX, the ForeFlight route string and URL a route is handed to other apps as; byte for byte, with the FPL's clock fixed) |
 | `aircraft/limits.json` | — | `backend/tests/test_contract_fixtures.py` (`AircraftLimitsTests`; `UPDATE_CONTRACTS=1` regenerates) | `core-model` (`AircraftDraft`) |
 | `symbols/*` | `frontend/src/contracts/symbolFixtures.test.js` | — | `core-model` (`Sidc`, `SymbolPresets`, `UnitMarkers`), `core-symbols` (`ScriptAnswer`, `PresetSymbols`; the `svg/` files are the app's assets) |
 | `msnx/*` | `frontend/src/contracts/msnxFixtures.test.js` | — | `core-formats` (`MsnxReader`; `MsnxWriter` for the `sketch-*.msnx` the web exports, all seven parts it changes, compared as parsed documents) |

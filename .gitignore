@@ -25,6 +25,7 @@ dist/
 
 # --- PYTHON / FLASK SPECIFIC ---
 *.db
+# The SQLite files the contract tests read are test fixtures, not data: a clean checkout (CI) needs them.
 !contracts/fixtures/sqlite/*.db
 instance/
 .pytest_cache/

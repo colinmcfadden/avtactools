@@ -39,8 +39,10 @@ class ShareExportTest {
 
     private fun exports() = File(context.cacheDir, "exports")
 
-    private fun prepare(file: ExportFile, now: Long = System.currentTimeMillis()): Intent =
-        ShareExport.prepare(context, file, now) { _, authority, target ->
+    private fun prepare(file: ExportFile, now: Long = System.currentTimeMillis()): Intent = prepare(listOf(file), now)
+
+    private fun prepare(files: List<ExportFile>, now: Long = System.currentTimeMillis()): Intent =
+        ShareExport.prepare(context, files, now) { _, authority, target ->
             Uri.Builder().scheme("content").authority(authority).appendPath("exports").appendPath(target.name).build()
         }
 
@@ -59,7 +61,7 @@ class ShareExportTest {
     @Test
     fun `what the other app is given is one URI of this app's provider, which reads back the file`() {
         assumeTrue("AndroidX FileProvider uses Android path separators, unlike Robolectric on Windows", File.separatorChar == '/')
-        val send = sent(ShareExport.prepare(context, ExportFile("ROUTE 1.msnx", bytes)))
+        val send = sent(prepare(ExportFile("ROUTE 1.msnx", bytes)))
         @Suppress("DEPRECATION") val uri = send.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)!!
         assertEquals("content", uri.scheme)
         assertEquals("${context.packageName}.exports", uri.authority)
@@ -73,7 +75,7 @@ class ShareExportTest {
     fun `a file outside the exports folder cannot be reached through the provider`() {
         assumeTrue("AndroidX FileProvider uses Android path separators, unlike Robolectric on Windows", File.separatorChar == '/')
         val secret = File(context.cacheDir, "secret.txt").apply { writeText("not for sharing") }
-        val send = sent(ShareExport.prepare(context, ExportFile("ROUTE 1.msnx", bytes)))
+        val send = sent(prepare(ExportFile("ROUTE 1.msnx", bytes)))
         @Suppress("DEPRECATION") val uri = send.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)!!
         val sibling = Uri.parse("content://${uri.authority}/exports/../secret.txt")
         val failed = runCatching { context.contentResolver.openInputStream(sibling)!!.use { it.readBytes() } }
@@ -91,6 +93,7 @@ class ShareExportTest {
         assertEquals("ROUTES.msnx", ShareExport.plainName("/"))
         assertEquals("A B.msnx", ShareExport.plainName("A B"))                                 // the extension is added when it is missing
         assertEquals("A.msnx", ShareExport.plainName("A.msnx"))                                // and not doubled
+        assertEquals("MISSION 1.ths", ShareExport.plainName("../../MISSION 1.ths"))             // threat files keep their own type
         prepare(ExportFile("../../escape.msnx", bytes))
         assertTrue(File(exports(), "escape.msnx").exists())
         assertFalse(File(context.cacheDir.parentFile, "escape.msnx").exists())
@@ -120,5 +123,118 @@ class ShareExportTest {
         val template = AssetMissionTemplate(context).bytes()
         assertNotNull(template)
         assertArrayEquals(Fixtures.repoBytes("frontend/public/msnx_template.msnx"), template)
+    }
+
+    @Test
+    fun `the bundled threat database is the backend's template`() {
+        assertArrayEquals(Fixtures.repoBytes("backend/threat_template.ths"), AssetThsTemplate(context).bytes())
+    }
+
+    // -- A threat file beside the mission ------------------------------------------------------------------------------------
+
+    @Test
+    fun `a ths keeps its own extension, whatever the folder it came with`() {
+        assertEquals("MISSION 1.ths", ShareExport.plainName("MISSION 1.ths"))
+        assertEquals("MISSION 1.ths", ShareExport.plainName("MISSION 1.THS"))
+        assertEquals("x.ths", ShareExport.plainName("/data/user/0/x.ths"))
+        assertEquals("x.ths", ShareExport.plainName("..\\..\\x.ths"))
+    }
+
+    @Test
+    fun `the mission and its threat file go out together, each readable through its own URI`() {
+        assumeTrue("AndroidX FileProvider uses Android path separators, unlike Robolectric on Windows", File.separatorChar == '/')
+        val ths = byteArrayOf(83, 81, 76, 105, 116, 101)
+        val chooser = prepare(listOf(ExportFile("MISSION 1.msnx", bytes), ExportFile("MISSION 1.ths", ths)))
+        val send = sent(chooser)
+        assertEquals(Intent.ACTION_SEND_MULTIPLE, send.action)
+        assertEquals("application/octet-stream", send.type)
+        @Suppress("DEPRECATION") val uris = send.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)!!
+        assertEquals(listOf("MISSION 1.msnx", "MISSION 1.ths"), uris.map { it.lastPathSegment })
+        assertArrayEquals(bytes, context.contentResolver.openInputStream(uris[0])!!.use { it.readBytes() })
+        assertArrayEquals(ths, context.contentResolver.openInputStream(uris[1])!!.use { it.readBytes() })
+        val clip: ClipData = send.clipData!!
+        assertEquals(uris, (0 until clip.itemCount).map { clip.getItemAt(it).uri })            // the grant covers every one
+        assertTrue(send.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+    }
+
+    @Test
+    fun `one file is still a plain send`() {
+        val send = sent(prepare(listOf(ExportFile("threats.ths", bytes))))
+        assertEquals(Intent.ACTION_SEND, send.action)
+    }
+
+    @Test
+    fun `nothing to share is not a share`() {
+        val failure = runCatching { prepare(emptyList()) }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
+    fun `a threat file is cleared after an hour, where a mission is kept a day`() {
+        exports().mkdirs()
+        val now = System.currentTimeMillis()
+        val oldThs = File(exports(), "OLD.ths").apply { writeBytes(bytes); setLastModified(now - 2 * 60 * 60 * 1000) }
+        val freshThs = File(exports(), "FRESH.ths").apply { writeBytes(bytes); setLastModified(now - 30 * 60 * 1000) }
+        val twoHourMission = File(exports(), "TWO.msnx").apply { writeBytes(bytes); setLastModified(now - 2 * 60 * 60 * 1000) }
+        prepare(ExportFile("NEW.msnx", bytes), now)
+        assertFalse("a two-hour-old .ths is still there", oldThs.exists())
+        assertTrue(freshThs.exists())
+        assertTrue("a mission is kept a day", twoHourMission.exists())
+    }
+
+    @Test
+    fun `clearing removes everything exported, a mission and a threat file alike, and is fine with nothing there`() {
+        ShareExport.clear(context)                                                             // no folder yet: no complaint
+        prepare(listOf(ExportFile("A.msnx", bytes), ExportFile("A.ths", bytes)))
+        assertEquals(2, exports().listFiles()!!.size)
+        ShareExport.clear(context)
+        assertEquals(0, exports().listFiles()!!.size)
+    }
+
+    // -- A route for another app ---------------------------------------------------------------------------
+
+    @Test
+    fun `a GPX and a flight plan keep their own extensions`() {
+        assertEquals("NEPTUNE_RUN.gpx", ShareExport.plainName("NEPTUNE_RUN.gpx"))
+        assertEquals("NEPTUNE_RUN.fpl", ShareExport.plainName("../../NEPTUNE_RUN.fpl"))
+        assertEquals("A.gpx", ShareExport.plainName("A.GPX"))                                  // the extension is written in lower case
+    }
+
+    @Test
+    fun `the file is told to the other app as what it is`() {
+        assertEquals("application/gpx+xml", ShareExport.mimeOf("NEPTUNE.gpx"))
+        assertEquals("application/gpx+xml", ShareExport.mimeOf("NEPTUNE.GPX"))
+        assertEquals("application/xml", ShareExport.mimeOf("NEPTUNE.fpl"))
+        assertEquals("application/octet-stream", ShareExport.mimeOf("NEPTUNE.msnx"))
+        assertEquals("application/octet-stream", ShareExport.mimeOf("MISSION 1.ths"))
+    }
+
+    @Test
+    fun `a GPX is sent as one file with its own type and a title that is not about AMPS`() {
+        val chooser = prepare(ExportFile("NEPTUNE.gpx", "<gpx/>".toByteArray()))
+        val send = sent(chooser)
+        assertEquals(Intent.ACTION_SEND, send.action)
+        assertEquals("application/gpx+xml", send.type)
+        assertEquals("Share route", chooser.getCharSequenceExtra(Intent.EXTRA_TITLE).toString())
+        assertTrue(File(exports(), "NEPTUNE.gpx").exists())
+    }
+
+    @Test
+    fun `a mission keeps its title and type, and a mixed send is any type`() {
+        val mission = prepare(ExportFile("A.msnx", bytes))
+        assertEquals("Export for AMPS", mission.getCharSequenceExtra(Intent.EXTRA_TITLE).toString())
+        assertEquals("application/octet-stream", sent(mission).type)
+        val mixed = sent(prepare(listOf(ExportFile("A.msnx", bytes), ExportFile("A.gpx", bytes))))
+        assertEquals("*/*", mixed.type)
+        val two = sent(prepare(listOf(ExportFile("A.gpx", bytes), ExportFile("B.gpx", bytes))))
+        assertEquals("application/gpx+xml", two.type)
+    }
+
+    @Test
+    fun `a GPX is cleared after a day like a mission, not after an hour like a threat file`() {
+        exports().mkdirs()
+        val hourOld = File(exports(), "HOUR.gpx").apply { writeBytes(bytes); setLastModified(System.currentTimeMillis() - 2 * 60 * 60 * 1000) }
+        prepare(ExportFile("NEW.gpx", bytes))
+        assertTrue(hourOld.exists())
     }
 }

@@ -144,6 +144,11 @@ class MapViewModel @Inject constructor(
         if (at != null) _commands.tryEmit(MapCommand.FlyTo(at, DIAGRAM_ZOOM))
     }
 
+    /** Takes the map to [at] at [zoom]: somewhere the person has just brought in (a mission's routes), not a diagram, so no base map changes. */
+    fun showArea(at: LatLon, zoom: Double) {
+        _commands.tryEmit(MapCommand.FlyTo(at, zoom))
+    }
+
     fun selectStyle(id: String) {
         chosenStyleId = id
         _state.update { it.copy(style = MapStyles.byId(id, tokens.token.value)) }

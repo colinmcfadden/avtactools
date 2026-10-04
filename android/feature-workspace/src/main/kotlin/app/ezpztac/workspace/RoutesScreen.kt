@@ -1,5 +1,7 @@
 package app.ezpztac.workspace
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -42,17 +46,22 @@ import app.ezpztac.designsystem.EzpzTextField
 import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
+import app.ezpztac.data.HandoffFormat
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.LocalPointMatch
 import app.ezpztac.planning.PlanDraft
 import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.SyncEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class RoutesActions(
     val startCreating: () -> Unit = {},
     val cancelCreating: () -> Unit = {},
     val createSet: (name: String) -> Unit = {},
+    val importMission: () -> Unit = {},
     val openSet: (String) -> Unit = {},
     val closeSet: () -> Unit = {},
     val renameSet: (String, String) -> Unit = { _, _ -> },
@@ -91,12 +100,14 @@ class RoutesActions(
     val dismissNote: () -> Unit = {},
     val exportSet: () -> Unit = {},
     val exportRoute: (routeId: String) -> Unit = {},
+    val shareRoute: (routeId: String, format: HandoffFormat) -> Unit = { _, _ -> },
     val dismissExportWarning: () -> Unit = {},
     /** The local point a name typed on a route point would put it on, or null when it names none. */
     val localPointNamed: (typed: String) -> LocalPointMatch? = { null },
 )
 
-private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = RoutesActions(
+private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null, importMission: () -> Unit = {}) = RoutesActions(
+    importMission = importMission,
     startCreating = viewModel::startCreating, cancelCreating = viewModel::cancelCreating, createSet = viewModel::createSet, openSet = viewModel::openSet,
     closeSet = viewModel::closeSet, renameSet = viewModel::renameSet, deleteSet = viewModel::deleteSet, resolve = viewModel::resolve,
     dismissError = viewModel::dismissError, selectRoute = viewModel::selectRoute, toggleVisible = viewModel::toggleVisible, renameRoute = viewModel::renameRoute,
@@ -107,7 +118,7 @@ private fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null) = R
     nudgePoint = viewModel::nudgePoint, pointToCrosshair = { routeId, pointId -> viewModel.pointToCrosshair(routeId, pointId, crosshair) },
     pointToText = viewModel::pointToText, addShapingPoint = { routeId -> viewModel.addShapingPoint(routeId, crosshair) },
     fetchWinds = viewModel::fetchWinds, fetchElevations = viewModel::fetchElevations, dismissNote = viewModel::dismissNote,
-    exportSet = viewModel::exportSet, exportRoute = viewModel::exportRoute, dismissExportWarning = viewModel::dismissExportWarning,
+    exportSet = viewModel::exportSet, exportRoute = viewModel::exportRoute, shareRoute = viewModel::shareRoute, dismissExportWarning = viewModel::dismissExportWarning,
     localPointNamed = viewModel::localPointNamed,
 )
 
@@ -122,12 +133,25 @@ fun RoutesHost(
     crosshair: LatLon? = null,
     crosshairGrid: String? = null,
     viewModel: RoutesViewModel = hiltViewModel(),
+    incoming: IncomingViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val share by rememberUpdatedState(onExport)
+    val resolver = LocalContext.current.contentResolver
+    val scope = rememberCoroutineScope()
+    // A mission file chosen here is put to the person like one opened from Files or a mail: the same question, whatever way it came.
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult                 // the person backed out
+        scope.launch {
+            when (val picked = withContext(Dispatchers.IO) { PickedFile.read(resolver, uri, tooBig = IncomingViewModel.TOO_BIG) }) {
+                is PickedFile.Result.Read -> incoming.offer(picked.name, picked.bytes)
+                is PickedFile.Result.Failed -> incoming.refuse("the file you chose", picked.message)
+            }
+        }
+    }
     // A mission built is handed to the app that can send it (the system share sheet); this module knows nothing of that.
     LaunchedEffect(viewModel) { viewModel.exports.collect { share(it) } }
-    RoutesContent(state, actionsOf(viewModel, crosshair), modifier, crosshairGrid)
+    RoutesContent(state, actionsOf(viewModel, crosshair) { picker.launch(arrayOf("*/*")) }, modifier, crosshairGrid)   // an .msnx has no media type of its own
 }
 
 /** The toolbar over the map, shown only while a route is being drawn. Over the sheet's peek, so it is reachable with the sheet down. */
@@ -142,7 +166,12 @@ fun RoutesContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifi
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Routes", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-            if (!state.creating) TextAction("New set", onClick = actions.startCreating)
+            if (!state.creating) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                    TextAction("Import mission", onClick = actions.importMission)
+                    TextAction("New set", onClick = actions.startCreating)
+                }
+            }
         }
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
         state.open?.let { OpenSetCard(it, state.drawing, state.exporting, actions) }

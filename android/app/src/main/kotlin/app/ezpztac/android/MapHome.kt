@@ -44,6 +44,8 @@ import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.RouteLayer
+import app.ezpztac.map.ThreatLayer
+import app.ezpztac.map.ThreatLabelsLayer
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.workspace.AircraftHost
@@ -51,9 +53,12 @@ import app.ezpztac.workspace.BoundaryHost
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsHost
 import app.ezpztac.workspace.GraphicsHost
+import app.ezpztac.workspace.IncomingHost
 import app.ezpztac.workspace.PointsHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesHost
+import app.ezpztac.workspace.ThreatsHost
+import app.ezpztac.workspace.ThreatsViewModel
 import kotlinx.coroutines.flow.filterNotNull
 
 private val PEEK = 112.dp
@@ -83,6 +88,8 @@ fun MapHome(
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
+    val threatScene by home.threatScene.collectAsStateWithLifecycle()
+    val threatsModel: ThreatsViewModel = hiltViewModel()                  // the sheet's threats section and the mission export share one
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
@@ -101,6 +108,9 @@ fun MapHome(
     // The buttons that start drawing a boundary are in the sheet and the corners are put down on the map: down to the peek, so the map is there.
     LaunchedEffect(drawing) { if (drawing) scaffold.bottomSheetState.partialExpand() }
     LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
+    LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
+    // A file another app opened with this one (Files, a mail, the share sheet) is put to the person here: nothing is imported until they accept.
+    IncomingHost()
     // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { home.appStopped() }
 
@@ -125,8 +135,13 @@ fun MapHome(
                             GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs)
                         },
                     )
-                    RoutesHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center, crosshairGrid = state.readout?.mgrs)
+                    // A mission goes to AMPS with the threats it was planned against: the .ths named for it travels beside it when there are any.
+                    RoutesHost(
+                        onExport = { mission -> threatsModel.shareWithThreats(mission) { files -> ShareExport.share(context, files) } },
+                        crosshair = state.center, crosshairGrid = state.readout?.mgrs,
+                    )
                     PointsHost()
+                    ThreatsHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center, crosshairGrid = state.readout?.mgrs, viewModel = threatsModel)
                     AircraftHost(canMake = canMakeAircraft)
                     Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
                     Text(stringResource(R.string.home_version, version, build), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -160,9 +175,11 @@ fun MapHome(
                 DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
                 PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's
                 RouteLayer(host, routeScene)
+                ThreatLayer(host, threatScene)                  // range rings; symbols and names are Compose below
                 GpsLayer(host, state.gps)
                 GraphicLabelsLayer(host, scene.graphics)
                 PinLabelsLayer(host, routeScene, pointScene)
+                ThreatLabelsLayer(host, threatScene)
             }
         }
     }

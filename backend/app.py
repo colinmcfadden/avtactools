@@ -43,7 +43,6 @@ from routes.admin_routes import admin_bp
 from routes.config_routes import config_bp
 from routes.sync_routes import sync_bp
 from client_header import CLIENT_HEADER
-from dev_user import register_dev_user_command
 
 app = Flask(__name__)
 cors_origins = [
@@ -134,7 +133,6 @@ app.register_blueprint(aircraft_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(config_bp)
 app.register_blueprint(sync_bp)
-register_dev_user_command(app)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under

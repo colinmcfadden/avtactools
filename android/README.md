@@ -18,17 +18,17 @@ android/
 ├─ core-network/    the API client: transport, sign-in, token refresh, typed routes, request priority
 ├─ core-sync/       the sync engine: outbox, pull by cursor, conflicts kept side by side
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
-├─ core-data/       Room database and the SyncStore on it (schemas in core-data/schemas, committed); the diagrams and the aircraft profiles
+├─ core-data/       Room/sync repositories plus the encrypted short-lived threat picture and native .ths transfer
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
 ├─ core-symbols/    MIL-STD-2525C symbols as bitmaps: pre-rendered presets, milsymbol in the system JS sandbox, AndroidSVG
-├─ feature-map/     the 2D map: MapLibre, base maps, crosshair readout, search, GPS, the diagram and its planning graphics
+├─ feature-map/     the 2D map: MapLibre, diagrams, routes, local points, threat symbols and range rings
 ├─ feature-auth/    sign-in, sign-up, verify, reset and the .mil gate: screens and their view models
-├─ feature-workspace/ the Diagrams tab: list, make from a target, open, rename, delete, settle a conflict, analyze, the planning graphics, the aircraft and a hand-drawn boundary
+├─ feature-workspace/ the planning sheet: diagrams, graphics, aircraft, boundaries, routes, points, weather and local threats
 ├─ app/             the application: Hilt, Compose, manifest, the shell and the map with its sheet
 └─ build-logic/     the convention plugins every module uses
 ```
 
-Not here yet: `core-packs`, and the other `feature-*` modules (routes, threats, weather, exports, 3D).
+Not here yet: `core-packs`, offline threat viewsheds, KMZ/QR export, full LZ-card exports and 3D.
 
 Every module is tested against the golden fixtures in [`../contracts`](../contracts/README.md),
 the same files the web app's tests read, so the app cannot quietly disagree with
@@ -49,6 +49,12 @@ compile here rather than on CI or a device.
 
 Tests read `../contracts/fixtures` and Gradle re-runs them when a fixture
 changes. To see one fail, edit a number in a fixture and run the tests.
+
+### Against a backend on your own PC
+
+A local backend has its own empty database, so sign in with an account made there: `python backend/dev_user.py you@example.com`
+(see `docs/HANDOFF.md` §4 for the whole procedure, `adb reverse` and the emulator address). Debug builds show the server they talk to and
+the last failure on the sign-in screen.
 
 ## The Android modules
 

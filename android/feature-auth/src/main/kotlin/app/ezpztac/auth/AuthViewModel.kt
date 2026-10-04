@@ -19,6 +19,8 @@ data class AuthUiState(
     val busy: Boolean = false,
     /** What went wrong, in words for a person. Cleared by the next action and by [AuthViewModel.dismissError]. */
     val error: String? = null,
+    /** What went wrong in a developer's words ([detail]); shown only by debug builds. Cleared with the error. */
+    val detail: String? = null,
     val notice: String? = null,
     /** The address the person last gave, carried between screens (sign-up → check your inbox → resend). */
     val email: String = "",
@@ -49,6 +51,7 @@ class AuthViewModel @Inject constructor(private val api: AuthApi) : ViewModel() 
             it.copy(
                 route = route,
                 error = null,
+                detail = null,
                 notice = null,
                 completed = false,
                 resetRequested = false,
@@ -68,7 +71,7 @@ class AuthViewModel @Inject constructor(private val api: AuthApi) : ViewModel() 
         return true
     }
 
-    fun dismissError() = _state.update { it.copy(error = null) }
+    fun dismissError() = _state.update { it.copy(error = null, detail = null) }
 
     /** A message from outside for the sign-in screen: "Your session expired." */
     fun notify(text: String?) = _state.update { it.copy(notice = text) }
@@ -139,18 +142,18 @@ class AuthViewModel @Inject constructor(private val api: AuthApi) : ViewModel() 
 
     // -- Plumbing -----------------------------------------------------------------------------------------
 
-    private fun fail(message: String) = _state.update { it.copy(error = message, notice = null) }
+    private fun fail(message: String) = _state.update { it.copy(error = message, detail = null, notice = null) }
 
     private fun run(fallback: String, email: String? = null, block: suspend () -> Unit) {
         if (_state.value.busy) return                                            // a second tap while one is out does nothing
-        _state.update { it.copy(busy = true, error = null, notice = null, email = email ?: it.email) }
+        _state.update { it.copy(busy = true, error = null, detail = null, notice = null, email = email ?: it.email) }
         viewModelScope.launch {
             try {
                 block()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(error = describe(e, fallback)) }
+                _state.update { it.copy(error = describe(e, fallback), detail = detail(e)) }
             } finally {
                 _state.update { it.copy(busy = false) }
             }

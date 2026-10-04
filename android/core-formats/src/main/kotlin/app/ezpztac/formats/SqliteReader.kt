@@ -90,6 +90,9 @@ public class SqliteReader(private val data: ByteArray) {
         return SqlTable(definition.names, rows)
     }
 
+    /** Whether the database has a table called [tableName] (matched without regard to case); no row is read. */
+    public fun hasTable(tableName: String): Boolean = findTable(tableName) != null
+
     // -- The schema ----------------------------------------------------------------
 
     private class TableSchema(val rootPage: Int, val sql: String)

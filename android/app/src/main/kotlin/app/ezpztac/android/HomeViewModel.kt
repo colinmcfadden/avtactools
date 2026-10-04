@@ -8,12 +8,15 @@ import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.MapFocus
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SlopeState
 import app.ezpztac.data.WeatherService
+import app.ezpztac.data.ThreatSelection
+import app.ezpztac.data.ThreatStore
 import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.LzScene
@@ -22,6 +25,8 @@ import app.ezpztac.map.PointHitTest
 import app.ezpztac.map.PointScene
 import app.ezpztac.map.RouteHitTest
 import app.ezpztac.map.RouteScene
+import app.ezpztac.map.ThreatHitTest
+import app.ezpztac.map.ThreatScene
 import app.ezpztac.map.SlopeImage
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
@@ -64,7 +69,10 @@ class HomeViewModel @Inject constructor(
     private val lastSet: LastRouteSet,
     private val localPoints: LocalPoints,
     private val pointSelection: PointSelection,
+    private val threats: ThreatStore,
+    private val threatSelection: ThreatSelection,
     private val weather: WeatherService,
+    mapFocus: MapFocus,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -75,6 +83,9 @@ class HomeViewModel @Inject constructor(
      * turn of the phone must not throw the person's view back to the diagram's target).
      */
     val opened: SharedFlow<OpenedDiagram> = _opened.asSharedFlow()
+
+    /** Somewhere the person has just brought in (a mission's routes) that the map should go to. */
+    val focus: SharedFlow<MapFocus.Request> = mapFocus.requests
 
     /**
      * What the map draws for the open diagram: its target, boundary, planning graphics (the one being held with a halo) and, once measured,
@@ -105,6 +116,10 @@ class HomeViewModel @Inject constructor(
     val points: StateFlow<PointScene> = combine(localPoints.sets, pointSelection.held) { sets, held ->
         PointScene.of(sets.filter { it.visible }.map { DrawnPointSet(it.set.id, it.color, it.set.points) }, held?.setId, held?.pointId)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PointScene.EMPTY)
+
+    /** The local-only threat picture: visible markers and their range rings, with the held threat marked. */
+    val threatScene: StateFlow<ThreatScene> = combine(threats.entries, threatSelection.held) { entries, held -> ThreatScene.of(entries, held) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ThreatScene.EMPTY)
 
     /** Whether a boundary or a route is being drawn: the sheet goes down to its peek so the map is there to tap. */
     val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft) { boundary, route -> boundary != null || route != null }
@@ -192,10 +207,19 @@ class HomeViewModel @Inject constructor(
         val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx)
         if (hit != null) {
             pointSelection.clear()
+            threatSelection.clear()
             selection.select(hit)
             return
         }
         selection.clear()
+        val threat = ThreatHitTest.pick(threatScene.value, view, at, touchRadiusPx)
+        if (threat != null) {
+            pointSelection.clear()
+            routeSelection.releasePoint()
+            threatSelection.toggle(threat)
+            return
+        }
+        threatSelection.clear()
         val route = RouteHitTest.pick(routes.value, view, at, touchRadiusPx)
         if (route != null) {
             pointSelection.clear()

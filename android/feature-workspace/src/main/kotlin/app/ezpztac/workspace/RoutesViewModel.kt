@@ -11,7 +11,9 @@ import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.Units
 import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.data.PlanningOutcome
+import app.ezpztac.data.HandoffFormat
 import app.ezpztac.data.RouteExport
+import app.ezpztac.data.RouteHandoffExport
 import app.ezpztac.data.RoutePlanning
 import app.ezpztac.data.RouteHeld
 import app.ezpztac.data.RouteSelection
@@ -183,6 +185,7 @@ class RoutesViewModel @Inject constructor(
     private val conflicts: ConflictResolver,
     private val planning: RoutePlanning,
     private val export: RouteExport,
+    private val handoff: RouteHandoffExport,
     localPoints: LocalPoints,
 ) : ViewModel() {
     private data class Local(
@@ -302,6 +305,37 @@ class RoutesViewModel @Inject constructor(
             when (result) {
                 is ExportResult.Ready -> {
                     local.update { it.copy(exporting = false, exportWarning = result.warning) }
+                    _exports.emit(ExportFile(result.fileName, result.bytes))
+                }
+                is ExportResult.Refused -> local.update { it.copy(exporting = false, error = result.message) }
+            }
+        }
+    }
+
+    /**
+     * Hands one route of the open set to another app as a GPX or a Garmin flight plan (every point, shaping points too). Built here, shared by the screen like a mission;
+     * nothing is sent by the app. A route that has gone from the set (deleted on another device, say) has nothing to share and is said so.
+     */
+    fun shareRoute(routeId: String, format: HandoffFormat) {
+        val set = session.active.value ?: return
+        if (local.value.exporting) return
+        val route = set.route(routeId)
+        if (route == null) {
+            local.update { it.copy(error = "That route is no longer in this set.") }
+            return
+        }
+        local.update { it.copy(exporting = true, error = null, exportWarning = null) }
+        viewModelScope.launch {
+            val result = try {
+                withContext(worker) { handoff.build(route, format) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                ExportResult.Refused("The route could not be written.")
+            }
+            when (result) {
+                is ExportResult.Ready -> {
+                    local.update { it.copy(exporting = false) }
                     _exports.emit(ExportFile(result.fileName, result.bytes))
                 }
                 is ExportResult.Refused -> local.update { it.copy(exporting = false, error = result.message) }
