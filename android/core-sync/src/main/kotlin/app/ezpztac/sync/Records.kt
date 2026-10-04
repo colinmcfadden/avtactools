@@ -5,9 +5,16 @@ import kotlinx.serialization.json.JsonObject
 /**
  * The kinds of saved record that sync. A [ROUTE] record is a *set* of sketched routes under one name (the server's `kind: sketch` saved route). A
  * [POINT_SET] record is the points of one `.LPS` import; its document is `{"points": [...]}`, the server's list of points in an object so it is held
- * like every other record's document.
+ * like every other record's document. A [MISSION] record is an imported AMPS mission (the server's `kind: mission` saved route): **its file is the document**
+ * ([LocalRecord.file]), and the record's own `data` is only the display summary the server keeps beside it.
  */
-public enum class RecordKind { LZ, AIRCRAFT, ROUTE, POINT_SET }
+public enum class RecordKind { LZ, AIRCRAFT, ROUTE, POINT_SET, MISSION }
+
+/**
+ * A file a record carries beside its document: an AMPS mission's `.msnx`. [id] is the SHA-256 of the file's bytes, so a file is kept once and can never change under
+ * its name, which is what lets a send in progress and the record itself refer to the same bytes without copying them. The bytes are in the store ([SyncTransaction.blob]).
+ */
+public data class FileRef(val id: String, val name: String)
 
 /**
  * One saved record on this device. Its identity is [uuid], chosen here when it is made (so it has one before the
@@ -34,6 +41,8 @@ public data class LocalRecord(
     val localVersion: Int = 0,
     /** Set on the copy kept beside a record after a conflict: the uuid of the record it was made from. */
     val conflictOf: String? = null,
+    /** The file the record carries ([RecordKind.MISSION] only). */
+    val file: FileRef? = null,
 ) {
     /** What to show beside the record. */
     val status: SyncStatus
@@ -63,6 +72,8 @@ public data class Attempt(
     val baseRevision: Int?,
     val name: String,
     val data: JsonObject,
+    /** The file as it was when this was made: a snapshot like the rest, and immutable (it names bytes by their hash). */
+    val file: FileRef? = null,
 )
 
 /**

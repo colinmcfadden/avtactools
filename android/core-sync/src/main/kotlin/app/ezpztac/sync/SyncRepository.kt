@@ -17,22 +17,29 @@ public class SyncRepository(
     public suspend fun record(kind: RecordKind, uuid: String): LocalRecord? =
         store.transaction { record(kind, uuid) }?.takeUnless { it.deleted }
 
-    /** Makes a record. It has its identity at once; the server hears of it at the next sync. */
-    public suspend fun create(kind: RecordKind, name: String, data: JsonObject, uuid: String = ids.newUuid()): LocalRecord =
+    /** The bytes of the file a record carries, or null if it has none. */
+    public suspend fun file(kind: RecordKind, uuid: String): ByteArray? = store.transaction {
+        record(kind, uuid)?.takeUnless { it.deleted }?.file?.let { blob(it.id) }
+    }
+
+    /** Makes a record. It has its identity at once; the server hears of it at the next sync. A [file] is kept with it (a mission needs one). */
+    public suspend fun create(kind: RecordKind, name: String, data: JsonObject, uuid: String = ids.newUuid(), file: FilePart? = null): LocalRecord =
         store.transaction {
-            val record = LocalRecord(kind, uuid, serverId = null, baseRevision = null, name = name, data = data, dirty = true, localVersion = 1)
+            val ref = file?.let { keep(it) }
+            val record = LocalRecord(kind, uuid, serverId = null, baseRevision = null, name = name, data = data, dirty = true, localVersion = 1, file = ref)
             put(record)
             enqueue(OutboxEntry(0, kind, uuid, Operation.CREATE))
             record
         }
 
-    /** Changes a record. Only what is given changes. A record the server has not seen yet is simply updated in place. */
-    public suspend fun edit(kind: RecordKind, uuid: String, name: String? = null, data: JsonObject? = null): LocalRecord =
+    /** Changes a record. Only what is given changes. A record the server has not seen yet is simply updated in place. A [file] given replaces the record's. */
+    public suspend fun edit(kind: RecordKind, uuid: String, name: String? = null, data: JsonObject? = null, file: FilePart? = null): LocalRecord =
         store.transaction {
             val current = requireNotNull(record(kind, uuid)?.takeUnless { it.deleted }) { "no such record" }
             val edited = current.copy(
                 name = name ?: current.name,
                 data = data ?: current.data,
+                file = file?.let { keep(it) } ?: current.file,
                 dirty = true,
                 localVersion = current.localVersion + 1,
             )
@@ -67,6 +74,13 @@ public class SyncRepository(
                 enqueue(OutboxEntry(0, kind, uuid, Operation.DELETE))
             }
         }
+    }
+
+    /** Stores a file's bytes and says what to call it. */
+    private suspend fun SyncTransaction.keep(file: FilePart): FileRef {
+        val id = FileHash.of(file.bytes)
+        putBlob(id, file.bytes)
+        return FileRef(id, file.name)
     }
 
     /** How many changes are waiting to go. */

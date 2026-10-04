@@ -30,6 +30,28 @@ public fun content(kind: RecordKind, tag: String): JsonObject = when (kind) {
     RecordKind.ROUTE -> doc("version" to 1, "note" to tag)
     // The server refuses a set with no points and does not look inside them, so the tag is a point's name.
     RecordKind.POINT_SET -> JsonObject(mapOf("points" to JsonArray(listOf(buildJsonObject { put("id", "p1"); put("name", tag); put("lat", 34.5); put("lon", -84.2) }))))
+    // A mission's document is its file; what the record holds beside it is the summary the server keeps for lists.
+    RecordKind.MISSION -> doc("version" to 1, "note" to tag)
+}
+
+/** The file a record of [kind] carries when a scenario gives it [tag]: only a mission has one. The bytes say the tag, so a scenario can tell whose file it is looking at. */
+public fun fileFor(kind: RecordKind, tag: String): FilePart? = if (kind == RecordKind.MISSION) FilePart("$tag.msnx", "msnx:$tag".toByteArray()) else null
+
+/** Makes a record of [kind] with [tag] written into it (and into its file, for a mission). */
+public suspend fun Device.make(kind: RecordKind, name: String, tag: String): LocalRecord =
+    repository.create(kind, name, content(kind, tag), file = fileFor(kind, tag))
+
+/** Changes a record: its [name], and the document and file to ones carrying [tag]. */
+public suspend fun Device.change(kind: RecordKind, uuid: String, name: String? = null, tag: String? = null): LocalRecord =
+    repository.edit(kind, uuid, name = name, data = tag?.let { content(kind, it) }, file = tag?.let { fileFor(kind, it) })
+
+/** The tag in the file a device holds for a record, or null when it has none (every kind but a mission). */
+public suspend fun Device.fileTag(kind: RecordKind, uuid: String): String? =
+    repository.file(kind, uuid)?.toString(Charsets.UTF_8)?.removePrefix("msnx:")
+
+/** For a mission, the file a device holds for a record must carry [tag]; for every other kind there is no file to look at. */
+public suspend fun assertFile(device: Device, kind: RecordKind, uuid: String, tag: String) {
+    if (kind == RecordKind.MISSION) assertEquals(tag, device.fileTag(kind, uuid), "${device.label}'s file")
 }
 
 /** The field of a kind's document the scenarios write their tag into. */
@@ -50,7 +72,15 @@ public fun tagIn(kind: RecordKind, data: JsonElement?): String? {
 public fun tagOf(kind: RecordKind, record: LocalRecord): String? = tagIn(kind, record.data)
 
 public suspend fun Env.live(kind: RecordKind): List<SyncChange> = serverView().filter {
-    it.type == when (kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE -> "route"; RecordKind.POINT_SET -> "pointset" } && !it.deleted
+    // A saved route is a sketch set or a mission: one table on the server, two kinds here.
+    val matches = when (kind) {
+        RecordKind.LZ -> it.type == "lz"
+        RecordKind.AIRCRAFT -> it.type == "aircraft"
+        RecordKind.ROUTE -> it.type == "route" && it.kind != "mission"
+        RecordKind.MISSION -> it.type == "route" && it.kind == "mission"
+        RecordKind.POINT_SET -> it.type == "pointset"
+    }
+    matches && !it.deleted
 }
 
 /** One rule of sync, as a scenario between devices. [perKind] ones run once for each kind of record that syncs. */
@@ -73,11 +103,11 @@ public object ScenarioBook {
     private suspend fun diverged(env: Env, kind: RecordKind): Triple<Device, Device, String> {
         val a = env.device("A")
         val b = env.device("B")
-        val made = a.repository.create(kind, "HAWK", content(kind, "start"))
+        val made = a.make(kind, "HAWK", "start")
         a.sync(); b.sync()
-        a.repository.edit(kind, made.uuid, name = "HAWK (A)", data = content(kind, "from A"))
+        a.change(kind, made.uuid, name = "HAWK (A)", tag = "from A")
         a.sync()
-        b.repository.edit(kind, made.uuid, name = "HAWK (B)", data = content(kind, "from B"))
+        b.change(kind, made.uuid, name = "HAWK (B)", tag = "from B")
         return Triple(a, b, made.uuid)
     }
 
@@ -85,7 +115,7 @@ public object ScenarioBook {
         Scenario("a record made here reaches the server, and another device", perKind = true) { env, kind ->
             val a = env.device("A")
             val b = env.device("B")
-            val made = a.repository.create(kind, "HAWK", content(kind, "one"))
+            val made = a.make(kind, "HAWK", "one")
             assertEquals(SyncStatus.PENDING, made.status)
 
             val report = a.sync()
@@ -98,6 +128,7 @@ public object ScenarioBook {
             val there = b.record(kind, made.uuid)!!                                   // the same identity on both devices
             assertEquals("HAWK", there.name)
             assertEquals("one", tagOf(kind, there))
+            assertFile(b, kind, made.uuid, "one")                                     // a mission's file comes with it
             assertEquals(SyncStatus.SYNCED, there.status)
             assertEquals(a.record(kind, made.uuid)!!.serverId, there.serverId)
             assertTrue(a.outbox().isEmpty() && b.outbox().isEmpty())
@@ -105,13 +136,14 @@ public object ScenarioBook {
         Scenario("an edit travels, and so does a deletion", perKind = true) { env, kind ->
             val a = env.device("A")
             val b = env.device("B")
-            val made = a.repository.create(kind, "HAWK", content(kind, "one"))
+            val made = a.make(kind, "HAWK", "one")
             a.sync(); b.sync()
 
-            a.repository.edit(kind, made.uuid, name = "HAWK 2", data = content(kind, "two"))
+            a.change(kind, made.uuid, name = "HAWK 2", tag = "two")
             a.sync(); b.sync()
             assertEquals("HAWK 2", b.record(kind, made.uuid)!!.name)
             assertEquals("two", tagOf(kind, b.record(kind, made.uuid)!!))
+            assertFile(b, kind, made.uuid, "two")                                     // and an edited file replaces it
             assertEquals(2, b.record(kind, made.uuid)!!.baseRevision)
 
             a.repository.delete(kind, made.uuid)
@@ -123,9 +155,9 @@ public object ScenarioBook {
         },
         Scenario("edits made before a sync go as one write", perKind = true) { env, kind ->
             val a = env.device("A")
-            val made = a.repository.create(kind, "HAWK", content(kind, "one"))
+            val made = a.make(kind, "HAWK", "one")
             a.sync()
-            repeat(3) { a.repository.edit(kind, made.uuid, data = content(kind, "edit $it")) }
+            repeat(3) { a.change(kind, made.uuid, tag = "edit $it") }
             assertEquals(1, a.outbox().size)
             a.sync()
             assertEquals(2, env.live(kind).single().revision)                         // one bump, not three
@@ -133,7 +165,7 @@ public object ScenarioBook {
         },
         Scenario("a record made and deleted before any sync is never sent", perKind = true) { env, kind ->
             val a = env.device("A")
-            val made = a.repository.create(kind, "SCRATCH", content(kind, "x"))
+            val made = a.make(kind, "SCRATCH", "x")
             a.repository.delete(kind, made.uuid)
             assertTrue(a.outbox().isEmpty())
             val report = a.sync()
@@ -142,7 +174,7 @@ public object ScenarioBook {
         },
         Scenario("a sync with nothing to do does nothing", perKind = true) { env, kind ->
             val a = env.device("A")
-            a.repository.create(kind, "HAWK", content(kind, "one"))
+            a.make(kind, "HAWK", "one")
             a.sync()
             val again = a.sync()
             assertEquals(0, again.pushed)
@@ -162,6 +194,8 @@ public object ScenarioBook {
             assertEquals("from A", tagOf(kind, original))
             assertEquals("HAWK (B) (from B, 14:32)", copy.name)
             assertEquals("from B", tagOf(kind, copy))
+            assertFile(b, kind, uuid, "from A")                                       // each keeps its own file: the server's on the record, mine on the copy
+            assertFile(b, kind, conflict.copy, "from B")
             assertEquals(SyncStatus.CONFLICT, copy.status)
             assertEquals(uuid, copy.conflictOf)
 
@@ -178,6 +212,7 @@ public object ScenarioBook {
 
             assertEquals(listOf("HAWK (A)"), env.live(kind).map { it.name })          // one record
             assertEquals("from B", tagOf(kind, a.record(kind, uuid)!!))                // with B's content
+            assertFile(a, kind, uuid, "from B")
             assertEquals(1, a.names(kind).size)
             assertEquals(1, b.names(kind).size)
             assertNull(b.record(kind, copy))
@@ -190,6 +225,7 @@ public object ScenarioBook {
 
             assertEquals(listOf("HAWK (A)"), env.live(kind).map { it.name })
             assertEquals("from A", tagOf(kind, b.record(kind, uuid)!!))
+            assertFile(b, kind, uuid, "from A")
             assertEquals(1, a.names(kind).size)
             assertEquals(1, b.names(kind).size)
         },
@@ -208,9 +244,9 @@ public object ScenarioBook {
         Scenario("deleted here and edited there, the edit wins", perKind = true) { env, kind ->
             val a = env.device("A")
             val b = env.device("B")
-            val made = a.repository.create(kind, "HAWK", content(kind, "start"))
+            val made = a.make(kind, "HAWK", "start")
             a.sync(); b.sync()
-            a.repository.edit(kind, made.uuid, name = "HAWK edited", data = content(kind, "edited"))
+            a.change(kind, made.uuid, name = "HAWK edited", tag = "edited")
             a.sync()
             b.repository.delete(kind, made.uuid)                                       // B did not know
 
@@ -219,23 +255,25 @@ public object ScenarioBook {
             val back = b.record(kind, made.uuid)!!
             assertEquals("HAWK edited", back.name)
             assertEquals("edited", tagOf(kind, back))
+            assertFile(b, kind, made.uuid, "edited")
             assertEquals(SyncStatus.SYNCED, back.status)
             assertEquals(1, env.live(kind).size)
         },
         Scenario("edited here and deleted there, the work is kept as a new record", perKind = true) { env, kind ->
             val a = env.device("A")
             val b = env.device("B")
-            val made = a.repository.create(kind, "HAWK", content(kind, "start"))
+            val made = a.make(kind, "HAWK", "start")
             a.sync(); b.sync()
             a.repository.delete(kind, made.uuid)
             a.sync()
-            b.repository.edit(kind, made.uuid, name = "HAWK mine", data = content(kind, "mine"))
+            b.change(kind, made.uuid, name = "HAWK mine", tag = "mine")
 
             val report = b.sync()
             val fresh = report.recreated.getValue(made.uuid)
             assertNotEquals(made.uuid, fresh)
             assertNull(b.record(kind, made.uuid))
             assertEquals("HAWK mine", b.record(kind, fresh)!!.name)
+            assertFile(b, kind, fresh, "mine")
             assertEquals(SyncStatus.SYNCED, b.record(kind, fresh)!!.status)
             assertEquals(listOf("HAWK mine"), env.live(kind).map { it.name })
             a.sync()
@@ -259,14 +297,17 @@ public object ScenarioBook {
             a.repository.create(RecordKind.AIRCRAFT, "My Hawk", content(RecordKind.AIRCRAFT, "MH-60"))
             a.repository.create(RecordKind.ROUTE, "ROUTES", content(RecordKind.ROUTE, "r"))
             a.repository.create(RecordKind.POINT_SET, "POINTS", content(RecordKind.POINT_SET, "p"))
+            a.make(RecordKind.MISSION, "MISSION", "m")
             a.sync()
 
             val fresh = env.device("fresh")
-            assertEquals(6, fresh.sync().pulled)
+            assertEquals(7, fresh.sync().pulled)
             assertEquals(listOf("LZ 0", "LZ 1", "LZ 2"), fresh.names(RecordKind.LZ))
             assertEquals(listOf("My Hawk"), fresh.names(RecordKind.AIRCRAFT))
             assertEquals(listOf("ROUTES"), fresh.names(RecordKind.ROUTE))
             assertEquals(listOf("POINTS"), fresh.names(RecordKind.POINT_SET))
+            assertEquals(listOf("MISSION"), fresh.names(RecordKind.MISSION))
+            assertEquals("m", fresh.fileTag(RecordKind.MISSION, fresh.repository.records(RecordKind.MISSION).single().uuid))
             assertEquals("p", tagOf(RecordKind.POINT_SET, fresh.repository.records(RecordKind.POINT_SET).single()))     // the bare list the server sends is the document's points again
             assertEquals(0, fresh.sync().pulled)                                       // nothing new
             a.repository.create(RecordKind.LZ, "LZ 3", content(RecordKind.LZ, "3")); a.sync()

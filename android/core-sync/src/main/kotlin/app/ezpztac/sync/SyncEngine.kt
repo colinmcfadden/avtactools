@@ -74,6 +74,14 @@ public class SyncEngine(
 ) : ConflictResolver {
     private val running = Mutex()
 
+    private companion object {
+        /** What a mission's file is called when the server does not say. */
+        const val DEFAULT_MISSION_FILE = "mission.msnx"
+
+        /** A page's files are held at most this much at once before the changes that bring them are applied. */
+        const val FILE_GROUP_BYTES = 24L * 1024 * 1024
+    }
+
     public suspend fun sync(): SyncReport {
         if (!running.tryLock()) return SyncReport(skipped = true)
         try {
@@ -127,26 +135,32 @@ public class SyncEngine(
         val prepared = store.transaction {
             val record = record(initial.kind, initial.uuid)
             if (record == null) { dequeue(initial.seq); return@transaction null }
-            val attempt = initial.sent ?: Attempt(ids.newKey(), record.localVersion, record.baseRevision, record.name, record.data)
+            val attempt = initial.sent ?: Attempt(ids.newKey(), record.localVersion, record.baseRevision, record.name, record.data, record.file)
             val counted = initial.copy(sent = attempt, attempts = initial.attempts + 1)
             update(counted)
             Triple(counted, record, attempt)
         } ?: return Pushed()
         val (entry, record, attempt) = prepared
-        val payload = record.copy(name = attempt.name, data = attempt.data)
+        val payload = record.copy(name = attempt.name, data = attempt.data, file = attempt.file)
+        // The file goes as the attempt had it, which the store still holds (nothing drops a file a send in progress refers to).
+        val part = attempt.file?.let { ref ->
+            val bytes = store.transaction { blob(ref.id) }
+                ?: return block(entry, ApiException(400, "file_missing", "The file of this record is not on the device."))
+            FilePart(ref.name, bytes)
+        }
 
         // The request itself can be cancelled (the key and the attempt are already written, so a repeat is recognised). What is done
         // with the answer cannot: an answer taken and not recorded would leave this device and the server disagreeing.
         return try {
             when (entry.operation) {
                 Operation.CREATE -> {
-                    val remote = api.create(payload, attempt.key)
+                    val remote = api.create(payload, attempt.key, part)
                     withContext(NonCancellable) { afterCreate(entry, attempt, remote) }
                 }
                 Operation.UPDATE -> {
                     val base = attempt.baseRevision
                     if (base == null) withContext(NonCancellable) { afterCreateFallback(entry, record) } else {
-                        val remote = api.update(payload, base, attempt.key)
+                        val remote = api.update(payload, base, attempt.key, part)
                         withContext(NonCancellable) { afterUpdate(entry, attempt, remote) }
                     }
                 }
@@ -244,26 +258,47 @@ public class SyncEngine(
     private suspend fun onConflict(entry: OutboxEntry, sent: LocalRecord, error: RevisionConflictException): Outcome {
         val theirs = api.copyFromConflict(sent.kind, error.server)
             ?: return block(entry, error)                                  // a conflict that does not say what the server has: leave it to the user
+        // The server's copy of a mission is its file, which the 409 does not carry: it is fetched before anything is recorded, so a record is never left
+        // holding the server's revision and our file. A failure here leaves the attempt as it is, and the next sync meets the same conflict again.
+        var theirFile: FileRef? = null
+        var theirBytes: ByteArray? = null
+        if (sent.kind == RecordKind.MISSION && theirs.hasFile) {
+            try {
+                theirBytes = api.fetchFile(sent.kind, theirs.serverId)
+                theirFile = FileRef(FileHash.of(theirBytes), theirs.fileName ?: sent.file?.name ?: DEFAULT_MISSION_FILE)
+            } catch (e: NetworkException) {
+                return Failed(StopReason.Offline)
+            } catch (e: SessionEndedException) {
+                return Failed(StopReason.SessionEnded(e.code))
+            } catch (e: RateLimitedException) {
+                return Failed(StopReason.RateLimited(e.retryAfterSeconds))
+            } catch (e: AffiliationRequiredException) {
+                return Failed(StopReason.AffiliationRequired)
+            } catch (e: ApiException) {
+                return if (e.status >= 500) Failed(StopReason.ServerError(e.status)) else block(entry, e)
+            }
+        }
         var report = SyncReport()
         store.transaction {
             val current = record(sent.kind, sent.uuid) ?: run { dequeue(entry.seq); return@transaction }
+            if (theirBytes != null && theirFile != null) putBlob(theirFile.id, theirBytes)
             when (entry.operation) {
                 Operation.DELETE -> {
                     // Deleted here, edited there: the edit wins, since a deletion is not worth more than somebody's work.
                     dequeue(entry.seq)
-                    put(current.copy(serverId = theirs.serverId, baseRevision = theirs.revision, name = theirs.name, data = theirs.data, deleted = false, dirty = false))
+                    put(current.copy(serverId = theirs.serverId, baseRevision = theirs.revision, name = theirs.name, data = theirs.data, file = theirFile ?: current.file, deleted = false, dirty = false))
                     report = report.copy(restored = listOf(current.uuid))
                 }
                 else -> {
                     val copy = LocalRecord(
                         kind = current.kind, uuid = ids.newUuid(), serverId = null, baseRevision = null,
                         name = "${current.name} (from $deviceLabel, ${clock()})", data = current.data,
-                        dirty = true, localVersion = 1, conflictOf = current.uuid,
+                        dirty = true, localVersion = 1, conflictOf = current.uuid, file = current.file,
                     )
                     put(copy)
                     enqueue(OutboxEntry(0, copy.kind, copy.uuid, Operation.CREATE))
                     // The record itself takes the server's copy: that is what everyone else has.
-                    put(current.copy(serverId = theirs.serverId, baseRevision = theirs.revision, name = theirs.name, data = theirs.data, dirty = false))
+                    put(current.copy(serverId = theirs.serverId, baseRevision = theirs.revision, name = theirs.name, data = theirs.data, file = theirFile ?: current.file, dirty = false))
                     dequeue(entry.seq)
                     report = report.copy(conflicts = listOf(Conflict(current.kind, current.uuid, copy.uuid)))
                 }
@@ -325,13 +360,7 @@ public class SyncEngine(
             while (true) {
                 val since = store.transaction { cursor() }
                 val feed = api.changes(since)
-                // The page and the cursor move together: a crash between them would replay a page or skip one.
-                val applied = store.transaction {
-                    var step = SyncReport()
-                    for (change in feed.changes) step = step.merge(apply(change))
-                    setCursor(feed.cursor)
-                    step
-                }
+                val applied = applyPage(feed.changes, feed.cursor)
                 report = report.merge(applied).copy(pulled = report.pulled + feed.changes.size)
                 if (!feed.hasMore) break
             }
@@ -350,13 +379,60 @@ public class SyncEngine(
         return report
     }
 
-    private suspend fun SyncTransaction.apply(change: SyncChange): SyncReport {
+    /**
+     * Applies one page of the feed and moves the cursor past it. A mission's file is fetched (outside any transaction: a download is not something to hold the
+     * database for) before the change that brings it is applied, and a page is applied in groups, so a first sync of many missions never holds all their files at
+     * once. A crash between groups replays the page, which is harmless: a change already applied is at its revision and is neither fetched nor applied again.
+     * The cursor moves only when the whole page is done.
+     */
+    private suspend fun applyPage(changes: List<SyncChange>, cursor: Int): SyncReport {
+        var report = SyncReport()
+        var group = ArrayList<SyncChange>()
+        var files = HashMap<String, ByteArray>()
+        var held = 0L
+        suspend fun flush() {
+            if (group.isEmpty()) return
+            val batch = group
+            val withFiles = files
+            group = ArrayList(); files = HashMap(); held = 0
+            report = report.merge(store.transaction {
+                var step = SyncReport()
+                for (change in batch) step = step.merge(apply(change, withFiles[change.clientUuid]))
+                step
+            })
+        }
+        for (change in changes) {
+            if (needsFile(change)) {
+                try {
+                    val bytes = api.fetchFile(RecordKind.MISSION, change.id)
+                    files[change.clientUuid] = bytes
+                    held += bytes.size
+                } catch (e: ApiException) {
+                    // Gone since the feed was read (a later change will say so): there is nothing to apply. Anything else stops the pull, with the cursor where it was.
+                    if (e.status != 404 || e is NetworkException) throw e
+                }
+            }
+            group += change
+            if (held >= FILE_GROUP_BYTES) flush()
+        }
+        flush()
+        store.transaction { setCursor(cursor) }
+        return report
+    }
+
+    /** True for a mission this device does not hold at this revision and would take: its file has to come with it. */
+    private suspend fun needsFile(change: SyncChange): Boolean {
+        if (change.type != "route" || change.kind != "mission" || change.deleted || !change.hasFile) return false
+        val local = store.transaction { record(RecordKind.MISSION, change.clientUuid) } ?: return true
+        return !local.dirty && !local.deleted && (local.baseRevision ?: -1) < change.revision
+    }
+
+    private suspend fun SyncTransaction.apply(change: SyncChange, file: ByteArray?): SyncReport {
         val kind = when (change.type) {
             "lz" -> RecordKind.LZ
             "aircraft" -> RecordKind.AIRCRAFT
-            // A saved route the web made from an AMPS mission also holds the mission file, which the app does not fetch or send yet: it is left
-            // where it is (the cursor still moves past it). Sets of sketched routes sync like any record.
-            "route" -> if (change.kind == "mission") return SyncReport() else RecordKind.ROUTE
+            // A saved route is a set of sketched routes, or an AMPS mission with its file: the same table on the server, two kinds here.
+            "route" -> if (change.kind == "mission") RecordKind.MISSION else RecordKind.ROUTE
             "pointset" -> RecordKind.POINT_SET
             else -> return SyncReport()                                    // a collection a newer server adds: not ours to read
         }
@@ -386,12 +462,15 @@ public class SyncEngine(
 
         // A point set's points arrive as a bare list; every other document is an object already.
         val data = (if (kind == RecordKind.POINT_SET) pointSetDocument(change.data) else change.data as? JsonObject) ?: return SyncReport()
+        // A mission is its file: without the file in hand (it was gone by the time it was fetched) there is nothing to hold.
+        val ref = file?.let { bytes -> FileHash.of(bytes).also { id -> putBlob(id, bytes) }.let { id -> FileRef(id, change.fileName ?: DEFAULT_MISSION_FILE) } }
+        val holdable = kind != RecordKind.MISSION || ref != null
         when {
-            local == null -> put(LocalRecord(kind, change.clientUuid, change.id, change.revision, change.name, data))
+            local == null -> if (holdable) put(LocalRecord(kind, change.clientUuid, change.id, change.revision, change.name, data, file = ref))
             // Changes here that the server has not seen: never overwritten by a pull. The push will find out (409) and keep both.
             local.dirty || local.deleted -> Unit
             (local.baseRevision ?: -1) < change.revision ->
-                put(local.copy(serverId = change.id, baseRevision = change.revision, name = change.name, data = data))
+                if (holdable) put(local.copy(serverId = change.id, baseRevision = change.revision, name = change.name, data = data, file = ref ?: local.file))
         }
         return SyncReport()
     }
@@ -422,7 +501,7 @@ public class SyncEngine(
                     val original = record(kind, originalUuid)
                     if (original == null) put(copy.copy(conflictOf = null)) else {
                         // The copy's name carries "(from this device, 14:32)": mine means the original's own name with my content.
-                        val edited = original.copy(data = copy.data, dirty = true, localVersion = original.localVersion + 1)
+                        val edited = original.copy(data = copy.data, file = copy.file ?: original.file, dirty = true, localVersion = original.localVersion + 1)
                         put(edited)
                         if (original.serverId != null && entryFor(kind, originalUuid, Operation.UPDATE) == null) {
                             enqueue(OutboxEntry(0, kind, originalUuid, Operation.UPDATE))

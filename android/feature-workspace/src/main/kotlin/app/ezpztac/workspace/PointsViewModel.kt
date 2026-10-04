@@ -198,7 +198,7 @@ class PointsViewModel @Inject constructor(
     /** Adds the held local point to the end of the route being worked on, as a turn point carrying its name and charted elevation, and holds it. */
     fun addToHeldRoute() {
         val point = state.value.held ?: return
-        val open = routes.active.value ?: return
+        val open = routes.active.value?.takeIf { it.mission == null } ?: return                 // an imported mission's points are its file's: none is added to the end
         val route = routeToAddTo(open, routeSelection.held.value) ?: return
         val id = newPointId()
         routes.edit("Add local point") { set ->
@@ -225,7 +225,7 @@ class PointsViewModel @Inject constructor(
             grid = MgrsConverter.toMgrs(point.lat, point.lon)?.format() ?: "${oneDecimal(point.lat)}, ${oneDecimal(point.lon)}",
             latLon = "%.5f, %.5f".format(java.util.Locale.ROOT, point.lat, point.lon),
             useFor = if (route != null && routePoint != null) "${route.name}: ${routePoint.name?.takeIf { it.isNotBlank() } ?: "unnamed point"}" else null,
-            addTo = open?.let { routeToAddTo(it, heldRoute) }?.name,
+            addTo = open?.takeIf { it.mission == null }?.let { routeToAddTo(it, heldRoute) }?.name,
         )
     }
 

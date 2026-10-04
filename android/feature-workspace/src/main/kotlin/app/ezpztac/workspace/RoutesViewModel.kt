@@ -65,6 +65,8 @@ data class RouteSetRow(
     /** The set this is the user's kept version of, when another device changed it too. */
     val conflictOf: String?,
     val isOpen: Boolean,
+    /** An imported AMPS mission, kept with its file, not a set drawn here. */
+    val isMission: Boolean = false,
 )
 
 /** One route of the open set. */
@@ -92,6 +94,8 @@ data class OpenSetUi(
     val canRedo: Boolean,
     val sync: SyncStatus?,
     val conflictOf: String?,
+    /** An imported AMPS mission: its routes are part of its file, so they cannot be drawn, renamed or removed here, and what is changed is written back into the file. */
+    val isMission: Boolean = false,
 )
 
 /** A route being drawn. */
@@ -141,6 +145,8 @@ data class RouteDetailUi(
     val warnings: List<String>,
     /** Ground elevations have been fetched for this route. */
     val hasElevations: Boolean,
+    /** The route is part of an imported mission: a point's type is fixed by the file, and a point put on the line is a named one that splits a leg. */
+    val isMission: Boolean = false,
 )
 
 /** A mission built for AMPS, ready to be handed to another app: the screen that has a context shares it. */
@@ -222,11 +228,11 @@ class RoutesViewModel @Inject constructor(
         state.copy(open = state.open?.copy(canUndo = undo > 0, canRedo = redo > 0))
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RoutesUiState())
 
-    private fun RouteSetSummary.toRow(isOpen: Boolean) = RouteSetRow(uuid, name, routeCount, sync, conflictOf, isOpen)
+    private fun RouteSetSummary.toRow(isOpen: Boolean) = RouteSetRow(uuid, name, routeCount, sync, conflictOf, isOpen, isMission)
 
     private fun openOf(set: RouteSet, heldRouteId: String?, listed: RouteSetSummary?) = OpenSetUi(
         uuid = set.id, name = set.name, routes = set.routes.map { rowOf(it, selected = it.id == heldRouteId) },
-        canUndo = false, canRedo = false, sync = listed?.sync, conflictOf = listed?.conflictOf,
+        canUndo = false, canRedo = false, sync = listed?.sync, conflictOf = listed?.conflictOf, isMission = set.mission != null,
     )
 
     private fun detailOf(set: RouteSet, held: RouteHeld?): RouteDetailUi? {
@@ -247,7 +253,7 @@ class RoutesViewModel @Inject constructor(
         return RouteDetailUi(
             routeId = route.id, name = route.name, aircraft = route.plan.aircraft, plan = PlanDraft.of(route.plan), points = rows,
             shapingPoints = shaping.size, heldShaping = shaping.firstOrNull { it.id != null && it.id == held.pointId }?.let { ShapingPointUi(it.id.orEmpty(), held = true, grid = gridOf(it.lat, it.lon)) },
-            totals = totals, warnings = result.warnings, hasElevations = route.elevations.isNotEmpty(),
+            totals = totals, warnings = result.warnings, hasElevations = route.elevations.isNotEmpty(), isMission = set.mission != null,
         )
     }
 
@@ -283,8 +289,33 @@ class RoutesViewModel @Inject constructor(
 
     // -- Export for AMPS ---------------------------------------------------------------------------------------------
 
-    /** Builds the AMPS mission of every route in the open set. */
-    fun exportSet() = exportRoutes(routeId = null)
+    /**
+     * Builds the AMPS mission of every route in the open set. For an imported mission that is **its own file**, with the changes saved so far written into it (the name gets
+     * `_edited`, as the web names it): the file is the mission, so nothing is rebuilt from a template.
+     */
+    fun exportSet() = if (session.active.value?.mission != null) exportMissionFile() else exportRoutes(routeId = null)
+
+    private fun exportMissionFile() {
+        val link = session.active.value?.mission ?: return
+        if (local.value.exporting) return
+        local.update { it.copy(exporting = true, error = null, exportWarning = null) }
+        viewModelScope.launch {
+            val bytes = try {
+                session.flush()                                                    // the changes still in memory are in the file first
+                session.active.value?.id?.let { repository.missionFile(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (bytes == null) {
+                local.update { it.copy(exporting = false, error = "The mission could not be saved to send.") }
+                return@launch
+            }
+            local.update { it.copy(exporting = false) }
+            _exports.emit(ExportFile(link.fileName.replace(Regex("""\.msnx$""", RegexOption.IGNORE_CASE), "") + "_edited.msnx", bytes))
+        }
+    }
 
     /** Builds the AMPS mission of one route of the open set. */
     fun exportRoute(routeId: String) = exportRoutes(routeId)
@@ -383,8 +414,10 @@ class RoutesViewModel @Inject constructor(
     }
 
     /** Settles a conflict the sync kept beside a set: the same three choices a diagram has. */
-    fun resolve(copyUuid: String, resolution: SyncEngine.Resolution) =
-        run("The conflict could not be settled.") { conflicts.resolve(RecordKind.ROUTE, copyUuid, resolution) }
+    fun resolve(copyUuid: String, resolution: SyncEngine.Resolution) {
+        val kind = if (state.value.sets.firstOrNull { it.uuid == copyUuid }?.isMission == true) RecordKind.MISSION else RecordKind.ROUTE
+        run("The conflict could not be settled.") { conflicts.resolve(kind, copyUuid, resolution) }
+    }
 
     // -- Routes of the open set --------------------------------------------------------------------------------
 
@@ -397,12 +430,14 @@ class RoutesViewModel @Inject constructor(
     fun toggleVisible(routeId: String) = session.edit("Show or hide route") { set -> set.mapRoute(routeId) { it.copy(visible = !it.visible) } }
 
     fun renameRoute(routeId: String, name: String) {
+        if (isMission()) return fail(MISSION_ROUTES_ARE_THE_FILES)
         val title = name.trim().uppercase()
         if (title.isEmpty()) return fail("A route needs a name.")
         session.edit("Rename route") { set -> set.mapRoute(routeId) { it.copy(name = title) } }
     }
 
     fun deleteRoute(routeId: String) {
+        if (isMission()) return fail(MISSION_ROUTES_ARE_THE_FILES)
         if (selection.held.value?.routeId == routeId) selection.clear()
         session.edit("Delete route") { it.without(routeId) }
     }
@@ -503,11 +538,13 @@ class RoutesViewModel @Inject constructor(
 
     /** Changes what a named point is: `target`, `ip` or `turn`. */
     fun setPointType(routeId: String, pointId: String, ptType: String) {
+        if (isMission()) return fail(MISSION_POINT_TYPES_ARE_THE_FILES)
         session.edit("Change point type") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_AMPS, ptType = ptType)) } }
     }
 
     /** Makes a named point only shape the line. Refused (in words) for one of the last two named points: a leg needs two ends. */
     fun makeShaping(routeId: String, pointId: String) {
+        if (isMission()) return fail(MISSION_POINT_TYPES_ARE_THE_FILES)
         val route = session.active.value?.route(routeId) ?: return
         if (SketchOps.designate(route, pointId, PointSpec(RoutePoint.KIND_SHAPING)) == route) {
             return fail("A route needs at least two named points.")
@@ -550,11 +587,21 @@ class RoutesViewModel @Inject constructor(
     /** Where a new point's id comes from. A test sets its own. */
     internal var newPointId: () -> String = { java.util.UUID.randomUUID().toString() }
 
-    /** Adds a point that only shapes the line at the crosshair, [at], in the leg it is nearest to, and holds it so it can be moved into place. */
+    /**
+     * Adds a point that only shapes the line at the crosshair, [at], in the leg it is nearest to, and holds it so it can be moved into place. In an imported mission the
+     * file has no shaping point to give: the point is a **named** one (`.NEWPT`, as the web makes it) that splits the leg it is on.
+     */
     fun addShapingPoint(routeId: String, at: LatLon?) {
         if (at == null) return fail("Move the map to where the point should go first.")
         val route = session.active.value?.route(routeId) ?: return
         val id = newPointId()
+        if (isMission()) {
+            if (SketchOps.insertMissionPoint(route, at.lat, at.lon) { id } == route) return fail("A route needs two points before another can be put on it.")
+            fail(null)
+            session.edit("Add point") { set -> set.mapRoute(routeId) { SketchOps.insertMissionPoint(it, at.lat, at.lon) { id } } }
+            selection.holdPoint(id)
+            return
+        }
         if (SketchOps.insertShaping(route, at.lat, at.lon) { id } == route) return fail("A route needs two points before the line can be bent.")
         fail(null)
         session.edit("Add shaping point") { set -> set.mapRoute(routeId) { SketchOps.insertShaping(it, at.lat, at.lon) { id } } }
@@ -563,6 +610,7 @@ class RoutesViewModel @Inject constructor(
 
     /** Makes a point that only shaped the line a named one: a turn point, called `.CP` until it is named. */
     fun makeNamed(routeId: String, pointId: String) {
+        if (isMission()) return fail(MISSION_POINT_TYPES_ARE_THE_FILES)
         session.edit("Make route point") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_AMPS, ptType = "turn")) } }
     }
 
@@ -584,7 +632,7 @@ class RoutesViewModel @Inject constructor(
 
     // -- Drawing ---------------------------------------------------------------------------------------------
 
-    fun startDrawing() = fail(sketching.start())
+    fun startDrawing() = fail(if (isMission()) MISSION_ROUTES_ARE_THE_FILES else sketching.start())
 
     /** Puts a point down at the crosshair, [at]. */
     fun addAtCrosshair(at: LatLon?) {
@@ -614,6 +662,14 @@ class RoutesViewModel @Inject constructor(
     }
 
     private fun fail(message: String?) = local.update { it.copy(error = message) }
+
+    /** The open set is an imported mission: its routes and the kind of each point are the file's. */
+    private fun isMission() = session.active.value?.mission != null
+
+    private companion object {
+        const val MISSION_ROUTES_ARE_THE_FILES = "An AMPS mission's routes are part of its file: they can't be drawn, renamed or removed here. Make a new set to draw a route."
+        const val MISSION_POINT_TYPES_ARE_THE_FILES = "What kind of point this is is fixed in the mission's file."
+    }
 
     private fun run(fallback: String, block: suspend () -> Unit) {
         local.update { it.copy(error = null) }

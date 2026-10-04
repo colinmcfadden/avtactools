@@ -7,12 +7,15 @@ import app.ezpztac.network.ChangeFeed
 import app.ezpztac.network.changes
 import app.ezpztac.network.createAircraftProfile
 import app.ezpztac.network.createLz
+import app.ezpztac.network.createMission
 import app.ezpztac.network.createPointSet
 import app.ezpztac.network.createRoute
 import app.ezpztac.network.deleteAircraftProfile
 import app.ezpztac.network.deleteLz
 import app.ezpztac.network.deletePointSet
 import app.ezpztac.network.deleteRoute
+import app.ezpztac.network.routeFile
+import app.ezpztac.network.updateMission
 import app.ezpztac.network.updateAircraftProfile
 import app.ezpztac.network.updateLz
 import app.ezpztac.network.updatePointSet
@@ -21,12 +24,23 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import java.util.UUID
 
-/** What the server says a record is now. */
-public data class ServerCopy(val serverId: Int, val revision: Int, val name: String, val data: JsonObject)
+/** A file sent with a record: its name and bytes. */
+public class FilePart(public val name: String, public val bytes: ByteArray)
+
+/** What the server says a record is now. A mission's file is not in it: [hasFile] says there is one to fetch ([SyncApi.fetchFile]), under [fileName]. */
+public data class ServerCopy(
+    val serverId: Int,
+    val revision: Int,
+    val name: String,
+    val data: JsonObject,
+    val hasFile: Boolean = false,
+    val fileName: String? = null,
+)
 
 /** The server's answer to saving a record. [created] is false when it already had one with this identity. */
 public data class Remote(val serverId: Int, val revision: Int, val created: Boolean)
@@ -35,10 +49,13 @@ public data class Remote(val serverId: Int, val revision: Int, val created: Bool
  * The server, as the sync engine needs it. [ApiSyncApi] is the real one; tests script their own.
  */
 public interface SyncApi {
-    public suspend fun create(record: LocalRecord, key: String): Remote
-    public suspend fun update(record: LocalRecord, baseRevision: Int, key: String): Remote
+    public suspend fun create(record: LocalRecord, key: String, file: FilePart? = null): Remote
+    public suspend fun update(record: LocalRecord, baseRevision: Int, key: String, file: FilePart? = null): Remote
     public suspend fun delete(record: LocalRecord, baseRevision: Int?, key: String)
     public suspend fun changes(since: Int): ChangeFeed
+
+    /** The file of a record the server holds (a mission's `.msnx`). */
+    public suspend fun fetchFile(kind: RecordKind, serverId: Int): ByteArray
 
     /** Reads the copy a conflict (409) carries. */
     public fun copyFromConflict(kind: RecordKind, server: JsonObject): ServerCopy?
@@ -59,15 +76,19 @@ public interface IdSource {
 
 /** [SyncApi] over the real client. */
 public class ApiSyncApi(private val client: ApiClient) : SyncApi {
-    override suspend fun create(record: LocalRecord, key: String): Remote = when (record.kind) {
+    override suspend fun create(record: LocalRecord, key: String, file: FilePart?): Remote = when (record.kind) {
         RecordKind.LZ -> client.createLz(record.name, record.data, record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
         RecordKind.AIRCRAFT -> client.createAircraftProfile(aircraftInput(record, includeIdentity = true), key)
             .let { Remote(it.value.id, it.value.revision ?: 1, it.created) }
         RecordKind.ROUTE -> client.createRoute(record.name, record.data, record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
         RecordKind.POINT_SET -> client.createPointSet(record.name, pointsOf(record), record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
+        RecordKind.MISSION -> {
+            val part = requireNotNull(file) { "a mission is sent with its file" }
+            client.createMission(record.name, record.data, record.uuid, part.name, part.bytes, key).let { Remote(it.value.id, it.value.revision, it.created) }
+        }
     }
 
-    override suspend fun update(record: LocalRecord, baseRevision: Int, key: String): Remote {
+    override suspend fun update(record: LocalRecord, baseRevision: Int, key: String, file: FilePart?): Remote {
         val id = requireNotNull(record.serverId) { "an update needs the server's id" }
         return when (record.kind) {
             RecordKind.LZ -> client.updateLz(id, baseRevision, record.name, record.data, key).let { Remote(it.id, it.revision, created = false) }
@@ -75,6 +96,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
                 .let { Remote(it.id, it.revision ?: baseRevision + 1, created = false) }
             RecordKind.ROUTE -> client.updateRoute(id, baseRevision, record.name, record.data, key).let { Remote(it.id, it.revision, created = false) }
             RecordKind.POINT_SET -> client.updatePointSet(id, baseRevision, record.name, pointsOf(record), key).let { Remote(it.id, it.revision, created = false) }
+            RecordKind.MISSION -> client.updateMission(id, baseRevision, record.name, record.data, file?.name, file?.bytes, key).let { Remote(it.id, it.revision, created = false) }
         }
     }
 
@@ -85,10 +107,13 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
             RecordKind.AIRCRAFT -> client.deleteAircraftProfile(id, baseRevision, key)
             RecordKind.ROUTE -> client.deleteRoute(id, baseRevision, key)
             RecordKind.POINT_SET -> client.deletePointSet(id, baseRevision, key)
+            RecordKind.MISSION -> client.deleteRoute(id, baseRevision, key)
         }
     }
 
     override suspend fun changes(since: Int): ChangeFeed = client.changes(since)
+
+    override suspend fun fetchFile(kind: RecordKind, serverId: Int): ByteArray = client.routeFile(serverId)
 
     override fun copyFromConflict(kind: RecordKind, server: JsonObject): ServerCopy? = serverCopyOf(kind, server)
 
@@ -120,8 +145,10 @@ public fun serverCopyOf(kind: RecordKind, server: JsonObject): ServerCopy? {
         RecordKind.AIRCRAFT -> server
         RecordKind.ROUTE -> server["route_data"] as? JsonObject ?: return null
         RecordKind.POINT_SET -> pointSetDocument(server["points"] ?: return null) ?: return null
+        RecordKind.MISSION -> server["route_data"] as? JsonObject ?: return null
     }
-    return ServerCopy(id, revision, name, data)
+    val hasFile = (server["has_file"] as? JsonPrimitive)?.booleanOrNull == true
+    return ServerCopy(id, revision, name, data, hasFile, (server["file_name"] as? JsonPrimitive)?.contentOrNull)
 }
 
 /** A point set's document from the server's list of points: the list in an object, so it is held like every other record's document. */

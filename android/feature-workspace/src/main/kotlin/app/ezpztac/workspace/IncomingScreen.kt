@@ -76,12 +76,12 @@ fun IncomingOfferContent(state: IncomingUiState, actions: IncomingActions, modif
                 SecondaryButton("Not now", onClick = actions.decline, enabled = !state.busy)
             }
             is IncomingOfferUi.Mission -> {
-                Heading("Bring in the routes?")
+                Heading("Bring in this mission?")
                 Body(
                     "${offer.fileName} has ${plural(offer.routes, "route")} with ${plural(offer.namedPoints, "named point")}" +
                         (offer.aircraft?.let { ", planned for the $it" } ?: "") + ". " +
-                        "They come in as a new set of routes you can change and send on. The mission file itself is not changed or kept, and what only AMPS holds " +
-                        "(its vehicle model, anything that is not a route) does not come with them: exporting makes a new mission from the routes.",
+                        "The mission is kept as it is, with its file, and syncs with your account. What you change here (moving, renaming and adding points, the plan) " +
+                        "is written back into the file, so everything only AMPS holds (its vehicle model, its calculations) stays in it.",
                 )
                 PrimaryButton("Bring in ${plural(offer.routes, "route")}", onClick = actions.accept, busy = state.busy, busyText = "Bringing in")
                 SecondaryButton("Not now", onClick = actions.decline, enabled = !state.busy)

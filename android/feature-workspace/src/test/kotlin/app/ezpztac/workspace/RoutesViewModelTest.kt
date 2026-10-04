@@ -102,7 +102,7 @@ class RoutesViewModelTest {
         val resolutions = mutableListOf<Triple<RecordKind, String, SyncEngine.Resolution>>()
         val server = FakeServer()
         val device = Device("A", server)
-        val repository = RouteRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler())
+        val repository = RouteRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler(), StandardTestDispatcher(scope.testScheduler))
         val session = RouteSession(repository, scope.backgroundScope)
         val selection = RouteSelection()
         val profiles = AircraftProfiles(
@@ -1246,5 +1246,129 @@ class RoutesViewModelTest {
         work.advanceUntilIdle()
         settle()
         assertEquals(1, r.shared.size)
+    }
+
+    // -- An imported mission ---------------------------------------------------------------------------------------
+
+    private val missionBytes = Fixtures.bytes("msnx/template.msnx")
+
+    /** The template mission, brought in and open: its file is the saved document. */
+    private suspend fun TestScope.openMission(r: Rig): String {
+        val importer = app.ezpztac.data.MissionImporter(r.repository, r.session, app.ezpztac.data.MapFocus())
+        importer.import(missionBytes, app.ezpztac.formats.MsnxReader.read(missionBytes), "Template.msnx")
+        settle()
+        return r.state.open!!.uuid
+    }
+
+    @Test
+    fun `an imported mission is listed and opened as a mission, and its route is held for planning`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openMission(r)
+        assertTrue(r.state.open!!.isMission)
+        assertTrue(r.state.sets.single { it.uuid == id }.isMission)
+        r.model.selectRoute(r.state.open!!.routes.single().id); settle()
+        assertTrue(r.state.detail!!.isMission)
+    }
+
+    @Test
+    fun `routes cannot be drawn, renamed or removed in a mission, and the person is told why`() = runTest(dispatcher) {
+        val r = rig()
+        openMission(r)
+        val route = r.state.open!!.routes.single()
+        r.model.startDrawing(); settle()
+        assertTrue(r.state.error!!.contains("part of its file"))
+        assertNull(r.state.drawing)
+        r.model.dismissError()
+        r.model.renameRoute(route.id, "OTHER"); settle()
+        assertEquals(route.name, r.state.open!!.routes.single().name)
+        assertTrue(r.state.error!!.contains("part of its file"))
+        r.model.dismissError()
+        r.model.deleteRoute(route.id); settle()
+        assertEquals(1, r.state.open!!.routes.size)
+        assertFalse(r.state.open!!.canUndo)                                    // none of that was an edit
+    }
+
+    @Test
+    fun `a point's type is the file's, so changing it is refused`() = runTest(dispatcher) {
+        val r = rig()
+        openMission(r)
+        val route = r.session.active.value!!.routes.single()
+        val named = route.points.first { it.kind == RoutePoint.KIND_AMPS }
+        r.model.setPointType(route.id, named.id!!, "target"); settle()
+        assertTrue(r.state.error!!.contains("fixed in the mission"))
+        r.model.dismissError()
+        r.model.makeShaping(route.id, named.id!!); settle()
+        assertTrue(r.state.error!!.contains("fixed in the mission"))
+        assertEquals(route.points, r.session.active.value!!.routes.single().points)
+    }
+
+    @Test
+    fun `moving and renaming a point of a mission are written into its file`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openMission(r)
+        val route = r.session.active.value!!.routes.single()
+        val named = route.points.first { it.kind == RoutePoint.KIND_AMPS }
+        r.model.nudgePoint(route.id, named.id!!, northFt = 300.0, eastFt = 0.0); settle()
+        r.model.renamePoint(route.id, named.id!!, "BASE"); settle()
+        r.session.flush()
+        val back = app.ezpztac.formats.MsnxReader.read(r.repository.missionFile(id)!!).routes.single().points.first { it.id == named.id }
+        assertTrue(back.lat > named.lat)
+        assertEquals(".BASE".removePrefix("."), back.name!!.removePrefix("."))
+    }
+
+    @Test
+    fun `adding a point puts a named point on the line, which is held, and the file gets a point and a leg`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openMission(r)
+        val route = r.session.active.value!!.routes.single()
+        val at = LatLon((route.points[10].lat + route.points[11].lat) / 2, (route.points[10].lon + route.points[11].lon) / 2)
+        r.model.newPointId = { "99999999-aaaa-4bbb-8ccc-dddddddddddd" }
+        r.model.addShapingPoint(route.id, at); settle()
+        val now = r.session.active.value!!.routes.single()
+        assertEquals(route.points.size + 1, now.points.size)
+        val added = now.points.single { it.id == "99999999-aaaa-4bbb-8ccc-dddddddddddd" }
+        assertEquals(RoutePoint.KIND_AMPS, added.kind)
+        assertEquals(".NEWPT", added.name)
+        r.session.flush()
+        val file = app.ezpztac.formats.MsnxReader.read(r.repository.missionFile(id)!!).routes.single()
+        assertEquals(route.points.size + 1, file.points.size)
+    }
+
+    @Test
+    fun `exporting a mission shares its own file with the changes in it, named as the web names it`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openMission(r)
+        val route = r.session.active.value!!.routes.single()
+        val named = route.points.first { it.kind == RoutePoint.KIND_AMPS }
+        r.model.nudgePoint(route.id, named.id!!, northFt = 500.0, eastFt = 0.0); settle()
+        r.model.exportSet(); settle()
+        assertNull(r.state.error)
+        val sent = r.shared.single()
+        assertEquals("Template_edited.msnx", sent.fileName)
+        // The very file that is stored, with the move already in it: not one rebuilt from a template.
+        assertTrue(r.repository.missionFile(id)!!.contentEquals(sent.bytes))
+        val moved = app.ezpztac.formats.MsnxReader.read(sent.bytes).routes.single().points.first { it.id == named.id }
+        assertTrue(moved.lat > named.lat)
+    }
+
+    @Test
+    fun `a conflict on a mission is settled as a mission`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openMission(r)
+        r.model.resolve(id, SyncEngine.Resolution.KEEP_BOTH); settle()
+        assertEquals(listOf(Triple(RecordKind.MISSION, id, SyncEngine.Resolution.KEEP_BOTH)), r.resolutions)
+        r.model.createSet("A SET"); settle()
+        val set = r.state.open!!.uuid
+        r.model.resolve(set, SyncEngine.Resolution.KEEP_THEIRS); settle()
+        assertEquals(RecordKind.ROUTE, r.resolutions.last().first)
+    }
+
+    @Test
+    fun `renaming an open mission keeps its file as it is`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openMission(r)
+        r.model.renameSet(id, "goat run"); settle()
+        assertEquals("GOAT RUN", r.state.open!!.name)
+        assertTrue(r.repository.missionFile(id)!!.contentEquals(missionBytes))
     }
 }

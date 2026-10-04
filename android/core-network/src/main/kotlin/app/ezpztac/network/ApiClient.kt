@@ -53,6 +53,8 @@ public class ApiResponse internal constructor(
     public val status: Int,
     private val headers: okhttp3.Headers,
     public val body: String,
+    /** The body as it arrived, for a call that asked for a file ([ApiClient.Call.binary]); empty for every other call. */
+    public val bytes: ByteArray = ByteArray(0),
 ) {
     public fun header(name: String): String? = headers[name]
 }
@@ -245,6 +247,9 @@ public class ApiClient(
 
     // -- One call --------------------------------------------------------------------
 
+    /** A file in a form: the part's [field] name, the file's [name] and its [bytes]. */
+    internal class FormFile(val field: String, val name: String, val bytes: ByteArray, val mediaType: String = "application/octet-stream")
+
     /** What to ask for. Internal: the typed endpoints build these. */
     internal class Call(
         val method: String,
@@ -253,6 +258,10 @@ public class ApiClient(
         val body: JsonElement? = null,
         /** Text fields of a `multipart/form-data` body, which is how the web sends a saved route; used instead of [body]. */
         val form: Map<String, String>? = null,
+        /** A file part of the form, as the web sends a mission's `.msnx` (`msnx`). Only with [form]. */
+        val file: FormFile? = null,
+        /** The answer is a file: its bytes are kept as they came, instead of being read as text. */
+        val binary: Boolean = false,
         /** Whether the call needs the access token. */
         val auth: Boolean = true,
         val headers: Map<String, String> = emptyMap(),
@@ -267,7 +276,7 @@ public class ApiClient(
         try {
             val raw = if (call.auth) executeSigned(call) else send(call, accessToken = null)
             if (raw.status !in 200..299) throw map(raw)
-            return ApiResponse(raw.status, raw.headers, raw.body)
+            return ApiResponse(raw.status, raw.headers, raw.body, raw.bytes)
         } finally {
             ticket?.close()
         }
@@ -300,7 +309,7 @@ public class ApiClient(
         return json != null && json["msg"] != null && json["error"] == null
     }
 
-    internal class Raw(val status: Int, val headers: okhttp3.Headers, val body: String)
+    internal class Raw(val status: Int, val headers: okhttp3.Headers, val body: String, val bytes: ByteArray = ByteArray(0))
 
     private suspend fun send(call: Call, accessToken: String?): Raw {
         val url = base.newBuilder().apply {
@@ -308,7 +317,10 @@ public class ApiClient(
             call.query.forEach { (k, v) -> addQueryParameter(k, v) }
         }.build()
         val body = when {
-            call.form != null -> MultipartBody.Builder().setType(MultipartBody.FORM).apply { call.form.forEach { (k, v) -> addFormDataPart(k, v) } }.build()
+            call.form != null -> MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+                call.form.forEach { (k, v) -> addFormDataPart(k, v) }
+                call.file?.let { addFormDataPart(it.field, it.name, it.bytes.toRequestBody(it.mediaType.toMediaType())) }
+            }.build()
             call.body != null -> JSON.encodeToString(JsonElement.serializer(), call.body).toRequestBody(JSON_TYPE)
             call.method == "GET" || call.method == "HEAD" -> null
             else -> EMPTY_BODY
@@ -325,7 +337,10 @@ public class ApiClient(
         val client = timeout?.let { http.newBuilder().readTimeout(it, TimeUnit.SECONDS).build() } ?: http
         try {
             client.newCall(request).await().use { response ->
-                return Raw(response.code, response.headers, response.body?.string().orEmpty())
+                if (!call.binary) return Raw(response.code, response.headers, response.body?.string().orEmpty())
+                // A file is read as bytes; an error's body is still text, which is what the error mapping reads.
+                val bytes = response.body?.bytes() ?: ByteArray(0)
+                return if (response.code in 200..299) Raw(response.code, response.headers, "", bytes) else Raw(response.code, response.headers, String(bytes, Charsets.UTF_8))
             }
         } catch (e: IOException) {
             throw networkFailure(e)

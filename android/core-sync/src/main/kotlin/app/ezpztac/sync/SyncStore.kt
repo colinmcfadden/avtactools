@@ -40,6 +40,15 @@ public interface SyncTransaction {
 
     public suspend fun cursor(): Int
     public suspend fun setCursor(cursor: Int)
+
+    /** The bytes of a file, by [FileRef.id]; null if the store has none by that name. */
+    public suspend fun blob(id: String): ByteArray?
+
+    /**
+     * Keeps [bytes] under [id], which must be [FileHash.of] the bytes. Putting what is already there is harmless. A file that no record and no send in progress refers to
+     * is dropped when the transaction ends, so a replaced file does not stay on the device.
+     */
+    public suspend fun putBlob(id: String, bytes: ByteArray)
 }
 
 /** A store that lives in memory: for tests, and for the first version of the app before Room is wired in. */
@@ -48,6 +57,7 @@ public class InMemorySyncStore : SyncStore, RecordFeed {
     private val version = MutableStateFlow(0L)
     private val records = LinkedHashMap<Pair<RecordKind, String>, LocalRecord>()
     private val entries = LinkedHashMap<Long, OutboxEntry>()
+    private val blobs = LinkedHashMap<String, ByteArray>()
     private var nextSeq = 1L
     private var cursor = 0
 
@@ -68,6 +78,18 @@ public class InMemorySyncStore : SyncStore, RecordFeed {
         override suspend fun dequeue(seq: Long) { entries.remove(seq) }
         override suspend fun cursor() = cursor
         override suspend fun setCursor(cursor: Int) { this@InMemorySyncStore.cursor = cursor }
+        override suspend fun blob(id: String) = blobs[id]
+        override suspend fun putBlob(id: String, bytes: ByteArray) { blobs[id] = bytes }
+    }
+
+    /** How many files the store holds, for tests of what is kept and what is let go. */
+    public val blobCount: Int get() = blobs.size
+
+    private fun dropUnreferencedBlobs() {
+        val used = HashSet<String>()
+        records.values.forEach { r -> r.file?.let { used += it.id } }
+        entries.values.forEach { e -> e.sent?.file?.let { used += it.id } }
+        blobs.keys.retainAll(used)
     }
 
     override fun observe(kind: RecordKind): Flow<List<LocalRecord>> = version
@@ -79,13 +101,15 @@ public class InMemorySyncStore : SyncStore, RecordFeed {
         // All or nothing: a block that throws leaves the store as it was.
         val savedRecords = LinkedHashMap(records)
         val savedEntries = LinkedHashMap(entries)
+        val savedBlobs = LinkedHashMap(blobs)
         val savedSeq = nextSeq
         val savedCursor = cursor
         try {
-            tx.block().also { version.value++ }
+            tx.block().also { dropUnreferencedBlobs(); version.value++ }
         } catch (e: Throwable) {
             records.clear(); records.putAll(savedRecords)
             entries.clear(); entries.putAll(savedEntries)
+            blobs.clear(); blobs.putAll(savedBlobs)
             nextSeq = savedSeq; cursor = savedCursor
             throw e
         }

@@ -29,6 +29,11 @@ public data class RouteSet(
     val extras: JsonObject = JsonObject(emptyMap()),
     /** Routes in the document that could not be read as a route, as they were. */
     val unreadable: List<JsonElement> = emptyList(),
+    /**
+     * Set when this is an imported AMPS mission and not a set drawn here. A mission's **file** is its document: the routes are read out of it when it is opened and the edits are
+     * written back into it, so everything in the file this app does not read is kept. The link is never part of [RouteSets]' JSON (a mission's `route_data` is only a summary).
+     */
+    val mission: MissionLink? = null,
 ) {
     /** The route named [routeId], if it is in the set. */
     public fun route(routeId: String): SketchRoute? = routes.firstOrNull { it.id == routeId }
@@ -48,6 +53,9 @@ public data class RouteSet(
     /** The set without [routeId]. */
     public fun without(routeId: String): RouteSet = if (routes.any { it.id == routeId }) copy(routes = routes.filterNot { it.id == routeId }) else this
 }
+
+/** What makes a [RouteSet] an imported mission: [fileName] is what its `.msnx` is called. */
+public data class MissionLink(val fileName: String)
 
 /** Reading a [RouteSet] from the web's `route_data` and writing it back. */
 public object RouteSets {
@@ -77,6 +85,28 @@ public object RouteSets {
         val routes = set.routes.map(::writeRoute) + set.unreadable
         return JsonObject(mapOf("version" to JsonPrimitive(VERSION)) + set.extras + mapOf("routes" to JsonArray(routes)))
     }
+
+    /**
+     * What the server keeps beside a mission's file, for lists: `{version: 1, routes: [{name, color}]}`, as the web saves it. It is not the mission (the file is); it is what a
+     * list can show without opening the file, and where each route's colour is kept.
+     */
+    public fun missionSummary(routes: List<SketchRoute>): JsonObject = JsonObject(
+        mapOf(
+            "version" to JsonPrimitive(VERSION),
+            "routes" to JsonArray(routes.map { JsonObject(mapOf("name" to JsonPrimitive(it.name), "color" to JsonPrimitive(it.color))) }),
+        ),
+    )
+
+    private val COLOR = Regex("^#[0-9A-Fa-f]{6}$")
+
+    /**
+     * The colour each route of a mission was given, by its place in the file; null where the summary names none. The summary is the server's text and a colour reaches the map as a
+     * style value, so anything that is not `#RRGGBB` is none.
+     */
+    public fun missionColors(summary: JsonObject): List<String?> =
+        ((summary["routes"] as? JsonArray) ?: JsonArray(emptyList())).map { route ->
+            ((route as? JsonObject)?.get("color") as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { COLOR.matches(it) }
+        }
 
     private fun readRoute(element: JsonElement): SketchRoute? {
         val obj = element as? JsonObject ?: return null

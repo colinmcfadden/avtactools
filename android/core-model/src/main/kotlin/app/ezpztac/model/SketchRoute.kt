@@ -23,6 +23,8 @@ public data class SketchRoute(
     val plan: RoutePlan = RoutePlan(),
     /** Ground elevation in feet by point id. */
     val elevations: Map<String, Double> = emptyMap(),
+    /** AMPS's id for the route's segment, which ties it to its legs in a mission file. Only a route of an imported mission has one; a sketched route never does. */
+    val segmentId: String? = null,
     /** Fields a newer release wrote that this one does not know, kept so saving does not drop them ([RouteSets]). Never part of the model's own JSON. */
     @Transient val extras: JsonObject = JsonObject(emptyMap()),
 )

@@ -207,10 +207,15 @@ private fun OpenSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, exporting: Bo
                 }
                 SyncChip(open.sync, open.conflictOf)
             }
-            if (open.conflictOf != null) ConflictPanel("set of routes") { actions.resolve(open.uuid, it) }
+            if (open.conflictOf != null) ConflictPanel(if (open.isMission) "mission" else "set of routes") { actions.resolve(open.uuid, it) }
             if (drawing != null) {
                 Text(
                     "Drawing a route: ${pointsText(drawing.points)}. Tap the map to add a point, then Finish. The buttons are over the map.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (open.isMission) {
+                Text(
+                    "An AMPS mission. Moving, renaming and adding points and the plan are written back into its file; its routes themselves stay as they are.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
@@ -219,7 +224,7 @@ private fun OpenSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, exporting: Bo
             if (open.routes.isEmpty()) {
                 if (drawing == null) Text("This set has no routes yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
-                open.routes.forEach { RouteRow(it, actions) }
+                open.routes.forEach { RouteRow(it, actions, fixed = open.isMission) }
             }
             if (open.routes.isNotEmpty()) {
                 if (exporting) PrimaryButton("Export for AMPS", onClick = {}, busy = true, busyText = "Building the mission…")
@@ -235,7 +240,7 @@ private fun OpenSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, exporting: Bo
 }
 
 @Composable
-private fun RouteRow(route: RouteRowUi, actions: RoutesActions) {
+private fun RouteRow(route: RouteRowUi, actions: RoutesActions, fixed: Boolean = false) {
     var rename by rememberSaveable(route.id) { mutableStateOf<String?>(null) }
     var confirmDelete by rememberSaveable(route.id) { mutableStateOf(false) }
     val border = if (route.selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
@@ -261,7 +266,8 @@ private fun RouteRow(route: RouteRowUi, actions: RoutesActions) {
                 }
                 TextAction(if (route.visible) "Hide" else "Show", onClick = { actions.toggleVisible(route.id) })
             }
-            if (route.selected) {
+            // A route of an imported mission is part of its file: it is not renamed or removed here.
+            if (route.selected && !fixed) {
                 if (rename != null) {
                     EzpzTextField(
                         value = rename.orEmpty(), onValueChange = { rename = it }, label = "Route name", imeAction = ImeAction.Done,
@@ -354,16 +360,19 @@ private fun SetListItem(row: RouteSetRow, actions: RoutesActions) {
         Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = Tokens.Size.touchTarget.dp).clickable { actions.openSet(row.uuid) }
-                    .semantics { contentDescription = "${row.name}. ${routesText(row.routeCount)}. ${syncLabel(row.sync, row.conflictOf)}" },
+                    .semantics { contentDescription = "${row.name}. ${if (row.isMission) "AMPS mission. " else ""}${routesText(row.routeCount)}. ${syncLabel(row.sync, row.conflictOf)}" },
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(row.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
-                    Text(routesText(row.routeCount), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        (if (row.isMission) "AMPS mission · " else "") + routesText(row.routeCount),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 SyncChip(row.sync, row.conflictOf)
             }
-            if (row.conflictOf != null) ConflictPanel("set of routes") { actions.resolve(row.uuid, it) }
+            if (row.conflictOf != null) ConflictPanel(if (row.isMission) "mission" else "set of routes") { actions.resolve(row.uuid, it) }
             SetManageControls(row.uuid, row.name, actions)
         }
     }

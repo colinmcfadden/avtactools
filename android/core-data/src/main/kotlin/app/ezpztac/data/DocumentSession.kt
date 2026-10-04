@@ -22,6 +22,9 @@ interface DocumentStore<D : Any> {
      * identity, in which case that is returned and the session adopts it.
      */
     suspend fun save(document: D): D
+
+    /** The document of record [uuid] has been closed: anything held for it while it was open (a mission's file) can go. */
+    fun release(uuid: String) {}
 }
 
 /**
@@ -63,7 +66,7 @@ open class DocumentSession<D : Any>(
     val undoDepth: StateFlow<Int> = _undoDepth.asStateFlow()
     val redoDepth: StateFlow<Int> = _redoDepth.asStateFlow()
 
-    private class Step<D>(val label: String, val before: D, val after: D)
+    private class Step<D>(val label: String, val before: D, val after: D, val key: Any? = null)
 
     private val undo = ArrayDeque<Step<D>>()
     private val redo = ArrayDeque<Step<D>>()
@@ -90,9 +93,11 @@ open class DocumentSession<D : Any>(
      */
     suspend fun close() {
         switching.withLock {
+            val closing = _active.value?.let(idOf)
             try {
                 flush()
             } finally {
+                closing?.let(store::release)
                 pending?.cancel()
                 undo.clear(); redo.clear(); publishDepths()
                 _active.value = null
@@ -122,13 +127,22 @@ open class DocumentSession<D : Any>(
     /**
      * Applies [change] to the open document. [label] names the edit for an undo button ("Move helicopter"). A change that leaves the document as
      * it was is not an edit: nothing is recorded or saved.
+     *
+     * Edits made with the same [coalesce] key, one straight after another, are **one step** to undo: a drag changes the document many times a second, and the person
+     * who drags a helicopter wants one undo to put it back where it was, not a hundred. Each such change must say where the thing now is (not how far it has moved
+     * since the last), and one that brings the document back to what it was before the first takes the step away. Null is no merging.
      */
-    fun edit(label: String, change: (D) -> D) {
+    fun edit(label: String, coalesce: Any? = null, change: (D) -> D) {
         val before = _active.value ?: return
         val after = settled(change)(before)
         if (after == before) return
-        undo.addLast(Step(label, before, after))
-        while (undo.size > MAX_UNDO) undo.removeFirst()
+        val last = undo.lastOrNull()
+        if (coalesce != null && last != null && last.key == coalesce) {
+            if (after == last.before) undo.removeLast() else undo[undo.lastIndex] = Step(last.label, last.before, after, coalesce)
+        } else {
+            undo.addLast(Step(label, before, after, coalesce))
+            while (undo.size > MAX_UNDO) undo.removeFirst()
+        }
         redo.clear()
         apply(after)
     }
@@ -150,8 +164,8 @@ open class DocumentSession<D : Any>(
     private fun settled(change: (D) -> D): (D) -> D = { d -> tidy(d, change(d)) }
 
     private fun patchHistory(change: (D) -> D) {
-        for (i in undo.indices) undo[i] = undo[i].let { Step(it.label, change(it.before), change(it.after)) }
-        for (i in redo.indices) redo[i] = redo[i].let { Step(it.label, change(it.before), change(it.after)) }
+        for (i in undo.indices) undo[i] = undo[i].let { Step(it.label, change(it.before), change(it.after), it.key) }
+        for (i in redo.indices) redo[i] = redo[i].let { Step(it.label, change(it.before), change(it.after), it.key) }
     }
 
     /** Undoes the last edit. Returns its label, or null if there was nothing to undo. */

@@ -2,6 +2,7 @@ package app.ezpztac.data
 
 import androidx.room.withTransaction
 import app.ezpztac.sync.Attempt
+import app.ezpztac.sync.FileRef
 import app.ezpztac.sync.LocalRecord
 import app.ezpztac.sync.Operation
 import app.ezpztac.sync.OutboxEntry
@@ -23,7 +24,12 @@ public class RoomSyncStore internal constructor(private val database: EzpzDataba
     private val dao get() = database.syncDao()
 
     override suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T =
-        database.withTransaction { RoomTransaction(dao).block() }
+        database.withTransaction {
+            RoomTransaction(dao).block().also {
+                // A file that a replaced record or a finished send used to hold is let go with the change that dropped it.
+                dao.dropUnreferencedBlobs()
+            }
+        }
 
     /**
      * The records of a kind that are not deleted, as a list that updates itself when any of them changes. Room re-runs the query when
@@ -59,6 +65,9 @@ private class RoomTransaction(private val dao: SyncDao) : SyncTransaction {
     override suspend fun cursor(): Int = dao.state(CURSOR) ?: 0
     override suspend fun setCursor(cursor: Int) = dao.setState(SyncStateEntity(CURSOR, cursor))
 
+    override suspend fun blob(id: String): ByteArray? = dao.blob(id)
+    override suspend fun putBlob(id: String, bytes: ByteArray) = dao.putBlob(BlobEntity(id, bytes))
+
     private companion object {
         const val CURSOR = "cursor"
     }
@@ -81,6 +90,7 @@ internal fun RecordEntity.toModel() = LocalRecord(
     deleted = deleted,
     localVersion = localVersion,
     conflictOf = conflictOf,
+    file = fileId?.let { FileRef(it, fileName ?: "") },
 )
 
 internal fun LocalRecord.toEntity() = RecordEntity(
@@ -94,6 +104,8 @@ internal fun LocalRecord.toEntity() = RecordEntity(
     deleted = deleted,
     localVersion = localVersion,
     conflictOf = conflictOf,
+    fileId = file?.id,
+    fileName = file?.name,
 )
 
 internal fun OutboxEntity.toModel() = OutboxEntry(
@@ -107,6 +119,7 @@ internal fun OutboxEntity.toModel() = OutboxEntry(
         baseRevision = sentBaseRevision,
         name = checkNotNull(sentName) { "an attempt without a name" },
         data = checkNotNull(sentData) { "an attempt without a document" }.toObject(),
+        file = sentFileId?.let { FileRef(it, sentFileName ?: "") },
     ),
     attempts = attempts,
     lastError = lastError,
@@ -123,6 +136,8 @@ internal fun OutboxEntry.toEntity() = OutboxEntity(
     sentBaseRevision = sent?.baseRevision,
     sentName = sent?.name,
     sentData = sent?.data?.toText(),
+    sentFileId = sent?.file?.id,
+    sentFileName = sent?.file?.name,
     attempts = attempts,
     lastError = lastError,
     blocked = blocked,

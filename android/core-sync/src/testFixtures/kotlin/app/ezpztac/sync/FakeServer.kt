@@ -23,6 +23,8 @@ public class FakeServer : SyncApi {
     class Rec(
         val serverId: Int, val kind: RecordKind, val uuid: String,
         var revision: Int, var name: String, var data: JsonObject, var deleted: Boolean, var seq: Int, var lastKey: String?,
+        /** A mission's file, as the server keeps it. */
+        var file: ByteArray? = null, var fileName: String? = null,
     )
 
     val records = mutableListOf<Rec>()
@@ -80,23 +82,28 @@ public class FakeServer : SyncApi {
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data))
         RecordKind.POINT_SET -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
             "revision" to JsonPrimitive(r.revision), "points" to (r.data["points"] ?: JsonArray(emptyList()))))
+        RecordKind.MISSION -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "kind" to JsonPrimitive("mission"),
+            "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data,
+            "has_file" to JsonPrimitive(r.file != null), "file_name" to JsonPrimitive(r.fileName)))
     }
 
     private fun conflict(r: Rec) = RevisionConflictException("The record changed on the server. Nothing was overwritten.", snapshot(r))
 
-    override suspend fun create(record: LocalRecord, key: String): Remote {
+    override suspend fun create(record: LocalRecord, key: String, file: FilePart?): Remote {
         log += "create ${record.kind.name.lowercase()} ${record.uuid} $key"
         check("create"); onWrite?.invoke("create")
         failName?.let { (name, error) -> if (record.name == name) throw error }
         val existing = records.firstOrNull { it.kind == record.kind && it.uuid == record.uuid }
         if (existing != null) { lose(); return Remote(existing.serverId, existing.revision, created = false) }
-        val r = Rec(nextId++, record.kind, record.uuid, 1, record.name, record.data, false, ++seq, key)
+        // The real server refuses a mission with no file (400).
+        if (record.kind == RecordKind.MISSION && file == null) throw ApiException(400, null, "Mission saves require the msnx file")
+        val r = Rec(nextId++, record.kind, record.uuid, 1, record.name, record.data, false, ++seq, key, file?.bytes, file?.name)
         records += r
         lose()
         return Remote(r.serverId, r.revision, created = true)
     }
 
-    override suspend fun update(record: LocalRecord, baseRevision: Int, key: String): Remote {
+    override suspend fun update(record: LocalRecord, baseRevision: Int, key: String, file: FilePart?): Remote {
         log += "update ${record.kind.name.lowercase()} ${record.serverId} base=$baseRevision $key"
         check("update"); onWrite?.invoke("update")
         failName?.let { (name, error) -> if (record.name == name) throw error }
@@ -104,6 +111,7 @@ public class FakeServer : SyncApi {
         if (r.lastKey == key) { lose(); return Remote(r.serverId, r.revision, false) }              // the same write again
         if (baseRevision != r.revision) throw conflict(r)
         r.name = record.name; r.data = record.data; r.revision++; r.seq = ++seq; r.lastKey = key
+        if (file != null) { r.file = file.bytes; r.fileName = file.name }
         lose()
         return Remote(r.serverId, r.revision, false)
     }
@@ -114,7 +122,7 @@ public class FakeServer : SyncApi {
         val r = find(record.kind, record.serverId!!) ?: throw ApiException(404, null, "Not found")
         if (r.deleted) { lose(); return }
         if (r.lastKey != key && baseRevision != null && baseRevision != r.revision) throw conflict(r)
-        r.deleted = true; r.name = ""; r.data = JsonObject(emptyMap()); r.revision++; r.seq = ++seq; r.lastKey = key
+        r.deleted = true; r.name = ""; r.data = JsonObject(emptyMap()); r.file = null; r.fileName = null; r.revision++; r.seq = ++seq; r.lastKey = key
         lose()
     }
 
@@ -123,9 +131,10 @@ public class FakeServer : SyncApi {
         failAll?.let { throw it }
         val ours = records.filter { it.seq > since }.map {
             SyncChange(
-                type = when (it.kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE -> "route"; RecordKind.POINT_SET -> "pointset" },
+                type = when (it.kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE, RecordKind.MISSION -> "route"; RecordKind.POINT_SET -> "pointset" },
                 id = it.serverId, clientUuid = it.uuid, revision = it.revision, deleted = it.deleted, name = it.name,
-                kind = if (it.kind == RecordKind.ROUTE) "sketch" else null,
+                kind = when (it.kind) { RecordKind.ROUTE -> "sketch"; RecordKind.MISSION -> "mission"; else -> null },
+                fileName = it.fileName, hasFile = it.file != null,
                 // The feed carries an LZ's diagram and a route's routes as they are, a profile as the whole record, and a point set's points as a bare list.
                 seq = it.seq, data = feedData(it),
             )
@@ -144,24 +153,36 @@ public class FakeServer : SyncApi {
 
     override fun copyFromConflict(kind: RecordKind, server: JsonObject): ServerCopy? = serverCopyOf(kind, server)
 
+    /** How many times a file was downloaded, for tests of what is fetched and what is not. */
+    var downloads = 0
+
+    override suspend fun fetchFile(kind: RecordKind, serverId: Int): ByteArray {
+        log += "file $serverId"
+        failAll?.let { throw it }
+        downloads++
+        val r = find(kind, serverId)?.takeUnless { it.deleted } ?: throw ApiException(404, null, "Not found")
+        return r.file ?: throw ApiException(404, null, "No file")
+    }
+
     // -- Somebody else (the web, another device) changing things --------------------------
 
     fun byUuid(kind: RecordKind, uuid: String): Rec = records.single { it.kind == kind && it.uuid == uuid }
 
-    fun editElsewhere(kind: RecordKind, uuid: String, name: String? = null, data: JsonObject? = null) {
+    fun editElsewhere(kind: RecordKind, uuid: String, name: String? = null, data: JsonObject? = null, file: ByteArray? = null) {
         val r = byUuid(kind, uuid)
         if (name != null) r.name = name
         if (data != null) r.data = data
+        if (file != null) r.file = file
         r.revision++; r.seq = ++seq; r.lastKey = null
     }
 
     fun deleteElsewhere(kind: RecordKind, uuid: String) {
         val r = byUuid(kind, uuid)
-        r.deleted = true; r.name = ""; r.data = JsonObject(emptyMap()); r.revision++; r.seq = ++seq; r.lastKey = null
+        r.deleted = true; r.name = ""; r.data = JsonObject(emptyMap()); r.file = null; r.fileName = null; r.revision++; r.seq = ++seq; r.lastKey = null
     }
 
-    fun createElsewhere(kind: RecordKind, uuid: String, name: String, data: JsonObject): Rec {
-        val r = Rec(nextId++, kind, uuid, 1, name, data, false, ++seq, null)
+    fun createElsewhere(kind: RecordKind, uuid: String, name: String, data: JsonObject, file: ByteArray? = null): Rec {
+        val r = Rec(nextId++, kind, uuid, 1, name, data, false, ++seq, null, file, if (file != null) "$name.msnx" else null)
         records += r
         return r
     }

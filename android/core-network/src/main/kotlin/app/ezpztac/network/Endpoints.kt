@@ -166,7 +166,7 @@ public suspend fun ApiClient.deleteLz(id: Int, baseRevision: Int? = null, idempo
 // -- Saved routes -----------------------------------------------------------------
 //
 // A saved route is a *set* of sketched routes under one name. The server takes it as `multipart/form-data` (the web's form), with the routes as a
-// JSON document in a text field. Only `sketch` sets are made here: a `mission` save also carries the AMPS file, which the apps do not send yet.
+// JSON document in a text field. Only `sketch` sets are made here; a mission, which also carries the AMPS file, is below.
 
 public suspend fun ApiClient.listRoutes(): List<RouteSummary> =
     decode(execute(ApiClient.Call("GET", "/api/routes")))
@@ -226,6 +226,61 @@ public suspend fun ApiClient.deleteRoute(id: Int, baseRevision: Int? = null, ide
         ),
     )
 }
+
+// -- Saved missions -----------------------------------------------------------------
+//
+// A saved *mission* is an AMPS `.msnx` the person imported and edited: the file is the document, and `route_data` is only a display summary
+// (`{version: 1, routes: [{name, color}]}`). The server takes the same form as a sketch set, with `kind` `mission` and the file as the `msnx` part, and refuses a
+// mission with no file. The file is read back with [routeFile].
+
+/**
+ * Saves a new mission. Like [createRoute], a retry after a lost response returns the first record ([Saved.created] false).
+ */
+public suspend fun ApiClient.createMission(
+    name: String,
+    routeData: JsonObject,
+    clientUuid: String,
+    fileName: String,
+    file: ByteArray,
+    idempotencyKey: String = newKey(),
+): Saved<RouteSummary> {
+    val response = execute(
+        ApiClient.Call(
+            "POST", "/api/routes",
+            form = mapOf("name" to name, "kind" to "mission", "route_data" to routeData.toString(), "client_uuid" to clientUuid),
+            file = ApiClient.FormFile("msnx", fileName, file),
+            headers = mapOf("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+    return Saved(decode(response), created = response.status == 201)
+}
+
+/** Edits a saved mission on top of [baseRevision]. A [file] given replaces the stored one; as with [updateRoute], nothing is overwritten if the server has moved on. */
+public suspend fun ApiClient.updateMission(
+    id: Int,
+    baseRevision: Int?,
+    name: String? = null,
+    routeData: JsonObject? = null,
+    fileName: String? = null,
+    file: ByteArray? = null,
+    idempotencyKey: String = newKey(),
+): RouteSummary = decode(
+    execute(
+        ApiClient.Call(
+            "PUT", "/api/routes/$id",
+            form = buildMap {
+                if (name != null) put("name", name)
+                if (routeData != null) put("route_data", routeData.toString())
+            },
+            file = if (file != null) ApiClient.FormFile("msnx", fileName ?: "mission.msnx", file) else null,
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    ),
+)
+
+/** The `.msnx` bytes of a saved mission. A background call: it waits while the server is busy with an analysis. */
+public suspend fun ApiClient.routeFile(id: Int): ByteArray =
+    execute(ApiClient.Call("GET", "/api/routes/$id/file", binary = true, callPriority = CallPriority.BACKGROUND)).bytes
 
 // -- Weather ------------------------------------------------------------------------
 

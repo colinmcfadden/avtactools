@@ -1,6 +1,7 @@
 package app.ezpztac.data
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -14,9 +15,11 @@ import androidx.room.RoomDatabase
  * until the version is raised and a migration written.
  */
 @Database(
-    entities = [RecordEntity::class, OutboxEntity::class, SyncStateEntity::class],
-    version = 1,
+    entities = [RecordEntity::class, OutboxEntity::class, SyncStateEntity::class, BlobEntity::class],
+    version = 2,
     exportSchema = true,
+    // 2: a record can carry a file (a mission's `.msnx`): two columns on the record, two on a send in progress, and the table the bytes live in.
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 internal abstract class EzpzDatabase : RoomDatabase() {
     abstract fun syncDao(): SyncDao

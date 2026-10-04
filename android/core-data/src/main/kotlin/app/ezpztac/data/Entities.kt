@@ -1,5 +1,6 @@
 package app.ezpztac.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -28,6 +29,9 @@ internal data class RecordEntity(
     val deleted: Boolean,
     val localVersion: Int,
     val conflictOf: String?,
+    /** The file the record carries (a mission's `.msnx`): its hash, which names its bytes in [BlobEntity], and the name it is sent under. */
+    val fileId: String? = null,
+    val fileName: String? = null,
 )
 
 /**
@@ -49,9 +53,21 @@ internal data class OutboxEntity(
     val sentBaseRevision: Int?,
     val sentName: String?,
     val sentData: String?,
+    val sentFileId: String? = null,
+    val sentFileName: String? = null,
     val attempts: Int,
     val lastError: String?,
     val blocked: Boolean,
+)
+
+/**
+ * The bytes of a file a record carries, named by their SHA-256. Nothing is ever updated in place (the name is the content), and a row no record and no send in progress
+ * refers to is deleted at the end of every transaction ([SyncDao.dropUnreferencedBlobs]).
+ */
+@Entity(tableName = "blob")
+internal data class BlobEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(typeAffinity = ColumnInfo.BLOB) val bytes: ByteArray,
 )
 
 /** Small facts the sync engine keeps between runs: today, how far it has read the server's change feed. */

@@ -55,6 +55,22 @@ internal interface SyncDao {
     @Query("DELETE FROM sync_state WHERE `key` = :key")
     suspend fun clearState(key: String)
 
+    @Query("SELECT bytes FROM blob WHERE id = :id")
+    suspend fun blob(id: String): ByteArray?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun putBlob(blob: BlobEntity)
+
+    /** A file nothing refers to: not a record's, and not one a send in progress is carrying. */
+    @Query(
+        "DELETE FROM blob WHERE id NOT IN (SELECT fileId FROM record WHERE fileId IS NOT NULL) " +
+            "AND id NOT IN (SELECT sentFileId FROM outbox WHERE sentFileId IS NOT NULL)",
+    )
+    suspend fun dropUnreferencedBlobs()
+
+    @Query("DELETE FROM blob")
+    suspend fun wipeBlobs()
+
     @Query("DELETE FROM record")
     suspend fun wipeRecords()
 

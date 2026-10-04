@@ -72,13 +72,14 @@ class IncomingViewModelTest {
         private val device = Device("A", FakeServer())
         val syncStore = device.store as InMemorySyncStore
         val sets = PointSetRepository(device.repository, syncStore, RecordingScheduler())
-        val routes = RouteRepository(device.repository, syncStore, RecordingScheduler())
+        val routes = RouteRepository(device.repository, syncStore, RecordingScheduler(), StandardTestDispatcher(scope.testScheduler))
         val routeSession = RouteSession(routes, scope.backgroundScope)
         val model = IncomingViewModel(incoming, FileInspector(ThreatTransfer(ThsWriter { ByteArray(0) })), threats, selection, sets, MissionImporter(routes, routeSession, MapFocus()))
             .also { it.worker = StandardTestDispatcher(scope.testScheduler) }
         val state get() = model.state.value
         suspend fun savedSets() = syncStore.transaction { records(RecordKind.POINT_SET).size }
         suspend fun savedRouteSets() = syncStore.transaction { records(RecordKind.ROUTE).size }
+        suspend fun savedMissions() = syncStore.transaction { records(RecordKind.MISSION).size }
     }
 
     private fun TestScope.rig() = Rig(this).also { advanceUntilIdle() }
@@ -195,12 +196,13 @@ class IncomingViewModelTest {
     }
 
     @Test
-    fun `accepting a mission makes a set of its routes, opens it, and says so`() = runTest(dispatcher) {
+    fun `accepting a mission keeps it with its file, opens it, and says so`() = runTest(dispatcher) {
         val r = rig()
         r.incoming.offer("template.msnx", missionFile)
         advanceUntilIdle()
         r.model.accept(); advanceUntilIdle()
-        assertEquals(1, r.savedRouteSets())
+        assertEquals(1, r.savedMissions())
+        assertEquals(0, r.savedRouteSets())                                       // a mission is not a set drawn here
         assertEquals("TEMPLATE", r.routeSession.active.value!!.name)
         assertEquals("Brought in 1 route from template.msnx as TEMPLATE.", r.state.result)
         assertFalse(r.state.busy)
@@ -211,7 +213,7 @@ class IncomingViewModelTest {
     fun `the words after a mission is brought in say where it is when it could not be opened`() = runTest(dispatcher) {
         val r = rig()
         assertEquals("Brought in 1 route from a.msnx as A.", r.model.missionResult(1, "a.msnx", "A", opened = true))
-        assertEquals("Brought in 1,200 routes from a.msnx as A. It is in your list of route sets.", r.model.missionResult(1200, "a.msnx", "A", opened = false))
+        assertEquals("Brought in 1,200 routes from a.msnx as A. It is in your list of route sets and missions.", r.model.missionResult(1200, "a.msnx", "A", opened = false))
     }
 
     @Test
@@ -225,14 +227,14 @@ class IncomingViewModelTest {
     }
 
     @Test
-    fun `a second tap while a mission is being brought in makes one set`() = runTest(dispatcher) {
+    fun `a second tap while a mission is being brought in makes one mission`() = runTest(dispatcher) {
         val r = rig()
         r.incoming.offer("template.msnx", missionFile)
         advanceUntilIdle()
         r.model.accept()
         r.model.accept()
         advanceUntilIdle()
-        assertEquals(1, r.savedRouteSets())
+        assertEquals(1, r.savedMissions())
     }
 
     @Test

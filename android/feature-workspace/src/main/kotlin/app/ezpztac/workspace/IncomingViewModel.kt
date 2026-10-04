@@ -39,7 +39,7 @@ sealed interface IncomingOfferUi {
     /** A local-points file: its [count] points would be saved, and synced, as a set called [setName]. */
     data class Points(override val fileName: String, val setName: String, val count: Int) : IncomingOfferUi
 
-    /** An AMPS mission: its [routes] and [namedPoints] would come in as a new set of routes, a copy. [aircraft] is what AMPS planned it for, if it says. */
+    /** An AMPS mission: it would be kept as it is, with its file, and its [routes] and [namedPoints] opened for planning. [aircraft] is what AMPS planned it for, if it says. */
     data class Mission(override val fileName: String, val routes: Int, val namedPoints: Int, val aircraft: String?) : IncomingOfferUi
 
     /** Not something that can be opened, or could not be read; [message] says why, in words. */
@@ -157,7 +157,7 @@ class IncomingViewModel @Inject constructor(
                 local.update { it.copy(busy = true, result = null, error = null) }
                 viewModelScope.launch {
                     val outcome = try {
-                        withContext(worker) { missions.import(seen.mission, file.name) }
+                        withContext(worker) { missions.import(file.bytes, seen.mission, file.name) }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
@@ -200,9 +200,9 @@ class IncomingViewModel @Inject constructor(
 
     private fun routeCount(n: Int) = if (n == 1) "1 route" else "${withCommas(n.toLong())} routes"
 
-    /** What the person is told once a mission's routes are in. A set that could not be opened (another one open could not be saved first) is where to find it. */
+    /** What the person is told once a mission is in. A mission that could not be opened (another one open could not be saved first) is where to find it. */
     internal fun missionResult(routes: Int, fileName: String, setName: String, opened: Boolean): String =
-        "Brought in ${routeCount(routes)} from $fileName as $setName." + if (opened) "" else " It is in your list of route sets."
+        "Brought in ${routeCount(routes)} from $fileName as $setName." + if (opened) "" else " It is in your list of route sets and missions."
 
     private fun pointCount(n: Int) = if (n == 1) "1 point" else "${withCommas(n.toLong())} points"
 

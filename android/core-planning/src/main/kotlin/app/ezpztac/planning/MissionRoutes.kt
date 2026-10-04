@@ -3,6 +3,7 @@ package app.ezpztac.planning
 import app.ezpztac.geo.GreatCircle
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.Mission
+import app.ezpztac.model.MissionRoute
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.SketchRoute
 import app.ezpztac.model.Units
@@ -42,6 +43,33 @@ public object MissionRoutes {
         }
         return routes
     }
+
+    /**
+     * The routes of a **saved mission**, which keeps the file: every route, in the file's order, with its segment, because a change to one is found in the file by its place
+     * and its segment (so a route with no points is kept, though there is nothing to draw). A colour is the one the mission's summary kept for that place, else the first of the
+     * palette not taken. A blank name is `ROUTE n`.
+     */
+    public fun toMissionSketchRoutes(mission: Mission, colors: List<String?>, newId: () -> String): List<SketchRoute> {
+        val taken = ArrayList<String>()
+        return mission.routes.mapIndexed { index, route ->
+            val color = colors.getOrNull(index) ?: RouteColors.next(taken)
+            taken += color
+            SketchRoute(
+                id = newId(), name = route.name.trim().ifEmpty { "ROUTE ${index + 1}" }, color = color, points = route.points, plan = route.plan,
+                elevations = route.elevations, segmentId = route.segmentId,
+            )
+        }
+    }
+
+    /** What a mission's file is told about its routes: each route as it stands. The name is the file's own and is not written back. */
+    public fun toMissionRoutes(routes: List<SketchRoute>): List<MissionRoute> =
+        routes.map { MissionRoute(it.name, it.segmentId, it.points, it.plan, it.elevations) }
+
+    /** True when two lists of routes would write the same file: a name, a colour or a hidden route is not in it. */
+    public fun sameFileContent(a: List<MissionRoute>, b: List<MissionRoute>): Boolean =
+        a.size == b.size && a.indices.all { i ->
+            a[i].segmentId == b[i].segmentId && a[i].points == b[i].points && a[i].plan == b[i].plan && a[i].elevations == b[i].elevations
+        }
 
     /** How many designated (named) route points the routes have in all, which is what a crew counts: shaping points only bend the line. */
     public fun namedPoints(routes: List<SketchRoute>): Int = routes.sumOf { r -> r.points.count { it.kind == RoutePoint.KIND_AMPS } }

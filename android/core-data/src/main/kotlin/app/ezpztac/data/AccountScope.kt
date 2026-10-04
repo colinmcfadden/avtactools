@@ -50,6 +50,7 @@ internal class RoomAccountScope(private val database: EzpzDatabase) : AccountSco
         database.withTransaction {
             dao.wipeRecords()
             dao.wipeOutbox()
+            dao.wipeBlobs()
             dao.wipeState()
         }
     }

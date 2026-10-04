@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
 import app.ezpztac.sync.Attempt
+import app.ezpztac.sync.FileHash
+import app.ezpztac.sync.FileRef
 import app.ezpztac.sync.LocalRecord
 import app.ezpztac.sync.Operation
 import app.ezpztac.sync.OutboxEntry
@@ -272,5 +274,79 @@ class RoomSyncStoreTest {
         val path = context.getDatabasePath(EzpzDatabase.FILE_NAME).path
         assertTrue(path, path.startsWith(context.dataDir.path))
         assertFalse("must not be on shared storage", path.contains("/sdcard") || path.contains("/storage/emulated"))
+    }
+
+    // -- Files ---------------------------------------------------------------------------------
+
+    private fun mission(uuid: String, file: FileRef?) = LocalRecord(
+        RecordKind.MISSION, uuid, serverId = null, baseRevision = null, name = uuid, data = JsonObject(emptyMap()), dirty = true, localVersion = 1, file = file,
+    )
+
+    private val everyByte = ByteArray(256) { it.toByte() } + ByteArray(70_000) { (it * 31).toByte() }
+
+    @Test
+    fun `a file comes back byte for byte, and its reference with it`() = runBlocking<Unit> {
+        val id = FileHash.of(everyByte)
+        store.transaction {
+            putBlob(id, everyByte)
+            put(mission("m", FileRef(id, "GOAT SUCKER.msnx")))
+        }
+        val back = store.transaction { record(RecordKind.MISSION, "m") }!!
+        assertEquals(FileRef(id, "GOAT SUCKER.msnx"), back.file)
+        assertTrue(everyByte.contentEquals(store.transaction { blob(id) }!!))
+    }
+
+    @Test
+    fun `a file nothing refers to is let go when the transaction ends`() = runBlocking<Unit> {
+        val id = FileHash.of(everyByte)
+        store.transaction { putBlob(id, everyByte) }
+        assertNull(store.transaction { blob(id) })
+    }
+
+    @Test
+    fun `a file a record refers to stays until the record lets go of it`() = runBlocking<Unit> {
+        val first = byteArrayOf(1, 2, 3)
+        val second = byteArrayOf(4, 5, 6)
+        val firstId = FileHash.of(first)
+        val secondId = FileHash.of(second)
+        store.transaction { putBlob(firstId, first); put(mission("m", FileRef(firstId, "a.msnx"))) }
+        assertNotNull(store.transaction { blob(firstId) })
+        store.transaction { putBlob(secondId, second); put(mission("m", FileRef(secondId, "b.msnx"))) }
+        assertNull(store.transaction { blob(firstId) })
+        assertNotNull(store.transaction { blob(secondId) })
+        store.transaction { remove(RecordKind.MISSION, "m") }
+        assertNull(store.transaction { blob(secondId) })
+    }
+
+    @Test
+    fun `a file a send in progress carries stays even after the record has moved on`() = runBlocking<Unit> {
+        val first = byteArrayOf(1, 2, 3)
+        val second = byteArrayOf(4, 5, 6)
+        val firstId = FileHash.of(first)
+        val secondId = FileHash.of(second)
+        store.transaction {
+            putBlob(firstId, first)
+            put(mission("m", FileRef(firstId, "a.msnx")))
+            val entry = enqueue(OutboxEntry(0, RecordKind.MISSION, "m", Operation.CREATE))
+            update(entry.copy(sent = Attempt("key", 1, null, "m", JsonObject(emptyMap()), FileRef(firstId, "a.msnx"))))
+        }
+        store.transaction { putBlob(secondId, second); put(mission("m", FileRef(secondId, "b.msnx"))) }
+        // The record has a newer file, but the send in doubt must be repeated as it was, so its file is kept.
+        assertNotNull(store.transaction { blob(firstId) })
+        assertEquals(FileRef(firstId, "a.msnx"), store.transaction { outbox() }.single().sent!!.file)
+        store.transaction { dequeue(outbox().single().seq) }
+        assertNull(store.transaction { blob(firstId) })
+    }
+
+    @Test
+    fun `a transaction that fails keeps the files it found, and drops none`() = runBlocking<Unit> {
+        val bytes = byteArrayOf(9, 9)
+        val id = FileHash.of(bytes)
+        store.transaction { putBlob(id, bytes); put(mission("m", FileRef(id, "a.msnx"))) }
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { store.transaction { remove(RecordKind.MISSION, "m"); error("rolled back") } }
+        }
+        assertNotNull(store.transaction { blob(id) })
+        assertNotNull(store.transaction { record(RecordKind.MISSION, "m") })
     }
 }

@@ -119,6 +119,23 @@ public object SketchOps {
         return route.copy(points = route.points.take(index + 1) + inserted + route.points.drop(index + 1))
     }
 
+    /** What a point put on the line of an imported mission is called, as the web names it (`.NEWPT`); the mission writer gives the file's point the same name. */
+    public const val MISSION_NEW_POINT_NAME: String = ".NEWPT"
+
+    /**
+     * A point put on the line of an **imported mission**, between the nearest pair of consecutive points. Unlike [insertShaping] it is a named turn point (`.NEWPT`), with the
+     * ground elevation of the point it follows, as the web's `insertPointOnRoute` makes it: the file has a leg to split there, and a file cannot be given a shaping point.
+     */
+    public fun insertMissionPoint(route: SketchRoute, lat: Double, lon: Double, newPointId: () -> String): SketchRoute {
+        val index = nearestAdjacentIndex(route.points, lat, lon)
+        if (index == -1) return route
+        val anchor = route.points[index]
+        val inserted = RoutePoint(
+            id = newPointId(), lat = lat, lon = lon, ele = anchor.ele, kind = RoutePoint.KIND_AMPS, ptType = "turn", name = MISSION_NEW_POINT_NAME, role = "waypoint",
+        )
+        return route.copy(points = route.points.take(index + 1) + inserted + route.points.drop(index + 1))
+    }
+
     /** A designated AMPS point at the end of a route: how the line is snapped onto a named local point, carrying its charted elevation. */
     public fun appendAmps(route: SketchRoute, lat: Double, lon: Double, name: String = "", ptType: String = "turn", chartElevationFt: Double? = null, newPointId: () -> String): SketchRoute =
         route.copy(

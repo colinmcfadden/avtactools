@@ -66,12 +66,12 @@ class IncomingScreenTest {
     }
 
     @Test
-    fun `a mission asks before bringing its routes in, and says the file itself is not changed`() {
+    fun `a mission asks before it is brought in, and says its file is kept and the changes are written back`() {
         show(IncomingUiState(IncomingOfferUi.Mission("plan.msnx", routes = 2, namedPoints = 14, aircraft = "UH-60L")))
-        compose.onNodeWithText("Bring in the routes?").assertIsDisplayed()
+        compose.onNodeWithText("Bring in this mission?").assertIsDisplayed()
         assertTrue(present("plan.msnx has 2 routes with 14 named points, planned for the UH-60L.", substring = true))
-        assertTrue(present("not changed or kept", substring = true))
-        assertTrue(present("exporting makes a new mission", substring = true))
+        assertTrue(present("written back into the file", substring = true))
+        assertTrue(present("syncs with your account", substring = true))
         compose.onNodeWithText("Bring in 2 routes").performClick()
         compose.onNodeWithText("Not now").performClick()
         assertEquals(listOf("accept", "decline"), log)

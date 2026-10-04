@@ -14,6 +14,7 @@ class RouteSession(
     store = object : DocumentStore<RouteSet> {
         override suspend fun open(uuid: String): RouteSet? = repository.open(uuid)
         override suspend fun save(document: RouteSet): RouteSet = repository.save(document)
+        override fun release(uuid: String) = repository.release()
     },
     scope = scope,
     idOf = { it.id },

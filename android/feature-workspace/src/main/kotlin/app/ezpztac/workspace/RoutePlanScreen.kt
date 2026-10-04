@@ -68,19 +68,21 @@ internal fun RouteDetailCard(
             detail.warnings.forEach { Banner(it, BannerKind.Warning) }
             if (detail.points.isNotEmpty()) {
                 Text("Nav log", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                detail.points.forEach { PointRow(detail.routeId, it, crosshairGrid, actions) }
+                detail.points.forEach { PointRow(detail.routeId, it, crosshairGrid, actions, fixedType = detail.isMission) }
             }
-            detail.heldShaping?.let { ShapingPointStrip(detail.routeId, it, crosshairGrid, actions) }
+            detail.heldShaping?.let { ShapingPointStrip(detail.routeId, it, crosshairGrid, actions, fixedType = detail.isMission) }
             if (detail.shapingPoints > 0) {
                 Text(
                     if (detail.shapingPoints == 1) "1 shaping point bends the line between named points." else "${detail.shapingPoints} shaping points bend the line between named points.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // In an imported mission the point put on the line is a named one that splits the leg (the file has no other kind to give it).
+            val addLabel = if (detail.isMission) "Add a point on the line at the crosshair" else "Add a shaping point at the crosshair"
             SecondaryButton(
-                if (crosshairGrid != null) "Add a shaping point at the crosshair · $crosshairGrid" else "Add a shaping point at the crosshair",
+                if (crosshairGrid != null) "$addLabel · $crosshairGrid" else addLabel,
                 onClick = { actions.addShapingPoint(detail.routeId) },
-                modifier = Modifier.semantics { contentDescription = "Add a point that bends the line at the crosshair" },
+                modifier = Modifier.semantics { contentDescription = if (detail.isMission) "Add a named point on the line at the crosshair" else "Add a point that bends the line at the crosshair" },
             )
             detail.totals?.let { Text(it, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface) }
             if (exporting) PrimaryButton("Export this route", onClick = {}, busy = true, busyText = "Building the mission…")
@@ -153,7 +155,7 @@ private fun FetchControls(hasElevations: Boolean, fetching: PlanningKind?, note:
 // -- The nav log ---------------------------------------------------------------------------------------------------
 
 @Composable
-private fun PointRow(routeId: String, point: PlanPointUi, crosshairGrid: String?, actions: RoutesActions) {
+private fun PointRow(routeId: String, point: PlanPointUi, crosshairGrid: String?, actions: RoutesActions, fixedType: Boolean = false) {
     val border = if (point.held) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant, border = BorderStroke(if (point.held) 2.dp else 1.dp, border),
@@ -192,7 +194,7 @@ private fun pointTitle(point: PlanPointUi): String {
 }
 
 @Composable
-private fun PointForm(routeId: String, point: PlanPointUi, crosshairGrid: String?, actions: RoutesActions) {
+private fun PointForm(routeId: String, point: PlanPointUi, crosshairGrid: String?, actions: RoutesActions, fixedType: Boolean = false) {
     var typed by remember(point.id, point.values) { mutableStateOf(point.values) }
     var problem by remember(point.id, point.values) { mutableStateOf<String?>(null) }
     var name by remember(point.id, point.name) { mutableStateOf(point.name) }
@@ -209,7 +211,7 @@ private fun PointForm(routeId: String, point: PlanPointUi, crosshairGrid: String
             hint = nameHint,
         )
         if (name != point.name) TextAction("Save name", onClick = { actions.renamePoint(routeId, point.id, name) })
-        Choice("Type", label(TYPE_CHOICES, point.ptType.orEmpty()), TYPE_CHOICES) { actions.setPointType(routeId, point.id, it) }
+        if (!fixedType) Choice("Type", label(TYPE_CHOICES, point.ptType.orEmpty()), TYPE_CHOICES) { actions.setPointType(routeId, point.id, it) }
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             EzpzTextField(typed.altitudeValue, { change(typed.copy(altitudeValue = it)) }, if (point.first) "Start altitude (ft)" else "Altitude to (ft)", Modifier.weight(1f))
             Box(Modifier.weight(1f)) { Choice("Reference", label(ALTITUDE_CHOICES, typed.altitudeRef), ALTITUDE_CHOICES) { change(typed.copy(altitudeRef = it)) } }
@@ -236,18 +238,22 @@ private fun PointForm(routeId: String, point: PlanPointUi, crosshairGrid: String
         } else {
             SecondaryButton("Move this point", onClick = { moving = true }, modifier = Modifier.semantics { contentDescription = "Show controls to move this point" })
         }
-        SecondaryButton("Make it only shape the line", onClick = { actions.makeShaping(routeId, point.id) })
+        if (!fixedType) SecondaryButton("Make it only shape the line", onClick = { actions.makeShaping(routeId, point.id) })
     }
 }
 
 @Composable
-private fun ShapingPointStrip(routeId: String, point: ShapingPointUi, crosshairGrid: String?, actions: RoutesActions) {
+private fun ShapingPointStrip(routeId: String, point: ShapingPointUi, crosshairGrid: String?, actions: RoutesActions, fixedType: Boolean = false) {
     Surface(shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant, border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
         Column(Modifier.fillMaxWidth().padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             Text("Shaping point", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
-            Text("It only bends the line. Make it a route point to give it a name, an altitude or a time.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (fixedType) "It only bends the line, as AMPS calculated it. Moving it moves the shape of the leg in the mission's file."
+                else "It only bends the line. Make it a route point to give it a name, an altitude or a time.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             PointPosition(routeId, point.id, point.grid, crosshairGrid, actions)
-            PrimaryButton("Make it a route point", onClick = { actions.makeNamed(routeId, point.id) })
+            if (!fixedType) PrimaryButton("Make it a route point", onClick = { actions.makeNamed(routeId, point.id) })
         }
     }
 }
