@@ -187,6 +187,12 @@ public class SyncEngine(
             Failed(StopReason.AffiliationRequired)
         } catch (e: ApiException) {
             when {
+                // A create has no record on the server to be gone: a 404 there is a server (or address) that does not know the route, and re-creating the record under a
+                // new identity would only be answered the same way, again and again, leaving a copy each time.
+                e.status == 404 && entry.operation == Operation.CREATE -> {
+                    withContext(NonCancellable) { uncount(entry) }
+                    Failed(StopReason.ServerError(404))
+                }
                 e.status == 404 -> withContext(NonCancellable) { onGone(entry, record) }
                 e.status >= 500 -> Failed(StopReason.ServerError(e.status))
                 else -> withContext(NonCancellable) { block(entry, e) }

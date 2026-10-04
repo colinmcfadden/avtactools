@@ -169,4 +169,22 @@ internal class MissionSyncTest {
         assertEquals(1, report.blocked.size)
         assertTrue(report.blocked.single().lastError!!.contains("not on the device"))
     }
+
+    @Test
+    fun `a create the server answers 404 is not a record that is gone, so it keeps its identity and waits`() = rig {
+        val wrongServer = object : SyncApi by server {
+            override suspend fun create(record: LocalRecord, key: String, file: FilePart?): Remote = throw ApiException(404, null, "Not found")
+        }
+        val c = Device("C", wrongServer)
+        c.make(RecordKind.LZ, "CROW", "y")
+        val before = c.names(RecordKind.LZ)
+        val first = c.sync()
+        assertEquals(StopReason.ServerError(404), first.stopped)
+        c.sync()
+        c.sync()
+        assertEquals(before, c.names(RecordKind.LZ))
+        assertEquals(1, c.repository.records(RecordKind.LZ).size)               // not one more each time
+        assertEquals(1, c.store.transaction { outbox() }.size)
+        assertTrue(first.recreated.isEmpty())
+    }
 }
