@@ -1,6 +1,8 @@
 package app.ezpztac.android.sync
 
 import app.ezpztac.android.AuthBackend
+import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.RouteSession
 import app.ezpztac.network.AuthState
 import app.ezpztac.sync.StopReason
 import app.ezpztac.sync.SyncEngine
@@ -34,9 +36,17 @@ interface SyncRunner {
 class EngineSyncRunner @Inject constructor(
     private val engine: SyncEngine,
     private val auth: AuthBackend,
+    private val diagrams: DiagramSession,
+    private val routes: RouteSession,
 ) : SyncRunner {
     override suspend fun runOnce(): SyncOutcome {
         if (auth.state.value !is AuthState.SignedIn) return SyncOutcome.Done                      // nobody to sync for
-        return outcomeOf(engine.sync())
+        val report = engine.sync()
+        // A record the engine gave a new identity while it was open: the open document follows it, or its next save would fork it.
+        report.recreated.forEach { (old, new) ->
+            diagrams.follow(old, new)
+            routes.follow(old, new)
+        }
+        return outcomeOf(report)
     }
 }

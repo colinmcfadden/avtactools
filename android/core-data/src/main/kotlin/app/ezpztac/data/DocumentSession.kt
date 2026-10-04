@@ -230,6 +230,21 @@ open class DocumentSession<D : Any>(
         }
     }
 
+    /**
+     * The sync engine gave the record [oldId] a new identity, [newId] (the server held the old one as a deleted record, so the work went up again as a new one). If that
+     * is the open document it takes the new id, keeping what has not been saved yet; otherwise a save would find no record under the old id and keep the work as one more
+     * new record, and every sync would then make another.
+     */
+    suspend fun follow(oldId: String, newId: String) {
+        switching.withLock {
+            writing.withLock {
+                if (_active.value?.let(idOf) != oldId) return
+                val moved = store.open(newId) ?: return
+                adopt(oldId, moved)
+            }
+        }
+    }
+
     /** The record was made anew under another id: the open document, and every step that can be undone to, take it, keeping edits made meanwhile. */
     private fun adopt(oldId: String, saved: D) {
         val change = { d: D -> reidentify(d, saved) }

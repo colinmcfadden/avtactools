@@ -448,6 +448,38 @@ class DiagramSessionTest {
     }
 
     @Test
+    fun `a record the engine gave a new id is followed, so the next save edits it and makes no copy`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "A")
+        r.session.open(made.id)
+        // What the engine does when the server held the record as deleted: the same record, a new uuid, the old one gone.
+        val store = r.device.store as InMemorySyncStore
+        val fresh = java.util.UUID.randomUUID().toString()
+        store.transaction {
+            val old = record(RecordKind.LZ, made.id)!!
+            remove(RecordKind.LZ, made.id)
+            put(old.copy(uuid = fresh, serverId = null, baseRevision = null, dirty = true))
+        }
+        r.session.follow(made.id, fresh)
+        assertEquals(fresh, r.session.active.value!!.id)
+        r.session.edit("Rename") { it.copy(name = "A2") }
+        r.session.flush()
+        r.session.edit("Rename again") { it.copy(name = "A3") }
+        r.session.flush()
+        assertEquals(1, store.transaction { records(RecordKind.LZ) }.size)                  // one record, not one more each time
+        assertEquals("A3", r.repository.open(fresh)!!.name)
+    }
+
+    @Test
+    fun `following an id that is not the open document changes nothing`() = runTest {
+        val r = rig()
+        val made = r.repository.create(target, "A")
+        r.session.open(made.id)
+        r.session.follow("someone-else", "elsewhere")
+        assertEquals(made.id, r.session.active.value!!.id)
+    }
+
+    @Test
     fun `a save that failed for a moment is written by the next flush`() = runTest {
         val inner = InMemorySyncStore()
         val flaky = object : app.ezpztac.sync.SyncStore, app.ezpztac.sync.RecordFeed by inner {
