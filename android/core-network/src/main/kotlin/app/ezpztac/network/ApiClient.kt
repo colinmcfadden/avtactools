@@ -1,6 +1,7 @@
 package app.ezpztac.network
 
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -335,15 +336,19 @@ public class ApiClient(
             .build()
         val timeout = call.readTimeoutSeconds ?: if (PriorityPaths.isHeavy(call.path)) HEAVY_READ_TIMEOUT_SECONDS else null
         val client = timeout?.let { http.newBuilder().readTimeout(it, TimeUnit.SECONDS).build() } ?: http
-        try {
-            client.newCall(request).await().use { response ->
-                if (!call.binary) return Raw(response.code, response.headers, response.body?.string().orEmpty())
-                // A file is read as bytes; an error's body is still text, which is what the error mapping reads.
-                val bytes = response.body?.bytes() ?: ByteArray(0)
-                return if (response.code in 200..299) Raw(response.code, response.headers, "", bytes) else Raw(response.code, response.headers, String(bytes, Charsets.UTF_8))
+        // Reading the body is blocking network work, and the call resumes on whatever thread asked: from a screen, that is the main thread, where Android refuses it
+        // (NetworkOnMainThreadException). So the whole exchange is on the I/O threads, whoever is asking.
+        return withContext(Dispatchers.IO) {
+            try {
+                client.newCall(request).await().use { response ->
+                    if (!call.binary) return@use Raw(response.code, response.headers, response.body?.string().orEmpty())
+                    // A file is read as bytes; an error's body is still text, which is what the error mapping reads.
+                    val bytes = response.body?.bytes() ?: ByteArray(0)
+                    if (response.code in 200..299) Raw(response.code, response.headers, "", bytes) else Raw(response.code, response.headers, String(bytes, Charsets.UTF_8))
+                }
+            } catch (e: IOException) {
+                throw networkFailure(e)
             }
-        } catch (e: IOException) {
-            throw networkFailure(e)
         }
     }
 
