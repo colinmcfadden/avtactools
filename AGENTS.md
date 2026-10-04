@@ -406,7 +406,8 @@ npm start                                     # copies Cesium into public/cesium
 **An app signing in against this backend needs an account in *this* database.** The local SQLite file (`backend/ezpz.db`) holds none of the
 production accounts, and the login route answers "Invalid email or password." for a wrong password, an unknown address and an unverified one alike
 (on purpose). `python dev_user.py you@example.com [--admin]` makes a verified, `.mil`-cleared account there; it refuses anything but a local SQLite
-database. The Android procedure is in `docs/HANDOFF.md` §4.
+database. The Android procedure is in `docs/HANDOFF.md` §4. Run it from `backend/` with the Python the backend runs under; **the owner's venv is not
+at `backend/venv`** (the block above is how to make one, not where it is), so give them a command that does not assume a path, or ask.
 
 ### Tests
 

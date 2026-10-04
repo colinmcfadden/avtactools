@@ -96,9 +96,11 @@ Make an account in the local database (PowerShell; the password must be 15+ char
 
 ```powershell
 cd backend
-.\venv\Scripts\Activate.ps1
-python dev_user.py you@example.com --admin     # asks for the password; --admin is optional
-python app.py                                   # http://127.0.0.1:5000
+# Use the Python you run the backend with. If that is a venv, call it directly (no activation needed); it may be in backend\venv, or at the
+# repo root (venv\ and .venv\ are gitignored there). To find it:
+#   Get-ChildItem C:\_dev\avtactools, C:\_dev\avtactools\backend -Directory -Force | Where-Object { Test-Path "$($_.FullName)\Scripts\python.exe" }
+& "C:\_dev\avtactools\venv\Scripts\python.exe" dev_user.py you@example.com --admin     # asks for the password; --admin is optional
+& "C:\_dev\avtactools\venv\Scripts\python.exe" app.py                                   # http://127.0.0.1:5000
 ```
 
 `dev_user.py` makes the account verified, active and past the `.mil` gate, and signs out anything issued before if it already
