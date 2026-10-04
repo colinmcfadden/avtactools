@@ -54,6 +54,7 @@ reference is.
 | `routes/handoff.json` | `frontend/src/contracts/handoffFixtures.test.js` | — | `core-formats` (`RouteHandoff`: the Garmin FPL, the GPX, the ForeFlight route string and URL a route is handed to other apps as; byte for byte, with the FPL's clock fixed) |
 | `aircraft/limits.json` | — | `backend/tests/test_contract_fixtures.py` (`AircraftLimitsTests`; `UPDATE_CONTRACTS=1` regenerates) | `core-model` (`AircraftDraft`) |
 | `symbols/*` | `frontend/src/contracts/symbolFixtures.test.js` | — | `core-model` (`Sidc`, `SymbolPresets`, `UnitMarkers`), `core-symbols` (`ScriptAnswer`, `PresetSymbols`; the `svg/` files are the app's assets) |
+| `msnx/edits.json`, `msnx/edits/*.msnx` | `frontend/src/contracts/msnxEditFixtures.test.js` | — | `core-formats` (`MsnxMutator`: what the web writes when an imported mission is edited, compared as parsed documents) |
 | `msnx/*` | `frontend/src/contracts/msnxFixtures.test.js` | — | `core-formats` (`MsnxReader`; `MsnxWriter` for the `sketch-*.msnx` the web exports, all seven parts it changes, compared as parsed documents) |
 | `sqlite/tables.json` | `frontend/src/contracts/sqliteFixtures.test.js` | `backend/tests/test_contract_fixtures.py` | `core-formats` |
 | `localpoints/parse.json` | `frontend/src/contracts/sqliteFixtures.test.js` | — | `core-formats` |
