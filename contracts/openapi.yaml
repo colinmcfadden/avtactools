@@ -1166,6 +1166,48 @@ paths:
         "502":
           $ref: "#/components/responses/SimpleError"
 
+  /api/threat-mask:
+    post:
+      operationId: threatMask
+      summary: What a threat's radars can see over the terrain
+      description: |
+        A viewshed for each radar that asks for a mask (`showMask`), over the open Terrarium elevation tiles: where an aircraft flying at each of the radar's altitude bands (`bands`,
+        those that are `viewable`) is in line of sight of its antenna, with earth curvature and refraction, as a coloured PNG (`png`, a data URI) over `bounds`. A radar that does not ask,
+        or has no viewable band, or sees nothing, has no entry. **The position and radars are used for this one answer and are not kept**: nothing is written, and the app asks only when
+        the person presses the button, since threats are otherwise never sent anywhere. Errors are `{error}`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon, radars]
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+                radars:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: "#/components/schemas/ThreatRadar"
+      responses:
+        "200":
+          description: The masks. `radars` is empty when no radar had anything to show.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatMask"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "500":
+          $ref: "#/components/responses/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+
   /api/elevations:
     post:
       operationId: elevations
@@ -1836,6 +1878,45 @@ components:
         sampleCount: { type: integer }
         sampleAreaM2: { type: number }
 
+    ThreatRadar:
+      type: object
+      required: [type, rangeNmi]
+      properties:
+        type: { type: integer, description: "0 detection, 1 engagement." }
+        rangeNmi: { type: number }
+        antennaHeightFt: { type: number }
+        aglNotMsl: { type: boolean }
+        showMask: { type: boolean }
+        showRangeRings: { type: boolean }
+        bands:
+          type: array
+          items:
+            type: object
+            required: [altFt]
+            properties:
+              altFt: { type: number }
+              color: { type: string, description: "`#RRGGBB`." }
+              alpha: { type: number }
+              colorIndex: { type: integer }
+              viewable: { type: boolean }
+    ThreatMask:
+      type: object
+      required: [bounds, radars]
+      properties:
+        bounds:
+          type: array
+          description: "`[[south, west], [north, east]]` of every raster."
+          items:
+            type: array
+            items: { type: number }
+        radars:
+          type: array
+          items:
+            type: object
+            required: [type, png]
+            properties:
+              type: { type: integer }
+              png: { type: string, description: "A `data:image/png;base64,` raster over `bounds`, one colour per altitude band, the lowest band on top." }
     TerrainAnalysis:
       type: object
       required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, thresholds]

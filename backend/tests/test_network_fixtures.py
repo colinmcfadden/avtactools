@@ -52,6 +52,7 @@ from terrain_provider import LocalRasterCatalog  # noqa: E402
 if "routes.terrain_routes" not in sys.modules:
     sys.modules.setdefault("ultralytics", MagicMock())
 from routes.terrain_routes import terrain_bp  # noqa: E402
+from routes.threat_routes import threat_bp  # noqa: E402
 
 FIXTURE = BACKEND_DIR.parent / "contracts" / "fixtures" / "network" / "responses.json"
 UPDATE = os.environ.get("UPDATE_CONTRACTS") == "1"
@@ -102,7 +103,7 @@ def documented(method, path, status):
 
 
 class NetworkFixtureTests(NativeAuthCase):
-    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, weather_bp)
+    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp)
 
     def setUp(self):
         super().setUp()
@@ -349,6 +350,39 @@ class NetworkFixtureTests(NativeAuthCase):
                          self.client.post("/api/terrain-analysis", headers=head, json={"polygon": [[40.0, -100.0], [40.0, -99.99], [40.01, -99.99]]}))
         self.rec("terrain-analysis: too few points", self.client.post("/api/terrain-analysis", headers=head, json={"polygon": [[1, 2], [3, 4]]}))
 
+    def threat_mask(self):
+        """What a threat's radars can see. The elevation tiles are other people's, so the terrain is stood in for (a ridge between the radar and the east, over
+        a gentle slope); the route, the viewshed maths, the colouring and the response are the server's own."""
+        self.make_account(email="threats@example.com")
+        head = self.bearer(self.login(ANDROID, "threats@example.com")["access_token"])
+
+        size = 160
+        rows, cols = np.mgrid[0:size, 0:size]
+        dem = (300.0 + 0.1 * cols + 90.0 * np.exp(-((cols - 110) ** 2) / 40.0)).astype(np.float32)        # a north-south ridge east of the radar
+        meta = {"radar_row": 80.0, "radar_col": 50.0, "mpp": 60.0, "south": 34.50, "west": -84.60, "north": 34.60, "east": -84.50}
+
+        def radar(kind, range_nmi, show_mask=True, bands=None, antenna_ft=30.0):
+            return {
+                "type": kind, "rangeNmi": range_nmi, "antennaHeightFt": antenna_ft, "aglNotMsl": True, "showMask": show_mask, "showRangeRings": True,
+                "bands": bands if bands is not None else [
+                    {"altFt": 100, "color": "#FF0000", "alpha": 0.4, "colorIndex": 0, "viewable": True},
+                    {"altFt": 500, "color": "#00FF00", "alpha": 0.35, "colorIndex": 1, "viewable": True},
+                    {"altFt": 2000, "color": "#0000FF", "alpha": 0.3, "colorIndex": 2, "viewable": False},
+                ],
+            }
+
+        place = {"lat": 34.55, "lon": -84.57}
+        with patch("routes.threat_routes.fetch_dem", return_value=(dem, meta)):
+            self.rec("threat-mask", self.client.post("/api/threat-mask", headers=head, json={**place, "radars": [radar(0, 2.0), radar(1, 1.0, show_mask=False)]}))
+            self.rec("threat-mask: nothing to show", self.client.post("/api/threat-mask", headers=head, json={**place, "radars": [radar(0, 2.0, show_mask=False)]}))
+            self.rec("threat-mask: no radar sees anything at a band that is not viewable",
+                     self.client.post("/api/threat-mask", headers=head, json={**place, "radars": [radar(0, 2.0, bands=[])]}))
+            self.rec("threat-mask: no radars", self.client.post("/api/threat-mask", headers=head, json={**place, "radars": []}))
+            self.rec("threat-mask: a range that is not positive", self.client.post("/api/threat-mask", headers=head, json={**place, "radars": [radar(0, 0.0)]}))
+            self.rec("threat-mask: no longitude", self.client.post("/api/threat-mask", headers=head, json={"lat": 34.55, "radars": [radar(0, 2.0)]}))
+        with patch("routes.threat_routes.fetch_dem", return_value=(None, None)):
+            self.rec("threat-mask: no terrain for the area", self.client.post("/api/threat-mask", headers=head, json={**place, "radars": [radar(0, 2.0)]}))
+
     def planning(self):
         """Planning a route: ground elevations and the wind at each point. The elevation tiles and the weather service are other people's, so
         what they answer is stood in for; the routes, the choice of station and of observation or forecast, and the responses are the server's own."""
@@ -464,6 +498,7 @@ class NetworkFixtureTests(NativeAuthCase):
         self.scenario()
         self.accounts()
         self.terrain()
+        self.threat_mask()
         self.planning()
         self.weather_summary()
         document = {
