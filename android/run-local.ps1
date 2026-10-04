@@ -56,5 +56,5 @@ if (-not $NoBuild) {
 
 # 5. Optionally start clean, then launch.
 if ($ClearData) { & adb -s $Device shell pm clear $appId | Out-Null; Write-Host "App data cleared" }
-& adb -s $Device shell monkey -p $appId -c android.intent.category.LAUNCHER 1 2>$null | Out-Null
+& adb -s $Device shell am start -n "$appId/app.ezpztac.android.MainActivity" | Out-Null
 Write-Host "Started $appId against http://127.0.0.1:$Port/"
