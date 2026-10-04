@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.AnalysisStatus
+import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDrawing
+import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.model.DiagramGeometry
 import app.ezpztac.model.DiagramStatus
@@ -34,7 +37,12 @@ data class BoundaryUiState(
     /** The corners of the boundary the open diagram already has drawn (not analysed yet), or 0. */
     val drawnPoints: Int = 0,
     val error: String? = null,
+    /** The corner of the boundary being held on the map, if one is. */
+    val heldCorner: HeldCornerUi? = null,
 )
+
+/** A corner of the boundary held on the map: what it is (`Boundary corner 3 of 6`), where, and whether it can be deleted (a boundary keeps three). */
+data class HeldCornerUi(val title: String, val grid: String, val canDelete: Boolean)
 
 /**
  * Drawing a landing-zone boundary by hand (the web's "Draw LZ/PZ boundary"): the sheet's start button, and the toolbar over the map that
@@ -45,10 +53,11 @@ class BoundaryViewModel @Inject constructor(
     private val drawing: BoundaryDrawing,
     session: DiagramSession,
     analysis: AnalysisService,
+    private val corners: BoundaryCorners,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
-    val state: StateFlow<BoundaryUiState> = combine(drawing.draft, session.active, analysis.status, error) { draft, diagram, status, error ->
+    val state: StateFlow<BoundaryUiState> = combine(drawing.draft, session.active, analysis.status, error, corners.held) { draft, diagram, status, error, heldCorner ->
         val running = status is AnalysisStatus.Running && status.diagramId == diagram?.id
         val startable = diagram != null && diagram.target != null
         BoundaryUiState(
@@ -65,8 +74,20 @@ class BoundaryViewModel @Inject constructor(
             clears = diagram != null && (diagram.status == DiagramStatus.ANALYZED || DiagramGeometry.drawn(diagram).isNotEmpty()),
             drawnPoints = diagram?.let { DiagramGeometry.drawn(it).size } ?: 0,
             error = error,
+            heldCorner = diagram?.let { d -> heldCorner?.let { cornerOf(d, it) } },
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, BoundaryUiState())
+
+    /** The held corner as the bar shows it, or null when it is not there any more. */
+    private fun cornerOf(diagram: app.ezpztac.model.Diagram, corner: BoundaryCornerRef): HeldCornerUi? {
+        val ring = DiagramGeometry.polygon(if (corner.drawn) diagram.analysis.customLZ else diagram.analysis.detectedLZ)
+        val at = ring.getOrNull(corner.index) ?: return null
+        val grid = MgrsConverter.toMgrs(at.lat, at.lon)?.format() ?: "%.5f, %.5f".format(java.util.Locale.ROOT, at.lat, at.lon)
+        return HeldCornerUi("Boundary corner ${corner.index + 1} of ${ring.size}", grid, canDelete = ring.size > BoundaryCorners.MIN_CORNERS)
+    }
+
+    /** Deletes the corner held on the map (one undo step). Its refusal, if any, is in words in [BoundaryUiState.error]. */
+    fun deleteCorner() = fail(corners.deleteHeld())
 
     fun start() = fail(drawing.start())
 

@@ -66,7 +66,8 @@ class BoundaryViewModelTest {
         val terrain = HeldTerrain()
         val analysis = AnalysisService(terrain, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
         val drawing = BoundaryDrawing(session)
-        val model = BoundaryViewModel(drawing, session, analysis)
+        val corners = app.ezpztac.data.BoundaryCorners(session)
+        val model = BoundaryViewModel(drawing, session, analysis, corners)
         val state get() = model.state.value
     }
 
@@ -239,5 +240,36 @@ class BoundaryViewModelTest {
         assertFalse(r.state.drawing)
         assertNull(r.state.error)
         assertEquals(0, r.state.drawnPoints)
+    }
+
+    @Test
+    fun `a held corner is named, placed, and deleted from the view model as one step`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open()
+        r.session.setQuietly { DiagramOps.setAnalysisDraft(it, JsonObject(mapOf("customLZ" to ring(LatLon(34.0, -84.0), LatLon(34.0, -83.9), LatLon(34.1, -83.9), LatLon(34.1, -84.0))))) }
+        r.corners.select(app.ezpztac.model.BoundaryCornerRef(true, 1))
+        advanceUntilIdle()
+        val held = r.state.heldCorner!!
+        assertEquals("Boundary corner 2 of 4", held.title)
+        assertTrue(held.canDelete)
+        r.model.deleteCorner()
+        advanceUntilIdle()
+        assertNull(r.state.heldCorner)
+        assertNull(r.state.error)
+        assertEquals(3, r.state.drawnPoints)
+    }
+
+    @Test
+    fun `the third corner cannot be deleted and the refusal is in words`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open()
+        r.session.setQuietly { DiagramOps.setAnalysisDraft(it, JsonObject(mapOf("customLZ" to ring(LatLon(34.0, -84.0), LatLon(34.0, -83.9), LatLon(34.1, -83.9))))) }
+        r.corners.select(app.ezpztac.model.BoundaryCornerRef(true, 0))
+        advanceUntilIdle()
+        assertEquals(false, r.state.heldCorner!!.canDelete)
+        r.model.deleteCorner()
+        advanceUntilIdle()
+        assertEquals("A boundary needs at least 3 corners.", r.state.error)
+        assertEquals(3, r.state.drawnPoints)
     }
 }

@@ -1031,7 +1031,7 @@ client is built around not losing one:
     is listening to `opened` (a `SharedFlow` with no replay: an event nobody hears is lost, and it is what takes the map to the diagram and restores its base
     map), does nothing if the person has already opened something, and treats a diagram that is gone (deleted, another account's) or will not open as
     "start from the list".
-  - **Not done:** moving or deleting a corner of a boundary once drawn (draw it again); the heading-aware slope. (Dragging and turning on the map are *Dragging and
+  - **Not done:** moving a corner of a boundary once drawn (draw it again); the heading-aware slope. **Deleting a corner is built** (`BoundaryCorners`, `CornerHitTest`): a tap holds a corner of the analysis or the drawn boundary (after graphics, routes and their points, before local points), the held-object bar offers *Delete corner*, it is one undo step, and a boundary keeps three corners (the button is disabled and says so). Deleting from the analysis boundary makes the slope be measured again. **The slope heat map has a button** (`SlopeVisibility`, `SlopeToggleUi`): it only hides the raster, the slope is still measured and the tiles still say it; it is a view choice, on at each launch and not saved with the diagram. Neither is seen on a device yet. (Dragging and turning on the map are *Dragging and
     turning on the map*, below; the inspector still does all of it and works with gloves and a screen reader.)
 - **Boundary drawing** (`core-data`: `BoundaryDrawing`; `feature-workspace`: `BoundaryViewModel`, `BoundaryScreen`; `feature-map`: `LzScene.draft`;
   `app`: `HomeViewModel`, `MapHome`). The web's "Draw LZ/PZ boundary" (`toggleDrawingMode` in `App.js`): the person puts the corners down one by

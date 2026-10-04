@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -64,6 +65,9 @@ fun MapScreen(
     onGpsPermissionResult: (Boolean) -> Unit,
     onLocateMe: () -> Unit,
     onFaceNorth: () -> Unit,
+    /** The slope heat map's button, present only while the open diagram has a slope measured. */
+    slope: SlopeToggleUi? = null,
+    onToggleSlope: () -> Unit = {},
     modifier: Modifier = Modifier,
     /** Space the bottom sheet takes, so the crosshair stays in the middle of what is still showing. */
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
@@ -85,6 +89,12 @@ fun MapScreen(
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                     LayersButton(state, onSelectStyle)
                     GpsButton(gps, onToggleGps, onGpsPermissionResult, onLocateMe)
+                    slope?.let {
+                        MapButton(
+                            "Slope", if (it.shown) "Slope heat map is on. Tap to hide it" else "Slope heat map is off. Tap to show it",
+                            modifier = Modifier.alpha(if (it.shown) 1f else 0.55f), onClick = onToggleSlope,
+                        )
+                    }
                     camera?.let { CompassButton(it.bearingDegrees, onFaceNorth) }
                 }
             }
@@ -96,6 +106,9 @@ fun MapScreen(
         overlay()
     }
 }
+
+/** The slope heat map's button: whether the raster is drawn over the diagram. */
+data class SlopeToggleUi(val shown: Boolean)
 
 @Composable
 private fun Crosshair() {

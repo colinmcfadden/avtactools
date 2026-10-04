@@ -1,6 +1,7 @@
 package app.ezpztac.map
 
 import app.ezpztac.model.AircraftProfile
+import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramGeometry
 import app.ezpztac.model.GraphicRef
@@ -37,6 +38,8 @@ data class LzScene(
      * point is seen too. Not the diagram's: it is kept only while the person is drawing, and becomes [drawn] when they finish.
      */
     val draft: List<LatLon> = emptyList(),
+    /** The corner of the boundary the person is holding (to delete it), if one is: drawn larger, in amber. */
+    val heldCorner: BoundaryCornerRef? = null,
 ) {
     val isEmpty: Boolean get() = target == null && boundary.isEmpty() && drawn.isEmpty() && slope == null && graphics.isEmpty && draft.isEmpty()
 
@@ -52,6 +55,9 @@ data class LzScene(
                 drawn.size >= 3 -> add(feature("drawn", polygon(drawn)))
                 drawn.size == 2 -> add(feature("drawn", line(drawn)))
             }
+            // A dot at each corner of a boundary that is a polygon, so a corner can be seen and held; the held one is marked.
+            if (boundary.size >= 3) boundary.forEachIndexed { i, p -> add(feature("corner", point(p), "held" to JsonPrimitive(heldCorner == BoundaryCornerRef(false, i)))) }
+            if (drawn.size >= 3) drawn.forEachIndexed { i, p -> add(feature("corner", point(p), "held" to JsonPrimitive(heldCorner == BoundaryCornerRef(true, i)))) }
             if (draft.size >= 2) add(feature("drawn", line(draft)))
             draft.forEach { add(feature("vertex", point(it))) }
             graphics.sectors.forEach { add(feature("sector", polygon(it.ring), "selected" to JsonPrimitive(it.selected))) }
@@ -131,6 +137,7 @@ data class LzScene(
             active: AircraftProfile = AircraftProfile.FALLBACK,
             selected: GraphicRef? = null,
             draft: List<LatLon> = emptyList(),
+            heldCorner: BoundaryCornerRef? = null,
         ): LzScene {
             if (diagram == null) return EMPTY
             return LzScene(
@@ -140,6 +147,7 @@ data class LzScene(
                 slope = slope,
                 graphics = GraphicsScene.of(diagram, profiles, active, selected),
                 draft = draft,
+                heldCorner = heldCorner,
             )
         }
     }

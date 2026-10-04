@@ -33,18 +33,29 @@ data class HeldObjectUi(
     val subtitle: String?,
     /** The way it points, degrees clockwise from north; null for what does not turn. */
     val heading: Double?,
+    /** A button that deletes it ("Delete corner"), for what can be deleted from the bar; null for what cannot. */
+    val deleteLabel: String? = null,
+    /** Whether that button can be pressed, and why not when it cannot ([deleteNote]). */
+    val deleteEnabled: Boolean = true,
+    val deleteNote: String? = null,
 )
 
 /**
  * What is held, from what the sheet's own screens already know of it: a planning graphic first, then a threat, then a point of a route, which is the order a tap on the map
  * takes. Null when nothing is held.
  */
-fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: RoutesUiState): HeldObjectUi? {
+fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: RoutesUiState, corner: HeldCornerUi? = null): HeldObjectUi? {
     graphics.inspector?.let { return HeldObjectUi(it.title, it.grid, it.rotation) }
     threats.held?.let { return HeldObjectUi(it.name.ifBlank { "Threat" }, it.grid, heading = null) }
-    val detail = routes.detail ?: return null
-    detail.points.firstOrNull { it.held }?.let { return HeldObjectUi(it.name.ifBlank { "Route point" }, "${detail.name} · ${it.grid}", heading = null) }
-    detail.heldShaping?.let { return HeldObjectUi("Shaping point", "${detail.name} · ${it.grid}", heading = null) }
+    val detail = routes.detail
+    detail?.points?.firstOrNull { it.held }?.let { return HeldObjectUi(it.name.ifBlank { "Route point" }, "${detail.name} · ${it.grid}", heading = null) }
+    detail?.heldShaping?.let { return HeldObjectUi("Shaping point", "${detail.name} · ${it.grid}", heading = null) }
+    corner?.let {
+        return HeldObjectUi(
+            it.title, it.grid, heading = null, deleteLabel = "Delete corner", deleteEnabled = it.canDelete,
+            deleteNote = if (it.canDelete) null else "A boundary needs at least 3 corners.",
+        )
+    }
     return null
 }
 
@@ -56,6 +67,8 @@ class HeldObjectActions(
     val options: () -> Unit = {},
     /** Puts it down: nothing is held. */
     val done: () -> Unit = {},
+    /** Deletes it (only offered for what [HeldObjectUi.deleteLabel] names). */
+    val delete: () -> Unit = {},
 )
 
 /** The bar over the map for whatever is held: absent when nothing is. */
@@ -67,12 +80,14 @@ fun HeldObjectBarHost(
     graphics: GraphicsViewModel = hiltViewModel(),
     threats: ThreatsViewModel = hiltViewModel(),
     routes: RoutesViewModel = hiltViewModel(),
+    boundary: BoundaryViewModel = hiltViewModel(),
 ) {
     val g by graphics.state.collectAsStateWithLifecycle()
     val t by threats.state.collectAsStateWithLifecycle()
     val r by routes.state.collectAsStateWithLifecycle()
-    val held = heldObjectOf(g, t, r) ?: return
-    HeldObjectBar(held, HeldObjectActions(rotateBy = graphics::rotateBy, options = onOptions, done = onDone), modifier)
+    val b by boundary.state.collectAsStateWithLifecycle()
+    val held = heldObjectOf(g, t, r, b.heldCorner) ?: return
+    HeldObjectBar(held, HeldObjectActions(rotateBy = graphics::rotateBy, options = onOptions, done = onDone, delete = boundary::deleteCorner), modifier)
 }
 
 @Composable
@@ -97,7 +112,12 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
                     }
                 }
             }
-            SecondaryButton("More options", onClick = actions.options)
+            held.deleteLabel?.let { label ->
+                SecondaryButton(label, onClick = actions.delete, enabled = held.deleteEnabled)
+                held.deleteNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            // A boundary corner has no options of its own to open in the sheet.
+            if (held.deleteLabel == null) SecondaryButton("More options", onClick = actions.options)
             Text(
                 "Press and hold to move it.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.BoundaryCorners
+import app.ezpztac.data.BoundaryDraft
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
@@ -16,10 +18,12 @@ import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SlopeState
+import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.ThreatMasks
 import app.ezpztac.data.ThreatSelection
 import app.ezpztac.data.ThreatStore
+import app.ezpztac.map.CornerHitTest
 import app.ezpztac.map.DragHitTest
 import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
@@ -34,7 +38,10 @@ import app.ezpztac.map.ThreatHitTest
 import app.ezpztac.map.ThreatMaskPicture
 import app.ezpztac.map.ThreatScene
 import app.ezpztac.map.SlopeImage
+import app.ezpztac.map.SlopeToggleUi
+import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.model.DragTarget
+import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.symbols.SymbolRenderer
@@ -80,6 +87,8 @@ class HomeViewModel @Inject constructor(
     private val threatSelection: ThreatSelection,
     private val weather: WeatherService,
     private val mapDrag: MapDrag,
+    private val slopeVisibility: SlopeVisibility,
+    private val boundaryCorners: BoundaryCorners,
     private val threatMasks: ThreatMasks,
     mapFocus: MapFocus,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
@@ -104,12 +113,30 @@ class HomeViewModel @Inject constructor(
      * the slope raster. The raster is shown only while the boundary is still the one it was measured for. Each aircraft is drawn as the
      * airframe it was placed as, the same as the sheet measures it; one placed with a profile that is not known here is drawn as the chosen one.
      */
-    val scene: StateFlow<LzScene> = combine(session.active, analysis.slopes, combine(selection.selected, drawing.draft) { held, draft -> held to draft }, aircraft.profiles, aircraft.active) { diagram, slopes, (selected, draft), profiles, active ->
+    val scene: StateFlow<LzScene> = combine(
+        session.active, analysis.slopes,
+        combine(selection.selected, drawing.draft, slopeVisibility.shown, boundaryCorners.held) { held, draft, shown, corner -> HeldView(held, draft, shown, corner) },
+        aircraft.profiles, aircraft.active,
+    ) { diagram, slopes, view, profiles, active ->
+        val (selected, draft, slopeShown, heldCorner) = view
         val measured = diagram?.let { d -> (slopes[d.id] as? SlopeState.Ready)?.takeIf { it.boundaryKey == analysis.boundaryKey(d) } }
         // A boundary being drawn belongs to the diagram it was started on: on another one it is not drawn (and is dropped when that one opens).
         val corners = draft?.takeIf { it.diagramId == diagram?.id }?.points.orEmpty()
-        LzScene.of(diagram, measured?.analysis?.toSlopeImage(), profiles = profiles, active = active, selected = selected, draft = corners)
+        // The heat map is drawn only while the person has it on; it is measured either way.
+        LzScene.of(diagram, measured?.analysis?.toSlopeImage()?.takeIf { slopeShown }, profiles = profiles, active = active, selected = selected, draft = corners, heldCorner = heldCorner)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
+
+    /** What the map's scene is built from besides the diagram: what is held, what is being drawn, whether the heat map is on, and the boundary corner held. */
+    private data class HeldView(val selected: GraphicRef?, val draft: BoundaryDraft?, val slopeShown: Boolean, val corner: BoundaryCornerRef?)
+
+    /** The button for the slope heat map: there only while the open diagram has a slope measured, saying whether it is drawn. */
+    val slopeToggle: StateFlow<SlopeToggleUi?> = combine(session.active, analysis.slopes, slopeVisibility.shown) { diagram, slopes, shown ->
+        val ready = diagram?.let { d -> (slopes[d.id] as? SlopeState.Ready)?.takeIf { it.boundaryKey == analysis.boundaryKey(d) } }
+        if (ready?.analysis?.toSlopeImage() == null) null else SlopeToggleUi(shown)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** The person pressed the slope button: the heat map goes on or off. */
+    fun toggleSlope() = slopeVisibility.toggle()
 
     /**
      * What the map draws for the open set of routes: each visible route as a line with its named points, the one being worked on heavier, and a route
@@ -200,6 +227,7 @@ class HomeViewModel @Inject constructor(
             session.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { diagram ->
                 last.remember(diagram.id)                                                // not forgotten when the session closes (sign-out): the same account is back
                 selection.clear()                                                          // what was held belonged to the diagram before
+                boundaryCorners.clear()
                 drawing.cancel()                                                           // and so did a boundary half drawn
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))
             }
@@ -224,6 +252,7 @@ class HomeViewModel @Inject constructor(
         }
         val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx, unitFootprints)
         if (hit != null) {
+            boundaryCorners.clear()
             pointSelection.clear()
             threatSelection.clear()
             selection.select(hit)
@@ -232,6 +261,7 @@ class HomeViewModel @Inject constructor(
         selection.clear()
         val threat = ThreatHitTest.pick(threatScene.value, view, at, touchRadiusPx)
         if (threat != null) {
+            boundaryCorners.clear()
             pointSelection.clear()
             routeSelection.releasePoint()
             threatSelection.toggle(threat)
@@ -240,11 +270,20 @@ class HomeViewModel @Inject constructor(
         threatSelection.clear()
         val route = RouteHitTest.pick(routes.value, view, at, touchRadiusPx)
         if (route != null) {
+            boundaryCorners.clear()
             pointSelection.clear()
             routeSelection.select(route.routeId, route.pointId)
             return
         }
         routeSelection.releasePoint()
+        // A corner of the boundary is the lowest thing on the map: held only when nothing above it was.
+        val corner = CornerHitTest.pick(scene.value, view, at, touchRadiusPx)
+        if (corner != null) {
+            pointSelection.clear()
+            boundaryCorners.select(corner)
+            return
+        }
+        boundaryCorners.clear()
         // A local point is under the routes (a route point snapped onto one is the route's), and over nothing: a tap on nothing puts it down.
         val point = PointHitTest.pick(points.value, view, at, touchRadiusPx)
         if (point != null) pointSelection.toggle(point.setId, point.pointId) else pointSelection.clear()
@@ -266,6 +305,7 @@ class HomeViewModel @Inject constructor(
 
     /** Puts down whatever is held on the map (the bar's Done): a graphic, a threat, a point of a route, a local point. A route being worked on stays the route. */
     fun releaseHeld() {
+        boundaryCorners.clear()
         selection.clear()
         threatSelection.clear()
         pointSelection.clear()

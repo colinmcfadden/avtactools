@@ -2,6 +2,7 @@ package app.ezpztac.android
 
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
@@ -28,6 +29,7 @@ import app.ezpztac.map.CameraState
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.SlopeImage
+import app.ezpztac.map.SlopeToggleUi
 import app.ezpztac.network.NetworkException
 import app.ezpztac.network.SlopeStats
 import app.ezpztac.network.SlopeThresholds
@@ -70,6 +72,7 @@ import app.ezpztac.testing.Fixtures
 import app.ezpztac.data.WeatherApi
 import app.ezpztac.data.WeatherCache
 import app.ezpztac.data.WeatherService
+import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.ThreatPicture
 import app.ezpztac.data.MaskState
 import app.ezpztac.model.Radar
@@ -216,9 +219,10 @@ class HomeViewModelTest {
         val weatherApi = CountingWeather()
         val weather = WeatherService(weatherApi, KeptWeather(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)))
         val mapFocus = MapFocus()
+        val corners = BoundaryCorners(session)
         val model = HomeViewModel(
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection,
-            threats, threatSelection, weather, MapDrag(session, routeSession, threats), masks, mapFocus, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
+            threats, threatSelection, weather, MapDrag(session, routeSession, threats), SlopeVisibility(), corners, masks, mapFocus, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
@@ -750,6 +754,38 @@ class HomeViewModelTest {
         r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)
         r.model.mapTapped(LatLon(34.7900, -84.0700), view(), touchRadiusPx = 24.0)
         assertEquals(listOf(LatLon(34.78, -84.09), LatLon(34.79, -84.07)), r.drawing.draft.value!!.points)
+    }
+
+    @Test
+    fun `a tap on a boundary corner holds it, a graphic outranks it, and a tap on nothing puts it down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val camera = view(LatLon(34.75, -84.05))
+        r.model.mapTapped(LatLon(34.71, -84.09), camera, touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.model.BoundaryCornerRef(false, 0), r.corners.held.value)
+        assertEquals(null, r.selection.selected.value)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)                // a graphic: held instead
+        assertEquals(null, r.corners.held.value)
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+        r.model.mapTapped(LatLon(34.79, -84.01), camera, touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.model.BoundaryCornerRef(false, 2), r.corners.held.value)
+        assertEquals(null, r.selection.selected.value)
+        r.model.mapTapped(LatLon(34.75, -84.05), camera, touchRadiusPx = 24.0)                    // empty ground
+        assertEquals(null, r.corners.held.value)
+    }
+
+    @Test
+    fun `a tap while drawing is a new corner and holds no existing one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.drawing.start()
+        r.model.mapTapped(LatLon(34.71, -84.09), view(LatLon(34.75, -84.05)), touchRadiusPx = 24.0)
+        assertEquals(null, r.corners.held.value)
     }
 
     @Test
@@ -1391,5 +1427,23 @@ class HomeViewModelTest {
         r.masks.request(id); advanceUntilIdle()
         r.threats.setVisible(id, false); advanceUntilIdle()
         assertTrue(r.model.threatScene.value.masks.isEmpty())
+    }
+
+    @Test
+    fun `the slope heat map can be turned off and on without measuring it again, and has a button only once it is measured`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertEquals(null, r.model.slopeToggle.value)                                          // nothing open, nothing to toggle
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertEquals(SlopeToggleUi(shown = true), r.model.slopeToggle.value)
+        assertTrue(r.model.scene.value.slope != null)
+
+        r.model.toggleSlope(); advanceUntilIdle()
+        assertEquals(null, r.model.scene.value.slope)                                          // not drawn
+        assertEquals(SlopeToggleUi(shown = false), r.model.slopeToggle.value)                  // but the button is still there to bring it back
+        r.model.toggleSlope(); advanceUntilIdle()
+        assertTrue(r.model.scene.value.slope != null)
+        assertEquals(1, r.server.slopeCalls.size)                                              // turning it off and on measured nothing
     }
 }

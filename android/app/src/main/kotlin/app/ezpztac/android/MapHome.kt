@@ -98,6 +98,7 @@ fun MapHome(
     val threatScene by home.threatScene.collectAsStateWithLifecycle()
     val threatsModel: ThreatsViewModel = hiltViewModel()                  // the sheet's threats section and the mission export share one
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
+    val slopeToggle by home.slopeToggle.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
     val context = LocalContext.current
@@ -163,6 +164,7 @@ fun MapHome(
                 onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
                 onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                 onFaceNorth = viewModel::faceNorth,
+                slope = slopeToggle, onToggleSlope = home::toggleSlope,
                 bottomInset = PEEK,
                 // Over the readout, above the sheet's peek: only there while a boundary or a route is being drawn (never both: drawing one refuses the other).
                 overlay = {

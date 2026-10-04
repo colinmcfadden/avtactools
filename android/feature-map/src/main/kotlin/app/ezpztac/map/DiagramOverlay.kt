@@ -58,6 +58,17 @@ class DiagramOverlay {
                 PropertyFactory.circleStrokeColor("#FFFFFF"), PropertyFactory.circleStrokeWidth(2f),
             ),
         )
+        // A dot at each corner of the boundary, so a corner can be seen and held (to delete it); the held one is larger and amber.
+        val held = Expression.eq(Expression.get("held"), Expression.literal(true))
+        style.addLayer(
+            CircleLayer(CORNER_LAYER, SOURCE).withFilter(role("corner")).withProperties(
+                PropertyFactory.circleRadius(Expression.switchCase(held, Expression.literal(9f), Expression.literal(4.5f))),
+                PropertyFactory.circleColor("#FFFFFF"),
+                PropertyFactory.circleStrokeColor(Expression.switchCase(held, Expression.literal("#F59E0B"), Expression.literal("#374151"))),
+                PropertyFactory.circleStrokeWidth(Expression.switchCase(held, Expression.literal(3f), Expression.literal(1.5f))),
+                PropertyFactory.circleOpacity(0.9f),
+            ),
+        )
         installGraphics(style, role)
         style.addLayer(
             CircleLayer(TARGET_LAYER, SOURCE).withFilter(role("target")).withProperties(
@@ -199,6 +210,7 @@ class DiagramOverlay {
         const val OUTLINE_LAYER = "lz-outline"
         const val DRAWN_LAYER = "lz-drawn"
         const val VERTEX_LAYER = "lz-vertex"
+        const val CORNER_LAYER = "lz-corner"
         const val TARGET_LAYER = "lz-target"
         const val SECTOR_FILL_LAYER = "lz-sector-fill"
         const val SECTOR_LINE_LAYER = "lz-sector-line"

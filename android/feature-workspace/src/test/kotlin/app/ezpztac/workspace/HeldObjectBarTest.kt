@@ -53,6 +53,23 @@ class HeldObjectBarTest {
     )
 
     @Test
+    fun `a held boundary corner offers delete, and says why when it cannot`() {
+        val ok = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(), HeldCornerUi("Boundary corner 2 of 4", "16S GD 66000 52000", canDelete = true))!!
+        assertEquals("Delete corner", ok.deleteLabel)
+        assertEquals(true, ok.deleteEnabled)
+        assertNull(ok.deleteNote)
+        val no = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(), HeldCornerUi("Boundary corner 1 of 3", "16S GD 66000 52000", canDelete = false))!!
+        assertEquals(false, no.deleteEnabled)
+        assertEquals("A boundary needs at least 3 corners.", no.deleteNote)
+    }
+
+    @Test
+    fun `a threat outranks a corner and a bar for something else has no delete`() {
+        val corner = HeldCornerUi("Boundary corner 1 of 4", "g", canDelete = true)
+        assertNull(heldObjectOf(GraphicsUiState(), ThreatsUiState(held = threat), RoutesUiState(), corner)!!.deleteLabel)
+    }
+
+    @Test
     fun `nothing held, no bar`() {
         assertNull(heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState()))
     }
