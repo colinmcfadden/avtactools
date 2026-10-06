@@ -28,7 +28,7 @@ We build two fully native apps: EZ/PZ for Android in Kotlin with Jetpack Compose
 - **Device hardware.** GPS own-ship position, compass heading, haptics, and the camera for QR threat transfer.
 - **Speed.** GPU vector maps, background threads for terrain and viewshed math, and no browser memory ceiling for big route and threat sets.
 
-**In scope:** every end-user feature in the web app today — auth and the `.mil` gate, the LZ/PZ workspace, terrain analysis, every planning graphic, MIL-STD-2525C symbology, LZ cards, cloud save, routes and AMPS round-trip, local points, threats, weather, aircraft profiles and the 3D LiDAR view — plus mobile-only work: offline mission packs, GPS, file-type handlers and widgets.
+**In scope:** every end-user feature in the web app today — auth and the `.mil` gate, the LZ/PZ workspace, terrain analysis, every planning graphic, MIL-STD-2525C symbology, LZ cards, cloud save, routes and AMPS round-trip, local points, threats, weather, aircraft profiles and the 3D LiDAR view — plus mobile-only work: offline map packs, GPS, file-type handlers and widgets.
 
 **Out of scope:** the admin dashboard, which stays web at `admin.ezpztac.app` and is linked from the app for admins. Also out: a shared cross-platform UI layer (no React Native, Flutter or Compose Multiplatform UI).
 
@@ -47,7 +47,7 @@ The project's rules carry over unchanged: unclassified only and no CUI, threats 
 
 ## Feature inventory and parity
 
-All 22 capabilities below ship natively; only the admin dashboard stays on the web. Fifteen work fully offline once a mission pack is on the device, and saves queue until it reconnects. The rest need the server for first sign-in, model inference, LiDAR builds or live weather. "Pack" means a downloaded mission area (see Offline strategy).
+All 22 capabilities below ship natively; only the admin dashboard stays on the web. Fifteen work fully offline once a map pack is on the device, and saves queue until it reconnects. The rest need the server for first sign-in, model inference, LiDAR builds or live weather. "Pack" in this plan means a map pack, a downloaded area (see Offline strategy). It is not a mission pack, the shared container a team plans in together (docs/MISSION_PACKS.md).
 
 | # | Feature | Web app today | Native treatment | Offline | Phase |
 | --- | --- | --- | --- | --- | --- |
@@ -86,7 +86,7 @@ Each platform gets its own native UI, and both use MapLibre Native for the 2D ma
 | --- | --- | --- | --- |
 | UI toolkit | Jetpack Compose with Material 3 adaptive layouts (Android). SwiftUI, with UIKit where SwiftUI falls short (iOS) | Current platform standard; adaptive list-detail and supporting-pane layouts come built in for tablets | XML Views; UIKit-first; any cross-platform UI |
 | Shared logic | None at runtime. A shared `contracts/` folder holds the OpenAPI spec, JSON golden fixtures and design tokens | The owner wants Kotlin and Swift. Fixtures prove all three implementations give the same answers | Kotlin Multiplatform (puts Kotlin/Native inside the iOS build); a Rust core through UniFFI (a third language) |
-| 2D map engine | MapLibre Native on both platforms | Open source (BSD), no per-user fees and no telemetry, which matters for unit locations (OPSEC). Metal and Vulkan backends. Reads local PMTiles files, so server-built mission packs drop straight in | Mapbox Maps SDK v11. It has offline Mapbox imagery and 3D terrain built in, but it is proprietary, billed per user past 25,000 MAU, and its offline data must come from Mapbox servers and cannot be redistributed |
+| 2D map engine | MapLibre Native on both platforms | Open source (BSD), no per-user fees and no telemetry, which matters for unit locations (OPSEC). Metal and Vulkan backends. Reads local PMTiles files, so server-built map packs drop straight in | Mapbox Maps SDK v11. It has offline Mapbox imagery and 3D terrain built in, but it is proprietary, billed per user past 25,000 MAU, and its offline data must come from Mapbox servers and cannot be redistributed |
 | Online imagery | The same Mapbox raster styles as the web (`satellite-v9`, `outdoors-v12`), plus the FAA VFR sectional | Crews see the same picture as the web app and their LZ cards | — |
 | Offline imagery | Server-built PMTiles packs from public-domain data: USGS NAIP imagery (CONUS), FAA sectional GeoTIFFs, USGS DEMs | Mapbox terms forbid caching its tiles outside its own SDK. Public-domain data can be built once and handed to every device | Caching Mapbox tiles inside MapLibre (a terms breach) |
 | 3D view | Native local-scene renderer: Metal (iOS), OpenGL ES 3.2 (Android). One east-north-up frame centred on the LZ streams the existing `.pnts` point-cloud tiles, terrain grids, imagery and routes | An LZ view spans a few kilometres, so no globe engine is needed. It reuses today's LiDAR tilesets unchanged and adds no dependency | SceneKit (soft-deprecated at WWDC25); RealityKit (iOS-only, and a multi-million-point LOD cloud needs custom Metal anyway); Cesium in a WebView (not native); Cesium Native C++ (heavy integration); waiting for MapLibre 3D terrain (partially funded, no date) |
@@ -150,7 +150,7 @@ App — same layers and module names on Android (Kotlin) and iOS (Swift)
 
 Server (the existing stack)
      Flask API — auth, saves, analysis, weather
-     Build services — mission packs, LiDAR 3D tiles
+     Build services — map packs, LiDAR 3D tiles
 ```
 
 Map tiles come from Mapbox and the FAA when online, and from pack files when not. With no connection, everything except the Server block keeps working.
@@ -167,9 +167,9 @@ Map tiles come from Mapbox and the FAA when online, and from pack files when not
 | `core-symbols` | `SymbolRenderer`: JS engine, SVG rasteriser, caches | `core-model` |
 | `core-network` | API client, auth session, token refresh, request priority | `core-model` |
 | `core-data` | Database, repositories, sync engine | `core-model`, `core-network` |
-| `core-packs` | Pack download, verification, storage, PMTiles sources | `core-network` |
+| `core-mappacks` | Map-pack download, verification, storage, PMTiles sources | `core-network` |
 | `core-designsystem` | Tokens, type, colour, shared components (sheet, inspector, readout pill) | — |
-| `feature-auth`, `-map`, `-workspace`, `-analysis`, `-graphics`, `-routes`, `-threats`, `-weather`, `-exports`, `-aircraft`, `-history`, `-packs`, `-viewer3d`, `-settings` | One screen family each, with its store | Core modules only |
+| `feature-auth`, `-map`, `-workspace`, `-analysis`, `-graphics`, `-routes`, `-threats`, `-weather`, `-exports`, `-aircraft`, `-history`, `-mappacks`, `-viewer3d`, `-settings` | One screen family each, with its store | Core modules only |
 
 **Rules**
 
@@ -276,17 +276,17 @@ The sheet's Peek detent keeps the active diagram's key numbers in view while the
 
 ## Offline strategy
 
-The apps are offline-first. The on-device database is the source of truth, every calculation runs locally, and a downloaded **mission pack** carries the maps and terrain for an area. The server is needed only for first sign-in, SAM detection (until the on-device model lands), LiDAR builds, live weather and links meant for another device.
+The apps are offline-first. The on-device database is the source of truth, every calculation runs locally, and a downloaded **map pack** carries the maps and terrain for an area. The server is needed only for first sign-in, SAM detection (until the on-device model lands), LiDAR builds, live weather and links meant for another device.
 
 **Three tiers**
 
 | Tier | What works | What it needs |
 | --- | --- | --- |
 | 0 — Always | Launch, cached session, every saved diagram, route and point set; all planning math; MGRS; graphics editing; `.msnx`, `.LPS`, `.ths` and KMZ import and export; same-device ForeFlight and ATAK hand-off | Nothing. Base maps show whatever the ambient cache holds |
-| 1 — Mission pack | Tier 0, plus offline base maps, slope analysis, route ground elevations, threat viewsheds, the LZ card with map image, METAR/TAF/NOTAM refresh, hosted ForeFlight and threat QR links, route-share links | A pack covering the area |
+| 1 — Map pack | Tier 0, plus offline base maps, slope analysis, route ground elevations, threat viewsheds, the LZ card with map image, METAR/TAF/NOTAM refresh, hosted ForeFlight and threat QR links, route-share links | A pack covering the area |
 | 2 — 3 Dimensional | SAM boundary detection (on device from P4), LiDAR builds, admin, 3D for LZs whose LiDAR was packed | A connection |
 
-**What a mission pack holds**
+**What a map pack holds**
 
 A pack is an area the user picks — a box, a radius around an LZ, or a corridor along a route — built on the server as a handful of files and downloaded in one go.
 
@@ -525,19 +525,19 @@ Each feature below names the screens it needs, the web code its logic is ported 
 
 ## Backend changes
 
-The Flask API stays the single backend for all three clients. It needs ten additions, nearly all additive, so the web app keeps working untouched. The largest are sync support on saved records and the new mission-pack service.
+The Flask API stays the single backend for all three clients. It needs ten additions, nearly all additive, so the web app keeps working untouched. The largest are sync support on saved records and the new map-pack service.
 
 | # | Change | Why | Phase |
 | --- | --- | --- | --- |
-| 1 | `GET /api/config` (public): minimum app version per platform, maintenance message, which services are up (LiDAR builds, packs), current Mapbox public token | Store builds stay in the field for months. The server must be able to say "update required", and the token can rotate without an app release | P0 |
+| 1 | `GET /api/config` (public): minimum app version per platform, maintenance message, which services are up (LiDAR builds, map packs: the field is `packs`), current Mapbox public token | Store builds stay in the field for months. The server must be able to say "update required", and the token can rotate without an app release | P0 |
 | 2 | Client header on every request (`X-EZPZ-Client: ios/1.4.0 (212)`), logged into `LoginEvent` and shown in admin | Tells the owner which app versions are live before changing an endpoint | P0 |
 | 3 | Accept several Google client IDs (`GOOGLE_CLIENT_IDS`: web, Android, iOS) | Native ID tokens carry their own audience | P1 |
 | 4 | `POST /api/auth/apple`, verifying Apple's identity token against Apple's published keys | App Store rule 4.8 | iOS P1 (week 14) |
 | 5 | Refresh tokens: `POST /api/auth/refresh`, rotating, stored hashed as `AccountToken` purpose `refresh`, 30-day life, revoked by the existing `sv` bump | Crews stay signed in across days offline without keeping a long-lived access token | P1 |
 | 6 | `DELETE /api/auth/me` (account deletion; the super-admin refuses), and a device-sessions list with revoke | Store requirement; also pays down the "no server-side revocation" debt | P1 |
 | 7 | Sync on `SavedLZ`, `SavedRoute`, `SavedPointSet` and custom `AircraftProfile`: new `client_uuid`, `revision` and `deleted_at` columns, added by guarded `ALTER TABLE` (quoting `"user"`); `GET /api/sync/changes?since=`; `If-Match` returning 409 with the server copy; creates deduplicated by `client_uuid` | Offline edits, safe retries, and no silent overwrites between web and devices. Existing list endpoints skip deleted rows | P1 |
-| 8 | Mission-pack service: `POST /api/packs`, `GET /api/packs/<key>` (progress and manifest), `GET /api/packs/<key>/<file>` with HTTP range support. A separate container beside the LiDAR build service, reading `/data/topo`, NAIP, FAA charts and an OpenStreetMap basemap extract | Offline maps and terrain (see Offline strategy) | P3 |
-| 9 | `GET /api/lidar/tilesets/<key>/archive`: one streamed archive of a built tileset | Puts 3D into a mission pack | P4 |
+| 8 | Map-pack service: `POST /api/map-packs`, `GET /api/map-packs/<key>` (progress and manifest), `GET /api/map-packs/<key>/<file>` with HTTP range support (`/api/packs` is mission packs'). A separate container beside the LiDAR build service, reading `/data/topo`, NAIP, FAA charts and an OpenStreetMap basemap extract | Offline maps and terrain (see Offline strategy) | P3 |
+| 9 | `GET /api/lidar/tilesets/<key>/archive`: one streamed archive of a built tileset | Puts 3D into a map pack | P4 |
 | 10 | `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` served from `ezpztac.app` (Vercel `public/`) | Email links open the app | P1 |
 
 Push notifications arrive in P3: APNs and FCM for "pack ready", "3D ready" and "access approved". The push credentials stay server-side, and notifications carry no coordinates or plan content.
@@ -551,7 +551,7 @@ Push notifications arrive in P3: APNs and FCM for "pack ready", "3D ready" and "
 | Route ground elevations from pack Terrarium tiles | METAR, TAF, NOTAMs and forecast winds |
 | Threat viewsheds from pack Terrarium tiles | Hosted share links and QR downloads |
 | `.ths`, KMZ and LZ card `.xlsx` and PDF generation | Entitlements, admin, accounts |
-| `.msnx` read and write (already client-side on the web) | Mission-pack and LiDAR builds |
+| `.msnx` read and write (already client-side on the web) | Map-pack and LiDAR builds |
 
 When a pack covers the area, the device computes; otherwise it calls the server. Both run the same algorithm over the same source data, and the fixtures prove the answers agree, so either path gives the crew the same number.
 
@@ -578,7 +578,7 @@ Both apps use one SQLite schema: Room on Android, GRDB on iOS. Planning document
 | `aircraft_profile` | id, server id, slug, system flag, profile JSON, template file path, updated time | Master: pulled. Custom: yes |
 | `outbox` | sequence, entity, entity id, operation, base revision, idempotency key, attempts, last error | Drives sync |
 | `sync_state` | Cursor per collection | — |
-| `mission_pack` | Opaque key, user's name for it, bounds, layers, bytes, status, created and expiry times, manifest | No |
+| `map_pack` | Opaque key, user's name for it, bounds, layers, bytes, status, created and expiry times, manifest | No |
 | `weather_snapshot` | Payload and fetch time per location | No |
 
 Threats are not in the database (see Offline strategy).
@@ -595,7 +595,7 @@ Threats are not in the database (see Offline strategy).
 | Folder | Contents | Backed up to iCloud or Google |
 | --- | --- | --- |
 | `Database/` | The SQLite file | No — the server is the backup, and LZ locations stay out of consumer cloud backups |
-| `Packs/<key>/` | PMTiles layers, DEM crops, manifest | No |
+| `MapPacks/<key>/` | PMTiles layers, DEM crops, manifest | No |
 | `Lidar/<key>/` | Downloaded 3D tilesets | No |
 | `Imports/` | Original `.msnx` and `.LPS` files, kept so exports preserve unknown parts byte for byte | No |
 | `Caches/` | Symbol bitmaps, map tile cache, snapshots, export temp files | No (OS may purge) |

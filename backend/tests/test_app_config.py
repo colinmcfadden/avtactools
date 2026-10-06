@@ -59,7 +59,7 @@ class BuildConfigTests(unittest.TestCase):
         self.assertTrue(build(lidar=True)["services"]["lidarBuilds"])
         self.assertFalse(build(lidar=False)["services"]["lidarBuilds"])
 
-    def test_the_mission_pack_service_does_not_exist_yet(self):
+    def test_the_map_pack_service_does_not_exist_yet(self):
         self.assertFalse(build(lidar=True)["services"]["packs"])
 
 

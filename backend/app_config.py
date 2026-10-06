@@ -69,7 +69,9 @@ def build_config(environ, *, server_version, lidar_builds, mapbox_default=None):
         },
         "services": {
             "lidarBuilds": bool(lidar_builds),
-            # The mission-pack service (docs/NATIVE_APPS_PLAN.md, P3) does not exist yet.
+            # The map-pack service (offline maps and terrain for an area; docs/NATIVE_APPS_PLAN.md,
+            # P3) does not exist yet. Not mission packs, the shared containers in pack_routes.py:
+            # the field kept its name because the Android app already reads it.
             "packs": False,
         },
         "mapbox": {

@@ -23,6 +23,7 @@ contracts/
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
+│  ├─ packs/        ops.json                        reference: the web app (packOps.js)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
 └─ scripts/         generators: the fixtures PyGeodesy owns, and tokens.py
 ```
@@ -62,6 +63,7 @@ reference is.
 | `network/responses.json` | — (it is *written* from the server) | `backend/tests/test_network_fixtures.py` | `core-network` |
 | `network/priority.json` | `frontend/src/contracts/networkFixtures.test.js` | — | `core-network` |
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
+| `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | — (the Android applier comes with pack sync; `docs/MISSION_PACKS.md`) |
 
 iOS joins this table when it starts; it reads the same files.
 
@@ -156,7 +158,8 @@ without the fixture diff in the same PR — and the Android tests then fail unti
   mission, no CUI. Real, unclassified AMPS files for round-trip tests come from
   the owner and are added deliberately.
 - `openapi.yaml` is the other half of this folder: the routes the apps call, one at
-  a time as each arrives (`GET /api/config` so far). `backend/tests/test_openapi_contract.py`
+  a time as each arrives. The mission-pack routes are described ahead of any client and
+  held by `backend/tests/test_packs.py`. `backend/tests/test_openapi_contract.py`
   holds the server's responses to it and fails on an added, removed or retyped
   field. Changes are additive: store builds stay in the field for months.
 

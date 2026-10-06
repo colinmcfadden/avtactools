@@ -94,11 +94,12 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Threats** | `.ths` import/export, terrain-masking viewshed, KMZ, QR | `feature/threats/` | `routes/threat_routes.py`, `ths_export.py`, `threat_download_store.py`, `threat_template.ths` |
 | **Weather** | METAR, NOTAMs, winds aloft | `feature/weather/` | `routes/weather_routes.py` |
 | **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
+| **Mission packs** *(backend only so far)* | A shared container of LZs, sketched route sets and point sets a team plans one operation in. Members edit it through a server-ordered stream of id-addressed operations, every change is logged, and the owner can finish it (read-only for everyone). Teams, email invites, and name search limited to teammates. Design and rules: `docs/MISSION_PACKS.md` | — (waits for the menu redesign's dock) | `routes/pack_routes.py`, `routes/team_routes.py`, `pack_ops.py`, `pack_support.py` |
 | **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
 
 Entitlement keys (`entitlements.FEATURES`): `lz_pz_tools`, `routes`,
-`msnx_import`, `threats`, `cloud_save`, `exports`, `aircraft_profiles`. A
-missing key means **enabled**, so new features default on.
+`msnx_import`, `threats`, `cloud_save`, `exports`, `aircraft_profiles`,
+`mission_packs`. A missing key means **enabled**, so new features default on.
 
 ---
 
@@ -114,6 +115,8 @@ avtactools/
 │  ├─ terrain_provider.py    DEM catalog (TERRAIN_DATA_DIR) + Terrarium fallback; slope analysis
 │  ├─ terrain_tiles.py       Per-tile heightmaps for the Cesium terrain provider
 │  ├─ ths_export.py          Writes an AMPS .ths from the template (stdlib only, so fixtures can import it)
+│  ├─ pack_ops.py            What one mission-pack operation does (stdlib only; held to contracts/fixtures/packs)
+│  ├─ pack_support.py        Mission packs: roles, the per-pack change order, shapes, account release
 │  ├─ lidar/                 Offline point-cloud pipeline — runs in its own Docker image (§12)
 │  ├─ tests/                 pytest
 │  ├─ Dockerfile, fly.toml   Production container and Fly config
@@ -128,7 +131,7 @@ avtactools/
 ├─ android/                  Gradle project for the Android app (§17); pure-Kotlin core modules so far
 ├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17)
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
-├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md; HANDOFF.md (where the Android build stands, what is next)
+├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md; HANDOFF.md (where the Android build stands, what is next)
 ├─ .github/workflows/        release.yaml (semantic-release); android.yaml, contracts.yaml (path-filtered tests)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
 └─ backend/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
@@ -170,7 +173,9 @@ responses to. A route not in that file is not yet something an app may rely on.
 | threats | `POST /api/threat-mask`, `POST /api/threats-ths`, `GET/POST /api/threats-kmz`, `POST /api/threats-kmz-link` |
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
 | lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key |
-| admin | `/admin/*` — session cookie, not JWT |
+| mission packs | `/api/packs` (+ `/<uuid>`, `/finish`, `/reopen`, `/duplicate`, `/ops`, `/events`, `/items…`, `/members…`, `/invites…`) — `docs/MISSION_PACKS.md` §4 |
+| teams, invites, search | `/api/teams` (+ `/<id>`, `/members/<user_id>`, `/invites`), `/api/invites` (+ `/<id>/accept`, `/<id>/decline`, `/accept`), `GET /api/users/search?q=` (teammates only) |
+| admin | `/admin/*` — session cookie, not JWT. `/admin/packs` and `/admin/teams` are read only and never show what a pack holds |
 | app config | `GET /api/config` — **public**, cached 60 s: `minAppVersion` per platform, `maintenance`, which optional `services` are up, and the Mapbox public token (`app_config.py`, `routes/config_routes.py`) |
 | health | `GET /` → JSON status (or redirect to `/admin/login` on the admin host) |
 
@@ -182,7 +187,18 @@ Regenerate this from the source of truth with `app.url_map` if it drifts.
 
 `models.py`: `User`, `LocalCredential`, `AccountToken` (verification and reset
 tokens, stored as SHA-256), `LoginEvent`, `AircraftProfile`, `SavedRoute`,
-`SavedPointSet`, `SavedLZ`.
+`SavedPointSet`, `SavedLZ`, and the mission-pack tables `Team`, `TeamMember`,
+`MissionPack`, `MissionPackMember`, `MissionPackInvite`, `MissionPackItem`,
+`MissionPackEvent`.
+
+**Mission packs are stored apart from the library** (`docs/MISSION_PACKS.md`). Items
+hold the library's JSON unchanged, but in their own table, so nothing about packs
+touches the saved-record queries or the per-user sync feed. Three things to keep true:
+every write to a pack takes its row first (`pack_support.lock`) and numbers its
+events under it, so the log has one order; a finished pack refuses every edit
+with 423, the owner's included; and deleting an account calls
+`pack_support.release_account` first (both deletion paths do), because
+`mission_pack.owner_id` deliberately has no `ON DELETE`.
 
 **Saved records sync across devices** (`sync_support.py`; rules in
 `docs/NATIVE_APPS_PLAN.md`, "Sync and conflicts"). `SavedLZ`, `SavedRoute` and
@@ -444,6 +460,12 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
   `Missing: yaml@2.9.1`), so install with `npm install` and restore the lockfile
   (`git checkout frontend/package-lock.json`) if you only needed `node_modules`.
 - The build prints many pre-existing ESLint warnings; add none of your own.
+- **Jest finds no tests in a Claude worktree** (`.claude/worktrees/<name>/`): CRA's `testMatch`
+  globs skip paths with a dot directory. Pass the pattern yourself, e.g.
+  `npx react-scripts test --watchAll=false --testMatch "**/.claude/**/src/contracts/*.test.js"`.
+- `tests/test_network_fixtures.py` fails on the owner's Windows workstation before any change:
+  the recorded `analyze-field` polygon differs there in the last digit or two of its floats.
+  When regenerating `responses.json`, keep only the diff you meant.
 
 ---
 
@@ -690,7 +712,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`, `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
+  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
   "where things stand, what is next" note for whoever picks the Android work up; refresh it with each commit that moves either.
 
 ---
@@ -720,7 +742,7 @@ design tokens. iOS is not started.
 | `feature-workspace` | The Diagrams tab of the sheet: the list (name, grid, status, whether the server has it), making one from a target (the grid under the crosshair is offered), opening, renaming, deleting (asks first) and settling a conflict (keep both is the primary choice; keep mine / keep theirs say what they discard). `DiagramsViewModel` over `DiagramRepository`, `DiagramSession` and a `ConflictResolver`; the screen (`DiagramsContent`) is stateless and scrolls only if its host does | list, create, open, rename, delete, conflicts, and the open diagram's card: Analyze / Stop, the summary tiles (capacity, area, elevation, slope call with its source) and rename/delete. The list below it is the *other* diagrams (an open conflict copy keeps its row for its choices). `GraphicsViewModel` / `GraphicsContent` are the planning graphics inside that card: place a helicopter, PZ marker, sector or go-around at the crosshair, a list of them with their grid, an inspector (nudge in feet with a 10/50/200 ft step, put at the crosshair or at a typed grid, turn, set a heading, a PZ's reach and tip, a go-around's side, a doghouse's label, time, distance and airspeed, delete), the unit builder (add a unit at the crosshair, or apply the builder to the held one), undo/redo and the separation alerts. Every change is one `DiagramSession.edit` step. `AircraftViewModel` / `AircraftContent` are the aircraft section of the sheet: the mission aircraft chosen from the admin's list and the user's own, and making, copying, changing and deleting the user's own (the form mirrors the web's `AircraftProfileModal`); `AircraftPicker` in the diagram's card chooses the mission aircraft and says what its numbers are. `BoundaryViewModel` / `BoundarySection` (the sheet's "Draw boundary") and `BoundaryToolbar` (over the map while drawing) are the hand-drawn boundary. `WeatherSection` is the weather tiles of an analysed diagram's card. `ThreatsViewModel` / `ThreatsScreen` are the Threats section (below): the list, the held threat's card (details, edit, move, remove) and the form. `IncomingViewModel` / `IncomingHost` ask the person about a file another app opened with the app (*Files from other apps*) |
 | `app` | The application: Hilt, Compose, the manifest and its security settings, and the shell: `Gate`/`gateFor` (what stands between the person and the app), `AppViewModel`, WorkManager sync (`SyncScheduler`, `SyncWorker`). See *The app module* below | the shell, the auth flow, the Google sign-in glue and the map as the root, with a bottom sheet that holds the Diagrams, Aircraft, Routes, Local points and Threats sections, the version and sign-out; `HomeViewModel` joins the map and the documents (where the map goes, the scene it draws, measuring the slope of an analysed diagram when it is opened, the routes, local points, weather and local threat picture, and the order a tap on the map is tried in); the app also bundles the AMPS mission and threat templates for explicit sharing (`ShareExport`) and reads files other apps open with it (`incoming/`) |
 | `core-symbols` | Android library: MIL-STD-2525C symbols as bitmaps. `PresetSymbols` (the unit presets in all four affiliations and the threat presets, pre-rendered by the web's milsymbol: `contracts/fixtures/symbols/svg`, copied into the app's assets at build, no JavaScript needed), `JavaScriptSymbolSource` (milsymbol itself, vendored in `assets/milsymbol.js` with its MIT licence, run in the system JavaScript sandbox, `androidx.javascriptengine`, for everything else), `SvgRasterizer` (AndroidSVG), `DefaultSymbolRenderer` (the sources in order, an LRU cache, concurrent asks for one symbol coalesced), and `LocalSymbolRenderer` / `rememberSymbol` for Compose. See *Symbols and units* below | the renderer, presets, rasteriser and cache are done and tried; **the sandbox itself is not verifiable here** |
-| everything else in the plan (`core-packs`, the other `feature-*` …) | later work | **not started** |
+| everything else in the plan (`core-mappacks`, the other `feature-*` …) | later work | **not started** |
 
 Package root is `app.ezpztac.*` (the reverse of `ezpztac.app`). The Android
 `applicationId` is not chosen and is permanent once published: ask the owner.
