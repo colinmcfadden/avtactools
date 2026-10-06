@@ -24,6 +24,7 @@ FEATURES = (
         "Aircraft profiles",
         "Create and manage custom aircraft profiles (the master list stays available)",
     ),
+    ("mission_packs", "Mission packs", "Plan together in shared packs of LZs, routes and point sets, and join teams"),
 )
 
 FEATURE_KEYS = tuple(key for key, _label, _desc in FEATURES)

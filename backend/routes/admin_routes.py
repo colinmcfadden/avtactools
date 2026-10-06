@@ -22,7 +22,11 @@ from werkzeug.security import check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile, SyncCounter
+from models import (
+    db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile, SyncCounter,
+    MissionPack, MissionPackItem, MissionPackMember, Team, TeamMember,
+)
+import pack_support
 import sync_support as sync
 from entitlements import (
     FEATURES, FEATURE_KEYS, resolve_features,
@@ -345,6 +349,8 @@ def delete_user(uid):
         flash("Deletion cancelled: the confirmation email didn't match.", 'error')
         return redirect(url_for('admin.user_detail', uid=uid))
 
+    # Packs they own pass to someone else in them, or go when nobody else is.
+    pack_support.release_account(uid)
     SavedRoute.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
@@ -354,6 +360,69 @@ def delete_user(uid):
     db.session.commit()
     flash('User deleted.', 'ok')
     return redirect(url_for('admin.users'))
+
+
+# --- mission packs and teams (read only) -------------------------------------
+#
+# What exists and who is in it, never what a pack holds: an LZ's place is the
+# crew's business. Nothing here changes a pack; owners and members do that.
+
+def _page_arg():
+    try:
+        return max(1, int(request.args.get('page', 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _counts(model, column, ids, **filters):
+    if not ids:
+        return {}
+    rows = (db.session.query(getattr(model, column), func.count()).filter(getattr(model, column).in_(ids))
+            .filter_by(**filters).group_by(getattr(model, column)).all())
+    return dict(rows)
+
+
+@admin_bp.route('/packs')
+@admin_required
+def packs():
+    q = (request.args.get('q') or '').strip()
+    page = _page_arg()
+    query = MissionPack.query.filter(MissionPack.deleted_at.is_(None))
+    if q:
+        query = query.filter(MissionPack.name.ilike(f"%{q}%"))
+    total = query.count()
+    rows = query.order_by(MissionPack.updated_at.desc()).offset((page - 1) * PER_PAGE).limit(PER_PAGE).all()
+    ids = [p.id for p in rows]
+    owners = {u.id: u for u in User.query.filter(User.id.in_({p.owner_id for p in rows})).all()} if rows else {}
+    teams = {t.id: t for t in Team.query.filter(Team.id.in_({p.team_id for p in rows if p.team_id})).all()} if rows else {}
+    return render_template(
+        'admin/packs.html', nav_section='packs', packs=rows, q=q, page=page, total=total,
+        pages=max(1, (total + PER_PAGE - 1) // PER_PAGE), owners=owners, teams=teams,
+        members=_counts(MissionPackMember, 'pack_id', ids),
+        items=_counts(MissionPackItem, 'pack_id', ids, deleted_at=None),
+    )
+
+
+@admin_bp.route('/teams')
+@admin_required
+def teams():
+    q = (request.args.get('q') or '').strip()
+    page = _page_arg()
+    query = Team.query
+    if q:
+        query = query.filter(Team.name.ilike(f"%{q}%"))
+    total = query.count()
+    rows = query.order_by(Team.name).offset((page - 1) * PER_PAGE).limit(PER_PAGE).all()
+    ids = [t.id for t in rows]
+    owner_rows = TeamMember.query.filter(TeamMember.team_id.in_(ids), TeamMember.role == 'owner').all() if ids else []
+    owner_users = {u.id: u for u in User.query.filter(User.id.in_({m.user_id for m in owner_rows})).all()} if owner_rows else {}
+    return render_template(
+        'admin/teams.html', nav_section='teams', teams=rows, q=q, page=page, total=total,
+        pages=max(1, (total + PER_PAGE - 1) // PER_PAGE),
+        owners={m.team_id: owner_users.get(m.user_id) for m in owner_rows},
+        members=_counts(TeamMember, 'team_id', ids),
+        shared=_counts(MissionPack, 'team_id', ids, deleted_at=None),
+    )
 
 
 # --- aircraft profiles ------------------------------------------------------

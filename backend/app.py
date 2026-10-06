@@ -42,6 +42,8 @@ from routes.aircraft_routes import aircraft_bp
 from routes.admin_routes import admin_bp
 from routes.config_routes import config_bp
 from routes.sync_routes import sync_bp
+from routes.pack_routes import pack_bp
+from routes.team_routes import team_bp
 from client_header import CLIENT_HEADER
 
 app = Flask(__name__)
@@ -133,6 +135,8 @@ app.register_blueprint(aircraft_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(config_bp)
 app.register_blueprint(sync_bp)
+app.register_blueprint(pack_bp)
+app.register_blueprint(team_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under

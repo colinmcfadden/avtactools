@@ -13,6 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import pack_support
 import refresh_tokens
 from auth_rate_limit import check_rate_limits
 from client_header import client_from_request
@@ -835,6 +836,8 @@ def delete_account():
         return _error("That didn't match this account.", 401, "invalid_credentials")
 
     uid = user.id
+    # Packs they own pass to someone else in them, or go when nobody else is.
+    pack_support.release_account(uid)
     SavedRoute.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()

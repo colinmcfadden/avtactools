@@ -98,6 +98,8 @@
       {# Views pass nav_section to highlight the tab they belong to. #}
       <a href="{{ url_for('admin.users') }}" class="{{ 'on' if nav_section == 'users' }}">Users</a>
       <a href="{{ url_for('admin.aircraft') }}" class="{{ 'on' if nav_section == 'aircraft' }}">Aircraft</a>
+      <a href="{{ url_for('admin.packs') }}" class="{{ 'on' if nav_section == 'packs' }}">Packs</a>
+      <a href="{{ url_for('admin.teams') }}" class="{{ 'on' if nav_section == 'teams' }}">Teams</a>
     </nav>
     {% endif %}
     <div class="spacer"></div>

@@ -46,6 +46,14 @@ def _resolve(spec, schema):
 def validate(spec, schema, value, path="$"):
     """The list of problems with ``value`` against ``schema``; empty means valid."""
     schema = _resolve(spec, schema)
+    if "allOf" in schema:
+        # Only OpenAPI 3.0's way of making a reference nullable: `nullable` beside
+        # `allOf` with one `$ref` (a sibling of a bare `$ref` is ignored by the spec).
+        if len(schema["allOf"]) != 1 or set(schema) - _IGNORED - {"allOf", "nullable"}:
+            raise NotImplementedError(f"{path}: allOf is supported only as a nullable wrapper around one schema")
+        if value is None:
+            return [] if schema.get("nullable") else [f"{path}: null is not allowed"]
+        return validate(spec, schema["allOf"][0], value, path)
     unknown = set(schema) - _IGNORED - {
         "type", "nullable", "enum", "required", "properties", "additionalProperties",
         "items", "pattern", "minLength", "maxLength", "minimum", "maximum",

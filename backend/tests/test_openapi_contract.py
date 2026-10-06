@@ -130,6 +130,15 @@ class CheckerCatchesDriftTests(unittest.TestCase):
     def test_a_keyword_the_checker_cannot_check_fails_loudly(self):
         with self.assertRaises(NotImplementedError):
             validate(SPEC, {"type": "object", "oneOf": [{"type": "string"}]}, {})
+        with self.assertRaises(NotImplementedError):
+            validate(SPEC, {"allOf": [{"type": "string"}, {"maxLength": 3}]}, "x")
+
+    def test_a_nullable_reference_is_null_or_the_referenced_schema(self):
+        person = {"nullable": True, "allOf": [{"$ref": "#/components/schemas/Person"}]}
+        self.assertEqual(validate(SPEC, person, None), [])
+        self.assertEqual(validate(SPEC, person, {"id": 1, "name": "Colin"}), [])
+        self.assertTrue(validate(SPEC, person, {"id": 1}))
+        self.assertTrue(validate(SPEC, {"allOf": [{"$ref": "#/components/schemas/Person"}]}, None))
 
 
 class ClientHeaderSpecMatchesCodeTests(unittest.TestCase):

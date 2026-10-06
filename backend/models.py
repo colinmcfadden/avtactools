@@ -361,3 +361,161 @@ class SavedLZ(SyncMixin, db.Model):
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# -- Mission packs -------------------------------------------------------------
+#
+# A pack is a shared container of LZs, route sets and point sets that every member
+# edits through a server-ordered stream of small operations (pack_ops.py). It is
+# stored apart from the one-off library above, so nothing here touches SavedLZ,
+# SavedRoute, SavedPointSet or the per-user sync feed. Every table is new and made
+# by db.create_all(). See docs/MISSION_PACKS.md and pack_support.py.
+
+
+class Team(db.Model):
+    """A unit or section ("B Co 2-10 AVN"). People find each other by name only through a shared team."""
+
+    __tablename__ = 'team'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class TeamMember(db.Model):
+    __tablename__ = 'team_member'
+
+    id = db.Column(db.Integer, primary_key=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    role = db.Column(db.String(10), nullable=False, default='member')  # owner | admin | member
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('team_id', 'user_id', name='ux_team_member'),)
+
+
+class MissionPack(db.Model):
+    """The pack itself. ``head_seq`` is its own change counter: every event takes the next number under a row lock."""
+
+    __tablename__ = 'mission_pack'
+
+    id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, index=True)
+    # Always set: deleting the owner's account hands the pack on, or deletes it
+    # when nobody else is in it (pack_support.release_account).
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    # Shared with a whole team: its members see the pack with ``team_role``.
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='SET NULL'), nullable=True, index=True)
+    team_role = db.Column(db.String(10), nullable=False, default='editor')  # editor | viewer
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False, default='')
+    # finished: the server refuses every edit, the owner's included, until the owner reopens it.
+    status = db.Column(db.String(10), nullable=False, default='active')  # active | finished
+    finished_at = db.Column(db.DateTime, nullable=True)
+    finished_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    head_seq = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    # A tombstone, content gone, so a device that asks about it learns it was deleted.
+    deleted_at = db.Column(db.DateTime, nullable=True)
+
+
+class MissionPackMember(db.Model):
+    __tablename__ = 'mission_pack_member'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    role = db.Column(db.String(10), nullable=False, default='editor')  # owner | editor | viewer
+    added_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    added_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('pack_id', 'user_id', name='ux_mission_pack_member'),)
+
+
+class MissionPackInvite(db.Model):
+    """An invitation to a pack or to a team, by email or (teams only) by a single-use link.
+
+    The token is stored as SHA-256, like AccountToken. An emailed invite is also
+    matched by address, so someone who signs up later finds it waiting once they
+    clear the .mil gate.
+    """
+
+    __tablename__ = 'mission_pack_invite'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=True, index=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='CASCADE'), nullable=True, index=True)
+    email = db.Column(db.String(120), nullable=True, index=True)  # lower-cased; NULL for a link invite
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    invited_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    role = db.Column(db.String(10), nullable=False)
+    status = db.Column(db.String(10), nullable=False, default='pending')  # pending | accepted | declined | revoked
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    accepted_at = db.Column(db.DateTime, nullable=True)
+    accepted_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+
+
+class MissionPackItem(db.Model):
+    """An LZ, a set of sketched routes or a point set inside a pack.
+
+    ``data`` is the same JSON the library keeps (lz_data, route_data, points_data),
+    so every editor and exporter works on it unchanged. An item copied in from the
+    library remembers where it came from (``source_*``) so whoever copied it can
+    update it from the original later; the copy is the pack's, and nothing reaches back.
+    """
+
+    __tablename__ = 'mission_pack_item'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=False, index=True)
+    uuid = db.Column(db.String(64), nullable=False)
+    kind = db.Column(db.String(10), nullable=False)  # lz | route | pointset
+    name = db.Column(db.String(100), nullable=False)
+    data = db.Column(db.JSON, nullable=True)  # NULL once deleted
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    change_seq = db.Column(db.Integer, nullable=False, default=0)  # the event that last changed it
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    source_kind = db.Column(db.String(10), nullable=True)
+    source_uuid = db.Column(db.String(36), nullable=True)
+    source_revision = db.Column(db.Integer, nullable=True)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (db.UniqueConstraint('pack_id', 'uuid', name='ux_mission_pack_item'),)
+
+
+class MissionPackEvent(db.Model):
+    """One numbered change to a pack: the edit log, and what clients replay to catch up.
+
+    Append-only. ``summary`` is the sentence the client that made the change wrote
+    ("Colin moved Chalk 2 on LZ Hawk"); ``payload`` is the operation itself.
+    ``actor_name`` is kept as it was, so the log still reads after an account is gone.
+    """
+
+    __tablename__ = 'mission_pack_event'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=False, index=True)
+    seq = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    actor_name = db.Column(db.String(120), nullable=False, default='')
+    item_uuid = db.Column(db.String(64), nullable=True)
+    op_type = db.Column(db.String(32), nullable=False)
+    payload = db.Column(db.JSON, nullable=False)
+    summary = db.Column(db.String(300), nullable=False, default='')
+    client_op_id = db.Column(db.String(64), nullable=True)
+    status = db.Column(db.String(10), nullable=False, default='applied')  # applied | skipped
+    reason = db.Column(db.String(32), nullable=True)  # why it was skipped
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('pack_id', 'seq', name='ux_mission_pack_event_seq'),
+        # A retried batch is recognised rather than applied twice.
+        db.UniqueConstraint('pack_id', 'client_op_id', name='ux_mission_pack_event_client_op'),
+    )

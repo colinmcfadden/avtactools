@@ -1303,6 +1303,935 @@ paths:
         "500":
           $ref: "#/components/responses/SimpleError"
 
+  # -- Mission packs (docs/MISSION_PACKS.md) ---------------------------------------------
+  # Every pack route needs the `mission_packs` entitlement (403 `feature_disabled` without it)
+  # and is never cached. A pack the caller is not in is a 404, so its existence is not revealed.
+
+  /api/packs:
+    get:
+      operationId: listPacks
+      summary: The packs the caller is in, directly or through a team, most recently changed first
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [packs]
+                properties:
+                  packs:
+                    type: array
+                    items: { $ref: "#/components/schemas/PackSummary" }
+    post:
+      operationId: createPack
+      summary: Make a pack; the caller owns it
+      description: |
+        Send `uuid`, one the device chose, so a retry after a lost response returns the
+        first pack (200) instead of making a second (201). `team_id` shares it with a team
+        the caller is in, whose members then see it as `team_role`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100, description: "Trimmed; no control characters." }
+                description: { type: string, maxLength: 2000 }
+                uuid: { type: string }
+                team_id: { type: integer }
+                team_role: { type: string, enum: [editor, viewer] }
+      responses:
+        "201":
+          description: Made.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "200":
+          description: The caller already made a pack with this `uuid`; here it is.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    get:
+      operationId: getPack
+      summary: The pack with its members and every item, as of `head_seq`
+      description: |
+        A consistent view: the items are exactly as after event `head_seq`. To stay current,
+        replay `GET /api/packs/{uuid}/events?since=<head_seq>` (or the live stream) from here.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The pack.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "404":
+          $ref: "#/components/responses/PackError"
+    put:
+      operationId: updatePack
+      summary: Rename or describe the pack (editors), or share it with a team (owner)
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                description: { type: string, maxLength: 2000 }
+                team_id: { type: integer, nullable: true, description: "null stops sharing." }
+                team_role: { type: string, enum: [editor, viewer] }
+      responses:
+        "200":
+          description: The pack after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+    delete:
+      operationId: deletePack
+      summary: Delete the pack and everything in it (owner)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/finish:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: finishPack
+      summary: Finish the pack (owner). Every edit is then refused with 423, the owner's included
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The pack, finished. Finishing a finished pack changes nothing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/reopen:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: reopenPack
+      summary: Reopen a finished pack (owner)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The pack, active.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/duplicate:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: duplicatePack
+      summary: A new pack owned by the caller, with a copy of every item (works on a finished pack)
+      security:
+        - bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100, description: 'Default: "<name> (copy)".' }
+      responses:
+        "201":
+          description: The new pack.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/ops:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: applyPackOps
+      summary: Apply a batch of edits, in order, each numbered and logged
+      description: |
+        Each operation is applied, or logged as `skipped` when what it edits is gone or in the
+        way; the rules are `contracts/fixtures/packs/ops.json`. Each carries a `client_op_id`
+        (printable ASCII, 64 at most): one the pack has seen is answered from the log and not
+        applied again, so a batch whose answer was lost is safe to send again. A malformed
+        operation refuses the whole batch (400 `invalid_op`, with `index` and `reason`) before
+        anything is applied. `item.replace` is the server's own and is refused.
+
+        With `base_seq`, `events` is everything after it (up to 500; `has_more` says there is
+        more), so the client can rebase its unconfirmed edits; without it, just this batch's.
+        Viewers get 403 `pack_read_only`; a finished pack 423 `pack_finished`; an item that
+        would pass 5 MB 413 `item_too_large`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ops]
+              properties:
+                base_seq: { type: integer, minimum: 0 }
+                ops:
+                  type: array
+                  description: 1 to 200 operations.
+                  items:
+                    type: object
+                    required: [type, item, client_op_id]
+                    properties:
+                      type: { type: string, enum: [item.create, item.delete, item.rename, set, patch, upsert, insert, remove] }
+                      item: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$' }
+                      client_op_id: { type: string, maxLength: 64 }
+                      summary: { type: string, description: "The log's sentence for it, e.g. \"Colin moved Chalk 2 on LZ Hawk\". Cut to 300." }
+      responses:
+        "200":
+          description: How each went.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackOpsResult" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/events:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    get:
+      operationId: packEvents
+      summary: The pack's log after a cursor, oldest first
+      description: What a client replays to catch up (keep `cursor`, send it back as `since`), and the History panel's lines.
+      security:
+        - bearer: []
+      parameters:
+        - name: since
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          description: Page size, 1 to 500. A larger request is clamped.
+          schema: { type: integer, minimum: 1, default: 200 }
+      responses:
+        "200":
+          description: A page of events.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackEventPage" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: copyIntoPack
+      summary: Copy one of the caller's library records into the pack
+      description: |
+        The copy is the pack's; the original is never changed by it. The item remembers its
+        `source` so whoever copied it in can later update it from the original. Sketched routes
+        only: an imported AMPS mission (`kind: mission`) is refused with `mission_not_supported`.
+        Send `item` (the new item's uuid) so a retry returns the first copy (200).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source:
+                  type: object
+                  required: [kind]
+                  description: The library record, by `id` or by `client_uuid`.
+                  properties:
+                    kind: { type: string, enum: [lz, route, pointset] }
+                    id: { type: integer }
+                    client_uuid: { type: string }
+                item: { type: string }
+                name: { type: string, maxLength: 100 }
+                summary: { type: string }
+      responses:
+        "201":
+          description: Copied in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "200":
+          description: This copy was already made under this `item`; here it is (`event` is null).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    get:
+      operationId: getPackItem
+      summary: One item, whole
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The item.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [item, head_seq]
+                properties:
+                  item: { $ref: "#/components/schemas/PackItem" }
+                  head_seq: { type: integer, minimum: 0 }
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}/update-from-original:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    post:
+      operationId: updatePackItemFromOriginal
+      summary: Replace a copied item's content with its library original as it is now
+      description: |
+        Only the member who copied it in may (`not_your_original` otherwise): the original is
+        their private record. Logged as an `item.replace` event carrying the new content.
+      security:
+        - bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                summary: { type: string }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}/library:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    post:
+      operationId: savePackItemToLibrary
+      summary: Save a copy of an item to the caller's own library (any member; works on a finished pack)
+      description: Needs the `cloud_save` entitlement too. The new record syncs like any other.
+      security:
+        - bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        "201":
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LibraryCopy" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/members:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: addPackMember
+      summary: Add someone who shares a team with the owner (owner). Anyone else is invited by email
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: integer }
+                role: { type: string, enum: [editor, viewer], default: editor }
+      responses:
+        "201":
+          description: Added; they are emailed a notice.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackMemberReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/members/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      operationId: changePackMember
+      summary: Change a member's role (owner). `owner` hands the pack over; the old owner stays an editor
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [owner, editor, viewer] }
+      responses:
+        "200":
+          description: The member now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackMemberReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+    delete:
+      operationId: removePackMember
+      summary: Remove a member (owner), or leave (yourself). The owner hands the pack over first
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/invites:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    get:
+      operationId: listPackInvites
+      summary: Invitations not yet answered (owner); an expired one says `expired`
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Invitations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteList" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+    post:
+      operationId: inviteToPack
+      summary: Invite anyone by email (owner)
+      description: |
+        Someone without an account is asked to make one with that address; the invitation waits
+        until they have verified it and cleared the `.mil` gate. Inviting the same address again
+        sends a new link and replaces the old one (200). 30 an hour per person (429).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+                role: { type: string, enum: [editor, viewer], default: editor }
+      responses:
+        "201":
+          description: Invited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteReply" }
+        "200":
+          description: Invited again, with a new link.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "429":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/invites/{invite_id}:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/InviteId"
+    delete:
+      operationId: revokePackInvite
+      summary: Withdraw an invitation (owner)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Withdrawn.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteOnly" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/invites/{invite_id}/resend:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/InviteId"
+    post:
+      operationId: resendPackInvite
+      summary: Send a new link, good for another 14 days (owner). The old link stops working
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Sent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteReply" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "429":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams:
+    get:
+      operationId: listTeams
+      summary: The caller's teams
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Teams, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [teams]
+                properties:
+                  teams:
+                    type: array
+                    items: { $ref: "#/components/schemas/TeamSummary" }
+    post:
+      operationId: createTeam
+      summary: Make a team; the caller owns it
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        "201":
+          description: Made.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "400":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams/{id}:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: getTeam
+      summary: A team and its members (members only)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "404":
+          $ref: "#/components/responses/PackError"
+    put:
+      operationId: renameTeam
+      summary: Rename a team (owner or admin)
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: The team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team (owner). Packs shared with it stop being shared, each saying so in its log
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams/{id}/members/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      operationId: changeTeamMember
+      summary: Change a member's role (owner). `owner` hands the team over; the old owner becomes an admin
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [owner, admin, member] }
+      responses:
+        "200":
+          description: The team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+    delete:
+      operationId: removeTeamMember
+      summary: Leave (yourself), or remove someone (owner; an admin removes members only)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams/{id}/invites:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: listTeamInvites
+      summary: Invitations not yet answered (owner or admin)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Invitations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteList" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+    post:
+      operationId: inviteToTeam
+      summary: Invite by email, or with no email make a single-use link (owner or admin)
+      description: A link's `token` is in this response only; it is stored hashed and never shown again.
+      security:
+        - bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                role: { type: string, enum: [member, admin], default: member, description: Only the owner gives `admin`. }
+      responses:
+        "201":
+          description: Invited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "429":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams/{id}/invites/{invite_id}:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/InviteId"
+    delete:
+      operationId: revokeTeamInvite
+      summary: Withdraw an invitation (owner or admin)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Withdrawn.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteOnly" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/users/search:
+    get:
+      operationId: searchUsers
+      summary: People who share a team with the caller, by name or sign-in email (20 at most)
+      description: There is no open directory. A `.mil` address someone did not sign in with is never searched or shown.
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 100 }
+      responses:
+        "200":
+          description: Matches, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserBrief" }
+        "400":
+          $ref: "#/components/responses/PackError"
+
+  /api/invites:
+    get:
+      operationId: myInvites
+      summary: Invitations waiting for the caller, to their sign-in address or their verified `.mil` one
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Pending, unexpired invitations, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteList" }
+
+  /api/invites/{invite_id}/accept:
+    parameters:
+      - $ref: "#/components/parameters/InviteId"
+    post:
+      operationId: acceptInvite
+      summary: Accept an invitation addressed to the caller
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Joined.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteAccepted" }
+        "404":
+          $ref: "#/components/responses/PackError"
+        "410":
+          $ref: "#/components/responses/PackError"
+
+  /api/invites/{invite_id}/decline:
+    parameters:
+      - $ref: "#/components/parameters/InviteId"
+    post:
+      operationId: declineInvite
+      summary: Decline an invitation addressed to the caller
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Declined.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteOnly" }
+        "404":
+          $ref: "#/components/responses/PackError"
+        "410":
+          $ref: "#/components/responses/PackError"
+
+  /api/invites/accept:
+    post:
+      operationId: acceptInviteByToken
+      summary: Accept from an emailed or shared link, whatever address the caller signed in with
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: "The `invite` query parameter of the link." }
+      responses:
+        "200":
+          description: Joined.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteAccepted" }
+        "404":
+          $ref: "#/components/responses/PackError"
+        "410":
+          $ref: "#/components/responses/PackError"
+
 components:
   parameters:
     ClientHeader:
@@ -1340,6 +2269,38 @@ components:
       schema:
         type: string
         maxLength: 64
+
+    PackUuid:
+      name: uuid
+      in: path
+      required: true
+      description: The pack's `uuid`.
+      schema: { type: string, maxLength: 36 }
+
+    PackItemUuid:
+      name: item
+      in: path
+      required: true
+      description: The item's `uuid` within the pack.
+      schema: { type: string, maxLength: 64 }
+
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema: { type: integer }
+
+    TeamId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+    InviteId:
+      name: invite_id
+      in: path
+      required: true
+      schema: { type: integer }
 
   securitySchemes:
     bearer:
@@ -1463,6 +2424,13 @@ components:
               error: { type: string }
               errors: { type: array, items: { type: string } }
               code: { type: string, enum: [invalid_client_uuid, invalid_if_match] }
+
+    PackError:
+      description: An error from the pack and team routes. `code` is stable and meant for the app.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PackError"
 
   schemas:
     PointWind:
@@ -1838,7 +2806,7 @@ components:
               description: The 3D point-cloud build service is configured.
             packs:
               type: boolean
-              description: The mission-pack service is configured (not built yet).
+              description: The map-pack service (offline maps and terrain for an area; docs/NATIVE_APPS_PLAN.md) is configured. Not built yet. Unrelated to mission packs, the shared containers under /api/packs.
         mapbox:
           type: object
           additionalProperties: false
@@ -1969,3 +2937,369 @@ components:
                 noseHigh: { type: number }
                 noseLow: { type: number }
                 crossSlope: { type: number }
+
+    # -- Mission packs -----------------------------------------------------------------------
+
+    Person:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: integer, nullable: true, description: "Null once the account is deleted (the name is kept as it was)." }
+        name: { type: string }
+
+    Status:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [deleted, removed] }
+
+    PackError:
+      type: object
+      required: [error]
+      description: |
+        `error` is for people; `code` is stable and meant for the app: `pack_not_found`,
+        `pack_read_only` (a viewer), `owner_only`, `pack_finished` (423, with who finished it and
+        when), `invalid_batch`, `invalid_op` (with `index` and the `reason` from
+        contracts/fixtures/packs/ops.json, or `bad_client_op_id`, `bad_summary`), `item_too_large`
+        (413, with `item`), `invalid_name`, `invalid_description`, `invalid_uuid`, `uuid_taken`,
+        `not_in_team`, `invalid_role`, `invalid_source`, `invalid_item`, `source_not_found`,
+        `mission_not_supported`, `unreadable_source`, `item_exists`, `item_not_found`,
+        `not_your_original`, `original_gone`, `empty_point_set`, `feature_disabled`,
+        `not_a_teammate`, `already_member`, `member_not_found`, `owner_must_transfer`,
+        `invalid_email`, `invite_not_found`, `invite_gone` / `invite_expired` (410),
+        `rate_limited` (429), `team_not_found`, `team_managers_only`, `invalid_query`.
+      properties:
+        error: { type: string }
+        code: { type: string }
+        index: { type: integer }
+        reason: { type: string }
+        item: { type: string }
+        finished_at: { type: string, nullable: true }
+        finished_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+
+    PackTeam:
+      type: object
+      additionalProperties: false
+      required: [id, name, member_count, role]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        member_count: { type: integer, minimum: 0 }
+        role: { type: string, enum: [editor, viewer], description: What the team's members may do in the pack. }
+
+    PackSummary:
+      type: object
+      additionalProperties: false
+      required: [uuid, name, description, status, role, owner, team, head_seq, member_count, item_count,
+                 finished_at, finished_by, created_at, updated_at]
+      properties:
+        uuid: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, finished], description: "finished: read-only for everyone." }
+        role: { type: string, enum: [owner, editor, viewer], description: The caller's. }
+        owner: { $ref: "#/components/schemas/Person" }
+        team:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/PackTeam" }]
+        head_seq: { type: integer, minimum: 0, description: The number of the pack's latest event. }
+        member_count: { type: integer, minimum: 0, description: "Members in their own right, not counting a shared team." }
+        item_count: { type: integer, minimum: 0 }
+        finished_at: { type: string, nullable: true }
+        finished_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        created_at: { type: string }
+        updated_at: { type: string }
+
+    Pack:
+      type: object
+      additionalProperties: false
+      required: [uuid, name, description, status, role, owner, team, head_seq, member_count, item_count,
+                 finished_at, finished_by, created_at, updated_at, members, items]
+      description: A PackSummary, with its members and every live item, as of `head_seq`.
+      properties:
+        uuid: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, finished] }
+        role: { type: string, enum: [owner, editor, viewer] }
+        owner: { $ref: "#/components/schemas/Person" }
+        team:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/PackTeam" }]
+        head_seq: { type: integer, minimum: 0 }
+        member_count: { type: integer, minimum: 0 }
+        item_count: { type: integer, minimum: 0 }
+        finished_at: { type: string, nullable: true }
+        finished_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        created_at: { type: string }
+        updated_at: { type: string }
+        members:
+          type: array
+          items: { $ref: "#/components/schemas/PackMember" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PackItem" }
+
+    PackMember:
+      type: object
+      additionalProperties: false
+      required: [user_id, name, email, role, added_at]
+      properties:
+        user_id: { type: integer }
+        name: { type: string }
+        email: { type: string, description: The sign-in address. }
+        role: { type: string, enum: [owner, editor, viewer] }
+        added_at: { type: string }
+
+    PackMemberReply:
+      type: object
+      additionalProperties: false
+      required: [member]
+      properties:
+        member: { $ref: "#/components/schemas/PackMember" }
+
+    PackItem:
+      type: object
+      additionalProperties: false
+      required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
+      properties:
+        uuid: { type: string }
+        kind: { type: string, enum: [lz, route, pointset] }
+        name: { type: string }
+        revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
+        seq: { type: integer, minimum: 0, description: The event that last changed it. }
+        created_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        updated_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        created_at: { type: string }
+        updated_at: { type: string }
+        source:
+          type: object
+          nullable: true
+          additionalProperties: false
+          description: Where a copy from someone's library came from. Null for an item made in the pack.
+          required: [kind, uuid, revision, original]
+          properties:
+            kind: { type: string, enum: [lz, route, pointset] }
+            uuid: { type: string }
+            revision: { type: integer }
+            original:
+              type: string
+              nullable: true
+              enum: [same, changed, deleted]
+              description: Only for the member who copied it in (the original is their private record); null for everyone else.
+        data:
+          description: The same JSON the library keeps (lz_data, route_data, or the list of points). Present wherever the item is returned whole.
+
+    PackEvent:
+      type: object
+      additionalProperties: false
+      required: [seq, type, item, actor, summary, status, reason, client_op_id, op, created_at]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        type:
+          type: string
+          description: |
+            An item operation (`item.create`, `item.delete`, `item.rename`, `item.replace`, `set`, `patch`,
+            `upsert`, `insert`, `remove`) or a pack event (`pack.create`, `pack.update`, `pack.share`,
+            `pack.finish`, `pack.reopen`, `pack.transfer`, `member.add`, `member.join`, `member.role`,
+            `member.remove`, `invite.create`, `invite.revoke`). A client applies the first kind with its
+            applier and reads the second for the pack's state; a type it does not know, it skips.
+        item: { type: string, nullable: true }
+        actor:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          description: "Who made the change; id null for the server's own (name `EZ-PZ`) or a deleted account."
+          properties:
+            id: { type: integer, nullable: true }
+            name: { type: string }
+        summary: { type: string, description: 'The sentence for the History panel, e.g. "Colin moved Chalk 2 on LZ Hawk".' }
+        status: { type: string, enum: [applied, skipped] }
+        reason: { type: string, nullable: true, description: Why it was skipped (contracts/fixtures/packs/ops.json). }
+        client_op_id: { type: string, nullable: true }
+        op:
+          type: object
+          required: [type]
+          description: The operation itself, as applied (without `client_op_id` and `summary`).
+        created_at: { type: string }
+
+    PackOpsResult:
+      type: object
+      additionalProperties: false
+      required: [head_seq, results, events, has_more]
+      properties:
+        head_seq: { type: integer, minimum: 0 }
+        results:
+          type: array
+          description: One per operation sent, in order.
+          items:
+            type: object
+            additionalProperties: false
+            required: [client_op_id, seq, status, reason]
+            properties:
+              client_op_id: { type: string }
+              seq: { type: integer, minimum: 1 }
+              status: { type: string, enum: [applied, skipped] }
+              reason: { type: string, nullable: true }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/PackEvent" }
+        has_more: { type: boolean }
+
+    PackEventPage:
+      type: object
+      additionalProperties: false
+      required: [events, cursor, has_more, head_seq]
+      properties:
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/PackEvent" }
+        cursor: { type: integer, minimum: 0, description: Send this as `since` next time. }
+        has_more: { type: boolean }
+        head_seq: { type: integer, minimum: 0 }
+
+    PackItemReply:
+      type: object
+      additionalProperties: false
+      required: [item, event, head_seq]
+      properties:
+        item: { $ref: "#/components/schemas/PackItem" }
+        event:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/PackEvent" }]
+        head_seq: { type: integer, minimum: 0 }
+
+    LibraryCopy:
+      type: object
+      additionalProperties: false
+      required: [kind, id, client_uuid, name, revision]
+      properties:
+        kind: { type: string, enum: [lz, route, pointset] }
+        id: { type: integer }
+        client_uuid: { type: string }
+        name: { type: string }
+        revision: { type: integer, minimum: 1 }
+
+    Invite:
+      type: object
+      additionalProperties: false
+      required: [id, email, role, status, invited_by, expires_at, created_at, pack, team]
+      properties:
+        id: { type: integer }
+        email: { type: string, nullable: true, description: "Null for a team's single-use link." }
+        role: { type: string, enum: [editor, viewer, admin, member] }
+        status: { type: string, enum: [pending, accepted, declined, revoked, expired] }
+        invited_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        expires_at: { type: string }
+        created_at: { type: string }
+        pack:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [uuid, name]
+          properties:
+            uuid: { type: string }
+            name: { type: string }
+        team:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+
+    InviteOnly:
+      type: object
+      additionalProperties: false
+      required: [invite]
+      properties:
+        invite: { $ref: "#/components/schemas/Invite" }
+
+    InviteList:
+      type: object
+      additionalProperties: false
+      required: [invites]
+      properties:
+        invites:
+          type: array
+          items: { $ref: "#/components/schemas/Invite" }
+
+    InviteReply:
+      type: object
+      additionalProperties: false
+      required: [invite]
+      properties:
+        invite: { $ref: "#/components/schemas/Invite" }
+        email_sent: { type: boolean, description: Present for an emailed invitation. }
+        token: { type: string, description: "A team link's token: shown here once, never again." }
+
+    InviteAccepted:
+      type: object
+      additionalProperties: false
+      required: [invite, pack, team]
+      properties:
+        invite: { $ref: "#/components/schemas/Invite" }
+        pack:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/PackSummary" }]
+        team:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/TeamSummary" }]
+
+    TeamSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, member_count, created_at]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        role: { type: string, enum: [owner, admin, member], description: The caller's. }
+        member_count: { type: integer, minimum: 1 }
+        created_at: { type: string }
+
+    Team:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, member_count, created_at, members]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        role: { type: string, enum: [owner, admin, member] }
+        member_count: { type: integer, minimum: 1 }
+        created_at: { type: string }
+        members:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [user_id, name, email, role, joined_at]
+            properties:
+              user_id: { type: integer }
+              name: { type: string }
+              email: { type: string }
+              role: { type: string, enum: [owner, admin, member] }
+              joined_at: { type: string }
+
+    UserBrief:
+      type: object
+      additionalProperties: false
+      required: [id, name, email]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, description: The sign-in address. }

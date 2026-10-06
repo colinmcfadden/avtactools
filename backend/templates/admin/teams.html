@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% block title %}Teams{% endblock %}
+
+{% block topbar %}
+<form method="get" action="{{ url_for('admin.teams') }}" class="row">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Search team name" style="width:220px;">
+  <button class="btn btn-sm" type="submit">Search</button>
+</form>
+<form method="post" action="{{ url_for('admin.logout') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <button class="btn btn-sm" type="submit">Log out</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<div class="row" style="justify-content:space-between;margin-bottom:14px;">
+  <h1 style="font-size:20px;margin:0;">Teams <span class="muted" style="font-size:14px;">({{ total }})</span></h1>
+</div>
+<p class="muted" style="font-size:13px;margin:0 0 14px;">Read only. Users make their own teams; people find each other by name only through a team they share.</p>
+
+<div class="card" style="padding:0;overflow-x:auto;">
+  <table>
+    <thead>
+      <tr><th>Team</th><th>Owner</th><th>Members</th><th>Packs shared with it</th><th>Created</th></tr>
+    </thead>
+    <tbody>
+      {% for t in teams %}
+      {% set owner = owners.get(t.id) %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td>
+          {% if owner %}<a href="{{ url_for('admin.user_detail', uid=owner.id) }}">{{ owner.name }}</a>
+          <div class="muted mono" style="font-size:12px;">{{ owner.email }}</div>{% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>{{ members.get(t.id, 0) }}</td>
+        <td>{{ shared.get(t.id, 0) }}</td>
+        <td class="muted" style="font-size:12px;">{{ t.created_at.strftime('%Y-%m-%d') if t.created_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted" style="padding:24px;text-align:center;">No teams.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if pages > 1 %}
+<div class="row" style="justify-content:center;margin-top:16px;">
+  {% if page > 1 %}<a class="btn btn-sm" href="{{ url_for('admin.teams', q=q, page=page-1) }}">← Prev</a>{% endif %}
+  <span class="muted" style="font-size:12px;">Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a class="btn btn-sm" href="{{ url_for('admin.teams', q=q, page=page+1) }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
