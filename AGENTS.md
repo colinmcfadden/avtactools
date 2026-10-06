@@ -67,6 +67,9 @@ Browser — React 19 SPA (CRA), hosted on Vercel
                                     └─ build requests ──► LiDAR build service ───┘
                                                           (backend/lidar image: PDAL +
                                                            py3dtiles, internal only)
+
+ └─ WebSocket (mission packs) ───► live service (backend/realtime image)
+                                    LISTENs on the API's Postgres; asks the API who may see a pack
 ```
 
 The build service is a separate container. The API forwards build requests to
@@ -94,7 +97,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Threats** | `.ths` import/export, terrain-masking viewshed, KMZ, QR | `feature/threats/` | `routes/threat_routes.py`, `ths_export.py`, `threat_download_store.py`, `threat_template.ths` |
 | **Weather** | METAR, NOTAMs, winds aloft | `feature/weather/` | `routes/weather_routes.py` |
 | **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
-| **Mission packs** *(backend only so far)* | A shared container of LZs, sketched route sets and point sets a team plans one operation in. Members edit it through a server-ordered stream of id-addressed operations, every change is logged, and the owner can finish it (read-only for everyone). Teams, email invites, and name search limited to teammates. Design and rules: `docs/MISSION_PACKS.md` | — (waits for the menu redesign's dock) | `routes/pack_routes.py`, `routes/team_routes.py`, `pack_ops.py`, `pack_support.py` |
+| **Mission packs** *(no screens yet)* | A shared container of LZs, sketched route sets and point sets a team plans one operation in. Members edit it through a server-ordered stream of id-addressed operations, every change is logged, and the owner can finish it (read-only for everyone). Teams, email invites, and name search limited to teammates. Edits reach everyone through a live stream (a separate service), or by polling where it is not running. Design and rules: `docs/MISSION_PACKS.md` | `feature/missionPacks/` (the sync client, `useMissionPack`; screens wait for the menu redesign's dock) | `routes/pack_routes.py`, `routes/team_routes.py`, `pack_ops.py`, `pack_support.py`, `realtime/service.py` |
 | **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
 
 Entitlement keys (`entitlements.FEATURES`): `lz_pz_tools`, `routes`,
@@ -274,6 +277,7 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 | Backend (Fly) | `backend-brisk-acorn-4800.fly.dev` | **Manually:** `fly deploy` from `backend/` |
 | Backend (self-hosted) | Coolify VM, `prod-ezpz-api.mcfadd.in` via Cloudflare Tunnel | Automatically on push, via Coolify's GitHub App |
 | LiDAR build service | Coolify VM, beside the backend — **no public domain** | Automatically on push (separate Coolify app, base dir `/backend/lidar`) |
+| Live service (mission packs) | Coolify VM, beside the backend; **needs a public hostname** through the Cloudflare Tunnel (WebSockets) | Not yet deployed. A separate Coolify app, base dir `/backend/realtime`, port 8091; set `DATABASE_URL` and `REALTIME_API_URL` on it and `REALTIME_PUBLIC_URL` on the API. Without it clients poll |
 | Admin | `admin.ezpztac.app` → the backend's `/admin` | with the backend |
 | Database | Supabase Postgres, **Session-mode pooler** | — |
 
@@ -376,6 +380,7 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `LIDAR_CACHE_DIR` | Where the USGS coverage index is cached. |
 | `MIN_APP_VERSION_ANDROID`, `MIN_APP_VERSION_IOS` | Oldest supported native app version, `X.Y.Z`, served by `/api/config`; the app shows "Update required" below it. Unset = no minimum. A malformed value is ignored and logged, never served. |
 | `MAINTENANCE_MESSAGE` | Non-empty turns maintenance on in `/api/config` and is the notice the apps show (500 chars max). |
+| `REALTIME_PUBLIC_URL` | Where clients open the mission packs' live stream (`ws://` or `wss://`), handed out as every pack's `live_url`. Unset: clients poll. The service's own settings are at the top of `backend/realtime/service.py`. |
 | `MAPBOX_PUBLIC_TOKEN` | The Mapbox token `/api/config` hands the native apps, so it can rotate without an app release. Must start `pk.`; anything else is dropped. Default: the token in `export_service.py`. |
 
 The build service has its own settings (`LIDAR_COLLECTION`,
@@ -463,6 +468,9 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
 - **Jest finds no tests in a Claude worktree** (`.claude/worktrees/<name>/`): CRA's `testMatch`
   globs skip paths with a dot directory. Pass the pattern yourself, e.g.
   `npx react-scripts test --watchAll=false --testMatch "**/.claude/**/src/contracts/*.test.js"`.
+- `tests/test_realtime.py` needs `websockets` (`pip install -r realtime/requirements.txt`) and skips without it;
+  `tests/test_realtime_live.py` also needs `psycopg2` and a local Postgres named by `EZPZ_LIVE_POSTGRES` (its docstring
+  has the `docker run` line). `tests/live_server.py` takes `EZPZ_LIVE_DATABASE_URL` for that.
 - `tests/test_network_fixtures.py` fails on the owner's Windows workstation before any change:
   the recorded `analyze-field` polygon differs there in the last digit or two of its floats.
   When regenerating `responses.json`, keep only the diff you meant.

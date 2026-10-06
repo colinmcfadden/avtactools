@@ -8,10 +8,12 @@ records (`SavedLZ`, `SavedRoute`, `SavedPointSet`) are untouched by any of it.
 Not the offline download the native plan used to call a "mission pack": that is
 now a **map pack** (`docs/NATIVE_APPS_PLAN.md`, Offline strategy).
 
-**Status:** backend steps 1 and 2 are built (packs, items, the operation stream,
-the log, finish, teams, invites, search). No client uses them yet. The web UI is
-built inside the menu redesign's dock and workspace switcher
-(`docs/MENU_REDESIGN.md` on `docs/menu-redesign`, §8), after its phases 1–5.
+**Status:** steps 1–3 are built: the backend (packs, items, the operation stream,
+the log, finish, teams, invites, search), the live service (§6), and the web's
+sync client (`frontend/src/feature/missionPacks/`: `useMissionPack`), which no
+screen uses yet. The web's pack screens are built inside the menu redesign's dock
+and workspace switcher (`docs/MENU_REDESIGN.md` on `docs/menu-redesign`, §8),
+after its phases 1–5.
 
 ---
 
@@ -146,14 +148,71 @@ accept the site's links (`AuthLinks`).
 
 ## 5. How a client keeps up
 
-1. `GET /api/packs/<uuid>` returns the items **as of `head_seq`**. A writer holds the pack's row while it writes, and this read waits for it (`FOR SHARE` on Postgres).
-2. Apply your own edits at once, and send them in batches to `POST …/ops` with `base_seq` set to the last `seq` you have. Send a drag as one operation when the finger lifts, not one per frame.
-3. The answer carries every event after `base_seq`, yours included, in order. Rebase whatever you have not seen confirmed on top of them, using the applier.
-4. If an answer is lost, send the same batch again. A `client_op_id` the pack has seen is answered from the log and not applied twice.
-5. Until the realtime service exists, poll `GET …/events?since=<seq>` every few seconds while a pack is open. A type a client does not know it skips.
-6. When the pack is finished (423), switch to read-only and say who finished it and when.
+The web does all of this in `feature/missionPacks/`: `packSession.js` is the state
+(pure, and the part a native port follows), `packClient.js` the network, and
+`useMissionPack(packUuid, me)` the React side.
 
-## 6. Rules worth keeping
+1. `GET /api/packs/<uuid>` returns the items **as of `head_seq`**. A writer holds the pack's row while it writes, and this read waits for it (`FOR SHARE` on Postgres).
+2. Apply your own edits at once, and send them in batches to `POST …/ops` with `base_seq` set to the last `seq` you have, one batch in flight at a time. Send a drag as one operation when the finger lifts, not one per frame.
+3. The answer carries every event after `base_seq`, yours included, in order. Apply them to the confirmed copy and apply whatever is still pending on top again. An event confirms the pending edit with its `client_op_id`, applied or skipped.
+4. If no answer comes (or a 401, 429 or 5xx), send the same batch again. A `client_op_id` the pack has seen is answered from the log and not applied twice.
+5. Take everyone else's events from the live stream (§6) when the pack has a `live_url`; otherwise, and while the stream is down, poll `GET …/events?since=<seq>` every few seconds (not while the page is hidden). An event that skips a number means one was missed: fetch from your `seq`. A type a client does not know it skips.
+6. If an event the server applied does not apply to your copy, your copy has drifted (it should never happen): load the pack again and keep what is pending on top.
+7. When the pack is finished (423, or a `pack.finish` event), switch to read-only, say who finished it and when, and keep the edits that were never taken (`session.dropped`) so the person can save them to the library. A 400 or 413 drops that batch only.
+
+## 6. The live stream
+
+`backend/realtime/service.py`, its own container (`backend/realtime/Dockerfile`,
+Coolify base directory `/backend/realtime`), using `websockets`. The API sends a
+Postgres `NOTIFY` on `mission_pack_events` inside the transaction that made each
+change (`pack_support._announce`), so a change that rolls back is never announced
+and announcements arrive in commit order. The service `LISTEN`s and passes each one
+to the sockets that have that pack open. It holds no pack data, and access is
+always the API's call: it asks `GET /api/packs/<uuid>/access` with the person's own
+token when a socket opens, whenever a membership event arrives for that pack, and
+every 5 minutes. Edits never go through it.
+
+A payload over Postgres's 8,000-byte limit (an item made or replaced whole) is
+announced by its number alone, and clients fetch it. If the `LISTEN` connection
+drops, the service opens it again and tells every socket to catch up, because
+whatever was announced meanwhile is lost.
+
+**Protocol.** JSON text frames on `<live_url>` (the path `/live` or `/`; `/health`
+answers plain HTTP for health checks).
+
+| Direction | Message | Meaning |
+|---|---|---|
+| client → | `{"type": "hello", "pack": uuid, "token": jwt}` | First, within 10 s. One socket per open pack |
+| client → | `{"type": "token", "token": jwt}` | A refreshed token, used from the next access check |
+| client → | `{"type": "presence", "focus": {...}}` (or `null`) | What this person has open (1 KB at most); everyone's is sent at most every 100 ms |
+| → client | `{"type": "welcome", "pack", "head_seq", "role", "status", "you": {"session", "user_id", "name"}}` | Access granted. Fetch from your `seq` if `head_seq` is ahead |
+| → client | `{"type": "event", "pack", "seq", "event": {...}}` | One event, exactly as `GET …/events` gives it |
+| → client | `{"type": "head", "pack", "seq"}` | Event `seq` exists but was too large to carry: fetch it |
+| → client | `{"type": "resync", "pack"}` | Announcements may have been lost: fetch from your `seq` |
+| → client | `{"type": "presence", "pack", "people": [{"session", "user_id", "name", "focus"}]}` | Who has the pack open, this socket included |
+| → client | `{"type": "closed", "reason": code}` then a close frame | Why the socket is being closed |
+
+Close codes: **4401** the token was refused (sign in again); **4403** / **4404** the
+pack is not this person's to see; **4410** it was deleted; **4400** / **4408** a bad
+or missing hello (a client bug); **1013** the service could not reach the API or the
+client fell 1,000 messages behind (try again later); **1009** a frame over 8 KB.
+Anything else: reconnect with growing pauses, and poll meanwhile.
+
+**Settings.** On the API, `REALTIME_PUBLIC_URL` (`ws://` or `wss://`) is the
+`live_url` every pack response carries; unset, it is null and clients poll. On the
+service, `DATABASE_URL` (the API's Postgres: the Session pooler, since `LISTEN`
+needs a session of its own), `REALTIME_API_URL` (the API's root, without `/api`),
+`REALTIME_PORT` (default 8091) and optionally `REALTIME_ALLOWED_ORIGINS`. A socket
+proves itself with a token, never a cookie, so the origin check is only defence in
+depth. It pings every 30 s, under Cloudflare's 100 s idle timeout.
+
+**Tests.** `tests/test_realtime.py` is the protocol over real sockets with the API
+stood in for (needs `websockets`). `tests/test_realtime_live.py` is the whole chain:
+the real pack routes on a real Postgres, their `NOTIFY`, the service and two
+people's sockets. It runs when `EZPZ_LIVE_POSTGRES` names a local Postgres server.
+Its docstring has the `docker run` line.
+
+## 7. Rules worth keeping
 
 - **One order per pack.** Every write takes the pack's row first (`pack_support.lock`, an UPDATE as `sync_support.next_seq` does, which also queues SQLite writers) and numbers its events under it. Don't number events from a timestamp or outside the lock.
 - **The log is the record.** `mission_pack_event` is append-only. Pack-level changes are events too: `pack.create`, `pack.update`, `pack.share`, `pack.finish`, `pack.reopen`, `pack.transfer`, `member.add`, `member.join`, `member.role`, `member.remove`, `invite.create`, `invite.revoke`. `actor_name` is kept as written, so the log still reads after an account is deleted.
@@ -164,11 +223,11 @@ accept the site's links (`AuthLinks`).
 - **The admin dashboard is read only** here (`/admin/packs`, `/admin/teams`). It shows who owns what and who is in it, never what a pack holds.
 - **Aggregation.** A pack gathers one operation's LZs, PZs and routes in one place. It is unclassified like everything else here, but `docs/USER_GUIDE.md` should say so when the pack UI ships.
 
-## 7. Phases
+## 8. Phases
 
 1. **Packs for one person** (backend: done). Tables, pack routes, copy-in from the library, the operation stream and the log, finish. The web's pack mode waits for the menu redesign.
 2. **Sharing** (backend: done). Teams, name search, email invites, roles, members.
-3. **Live sync.** A `realtime/` service using `websockets` in its own container (with its own Coolify app, as `backend/lidar` has). It checks the same JWT and pack membership and listens on Postgres `LISTEN/NOTIFY`; the Session pooler supports it, but check before relying on it. It forwards each new event to the pack's open sockets, with presence, and sends a ping every 30 s so Cloudflare's 100 s idle timeout does not close them. The API sends `pg_notify` after each commit. Clients fall back to polling where the service is not running (Fly).
+3. **Live sync** (done; not deployed). The live service (§6), the API's `NOTIFY`, and the web's sync client with polling where there is no service (Fly). Deploying it is an owner step: a Coolify app for `/backend/realtime`, a public hostname for it through the Cloudflare Tunnel, and `REALTIME_PUBLIC_URL` on the API. Supabase's Session pooler should carry `LISTEN`; it has not been tried against it yet.
 4. **Android.** Room migration (pack, pack_item, pack_member, pack_op_outbox, pack_event), a `PackSyncEngine` beside the existing engine, OkHttp's WebSocket, an offline outbox, pack screens. Operations refused because the pack was finished meanwhile are saved to the library as "NAME (my offline edits)": nothing is silently dropped. Record the pack routes' responses in `contracts/fixtures/network/responses.json` then.
 5. **History and finish UI** on both apps.
 
