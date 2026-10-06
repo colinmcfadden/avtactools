@@ -14,6 +14,8 @@ Settings, by environment variable:
 
     EZPZ_ACCESS_TOKEN_SECONDS   how long an access token lives (default 86400). The integration tests
                                 set 1, so a token lapses and the refresh flow runs for real.
+    EZPZ_LIVE_DATABASE_URL      a Postgres database to use instead of the throwaway SQLite one, for what
+                                only Postgres does (the mission packs' NOTIFY; tests/test_realtime_live.py)
 
 Test-only routes, under ``/__test__`` (they exist only here):
 
@@ -21,7 +23,7 @@ Test-only routes, under ``/__test__`` (they exist only here):
     POST /__test__/age-refresh  {seconds, user_id?} moves every spent refresh token that far into the
                                 past, standing in for time passing (the 30 s grace period)
     POST /__test__/clear-rate-limits  forgets the sign-in rate limiter's counts (every client here shares one address)
-    GET  /__test__/email?kind=&to=   the newest link token (kind verify or reset) or .mil code (kind mil) "sent" to an address.
+    GET  /__test__/email?kind=&to=   the newest link token (kind verify, reset, pack_invite or team_invite) or .mil code (kind mil) "sent" to an address.
                                 Email is captured, never sent: the routes run as they do in production up to the mail call.
     POST /__test__/stop         ends the process
 """
@@ -46,15 +48,18 @@ from werkzeug.security import generate_password_hash  # noqa: E402
 from werkzeug.serving import make_server  # noqa: E402
 
 from affiliation_gate import enforce_affiliation_gate  # noqa: E402
+from database_url import database_uri  # noqa: E402
 from auth_rate_limit import clear_rate_limits  # noqa: E402
 from models import AccountToken, LocalCredential, User, db  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.auth import auth_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
+from routes.pack_routes import pack_bp  # noqa: E402
 from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
+from routes.team_routes import team_bp  # noqa: E402
 from token_revocation import is_revoked  # noqa: E402
 
 
@@ -71,6 +76,11 @@ def _capture_email():
         patch("routes.auth.send_welcome_email", return_value=True),
         patch("routes.auth.send_password_changed_email", return_value=True),
         patch("routes.auth.send_new_account_notification", return_value=True),
+        patch("routes.pack_routes.send_pack_invite_email",
+              side_effect=lambda to, _inviter, _pack, token, _has_account: EMAILS.append(("pack_invite", to, token)) or True),
+        patch("routes.pack_routes.send_pack_added_email", return_value=True),
+        patch("routes.team_routes.send_team_invite_email",
+              side_effect=lambda to, _inviter, _team, token: EMAILS.append(("team_invite", to, token)) or True),
     ]
     for each in patches:
         each.start()
@@ -80,8 +90,9 @@ def create_app():
     app = Flask(__name__)
     _capture_email()
     folder = tempfile.mkdtemp(prefix="ezpz-live-")
+    database = database_uri({"DATABASE_URL": os.environ.get("EZPZ_LIVE_DATABASE_URL", "")}, "")
     app.config.update(
-        SQLALCHEMY_DATABASE_URI="sqlite:///" + os.path.join(folder, "live.db"),
+        SQLALCHEMY_DATABASE_URI=database or "sqlite:///" + os.path.join(folder, "live.db"),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         JWT_SECRET_KEY="live-server-secret-that-is-over-32-bytes-long",
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(seconds=int(os.environ.get("EZPZ_ACCESS_TOKEN_SECONDS", "86400"))),
@@ -95,7 +106,7 @@ def create_app():
         return is_revoked(payload)
 
     app.before_request(enforce_affiliation_gate)
-    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, sync_bp, aircraft_bp):
+    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, sync_bp, aircraft_bp, pack_bp, team_bp):
         app.register_blueprint(blueprint)
 
     @app.post("/__test__/account")

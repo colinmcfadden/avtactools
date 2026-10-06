@@ -1,5 +1,7 @@
 """Mission packs and teams: the routes, held to their rules, and to contracts/openapi.yaml."""
 
+import json
+import os
 import sys
 import uuid
 from datetime import timedelta
@@ -947,6 +949,78 @@ class AccountDeletionTests(PackCase):
             self.assertEqual(SavedLZ.query.count(), 0)
 
 
+class AnnouncementTests(PackCase):
+    """What the API tells the live service, in the transaction that made the change (pack_support)."""
+
+    def setUp(self):
+        super().setUp()
+        self.sent = []
+        self.emit = patch.object(pack_support, '_emit',
+                                 side_effect=lambda _session, payloads: self.sent.append([json.loads(p) for p in payloads]))
+        self.emit.start()
+        self.addCleanup(self.emit.stop)
+
+    def test_each_committed_change_is_announced_once_with_its_event(self):
+        uuid_ = self.new_pack()['uuid']
+        self.add_lz(uuid_)
+        self.ok(self.send(uuid_, self.op('item.rename', 'lz-1', name='A'), self.op('item.rename', 'lz-1', name='B')))
+        self.assertEqual([[(a['pack'], a['seq']) for a in commit] for commit in self.sent],
+                         [[(uuid_, 1)], [(uuid_, 2)], [(uuid_, 3), (uuid_, 4)]])
+        last = self.sent[-1][-1]['event']
+        self.assertEqual((last['type'], last['op']['name'], last['actor']['name']), ('item.rename', 'B', 'Colin'))
+        self.assertEqual(last, self.events(uuid_)[-1])                 # the same body the log gives
+
+    def test_a_change_that_is_refused_or_rolled_back_is_never_announced(self):
+        uuid_ = self.new_pack()['uuid']
+        self.add_lz(uuid_)
+        before = len(self.sent)
+        self.assertEqual(self.send(uuid_, self.op('set', 'lz-1', path=[], value=1)).status_code, 400)
+        with patch.object(pack_support, 'MAX_ITEM_BYTES', 100):
+            self.assertEqual(self.send(uuid_, self.op('set', 'lz-1', path=['notes'], value='x' * 200)).status_code, 413)
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{uuid_}/finish'))
+        self.assertEqual(self.send(uuid_, self.op('item.rename', 'lz-1', name='X')).status_code, 423)
+        self.assertEqual([a['event']['type'] for commit in self.sent[before:] for a in commit], ['pack.finish'])
+
+    def test_an_event_too_large_to_carry_is_announced_by_its_number(self):
+        uuid_ = self.new_pack()['uuid']
+        self.add_lz(uuid_, data={**LZ_DATA, 'notes': 'x' * 9000})
+        self.assertEqual(self.sent[-1], [{'pack': uuid_, 'seq': 2}])
+        for payload in pack_support.notification_payloads([{'pack': uuid_, 'seq': 3, 'event': {'op': 'y' * 7400}}]):
+            self.assertLessEqual(len(payload.encode('utf-8')), pack_support.NOTIFY_LIMIT)
+
+    def test_a_deleted_pack_is_announced(self):
+        uuid_ = self.new_pack()['uuid']
+        self.ok(self.call(self.colin, 'delete', f'/api/packs/{uuid_}'))
+        self.assertEqual(self.sent[-1], [{'pack': uuid_, 'deleted': True}])
+
+    def test_a_pack_that_goes_with_an_account_is_announced(self):
+        uuid_ = self.new_pack()['uuid']
+        self.ok(self.call(self.colin, 'delete', '/api/auth/me', json={'confirm': 'DELETE', 'password': PASSWORD}))
+        self.assertIn({'pack': uuid_, 'deleted': True}, self.sent[-1])
+
+    def test_nothing_is_sent_to_a_database_that_is_not_postgres(self):
+        self.emit.stop()                                  # the real _emit, on this test's SQLite
+        with patch.object(pack_support, 'text', side_effect=AssertionError('pg_notify on SQLite')):
+            self.new_pack()
+
+
+class LiveUrlTests(PackCase):
+    def test_the_pack_says_where_its_live_stream_is(self):
+        uuid_ = self.new_pack()['uuid']
+        for value, expected in (('wss://live.example.com', 'wss://live.example.com'), ('ws://127.0.0.1:8091/live', 'ws://127.0.0.1:8091/live'),
+                                ('', None), ('https://live.example.com', None), ('wss://has space', None)):
+            with self.subTest(value=value), patch.dict(os.environ, {'REALTIME_PUBLIC_URL': value}):
+                self.assertEqual(self.pack(uuid_)['live_url'], expected)
+
+    def test_access_is_what_the_live_service_asks(self):
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam, role='viewer')
+        self.assertEqual(self.ok(self.call(self.sam, 'get', f'/api/packs/{uuid_}/access')),
+                         {'role': 'viewer', 'status': 'active', 'head_seq': 3, 'user': {'id': self.sam['id'], 'name': 'Sam'}})
+        self.assertEqual(self.call(self.alex, 'get', f'/api/packs/{uuid_}/access').status_code, 404)
+        self.assertEqual(self.client.get(f'/api/packs/{uuid_}/access').status_code, 401)
+
+
 class AdminTests(PackCase):
     extra_blueprints = PackCase.extra_blueprints + (admin_bp,)
 
@@ -1018,6 +1092,7 @@ class ContractTests(PackCase):
                       '/api/packs/{uuid}/ops', 'post', 200)
         self.conforms(self.send(uuid_, self.op('set', 'ps-1', path=[], value=1)), '/api/packs/{uuid}/ops', 'post', 400)
         self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}'), '/api/packs/{uuid}', 'get', 200)
+        self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}/access'), '/api/packs/{uuid}/access', 'get', 200)
         self.conforms(self.call(self.sam, 'get', f'/api/packs/{uuid_}'), '/api/packs/{uuid}', 'get', 404)
         self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}/events?since=0'), '/api/packs/{uuid}/events', 'get', 200)
         self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}/items/lz-a'), '/api/packs/{uuid}/items/{item}', 'get', 200)

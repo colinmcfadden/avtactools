@@ -1429,6 +1429,38 @@ paths:
         "404":
           $ref: "#/components/responses/PackError"
 
+  /api/packs/{uuid}/access:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    get:
+      operationId: packAccess
+      summary: Whether the caller may see the pack, and as whom
+      description: What the live service asks, with the person's own token, before it opens a socket and whenever the pack's membership changes. An app has no need of it.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The caller's place in the pack.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [role, status, head_seq, user]
+                properties:
+                  role: { type: string, enum: [owner, editor, viewer] }
+                  status: { type: string, enum: [active, finished] }
+                  head_seq: { type: integer, minimum: 0 }
+                  user:
+                    type: object
+                    additionalProperties: false
+                    required: [id, name]
+                    properties:
+                      id: { type: integer }
+                      name: { type: string }
+        "404":
+          $ref: "#/components/responses/PackError"
+
   /api/packs/{uuid}/finish:
     parameters:
       - $ref: "#/components/parameters/PackUuid"
@@ -3020,7 +3052,7 @@ components:
       type: object
       additionalProperties: false
       required: [uuid, name, description, status, role, owner, team, head_seq, member_count, item_count,
-                 finished_at, finished_by, created_at, updated_at, members, items]
+                 finished_at, finished_by, created_at, updated_at, members, items, live_url]
       description: A PackSummary, with its members and every live item, as of `head_seq`.
       properties:
         uuid: { type: string }
@@ -3047,6 +3079,13 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/PackItem" }
+        live_url:
+          type: string
+          nullable: true
+          pattern: '^wss?://'
+          description: |
+            Where to open the live stream for this pack (docs/MISSION_PACKS.md, "The live stream"). Null when
+            this deployment has no live service: poll `GET /api/packs/{uuid}/events` instead.
 
     PackMember:
       type: object

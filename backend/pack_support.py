@@ -17,10 +17,15 @@ The rules (docs/MISSION_PACKS.md has the reasons):
 """
 
 import hashlib
+import json
+import logging
+import os
+import re
 import secrets
 from datetime import datetime, timedelta
 
-from sqlalchemy import case, select, update
+from sqlalchemy import case, event, select, text, update
+from sqlalchemy.orm import Session
 
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember,
@@ -111,13 +116,15 @@ def append(pack, user, payload, summary, item_uuid=None, client_op_id=None, stat
     """Add the next event to a locked pack. The caller commits."""
     pack.head_seq += 1
     pack.updated_at = now()
-    event = MissionPackEvent(
+    row = MissionPackEvent(
         pack_id=pack.id, seq=pack.head_seq, user_id=user.id if user is not None else None,
         actor_name=actor_name(user), item_uuid=item_uuid, op_type=payload['type'], payload=payload,
         summary=(summary or '')[:MAX_SUMMARY], client_op_id=client_op_id, status=status, reason=reason,
+        created_at=now(),
     )
-    db.session.add(event)
-    return event
+    db.session.add(row)
+    announce_event(pack, row)
+    return row
 
 
 def clean_summary(value):
@@ -245,7 +252,76 @@ def pack_full(pack, user_id, role):
         **pack_summary(pack, role),
         'members': member_bodies(pack),
         'items': [item_body(i, user_id, known) for i in items],
+        'live_url': live_url(),
     }
+
+
+# -- Telling the live service ----------------------------------------------------
+#
+# Every change is announced to the live service (backend/realtime) with a Postgres
+# NOTIFY sent inside the transaction that made it, so a change that rolls back is
+# never announced and announcements arrive in commit order. A payload must stay
+# under Postgres's 8,000-byte limit: an event too large to carry (an item made or
+# replaced whole) is announced by its number alone, and clients fetch it from
+# GET /api/packs/<uuid>/events. Elsewhere (SQLite) nothing is sent, and clients poll.
+
+NOTIFY_CHANNEL = 'mission_pack_events'
+NOTIFY_LIMIT = 7500
+_QUEUE = 'mission_pack_announcements'
+_LIVE_URL = re.compile(r'^wss?://[^\s]+\Z')
+log = logging.getLogger(__name__)
+
+
+def live_url():
+    """Where clients open the live stream, or None (then they poll). ``REALTIME_PUBLIC_URL``, ws:// or wss:// only."""
+    url = (os.environ.get('REALTIME_PUBLIC_URL') or '').strip()
+    if not url:
+        return None
+    if not _LIVE_URL.match(url):
+        log.warning('REALTIME_PUBLIC_URL must start ws:// or wss://; ignored')
+        return None
+    return url
+
+
+def announce_event(pack, event_row):
+    db.session.info.setdefault(_QUEUE, []).append(
+        {'pack': pack.uuid, 'seq': event_row.seq, 'event': event_body(event_row)})
+
+
+def announce_deleted(pack_uuid):
+    db.session.info.setdefault(_QUEUE, []).append({'pack': pack_uuid, 'deleted': True})
+
+
+def notification_payloads(queued):
+    """The NOTIFY payloads for what a transaction changed, each under the size limit."""
+    payloads = []
+    for item in queued:
+        payload = json.dumps(item, separators=(',', ':'))
+        if 'event' in item and len(payload.encode('utf-8')) > NOTIFY_LIMIT:
+            payload = json.dumps({'pack': item['pack'], 'seq': item['seq']}, separators=(',', ':'))
+        payloads.append(payload)
+    return payloads
+
+
+def _emit(session, payloads):
+    if session.get_bind().dialect.name != 'postgresql':
+        return
+    for payload in payloads:
+        session.execute(text('SELECT pg_notify(:channel, :payload)'), {'channel': NOTIFY_CHANNEL, 'payload': payload})
+
+
+@event.listens_for(Session, 'before_commit')
+def _announce(session):
+    queued = session.info.pop(_QUEUE, None)
+    if queued:
+        _emit(session, notification_payloads(queued))
+
+
+@event.listens_for(Session, 'after_transaction_end')
+def _forget(session, transaction):
+    # A transaction that rolled back (or a request that ended without committing) announces nothing.
+    if transaction.parent is None:
+        session.info.pop(_QUEUE, None)
 
 
 # -- Invites --------------------------------------------------------------------
@@ -297,6 +373,7 @@ def invite_body(invite):
 
 def _purge_pack(pack):
     """Delete a pack and everything in it, rows and all. Only when nobody else is in it."""
+    announce_deleted(pack.uuid)
     for model in (MissionPackEvent, MissionPackItem, MissionPackInvite, MissionPackMember):
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
     db.session.delete(pack)

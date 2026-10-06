@@ -216,6 +216,19 @@ def get_pack(pack_uuid):
     return _reply(body)
 
 
+@pack_bp.route('/api/packs/<pack_uuid>/access', methods=['GET'])
+@jwt_required()
+@require_feature('mission_packs')
+def pack_access(pack_uuid):
+    """Whether the caller may see the pack, and as whom: what the live service asks before it opens a socket."""
+    me = _me()
+    pack, role, refused = _load(pack_uuid, me.id)
+    if refused:
+        return refused
+    return _reply({'role': role, 'status': pack.status, 'head_seq': pack.head_seq,
+                   'user': {'id': me.id, 'name': me.name}})
+
+
 @pack_bp.route('/api/packs/<pack_uuid>', methods=['PUT'])
 @jwt_required()
 @require_feature('mission_packs')
@@ -284,6 +297,7 @@ def delete_pack(pack_uuid):
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
     pack.name, pack.description, pack.team_id = '', '', None
     pack.deleted_at = packs.now()
+    packs.announce_deleted(pack.uuid)
     db.session.commit()
     return _reply({'status': 'deleted'})
 
