@@ -6,6 +6,7 @@ import App from './App';
 import { AuthProvider } from './feature/auth/AuthContext';
 import AuthGate from './feature/auth/AuthGate';
 import { ToastProvider } from './feature/ui/Toast';
+import { captureInviteLink } from './feature/missionPacks/inviteLink';
 import reportWebVitals from './reportWebVitals';
 import Viewer3DDemo from './feature/viewer3d/Viewer3DDemo';
 
@@ -16,6 +17,10 @@ import Viewer3DDemo from './feature/viewer3d/Viewer3DDemo';
 const showViewer3DDemo =
   process.env.NODE_ENV === 'development' &&
   new URLSearchParams(window.location.search).has('view3d');
+
+// A pack or team invitation (?invite=<token>) is taken out of the address before anything renders,
+// so it is not left in the history; it is accepted once the person has signed in (useInviteLink).
+captureInviteLink();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
