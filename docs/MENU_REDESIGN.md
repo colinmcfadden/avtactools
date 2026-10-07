@@ -5,7 +5,12 @@
 What was decided while building, beyond this document:
 
 - **Narrow windows** (below 1100 px): the dock is a bottom sheet, as the Android app's is. The rail becomes a row of tabs on the sheet; the sheet rests at a peek, half or nearly full height (drag the handle, or tap it to step up); a phone starts at the peek. The phone's ☰ for the left panel moved into the top bar.
-- **The map sits between the top bar and the dock** (`.shell-map`), so a target set by grid lands in the middle of what can be seen; `MapView` tells Leaflet when its box changes size.
+- **The map sits between the top bar and the dock** (`.shell-map`), so a target set by grid lands in the middle of what can be seen; `MapView` tells Leaflet when its box changes size. On narrow windows the map ends at the sheet's top too: `Dock` puts `--sheet-height` and `--map-bottom` on the shared parent, so neither a grid target nor the map-style switcher is ever under the sheet. At the sheet's full height the map is a thin strip behind it.
+- **Menus sit above dialogs** (`.ui-menu` z-index 3200; dialogs 3000, toasts 3500), so a ⋯ menu inside the Library can be clicked.
+- **Opening a saved route set never merges it into unsaved sketches.** Opened while the session has sketches of its own, it gets its own card with its own Save state; opened into a session with none, it becomes the session's sketches. Each set is compared with what it was when last saved or opened.
+- **Missions come in one way**: the sidebar's Import MSNX is gone; the Import menu, the Routes panel's footer and a drop on the map all go through the review.
+- **Library lists that fail say so**: a tab that could not load says it could not be loaded and offers Try again (never "Nothing saved yet"); one that could not refresh keeps its rows, marked as possibly out of date.
+- **Export from the Routes panel reports in toasts**, and the threats `.ths` beside a mission is made only when the `.msnx` was.
 - **Map overlays** are listed in the Import menu as not available yet: reading KMZ or GeoTIFF needs a new library (§9).
 - **Imports default**: local points go to the Library (the open pack when there is one), mission files stay in the session; the person can change either in the review.
 - The Library rows show no grid: the list API does not return one, and adding it changes the recorded responses the Android client is held to. Add `grid` to the LZ summary when the apps are next touched.

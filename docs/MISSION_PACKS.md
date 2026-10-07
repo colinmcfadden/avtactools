@@ -12,9 +12,9 @@ now a **map pack** (`docs/NATIVE_APPS_PLAN.md`, Offline strategy).
 the log, finish, teams, invites, search, seen markers), the live service (§6), and
 the web's side of everything below the screens (`frontend/src/feature/missionPacks/`):
 the sync client (`useMissionPack`), a call for every route (`packApi`), invitation
-links, and the editors kept in step with an open pack (§5a). No screen uses it yet:
-the pack screens are built inside the menu redesign's dock and workspace switcher
-(`docs/MENU_REDESIGN.md` on `docs/menu-redesign`, §8), after its phases 1–5.
+links, and the editors kept in step with an open pack (§5a). The pack screens are
+built too, inside the menu redesign's dock and workspace switcher
+(`docs/MENU_REDESIGN.md` §8; how they join the editors is the end of §5a).
 
 **Off until it launches.** Packs ship together with the menu redesign (the owner,
 2026-10-07). Until then `mission_packs` is in `entitlements.DEFAULT_OFF`: every
@@ -150,9 +150,12 @@ finished the pack and when), `pack_read_only` (a viewer), `owner_only`,
 `mission_not_supported`, `not_your_original`, `not_a_teammate`,
 `owner_must_transfer`, and `invite_gone` / `invite_expired` (410).
 
-**Invitation links** are `<FRONTEND_URL>/?invite=<token>`. No client reads that
-parameter yet; the web will when its pack UI lands, and the native apps when they
-accept the site's links (`AuthLinks`).
+**Invitation links** are `<FRONTEND_URL>/?invite=<token>`. The web takes the token
+out of the address before anything renders and accepts it once the person is signed
+in (`useInviteLink`), then opens the pack. Accepting needs the `mission_packs`
+entitlement like every other pack route, so while packs are off a tester must be
+ticked before they open the link. The native apps will read it when they accept the
+site's links (`AuthLinks`).
 
 ## 5. How a client keeps up
 
@@ -167,6 +170,8 @@ The web does all of this in `feature/missionPacks/`: `packSession.js` is the sta
 5. Take everyone else's events from the live stream (§6) when the pack has a `live_url`; otherwise, and while the stream is down, poll `GET …/events?since=<seq>` every few seconds (not while the page is hidden). An event that skips a number means one was missed: fetch from your `seq`. A type a client does not know it skips.
 6. If an event the server applied does not apply to your copy, your copy has drifted (it should never happen): load the pack again and keep what is pending on top.
 7. When the pack is finished (423, or a `pack.finish` event), switch to read-only, say who finished it and when, and keep the edits that were never taken (`session.dropped`) so the person can save them to the library. A 400 or 413 drops that batch only.
+8. A pack that cannot be loaded (no answer, or a 5xx) is tried again by itself, after 1 s growing to 30 s, and at once when the connection or the tab comes back. A 403 or 404 means it is not this person's to see any more, and is not retried.
+9. Closing a pack (switching workspace, opening another) stops listening but not sending: what is still queued, or waiting to be retried, is sent until nothing is left, and anything the pack would not take is reported (`onLost`, a toast). After a sign-out nothing more is sent, so a later sign-in can never carry the previous person's edits.
 
 ## 5a. The editors and an open pack (web)
 
@@ -195,7 +200,10 @@ and `usePackPoints` join them to the pack, on one engine (`usePackItemSync`):
   to the pack's version, and `droppedVersions` rebuilds the person's own version of what
   they had changed, to save to their library as "NAME (my edits)" (`packActions.js`).
 - An item someone removed leaves the editor. `usePackSeen` moves the person's seen
-  marker while they look, and `changedSince` says which items changed since.
+  marker while they look, and `changedSince` says which items changed since. "Since"
+  is the server's `seen_seq` for that pack as it loads: nothing is marked new until the
+  pack has loaded, and switching straight from one pack to another never carries the
+  first one's marker over.
 
 These hooks are tested against the real editors and a fake pack that applies every
 operation as the server would (`fakePack.js`), including a change here and one there in
@@ -220,8 +228,22 @@ to the app by `usePackWorkspace`. Things worth keeping true:
   whether someone is signed in. Each person's focus is `{ item, at }`, the LZ/PZ they have open and
   where their pointer is on the map; the others are drawn as named flags (`PresenceLayer`). Without
   the live service (Fly, the local preview) nobody is shown, and that is correct.
-- Read-only (finished, or a viewer): the planning tools are off, a banner says who finished it and
-  when, and edits the pack would not take are offered back as "NAME (my edits)" in the Library.
+- Read-only (finished, or a viewer; `packForPanels.readOnly`, the same test as the session's): the
+  planning tools are off, the map offers no drag, turn, delete or inline edit of the pack's graphics
+  and route points, the LZ/PZ panel has no Rename and the Routes panel no sketching, a banner says
+  who finished it and when, and edits the pack would not take are offered back as "NAME (my edits)"
+  in the Library. A pack that turns read-only in the middle of a drag ends the drag without a change.
+- **History follows the pack while it is open.** `session.pack.head_seq` moves with every event
+  applied, one's own included, and the tab fetches only what is newer than what it holds; with more
+  than 500 events it shows the newest 500.
+- After *Update from original*, the copier's item reads unchanged again at once (an `item.replace`
+  made by `me` sets `source.original` to `same`), without waiting for the pack to be reloaded.
+- **While a pack opens or cannot be reached**, the top bar names it with *Opening…* or *Cannot reach
+  the pack*, never "Library", while the Library is parked.
+- **Importing local points while a pack is open**: the pack destination is off for a viewer as for a
+  finished pack, with the reason; points the pack refuses stay in the session; points sent to the
+  Library or the session are not shown until the person switches back to the Library, and the review
+  and a toast say so.
 
 ## 6. The live stream
 
