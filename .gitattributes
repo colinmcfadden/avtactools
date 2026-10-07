@@ -10,3 +10,7 @@ android/**/*.sh text eol=lf
 # regenerates to the same bytes.
 *.msnx binary
 contracts/fixtures/**/*.json text eol=lf
+# The pre-rendered symbols, and milsymbol as the app bundles it (a test holds it
+# byte for byte to the web's node_modules copy): a CRLF checkout fails both.
+contracts/fixtures/**/*.svg text eol=lf
+android/core-symbols/src/main/assets/*.js text eol=lf

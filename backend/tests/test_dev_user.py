@@ -4,6 +4,7 @@ What matters is that the account it makes can really sign in through the product
 send), is past the `.mil` gate, and that the script will not touch anything but a local SQLite file.
 """
 
+import gc
 import os
 import sys
 import tempfile
@@ -40,6 +41,17 @@ class DevUserTests(unittest.TestCase):
         for var in ("TRUSTED_PROXY", "FLY_APP_NAME", "APP_ENV"):
             os.environ.pop(var, None)
         self.addCleanup(self.folder.cleanup)
+        # Cleanups run last in, first out, so this closes the database before the folder goes: Windows will not delete a
+        # file that is still open (WinError 32).
+        self.addCleanup(self.close_databases)
+
+    @staticmethod
+    def close_databases():
+        gc.collect()
+        # Every app here (the script's own and the login check's) shares `db`, which keeps one engine per app.
+        for engines in list(db._app_engines.values()):
+            for engine in engines.values():
+                engine.dispose()
 
     def make(self, *args, password=PASSWORD):
         dev_user.main(["--password", password, *args])

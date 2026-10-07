@@ -430,10 +430,16 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
   (SQLAlchemy app registration). Report it; don't "fix" it as a side effect.
 - The geoid test skips without `PROJ_NETWORK=ON` — PROJ returns heights
   unchanged, and *reports success*, when grids are missing.
-- **CI runs only two test sets:** `android.yaml` (the Kotlin modules) and
-  `contracts.yaml` (the fixtures, on the web and PyGeodesy sides), each only when
-  its paths change. Backend pytest and the rest of the web's Jest suite still run
-  nowhere but on your machine.
+- **CI runs three test sets:** `android.yaml` (the Kotlin modules),
+  `contracts.yaml` (the fixtures, on the web and PyGeodesy sides) and
+  `backend.yaml` (the backend's contract tests: a named list of pytest files that
+  need no SAM weights, terrain data or GPU), each only when its paths change. The
+  rest of backend pytest and of the web's Jest suite runs nowhere but on your machine.
+- **On a Windows checkout** (`core.autocrlf=true`), a text file compared byte for
+  byte needs an `eol=lf` rule in `.gitattributes`, or the checkout's CRLF fails
+  the comparison while CI passes. And Windows and Linux maths libraries can differ
+  in a double's last digit, so a recorded number is compared with a tolerance
+  (`test_network_fixtures.settle_floats`), never exactly.
 - `frontend/package-lock.json` is out of sync under npm 10 (`npm ci` reports
   `Missing: yaml@2.9.1`), so install with `npm install` and restore the lockfile
   (`git checkout frontend/package-lock.json`) if you only needed `node_modules`.
@@ -655,9 +661,9 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   Hugging Face Spaces and a `backend/src/` layout). This file is current.
 - `backend/.env.example` is missing (§10).
 - `tests/test_threat_qr_export.py` fails (pre-existing).
-- CI runs only the Kotlin modules and the fixtures (§11); backend pytest and
-  most of the web's Jest suite run nowhere but locally, and `pytest` isn't a
-  declared dependency.
+- CI runs the Kotlin modules, the fixtures and the backend's contract tests
+  (§11); the rest of backend pytest and most of the web's Jest suite run nowhere
+  but locally, and `pytest` isn't a declared dependency.
 - Web behaviour the native ports reproduce on purpose, because the web is the
   reference and the fixtures pin it. Each is a candidate to fix on the web
   *first* (then regenerate the fixtures): `looksLikeCoordinateText("34S")` is
@@ -886,8 +892,9 @@ client is built around not losing one:
   - Recorded from the real server like the other routes (`pointset: …` in `responses.json`, held to `contracts/openapi.yaml`) and run through all eleven per-kind
     scenarios on the fake, the real Flask server and Room. A device that synced before the engine learned point sets has its cursor past them and would need it reset to 0;
     no app was released before that, so no migration exists.
-- Not done: WorkManager scheduling (`RetryPolicy.delayMillis` says how long to wait), the conflict
-  screen, and the 14-day "sign in again" rule.
+- Built since: WorkManager scheduling (`SyncScheduler`: a sync on demand and every 6 hours; not yet seen on a device),
+  conflict choices in the Diagrams, Routes and Points sections (`ConflictPanel`), and the 14-day "sign in again" rule
+  (`OfflineGrace`).
 
 **The app module and the Android build.**
 - **Convention plugins** in `android/build-logic`: `ezpz.kotlin-library` (pure modules), and for Android

@@ -14,6 +14,7 @@ different, and with it rewrites ``contracts/fixtures/network/responses.json``.
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -56,6 +57,19 @@ from routes.threat_routes import threat_bp  # noqa: E402
 
 FIXTURE = BACKEND_DIR.parent / "contracts" / "fixtures" / "network" / "responses.json"
 UPDATE = os.environ.get("UPDATE_CONTRACTS") == "1"
+FLOAT_TOLERANCE = 1e-12
+
+
+def settle_floats(committed, fresh):
+    """``fresh``, with every non-integer number that is within FLOAT_TOLERANCE (relative) of the committed one
+    at the same place replaced by the committed one. Anything else that differs is left to fail the comparison."""
+    if isinstance(fresh, float) and isinstance(committed, (int, float)) and not isinstance(committed, bool):
+        return committed if math.isclose(fresh, committed, rel_tol=FLOAT_TOLERANCE, abs_tol=FLOAT_TOLERANCE) else fresh
+    if isinstance(fresh, dict) and isinstance(committed, dict):
+        return {key: settle_floats(committed[key], value) if key in committed else value for key, value in fresh.items()}
+    if isinstance(fresh, list) and isinstance(committed, list) and len(fresh) == len(committed):
+        return [settle_floats(old, new) for old, new in zip(committed, fresh)]
+    return fresh
 
 # Placeholders for what changes from run to run.
 JWT = re.compile(r"^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$")
@@ -508,13 +522,18 @@ class NetworkFixtureTests(NativeAuthCase):
             "generatedBy": "backend/tests/test_network_fixtures.py (UPDATE_CONTRACTS=1)",
             "responses": self.recorded,
         }
+        committed = json.loads(FIXTURE.read_text(encoding="utf-8")) if FIXTURE.exists() else None
+        # Windows and Linux maths libraries can differ in a double's last digit (a boundary's latitude
+        # came out 34.10071753947543 on one and 34.100717539475426 on the other), so a number within
+        # that of the committed one counts as the same and keeps its committed digits.
+        fresh = json.loads(json.dumps(document["responses"]))
+        document["responses"] = settle_floats(committed["responses"], fresh) if committed else fresh
         text = self.dumps(document)
         if UPDATE:
             FIXTURE.parent.mkdir(parents=True, exist_ok=True)
             FIXTURE.write_text(text, encoding="utf-8")
             return
-        self.assertTrue(FIXTURE.exists(), f"{FIXTURE} is missing; run with UPDATE_CONTRACTS=1")
-        committed = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        self.assertIsNotNone(committed, f"{FIXTURE} is missing; run with UPDATE_CONTRACTS=1")
         self.assertEqual(committed, json.loads(text), "the server's responses changed; review the diff, then regenerate")
         self.assertGreater(len(committed["responses"]), 30)
 
