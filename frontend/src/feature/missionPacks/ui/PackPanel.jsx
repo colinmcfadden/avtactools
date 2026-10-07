@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { PanelHead } from "../../shell/Dock";
 import Avatar, { AvatarStack, shortName } from "../../ui/Avatar";
 import Chip from "../../ui/Chip";
@@ -118,6 +118,15 @@ const dayLabel = (value, now = new Date()) => {
   return shortDate(value, now);
 };
 
+const PAGE = 500; // the most events the server gives at once, and the most the history shows
+
+// Events held and fetched, each once (two fetches can overlap), oldest first: the newest PAGE of them.
+const mergeEvents = (held, more) => {
+  const bySeq = new Map(held.map((event) => [event.seq, event]));
+  more.forEach((event) => bySeq.set(event.seq, event));
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq).slice(-PAGE);
+};
+
 const History = ({ packUuid, headSeq, newSince, me, members, items, api }) => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -125,24 +134,45 @@ const History = ({ packUuid, headSeq, newSince, me, members, items, api }) => {
   const [person, setPerson] = useState("all");
   const [itemFilter, setItemFilter] = useState("all");
 
-  // The last 500 events, fetched again whenever the pack moves on.
+  // The last PAGE events, then whatever is newer each time the pack moves on (`headSeq` follows every
+  // event as it arrives): one fetch at a time, from the newest held.
+  const sync = useRef(null);
+  const head = headSeq ?? 0;
   useEffect(() => {
-    let current = true;
-    api
-      .getEvents(packUuid, Math.max(0, (headSeq ?? 0) - 500), 500)
-      .then(
-        (page) => {
-          if (!current) return;
-          setEvents(page?.events ?? []);
+    if (sync.current?.pack !== packUuid) {
+      sync.current = { pack: packUuid, head, newest: null, busy: false };
+      setEvents([]);
+      setLoading(true);
+    }
+    const state = sync.current;
+    state.head = Math.max(state.head, head);
+    if (state.busy) return;
+    state.busy = true;
+    (async () => {
+      try {
+        while (sync.current === state && (state.newest === null || state.head > state.newest)) {
+          const upTo = state.head;
+          let page = await api.getEvents(packUuid, state.newest ?? Math.max(0, upTo - PAGE), PAGE);
+          // More than a page behind (pages are oldest first): the newest page instead, never the oldest.
+          if (page?.has_more) page = await api.getEvents(packUuid, Math.max(0, (page.head_seq ?? upTo) - PAGE), PAGE);
+          if (sync.current !== state) return;
+          const more = page?.events ?? [];
+          state.newest = Math.max(upTo, ...more.map((event) => event.seq));
+          setEvents((held) => mergeEvents(held, more));
           setFailed(false);
-        },
-        () => current && setFailed(true),
-      )
-      .finally(() => current && setLoading(false));
-    return () => {
-      current = false;
-    };
-  }, [packUuid, headSeq, api]);
+        }
+      } catch {
+        if (sync.current === state) setFailed(true);
+      } finally {
+        state.busy = false;
+        if (sync.current === state) setLoading(false);
+      }
+    })();
+  }, [packUuid, head, api]);
+  // Closed: answers still on their way are dropped.
+  useEffect(() => () => {
+    sync.current = null;
+  }, []);
 
   const byUuid = useMemo(() => new Map(items.map((item) => [item.uuid, item])), [items]);
   const shown = useMemo(

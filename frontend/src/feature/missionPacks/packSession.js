@@ -192,15 +192,19 @@ export const receive = (session, events) => {
   let next = session;
   for (const event of events) {
     if (event.seq <= next.seq) continue; // already have it
-    if (event.seq > next.seq + 1) return { session: settle(next), gap: true };
+    if (event.seq > next.seq + 1) return { session: settle(withHead(next)), gap: true };
     next = ITEM_EVENTS.has(event.type) ? applyItemEvent(next, event) : applyPackEvent(next, event);
     next = { ...next, seq: event.seq };
     if (event.client_op_id) {
       next = { ...next, pending: next.pending.filter((entry) => entry.op.client_op_id !== event.client_op_id) };
     }
   }
-  return { session: settle(next), gap: false };
+  return { session: settle(withHead(next)), gap: false };
 };
+
+// The pack's head_seq follows the newest event applied here, so what is keyed on it (the History) keeps up.
+const withHead = (session) =>
+  session.seq > (session.pack.head_seq ?? 0) ? { ...session, pack: { ...session.pack, head_seq: session.seq } } : session;
 
 // A pack that turned read-only (finished, or our role lowered) will never take what is still pending.
 const settle = (session) => {

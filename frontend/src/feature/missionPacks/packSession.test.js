@@ -179,6 +179,15 @@ describe("the server's events", () => {
     expect(visibleItems(theirs)[0].source.original).toBeNull();
   });
 
+  it("keep the pack's head at the newest event, ours included", () => {
+    let session = receive(open(), [ev(4, setHeading(90)), ev(5, setHeading(95))]).session;
+    expect(session.pack.head_seq).toBe(5);
+    const sent = nextBatch(mine(session, setHeading(100)).session);
+    session = batchAnswered(sent.session, { head_seq: 6, has_more: false, results: [{ client_op_id: "op-1", seq: 6, status: "applied", reason: null }],
+      events: [ev(6, setHeading(100), { actor: SAM, clientOpId: "op-1" })] }).session;
+    expect(session.pack.head_seq).toBe(6);
+  });
+
   it("show an item made here before the server has it, at the end", () => {
     const { session } = mine(open(), { type: "item.create", item: "lz-2", kind: "lz", name: "LZ CROW", data: {} });
     expect(visibleItems(session).map((i) => [i.uuid, Boolean(i.pendingCreate)])).toEqual([["lz-1", false], ["lz-2", true]]);

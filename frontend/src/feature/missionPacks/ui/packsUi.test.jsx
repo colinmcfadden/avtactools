@@ -142,6 +142,35 @@ describe("the pack panel", () => {
     expect(lines[0]).toMatch(/Sam B\. moved/);
   });
 
+  it("adds to the history as the pack moves on, fetching only what is newer", async () => {
+    const api = events();
+    const view = renderPanel("history", { api });
+    expect(await screen.findByText("Sam B. moved Chalk 2 on LZ IBIS.")).toBeInTheDocument();
+    expect(api.getEvents).toHaveBeenCalledWith("p", 0, 500);
+    api.getEvents.mockResolvedValue({ events: [
+      { seq: 13, type: "set", item: "lz-1", actor: { id: 3, name: "Jess Reyes" }, summary: "Jess R. turned LZ IBIS.", status: "applied", created_at: minutesAgo(0) },
+    ], has_more: false, head_seq: 13 });
+    view.rerender(
+      <ToastProvider>
+        <PackPanel pack={{ ...pack, head_seq: 13 }} members={[]} items={items} openIds={new Set()} me={1} newSince={8} actions={actions} tab="history" setTab={() => {}} api={api} />
+      </ToastProvider>,
+    );
+    expect(await screen.findByText("Jess R. turned LZ IBIS.")).toBeInTheDocument();
+    expect(api.getEvents).toHaveBeenLastCalledWith("p", 12, 500);
+    expect(screen.getByText("Sam B. moved Chalk 2 on LZ IBIS.")).toBeInTheDocument(); // still there
+    expect(screen.getByText("New since you looked · 3")).toBeInTheDocument();
+  });
+
+  it("shows the newest events of a long history, not the oldest page after where it started", async () => {
+    const api = { getEvents: jest.fn((uuid, since) => Promise.resolve(since === 100
+      ? { events: [{ seq: 101, type: "set", item: "lz-1", actor: { id: 2, name: "Sam Bell" }, summary: "An old change.", status: "applied", created_at: minutesAgo(60) }], has_more: true, head_seq: 1000 }
+      : { events: [{ seq: 1000, type: "set", item: "lz-1", actor: { id: 2, name: "Sam Bell" }, summary: "The newest change.", status: "applied", created_at: minutesAgo(1) }], has_more: false, head_seq: 1000 })) };
+    renderPanel("history", { api, pack: { ...pack, head_seq: 600 } });
+    expect(await screen.findByText("The newest change.")).toBeInTheDocument();
+    expect(api.getEvents.mock.calls.map((call) => call[1])).toEqual([100, 500]);
+    expect(screen.queryByText("An old change.")).toBeNull();
+  });
+
   it("offers to keep edits the pack would not take", () => {
     const onKeepDropped = jest.fn();
     renderPanel("items", { dropped: 2, onKeepDropped });
