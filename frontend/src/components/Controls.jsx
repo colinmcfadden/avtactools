@@ -12,7 +12,6 @@ const Controls = ({
   activeAircraftProfile,
   onSelectAircraft,
   onManageAircraft,
-  onImportMsnx,
   isSketching,
   toggleRouteSketch,
   addHelo,
@@ -65,7 +64,6 @@ const Controls = ({
 }) => {
   const can = (key) => features[key] !== false;
   const [showUnitMenu, setShowUnitMenu] = useState(false);
-  const msnxInputRef = useRef(null);
 
   // Collapsed rail: the MGRS input is too narrow to use inline, so a search
   // icon pops out a floating (fixed-position, escaping the panel's clip) input.
@@ -114,10 +112,6 @@ const Controls = ({
         : null);
   const analysisEnabled = Boolean(targetLocation) && canAnalyze;
   const showAnalyzeAction = hasLifecycleProps || legacyCanAnalyze;
-  const diagramStatusLabel =
-    typeof diagramStatus === "string" && diagramStatus.length > 0
-      ? diagramStatus.replace(/[-_]/g, " ").toUpperCase()
-      : "PLAN";
 
   useEffect(() => {
     if (!canUseDiagramTools) {
@@ -152,14 +146,6 @@ const Controls = ({
       document.removeEventListener("keydown", onKey);
     };
   }, [showMgrsPopout]);
-
-  const handleMsnxFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      onImportMsnx(file);
-    }
-    e.target.value = "";
-  };
 
   const pzButtonSvg = (
     <svg
@@ -602,12 +588,11 @@ const Controls = ({
         </div>
         )}
 
-        {/* Routes */}
-        {(can("routes") || can("msnx_import")) && (
+        {/* Routes. Mission files come in through the Import menu, which reviews them first. */}
+        {can("routes") && (
         <div className="ff-card ff-card-routes">
-          <div className="ff-card-header">Routes (.msnx)</div>
+          <div className="ff-card-header">Routes</div>
           <div className="tool-grid">
-            {can("routes") && (
             <button
               onClick={toggleRouteSketch}
               className={`ff-tool-btn ${isSketching ? "active" : ""}`}
@@ -634,37 +619,7 @@ const Controls = ({
                 {isSketching ? "End Route" : "Route"}
               </span>
             </button>
-            )}
-
-            {can("msnx_import") && (
-            <button
-              onClick={() => msnxInputRef.current?.click()}
-              className="ff-tool-btn"
-              title="Import a .msnx mission file"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                width="24"
-                height="24"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <span className="btn-label">Import MSNX</span>
-            </button>
-            )}
           </div>
-          <input
-            ref={msnxInputRef}
-            type="file"
-            accept=".msnx"
-            style={{ display: "none" }}
-            onChange={handleMsnxFileChange}
-          />
         </div>
         )}
 

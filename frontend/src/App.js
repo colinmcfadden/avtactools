@@ -505,15 +505,6 @@ function App() {
     return result;
   };
 
-  const handleImportMsnx = async (file) => {
-    try {
-      await importMission(file);
-      dock.show("routes");
-    } catch (err) {
-      toast({ tone: "error", message: `${file.name} could not be imported: ${err.message}` });
-    }
-  };
-
   const [foreFlightRoute, setForeFlightRoute] = useState(null);
 
   const {
@@ -1253,7 +1244,6 @@ function App() {
           activeAircraftProfile={activeProfile}
           onSelectAircraft={selectProfile}
           onManageAircraft={() => setIsAircraftModalOpen(true)}
-          onImportMsnx={handleImportMsnx}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
           addHelo={addHelo}
