@@ -336,7 +336,8 @@ const TeamsDialog = ({ teams = [], me, api = packApi, onChanged, onClose }) => {
           </div>
           {chosen != null ? (
             <TeamDetail key={chosen} teamId={chosen} me={me} api={api} onChanged={onChanged} onGone={() => {
-              setChosen(null);
+              // Another of their teams, if they have one: the list still has the one just left until it refreshes.
+              setChosen(teams.find((t) => t.id !== chosen)?.id ?? null);
               onChanged();
             }} />
           ) : (

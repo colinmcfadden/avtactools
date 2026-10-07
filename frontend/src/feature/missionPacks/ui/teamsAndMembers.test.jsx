@@ -45,6 +45,41 @@ describe("manage teams", () => {
     expect(screen.getByRole("heading", { name: "B CO" })).toBeInTheDocument();
     expect(screen.getByText("B CO", { selector: ".packs-teams__team-name" }).closest("button")).toHaveAttribute("aria-current", "true");
   });
+
+  it("shows another of their teams once one is deleted, not 'not in a team'", async () => {
+    const cco = { id: 8, name: "C CO", member_count: 2, role: "member" };
+    const api = {
+      ...teamApi(),
+      getTeam: jest.fn((id) =>
+        Promise.resolve({
+          ...(id === 7 ? bco : cco),
+          members: [{ user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: id === 7 ? "owner" : "member" }],
+        }),
+      ),
+      deleteTeam: jest.fn().mockResolvedValue({}),
+    };
+    const dialog = (teams) => (
+      <ToastProvider>
+        <TeamsDialog teams={teams} me={1} api={api} onChanged={() => {}} onClose={() => {}} />
+      </ToastProvider>
+    );
+    const { rerender } = render(dialog([bco, cco]));
+    await settle();
+    expect(screen.getByRole("heading", { name: "B CO" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete team" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete team" }).at(-1));
+    await settle();
+    expect(api.deleteTeam).toHaveBeenCalledWith(7);
+
+    // The list has not caught up yet, and still has B CO.
+    expect(screen.queryByText(/You are not in a team yet/)).toBeNull();
+    expect(screen.getByRole("heading", { name: "C CO" })).toBeInTheDocument();
+
+    rerender(dialog([cco]));
+    expect(screen.getByRole("heading", { name: "C CO" })).toBeInTheDocument();
+    expect(screen.getByText("C CO", { selector: ".packs-teams__team-name" }).closest("button")).toHaveAttribute("aria-current", "true");
+  });
 });
 
 describe("sharing a pack with a team", () => {
