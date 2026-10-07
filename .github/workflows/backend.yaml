@@ -1,9 +1,9 @@
 name: Backend contracts
 
 # The server is the other half of every contract in contracts/: the OpenAPI file, the recorded
-# responses the native apps decode, the sync rules and the .ths exporter. Nothing ran the backend's
-# tests in CI before this (AGENTS.md, section 11), so this runs the ones that need no terrain data,
-# SAM weights or GPU, with only the packages they import.
+# responses the native apps decode, the sync rules, the mission-pack operations and the .ths
+# exporter. Nothing ran the backend's tests in CI before this (AGENTS.md, section 11), so this runs
+# the ones that need no terrain data, SAM weights or GPU, with only the packages they import.
 on:
   push:
     branches: [develop]
@@ -28,7 +28,23 @@ jobs:
   contract-tests:
     name: Contract tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+
+    # A real Postgres for the mission packs' live chain (tests/test_realtime_live.py): the API's
+    # NOTIFY, the live service's LISTEN and two people's sockets. SQLite cannot show any of it.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: live
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,20 +54,25 @@ jobs:
       # The pinned versions from requirements.txt, for just what these tests import. (GET /api/config reads the
       # Mapbox token from export_service, which pulls in rasterio, numpy and mercantile; the recorded terrain and
       # threat responses need OpenCV, headless. Not torch, which the SAM, terrain and LiDAR tests need and these
-      # do not.)
+      # do not.) The live service's websockets and the Postgres driver for the live chain come from their own pins.
       - name: Install
         run: |
-          for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
-                   python-dotenv PyYAML openpyxl pillow pygeodesy rasterio numpy mercantile affine \
-                   opencv-python-headless; do
-            grep -i "^$p==" backend/requirements.txt
-          done | xargs pip install pytest
+          { for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
+                     python-dotenv PyYAML openpyxl pillow pygeodesy rasterio numpy mercantile affine \
+                     opencv-python-headless psycopg2-binary; do
+              grep -i "^$p==" backend/requirements.txt
+            done
+            grep -i "^websockets==" backend/realtime/requirements.txt
+          } | xargs pip install pytest
 
       - name: Test
         working-directory: backend
+        env:
+          EZPZ_LIVE_POSTGRES: postgresql://postgres:live@127.0.0.1:5432/postgres
         run: >
           python -m pytest -q -p no:cacheprovider
           tests/test_network_fixtures.py tests/test_contract_fixtures.py tests/test_openapi_contract.py
           tests/test_sync.py tests/test_aircraft_sync.py tests/test_native_sessions.py
           tests/test_schema_sync.py tests/test_app_config.py tests/test_client_header.py tests/test_auth.py
           tests/test_affiliation_gate.py
+          tests/test_packs.py tests/test_pack_ops.py tests/test_realtime.py tests/test_realtime_live.py
