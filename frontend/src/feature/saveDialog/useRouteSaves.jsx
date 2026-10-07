@@ -4,10 +4,11 @@ import { useToast } from "../ui/Toast";
 import SaveDialog, { nextFreeName } from "./SaveDialog";
 
 /*
- * Saving route sets to the Library (docs/MENU_REDESIGN.md §4, screen SaveRoutes). A set is either this
- * session's sketched routes (key "sketches") or one imported mission file (key: its fileId). Each set
- * may be linked to a saved record; the first save asks for a name, later saves update that record in
- * place without asking, and "Save as…" makes a copy.
+ * Saving route sets to the Library (docs/MENU_REDESIGN.md §4, screen SaveRoutes). A set is this
+ * session's sketched routes (key "sketches"), a saved set opened beside them (key: its setId, from
+ * useRouteSketch's openSavedRoutes), or one imported mission file (key: its fileId). Each set may be
+ * linked to a saved record; the first save asks for a name, later saves update that record in place
+ * without asking, and "Save as…" makes a copy.
  *
  * Whether a set has unsaved changes is worked out by comparing it with what was last saved (or
  * opened): routes keep no dirty flag of their own. Hiding or showing a route is not a change.
@@ -156,7 +157,9 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
           ? await lib.current.updateMission(recordId, set.routes, file.blob, file.fileName, name)
           : await lib.current.saveMission(name, set.routes, file.blob, file.fileName);
     } else {
-      saved = recordId != null ? await lib.current.updateSketch(recordId, set.routes, name) : await lib.current.saveSketch(name, set.routes);
+      // Which set a route is filed under here (useRouteSketch) is not part of what is saved.
+      const routes = set.routes.map(({ setId: _filed, ...route }) => route);
+      saved = recordId != null ? await lib.current.updateSketch(recordId, routes, name) : await lib.current.saveSketch(name, routes);
     }
     const id = recordId ?? saved?.id;
     setLinks((prev) => ({ ...prev, [key]: { id, name } }));

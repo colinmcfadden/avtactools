@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { nextRouteColor, ROUTE_COLORS } from "./colorPalette";
 import { buildSketchMsnx } from "./createMsnx";
 import { defaultRoutePlan, ensureRoutePlan, fetchPointElevationsFt } from "./routeCalc";
@@ -39,9 +39,15 @@ export const restoreSketchRoute = (route, setId = null) =>
     ...(setId ? { setId } : {}),
   });
 
+const OPENED = "opened";
+
+/** Whether `setId` is a set opened from the Library beside this session's sketches (openSavedRoutes). */
+export const isOpenedSetId = (setId) => String(setId ?? "").startsWith(`${OPENED}-`);
+
 /*
  * Sketched routes, in sets. Each route carries `setId`: none (null) for this session's own sketches,
- * which are saved and exported together as one bundle; or the id of a set that lives elsewhere, a
+ * which are saved and exported together as one bundle; an "opened-…" id for a saved set opened from
+ * the Library beside them, saved and exported on its own; or the id of a set that lives elsewhere, a
  * mission pack's route set (feature/missionPacks/usePackRoutes.js), whose routes keep their ids so
  * everyone's edits can name them. Everything that changes one route finds it by its id, whichever
  * set it is in.
@@ -51,6 +57,22 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   const [draftPoints, setDraftPoints] = useState([]);
   const [sketchedRoutes, setSketchedRoutes] = useState([]);
   const sessionRoutes = useMemo(() => sketchedRoutes.filter((route) => !route.setId), [sketchedRoutes]);
+  // What is here now, not when the caller's render began: opening a saved set waits on the network.
+  const routesRef = useRef(sketchedRoutes);
+  routesRef.current = sketchedRoutes;
+
+  /** This session's sketches (`setId` null) and each set opened beside them, in the order opened: [{ setId, routes }]. */
+  const sketchSets = useMemo(() => {
+    const sets = sessionRoutes.length > 0 ? [{ setId: null, routes: sessionRoutes }] : [];
+    const opened = new Map();
+    sketchedRoutes.forEach((route) => {
+      if (!isOpenedSetId(route.setId)) return;
+      if (!opened.has(route.setId)) opened.set(route.setId, []);
+      opened.get(route.setId).push(route);
+    });
+    opened.forEach((routes, setId) => sets.push({ setId, routes }));
+    return sets;
+  }, [sessionRoutes, sketchedRoutes]);
 
   const startSketch = () => {
     setDraftPoints([]);
@@ -144,6 +166,22 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   const loadSketchRoutes = (routes, { setId = null } = {}) => {
     const restored = routes.map((route) => restoreSketchRoute(route, setId));
     setSketchedRoutes((prev) => [...prev, ...restored]);
+  };
+
+  /**
+   * Opens a saved set of routes from the Library. With none of this session's own sketches here,
+   * they become them, so new sketches join the set just opened. Otherwise they come in as a set of
+   * their own: merged in, the sketches already here would be written into the record just opened, or
+   * cut loose from the one they came from (docs/MENU_REDESIGN.md §5: opening never replaces unsaved
+   * work). Returns the set's id, null for this session's own sketches.
+   */
+  const openSavedRoutes = (routes) => {
+    const setId = routesRef.current.some((route) => !route.setId) ? generateId(OPENED) : null;
+    // New route ids either way: a record and its copy (Save as…) can be open side by side. Where a
+    // route is filed is this session's business, never the record's.
+    const restored = routes.map(({ setId: _filed, ...route }) => ({ ...restoreSketchRoute(route), ...(setId ? { setId } : {}) }));
+    setSketchedRoutes((prev) => [...prev, ...restored]);
+    return setId;
   };
 
   /**
@@ -270,6 +308,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     draftPoints,
     sketchedRoutes,
     sessionRoutes,
+    sketchSets,
     replaceRouteSet,
     removeRouteSet,
     startSketch,
@@ -281,6 +320,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     insertSketchPoint,
     appendSketchPoint,
     loadSketchRoutes,
+    openSavedRoutes,
     removeSketchRoute,
     toggleSketchVisibility,
     exportSketches,

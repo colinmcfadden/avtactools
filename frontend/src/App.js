@@ -520,7 +520,7 @@ function App() {
     isSketching,
     draftPoints,
     sketchedRoutes,
-    sessionRoutes,
+    sketchSets,
     startSketch,
     cancelSketch,
     addDraftPoint,
@@ -530,6 +530,7 @@ function App() {
     insertSketchPoint,
     appendSketchPoint,
     loadSketchRoutes,
+    openSavedRoutes,
     replaceRouteSet,
     removeRouteSet,
     removeSketchRoute,
@@ -576,10 +577,10 @@ function App() {
     deleteSavedRoute,
   } = useSavedRoutes();
 
-  // The route sets in this session: the sketched routes, then each imported mission file.
+  // The route sets in this session: the sketched routes, each saved set opened beside them, then each
+  // imported mission file.
   const routeSets = useMemo(() => {
-    const sets = [];
-    if (sessionRoutes.length > 0) sets.push({ key: SKETCHES, kind: "sketch", routes: sessionRoutes });
+    const sets = sketchSets.map(({ setId, routes }) => ({ key: setId ?? SKETCHES, kind: "sketch", routes }));
     const byFile = new Map();
     importedRoutes.forEach((route) => {
       if (!byFile.has(route.fileId)) {
@@ -590,7 +591,7 @@ function App() {
       byFile.get(route.fileId).routes.push(route);
     });
     return sets;
-  }, [importedRoutes, sessionRoutes]);
+  }, [importedRoutes, sketchSets]);
 
   const routeSaves = useRouteSaves({
     sets: routeSets,
@@ -644,8 +645,7 @@ function App() {
       const record = await loadSavedRoute(entry.id);
       const routes = record.route_data?.routes;
       if (!routes?.length) throw new Error("This save contains no routes.");
-      loadSketchRoutes(routes);
-      routeSaves.adopt(SKETCHES, entry);
+      routeSaves.adopt(openSavedRoutes(routes) ?? SKETCHES, entry);
     }
   };
 
