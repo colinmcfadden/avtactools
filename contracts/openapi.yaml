@@ -1610,6 +1610,45 @@ paths:
         "404":
           $ref: "#/components/responses/PackError"
 
+  /api/packs/{uuid}/seen:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    put:
+      operationId: markPackSeen
+      summary: How far the caller has looked in the pack
+      description: |
+        The newest event the caller has seen. It never goes back (an older value changes nothing) and is
+        clamped to `head_seq`. What "changed since you looked" is measured from on every device the person
+        uses (`seen_seq` in the pack), and what a member's "Seen" time is (`seen_at`). Any member, viewers and
+        finished packs included. Not part of the log.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seq]
+              properties:
+                seq: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: The caller's marker as it now is.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [seen_seq, seen_at]
+                properties:
+                  seen_seq: { type: integer, minimum: 0 }
+                  seen_at: { type: string }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
   /api/packs/{uuid}/items:
     parameters:
       - $ref: "#/components/parameters/PackUuid"
@@ -3026,8 +3065,8 @@ components:
     PackSummary:
       type: object
       additionalProperties: false
-      required: [uuid, name, description, status, role, owner, team, head_seq, member_count, item_count,
-                 finished_at, finished_by, created_at, updated_at]
+      required: [uuid, name, description, status, role, owner, team, head_seq, seen_seq, member_count, item_count,
+                 item_counts, finished_at, finished_by, created_at, updated_at]
       properties:
         uuid: { type: string }
         name: { type: string }
@@ -3039,8 +3078,10 @@ components:
           nullable: true
           allOf: [{ $ref: "#/components/schemas/PackTeam" }]
         head_seq: { type: integer, minimum: 0, description: The number of the pack's latest event. }
+        seen_seq: { type: integer, minimum: 0, description: "The newest event the caller has seen (PUT .../seen); 0 if never." }
         member_count: { type: integer, minimum: 0, description: "Members in their own right, not counting a shared team." }
         item_count: { type: integer, minimum: 0 }
+        item_counts: { $ref: "#/components/schemas/PackItemCounts" }
         finished_at: { type: string, nullable: true }
         finished_by:
           nullable: true
@@ -3051,8 +3092,8 @@ components:
     Pack:
       type: object
       additionalProperties: false
-      required: [uuid, name, description, status, role, owner, team, head_seq, member_count, item_count,
-                 finished_at, finished_by, created_at, updated_at, members, items, live_url]
+      required: [uuid, name, description, status, role, owner, team, head_seq, seen_seq, member_count, item_count,
+                 item_counts, finished_at, finished_by, created_at, updated_at, members, items, live_url]
       description: A PackSummary, with its members and every live item, as of `head_seq`.
       properties:
         uuid: { type: string }
@@ -3065,8 +3106,10 @@ components:
           nullable: true
           allOf: [{ $ref: "#/components/schemas/PackTeam" }]
         head_seq: { type: integer, minimum: 0 }
+        seen_seq: { type: integer, minimum: 0 }
         member_count: { type: integer, minimum: 0 }
         item_count: { type: integer, minimum: 0 }
+        item_counts: { $ref: "#/components/schemas/PackItemCounts" }
         finished_at: { type: string, nullable: true }
         finished_by:
           nullable: true
@@ -3087,16 +3130,27 @@ components:
             Where to open the live stream for this pack (docs/MISSION_PACKS.md, "The live stream"). Null when
             this deployment has no live service: poll `GET /api/packs/{uuid}/events` instead.
 
+    PackItemCounts:
+      type: object
+      additionalProperties: false
+      required: [lz, route, pointset]
+      description: Live items by kind.
+      properties:
+        lz: { type: integer, minimum: 0 }
+        route: { type: integer, minimum: 0 }
+        pointset: { type: integer, minimum: 0 }
+
     PackMember:
       type: object
       additionalProperties: false
-      required: [user_id, name, email, role, added_at]
+      required: [user_id, name, email, role, added_at, seen_at]
       properties:
         user_id: { type: integer }
         name: { type: string }
         email: { type: string, description: The sign-in address. }
         role: { type: string, enum: [owner, editor, viewer] }
         added_at: { type: string }
+        seen_at: { type: string, nullable: true, description: When they last looked at the pack (PUT .../seen); null if never. }
 
     PackMemberReply:
       type: object

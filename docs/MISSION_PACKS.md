@@ -51,7 +51,7 @@ recommendation on 2026-10-05.
 
 ## 2. Data model
 
-Seven new tables, made by `db.create_all()` at boot, all in `backend/models.py`.
+Eight new tables, made by `db.create_all()` at boot, all in `backend/models.py`.
 No existing table is altered.
 
 | Table | What it holds |
@@ -62,6 +62,7 @@ No existing table is altered.
 | `mission_pack_invite` | Invitations to a pack or a team: an email address (or, for a team, none: a single-use link), a SHA-256 token, role, status, expiry |
 | `mission_pack_item` | An item: `kind` (`lz`, `route`, `pointset`), `name`, and `data`, **exactly the JSON the library keeps** (`lz_data`, `route_data`, `points_data`), so every editor, exporter and native normalizer works on it unchanged. `source_*` records where a copy came from |
 | `mission_pack_event` | The log: one row per change, numbered by `seq` within the pack, with who, a sentence, the operation, and whether it was applied or skipped (and why) |
+| `mission_pack_seen` | How far each person has looked in a pack (`seen_seq`, `seen_at`): what "changed since you looked" is measured from on every device, and a member's "Seen" time. Not part of the log |
 
 Why a separate item table rather than a `pack_id` on `SavedLZ`: those tables
 belong to one user, every query filters on it, and they sync through the per-user
@@ -135,7 +136,7 @@ caller is not in is a 404, so its existence is not revealed.
 | Area | Routes |
 |---|---|
 | Packs | `GET/POST /api/packs`; `GET/PUT/DELETE /api/packs/<uuid>`; `POST …/finish`, `…/reopen`, `…/duplicate` |
-| Edits | `POST /api/packs/<uuid>/ops` takes a batch, each operation with a `client_op_id`, plus an optional `base_seq`. `GET /api/packs/<uuid>/events?since=&limit=` returns the log |
+| Edits | `POST /api/packs/<uuid>/ops` takes a batch, each operation with a `client_op_id`, plus an optional `base_seq`. `GET /api/packs/<uuid>/events?since=&limit=` returns the log. `PUT /api/packs/<uuid>/seen {seq}` records how far the caller has looked (never goes back); a pack carries the caller's `seen_seq`, its members their `seen_at`, and a list of packs `item_counts` by kind |
 | Items | `POST /api/packs/<uuid>/items` copies an item in from the library. `GET …/items/<item>`; `POST …/items/<item>/update-from-original`; `POST …/items/<item>/library` saves a copy to your library |
 | Members | `POST /api/packs/<uuid>/members` adds a teammate. `PUT/DELETE …/members/<user_id>`. Making someone the owner hands the pack over |
 | Invites | `GET/POST /api/packs/<uuid>/invites`, `DELETE …/invites/<id>`, `POST …/invites/<id>/resend`. `GET /api/invites` lists the caller's; `POST /api/invites/<id>/accept`, `…/decline`, and `POST /api/invites/accept {token}` (from the link) answer them |

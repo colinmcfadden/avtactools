@@ -16,7 +16,7 @@ import pack_support  # noqa: E402
 from auth_harness import PASSWORD, NativeAuthCase  # noqa: E402
 from entitlements import resolve_features  # noqa: E402
 from models import (  # noqa: E402
-    MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember,
+    MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
     SavedLZ, Team, TeamMember, User, db,
 )
 from openapi_check import check_response, load_spec  # noqa: E402
@@ -1124,6 +1124,67 @@ class AdminTests(PackCase):
         self.assertEqual(self.pack(uuid_, who=self.sam)['owner']['name'], 'Sam')
 
 
+class SeenTests(PackCase):
+    """How far each person has looked, and what a list of packs counts."""
+
+    def seen(self, uuid_, seq, who=None):
+        return self.call(who or self.colin, 'put', f'/api/packs/{uuid_}/seen', json={'seq': seq})
+
+    def test_a_marker_moves_forward_only_and_never_past_the_head(self):
+        uuid_ = self.new_pack()['uuid']
+        self.add_lz(uuid_)                                              # events 1 (create) and 2
+        self.assertEqual(self.pack(uuid_)['seen_seq'], 0)
+        self.assertEqual(self.ok(self.seen(uuid_, 1))['seen_seq'], 1)
+        self.assertEqual(self.ok(self.seen(uuid_, 0))['seen_seq'], 1)   # an older tab cannot undo it
+        self.assertEqual(self.ok(self.seen(uuid_, 99))['seen_seq'], 2)  # clamped to head_seq
+        self.assertEqual(self.pack(uuid_)['seen_seq'], 2)
+        self.assertEqual(self.ok(self.call(self.colin, 'get', '/api/packs'))['packs'][0]['seen_seq'], 2)
+
+    def test_each_person_has_their_own_and_members_show_when_they_last_looked(self):
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam)
+        self.add_lz(uuid_)
+        self.ok(self.seen(uuid_, 3, who=self.sam))
+        self.assertEqual(self.pack(uuid_, who=self.sam)['seen_seq'], 3)
+        self.assertEqual(self.pack(uuid_)['seen_seq'], 0)
+        members = {m['user_id']: m for m in self.pack(uuid_)['members']}
+        self.assertIsNotNone(members[self.sam['id']]['seen_at'])
+        self.assertIsNone(members[self.colin['id']]['seen_at'])
+
+    def test_a_viewer_and_a_finished_pack_still_keep_a_marker_but_a_stranger_does_not(self):
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam, role='viewer')
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{uuid_}/finish'))
+        self.assertGreater(self.ok(self.seen(uuid_, 9, who=self.sam))['seen_seq'], 0)
+        self.assertEqual(self.seen(uuid_, 1, who=self.alex).status_code, 404)
+        for bad in (-1, '3', True, None, 1.5):
+            self.assertEqual(self.call(self.colin, 'put', f'/api/packs/{uuid_}/seen', json={'seq': bad}).status_code, 400, bad)
+
+    def test_markers_are_not_in_the_log_and_go_with_the_pack_or_the_account(self):
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam)
+        head = self.pack(uuid_)['head_seq']
+        self.ok(self.seen(uuid_, head))
+        self.ok(self.seen(uuid_, head, who=self.sam))
+        self.assertEqual(self.pack(uuid_)['head_seq'], head)
+        self.assertEqual(len(self.db_rows(MissionPackSeen)), 2)
+        self.ok(self.call(self.sam, 'delete', '/api/auth/me', json={'confirm': 'DELETE', 'password': PASSWORD}))
+        self.assertEqual([r.user_id for r in self.db_rows(MissionPackSeen)], [self.colin['id']])
+        self.ok(self.call(self.colin, 'delete', f'/api/packs/{uuid_}'))
+        self.assertEqual(self.db_rows(MissionPackSeen), [])
+
+    def test_a_list_counts_items_by_kind(self):
+        uuid_ = self.new_pack()['uuid']
+        self.add_lz(uuid_)
+        self.ok(self.send(uuid_, self.op('item.create', 'rt-1', kind='route', name='INGRESS', data={'version': 1, 'routes': []}),
+                          self.op('item.create', 'ps-1', kind='pointset', name='POINTS', data=[{'id': 'a'}]),
+                          self.op('item.create', 'lz-2', kind='lz', name='LZ CROW', data=LZ_DATA),
+                          self.op('item.delete', 'lz-2')))
+        [summary] = self.ok(self.call(self.colin, 'get', '/api/packs'))['packs']
+        self.assertEqual(summary['item_counts'], {'lz': 1, 'route': 1, 'pointset': 1})
+        self.assertEqual(summary['item_count'], 3)
+
+
 class ContractTests(PackCase):
     """Real responses, held to contracts/openapi.yaml."""
 
@@ -1153,6 +1214,10 @@ class ContractTests(PackCase):
         self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}/access'), '/api/packs/{uuid}/access', 'get', 200)
         self.conforms(self.call(self.sam, 'get', f'/api/packs/{uuid_}'), '/api/packs/{uuid}', 'get', 404)
         self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}/events?since=0'), '/api/packs/{uuid}/events', 'get', 200)
+        self.conforms(self.call(self.colin, 'put', f'/api/packs/{uuid_}/seen', json={'seq': 2}), '/api/packs/{uuid}/seen', 'put', 200)
+        self.conforms(self.call(self.colin, 'put', f'/api/packs/{uuid_}/seen', json={'seq': -1}), '/api/packs/{uuid}/seen', 'put', 400)
+        self.conforms(self.call(self.sam, 'put', f'/api/packs/{uuid_}/seen', json={'seq': 1}), '/api/packs/{uuid}/seen', 'put', 404)
+        self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}'), '/api/packs/{uuid}', 'get', 200)
         self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}/items/lz-a'), '/api/packs/{uuid}/items/{item}', 'get', 200)
         self.ok(self.call(self.colin, 'put', f'/api/lz/{lz["id"]}', json={'name': 'NEW'}))
         self.conforms(self.call(self.colin, 'post', f'/api/packs/{uuid_}/items/lz-a/update-from-original'),

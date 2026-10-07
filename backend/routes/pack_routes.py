@@ -152,7 +152,7 @@ def _rate_limited(scope, user_id, limit, window):
 def list_packs():
     user_id = int(get_jwt_identity())
     rows = packs.visible_packs(user_id).order_by(MissionPack.updated_at.desc(), MissionPack.id.desc()).all()
-    return _reply({'packs': [packs.pack_summary(p, packs.role_of(p, user_id)) for p in rows]})
+    return _reply({'packs': [packs.pack_summary(p, packs.role_of(p, user_id), user_id) for p in rows]})
 
 
 @pack_bp.route('/api/packs', methods=['POST'])
@@ -293,7 +293,7 @@ def delete_pack(pack_uuid):
         return refused
     packs.lock(pack)
     # A tombstone, so a device that asks learns it was deleted; everything in it is gone.
-    for model in (MissionPackEvent, MissionPackItem, MissionPackInvite, MissionPackMember):
+    for model in packs.PACK_CONTENT:
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
     pack.name, pack.description, pack.team_id = '', '', None
     pack.deleted_at = packs.now()
@@ -513,6 +513,30 @@ def list_events(pack_uuid):
         'has_more': len(rows) > limit,
         'head_seq': pack.head_seq,
     })
+
+
+@pack_bp.route('/api/packs/<pack_uuid>/seen', methods=['PUT'])
+@jwt_required()
+@require_feature('mission_packs')
+def mark_pack_seen(pack_uuid):
+    """How far the caller has looked: the newest event they have seen. It never goes back, so a tab with an
+    older copy cannot undo another's. Any member, viewers and finished packs included. Not part of the log."""
+    user_id = int(get_jwt_identity())
+    seq = _body().get('seq')
+    if not isinstance(seq, int) or isinstance(seq, bool) or seq < 0:
+        return _error('seq must be a whole number, 0 or more.', 400, 'invalid_seq')
+    pack, _role, refused = _load(pack_uuid, user_id)
+    if refused:
+        return refused
+    row = packs.mark_seen(pack, user_id, seq)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Two tabs made the first marker at once: the other's is there now, so move that one.
+        db.session.rollback()
+        row = packs.mark_seen(packs.live_pack(pack_uuid), user_id, seq)
+        db.session.commit()
+    return _reply({'seen_seq': row.seen_seq, 'seen_at': packs.iso(row.seen_at)})
 
 
 # -- Items ----------------------------------------------------------------------

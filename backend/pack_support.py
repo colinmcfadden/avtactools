@@ -24,11 +24,11 @@ import re
 import secrets
 from datetime import datetime, timedelta
 
-from sqlalchemy import case, event, select, text, update
+from sqlalchemy import case, event, func, select, text, update
 from sqlalchemy.orm import Session
 
 from models import (
-    MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember,
+    MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
     SavedLZ, SavedPointSet, SavedRoute, Team, TeamMember, User, db,
 )
 
@@ -48,6 +48,8 @@ MAX_SUMMARY = 300
 SYSTEM_ACTOR = 'EZ-PZ'
 
 LIBRARY_MODELS = {'lz': SavedLZ, 'route': SavedRoute, 'pointset': SavedPointSet}
+# Everything a pack holds, which goes when the pack does (a deleted pack keeps only its tombstone row).
+PACK_CONTENT = (MissionPackEvent, MissionPackItem, MissionPackInvite, MissionPackMember, MissionPackSeen)
 
 
 def now():
@@ -207,8 +209,41 @@ def team_brief(team_id, team_role=None):
     return body
 
 
-def pack_summary(pack, role):
+def item_counts(pack):
+    """Live items by kind, every kind present: what a list of packs shows ("3 LZ/PZ · 2 routes")."""
+    counts = dict.fromkeys(LIBRARY_MODELS, 0)
+    rows = (db.session.query(MissionPackItem.kind, func.count(MissionPackItem.id))
+            .filter(MissionPackItem.pack_id == pack.id, MissionPackItem.deleted_at.is_(None))
+            .group_by(MissionPackItem.kind).all())
+    for kind, count in rows:
+        if kind in counts:
+            counts[kind] = count
+    return counts
+
+
+def seen_seq(pack, user_id):
+    row = MissionPackSeen.query.filter_by(pack_id=pack.id, user_id=user_id).first() if user_id is not None else None
+    return row.seen_seq if row else 0
+
+
+def mark_seen(pack, user_id, seq):
+    """Record that ``user_id`` has looked at the pack up to event ``seq``. Never goes back, and never past
+    ``head_seq``. The caller commits; a second writer racing on the first marker is the caller's to retry."""
+    seq = max(0, min(seq, pack.head_seq))
+    row = MissionPackSeen.query.filter_by(pack_id=pack.id, user_id=user_id).first()
+    if row is None:
+        row = MissionPackSeen(pack_id=pack.id, user_id=user_id, seen_seq=seq, seen_at=now())
+        db.session.add(row)
+    else:
+        row.seen_seq = max(row.seen_seq, seq)
+        row.seen_at = now()
+    return row
+
+
+def pack_summary(pack, role, user_id=None):
+    """``user_id`` is the caller's: ``seen_seq`` is how far they have looked."""
     known = names([pack.owner_id, pack.finished_by])
+    counts = item_counts(pack)
     return {
         'uuid': pack.uuid,
         'name': pack.name,
@@ -218,8 +253,10 @@ def pack_summary(pack, role):
         'owner': person(pack.owner_id, known),
         'team': team_brief(pack.team_id, pack.team_role),
         'head_seq': pack.head_seq,
+        'seen_seq': seen_seq(pack, user_id),
         'member_count': MissionPackMember.query.filter_by(pack_id=pack.id).count(),
-        'item_count': MissionPackItem.query.filter_by(pack_id=pack.id, deleted_at=None).count(),
+        'item_count': sum(counts.values()),
+        'item_counts': counts,
         'finished_at': iso(pack.finished_at),
         'finished_by': person(pack.finished_by, known),
         'created_at': iso(pack.created_at),
@@ -233,12 +270,14 @@ def member_bodies(pack):
         .order_by(MissionPackMember.added_at, MissionPackMember.id).all()
     )
     users = {u.id: u for u in User.query.filter(User.id.in_([m.user_id for m in members])).all()} if members else {}
+    seen = {s.user_id: s.seen_at for s in MissionPackSeen.query.filter_by(pack_id=pack.id).all()} if members else {}
     return [{
         'user_id': m.user_id,
         'name': users[m.user_id].name if m.user_id in users else '',
         'email': users[m.user_id].email if m.user_id in users else '',
         'role': m.role,
         'added_at': iso(m.added_at),
+        'seen_at': iso(seen.get(m.user_id)),
     } for m in members]
 
 
@@ -249,7 +288,7 @@ def pack_full(pack, user_id, role):
     )
     known = names([i.created_by for i in items] + [i.updated_by for i in items])
     return {
-        **pack_summary(pack, role),
+        **pack_summary(pack, role, user_id),
         'members': member_bodies(pack),
         'items': [item_body(i, user_id, known) for i in items],
         'live_url': live_url(),
@@ -374,7 +413,7 @@ def invite_body(invite):
 def _purge_pack(pack):
     """Delete a pack and everything in it, rows and all. Only when nobody else is in it."""
     announce_deleted(pack.uuid)
-    for model in (MissionPackEvent, MissionPackItem, MissionPackInvite, MissionPackMember):
+    for model in PACK_CONTENT:
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
     db.session.delete(pack)
 
@@ -423,6 +462,7 @@ def release_account(user_id):
     for pack in MissionPack.query.filter(MissionPack.owner_id == user_id, MissionPack.deleted_at.isnot(None)).all():
         _purge_pack(pack)
 
+    MissionPackSeen.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     leaving = names([user_id]).get(user_id, '')
     for membership in MissionPackMember.query.filter_by(user_id=user_id).all():
         pack = db.session.get(MissionPack, membership.pack_id)

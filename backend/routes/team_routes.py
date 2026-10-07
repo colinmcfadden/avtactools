@@ -313,7 +313,7 @@ def _accept(invite, me):
     db.session.commit()
     return _reply({
         'invite': packs.invite_body(invite),
-        'pack': packs.pack_summary(joined_pack, packs.role_of(joined_pack, me.id)) if joined_pack else None,
+        'pack': packs.pack_summary(joined_pack, packs.role_of(joined_pack, me.id), me.id) if joined_pack else None,
         'team': _team_summary(joined_team, packs.team_role_of(joined_team.id, me.id)) if joined_team else None,
     })
 

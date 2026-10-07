@@ -490,6 +490,25 @@ class MissionPackItem(db.Model):
     __table_args__ = (db.UniqueConstraint('pack_id', 'uuid', name='ux_mission_pack_item'),)
 
 
+class MissionPackSeen(db.Model):
+    """How far one person has looked in a pack: the newest event they have seen, and when.
+
+    What "changed since you looked" and "New since you looked" are measured from, on
+    every device the person uses, and what a member's "Seen 2 h ago" is. A person in
+    the pack through a shared team has one too. Not part of the log.
+    """
+
+    __tablename__ = 'mission_pack_seen'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    seen_seq = db.Column(db.Integer, nullable=False, default=0)
+    seen_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('pack_id', 'user_id', name='ux_mission_pack_seen'),)
+
+
 class MissionPackEvent(db.Model):
     """One numbered change to a pack: the edit log, and what clients replay to catch up.
 
