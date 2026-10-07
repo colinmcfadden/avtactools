@@ -180,6 +180,9 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     // New route ids either way: a record and its copy (Save as…) can be open side by side. Where a
     // route is filed is this session's business, never the record's.
     const restored = routes.map(({ setId: _filed, ...route }) => ({ ...restoreSketchRoute(route), ...(setId ? { setId } : {}) }));
+    // Two opens can resolve before the next render; the second must see the first's routes, or both
+    // become the sketches and the second's record takes the first's routes with it.
+    routesRef.current = [...routesRef.current, ...restored];
     setSketchedRoutes((prev) => [...prev, ...restored]);
     return setId;
   };

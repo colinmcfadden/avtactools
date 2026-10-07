@@ -109,6 +109,20 @@ describe("opening a saved set of routes", () => {
     expect(result.current.sets.map(names)).toEqual([["BRAVO 1"], ["ALPHA 1"]]);
   });
 
+  it("keeps two records apart when both finish opening before the screen redraws", () => {
+    const { result } = setup();
+    // Two Library opens resolving in one tick: the second must see the first's routes.
+    act(() => {
+      result.current.open(ALPHA, [savedRoute("a", "ALPHA 1")]);
+      result.current.open(BRAVO, [savedRoute("b", "BRAVO 1")]);
+    });
+    const bravo = openedSet(result);
+    expect(result.current.sets.map((set) => set.key)).toEqual([SKETCHES, bravo.key]);
+    expect(result.current.sets.map(names)).toEqual([["ALPHA 1"], ["BRAVO 1"]]);
+    expect(result.current.saves.stateOf(SKETCHES)).toMatchObject({ link: { id: 42, name: "ALPHA" }, dirty: false });
+    expect(result.current.saves.stateOf(bravo.key)).toMatchObject({ link: { id: 7, name: "BRAVO" }, dirty: false });
+  });
+
   it("gives the routes new ids, so a record and its copy can be open together", () => {
     const { result } = setup();
     act(() => result.current.open(ALPHA, [savedRoute("a", "ALPHA 1")]));
