@@ -145,6 +145,74 @@ describe("opening a pack", () => {
   });
 });
 
+describe("a pack that could not be loaded", () => {
+  const load = async () => {
+    client = createPackClient({
+      packUuid: "p-1", me: SAM.id, api, openSocket: (url) => new FakeSocket(url), getToken: () => token,
+      timers: clock, newId: () => `op-${++ids}`, isHidden: () => hidden,
+    });
+    await client.start();
+    await settle();
+  };
+  const wait = async (ms) => {
+    clock.advance(ms);
+    await settle();
+  };
+
+  it("is tried again, less often the longer it fails, until it opens", async () => {
+    api.getPack.mockRejectedValueOnce(fail(503)).mockRejectedValueOnce(fail(0)).mockResolvedValue(pack());
+    await load();
+    expect(client.getState().status).toBe("error");
+    await wait(999);
+    expect(api.getPack).toHaveBeenCalledTimes(1);
+    await wait(1);
+    expect(api.getPack).toHaveBeenCalledTimes(2);
+    expect(client.getState().status).toBe("error");
+    await wait(1999);
+    expect(api.getPack).toHaveBeenCalledTimes(2);
+    await wait(1);
+    expect(api.getPack).toHaveBeenCalledTimes(3);
+    expect(client.getState().status).toBe("polling");
+    expect(client.getState().items.map((i) => i.name)).toEqual(["LZ HAWK"]);
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
+  it("waits while the page is hidden, and is tried at once when it is shown or the connection is back", async () => {
+    api.getPack.mockRejectedValue(fail(0));
+    await load();
+    hidden = true;
+    await wait(60000);
+    expect(api.getPack).toHaveBeenCalledTimes(1);
+    hidden = false;
+    api.getPack.mockResolvedValue(pack());
+    client.wake();
+    await settle();
+    expect(api.getPack).toHaveBeenCalledTimes(2);
+    expect(client.getState().items).toHaveLength(1);
+    client.wake(); // open now: nothing more to try
+    await settle();
+    expect(api.getPack).toHaveBeenCalledTimes(2);
+  });
+
+  it("is not tried again once it is gone, or closed", async () => {
+    api.getPack.mockRejectedValue(fail(403, { code: "forbidden" }));
+    await load();
+    expect(client.getState().status).toBe("gone");
+    client.wake();
+    await wait(60000);
+    expect(api.getPack).toHaveBeenCalledTimes(1);
+
+    api.getPack.mockClear();
+    api.getPack.mockRejectedValue(fail(500));
+    await load();
+    client.stop();
+    client.wake();
+    await wait(60000);
+    expect(api.getPack).toHaveBeenCalledTimes(1);
+    expect(clock.pending.size).toBe(0);
+  });
+});
+
 describe("the live stream", () => {
   it("applies the next event as it comes, without asking the server", async () => {
     const socket = await start();

@@ -20,7 +20,8 @@ import { failureOf } from "./packApi";
  * the React side. See docs/MISSION_PACKS.md, §5.
  *
  * `status` is "loading", "live" (the stream is open), "polling", "gone" (deleted,
- * or no longer ours to see) or "error" (it could not be loaded).
+ * or no longer ours to see) or "error" (it could not be loaded: tried again, less
+ * often the longer it fails, and at once on `wake()`).
  *
  * Stopping (the person switched workspace, or the pack closed) drains: the edits
  * still waiting are sent, and retried, with nothing more asked or shown. Any the
@@ -60,10 +61,12 @@ export const createPackClient = ({
   let welcomed = false;
   let socketRetry = 0;
   let sendRetry = 0;
+  let loadRetry = 0;
+  let loading = false;
   let sending = false;
   let catchingUp = false;
   let catchUpAgain = false;
-  const timer = { poll: null, reconnect: null, send: null, presence: null };
+  const timer = { poll: null, reconnect: null, send: null, presence: null, load: null };
   let focus = null;
   let focusSent = true;
 
@@ -311,6 +314,38 @@ export const createPackClient = ({
     }, PRESENCE_MS);
   };
 
+  // -- loading ----------------------------------------------------------------------------
+
+  const load = async () => {
+    loading = true;
+    try {
+      const pack = await api.getPack(packUuid);
+      if (!active()) return;
+      loadRetry = 0;
+      publish({ session: openSession(pack, me), error: null });
+      startPolling();
+      connect();
+    } catch (error) {
+      if (!active()) return;
+      const failure = failureOf(error);
+      if (failure.status === 404 || failure.status === 403) {
+        publish({ error: failure });
+        shutDown("gone");
+        return;
+      }
+      publish({ status: "error", error: failure });
+      // A server down or no connection: tried again, as sends are. Not while the page is hidden,
+      // where wake() takes over when it is shown.
+      const ms = RETRY_MS[Math.min(loadRetry, RETRY_MS.length - 1)];
+      loadRetry += 1;
+      later("load", () => {
+        if (!isHidden()) load();
+      }, ms);
+    } finally {
+      loading = false;
+    }
+  };
+
   // -- the client ---------------------------------------------------------------------
 
   return {
@@ -321,24 +356,22 @@ export const createPackClient = ({
       return () => listeners.delete(listener);
     },
 
-    async start() {
-      try {
-        const pack = await api.getPack(packUuid);
-        if (!active()) return;
-        publish({ session: openSession(pack, me) });
-        startPolling();
-        connect();
-      } catch (error) {
-        const failure = failureOf(error);
-        publish({ status: failure.status === 404 || failure.status === 403 ? "gone" : "error", error: failure });
-      }
+    start() {
+      return load();
+    },
+
+    /** The connection is back, or the page is shown again: a pack that could not be loaded is tried now. */
+    wake() {
+      if (!active() || loading || state.session || state.status !== "error") return;
+      clear("load");
+      load();
     },
 
     /** Closes the stream and asks nothing more; what is still waiting is sent first (see above). */
     stop() {
       if (closing || stopped) return;
       closing = { token: getToken(), dropped: state.session?.dropped.length ?? 0 };
-      ["poll", "reconnect", "presence"].forEach(clear);
+      ["poll", "reconnect", "presence", "load"].forEach(clear);
       if (socket) socket.close(1000);
       socket = null;
       drained();

@@ -70,6 +70,17 @@ const LOST_WORDS = {
   signed_out: "you signed out before they were sent",
 };
 
+/**
+ * The pack the top bar names: the open one, or while it is opening or cannot be reached (no `meta`
+ * yet), its line in the switcher's list, so the bar never says "Library" while the Library is parked.
+ */
+export const topBarPack = (open, meta, packs = []) => {
+  if (!open) return null;
+  if (meta) return { name: meta.name, status: meta.status };
+  const listed = packs.find((pack) => pack.uuid === open);
+  return { name: listed?.name ?? "Mission Pack", status: listed?.status };
+};
+
 export const usePackWorkspace = ({
   enabled,
   user,
@@ -689,6 +700,8 @@ export const usePackWorkspace = ({
       }).length
     : 0;
 
+  const topPack = topBarPack(open, meta, home.packs);
+
   return {
     enabled,
     open,
@@ -728,6 +741,7 @@ export const usePackWorkspace = ({
     itemInfo,
     presenceOn,
     topStatus,
+    topPack,
     packForPanels,
     dialogs,
   };

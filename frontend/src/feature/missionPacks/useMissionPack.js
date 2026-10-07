@@ -13,7 +13,8 @@ const closed = () => CLOSED;
  * `edit(ops)` / `setFocus(focus)` / `refresh()`. `items` is what the person sees, their own
  * unconfirmed edits included; `session.dropped` lists edits the server will never
  * take (a finished pack, say), so the UI can offer to save them to the library.
- * `me` is the signed-in user's id. No pack (`packUuid` null) is "closed".
+ * `me` is the signed-in user's id. No pack (`packUuid` null) is "closed"; one that could not be
+ * loaded ("error") is tried again by itself.
  *
  * Closing a pack (another, or none) still sends the edits waiting for it; `onLost({ pack, lost })`
  * hears of any it would not take by then.
@@ -35,7 +36,15 @@ export const useMissionPack = (packUuid, me, { openSocket = (url) => new WebSock
     });
     setClient(next);
     next.start();
+    // A pack that could not be loaded is tried again at once when the connection or the page comes back.
+    const wake = () => {
+      if (!document.hidden) next.wake();
+    };
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", wake);
     return () => {
+      window.removeEventListener("online", wake);
+      document.removeEventListener("visibilitychange", wake);
       next.stop();
       setClient(null);
     };

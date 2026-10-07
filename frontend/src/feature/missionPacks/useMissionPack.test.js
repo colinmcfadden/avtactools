@@ -77,4 +77,16 @@ describe("useMissionPack", () => {
     expect(result.current.edit({ type: "item.delete", item: "x" })).toBe("closed");
     expect(api.getPack).not.toHaveBeenCalled();
   });
+
+  it("tries a pack that could not be loaded again as soon as the connection is back", async () => {
+    const { api, openSocket } = setup();
+    api.getPack.mockRejectedValueOnce(new Error("Network Error"));
+    const { result } = renderHook(() => useMissionPack("p-1", 2, { api, openSocket }));
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    expect(api.getPack).toHaveBeenCalledTimes(2); // at once, not at the next retry
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+  });
 });

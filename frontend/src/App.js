@@ -1313,7 +1313,7 @@ function App() {
           onOpenLibrary={() => openLibrary("lz")}
           onImport={(kind) => pickers[kind]?.open()}
           canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
-          pack={inPack && packs.meta ? { name: packs.meta.name, status: packs.meta.status } : null}
+          pack={packs.topPack}
           packStatus={packs.topStatus ?? "live"}
           people={packPeople}
           renderSwitcher={
@@ -1483,10 +1483,10 @@ function App() {
           )}
           {dock.panel === "pack" && inPack && !packs.meta && (
             <>
-              <PanelHead title="Pack" subtitle={packs.status === "error" ? "Cannot reach the pack" : "Opening…"} onCollapse={() => dock.setCollapsed(true)} />
+              <PanelHead title={packs.topPack?.name ?? "Pack"} subtitle={packs.status === "error" ? "Cannot reach the pack" : "Opening…"} onCollapse={() => dock.setCollapsed(true)} />
               <div className="shell-dock__body">
                 <div className="shell-empty">
-                  {packs.status === "error" ? "The pack could not be opened. Check the connection; it is tried again." : "Opening the pack…"}
+                  {packs.status === "error" ? "The pack could not be opened. Check the connection; it is tried again by itself." : "Opening the pack…"}
                 </div>
               </div>
             </>
