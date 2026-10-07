@@ -73,6 +73,23 @@ const Doghouse = ({ data, updateDoghouse }) => {
     return { x: e.clientX, y: e.clientY };
   };
 
+  // A move or turn the pack became read-only during (the owner finished it, or this person's role
+  // was lowered) has nothing to take it when the finger lifts: show the doghouse as stored, locked.
+  const putBack = (markerInst) => {
+    const stored = dataRef.current;
+    rotationRef.current = doghouseRotation(stored);
+    markerInst.setIcon(
+      L.divIcon({
+        className: "doghouse-container",
+        html: getHtml(stored, rotationRef.current, true),
+        iconSize: [160, 120],
+        iconAnchor: [80, 60],
+      })
+    );
+    markerInst.setLatLng([stored.lat, stored.lon]);
+    setTimeout(() => attachListeners(markerInst), 50);
+  };
+
   const attachListeners = (markerInst) => {
     const element = markerInst.getElement();
     if (!element) return;
@@ -114,6 +131,10 @@ const Doghouse = ({ data, updateDoghouse }) => {
         span.style.backgroundColor = "transparent";
         map.dragging.enable();
 
+        // Locked while it was being typed in: the redraw that locked it has already replaced the field.
+        const update = updateRef.current;
+        if (!update) return;
+
         const val = (span.innerText || "").trim();
         const type = span.getAttribute("data-type");
         const currentData = dataRef.current; 
@@ -131,7 +152,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
             })
           );
 
-          updateRef.current(currentData.id, { heading: doghouseHeadingText(newDeg) });
+          update(currentData.id, { heading: doghouseHeadingText(newDeg) });
           setTimeout(() => attachListeners(markerInst), 50);
         } else {
           let time;
@@ -143,7 +164,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
             };
           }
           const updates = doghouseFieldUpdates(type, val, time);
-          updateRef.current(currentData.id, updates);
+          update(currentData.id, updates);
         }
       };
 
@@ -202,7 +223,12 @@ const Doghouse = ({ data, updateDoghouse }) => {
           document.removeEventListener("mouseup", onRotateEnd);
           document.removeEventListener("touchend", onRotateEnd);
 
-          updateRef.current(dataRef.current.id, {
+          const update = updateRef.current;
+          if (!update) {
+            putBack(markerInst);
+            return;
+          }
+          update(dataRef.current.id, {
             heading: `${Math.round(rotationRef.current).toString().padStart(3, "0")}°`,
           });
         };
@@ -261,8 +287,13 @@ const Doghouse = ({ data, updateDoghouse }) => {
           document.removeEventListener("mouseup", onDragEnd);
           document.removeEventListener("touchend", onDragEnd);
 
+          const update = updateRef.current;
+          if (!update) {
+            putBack(markerInst);
+            return;
+          }
           const pos = markerInst.getLatLng();
-          updateRef.current(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
+          update(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
         };
 
         document.addEventListener("mousemove", onDrag, { passive: false });

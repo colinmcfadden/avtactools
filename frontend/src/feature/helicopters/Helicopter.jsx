@@ -173,6 +173,15 @@ const Helicopter = ({
     return { x: e.clientX, y: e.clientY };
   };
 
+  // A move or turn the pack became read-only during (the owner finished it, or this person's role
+  // was lowered) has nothing to take it when the finger lifts: show the helicopter as stored, locked.
+  const putBack = (markerInst) => {
+    const stored = stateRef.current;
+    markerInst.setLatLng([stored.lat, stored.lon]);
+    markerInst.setIcon(getHeloIcon(stored.rotation || 0, calculateSizePx(stored.lat), profileRef.current?.icon_key, true));
+    setTimeout(() => attachListeners(markerInst), 50);
+  };
+
   const attachListeners = (markerInst) => {
     const element = markerInst.getElement();
     if (!element) return;
@@ -200,6 +209,7 @@ const Helicopter = ({
         isRotating = true;
         rotateBtn.classList.add('active-rotate');
         map.dragging.disable();
+        const startRotation = stateRef.current.rotation;
 
         if (markerInst._icon) {
             L.DomUtil.addClass(markerInst._icon, 'mobile-lifting');
@@ -238,7 +248,14 @@ const Helicopter = ({
           document.removeEventListener("mouseup", onRotateEnd);
           document.removeEventListener("touchend", onRotateEnd);
 
-          updateRef.current(asset.id, {
+          const update = updateRef.current;
+          if (!update) {
+            // The turn is written onto the asset as it goes, so it comes off again.
+            stateRef.current.rotation = startRotation;
+            putBack(markerInst);
+            return;
+          }
+          update(asset.id, {
             rotation: stateRef.current.rotation,
           });
         };
@@ -311,7 +328,9 @@ const Helicopter = ({
             if (markerInst._icon) L.DomUtil.removeClass(markerInst._icon, 'mobile-lifting');
             if (linesLayerRef.current) linesLayerRef.current.clearLayers();
             const pos = markerInst.getLatLng();
-            updateRef.current(asset.id, { lat: pos.lat, lon: pos.lng });
+            const update = updateRef.current;
+            if (update) update(asset.id, { lat: pos.lat, lon: pos.lng });
+            else putBack(markerInst);
           } else {
             wrapper.classList.toggle('show-controls');
           }

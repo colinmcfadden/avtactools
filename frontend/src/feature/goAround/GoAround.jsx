@@ -78,6 +78,23 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
     return { x: e.clientX, y: e.clientY };
   };
 
+  // A move or turn the pack became read-only during (the owner finished it, or this person's role
+  // was lowered) has nothing to take it when the finger lifts: show the go-around as stored, locked.
+  const putBack = (markerInst) => {
+    const stored = dataRef.current;
+    rotationRef.current = stored.rotation || 0;
+    markerInst.setIcon(
+      L.divIcon({
+        className: "ga-container",
+        html: getHtml(stored, rotationRef.current, true),
+        iconSize: [160, 120],
+        iconAnchor: [80, 60],
+      })
+    );
+    markerInst.setLatLng([stored.lat, stored.lon]);
+    setTimeout(() => attachListeners(markerInst), 50);
+  };
+
   const attachListeners = (markerInst) => {
     const element = markerInst.getElement();
     if (!element) return;
@@ -153,7 +170,12 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
           document.removeEventListener("mouseup", onRotateEnd);
           document.removeEventListener("touchend", onRotateEnd);
 
-          updateRef.current(dataRef.current.id, { rotation: rotationRef.current });
+          const update = updateRef.current;
+          if (!update) {
+            putBack(markerInst);
+            return;
+          }
+          update(dataRef.current.id, { rotation: rotationRef.current });
         };
 
         // Attach to Document
@@ -223,7 +245,9 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
             isMoving = false;
             if (markerInst._icon) L.DomUtil.removeClass(markerInst._icon, 'mobile-lifting');
             const pos = markerInst.getLatLng();
-            updateRef.current(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
+            const update = updateRef.current;
+            if (update) update(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
+            else putBack(markerInst);
           } else {
             wrapper.classList.toggle('show-controls');
           }

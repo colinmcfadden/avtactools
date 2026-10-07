@@ -228,3 +228,110 @@ describe("a route's points", () => {
     expect(onInsertPoint).toHaveBeenCalledWith("sketch-1", 34, -84, 1, 1);
   });
 });
+
+describe("a map object being moved or turned when the pack becomes read-only", () => {
+  // The owner finishes the pack, or the person's role is lowered, through the live stream while a
+  // finger is down: App takes the edit handler away before it lifts. The release then has nothing
+  // to call, so the gesture ends quietly and the object is shown where it is stored.
+  let errors;
+  const onError = (event) => {
+    errors.push(event.error?.message ?? event.message);
+    event.preventDefault(); // jsdom would print it as well
+  };
+  beforeEach(() => {
+    errors = [];
+    window.addEventListener("error", onError);
+  });
+  afterEach(() => window.removeEventListener("error", onError));
+
+  const leafletMarkerOf = (selector) => {
+    let found = null;
+    holder.map.eachLayer((layer) => {
+      if (layer instanceof L.Marker && layer.getElement()?.querySelector(selector)) found = layer;
+    });
+    return found;
+  };
+
+  // Each makes fresh data (a helicopter's turn is written onto its asset as it goes).
+  const objects = [
+    {
+      what: "helicopter",
+      body: ".helo-sprite",
+      rotation: 90,
+      make: () => {
+        const asset = { id: 1, type: "helo", lat: 34.5, lon: -84.2, rotation: 90 };
+        return (update) => <Helicopter asset={asset} allAssets={[asset]} profiles={[]} updateAsset={update} />;
+      },
+    },
+    {
+      what: "doghouse",
+      body: ".doghouse-wrapper",
+      rotation: 90,
+      make: () => {
+        const data = { id: 3, lat: 34.5, lon: -84.2, heading: "090°", time: "1+30", dist: "3", airspeed: "100", id_val: "A" };
+        return (update) => <Doghouse data={data} updateDoghouse={update} />;
+      },
+    },
+    {
+      what: "go-around",
+      body: ".ga-body-wrapper",
+      rotation: 30,
+      make: () => {
+        const data = { id: 4, lat: 34.5, lon: -84.2, rotation: 30, direction: "right" };
+        return (update) => <GoAroundMarker data={data} updateGoAround={update} />;
+      },
+    },
+  ];
+
+  // Press `control`, drag, (maybe) lose the handler, drag on, and lift.
+  const gesture = (ui, control, { lose }) => {
+    const update = jest.fn();
+    const { rerender } = render(ui(update));
+    fireEvent.mouseDown(iconOf(control), { clientX: 0, clientY: 0 });
+    fireEvent.mouseMove(document, { clientX: 40, clientY: 40 });
+    if (lose) {
+      rerender(ui(undefined));
+      act(() => jest.advanceTimersByTime(200));
+    }
+    fireEvent.mouseMove(document, { clientX: 80, clientY: 80 });
+    fireEvent.mouseUp(document);
+    act(() => jest.advanceTimersByTime(200));
+    return update;
+  };
+
+  it.each(objects)("a $what's move is saved while it can be edited", ({ make }) => {
+    const update = gesture(make(), ".dh-move", { lose: false });
+    expect(update).toHaveBeenCalled();
+    const [, { lat, lon }] = update.mock.calls[update.mock.calls.length - 1];
+    expect([lat, lon]).not.toEqual([34.5, -84.2]);
+  });
+
+  it.each(objects)("a $what's move ends quietly and is put back", ({ make, body }) => {
+    gesture(make(), ".dh-move", { lose: true });
+    expect(errors).toEqual([]);
+    expect(leafletMarkerOf(body).getLatLng()).toMatchObject({ lat: 34.5, lng: -84.2 });
+    expect(iconOf(".dh-move")).toBeNull();
+  });
+
+  it.each(objects)("a $what's turn ends quietly and is put back", ({ make, body, rotation }) => {
+    gesture(make(), ".dh-rotate", { lose: true });
+    expect(errors).toEqual([]);
+    expect(iconOf(body).style.transform).toBe(`rotate(${rotation}deg)`);
+    expect(iconOf(".dh-rotate")).toBeNull();
+  });
+
+  it("a doghouse field being typed in is left as stored", () => {
+    document.execCommand = jest.fn(); // jsdom has none
+    const data = { id: 3, lat: 34.5, lon: -84.2, heading: "090°", time: "1+30", dist: "3", airspeed: "100", id_val: "A" };
+    const { rerender } = render(<Doghouse data={data} updateDoghouse={() => {}} />);
+    const field = iconOf('.dh-input[data-type="dist"]');
+    fireEvent.click(field);
+    field.innerText = "9";
+    rerender(<Doghouse data={data} />);
+    act(() => jest.advanceTimersByTime(200));
+    // A browser may blur the field as the redraw removes it.
+    fireEvent.blur(field);
+    expect(errors).toEqual([]);
+    delete document.execCommand;
+  });
+});
