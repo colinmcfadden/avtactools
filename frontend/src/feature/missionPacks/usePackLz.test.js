@@ -163,6 +163,15 @@ describe("usePackLz", () => {
     expect(result.current.items[0].data.graphics.helicopters[0].heading).toBe(45);
   });
 
+  it("still sends a change made just before the LZ/PZ was closed", () => {
+    const { result } = opened();
+    act(() => { result.current.ws.patchGraphic("helicopters", 101, { lat: 34.4 }, DIAGRAM); });
+    act(() => { result.current.ws.removeDiagram(DIAGRAM); });
+    settleTimers();
+    expect(result.current.sent.current.map((batch) => batch[0].value)).toEqual([{ lat: 34.4 }]);
+    expect(result.current.items[0].data.graphics.helicopters[0].lat).toBe(34.4);
+  });
+
   it("puts back a change the pack will not take", () => {
     const { result } = opened({ readOnly: true });
     act(() => { result.current.ws.patchGraphic("helicopters", 101, { lat: 1 }, DIAGRAM); });
