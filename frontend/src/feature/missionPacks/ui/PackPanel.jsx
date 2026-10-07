@@ -153,8 +153,9 @@ const History = ({ packUuid, headSeq, newSince, me, members, items, api }) => {
         .filter((e) => itemFilter === "all" || e.item === itemFilter),
     [events, person, itemFilter],
   );
-  const fresh = shown.filter((e) => e.seq > newSince && e.actor?.id !== me);
-  const older = shown.filter((e) => !(e.seq > newSince && e.actor?.id !== me));
+  const isFresh = (e) => newSince != null && e.seq > newSince && e.actor?.id !== me;
+  const fresh = shown.filter(isFresh);
+  const older = shown.filter((e) => !isFresh(e));
 
   const groups = [];
   older.forEach((event) => {

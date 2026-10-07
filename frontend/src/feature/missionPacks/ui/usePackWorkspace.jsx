@@ -264,11 +264,13 @@ export const usePackWorkspace = ({
     document.addEventListener("visibilitychange", change);
     return () => document.removeEventListener("visibilitychange", change);
   }, []);
+  // Opening a pack shows its panel at once, before the pack (and how far they had looked) has loaded.
   const seen = usePackSeen({
     packUuid: open,
     headSeq: session?.seq ?? 0,
     seenSeq: meta?.seen_seq ?? 0,
-    looking: Boolean(open) && dock.panel === "pack" && !dock.collapsed && visible,
+    loaded: Boolean(session),
+    looking: Boolean(session) && dock.panel === "pack" && !dock.collapsed && visible,
   });
   const newCount = items.filter((item) => changedSince(item, seen.newSince, me)).length;
 

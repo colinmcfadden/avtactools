@@ -107,6 +107,31 @@ describe("usePackSeen", () => {
     expect(result.current).toEqual({ seenSeq: 5, newSince: 5 });
   });
 
+  it("starts 'new' from the server's marker when a pack opened from the switcher loads", () => {
+    const markSeen = jest.fn().mockResolvedValue({ seen_seq: 50 });
+    const { result, rerender } = renderHook((props) => usePackSeen({ markSeen, ...props }), {
+      initialProps: { packUuid: null, headSeq: 0, seenSeq: 0, loaded: false, looking: false },
+    });
+    // The panel opens with the pack, before it has loaded.
+    rerender({ packUuid: "p-1", headSeq: 0, seenSeq: 0, loaded: false, looking: true });
+    expect(result.current.newSince).toBeNull();
+    rerender({ packUuid: "p-1", headSeq: 50, seenSeq: 40, loaded: true, looking: true });
+    expect(result.current).toEqual({ seenSeq: 40, newSince: 40 });
+    expect(changedSince({ seq: 30, updated_by: { id: 3 } }, null, 2)).toBe(false);
+  });
+
+  it("gives a pack switched to straight from another nothing of the other's", () => {
+    const markSeen = jest.fn().mockResolvedValue({ seen_seq: 0 });
+    const { result, rerender } = renderHook((props) => usePackSeen({ markSeen, ...props }), {
+      initialProps: { packUuid: "p-1", headSeq: 100, seenSeq: 100, loaded: true, looking: true },
+    });
+    expect(result.current.newSince).toBe(100);
+    rerender({ packUuid: "p-2", headSeq: 0, seenSeq: 0, loaded: false, looking: true });
+    expect(result.current.newSince).toBeNull();
+    rerender({ packUuid: "p-2", headSeq: 9, seenSeq: 2, loaded: true, looking: true });
+    expect(result.current).toEqual({ seenSeq: 2, newSince: 2 });
+  });
+
   it("marks an item changed by someone else since then", () => {
     expect(changedSince({ seq: 7, updated_by: { id: 3 } }, 4, 2)).toBe(true);
     expect(changedSince({ seq: 7, updated_by: { id: 2 } }, 4, 2)).toBe(false);

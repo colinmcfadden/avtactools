@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as packApi from "./packApi";
 
 /*
@@ -8,37 +8,32 @@ import * as packApi from "./packApi";
  * moves to the newest event after a moment. `newSince` is where they had got to when they started
  * looking, and stays put while they look, so "New since you looked" and the dots on what changed
  * do not vanish under them as the marker moves.
+ *
+ * `seenSeq` is the server's marker, which counts only once the pack has `loaded`: until then
+ * nothing is known (`newSince` is null), and the first one known is where "new" starts, even if
+ * they were already looking. Nothing of one pack's carries over to the next.
  */
-export const usePackSeen = ({ packUuid, headSeq = 0, seenSeq = 0, looking, markSeen = packApi.markSeen, delayMs = 1500 }) => {
-  const [seen, setSeen] = useState(seenSeq ?? 0);
-  const [since, setSince] = useState(seenSeq ?? 0);
-  const pack = useRef(packUuid);
+export const usePackSeen = ({ packUuid, headSeq = 0, seenSeq = 0, loaded = true, looking, markSeen = packApi.markSeen, delayMs = 1500 }) => {
+  const server = loaded ? seenSeq ?? 0 : null;
+  const [mark, setMark] = useState(() => ({ pack: packUuid, seen: server, since: server, looking }));
 
-  // Another pack, or the server knowing more (another device): start from what the server says.
-  useEffect(() => {
-    if (pack.current !== packUuid) {
-      pack.current = packUuid;
-      setSeen(seenSeq ?? 0);
-      setSince(seenSeq ?? 0);
-    } else {
-      setSeen((s) => Math.max(s, seenSeq ?? 0));
-    }
-  }, [packUuid, seenSeq]);
-
+  // Worked out while rendering, so no frame after a switch or a load is measured from the wrong place.
+  let next = mark;
+  if (next.pack !== packUuid) next = { pack: packUuid, seen: server, since: server, looking };
+  // The server knowing more (another device) moves the marker; the first it says is where "new" starts.
+  if (server !== null && (next.seen === null || server > next.seen)) next = { ...next, seen: server, since: next.since ?? server };
   // "New" is measured from where they were when they started looking.
-  const seenRef = useRef(seen);
-  seenRef.current = seen;
-  useEffect(() => {
-    if (looking) setSince(seenRef.current);
-  }, [looking, packUuid]);
+  if (looking !== next.looking) next = { ...next, looking, since: looking && next.seen !== null ? next.seen : next.since };
+  if (next !== mark) setMark(next);
+  const { seen, since } = next;
 
   useEffect(() => {
-    if (!looking || !packUuid || headSeq <= seen) return undefined;
+    if (!looking || !packUuid || seen === null || headSeq <= seen) return undefined;
     let current = true;
     const timer = setTimeout(() => {
       markSeen(packUuid, headSeq).then(
         (answer) => {
-          if (current) setSeen((s) => Math.max(s, answer?.seen_seq ?? headSeq));
+          if (current) setMark((m) => (m.pack === packUuid ? { ...m, seen: Math.max(m.seen ?? 0, answer?.seen_seq ?? headSeq) } : m));
         },
         () => {}, // tried again the next time something changes
       );
@@ -49,9 +44,9 @@ export const usePackSeen = ({ packUuid, headSeq = 0, seenSeq = 0, looking, markS
     };
   }, [looking, packUuid, headSeq, seen, markSeen, delayMs]);
 
-  return { seenSeq: seen, newSince: since };
+  return { seenSeq: seen ?? 0, newSince: since };
 };
 
 /** Whether an item changed since `sinceSeq` by someone other than `me` (an item from visibleItems). */
 export const changedSince = (item, sinceSeq, me) =>
-  Number.isFinite(item?.seq) && item.seq > sinceSeq && item.updated_by?.id !== me;
+  sinceSeq != null && Number.isFinite(item?.seq) && item.seq > sinceSeq && item.updated_by?.id !== me;
