@@ -87,6 +87,18 @@ beforeEach(() => {
 
 afterEach(() => client?.stop());
 
+describe("asking for what is new", () => {
+  it("fetches at once when asked, as after a copy from the library, which does not come through the operations", async () => {
+    const socket = await start();
+    await welcome(socket);
+    api.getEvents.mockResolvedValue({ events: [ev(4, { type: "item.create", item: "ps-1", kind: "pointset", name: "PTS", data: [{ id: "a" }] })], has_more: false, cursor: 4, head_seq: 4 });
+    client.refresh();
+    await settle();
+    expect(api.getEvents).toHaveBeenCalledWith("p-1", 3);
+    expect(client.getState().items.map((i) => i.uuid)).toEqual(["lz-1", "ps-1"]);
+  });
+});
+
 describe("opening a pack", () => {
   it("loads it, opens the stream and says hello with the person's token", async () => {
     const socket = await start();

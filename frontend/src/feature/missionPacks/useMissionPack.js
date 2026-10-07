@@ -10,7 +10,7 @@ const closed = () => CLOSED;
  * One open mission pack, kept in step with everyone else's edits.
  *
  * Returns the client's state ({ status, session, items, people, error }) and
- * `edit(ops)` / `setFocus(focus)`. `items` is what the person sees, their own
+ * `edit(ops)` / `setFocus(focus)` / `refresh()`. `items` is what the person sees, their own
  * unconfirmed edits included; `session.dropped` lists edits the server will never
  * take (a finished pack, say), so the UI can offer to save them to the library.
  * `me` is the signed-in user's id. No pack (`packUuid` null) is "closed".
@@ -40,5 +40,6 @@ export const useMissionPack = (packUuid, me, { openSocket = (url) => new WebSock
   const state = useSyncExternalStore(client ? client.subscribe : nothing, client ? client.getState : closed);
   const edit = useCallback((ops) => (client ? client.edit(ops) : "closed"), [client]);
   const setFocus = useCallback((focus) => client?.setFocus(focus), [client]);
-  return { ...state, edit, setFocus };
+  const refresh = useCallback(() => client?.refresh(), [client]);
+  return { ...state, edit, setFocus, refresh };
 };

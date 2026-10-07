@@ -320,5 +320,10 @@ export const createPackClient = ({
       focus = next ?? null;
       sendPresence();
     },
+
+    /** Asks for whatever is new now: after a change made outside the operation stream (a copy from the library). */
+    refresh() {
+      if (state.session && !stopped) catchUp();
+    },
   };
 };
