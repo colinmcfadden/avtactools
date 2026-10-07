@@ -168,6 +168,17 @@ describe("the server's events", () => {
     expect(session.info["lz-1"]).toBeUndefined();
   });
 
+  it("say an item updated from its original is the same as it again, to whoever copied it in", () => {
+    const source = { kind: "lz", uuid: "lib-1", revision: 1, original: "changed" };
+    const copied = { ...PACK, items: [{ ...PACK.items[0], created_by: SAM, source }] };
+    const replace = ev(4, { type: "item.replace", item: "lz-1", data: { flightData: { landingHeading: 90 } }, source_revision: 3 }, { actor: SAM });
+    const session = receive(open(copied), [replace]).session;
+    expect(visibleItems(session)[0].source).toEqual({ ...source, revision: 3, original: "same" });
+    // Everyone else is never told about another person's original.
+    const theirs = receive(openSession({ ...copied, items: [{ ...copied.items[0], source: { ...source, original: null } }] }, COLIN.id), [replace]).session;
+    expect(visibleItems(theirs)[0].source.original).toBeNull();
+  });
+
   it("show an item made here before the server has it, at the end", () => {
     const { session } = mine(open(), { type: "item.create", item: "lz-2", kind: "lz", name: "LZ CROW", data: {} });
     expect(visibleItems(session).map((i) => [i.uuid, Boolean(i.pendingCreate)])).toEqual([["lz-1", false], ["lz-2", true]]);

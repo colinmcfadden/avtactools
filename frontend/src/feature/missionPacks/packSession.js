@@ -151,6 +151,14 @@ const applyPackEvent = (session, event) => {
   return { ...session, pack, members, gone, readOnly };
 };
 
+// An item.replace is an update from the original, which only whoever copied the item in may make. It
+// takes the original as it is now, so for them it is the same again (only they are told either way).
+const replacedSource = (session, source, event) => {
+  if (!source) return source;
+  const original = event.actor?.id === session.me && source.original ? "same" : source.original;
+  return { ...source, revision: event.op.source_revision, original };
+};
+
 const applyItemEvent = (session, event) => {
   if (event.status !== "applied") return session;
   const result = applyPackOp(session.confirmed, event.op);
@@ -170,8 +178,7 @@ const applyItemEvent = (session, event) => {
   } else if (info[uuid]) {
     const before = info[uuid];
     info[uuid] = { ...before, name: item.name, revision: before.revision + 1, seq: event.seq, updated_by: event.actor,
-      updated_at: event.created_at,
-      source: event.type === "item.replace" && before.source ? { ...before.source, revision: event.op.source_revision } : before.source };
+      updated_at: event.created_at, source: event.type === "item.replace" ? replacedSource(session, before.source, event) : before.source };
   }
   return { ...session, confirmed: result.items, info, order };
 };
