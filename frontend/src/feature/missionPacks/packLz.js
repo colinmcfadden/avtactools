@@ -1,5 +1,6 @@
 import { normalizeLzDiagram, serializeLzDiagram } from "../lzWorkspace/useLzWorkspace";
 import { sameData } from "./packDiff";
+import { packLocalId, packLocalRef } from "./packRef";
 
 /*
  * An LZ/PZ diagram as a mission pack item. The item's data is the diagram document the
@@ -16,13 +17,7 @@ import { sameData } from "./packDiff";
 
 const OWN_FIELDS = ["id", "savedId", "dirty", "createdAt", "updatedAt", "view", "name"];
 
-export const packDiagramId = (packUuid, itemUuid) => `pack:${packUuid}:${itemUuid}`;
-
-/** { pack, item } for a diagram that is a pack item, else null. */
-export const packDiagramRef = (diagramId) => {
-  const match = /^pack:([^:]+):(.+)$/.exec(String(diagramId ?? ""));
-  return match ? { pack: match[1], item: match[2] } : null;
-};
+export { packLocalId as packDiagramId, packLocalRef as packDiagramRef };
 
 /** The part of a diagram document a pack shares, as plain JSON. */
 export const sharedLzData = (data) => {
@@ -38,7 +33,7 @@ export const lzItemData = (diagram) => sharedLzData(serializeLzDiagram(diagram))
 /** A workspace diagram for a pack item (`item` as useMissionPack lists it: { uuid, name, data }). */
 export const lzDiagramFromItem = (packUuid, item) =>
   normalizeLzDiagram(
-    { ...(item.data ?? {}), id: packDiagramId(packUuid, item.uuid), name: item.name, savedId: null },
+    { ...(item.data ?? {}), id: packLocalId(packUuid, item.uuid), name: item.name, savedId: null },
     { dirty: false },
   );
 

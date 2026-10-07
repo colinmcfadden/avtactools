@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
-import { useCallback, useRef, useState } from "react";
+import { useState } from "react";
 import { useLzWorkspace } from "../lzWorkspace/useLzWorkspace";
-import { applyPackOp, validatePackOp } from "./packOps";
+import { useFakePack } from "./fakePack";
 import { lzItemData, packDiagramId } from "./packLz";
 import { usePackLz } from "./usePackLz";
 
@@ -22,39 +22,11 @@ const LZ_DATA = {
 const ITEM = { uuid: "lz-1", kind: "lz", name: "LZ HAWK", data: LZ_DATA };
 const DIAGRAM = packDiagramId("p-1", "lz-1");
 
-// The pack as useMissionPack shows it: edits made here appear at once. Every operation must be well
-// formed and must apply, as it would on the server.
-const applyOps = (items, ops) => {
-  let map = Object.fromEntries(items.map((i) => [i.uuid, { kind: i.kind, name: i.name, data: i.data, deleted: false }]));
-  const order = items.map((i) => i.uuid);
-  ops.forEach((op) => {
-    const { summary, ...bare } = op; // eslint-disable-line no-unused-vars
-    expect(validatePackOp(bare)).toBeNull();
-    const result = applyPackOp(map, bare);
-    expect([op.type, result.status, result.reason]).toEqual([op.type, "applied", null]);
-    map = result.items;
-    if (!order.includes(op.item)) order.push(op.item);
-  });
-  return order.filter((uuid) => map[uuid] && !map[uuid].deleted).map((uuid) => ({
-    uuid, kind: map[uuid].kind, name: map[uuid].name,
-    // Untouched items keep their data object, as in packSession.
-    data: items.find((i) => i.uuid === uuid)?.data === map[uuid].data ? items.find((i) => i.uuid === uuid).data : map[uuid].data,
-  }));
-};
-
 const useHarness = ({ items: initial = [ITEM], readOnly = false, refuse = null } = {}) => {
   const ws = useLzWorkspace();
-  const [items, setItems] = useState(initial);
-  const sent = useRef([]);
+  const { items, edit, remote, sent } = useFakePack(initial, { refuse });
   const [gone, setGone] = useState([]);
   const [refusals, setRefusals] = useState([]);
-  const edit = useCallback((ops) => {
-    if (refuse) return refuse;
-    sent.current.push(ops);
-    setItems((before) => applyOps(before, ops));
-    return null;
-  }, [refuse]);
-  const remote = useCallback((ops) => setItems((before) => applyOps(before, ops)), []);
   const bridge = usePackLz({
     packUuid: "p-1", items, edit, readOnly, workspace: ws.workspace, importDiagram: ws.importDiagram,
     applyRemoteDiagram: ws.applyRemoteDiagram, removeDiagram: ws.removeDiagram, setActiveDiagram: ws.setActiveDiagram,
@@ -71,10 +43,10 @@ beforeEach(() => jest.useFakeTimers());
 afterEach(() => jest.useRealTimers());
 
 const opened = (options) => {
-  const hook = renderHook(() => useHarness(options));
-  act(() => { hook.result.current.bridge.openItem("lz-1"); });
+  const view = renderHook(() => useHarness(options));
+  act(() => { view.result.current.bridge.openItem("lz-1"); });
   settleTimers();
-  return hook;
+  return view;
 };
 
 describe("usePackLz", () => {

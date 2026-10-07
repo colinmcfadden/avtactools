@@ -485,6 +485,7 @@ function App() {
     isSketching,
     draftPoints,
     sketchedRoutes,
+    sessionRoutes,
     startSketch,
     cancelSketch,
     addDraftPoint,
@@ -552,14 +553,14 @@ function App() {
   // Once every sketch is removed, the next save is a different bundle — it
   // shouldn't offer to overwrite the old one.
   useEffect(() => {
-    if (sketchedRoutes.length === 0) {
+    if (sessionRoutes.length === 0) {
       setRouteSaveLinks((prev) => {
         if (!prev[SKETCHES_KEY]) return prev;
         const { [SKETCHES_KEY]: _dropped, ...rest } = prev;
         return rest;
       });
     }
-  }, [sketchedRoutes.length]);
+  }, [sessionRoutes.length]);
 
   /** True when the user has a linked save and chose to overwrite it. */
   const confirmOverwrite = (link, what) =>
@@ -609,7 +610,7 @@ function App() {
     try {
       const link = routeSaveLinks[SKETCHES_KEY];
       if (confirmOverwrite(link, "routes")) {
-        await updateSketch(link.id, sketchedRoutes);
+        await updateSketch(link.id, sessionRoutes);
         alert(`Updated "${link.name}".`);
         return;
       }
@@ -617,7 +618,7 @@ function App() {
       const defaultName = "SKETCHED ROUTES";
       const input = window.prompt("Save sketched routes as:", defaultName);
       if (input === null) return;
-      const saved = await saveSketch(input.trim() || defaultName, sketchedRoutes);
+      const saved = await saveSketch(input.trim() || defaultName, sessionRoutes);
       linkRouteSave(SKETCHES_KEY, saved);
       alert("Routes saved.");
     } catch (err) {
@@ -681,7 +682,7 @@ function App() {
 
   const handleExportSketchesWithThreats = async () => {
     await exportSketches();
-    await maybeExportThreats(sketchedRoutes.map((r) => r.name).join("_") || "mission");
+    await maybeExportThreats(sessionRoutes.map((r) => r.name).join("_") || "mission");
   };
 
   const handleExportMissionFileWithThreats = async (fileId) => {

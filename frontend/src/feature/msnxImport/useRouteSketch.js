@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import { nextRouteColor } from "./colorPalette";
+import { useCallback, useMemo, useState } from "react";
+import { nextRouteColor, ROUTE_COLORS } from "./colorPalette";
 import { buildSketchMsnx } from "./createMsnx";
 import { defaultRoutePlan, ensureRoutePlan, fetchPointElevationsFt } from "./routeCalc";
 import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
@@ -17,10 +17,40 @@ import {
 
 const generateId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+// The same colour for the same route on every screen, for a set's route saved without one.
+const colorFor = (id) => {
+  let hash = 0;
+  for (const ch of String(id)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return ROUTE_COLORS[hash % ROUTE_COLORS.length];
+};
+
+/**
+ * A route as the sketch keeps it, from saved data: this session's get a new id (loading one save
+ * twice must not collide); a set's keep theirs, and anything filled in for one is the same every
+ * time, since it is compared with what the set has.
+ */
+export const restoreSketchRoute = (route, setId = null) =>
+  ensureRoutePlan({
+    ...route,
+    id: setId ? route.id : generateId("sketch"),
+    color: route.color || (setId ? colorFor(route.id) : nextRouteColor()),
+    visible: true,
+    elevations: route.elevations || {},
+    ...(setId ? { setId } : {}),
+  });
+
+/*
+ * Sketched routes, in sets. Each route carries `setId`: none (null) for this session's own sketches,
+ * which are saved and exported together as one bundle; or the id of a set that lives elsewhere, a
+ * mission pack's route set (feature/missionPacks/usePackRoutes.js), whose routes keep their ids so
+ * everyone's edits can name them. Everything that changes one route finds it by its id, whichever
+ * set it is in.
+ */
 export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   const [isSketching, setIsSketching] = useState(false);
   const [draftPoints, setDraftPoints] = useState([]);
   const [sketchedRoutes, setSketchedRoutes] = useState([]);
+  const sessionRoutes = useMemo(() => sketchedRoutes.filter((route) => !route.setId), [sketchedRoutes]);
 
   const startSketch = () => {
     setDraftPoints([]);
@@ -40,8 +70,8 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     setDraftPoints((prev) => [...prev, { lat, lon, designation }]);
   };
 
-  /** Returns true if a route was created (needs >= 2 points). */
-  const finishSketch = (name) => {
+  /** Returns true if a route was created (needs >= 2 points). `setId`: the set it goes in (none: this session's). */
+  const finishSketch = (name, setId = null) => {
     setIsSketching(false);
     if (draftPoints.length < 2) {
       setDraftPoints([]);
@@ -61,7 +91,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
       newPointId: () => crypto.randomUUID(),
     });
 
-    setSketchedRoutes((prev) => [...prev, route]);
+    setSketchedRoutes((prev) => [...prev, setId ? { ...route, setId } : route]);
     setDraftPoints([]);
     return true;
   };
@@ -109,19 +139,35 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    * Restores saved sketch routes. Route ids are regenerated so loading the
    * same save twice can't collide (point ids are UUIDs and stay as saved);
    * the "sketch-" prefix matters — App routes context-menu actions on it.
+   * A set's routes (`setId`) keep their ids: others name them in their edits.
    */
-  const loadSketchRoutes = (routes) => {
-    const restored = routes.map((route) =>
-      ensureRoutePlan({
-        ...route,
-        id: generateId("sketch"),
-        color: route.color || nextRouteColor(),
-        visible: true,
-        elevations: route.elevations || {},
-      }),
-    );
+  const loadSketchRoutes = (routes, { setId = null } = {}) => {
+    const restored = routes.map((route) => restoreSketchRoute(route, setId));
     setSketchedRoutes((prev) => [...prev, ...restored]);
   };
+
+  /**
+   * Puts a set's routes in place of the ones it has (`routes`: the set's routes as it now has them),
+   * keeping where the set sits in the list and which of its routes this person has hidden.
+   */
+  const replaceRouteSet = useCallback((setId, routes) => {
+    setSketchedRoutes((prev) => {
+      const hidden = new Set(prev.filter((r) => r.setId === setId && r.visible === false).map((r) => r.id));
+      const next = routes.map((route) => {
+        const restored = restoreSketchRoute(route, setId);
+        return hidden.has(restored.id) ? { ...restored, visible: false } : restored;
+      });
+      const at = prev.findIndex((r) => r.setId === setId);
+      const others = prev.filter((r) => r.setId !== setId);
+      if (at < 0) return [...others, ...next];
+      const before = prev.slice(0, at).filter((r) => r.setId !== setId).length;
+      return [...others.slice(0, before), ...next, ...others.slice(before)];
+    });
+  }, []);
+
+  const removeRouteSet = useCallback((setId) => {
+    setSketchedRoutes((prev) => prev.filter((r) => r.setId !== setId));
+  }, []);
 
   /** Merges plan settings (airspeed, altitude, wind, TOT, ...) into a route. */
   const updateRoutePlan = (routeId, patch) => {
@@ -206,10 +252,11 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     );
   };
 
-  const exportSketches = async () => {
-    if (sketchedRoutes.length === 0) return;
+  /** Exports this session's sketches, or `routes` (a set's). */
+  const exportSketches = async (routes = sessionRoutes) => {
+    if (routes.length === 0) return;
     try {
-      const result = await buildSketchMsnx(sketchedRoutes, undefined, aircraftProfile);
+      const result = await buildSketchMsnx(routes, undefined, aircraftProfile);
       // The file already downloaded; tell the user only when AMPS will open it
       // as a different airframe than the one they planned with.
       if (result?.warning) alert(result.warning);
@@ -222,6 +269,9 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     isSketching,
     draftPoints,
     sketchedRoutes,
+    sessionRoutes,
+    replaceRouteSet,
+    removeRouteSet,
     startSketch,
     cancelSketch,
     addDraftPoint,
