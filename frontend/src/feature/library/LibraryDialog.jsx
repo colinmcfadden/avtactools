@@ -99,6 +99,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
   };
 
   const total = (source.entries ?? []).length;
+  const failed = Boolean(source.error);
   return (
     <>
       <Dialog
@@ -110,7 +111,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
         initialFocus={searchRef}
         note={
           <span>
-            {total} {total === 1 ? meta.noun[0] : meta.noun[1]}
+            {failed && total === 0 ? `Your ${meta.noun[1]} are not loaded` : `${total} ${total === 1 ? meta.noun[0] : meta.noun[1]}`}
             {onOpenPacks && (
               <>
                 {" · Working with a team? "}
@@ -175,8 +176,27 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
           </select>
         </div>
         <div className="library__list" id="library-panel" role="tabpanel" aria-labelledby={`library-tab-${tab}`}>
+          {/* A list that failed to load must not read as an empty Library: the person would think their
+              saves are gone. One loaded before and then failed to refresh is shown, marked as old. */}
+          {failed && total > 0 && !source.loading && (
+            <div className="ui-callout library__stale">
+              <span>
+                This list could not be refreshed, so it may be out of date.{" "}
+                <button type="button" className="ui-link" onClick={() => source.refresh?.()}>Try again</button>
+              </span>
+            </div>
+          )}
           {source.loading && rows.length === 0 ? (
             <div className="library__empty">Loading…</div>
+          ) : failed && total === 0 ? (
+            <div className="library__empty">
+              Your {meta.noun[1]} could not be loaded. Check the connection and try again.
+              <div>
+                <button type="button" className="ui-btn ui-btn--34 library__retry" onClick={() => source.refresh?.()}>
+                  Try again
+                </button>
+              </div>
+            </div>
           ) : rows.length === 0 ? (
             <div className="library__empty">
               {query
