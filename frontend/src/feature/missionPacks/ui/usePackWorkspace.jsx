@@ -62,6 +62,14 @@ const REFUSED_WORDS = {
   empty_point_set: "a point set needs at least one point",
 };
 
+// Why edits still waiting when a pack was closed were never taken (packClient's drain).
+const LOST_WORDS = {
+  pack_finished: "the pack was finished",
+  read_only: "you can only look at it now",
+  gone: "it is no longer available to you",
+  signed_out: "you signed out before they were sent",
+};
+
 export const usePackWorkspace = ({
   enabled,
   user,
@@ -78,7 +86,17 @@ export const usePackWorkspace = ({
   const home = usePacksHome({ enabled });
   const [packUuid, setPackUuid] = useState(() => (enabled ? readStored() : null));
   const open = enabled ? packUuid : null;
-  const live = useMissionPack(open, me);
+  // A pack closed with edits still waiting sends them on; any it would not take by then are said here,
+  // as its panel has gone.
+  const onLost = useCallback(
+    ({ pack, lost }) => {
+      const what = lost.length === 1 ? "A change" : `${lost.length} changes`;
+      const why = LOST_WORDS[lost[0]?.reason] ?? "the pack would not take them";
+      toast({ tone: "warn", message: `${what} to ${pack?.name ?? "the pack"} could not be saved: ${why}.` });
+    },
+    [toast],
+  );
+  const live = useMissionPack(open, me, { onLost });
   // Just after a switch, the hook still holds the previous pack's client for a render: its session
   // and people belong to that pack, not this one, and must not be taken for this one's.
   const fresh = Boolean(live.session) && live.session.pack?.uuid === open;

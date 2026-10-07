@@ -247,6 +247,17 @@ export const batchFailed = (session, failure) => {
   return withView({ ...session, pending: others, dropped: [...session.dropped, ...drop(sent, failure.reason || code || `http_${status}`)] });
 };
 
+/** Every edit not yet taken given up for `reason` (the person who made them signed out). Taken ones stay. */
+export const abandon = (session, reason) => {
+  const lost = session.pending.filter((entry) => entry.state === "queued" || entry.state === "sent");
+  if (lost.length === 0) return session;
+  return withView({
+    ...session,
+    pending: session.pending.filter((entry) => !lost.includes(entry)),
+    dropped: [...session.dropped, ...lost.map(({ op }) => ({ op, reason }))],
+  });
+};
+
 /** What the person sees: live items in the order they were added, with what the pack knows about each. */
 export const visibleItems = (session) =>
   [...session.order, ...Object.keys(session.view).filter((uuid) => !session.order.includes(uuid))]

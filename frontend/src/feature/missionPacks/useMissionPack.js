@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as packApi from "./packApi";
 import { createPackClient } from "./packClient";
 
@@ -14,9 +14,14 @@ const closed = () => CLOSED;
  * unconfirmed edits included; `session.dropped` lists edits the server will never
  * take (a finished pack, say), so the UI can offer to save them to the library.
  * `me` is the signed-in user's id. No pack (`packUuid` null) is "closed".
+ *
+ * Closing a pack (another, or none) still sends the edits waiting for it; `onLost({ pack, lost })`
+ * hears of any it would not take by then.
  */
-export const useMissionPack = (packUuid, me, { openSocket = (url) => new WebSocket(url), api = packApi } = {}) => {
+export const useMissionPack = (packUuid, me, { openSocket = (url) => new WebSocket(url), api = packApi, onLost } = {}) => {
   const [client, setClient] = useState(null);
+  const lostRef = useRef(onLost);
+  lostRef.current = onLost;
 
   useEffect(() => {
     if (!packUuid) return undefined;
@@ -26,6 +31,7 @@ export const useMissionPack = (packUuid, me, { openSocket = (url) => new WebSock
       api,
       openSocket,
       getToken: () => localStorage.getItem("auth_token"),
+      onLost: (lost) => lostRef.current?.(lost),
     });
     setClient(next);
     next.start();

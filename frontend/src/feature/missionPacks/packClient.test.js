@@ -55,14 +55,15 @@ let api;
 let client;
 let hidden;
 let ids;
+let token;
 
 const fail = (status, data = {}) => Object.assign(new Error(`HTTP ${status}`), status ? { response: { status, data } } : {});
 
-const start = async (body = pack()) => {
+const start = async (body = pack(), extra = {}) => {
   api.getPack.mockResolvedValue(body);
   client = createPackClient({
-    packUuid: "p-1", me: SAM.id, api, openSocket: (url) => new FakeSocket(url), getToken: () => "sam-token",
-    timers: clock, newId: () => `op-${++ids}`, isHidden: () => hidden,
+    packUuid: "p-1", me: SAM.id, api, openSocket: (url) => new FakeSocket(url), getToken: () => token,
+    timers: clock, newId: () => `op-${++ids}`, isHidden: () => hidden, ...extra,
   });
   await client.start();
   await settle();
@@ -82,6 +83,7 @@ beforeEach(() => {
   clock = new Clock();
   hidden = false;
   ids = 0;
+  token = "sam-token";
   api = { getPack: jest.fn(), getEvents: jest.fn(), sendOps: jest.fn() };
 });
 
@@ -281,5 +283,65 @@ describe("stopping", () => {
     await settle();
     expect(FakeSocket.all).toHaveLength(1);
     expect(api.getEvents).not.toHaveBeenCalled();
+  });
+  it("still sends the edits waiting behind a batch in flight, without showing anything more", async () => {
+    const socket = await start();
+    await welcome(socket);
+    let answer;
+    api.sendOps.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    api.sendOps.mockResolvedValue({ head_seq: 5, has_more: false, results: [{ client_op_id: "op-2", seq: 5, status: "applied", reason: null }],
+      events: [ev(5, setHeading(110), { actor: SAM, client_op_id: "op-2" })] });
+    client.edit(setHeading(100));
+    client.edit(setHeading(110)); // queued behind the first
+    const listener = jest.fn();
+    client.subscribe(listener);
+    client.stop();
+    expect(socket.closedWith).toBe(1000);
+    answer({ head_seq: 4, has_more: false, results: [{ client_op_id: "op-1", seq: 4, status: "applied", reason: null }],
+      events: [ev(4, setHeading(100), { actor: SAM, client_op_id: "op-1" })] });
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(2);
+    expect(api.sendOps).toHaveBeenLastCalledWith("p-1", { base_seq: 4, ops: [{ ...setHeading(110), client_op_id: "op-2" }] });
+    expect(client.getState().session.pending).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+    clock.advance(60000);
+    await settle();
+    expect(api.getEvents).not.toHaveBeenCalled();
+    expect(clock.pending.size).toBe(0);
+  });
+
+  it("keeps sending again a send that failed until it is taken", async () => {
+    const socket = await start();
+    await welcome(socket);
+    api.sendOps.mockRejectedValueOnce(fail(0)).mockRejectedValueOnce(fail(503));
+    client.edit(setHeading(100));
+    await settle();
+    client.stop();
+    clock.advance(1000);
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(2);
+    api.sendOps.mockResolvedValue({ head_seq: 4, has_more: false, results: [{ client_op_id: "op-1", seq: 4, status: "applied", reason: null }],
+      events: [ev(4, setHeading(100), { actor: SAM, client_op_id: "op-1" })] });
+    clock.advance(2000);
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(3);
+    expect(client.getState().session.pending).toEqual([]);
+    expect(clock.pending.size).toBe(0);
+  });
+
+  it("says what the pack would not take by then, and never sends as someone who signed in since", async () => {
+    const onLost = jest.fn();
+    const socket = await start(pack(), { onLost });
+    await welcome(socket);
+    api.sendOps.mockRejectedValueOnce(fail(0));
+    client.edit(setHeading(100));
+    await settle();
+    client.stop();
+    token = "colin-token";
+    clock.advance(30000);
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(1);
+    expect(onLost).toHaveBeenCalledWith({ pack: expect.objectContaining({ uuid: "p-1" }), lost: [{ op: expect.objectContaining({ client_op_id: "op-1" }), reason: "signed_out" }] });
+    expect(client.edit(setHeading(120))).toBe("closed");
   });
 });

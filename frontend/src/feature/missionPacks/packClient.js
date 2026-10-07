@@ -1,4 +1,5 @@
 import {
+  abandon,
   batchAnswered,
   batchFailed,
   edit as editSession,
@@ -20,6 +21,10 @@ import { failureOf } from "./packApi";
  *
  * `status` is "loading", "live" (the stream is open), "polling", "gone" (deleted,
  * or no longer ours to see) or "error" (it could not be loaded).
+ *
+ * Stopping (the person switched workspace, or the pack closed) drains: the edits
+ * still waiting are sent, and retried, with nothing more asked or shown. Any the
+ * pack would not take by then are passed to `onLost`, as nothing else shows them.
  */
 
 const POLL_MS = 3000;
@@ -43,10 +48,14 @@ export const createPackClient = ({
   timers = defaultTimers,
   newId = newOpId,
   isHidden = () => typeof document !== "undefined" && document.hidden,
+  onLost = null,
 }) => {
   let state = { status: "loading", session: null, items: [], people: [], error: null };
   const listeners = new Set();
   let stopped = false;
+  // Set by stop(): the token then and how many edits had been dropped, while what waits is still sent.
+  let closing = null;
+  const active = () => !stopped && !closing;
   let socket = null;
   let welcomed = false;
   let socketRetry = 0;
@@ -61,7 +70,7 @@ export const createPackClient = ({
   const publish = (changes) => {
     state = { ...state, ...changes };
     if (changes.session) state.items = visibleItems(changes.session);
-    listeners.forEach((listener) => listener());
+    if (!closing) listeners.forEach((listener) => listener());
   };
 
   const clear = (name) => {
@@ -82,12 +91,25 @@ export const createPackClient = ({
     if (session.gone) shutDown("gone");
   };
 
-  const shutDown = (status) => {
-    publish({ status });
+  const halt = () => {
     stopped = true;
     Object.keys(timer).forEach(clear);
     if (socket) socket.close(1000);
     socket = null;
+    const lost = closing && state.session ? state.session.dropped.slice(closing.dropped) : [];
+    if (lost.length && onLost) onLost({ pack: state.session.pack, lost });
+  };
+
+  const shutDown = (status) => {
+    publish({ status });
+    halt();
+  };
+
+  const unsent = () => Boolean(state.session?.pending.some((entry) => entry.state === "queued" || entry.state === "sent"));
+
+  // Stopped, and nothing is left to send or waiting to be sent again: done.
+  const drained = () => {
+    if (closing && !stopped && !sending && timer.send === null && !unsent()) halt();
   };
 
   // -- catching up --------------------------------------------------------------
@@ -96,7 +118,7 @@ export const createPackClient = ({
   const reload = async () => {
     try {
       const pack = await api.getPack(packUuid);
-      if (!stopped) setSession(reloadSession(state.session, pack));
+      if (active()) setSession(reloadSession(state.session, pack));
     } catch {
       // The next poll, event or reconnect tries again.
     }
@@ -112,9 +134,9 @@ export const createPackClient = ({
       do {
         catchUpAgain = false;
         let more = true;
-        while (more && !stopped) {
+        while (more && active()) {
           const page = await api.getEvents(packUuid, state.session.seq);
-          if (stopped) return;
+          if (!active()) return;
           const { session } = receive(state.session, page.events);
           setSession(session);
           if (session.diverged) {
@@ -124,7 +146,7 @@ export const createPackClient = ({
             more = page.has_more;
           }
         }
-      } while (catchUpAgain && !stopped);
+      } while (catchUpAgain && active());
     } catch (error) {
       const failure = failureOf(error);
       if (failure.status === 404 || failure.status === 403) shutDown("gone");
@@ -136,7 +158,7 @@ export const createPackClient = ({
   };
 
   const poll = () => {
-    if (stopped || state.status !== "polling") return;
+    if (!active() || state.status !== "polling") return;
     later("poll", () => {
       if (!isHidden()) catchUp();
       poll();
@@ -144,7 +166,7 @@ export const createPackClient = ({
   };
 
   const startPolling = () => {
-    if (stopped) return;
+    if (!active()) return;
     if (state.status !== "polling") publish({ status: "polling" });
     if (timer.poll === null) poll();
   };
@@ -153,7 +175,7 @@ export const createPackClient = ({
 
   const connect = () => {
     const url = state.session.pack.live_url;
-    if (stopped || !url) return;
+    if (!active() || !url) return;
     welcomed = false;
     let ws;
     try {
@@ -230,6 +252,12 @@ export const createPackClient = ({
 
   const flush = () => {
     if (stopped || sending || !state.session) return;
+    if (closing && getToken() !== closing.token) {
+      // Signed out, or someone else signed in, since it was stopped: never sent as anyone but who made them.
+      setSession(abandon(state.session, "signed_out"));
+      halt();
+      return;
+    }
     const next = nextBatch(state.session);
     if (!next) return;
     sending = true;
@@ -241,13 +269,20 @@ export const createPackClient = ({
         if (stopped) return;
         const result = batchAnswered(state.session, answer);
         setSession(result.session);
-        if (result.catchUp) catchUp();
+        if (result.catchUp && active()) catchUp();
         flush();
+        drained();
       },
       (error) => {
         sending = false;
         if (stopped) return;
         const failure = failureOf(error);
+        if (closing && failure.status === 401) {
+          // Nobody is left to sign in again for these.
+          setSession(abandon(state.session, "signed_out"));
+          halt();
+          return;
+        }
         setSession(batchFailed(state.session, failure));
         if (failure.status === 0 || failure.status === 401 || failure.status === 429 || failure.status >= 500) {
           const ms = RETRY_MS[Math.min(sendRetry, RETRY_MS.length - 1)];
@@ -256,6 +291,7 @@ export const createPackClient = ({
         } else {
           flush();
         }
+        drained();
       },
     );
   };
@@ -288,7 +324,7 @@ export const createPackClient = ({
     async start() {
       try {
         const pack = await api.getPack(packUuid);
-        if (stopped) return;
+        if (!active()) return;
         publish({ session: openSession(pack, me) });
         startPolling();
         connect();
@@ -298,15 +334,19 @@ export const createPackClient = ({
       }
     },
 
+    /** Closes the stream and asks nothing more; what is still waiting is sent first (see above). */
     stop() {
-      stopped = true;
-      Object.keys(timer).forEach(clear);
+      if (closing || stopped) return;
+      closing = { token: getToken(), dropped: state.session?.dropped.length ?? 0 };
+      ["poll", "reconnect", "presence"].forEach(clear);
       if (socket) socket.close(1000);
       socket = null;
+      drained();
     },
 
     /** Make edits: shown at once, sent in order. Returns why they were refused, or null. */
     edit(ops) {
+      if (stopped) return closing ? "closed" : "gone";
       if (!state.session) return "loading";
       const { session, refused } = editSession(state.session, ops, newId);
       if (refused) return refused;
@@ -323,7 +363,7 @@ export const createPackClient = ({
 
     /** Asks for whatever is new now: after a change made outside the operation stream (a copy from the library). */
     refresh() {
-      if (state.session && !stopped) catchUp();
+      if (state.session && active()) catchUp();
     },
   };
 };

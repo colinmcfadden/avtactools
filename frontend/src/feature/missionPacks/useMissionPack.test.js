@@ -47,6 +47,29 @@ describe("useMissionPack", () => {
     expect(sockets[0].close).toHaveBeenCalledWith(1000);
   });
 
+  it("still sends the edits waiting when the pack is closed, and says which it would not take", async () => {
+    const { api, openSocket } = setup();
+    const answers = [];
+    api.sendOps = jest.fn(() => new Promise((resolve, reject) => answers.push({ resolve, reject })));
+    const onLost = jest.fn();
+    const { result, rerender } = renderHook(({ uuid }) => useMissionPack(uuid, 2, { api, openSocket, onLost }), { initialProps: { uuid: "p-1" } });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    act(() => {
+      result.current.edit({ type: "item.rename", item: "lz-1", name: "LZ EAGLE" });
+      result.current.edit({ type: "item.rename", item: "lz-1", name: "LZ OSPREY" });
+    });
+    rerender({ uuid: null }); // back to the Library
+    expect(result.current.status).toBe("closed");
+    const first = api.sendOps.mock.calls[0][1].ops[0];
+    await act(async () => answers[0].resolve({ head_seq: 4, has_more: false, results: [{ client_op_id: first.client_op_id, seq: 4, status: "applied", reason: null }],
+      events: [{ seq: 4, type: first.type, item: "lz-1", actor: { id: 2, name: "Sam" }, summary: "", status: "applied", reason: null,
+        client_op_id: first.client_op_id, op: first, created_at: T }] }));
+    expect(api.sendOps).toHaveBeenCalledTimes(2);
+    expect(api.sendOps.mock.calls[1][1].ops.map((op) => op.name)).toEqual(["LZ OSPREY"]);
+    await act(async () => answers[1].reject(Object.assign(new Error("HTTP 423"), { response: { status: 423, data: { code: "pack_finished" } } })));
+    expect(onLost).toHaveBeenCalledWith(expect.objectContaining({ lost: [expect.objectContaining({ reason: "pack_finished" })] }));
+  });
+
   it("is closed with no pack", () => {
     const { api, openSocket } = setup();
     const { result } = renderHook(() => useMissionPack(null, 2, { api, openSocket }));
