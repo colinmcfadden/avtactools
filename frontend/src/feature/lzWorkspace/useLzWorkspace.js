@@ -44,6 +44,7 @@ export const LZ_WORKSPACE_ACTIONS = Object.freeze({
   MARK_DIRTY: "lzWorkspace/markDirty",
   MARK_SAVED: "lzWorkspace/markSaved",
   CLEAR_SAVED: "lzWorkspace/clearSaved",
+  APPLY_REMOTE_DIAGRAM: "lzWorkspace/applyRemoteDiagram",
 });
 
 let localIdCounter = 0;
@@ -673,6 +674,40 @@ export const lzWorkspaceReducer = (state, action) => {
         savedId: null,
       }));
 
+    // Someone else's change to a diagram that is shared (a mission pack item; see
+    // feature/missionPacks/packLz.js): its content becomes theirs, while what is this
+    // person's own stays: the base map and the other view choices, and the slope raster
+    // as long as the boundary it was drawn for is the same. Not an unsaved change here:
+    // it is already the pack's.
+    case LZ_WORKSPACE_ACTIONS.APPLY_REMOTE_DIAGRAM: {
+      const current = state.diagramsById[action.diagramId];
+      if (!current || !isObject(action.diagram)) return state;
+      const incoming = normalizeLzDiagram(action.diagram, {
+        id: current.id,
+        savedId: current.savedId,
+        dirty: false,
+        createdAt: current.createdAt,
+        updatedAt: nowIso(),
+      });
+      const sameBoundary =
+        JSON.stringify(current.analysis.detectedLZ) === JSON.stringify(incoming.analysis.detectedLZ) &&
+        JSON.stringify(current.analysis.customLZ) === JSON.stringify(incoming.analysis.customLZ);
+      return {
+        ...state,
+        diagramsById: {
+          ...state.diagramsById,
+          [current.id]: {
+            ...incoming,
+            view: current.view,
+            analysis: {
+              ...incoming.analysis,
+              terrainData: sameBoundary ? current.analysis.terrainData : null,
+            },
+          },
+        },
+      };
+    }
+
     default:
       return state;
   }
@@ -911,6 +946,11 @@ export const useLzWorkspace = (initialWorkspace) => {
     dispatch({ type: LZ_WORKSPACE_ACTIONS.HYDRATE_WORKSPACE, workspace });
   }, []);
 
+  const applyRemoteDiagram = useCallback((diagram, diagramId) => {
+    if (!diagramId) return;
+    dispatch({ type: LZ_WORKSPACE_ACTIONS.APPLY_REMOTE_DIAGRAM, diagramId, diagram });
+  }, []);
+
   const serializeActiveDiagram = useCallback(
     (options) => serializeLzDiagram(getActiveLzDiagram(state), options),
     [state],
@@ -951,6 +991,7 @@ export const useLzWorkspace = (initialWorkspace) => {
     markDirty,
     clearSaved,
     hydrateWorkspace,
+    applyRemoteDiagram,
     serializeActiveDiagram,
     dispatch,
   };
