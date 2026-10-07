@@ -315,9 +315,11 @@ select.ui-input { cursor: pointer; }
 
 /* -- Menus ------------------------------------------------------------------------------------ */
 
+/* Above dialogs (3000): a menu can open inside one (a Library row's ⋯), and both are portaled to the
+   body. Below toasts (3500). A menu item closes its menu before it opens a dialog of its own. */
 .ui-menu {
   position: fixed;
-  z-index: 2500;
+  z-index: 3200;
   box-sizing: border-box;
   padding: 8px;
   background: var(--surface-2);
