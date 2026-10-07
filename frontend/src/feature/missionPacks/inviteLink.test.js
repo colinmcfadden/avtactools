@@ -70,12 +70,12 @@ describe("useInviteLink", () => {
     withLink();
     let resolve;
     const accept = jest.fn(() => new Promise((r) => { resolve = r; }));
-    const first = renderHook(() => useInviteLink({ enabled: true, accept }));
-    const second = renderHook(() => useInviteLink({ enabled: true, accept }));
+    const { result: first } = renderHook(() => useInviteLink({ enabled: true, accept }));
+    const { result: second } = renderHook(() => useInviteLink({ enabled: true, accept }));
     expect(accept).toHaveBeenCalledTimes(1);
     await act(async () => resolve({ team: { id: 2, name: "B Co", role: "member" }, pack: null }));
-    expect(first.result.current.status).toBe("joined");
-    expect(second.result.current.message).toBe("You joined the team B Co.");
+    expect(first.current.status).toBe("joined");
+    expect(second.current.message).toBe("You joined the team B Co.");
   });
 
   it("keeps the link while packs are not on for the account", () => {

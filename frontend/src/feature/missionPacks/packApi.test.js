@@ -70,8 +70,8 @@ describe("packApi", () => {
     expect(api[method]).toHaveBeenCalledTimes(1);
     const args = api[method].mock.calls[0];
     expect(args[0]).toBe(path);
-    if (rest.length) expect(args[1]).toEqual(rest[0]);
-    else expect(args[1]).toBeUndefined();
+    // The body, or the query (`{ params }`), or nothing at all.
+    expect(args[1]).toEqual(rest.length ? rest[0] : undefined);
   });
 });
 
