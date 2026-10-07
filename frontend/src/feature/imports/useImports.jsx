@@ -12,7 +12,19 @@ import ImportReviewDialog, { defaultDestination } from "./ImportReviewDialog";
  *
  * `importers`: { msnx(file), lps(file, { name }), ths(file) } that bring a file into the session and
  * return what they made. `destinations`: { library: { msnx(result, item), lps(set) }, pack: { lps(set) } }.
+ * `onDone(kinds, imported)` hears which kinds came in and, for each file that did, where it went.
  */
+
+/**
+ * Moves points just imported into this session over to the open pack. The session's copy is dropped
+ * only once the pack has taken them, so a pack that refuses (finished, only viewed, no usable points)
+ * leaves them in the session instead of losing them.
+ */
+export const movePointsToPack = (set, { createItem, removePointSet }) => {
+  if (!createItem(set.name, set.points)) throw new Error("the pack did not take them. They stay in this session: switch to Library to see them.");
+  removePointSet(set.id);
+};
+
 export const useImports = ({ pack, importers, destinations, onDone }) => {
   const { show } = useToast();
   const [review, setReview] = useState(null);
@@ -36,6 +48,7 @@ export const useImports = ({ pack, importers, destinations, onDone }) => {
     async (items) => {
       const { importers: imp, destinations: dest, onDone: done } = deps.current;
       const failed = [];
+      const imported = [];
       const kinds = new Set();
       for (const item of items) {
         try {
@@ -51,6 +64,7 @@ export const useImports = ({ pack, importers, destinations, onDone }) => {
             setThreatFiles((prev) => [...prev, { id: `${Date.now()}-${prev.length}`, fileName: item.file.name, count }]);
           }
           kinds.add(item.kind);
+          imported.push({ kind: item.kind, destination: item.destination, fileName: item.file.name });
         } catch (err) {
           failed.push(`${item.file.name}: ${err?.message || "it could not be imported"}`);
         }
@@ -59,7 +73,7 @@ export const useImports = ({ pack, importers, destinations, onDone }) => {
       const ok = items.length - failed.length;
       if (ok > 0) show({ message: items.length === 1 ? `Imported ${items[0].file.name}` : `Imported ${ok} of ${items.length} files` });
       if (failed.length) show({ tone: "error", message: `Not imported. ${failed.join(" ")}`, duration: 9000 });
-      done?.([...kinds]);
+      done?.([...kinds], imported);
     },
     [show],
   );

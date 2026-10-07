@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import fs from "fs";
 import path from "path";
 import React from "react";
@@ -6,6 +6,7 @@ import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from "
 import { ToastProvider } from "../ui/Toast";
 import { detectImport, formatSize } from "./detectImport";
 import ImportReviewDialog, { defaultDestination } from "./ImportReviewDialog";
+import { movePointsToPack, useImports } from "./useImports";
 
 // jsdom has neither TextDecoder nor Blob.arrayBuffer; the browser has both.
 beforeAll(() => {
@@ -100,7 +101,73 @@ describe("the import review", () => {
     expect(screen.queryByRole("radio", { name: "OP DK" })).toBeNull();
     const pointsWhere = within(screen.getByRole("radiogroup", { name: "Where NORTH_GA.LPS goes" }));
     expect(pointsWhere.getByRole("radio", { name: "Library" })).toBeChecked();
+    expect(screen.getByText("Saved to your Library and shown on the map.")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("radio", { name: "Session" })[0]);
     expect(screen.getByText("3 stay in this session")).toBeInTheDocument();
+  });
+
+  it("never offers the pack to someone who may only view it, and sends the points to the Library", () => {
+    const viewing = { ...pack, role: "viewer", finished: false };
+    expect(defaultDestination("lps", viewing)).toBe("library");
+    render(<ToastProvider><ImportReviewDialog items={items(viewing)} pack={viewing} onCancel={() => {}} onImport={() => {}} /></ToastProvider>);
+    const pointsWhere = within(screen.getByRole("radiogroup", { name: "Where NORTH_GA.LPS goes" }));
+    expect(pointsWhere.getByRole("radio", { name: "OP DK" })).toBeDisabled();
+    expect(pointsWhere.getByRole("radio", { name: "OP DK" })).toHaveAttribute("title", "You can only view this pack.");
+    expect(pointsWhere.getByRole("radio", { name: "Library" })).toBeChecked();
+  });
+
+  it("in a pack, says that what goes to the Library or this session is shown back in the Library", () => {
+    render(<ToastProvider><ImportReviewDialog items={items(pack)} pack={pack} onCancel={() => {}} onImport={() => {}} /></ToastProvider>);
+    const pointsWhere = within(screen.getByRole("radiogroup", { name: "Where NORTH_GA.LPS goes" }));
+    fireEvent.click(pointsWhere.getByRole("radio", { name: "Library" }));
+    expect(screen.getByText("Saved to your Library. Shown when you switch back to Library.")).toBeInTheDocument();
+    fireEvent.click(pointsWhere.getByRole("radio", { name: "Session" }));
+    expect(screen.getByText("Kept until you close this tab. Shown when you switch back to Library.")).toBeInTheDocument();
+    expect(screen.queryByText(/shown on the map/)).toBeNull();
+  });
+});
+
+describe("importing into an open pack", () => {
+  it("drops the session's copy of the points only once the pack has taken them", () => {
+    const set = { id: "lps-1", name: "NORTH GA POINTS", points: [{ lat: 34, lon: -84 }] };
+    const order = [];
+    const removePointSet = jest.fn(() => order.push("remove"));
+    movePointsToPack(set, { createItem: jest.fn(() => order.push("create") && "ps-1"), removePointSet });
+    expect(order).toEqual(["create", "remove"]);
+
+    const refusing = jest.fn(() => null);
+    removePointSet.mockClear();
+    expect(() => movePointsToPack(set, { createItem: refusing, removePointSet })).toThrow(/did not take them\. They stay in this session/);
+    expect(refusing).toHaveBeenCalledWith("NORTH GA POINTS", set.points);
+    expect(removePointSet).not.toHaveBeenCalled();
+  });
+
+  it("tells the app where each imported file went, leaving out the ones that failed", async () => {
+    const onDone = jest.fn();
+    const sets = { "NORTH_GA.LPS": { id: "lps-1", name: "NORTH GA" }, "SOUTH.LPS": { id: "lps-2", name: "SOUTH" } };
+    const removePointSet = jest.fn();
+    let imports;
+    const Harness = () => {
+      imports = useImports({
+        pack: { name: "OP DK", memberCount: 4, role: "editor", finished: false },
+        importers: { lps: async (file) => sets[file.name] },
+        destinations: {
+          library: { lps: async () => {} },
+          pack: { lps: async (set) => movePointsToPack(set, { createItem: () => null, removePointSet }) },
+        },
+        onDone,
+      });
+      return imports.dialog;
+    };
+    render(<ToastProvider><Harness /></ToastProvider>);
+    await act(() => imports.begin([fixture("sqlite/local-points.lps", "NORTH_GA.LPS"), fixture("sqlite/local-points.lps", "SOUTH.LPS")]));
+
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Where SOUTH.LPS goes" })).getByRole("radio", { name: "Library" }));
+    fireEvent.click(screen.getByRole("button", { name: /Import 2 files/ }));
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+
+    expect(onDone).toHaveBeenCalledWith(["lps"], [{ kind: "lps", destination: "library", fileName: "SOUTH.LPS" }]);
+    expect(removePointSet).not.toHaveBeenCalled();
+    expect(screen.getByText(/Not imported\. NORTH_GA\.LPS: the pack did not take them\. They stay in this session/)).toBeInTheDocument();
   });
 });

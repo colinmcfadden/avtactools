@@ -34,32 +34,40 @@ const Segmented = ({ options, value, onChange, label }) => (
   </div>
 );
 
+// Why the open pack cannot take this file, or null if it can. A finished pack, or one this person may
+// only view, refuses every change: offering it would only lose the points.
+const packRefusal = (kind, pack) => {
+  if (kind === "msnx") return "Mission files cannot go into a pack yet.";
+  if (pack.finished) return "This pack is finished.";
+  if (pack.role === "viewer") return "You can only view this pack.";
+  return null;
+};
+
 const destinationsFor = (kind, pack) => {
   if (kind === "ths") return null;
   const options = [];
   if (pack) {
-    options.push({
-      value: "pack",
-      label: pack.name,
-      disabled: kind === "msnx" || pack.finished,
-      title: kind === "msnx" ? "Mission files cannot go into a pack yet." : pack.finished ? "This pack is finished." : undefined,
-    });
+    const refusal = packRefusal(kind, pack);
+    options.push({ value: "pack", label: pack.name, disabled: Boolean(refusal), title: refusal ?? undefined });
   }
   options.push({ value: "library", label: "Library" }, { value: "session", label: "Session" });
   return options;
 };
 
+// While a pack is open only its own things are shown (docs/MISSION_PACKS.md §5a): what goes to the
+// Library or stays in this session appears once the person switches back to the Library.
 const noteFor = (item, pack) => {
   if (item.kind === "ths") return { tone: "warn", text: "Threats are never saved or shared with a pack." };
-  if (item.kind === "msnx" && pack) return { tone: "warn", text: "Mission files cannot go into a pack yet. Sketched routes only." };
+  if (item.kind === "msnx" && pack) return { tone: "warn", text: "Mission files cannot go into a pack yet (sketched routes only). Shown when you switch back to Library." };
   if (item.destination === "pack") return { tone: "pack", text: `Everyone in ${pack.name} (${pack.memberCount} ${pack.memberCount === 1 ? "member" : "members"}) will see these points.` };
-  if (item.destination === "library") return { tone: "", text: "Saved to your Library and shown on the map." };
-  return { tone: "", text: "Shown on the map until you close this tab." };
+  if (item.destination === "library") {
+    return { tone: "", text: pack ? "Saved to your Library. Shown when you switch back to Library." : "Saved to your Library and shown on the map." };
+  }
+  return { tone: "", text: pack ? "Kept until you close this tab. Shown when you switch back to Library." : "Shown on the map until you close this tab." };
 };
 
 export const defaultDestination = (kind, pack) => {
-  if (kind === "lps") return pack && !pack.finished ? "pack" : "library";
-  if (kind === "msnx") return "session";
+  if (kind === "lps") return pack && !packRefusal(kind, pack) ? "pack" : "library";
   return "session";
 };
 

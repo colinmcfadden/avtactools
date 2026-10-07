@@ -55,7 +55,7 @@ import useRouteSaves, { SKETCHES } from "./feature/saveDialog/useRouteSaves";
 import NameDialog from "./feature/ui/NameDialog";
 import { useToast } from "./feature/ui/Toast";
 import useFilePicker from "./feature/imports/useFilePicker";
-import useImports from "./feature/imports/useImports";
+import useImports, { movePointsToPack } from "./feature/imports/useImports";
 import ImportsPanel from "./feature/imports/ImportsPanel";
 import { setSummary } from "./feature/saveDialog/useRouteSaves";
 import { ConfirmDialog } from "./feature/ui/Dialog";
@@ -979,19 +979,22 @@ function App() {
         lps: (set) => localPoints.savePointSet(set),
       },
       pack: {
-        lps: async (set) => {
-          localPoints.removePointSet(set.id);
-          if (!packs.packPoints.createItem(set.name, set.points)) throw new Error("the pack did not take the points");
-        },
+        lps: async (set) => movePointsToPack(set, { createItem: packs.packPoints.createItem, removePointSet: localPoints.removePointSet }),
       },
     },
-    onDone: (kinds) => {
-      if (inPack && kinds.includes("msnx")) {
+    onDone: (kinds, imported = []) => {
+      // In a pack only the pack's own things are shown (docs/MISSION_PACKS.md §5a): say where a file that
+      // went to the Library or stayed in this session is, and do not open an Imports panel that hides it.
+      const elsewhere = inPack ? imported.filter((item) => item.kind === "msnx" || (item.kind === "lps" && item.destination !== "pack")) : [];
+      if (elsewhere.some((item) => item.kind === "msnx")) {
         toast({ tone: "info", message: "The mission file is in your Library session; packs hold sketched routes only. Switch to Library to see it." });
+      }
+      if (elsewhere.some((item) => item.kind === "lps")) {
+        toast({ tone: "info", message: "The local points are in your Library session, not the pack. Switch to Library to see them." });
       }
       if (kinds.length === 1 && kinds[0] === "ths") dock.show("threats");
       else if (kinds.includes("msnx")) dock.show("routes");
-      else if (kinds.length > 0) dock.show("imports");
+      else if (imported.some((item) => !elsewhere.includes(item))) dock.show("imports");
     },
   });
   const pickers = {
