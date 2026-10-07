@@ -36,8 +36,18 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
   const [role, setRole] = useState("editor");
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState(null);
+  // The live session learns of a share from its event, which names the team by id and role only.
+  // The name is the one the server gave in its answer to the share, else the owner's own team list
+  // has it (a pack can only be shared with a team its owner is in).
+  const [answered, setAnswered] = useState(null);
+  const sharedWith = pack.team && {
+    ...pack.team,
+    name: [answered, ...teams].find((t) => t?.id === pack.team.id)?.name ?? pack.team.name,
+  };
   const shareable = teams.filter((t) => t.id !== pack.team?.id);
   const [shareTeam, setShareTeam] = useState(shareable[0]?.id ?? null);
+  // What was picked, or the first team once the one picked (or none, while it was shared) is not offered.
+  const shareTo = shareable.some((t) => t.id === shareTeam) ? shareTeam : shareable[0]?.id ?? null;
 
   const loadInvites = useCallback(() => {
     if (!owner) return;
@@ -62,6 +72,9 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
       setBusy(false);
     }
   };
+
+  const share = (fields, done) =>
+    run(async () => setAnswered((await api.updatePack(pack.uuid, fields))?.team ?? null), done);
 
   const invite = (pick) =>
     run(
@@ -99,14 +112,14 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
                 </select>
               </div>
             </div>
-            {pack.team ? (
+            {sharedWith ? (
               <div className="packs-team-share" style={{ marginTop: 14 }}>
                 <Icon name="users" size={16} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="packs-person__name">{pack.team.name}</div>
-                  <div className="packs-person__meta">Shared with this team · they can {pack.team.role === "viewer" ? "view" : "edit"}</div>
+                  <div className="packs-person__name">{sharedWith.name || "A team"}</div>
+                  <div className="packs-person__meta">Shared with this team · they can {sharedWith.role === "viewer" ? "view" : "edit"}</div>
                 </div>
-                <button type="button" className="ui-btn ui-btn--ghost ui-btn--30" disabled={busy} onClick={() => run(() => api.updatePack(pack.uuid, { team_id: null }), `${pack.team.name} no longer has this pack`)}>
+                <button type="button" className="ui-btn ui-btn--ghost ui-btn--30" disabled={busy} onClick={() => share({ team_id: null }, `${sharedWith.name || "The team"} no longer has this pack`)}>
                   Stop sharing
                 </button>
               </div>
@@ -115,7 +128,7 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
                 <div className="packs-team-share" style={{ marginTop: 14 }}>
                   <Icon name="users" size={16} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <select className="ui-input ui-input--36" aria-label="Team to share with" value={shareTeam ?? ""} onChange={(event) => setShareTeam(Number(event.target.value))}>
+                    <select className="ui-input ui-input--36" aria-label="Team to share with" value={shareTo ?? ""} onChange={(event) => setShareTeam(Number(event.target.value))}>
                       {shareable.map((t) => (
                         <option key={t.id} value={t.id}>{t.name} · {t.member_count} members · not shared with this pack</option>
                       ))}
@@ -124,8 +137,8 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
                   <button
                     type="button"
                     className="ui-btn ui-btn--pack ui-btn--34"
-                    disabled={busy || shareTeam == null}
-                    onClick={() => run(() => api.updatePack(pack.uuid, { team_id: shareTeam, team_role: "editor" }), "Shared with the team")}
+                    disabled={busy || shareTo == null}
+                    onClick={() => share({ team_id: shareTo, team_role: "editor" }, `Shared with ${shareable.find((t) => t.id === shareTo).name}`)}
                   >
                     Share with team
                   </button>

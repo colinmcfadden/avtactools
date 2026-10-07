@@ -294,9 +294,12 @@ const TeamDetail = ({ teamId, me, api, onChanged, onGone }) => {
 const TeamsDialog = ({ teams = [], me, api = packApi, onChanged, onClose }) => {
   const [chosen, setChosen] = useState(teams[0]?.id ?? null);
   const [creating, setCreating] = useState(false);
+  // A team made here is chosen at once, before the refreshed list that has it comes back: missing
+  // from the list for now is not gone, so the choice stays.
+  const [created, setCreated] = useState(null);
   useEffect(() => {
-    if (chosen != null && !teams.some((t) => t.id === chosen)) setChosen(teams[0]?.id ?? null);
-  }, [teams, chosen]);
+    if (chosen != null && chosen !== created && !teams.some((t) => t.id === chosen)) setChosen(teams[0]?.id ?? null);
+  }, [teams, chosen, created]);
 
   return (
     <>
@@ -363,7 +366,10 @@ const TeamsDialog = ({ teams = [], me, api = packApi, onChanged, onClose }) => {
             const team = await api.createTeam(name);
             setCreating(false);
             onChanged();
-            if (team?.id != null) setChosen(team.id);
+            if (team?.id != null) {
+              setCreated(team.id);
+              setChosen(team.id);
+            }
           }}
         />
       )}
