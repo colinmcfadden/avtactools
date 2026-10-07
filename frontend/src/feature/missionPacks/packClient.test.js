@@ -412,4 +412,61 @@ describe("stopping", () => {
     expect(onLost).toHaveBeenCalledWith({ pack: expect.objectContaining({ uuid: "p-1" }), lost: [{ op: expect.objectContaining({ client_op_id: "op-1" }), reason: "signed_out" }] });
     expect(client.edit(setHeading(120))).toBe("closed");
   });
+
+  // Signing out clears the token before the pack closes, so a client stopped then has none to send with.
+  it("gives up at once what waits when the person has signed out, rather than send it with no token", async () => {
+    const onLost = jest.fn();
+    const socket = await start(pack(), { onLost });
+    await welcome(socket);
+    api.sendOps.mockRejectedValue(fail(401)); // what a send with no token would get
+    api.sendOps.mockRejectedValueOnce(fail(0));
+    client.edit(setHeading(100));
+    await settle();
+    token = null;
+    client.stop();
+    expect(onLost).toHaveBeenCalledWith({ pack: expect.objectContaining({ uuid: "p-1" }), lost: [{ op: expect.objectContaining({ client_op_id: "op-1" }), reason: "signed_out" }] });
+    expect(clock.pending.size).toBe(0);
+    clock.advance(60000);
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(1);
+  });
+
+  it("still hears the answer to a batch sent before signing out, and sends nothing after it", async () => {
+    const onLost = jest.fn();
+    const socket = await start(pack(), { onLost });
+    await welcome(socket);
+    api.sendOps.mockRejectedValue(fail(401)); // what a send with no token would get
+    let answer;
+    api.sendOps.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    client.edit(setHeading(100));
+    client.edit(setHeading(110)); // queued behind the first
+    token = null;
+    client.stop();
+    expect(onLost).not.toHaveBeenCalled();
+    answer({ head_seq: 4, has_more: false, results: [{ client_op_id: "op-1", seq: 4, status: "applied", reason: null }],
+      events: [ev(4, setHeading(100), { actor: SAM, client_op_id: "op-1" })] });
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(1);
+    expect(onLost).toHaveBeenCalledWith({ pack: expect.objectContaining({ uuid: "p-1" }), lost: [{ op: expect.objectContaining({ client_op_id: "op-2" }), reason: "signed_out" }] });
+    expect(clock.pending.size).toBe(0);
+  });
+
+  it("gives up, without waiting to try again, a batch sent before signing out that got no answer", async () => {
+    const onLost = jest.fn();
+    const socket = await start(pack(), { onLost });
+    await welcome(socket);
+    api.sendOps.mockRejectedValue(fail(401)); // what a send with no token would get
+    let refuse;
+    api.sendOps.mockReturnValueOnce(new Promise((resolve, reject) => { refuse = reject; }));
+    client.edit(setHeading(100));
+    token = null;
+    client.stop();
+    refuse(fail(0));
+    await settle();
+    expect(onLost).toHaveBeenCalledWith({ pack: expect.objectContaining({ uuid: "p-1" }), lost: [{ op: expect.objectContaining({ client_op_id: "op-1" }), reason: "signed_out" }] });
+    expect(clock.pending.size).toBe(0);
+    clock.advance(60000);
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(1);
+  });
 });

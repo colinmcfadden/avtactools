@@ -115,6 +115,17 @@ export const createPackClient = ({
     if (closing && !stopped && !sending && timer.send === null && !unsent()) halt();
   };
 
+  // Since it was stopped the person signed out, or someone else signed in. Signing out clears the token
+  // before the pack closes, so none at all counts too: a send with no token can only be refused, and that
+  // refusal would read as an expired session.
+  const signedOut = () => Boolean(closing) && (!closing.token || getToken() !== closing.token);
+
+  // What waits is never sent as anyone but who made it.
+  const giveUp = () => {
+    if (state.session) setSession(abandon(state.session, "signed_out"));
+    halt();
+  };
+
   // -- catching up --------------------------------------------------------------
 
   // This copy disagreed with the server (it never should): take the server's again, keeping what is pending.
@@ -255,10 +266,8 @@ export const createPackClient = ({
 
   const flush = () => {
     if (stopped || sending || !state.session) return;
-    if (closing && getToken() !== closing.token) {
-      // Signed out, or someone else signed in, since it was stopped: never sent as anyone but who made them.
-      setSession(abandon(state.session, "signed_out"));
-      halt();
+    if (signedOut()) {
+      giveUp();
       return;
     }
     const next = nextBatch(state.session);
@@ -280,14 +289,14 @@ export const createPackClient = ({
         sending = false;
         if (stopped) return;
         const failure = failureOf(error);
-        if (closing && failure.status === 401) {
-          // Nobody is left to sign in again for these.
-          setSession(abandon(state.session, "signed_out"));
-          halt();
+        const again = failure.status === 0 || failure.status === 401 || failure.status === 429 || failure.status >= 500;
+        if (closing && again && (failure.status === 401 || signedOut())) {
+          // Nobody is left to sign in again for these, or to send them again as.
+          giveUp();
           return;
         }
         setSession(batchFailed(state.session, failure));
-        if (failure.status === 0 || failure.status === 401 || failure.status === 429 || failure.status >= 500) {
+        if (again) {
           const ms = RETRY_MS[Math.min(sendRetry, RETRY_MS.length - 1)];
           sendRetry += 1;
           later("send", flush, ms);
@@ -374,7 +383,10 @@ export const createPackClient = ({
       ["poll", "reconnect", "presence", "load"].forEach(clear);
       if (socket) socket.close(1000);
       socket = null;
-      drained();
+      // Signed out already: what waits is given up now, not at the next try. A batch in flight went
+      // with the token, so its answer still says whether it was taken.
+      if (signedOut() && !sending) giveUp();
+      else drained();
     },
 
     /** Make edits: shown at once, sent in order. Returns why they were refused, or null. */
