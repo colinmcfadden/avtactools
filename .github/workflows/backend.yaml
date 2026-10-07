@@ -36,12 +36,14 @@ jobs:
           python-version: "3.11"
 
       # The pinned versions from requirements.txt, for just what these tests import. (GET /api/config reads the
-      # Mapbox token from export_service, which pulls in rasterio, numpy and mercantile. Not torch or opencv,
-      # which the SAM, terrain and LiDAR tests need and these do not.)
+      # Mapbox token from export_service, which pulls in rasterio, numpy and mercantile; the recorded terrain and
+      # threat responses need OpenCV, headless. Not torch, which the SAM, terrain and LiDAR tests need and these
+      # do not.)
       - name: Install
         run: |
           for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
-                   python-dotenv PyYAML openpyxl pillow pygeodesy rasterio numpy mercantile affine; do
+                   python-dotenv PyYAML openpyxl pillow pygeodesy rasterio numpy mercantile affine \
+                   opencv-python-headless; do
             grep -i "^$p==" backend/requirements.txt
           done | xargs pip install pytest
 
