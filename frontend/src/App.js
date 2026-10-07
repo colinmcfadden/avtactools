@@ -32,6 +32,7 @@ import { parseCoordinate } from "./utils/coordParse";
 import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
+import { exportRouteSetFiles } from "./feature/msnxImport/exportRouteSet";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import UnitBadge from "./components/UnitBadge";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
@@ -685,33 +686,16 @@ function App() {
     setContextMenu({ x, y, type: "route-line", routeId, lat, lon });
   }, []);
 
-  // Threats export to a companion .ths downloaded alongside the .msnx (AMPS
-  // reads the two as a mission + its threat overlay). Threats are never saved.
-  const maybeExportThreats = async (baseName) => {
-    if (threats.length === 0) return;
-    try {
-      // Companion file travels with the mission, e.g. "GOAT SUCKER_threats.ths".
-      await exportThsFile(`${(baseName || "mission").replace(/\.msnx$/i, "")}_threats`);
-    } catch (err) {
-      toast({ tone: "warn", message: `The mission exported, but the threats (.ths) could not be: ${err.message}` });
-    }
-  };
-
   /** Export .msnx for one route set, with the threats beside it as a .ths when asked. */
-  const exportRouteSet = async (set, withThreats) => {
-    try {
-      if (set.kind === "mission") await exportFile(set.key);
-      else await exportSketches(set.routes);
-    } catch (err) {
-      toast({ tone: "error", message: `The mission file could not be made: ${err.message}` });
-      return;
-    }
-    if (withThreats) {
-      await maybeExportThreats(
-        set.kind === "mission" ? set.fileName : set.routes.map((r) => r.name).join("_") || "mission",
-      );
-    }
-  };
+  const exportRouteSet = (set, withThreats) =>
+    exportRouteSetFiles(set, {
+      withThreats,
+      threatCount: threats.length,
+      exportMission: exportFile,
+      exportSketches,
+      exportThreats: exportThsFile,
+      toast,
+    });
 
   // A route set being closed with unsaved changes asks first.
   const [closingSet, setClosingSet] = useState(null);

@@ -290,17 +290,15 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     );
   };
 
-  /** Exports this session's sketches, or `routes` (a set's). */
+  /**
+   * Exports this session's sketches, or `routes` (a set's), as a .msnx download. Resolves to what
+   * buildSketchMsnx says about the file, whose `warning` is set when AMPS will open it as another
+   * airframe than the one planned with; throws when the file could not be made. The caller tells
+   * the person either way: a failure kept in here would let it carry on as if the file were made.
+   */
   const exportSketches = async (routes = sessionRoutes) => {
-    if (routes.length === 0) return;
-    try {
-      const result = await buildSketchMsnx(routes, undefined, aircraftProfile);
-      // The file already downloaded; tell the user only when AMPS will open it
-      // as a different airframe than the one they planned with.
-      if (result?.warning) alert(result.warning);
-    } catch (err) {
-      alert("Error exporting routes: " + err.message);
-    }
+    if (routes.length === 0) return null;
+    return buildSketchMsnx(routes, undefined, aircraftProfile);
   };
 
   return {
