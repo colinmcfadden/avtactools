@@ -130,8 +130,9 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
         <MoreMenu
           label={`More actions for ${name}`}
           items={[
+            { icon: "route", title: "Sketch a route into this set", onSelect: () => actions.sketchInto?.(set), hidden: !set.pack || readOnly || !actions.sketchInto },
             { icon: "copy", title: set.pack ? "Save a copy to Library…" : "Save as…", onSelect: () => actions.saveAs(set) },
-            { icon: "layers", title: "Add to Mission Pack…", onSelect: () => actions.addToPack?.(set), hidden: Boolean(set.pack) || !actions.addToPack || set.kind === "mission", disabled: !state.link, text: state.link ? undefined : "Save it first" },
+            { icon: "layers", title: "Add to Mission Pack…", onSelect: () => actions.addToPack?.(set, state.link), hidden: Boolean(set.pack) || !actions.addToPack || set.kind === "mission", disabled: !state.link, text: state.link ? undefined : "Save it first" },
             { divider: true },
             { icon: "x", title: set.pack ? "Close here" : "Close", text: set.pack ? "It stays in the pack" : "Takes these routes out of this session", onSelect: () => actions.close(set) },
           ]}
@@ -142,6 +143,12 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
         {stateChip(set, state)}
         <span className="shell-card__meta">{setSummary(set.routes)}</span>
       </div>
+      {set.pack?.target && !readOnly && (
+        <div className="shell-card__people">
+          <Icon name="route" size={13} color="var(--pack)" />
+          <span>New routes you sketch go into this set.</span>
+        </div>
+      )}
       {set.pack?.editedBy && (
         <div className="shell-card__people">
           <Avatar person={set.pack.editedBy} size="sm" />

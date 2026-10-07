@@ -202,6 +202,27 @@ operation as the server would (`fakePack.js`), including a change here and one t
 the same moment, a drag that goes on after someone else's change arrived, and the same
 field changed by two people.
 
+**The screens** (`feature/missionPacks/ui/`, designs in `docs/MENU_REDESIGN.md` §8) are joined
+to the app by `usePackWorkspace`. Things worth keeping true:
+
+- **One workspace is open: the Library or one pack.** Opening a pack *parks* the Library's open
+  LZ/PZs (the workspace's state, unsaved flags and all) and puts them back on the way out; the
+  Library's routes, points and missions stay loaded but are not shown. Switching never discards
+  anything. The open pack is remembered in `localStorage` (`ezpz.openPack`).
+- **Just after a switch the hook still holds the previous pack's client for one render.** Its
+  session names the other pack: `usePackWorkspace` ignores a session whose `pack.uuid` is not the
+  open one. Without that the first LZ/PZ of the new pack was never opened.
+- In a pack, all its route sets and point sets go on the map (and new ones as they arrive, unless
+  closed here), its first LZ/PZ opens, a new target is a new LZ/PZ in it, a finished sketch goes
+  into the chosen route set (made if there is none), local points can be imported straight into it,
+  and the Library's Open becomes Add to pack.
+- **"Who is here" is presence only**: the people the live service says have this pack open, never
+  whether someone is signed in. Each person's focus is `{ item, at }`, the LZ/PZ they have open and
+  where their pointer is on the map; the others are drawn as named flags (`PresenceLayer`). Without
+  the live service (Fly, the local preview) nobody is shown, and that is correct.
+- Read-only (finished, or a viewer): the planning tools are off, a banner says who finished it and
+  when, and edits the pack would not take are offered back as "NAME (my edits)" in the Library.
+
 ## 6. The live stream
 
 `backend/realtime/service.py`, its own container (`backend/realtime/Dockerfile`,
@@ -267,11 +288,11 @@ Its docstring has the `docker run` line.
 
 ## 8. Phases
 
-1. **Packs for one person** (backend: done). Tables, pack routes, copy-in from the library, the operation stream and the log, finish. The web's pack mode waits for the menu redesign.
+1. **Packs for one person** (backend: done; web screens: done on `feat/menu-redesign`). Tables, pack routes, copy-in from the library, the operation stream and the log, finish.
 2. **Sharing** (backend: done). Teams, name search, email invites, roles, members.
 3. **Live sync** (done; not deployed). The live service (§6), the API's `NOTIFY`, and the web's sync client with polling where there is no service (Fly). Deploying it is an owner step: a Coolify app for `/backend/realtime`, a public hostname for it through the Cloudflare Tunnel, and `REALTIME_PUBLIC_URL` on the API. Supabase's Session pooler should carry `LISTEN`; it has not been tried against it yet.
 4. **Android.** Room migration (pack, pack_item, pack_member, pack_op_outbox, pack_event), a `PackSyncEngine` beside the existing engine, OkHttp's WebSocket, an offline outbox, pack screens. Operations refused because the pack was finished meanwhile are saved to the library as "NAME (my offline edits)": nothing is silently dropped. Record the pack routes' responses in `contracts/fixtures/network/responses.json` then.
-5. **History and finish UI** on both apps.
+5. **History and finish UI**: done on the web; Android with step 4.
 
 **Not in v1:** rewinding a pack to an earlier point (the log makes it possible
 later), imported AMPS missions in packs, and an admin who edits packs.

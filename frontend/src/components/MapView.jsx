@@ -28,6 +28,7 @@ import MsnxRouteLayer, {
 import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
 import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
+import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
 
 // The slope PNG already carries its own per-band alpha (145-185 of 255, rising
 // with steepness so hazardous ground stands out), and this multiplies it. 0.55
@@ -199,6 +200,8 @@ const MapView = ({
   onThreatMove,
   onThreatEdit,
   onMapMove,
+  presence,
+  onPoint,
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -308,6 +311,7 @@ const MapView = ({
       {/* Logic to Zoom when target changes */}
       <MapUpdater center={targetLocation} targetId={activeDiagramId} />
       <SizeWatcher />
+      {(presence?.length > 0 || onPoint) && <PresenceLayer people={presence} onPoint={onPoint} />}
 
       <MsnxRouteLayer
         routes={importedRoutes}

@@ -1,6 +1,6 @@
 # Menu redesign (web)
 
-**Status:** phases 1 to 5 are built on `feat/menu-redesign` (October 2026): the primitives, the save flows, the Library and top bar, the dock with its panels and the bottom sheet on narrow windows, and imports. Phase 6 (the Mission Packs screens) is in progress. Web only; the Android app can adopt the same flows later.
+**Status:** phases 1 to 5 are built on `feat/menu-redesign` (October 2026): the primitives, the save flows, the Library and top bar, the dock with its panels and the bottom sheet on narrow windows, and imports. Phase 6 (the Mission Packs screens, and a Manage teams screen designed here) is built too; see `docs/MISSION_PACKS.md` §5a for how the screens join the editors. Web only; the Android app can adopt the same flows later.
 
 What was decided while building, beyond this document:
 
@@ -10,6 +10,9 @@ What was decided while building, beyond this document:
 - **Imports default**: local points go to the Library (the open pack when there is one), mission files stay in the session; the person can change either in the review.
 - The Library rows show no grid: the list API does not return one, and adding it changes the recorded responses the Android client is held to. Add `grid` to the LZ summary when the apps are next touched.
 - The route plan editor's Winds button moved beside Get elevations: the mockup's row overflowed the 344 px panel.
+- **Presence means having the pack open**, not being online: the switcher's chip and the panel say "N here now", and only for the open pack (another pack's presence would need a connection to it).
+- **Manage teams** (not in the mockups): a dialog with the person's teams on the left and the chosen one on the right: rename, invite by email (as member, or admin if they own it), roles, remove, pending invitations, leave or delete. It follows the server's rules: an admin removes members only; a team's owner hands it on before leaving.
+- An "editing" chip on an LZ/PZ card is shown only when someone is holding something on it (`focus.holding`), which nothing sends yet; until then the cards say who is there.
 
 **Design:** <https://claude.ai/artifact/4X3YxNxSYD4vggYkDf6m9A> (20 screens, private to Colin). An agent signed in as him can read a screen with the Artifact tool: `action: "read"`, `url` as above, `path: "project/<Screen>.dc.html"` (screen names are in the table at the end). The screens are inline-styled mockups, so treat them as a visual reference and rebuild them from the CSS variables in `frontend/src/App.css`, not by copying markup.
 

@@ -143,6 +143,17 @@ Your account menu (your name, top right) holds **Sign out**, and for admins a li
 
 The **Imports** panel lists what you have brought in, with where it lives; mission files and threat files link to the panel where they are edited.
 
+### Mission Packs
+
+A Mission Pack is a shared space for one operation: everyone in it edits the same LZ/PZs, route sets and point sets, and sees each other's changes as they are made. Use the workspace switcher at the top left (it says **Library** until a pack is open).
+
+- **New pack**: name it, say what it is for, and choose who can open it (just you, a team as editors or viewers, or particular people). People on your teams are found by name; anyone else gets an email.
+- **While a pack is open** the top bar turns violet and says whether everything has reached everyone. Anything you start goes into the pack: a new target, a sketched route, imported local points. There is no Save: the pack keeps every change. Your Library work is put aside meanwhile and comes back as you left it when you switch back.
+- **The Pack panel** lists what is in the pack and who changed it last; a violet dot marks what someone else changed since you looked. **History** is every change, newest first. An item copied from your Library says so, and offers **Update** when your original has changed.
+- **Members** (Invite, for the owner): add people, change roles, share with a team, resend or withdraw invitations. Everyone in a pack sees everything in it. Threats are never shared.
+- **Finish pack** makes it read-only for everyone; the owner can reopen it. Anyone can still view, export and save copies to their Library.
+- **Manage teams** (bottom of the switcher): make a team, invite people by email, and set who manages it.
+
 ### Threats
 
 Threats have their own panel. They stay in this browser tab only: they are never saved to your account. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first, because they cannot be brought back.

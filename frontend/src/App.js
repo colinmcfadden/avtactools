@@ -58,6 +58,13 @@ import useImports from "./feature/imports/useImports";
 import ImportsPanel from "./feature/imports/ImportsPanel";
 import { setSummary } from "./feature/saveDialog/useRouteSaves";
 import { ConfirmDialog } from "./feature/ui/Dialog";
+import { PanelHead } from "./feature/shell/Dock";
+import usePackWorkspace from "./feature/missionPacks/ui/usePackWorkspace";
+import PackPanel from "./feature/missionPacks/ui/PackPanel";
+import WorkspaceSwitcher from "./feature/missionPacks/ui/WorkspaceSwitcher";
+import { FinishedBanner } from "./feature/missionPacks/ui/PackDialogs";
+import { lzDiagramFromItem, packDiagramId } from "./feature/missionPacks/packLz";
+import { packLocalRef } from "./feature/missionPacks/packRef";
 
 const resolveStateUpdate = (nextValue, currentValue) =>
   typeof nextValue === "function" ? nextValue(currentValue) : nextValue;
@@ -447,6 +454,8 @@ function App() {
     cloud_save: !uf || uf.cloud_save !== false,
     exports: !uf || uf.exports !== false,
     aircraft_profiles: !uf || uf.aircraft_profiles !== false,
+    // Default off (entitlements.DEFAULT_OFF): only an explicit "on" shows Mission Packs.
+    mission_packs: Boolean(uf && uf.mission_packs === true),
   };
   const { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
@@ -521,6 +530,8 @@ function App() {
     insertSketchPoint,
     appendSketchPoint,
     loadSketchRoutes,
+    replaceRouteSet,
+    removeRouteSet,
     removeSketchRoute,
     toggleSketchVisibility,
     exportSketches,
@@ -588,6 +599,42 @@ function App() {
     onOpenLibrary: () => openLibrary("routes"),
   });
 
+  // --- Mission Packs: one open at a time, in place of the Library (docs/MENU_REDESIGN.md §8) ----------
+  const packs = usePackWorkspace({
+    enabled: feat.mission_packs,
+    user,
+    toast,
+    dock,
+    lz: {
+      workspace: lzWorkspace.workspace,
+      importDiagram: lzWorkspace.importDiagram,
+      applyRemoteDiagram: lzWorkspace.applyRemoteDiagram,
+      removeDiagram,
+      setActiveDiagram,
+      hydrateWorkspace: lzWorkspace.hydrateWorkspace,
+    },
+    sketch: { sketchedRoutes, loadSketchRoutes, replaceRouteSet, removeRouteSet },
+    points: { pointSets: localPoints.pointSets, setPointSets: localPoints.setPointSets },
+    library: {
+      history,
+      savedRoutes,
+      savedPointSets: localPoints.savedPointSets,
+      refreshAll: () => {
+        fetchHistory();
+        fetchSavedRoutes();
+        localPoints.fetchSavedPointSets();
+      },
+    },
+    onOpenLibrary: () => openLibrary("lz"),
+  });
+  const inPack = Boolean(packs.open);
+  const packReadOnly = inPack && packs.readOnly;
+  const editable = !packReadOnly;
+  // The pack's route set new routes go into (the last one chosen, else the first).
+  const [packRouteTarget, setPackRouteTarget] = useState(null);
+  const packRouteSetFor = () =>
+    packs.packRoutes.open.includes(packRouteTarget) ? packRouteTarget : packs.packRoutes.open[0] ?? null;
+
   const handleLoadSavedRoute = async (entry) => {
     if (entry.kind === "mission") {
       const file = await loadSavedRouteFile(entry.id, entry.file_name);
@@ -626,7 +673,16 @@ function App() {
       confirmLabel: "Finish route",
       upperCase: true,
       onConfirm: (name) => {
-        finishSketch(name || defaultName);
+        const label = name || defaultName;
+        if (inPack) {
+          const target = packRouteSetFor() ?? packs.packRoutes.createItem();
+          if (target) {
+            setPackRouteTarget(target);
+            finishSketch(label, packs.packRoutes.setIdOf(target));
+          }
+        } else {
+          finishSketch(label);
+        }
         setNameAsk(null);
       },
     });
@@ -786,10 +842,16 @@ function App() {
   const startDiagramAtTarget = useCallback(
     (target, mgrs) => {
       const normalizedMgrs = (mgrs || "").trim();
-      const diagramId = startDiagram(target, {
-        mgrs: normalizedMgrs,
-        mapData: { mgrs: normalizedMgrs },
-      });
+      if (packs.open && packs.readOnly) {
+        toast({ tone: "warn", message: "This pack is read-only, so nothing new can be added to it." });
+        return null;
+      }
+      const diagramId = packs.open
+        ? packs.packLz.createItem(target, { mgrs: normalizedMgrs })
+        : startDiagram(target, {
+            mgrs: normalizedMgrs,
+            mapData: { mgrs: normalizedMgrs },
+          });
       if (!diagramId) return null;
 
       // A new target deliberately starts a new active diagram. Existing work
@@ -802,7 +864,7 @@ function App() {
       setContextMenu(null);
       return diagramId;
     },
-    [gridInput, startDiagram],
+    [gridInput, startDiagram, packs, toast],
   );
 
   const handleSelectDiagram = useCallback(
@@ -926,7 +988,7 @@ function App() {
   // --- The redesign's frame: top bar, dock, Library and imports (docs/MENU_REDESIGN.md) --------
 
   const imports = useImports({
-    pack: null,
+    pack: packs.packForPanels,
     importers: {
       msnx: importMission,
       lps: (file, options) => localPoints.importLpsFile(file, options),
@@ -941,9 +1003,17 @@ function App() {
         msnx: (result, item) => routeSaves.queueSave(result.fileId, item.name),
         lps: (set) => localPoints.savePointSet(set),
       },
-      pack: { lps: async () => {} },
+      pack: {
+        lps: async (set) => {
+          localPoints.removePointSet(set.id);
+          if (!packs.packPoints.createItem(set.name, set.points)) throw new Error("the pack did not take the points");
+        },
+      },
     },
     onDone: (kinds) => {
+      if (inPack && kinds.includes("msnx")) {
+        toast({ tone: "info", message: "The mission file is in your Library session; packs hold sketched routes only. Switch to Library to see it." });
+      }
       if (kinds.length === 1 && kinds[0] === "ths") dock.show("threats");
       else if (kinds.includes("msnx")) dock.show("routes");
       else if (kinds.length > 0) dock.show("imports");
@@ -963,6 +1033,7 @@ function App() {
     if (signedInId == null || !feat.cloud_save) return;
     fetchHistory();
     fetchSavedRoutes();
+    localPoints.fetchSavedPointSets();
     // Once per sign-in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedInId]);
@@ -1026,13 +1097,79 @@ function App() {
     },
   };
   const recentLz = history.filter((entry) => !sessionLzIds.has(entry.id)).slice(0, 3);
+  // In a pack, opening something from the Library adds a copy of it to the pack.
+  const PACK_KIND = { lz: "lz", routes: "route", points: "pointset" };
+  const libraryView = inPack
+    ? Object.fromEntries(
+        Object.entries(librarySources).map(([tab, source]) => [
+          tab,
+          { ...source, openIds: new Set(), onOpen: (entry) => packs.copyIn(PACK_KIND[tab], entry) },
+        ]),
+      )
+    : librarySources;
+
+  // What is shown while a pack is open: its own route sets and point sets; the Library's stay loaded.
+  const ofOpenPack = (localId) => Boolean(localId) && packLocalRef(localId)?.pack === packs.open;
+  const shownSketches = inPack ? sketchedRoutes.filter((r) => ofOpenPack(r.setId)) : sketchedRoutes.filter((r) => !r.setId || !packLocalRef(r.setId));
+  const shownImported = inPack ? [] : importedRoutes;
+  const shownPointSets = (inPack ? localPoints.pointSets.filter((set) => ofOpenPack(set.id)) : localPoints.pointSets.filter((set) => !packLocalRef(set.id)))
+    .map((set) => (packLocalRef(set.id) ? { ...set, packItemId: packLocalRef(set.id).item } : set));
+
+  // The LZ/PZ panel in a pack lists every LZ/PZ in it; one not open here is drawn from the pack's copy.
+  const packItemsByUuid = new Map(packs.items.map((item) => [item.uuid, item]));
+  const lzCards = inPack
+    ? packs.items
+        .filter((item) => item.kind === "lz")
+        .map((item) => lzWorkspace.workspace.diagramsById[packDiagramId(packs.open, item.uuid)] ?? { ...lzDiagramFromItem(packs.open, item), name: item.name })
+    : diagrams;
+  const packItemOf = (localId) => {
+    const ref = packLocalRef(localId);
+    return ref && ref.pack === packs.open ? packItemsByUuid.get(ref.item) ?? null : null;
+  };
+  const selectCard = (id) => {
+    if (lzWorkspace.workspace.diagramsById[id]) handleSelectDiagram(id);
+    else if (packItemOf(id)) packs.packLz.openItem(packLocalRef(id).item);
+  };
+
+  // A pack's route sets, as the Routes panel shows them.
+  const packRouteSets = inPack
+    ? packs.packRoutes.open.map((uuid) => {
+        const item = packItemsByUuid.get(uuid);
+        const setId = packs.packRoutes.setIdOf(uuid);
+        return {
+          key: uuid,
+          kind: "sketch",
+          item,
+          routes: sketchedRoutes.filter((r) => r.setId === setId),
+          pack: {
+            finished: packs.readOnly,
+            target: packRouteSetFor() === uuid,
+            editedBy: item?.updated_by ?? null,
+            editedAt: item?.updated_at ?? null,
+          },
+        };
+      })
+    : null;
+  const routePanelSets = packRouteSets ?? routeSets;
+  const routePanelState = inPack
+    ? (key) => ({ name: packItemsByUuid.get(key)?.name ?? "ROUTES", link: null, dirty: false, savedAt: null, saving: false })
+    : routeSaves.stateOf;
+
+  // Who else has the pack open, once each.
+  const packPeople = [];
+  packs.others.forEach((person) => {
+    if (!packPeople.some((p) => p.id === person.user_id)) packPeople.push({ id: person.user_id, name: person.name });
+  });
 
   const lzUnsaved = diagrams.some((d) => d.status === "analyzed" && (d.savedId == null || d.dirty));
   const routesUnsaved = routeSets.some((set) => routeSaves.stateOf(set.key).dirty);
-  const importCount = localPoints.pointSets.length + routeSets.filter((set) => set.kind === "mission").length + imports.threatFiles.length;
+  const importCount = shownPointSets.length + (inPack ? 0 : routeSets.filter((set) => set.kind === "mission").length) + imports.threatFiles.length;
   const railItems = [
-    { key: "lz", label: "LZ/PZ", icon: "hexagon", dot: lzUnsaved ? "warn" : null, dotLabel: "Unsaved changes" },
-    { key: "routes", label: "Routes", icon: "route", dot: routesUnsaved ? "warn" : null, dotLabel: "Unsaved changes", hidden: !feat.routes },
+    ...(inPack
+      ? [{ key: "pack", label: "Pack", icon: "layers", iconColor: "var(--pack)", dot: packs.newCount > 0 ? "pack" : null, dotLabel: "Changed since you looked" }]
+      : []),
+    { key: "lz", label: "LZ/PZ", icon: "hexagon", dot: !inPack && lzUnsaved ? "warn" : null, dotLabel: "Unsaved changes" },
+    { key: "routes", label: "Routes", icon: "route", dot: !inPack && routesUnsaved ? "warn" : null, dotLabel: "Unsaved changes", hidden: !feat.routes },
     { key: "threats", label: "Threats", icon: "diamond", count: threats.length, hidden: !feat.threats },
     { key: "imports", label: "Imports", icon: "download", count: importCount },
   ];
@@ -1053,7 +1190,7 @@ function App() {
     refreshRouteElevations: refreshImportedElevations,
     applyForecastWinds: applyImportedForecastWinds,
   };
-  const localPointNames = localPoints.pointSets.flatMap((set) =>
+  const localPointNames = shownPointSets.flatMap((set) =>
     set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, elevationFt: p.elevationFt })),
   );
 
@@ -1064,6 +1201,10 @@ function App() {
       if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.key.toLowerCase() !== "s") return;
       event.preventDefault();
       if (document.querySelector('[role="dialog"]')) return;
+      if (inPack) {
+        toast({ tone: "pack", message: "Everything in a pack is saved as you make it." });
+        return;
+      }
       if (dock.panel === "routes" && routeSets.length > 0) {
         const set = routeSets.find((candidate) => routeSaves.stateOf(candidate.key).dirty) ?? routeSets[0];
         routeSaves.save(set.key);
@@ -1076,6 +1217,11 @@ function App() {
   });
 
   const closingState = closingSet ? routeSaves.stateOf(closingSet.key) : null;
+
+  // The pack panel has nothing to show outside a pack.
+  useEffect(() => {
+    if (!inPack && dock.panel === "pack") dock.show("lz");
+  }, [inPack, dock]);
 
   return (
     <div className="app-container">
@@ -1143,10 +1289,10 @@ function App() {
           setActiveNotams={setActiveNotams}
           winds={winds}
           loadingWeather={loadingWeather}
-          canAnalyze={canAnalyze}
-          canDrawBoundary={hasActiveTarget}
-          canUseDiagramTools={canEditGraphics}
-          canSaveDiagram={canEditGraphics}
+          canAnalyze={canAnalyze && editable}
+          canDrawBoundary={hasActiveTarget && editable}
+          canUseDiagramTools={canEditGraphics && editable}
+          canSaveDiagram={canEditGraphics && editable}
           diagramStatus={diagramStatus}
           diagramReadinessText={diagramReadinessText}
           compact={sidebarCompact}
@@ -1166,11 +1312,53 @@ function App() {
           onSignOut={logout}
           onOpenLibrary={() => openLibrary("lz")}
           onImport={(kind) => pickers[kind]?.open()}
-          canImport={{ msnx: feat.msnx_import, ths: feat.threats }}
+          canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
+          pack={inPack && packs.meta ? { name: packs.meta.name, status: packs.meta.status } : null}
+          packStatus={packs.topStatus ?? "live"}
+          people={packPeople}
+          renderSwitcher={
+            feat.mission_packs
+              ? ({ open, close, anchorRef }) => (
+                  <WorkspaceSwitcher
+                    open={open}
+                    onClose={close}
+                    anchorRef={anchorRef}
+                    onOpen={packs.home.refresh}
+                    current={packs.open}
+                    here={packPeople.length}
+                    packs={packs.home.packs}
+                    invites={packs.home.invites}
+                    teams={packs.home.teams}
+                    library={{
+                      lz: history.length,
+                      routes: savedRoutes.length,
+                      points: localPoints.savedPointSets.length,
+                      unsaved: inPack ? packs.parkedUnsaved : diagrams.filter((d) => d.status === "analyzed" && (d.savedId == null || d.dirty)).length,
+                    }}
+                    onPick={packs.openPack}
+                    onNewPack={packs.newPack}
+                    onManageTeams={packs.manageTeams}
+                    onAccept={(invite) => packs.answerInvite(invite, true)}
+                    onDecline={(invite) => packs.answerInvite(invite, false)}
+                  />
+                )
+              : undefined
+          }
           onOpenMenu={isMobile ? () => setIsMobileMenuOpen(true) : undefined}
         />
-        <div className={`shell-map${dock.collapsed ? " shell-map--dock-collapsed" : ""}`}>
+        <div
+          className={`shell-map${dock.collapsed ? " shell-map--dock-collapsed" : ""}${inPack && packs.meta?.status === "finished" ? " shell-map--banner" : ""}`}
+        >
         <UnitBadge />
+        {inPack && packs.meta?.status === "finished" && (
+          <FinishedBanner
+            pack={packs.meta}
+            isOwner={packs.role === "owner"}
+            onSaveCopy={packItemOf(activeDiagramId) ? () => packs.actions.saveCopy(packItemOf(activeDiagramId)) : undefined}
+            onDuplicate={packs.actions.duplicate}
+            onReopen={packs.actions.reopen}
+          />
+        )}
         <MapStyleSwitcher mapStyle={mapStyle} setMapStyle={setMapStyle} />
         <MobileGridInput
           gridInput={gridInput}
@@ -1192,17 +1380,17 @@ function App() {
           exportProgress={exportProgress}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
-          canAnalyze={canAnalyze}
-          canUseDiagramTools={canEditGraphics}
-          canSaveDiagram={canEditGraphics}
+          canAnalyze={canAnalyze && editable}
+          canUseDiagramTools={canEditGraphics && editable}
+          canSaveDiagram={canEditGraphics && editable}
           diagramStatus={diagramStatus}
           diagramReadinessText={diagramReadinessText}
         />
         <MapView
-          importedRoutes={importedRoutes}
+          importedRoutes={shownImported}
           onUpdateMsnxPointPosition={updatePointPosition}
           onInsertMsnxPoint={handleInsertPointContextMenu}
-          sketchedRoutes={sketchedRoutes}
+          sketchedRoutes={shownSketches}
           onUpdateSketchPointPosition={updateSketchPointPosition}
           onSketchPointContextMenu={handleSketchPointContextMenu}
           isSketchingRoute={isSketching}
@@ -1253,12 +1441,14 @@ function App() {
           handleLZRightClick={handleLZRightClick}
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
-          localPointSets={localPoints.pointSets}
+          localPointSets={shownPointSets}
           onAddLocalPointToRoute={handleAddLocalPointToRoute}
           threats={threats}
           onThreatMove={moveThreat}
           onThreatEdit={beginEditThreat}
           onMapMove={setMapCenter}
+          presence={inPack ? packs.others : undefined}
+          onPoint={inPack ? packs.pointAt : undefined}
         />
 
         <div className="alert-queue">
@@ -1272,18 +1462,59 @@ function App() {
         </div>
 
         <Dock items={railItems} dock={dock}>
+          {dock.panel === "pack" && inPack && packs.meta && (
+            <PackPanel
+              pack={packs.meta}
+              members={packs.session?.members ?? []}
+              items={packs.items}
+              openIds={packs.openIds}
+              people={packs.others}
+              me={user?.id}
+              newSince={packs.seen.newSince}
+              readOnly={packs.readOnly}
+              actions={packs.actions}
+              tab={packs.panelTab}
+              setTab={packs.setPanelTab}
+              dropped={packs.dropped}
+              onKeepDropped={packs.keepDropped}
+              status={packs.status}
+              onCollapse={() => dock.setCollapsed(true)}
+            />
+          )}
+          {dock.panel === "pack" && inPack && !packs.meta && (
+            <>
+              <PanelHead title="Pack" subtitle={packs.status === "error" ? "Cannot reach the pack" : "Opening…"} onCollapse={() => dock.setCollapsed(true)} />
+              <div className="shell-dock__body">
+                <div className="shell-empty">
+                  {packs.status === "error" ? "The pack could not be opened. Check the connection; it is tried again." : "Opening the pack…"}
+                </div>
+              </div>
+            </>
+          )}
           {dock.panel === "lz" && (
             <LzPanel
-              diagrams={diagrams}
+              diagrams={lzCards}
               activeDiagramId={activeDiagramId}
               savedAt={lzSaves.savedAt}
               savingId={lzSaves.savingId}
-              recent={feat.cloud_save ? recentLz : []}
-              onSelect={handleSelectDiagram}
-              onSave={(id) => lzSaves.save(id)}
-              onSaveAs={lzSaves.saveAs}
+              recent={feat.cloud_save && !inPack ? recentLz : []}
+              pack={inPack ? packs.packForPanels : null}
+              itemInfo={inPack ? packs.itemInfo : undefined}
+              presence={inPack ? packs.presenceOn : undefined}
+              onSelect={selectCard}
+              onSave={(id, options) => (inPack ? packItemOf(id) && packs.actions.saveCopy(packItemOf(id)) : lzSaves.save(id, options))}
+              onSaveAs={(id) => (inPack ? packItemOf(id) && packs.actions.saveCopy(packItemOf(id)) : lzSaves.saveAs(id))}
               onRename={(id, name) => lzWorkspace.setDiagramName(name, id)}
-              onClose={lzSaves.close}
+              onClose={(id) => (inPack ? packItemOf(id) && packs.actions.close(packItemOf(id)) : lzSaves.close(id))}
+              onAddToPack={
+                feat.mission_packs && !inPack
+                  ? (id) => {
+                      const diagram = lzWorkspace.workspace.diagramsById[id];
+                      const entry = history.find((e) => e.id === diagram?.savedId) ?? { id: diagram?.savedId, name: diagram?.name };
+                      if (entry.id != null) packs.addToPack("lz", entry);
+                    }
+                  : undefined
+              }
               onView3D={(id) => {
                 // The 3D window always shows the active LZ, so a card's 3D button makes its LZ active first.
                 if (id && id !== activeDiagramId) handleSelectDiagram(id);
@@ -1298,14 +1529,23 @@ function App() {
           )}
           {dock.panel === "routes" && (
             <RoutesDockPanel
-              sets={routeSets}
-              stateOf={routeSaves.stateOf}
+              sets={routePanelSets}
+              stateOf={routePanelState}
+              pack={inPack ? packs.packForPanels : null}
               threatCount={feat.threats ? threats.length : 0}
               actions={{
                 save: (set) => routeSaves.save(set.key),
-                saveAs: (set) => routeSaves.saveAs(set.key),
-                rename: (set, name) => routeSaves.rename(set.key, name),
-                close: closeRouteSet,
+                saveAs: (set) => (set.pack ? set.item && packs.actions.saveCopy(set.item) : routeSaves.saveAs(set.key)),
+                rename: (set, name) => (set.pack ? packs.packRoutes.renameSet(set.key, name) : routeSaves.rename(set.key, name)),
+                close: (set) => (set.pack ? set.item && packs.actions.close(set.item) : closeRouteSet(set)),
+                sketchInto: inPack
+                  ? (set) => {
+                      setPackRouteTarget(set.key);
+                      if (!isSketching) startSketch();
+                    }
+                  : undefined,
+                addToPack:
+                  feat.mission_packs && !inPack ? (set, link) => link && packs.addToPack("route", { id: link.id, name: link.name }) : undefined,
                 export: (set, { withThreats }) => exportRouteSet(set, withThreats),
                 share: setForeFlightRoute,
                 toggleVisibility: (set, id) => (set.kind === "mission" ? toggleRouteVisibility(id) : toggleSketchVisibility(id)),
@@ -1317,7 +1557,7 @@ function App() {
                 active: isSketching,
                 name: `ROUTE ${sketchedRoutes.length + 1}`,
                 points: draftPoints.length,
-                enabled: feat.routes,
+                enabled: feat.routes && editable,
                 onStart: startSketch,
                 onCancel: cancelSketch,
                 onFinish: toggleRouteSketch,
@@ -1345,8 +1585,9 @@ function App() {
           )}
           {dock.panel === "imports" && (
             <ImportsPanel
-              pointSets={localPoints.pointSets}
-              missions={routeSets
+              pointSets={shownPointSets}
+              pack={inPack ? packs.packForPanels : null}
+              missions={(inPack ? [] : routeSets)
                 .filter((set) => set.kind === "mission")
                 .map((set) => ({ key: set.key, fileName: set.fileName, summary: setSummary(set.routes), saved: Boolean(routeSaves.stateOf(set.key).link) }))}
               threatFiles={imports.threatFiles}
@@ -1361,7 +1602,11 @@ function App() {
                         .catch((err) => toast({ tone: "error", message: `“${set.name}” could not be saved: ${err.message}` }))
                   : undefined
               }
-              onRemovePoints={localPoints.removePointSet}
+              onRemovePoints={(id) => {
+                const item = packItemOf(id);
+                if (item) packs.actions.close(item);
+                else localPoints.removePointSet(id);
+              }}
               onOpenRoutes={() => dock.show("routes")}
               onOpenThreats={() => dock.show("threats")}
               onCollapse={() => dock.setCollapsed(true)}
@@ -1576,8 +1821,8 @@ function App() {
           lat={activeDiagram.target.lat}
           lon={activeDiagram.target.lon}
           saved={activeDiagram.savedId != null}
-          importedRoutes={importedRoutes}
-          sketchedRoutes={sketchedRoutes}
+          importedRoutes={shownImported}
+          sketchedRoutes={shownSketches}
           onClose={() => setIs3DOpen(false)}
         />
       )}
@@ -1602,6 +1847,7 @@ function App() {
         />
       )}
 
+      {packs.dialogs}
       {lzSaves.dialogs}
       {routeSaves.dialogs}
       {imports.dialog}
@@ -1631,7 +1877,15 @@ function App() {
         />
       )}
       {libraryTab && (
-        <LibraryDialog initialTab={libraryTab} sources={librarySources} onClose={() => setLibraryTab(null)} />
+        <LibraryDialog
+          initialTab={libraryTab}
+          sources={libraryView}
+          onClose={() => setLibraryTab(null)}
+          onAddToPack={feat.mission_packs && !inPack ? (tab, entry) => packs.addToPack(PACK_KIND[tab], entry) : undefined}
+          openLabel={inPack ? "Add to pack" : "Open"}
+          openingLabel={inPack ? "Adding" : "Opening"}
+          subtitle={inPack ? `Everything you have saved. Adding one puts a copy of it in ${packs.meta?.name ?? "the pack"}.` : undefined}
+        />
       )}
       {pickers.msnx.element}
       {pickers.lps.element}

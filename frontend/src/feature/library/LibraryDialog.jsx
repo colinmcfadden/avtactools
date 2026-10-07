@@ -35,7 +35,7 @@ const metaFor = (kind, entry) => {
   return updated;
 };
 
-const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpenPacks }) => {
+const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpenPacks, openLabel = "Open", openingLabel = "Opening", subtitle }) => {
   const { show } = useToast();
   const [tab, setTab] = useState(initialTab);
   const [query, setQuery] = useState("");
@@ -103,7 +103,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
     <>
       <Dialog
         title="Library"
-        subtitle="Everything you have saved. Opening one adds it to this session."
+        subtitle={subtitle ?? "Everything you have saved. Opening one adds it to this session."}
         icon="folder"
         className="library"
         onClose={onClose}
@@ -199,15 +199,15 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                     <div className="library__row-name">{entry.name}</div>
                     <div className="library__row-meta">{metaFor(tab, entry)}</div>
                   </div>
-                  {isOpen && <Chip tone="ok" dot={false}>Open in session</Chip>}
+                  {isOpen && <Chip tone="ok" dot={false}>{source.openWords ?? "Open in session"}</Chip>}
                   <button
                     type="button"
                     className="ui-btn ui-btn--34 library__open"
                     disabled={isOpen || busyId === entry.id}
-                    aria-label={`Open ${entry.name}`}
+                    aria-label={`${openLabel} ${entry.name}`}
                     onClick={() => open(entry)}
                   >
-                    {busyId === entry.id ? "Opening" : "Open"}
+                    {busyId === entry.id ? openingLabel : openLabel}
                   </button>
                   <MoreMenu
                     label={`More actions for ${entry.name}`}

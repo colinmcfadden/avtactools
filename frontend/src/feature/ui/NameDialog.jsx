@@ -13,6 +13,7 @@ const NameDialog = ({
   icon = "pencil",
   label = "Name",
   initialName = "",
+  placeholder,
   hint = "Press Enter to confirm.",
   confirmLabel = "OK",
   upperCase = false,
@@ -80,6 +81,7 @@ const NameDialog = ({
             className={`ui-input${error ? " ui-input--error" : ""}`}
             style={upperCase ? { textTransform: "uppercase" } : undefined}
             value={name}
+            placeholder={placeholder}
             maxLength={100}
             autoComplete="off"
             spellCheck={false}

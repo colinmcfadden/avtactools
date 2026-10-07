@@ -54,26 +54,37 @@ const TopBar = ({
           <Icon name="menu" size={18} />
         </button>
       )}
-      <button
-        type="button"
-        className={`shell-topbar__switcher${pack ? " shell-topbar__switcher--pack" : ""}`}
-        {...switcher.buttonProps}
-        aria-label={pack ? `Workspace: ${pack.name}, a Mission Pack. Change workspace` : "Workspace: Library. Change workspace"}
-      >
-        <Icon name={pack ? "layers" : "library"} size={16} color={pack ? "var(--pack)" : undefined} />
-        <span className="shell-topbar__switcher-name">{pack ? pack.name : "Library"}</span>
-        {pack && (
-          <span className={`ui-chip ${pack.status === "finished" ? "" : "ui-chip--pack"}`} style={{ height: 18, fontSize: 10 }}>
-            {pack.status === "finished" ? "Finished" : "Pack"}
-          </span>
-        )}
-        <Icon name={switcher.open ? "chevronUp" : "chevronDown"} size={14} />
-      </button>
+      {renderSwitcher ? (
+        <button
+          type="button"
+          className={`shell-topbar__switcher${pack ? " shell-topbar__switcher--pack" : ""}`}
+          {...switcher.buttonProps}
+          aria-label={pack ? `Workspace: ${pack.name}, a Mission Pack. Change workspace` : "Workspace: Library. Change workspace"}
+        >
+          <Icon name={pack ? "layers" : "library"} size={16} color={pack ? "var(--pack)" : undefined} />
+          <span className="shell-topbar__switcher-name">{pack ? pack.name : "Library"}</span>
+          {pack && (
+            <span className={`ui-chip ${pack.status === "finished" ? "" : "ui-chip--pack"}`} style={{ height: 18, fontSize: 10 }}>
+              {pack.status === "finished" ? "Finished" : "Pack"}
+            </span>
+          )}
+          <Icon name={switcher.open ? "chevronUp" : "chevronDown"} size={14} />
+        </button>
+      ) : (
+        <span className="shell-topbar__switcher" style={{ cursor: "default" }}>
+          <Icon name="library" size={16} />
+          <span className="shell-topbar__switcher-name">Library</span>
+        </span>
+      )}
       {renderSwitcher?.({ open: switcher.open, close: switcher.close, anchorRef: switcher.anchorRef })}
 
       {pack ? (
         <>
-          {people.length > 0 && <AvatarStack people={people} max={3} />}
+          {people.length > 0 && (
+            <span title={`${people.map((p) => p.name).join(", ")} ${people.length === 1 ? "has" : "have"} this pack open`}>
+              <AvatarStack people={people} max={3} />
+            </span>
+          )}
           <span className={`shell-topbar__status shell-topbar__status${status.tone}`}>
             <span className="shell-topbar__status-dot" />
             {status.text}
