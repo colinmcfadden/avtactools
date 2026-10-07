@@ -21,6 +21,9 @@ const gridOf = (diagram) => diagram?.target?.mgrs || diagram?.mapData?.mgrs || "
 
 export const diagramTitle = (diagram, index) => diagram?.name || `LZ/PZ ${index + 1}`;
 
+// A viewer cannot change a live pack any more than anyone can change a finished one.
+const isReadOnly = (pack) => Boolean(pack?.readOnly || pack?.finished);
+
 /** The chips that say how far along an LZ/PZ is, and whether it is saved. */
 export const lzStateChips = (diagram, { savedAt, pack } = {}) => {
   const chips = [];
@@ -30,7 +33,7 @@ export const lzStateChips = (diagram, { savedAt, pack } = {}) => {
   else chips.push({ key: "status", text: "No target", hollow: true });
 
   if (pack) {
-    if (pack.finished) chips.push({ key: "save", icon: "lock", text: "Read-only" });
+    if (isReadOnly(pack)) chips.push({ key: "save", icon: "lock", text: "Read-only" });
     else if (pack.fromLibrary && pack.originalChanged) chips.push({ key: "save", tone: "warn", icon: "refresh", text: "Original changed" });
     else if (pack.fromLibrary) chips.push({ key: "save", icon: "library", text: "From Library" });
     else chips.push({ key: "save", tone: "pack", icon: "check", text: pack.waiting ? "Waiting to send" : "Synced" });
@@ -80,6 +83,7 @@ const ActiveCard = ({ diagram, index, savedAt, saving, pack, people, onSave, onR
   const analyzed = diagram.status === "analyzed";
   const clean = diagram.savedId != null && !diagram.dirty;
   const finished = pack?.finished;
+  const readOnly = isReadOnly(pack);
   const tone = pack ? " shell-card--pack" : clean ? " shell-card--saved" : "";
   return (
     <section className={`shell-card shell-card--active${tone}`} aria-label={`${title}, active`}>
@@ -95,7 +99,7 @@ const ActiveCard = ({ diagram, index, savedAt, saving, pack, people, onSave, onR
         ) : (
           <h3 className="shell-card__name" style={{ margin: 0 }}>{title}</h3>
         )}
-        {!renaming && !finished && (
+        {!renaming && !readOnly && (
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--26 ui-btn--square" aria-label={`Rename ${title}`} onClick={() => setRenaming(true)}>
             <Icon name="pencil" size={15} />
           </button>
@@ -113,7 +117,7 @@ const ActiveCard = ({ diagram, index, savedAt, saving, pack, people, onSave, onR
       )}
       <div className="shell-card__actions">
         {pack ? (
-          finished ? (
+          readOnly ? (
             <button type="button" className="ui-btn ui-btn--grow" onClick={() => onSave(diagram.id, { copy: true })}>
               <Icon name="copy" size={15} />
               <span>Save a copy</span>
@@ -133,7 +137,7 @@ const ActiveCard = ({ diagram, index, savedAt, saving, pack, people, onSave, onR
         )}
         <button
           type="button"
-          className={`ui-btn${pack && !finished ? " ui-btn--grow" : ""}`}
+          className={`ui-btn${pack && !readOnly ? " ui-btn--grow" : ""}`}
           style={{ padding: "0 11px" }}
           disabled={!diagram.target}
           onClick={() => onView3D(diagram.id)}
@@ -146,7 +150,13 @@ const ActiveCard = ({ diagram, index, savedAt, saving, pack, people, onSave, onR
       <div className="shell-card__foot">
         <Icon name={pack ? "layers" : "folder"} size={13} color={pack ? "var(--pack)" : undefined} />
         {pack ? (
-          <span>{finished ? `Finished by ${pack.finishedBy || "the owner"}${pack.finishedAt ? ` on ${dateAndTime(pack.finishedAt).replace(" · ", " at ")}` : ""}` : `Saved to ${pack.name} as you work. ${pack.memberCount} ${pack.memberCount === 1 ? "member" : "members"} can see it.`}</span>
+          <span>
+            {finished
+              ? `Finished by ${pack.finishedBy || "the owner"}${pack.finishedAt ? ` on ${dateAndTime(pack.finishedAt).replace(" · ", " at ")}` : ""}`
+              : readOnly
+                ? `In ${pack.name}. You can view it but not change it.`
+                : `Saved to ${pack.name} as you work. ${pack.memberCount} ${pack.memberCount === 1 ? "member" : "members"} can see it.`}
+          </span>
         ) : (
           <>
             <span>Saves to your Library</span>
@@ -185,7 +195,8 @@ const CompactCard = ({ diagram, index, savedAt, pack, people, editing, onSelect,
 };
 
 /**
- * `pack`: null in the Library workspace, else { name, memberCount, finished, finishedBy, finishedAt }.
+ * `pack`: null in the Library workspace, else { name, memberCount, finished, readOnly, finishedBy,
+ * finishedAt }; `readOnly` (finished, or a viewer) takes away renaming and anything that adds to it.
  * `itemInfo(diagramId)`: in a pack, { fromLibrary, originalChanged, waiting }; `presence(diagramId)`:
  * the other people who have that LZ/PZ open; `editing(diagramId)`: who is moving something on it.
  */
@@ -213,16 +224,16 @@ const LzPanel = ({
 }) => {
   const [renamingId, setRenamingId] = useState(null);
   const active = diagrams.find((diagram) => diagram.id === activeDiagramId) ?? null;
+  const readOnly = isReadOnly(pack);
   const subtitle = pack
-    ? `${pack.name} · ${diagrams.length} ${diagrams.length === 1 ? "item" : "items"} · ${pack.finished ? "finished · read-only" : "live"}`
+    ? `${pack.name} · ${diagrams.length} ${diagrams.length === 1 ? "item" : "items"} · ${pack.finished ? "finished · read-only" : readOnly ? "live · view only" : "live"}`
     : `${diagrams.length} open · this session`;
   const packFor = (id) => (pack ? { ...pack, ...(itemInfo?.(id) ?? {}) } : null);
 
   const menuFor = (diagram, index) => {
     const title = diagramTitle(diagram, index);
-    const finished = pack?.finished;
     return [
-      { icon: "pencil", title: "Rename", onSelect: () => setRenamingId(diagram.id), hidden: finished },
+      { icon: "pencil", title: "Rename", onSelect: () => setRenamingId(diagram.id), hidden: readOnly },
       { icon: "copy", title: pack ? "Save a copy to Library…" : "Save as…", onSelect: () => (pack ? onSave(diagram.id, { copy: true }) : onSaveAs(diagram.id)), disabled: diagram.status !== "analyzed" },
       { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack?.(diagram.id), hidden: Boolean(pack) || !onAddToPack, disabled: diagram.savedId == null, text: diagram.savedId == null ? "Save it first" : undefined },
       { icon: "download", title: "Export LZ card", onSelect: () => onExportCard?.(diagram.id), hidden: !onExportCard, disabled: diagram.status !== "analyzed" },
@@ -238,7 +249,9 @@ const LzPanel = ({
         {diagrams.length === 0 ? (
           <div className="shell-empty">
             {pack
-              ? `Nothing in ${pack.name} yet. Set a target with the MGRS box, or right-click the map and choose Set as target, and the new LZ/PZ goes into the pack.`
+              ? readOnly
+                ? `Nothing in ${pack.name}.`
+                : `Nothing in ${pack.name} yet. Set a target with the MGRS box, or right-click the map and choose Set as target, and the new LZ/PZ goes into the pack.`
               : "No LZ/PZ open. Enter a grid in the MGRS target box, or right-click the map and choose Set as target."}
           </div>
         ) : (
@@ -307,7 +320,9 @@ const LzPanel = ({
             {pack
               ? pack.finished
                 ? "This pack is finished. Viewing and export still work; nothing can be changed."
-                : `New LZ/PZs you start while ${pack.name} is open are added to it.`
+                : readOnly
+                  ? "You are a viewer in this pack: you can look at everything in it, but not change it. Its owner can make you an editor."
+                  : `New LZ/PZs you start while ${pack.name} is open are added to it.`
               : "Set a new target with the MGRS box, or right-click the map, to open another LZ/PZ."}
           </span>
         </div>

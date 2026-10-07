@@ -1193,6 +1193,9 @@ function App() {
   const localPointNames = shownPointSets.flatMap((set) =>
     set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, elevationFt: p.elevationFt })),
   );
+  // A read-only pack (finished, or a viewer) hands the map no edit handlers, so its layers offer no
+  // drag, delete or edit at all, rather than one the pack refuses and silently puts back.
+  const mapEdit = (handler) => (editable ? handler : undefined);
 
   // Ctrl/⌘ S saves what the dock is showing: the route set with unsaved changes when Routes is open,
   // else the active LZ/PZ. The browser's own "save page" never appears.
@@ -1388,11 +1391,11 @@ function App() {
         />
         <MapView
           importedRoutes={shownImported}
-          onUpdateMsnxPointPosition={updatePointPosition}
-          onInsertMsnxPoint={handleInsertPointContextMenu}
+          onUpdateMsnxPointPosition={mapEdit(updatePointPosition)}
+          onInsertMsnxPoint={mapEdit(handleInsertPointContextMenu)}
           sketchedRoutes={shownSketches}
-          onUpdateSketchPointPosition={updateSketchPointPosition}
-          onSketchPointContextMenu={handleSketchPointContextMenu}
+          onUpdateSketchPointPosition={mapEdit(updateSketchPointPosition)}
+          onSketchPointContextMenu={mapEdit(handleSketchPointContextMenu)}
           isSketchingRoute={isSketching}
           addDraftPoint={addDraftPoint}
           onDraftPointContextMenu={handleDraftPointContextMenu}
@@ -1402,29 +1405,29 @@ function App() {
           mapData={mapData}
           detectedLZ={detectedLZ}
           assets={helicopters}
-          updateAsset={updateHelicopter}
-          deleteAsset={deleteHelicopter}
+          updateAsset={mapEdit(updateHelicopter)}
+          deleteAsset={mapEdit(deleteHelicopter)}
           aircraftProfiles={aircraftProfiles}
           activeAircraftProfile={activeProfile}
           showHeatmap={showHeatmap}
           terrainData={terrainData}
           doghouses={doghouses}
-          updateDoghouse={updateDoghouse}
+          updateDoghouse={mapEdit(updateDoghouse)}
           goArounds={goAround}
-          updateGoAround={updateGoAround}
-          deleteGoAround={deleteGoAround}
-          updatePZMarker={updatePZMarker}
-          deletePZMarker={deletePZMarker}
+          updateGoAround={mapEdit(updateGoAround)}
+          deleteGoAround={mapEdit(deleteGoAround)}
+          updatePZMarker={mapEdit(updatePZMarker)}
+          deletePZMarker={mapEdit(deletePZMarker)}
           pzMarkers={pzMarker}
           units={units}
-          onEditUnit={setEditingUnit}
-          updateUnitPosition={updateUnitPosition}
+          onEditUnit={mapEdit(setEditingUnit)}
+          updateUnitPosition={mapEdit(updateUnitPosition)}
           showLZOutline={showLZOutline}
-          deleteUnit={deleteUnit}
+          deleteUnit={mapEdit(deleteUnit)}
           sectors={sectorsOfFire}
-          updateSectorPoint={updateSectorOfFirePoint}
-          moveSector={moveSectorOfFire}
-          deleteSector={deleteSectorOfFire}
+          updateSectorPoint={mapEdit(updateSectorOfFirePoint)}
+          moveSector={mapEdit(moveSectorOfFire)}
+          deleteSector={mapEdit(deleteSectorOfFire)}
           exportBox={exportBox}
           updateExportBox={updateExportBox}
           deleteExportBox={deleteExportBox}
@@ -1438,11 +1441,12 @@ function App() {
           setDrawingPoints={setDrawingPoints}
           customLZ={customLZ}
           handleMapRightClick={handleMapRightClick}
-          handleLZRightClick={handleLZRightClick}
+          // The drawn LZ's own menu deletes or re-analyzes it; read-only, the map's menu opens there instead.
+          handleLZRightClick={editable ? handleLZRightClick : handleMapRightClick}
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
           localPointSets={shownPointSets}
-          onAddLocalPointToRoute={handleAddLocalPointToRoute}
+          onAddLocalPointToRoute={mapEdit(handleAddLocalPointToRoute)}
           threats={threats}
           onThreatMove={moveThreat}
           onThreatEdit={beginEditThreat}

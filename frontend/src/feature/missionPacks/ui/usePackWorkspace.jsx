@@ -673,6 +673,8 @@ export const usePackWorkspace = ({
         role: meta.role,
         memberCount: session?.members?.length ?? meta.member_count ?? 1,
         finished: meta.status === "finished",
+        // Finished, or a viewer: either way the pack takes no change from this person.
+        readOnly,
         finishedBy: meta.finished_by?.name,
         finishedAt: meta.finished_at,
       }

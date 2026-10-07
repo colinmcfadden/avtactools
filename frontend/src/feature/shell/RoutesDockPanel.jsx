@@ -225,7 +225,8 @@ const RoutesDockPanel = ({
       else next.add(id);
       return next;
     });
-  const readOnly = Boolean(pack?.finished);
+  // A viewer is as read-only as everyone in a finished pack: no sketching into it.
+  const readOnly = Boolean(pack?.readOnly || pack?.finished);
 
   return (
     <>
@@ -247,7 +248,9 @@ const RoutesDockPanel = ({
         {sets.length === 0 ? (
           <div className="shell-empty">
             {pack
-              ? `No routes in ${pack.name} yet. Sketch one and it goes into the pack.`
+              ? readOnly
+                ? `No routes in ${pack.name}.`
+                : `No routes in ${pack.name} yet. Sketch one and it goes into the pack.`
               : "No routes yet. Sketch one on the map, or import an AMPS mission file."}
           </div>
         ) : (

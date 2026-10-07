@@ -17,6 +17,8 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
     updateRef.current = updateGoAround;
     deleteRef.current = deleteGoAround;
   }, [data, updateGoAround, deleteGoAround]);
+  // No updateGoAround (a read-only Mission Pack): it is shown, but cannot be moved, turned or deleted.
+  const locked = !updateGoAround;
 
   const arrowColor = "#FFC107";
   const stripePattern = `
@@ -29,7 +31,7 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
   const rightArrowPath = "M10,50 Q40,50 60,80 L50,85 L80,95 L95,65 L85,70 Q70,20 10,20 Z";
   const leftArrowPath = "M90,50 Q60,50 40,80 L50,85 L20,95 L5,65 L15,70 Q30,20 90,20 Z";
 
-  const getHtml = (ga, rotation) => {
+  const getHtml = (ga, rotation, locked = false) => {
     const isRight = ga.direction === "right";
     const path = isRight ? rightArrowPath : leftArrowPath;
 
@@ -38,17 +40,17 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
         
         <div class="ga-interaction-group" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 160px; height: 120px; pointer-events: auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.01); border-radius: 8px;">
             
-            <div class="map-object-controls dh-controls" style="position: absolute; left: -12px; right: -12px; top: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none;">
+            ${locked ? "" : `<div class="map-object-controls dh-controls" style="position: absolute; left: -12px; right: -12px; top: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none;">
                 ${mapObjectControlMarkup({ type: "rotate", title: "Drag to rotate go-around", className: "dh-btn dh-rotate" })}
                 ${mapObjectControlMarkup({ type: "move", title: "Drag to move go-around", className: "dh-btn dh-move" })}
-            </div>
+            </div>`}
 
             <div class="ga-body-wrapper" style="
                 transform: rotate(${rotation}deg); 
                 transform-origin: center center; 
                 width: 100px; height: 100px; 
                 display: flex; flex-direction: column; align-items: center; justify-content: center;
-                pointer-events: auto; z-index: 20; position: relative; cursor: grab;
+                pointer-events: auto; z-index: 20; position: relative; cursor: ${locked ? "default" : "grab"};
             ">
                 <div style="
                     background: ${arrowColor}; 
@@ -244,7 +246,9 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
         wrapper.classList.toggle('show-controls');
       });
 
+      // Without deleteGoAround the right-click goes on to the map's own menu.
       L.DomEvent.on(bodyWrapper, 'contextmenu', (e) => {
+        if (!deleteRef.current) return;
         L.DomEvent.preventDefault(e); 
         L.DomEvent.stopPropagation(e);
         if (window.confirm("Delete Go Around?")) deleteRef.current(dataRef.current.id);
@@ -256,7 +260,7 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
     const marker = L.marker([data.lat, data.lon], {
       icon: L.divIcon({
         className: "ga-container",
-        html: getHtml(data, rotationRef.current),
+        html: getHtml(data, rotationRef.current, !updateRef.current),
         iconSize: [160, 120], 
         iconAnchor: [80, 60],
       }),
@@ -279,7 +283,7 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
     markerRef.current.setIcon(
       L.divIcon({
         className: "ga-container",
-        html: getHtml(data, rotationRef.current),
+        html: getHtml(data, rotationRef.current, locked),
         iconSize: [160, 120],
         iconAnchor: [80, 60],
       })
@@ -287,7 +291,7 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
     
     markerRef.current.setLatLng([data.lat, data.lon]);
     setTimeout(() => attachListeners(markerRef.current), 50);
-  }, [data.lat, data.lon, data.rotation, map]);
+  }, [data.lat, data.lon, data.rotation, map, locked]);
 
   return null;
 };
