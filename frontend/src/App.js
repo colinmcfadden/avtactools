@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import MapView from "./components/MapView";
 import Controls from "./components/Controls";
 import "./App.css";
@@ -23,16 +23,13 @@ import { usePzMarker } from "./feature/pzMarker/usePzMarker";
 import { useTerrain } from "./feature/terrain/useTerrain";
 import { useExport } from "./feature/export/useExport";
 import { useAuth } from "./feature/auth/AuthContext";
-import UserMenu from "./feature/auth/UserMenu";
 import { useSavedMaps } from "./feature/savedMaps/useSavedMaps";
-import HistoryModal from "./feature/savedMaps/HistoryModal";
 import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
 import { useAircraftProfiles } from "./feature/aircraft/useAircraftProfiles";
 import AircraftProfileModal from "./feature/aircraft/AircraftProfileModal";
 import { matchProfileToAircraft } from "./feature/aircraft/aircraftProfiles";
 import { parseCoordinate } from "./utils/coordParse";
 import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
-import RoutesPanel from "./feature/msnxImport/RoutesPanel";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
@@ -46,13 +43,24 @@ import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
 import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
 import { releaseAbandonedBuilds } from "./feature/viewer3d/useLidarTileset";
 import { useBuildOnSave } from "./feature/viewer3d/useBuildOnSave";
-import ActiveLzWindow from "./feature/lzWorkspace/ActiveLzWindow";
-import LzDiagramRemoveDialog from "./feature/lzWorkspace/LzDiagramRemoveDialog";
+import TopBar from "./feature/shell/TopBar";
+import Dock, { useDock } from "./feature/shell/Dock";
+import LzPanel, { diagramTitle } from "./feature/shell/LzPanel";
+import RoutesDockPanel from "./feature/shell/RoutesDockPanel";
+import ThreatsDockPanel from "./feature/shell/ThreatsDockPanel";
+import LibraryDialog from "./feature/library/LibraryDialog";
+import useLzSaves from "./feature/saveDialog/useLzSaves";
+import useRouteSaves, { SKETCHES } from "./feature/saveDialog/useRouteSaves";
+import NameDialog from "./feature/ui/NameDialog";
+import { useToast } from "./feature/ui/Toast";
+import useFilePicker from "./feature/imports/useFilePicker";
+import useImports from "./feature/imports/useImports";
+import ImportsPanel from "./feature/imports/ImportsPanel";
+import { setSummary } from "./feature/saveDialog/useRouteSaves";
+import { ConfirmDialog } from "./feature/ui/Dialog";
 
 const resolveStateUpdate = (nextValue, currentValue) =>
   typeof nextValue === "function" ? nextValue(currentValue) : nextValue;
-
-const getSavedMapId = (result) => result?.id ?? result?.data?.id ?? null;
 
 // The desktop control panel toggles between its full width and a narrow icon
 // rail. The rail is wide enough for the tool icons; the MGRS Target input pops
@@ -114,13 +122,14 @@ function App() {
     setFlightData: setDiagramFlightData,
     setView,
     markSaved,
+    markDirty,
     clearSaved,
     removeDiagram,
-    serializeActiveDiagram,
     importLegacySnapshot,
   } = lzWorkspace;
   const workspaceRef = useRef(lzWorkspace.workspace);
-  const pendingSaveDiagramIdRef = useRef(null);
+  const { show: toast } = useToast();
+  const dock = useDock("lz");
 
   useEffect(() => {
     workspaceRef.current = lzWorkspace.workspace;
@@ -426,7 +435,7 @@ function App() {
     },
   );
 
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   // Per-user feature entitlements from /auth/me. A missing map or key defaults
   // to enabled, so nothing is hidden while loading or for unrestricted users.
   const uf = user?.features || null;
@@ -439,12 +448,24 @@ function App() {
     exports: !uf || uf.exports !== false,
     aircraft_profiles: !uf || uf.aircraft_profiles !== false,
   };
-  const { history, isLoadingHistory, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
+  const { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [isLayerSaveInProgress, setIsLayerSaveInProgress] = useState(false);
-  const [removeConfirmationDiagramId, setRemoveConfirmationDiagramId] = useState(null);
-  const [pendingRemovalDiagramId, setPendingRemovalDiagramId] = useState(null);
+  // The Library dialog: null when closed, else the tab it opens on.
+  const [libraryTab, setLibraryTab] = useState(null);
+  const openLibrary = useCallback((tab = "lz") => setLibraryTab(tab), []);
+  // One name asked for at a time (a route being finished, a route point being named).
+  const [nameAsk, setNameAsk] = useState(null);
+
+  const lzSaves = useLzSaves({
+    getDiagram: (id) => workspaceRef.current?.diagramsById?.[id],
+    diagramTitle: (diagram) => diagramTitle(diagram, workspaceRef.current?.diagramOrder?.indexOf(diagram.id) ?? 0),
+    markSaved,
+    markDirty,
+    removeDiagram,
+    library: { history, fetchHistory, saveMap, updateMap },
+    signedIn: Boolean(user),
+    onOpenLibrary: () => openLibrary("lz"),
+  });
 
   const {
     importedRoutes,
@@ -452,7 +473,6 @@ function App() {
     updatePointPosition,
     insertPoint,
     removeRoute,
-    clearRoutes,
     exportFile,
     serializeFile,
     toggleRouteVisibility,
@@ -466,16 +486,22 @@ function App() {
     applyForecastWinds: applyImportedForecastWinds,
   } = useMsnxImport();
 
+  const importMission = async (file) => {
+    const result = await importMsnxFile(file);
+    // Follow the airframe the mission was actually planned for, so icons,
+    // separation, and plan defaults match the file rather than whatever was
+    // selected before. Unrecognised airframes leave the selection alone.
+    const matched = matchProfileToAircraft(aircraftProfiles, result?.aircraft);
+    if (matched) selectProfile(matched.slug);
+    return result;
+  };
+
   const handleImportMsnx = async (file) => {
     try {
-      const result = await importMsnxFile(file);
-      // Follow the airframe the mission was actually planned for, so icons,
-      // separation, and plan defaults match the file rather than whatever was
-      // selected before. Unrecognised airframes leave the selection alone.
-      const matched = matchProfileToAircraft(aircraftProfiles, result?.aircraft);
-      if (matched) selectProfile(matched.slug);
+      await importMission(file);
+      dock.show("routes");
     } catch (err) {
-      alert("Error importing route: " + err.message);
+      toast({ tone: "error", message: `${file.name} could not be imported: ${err.message}` });
     }
   };
 
@@ -528,6 +554,7 @@ function App() {
   const {
     savedRoutes,
     isLoadingSaved,
+    savedRoutesError,
     fetchSavedRoutes,
     saveSketch,
     saveMission,
@@ -538,113 +565,46 @@ function App() {
     deleteSavedRoute,
   } = useSavedRoutes();
 
-  // Links what's on the map to its cloud save, so Save offers to overwrite
-  // that entry instead of always creating a new one. Keyed by msnx fileId,
-  // plus SKETCHES_KEY for the sketched-routes bundle. Set on save and on
-  // load; stale fileId keys are harmless since fileIds are never reused.
-  const SKETCHES_KEY = "sketches";
-  const [routeSaveLinks, setRouteSaveLinks] = useState({});
-  const linkRouteSave = (key, saved) =>
-    setRouteSaveLinks((prev) => ({
-      ...prev,
-      [key]: { id: saved.id, name: saved.name },
-    }));
-
-  // Once every sketch is removed, the next save is a different bundle — it
-  // shouldn't offer to overwrite the old one.
-  useEffect(() => {
-    if (sessionRoutes.length === 0) {
-      setRouteSaveLinks((prev) => {
-        if (!prev[SKETCHES_KEY]) return prev;
-        const { [SKETCHES_KEY]: _dropped, ...rest } = prev;
-        return rest;
-      });
-    }
-  }, [sessionRoutes.length]);
-
-  /** True when the user has a linked save and chose to overwrite it. */
-  const confirmOverwrite = (link, what) =>
-    Boolean(link) &&
-    window.confirm(
-      `Overwrite the saved ${what} "${link.name}"?\n(Cancel to save as a new entry instead)`,
-    );
-
-  const handleSaveMissionGroup = async (group) => {
-    if (!user) {
-      alert("Saving routes is only available to signed-in users.");
-      return;
-    }
-    try {
-      const link = routeSaveLinks[group.fileId];
-      const overwrite = confirmOverwrite(link, "mission");
-
-      let name = null;
-      if (!overwrite) {
-        const defaultName = group.fileName.replace(/\.msnx$/i, "");
-        const input = window.prompt("Save mission as:", defaultName);
-        if (input === null) return;
-        name = input.trim() || defaultName;
+  // The route sets in this session: the sketched routes, then each imported mission file.
+  const routeSets = useMemo(() => {
+    const sets = [];
+    if (sessionRoutes.length > 0) sets.push({ key: SKETCHES, kind: "sketch", routes: sessionRoutes });
+    const byFile = new Map();
+    importedRoutes.forEach((route) => {
+      if (!byFile.has(route.fileId)) {
+        const set = { key: route.fileId, kind: "mission", fileName: route.fileName, routes: [] };
+        byFile.set(route.fileId, set);
+        sets.push(set);
       }
+      byFile.get(route.fileId).routes.push(route);
+    });
+    return sets;
+  }, [importedRoutes, sessionRoutes]);
 
-      const serialized = await serializeFile(group.fileId);
-      if (!serialized) throw new Error("Mission file data is no longer loaded.");
-
-      if (overwrite) {
-        await updateMission(link.id, group.routes, serialized.blob, serialized.fileName);
-        alert(`Updated "${link.name}".`);
-      } else {
-        const saved = await saveMission(name, group.routes, serialized.blob, serialized.fileName);
-        linkRouteSave(group.fileId, saved);
-        alert("Mission saved.");
-      }
-    } catch (err) {
-      alert("Error saving mission: " + err.message);
-    }
-  };
-
-  const handleSaveSketches = async () => {
-    if (!user) {
-      alert("Saving routes is only available to signed-in users.");
-      return;
-    }
-    try {
-      const link = routeSaveLinks[SKETCHES_KEY];
-      if (confirmOverwrite(link, "routes")) {
-        await updateSketch(link.id, sessionRoutes);
-        alert(`Updated "${link.name}".`);
-        return;
-      }
-
-      const defaultName = "SKETCHED ROUTES";
-      const input = window.prompt("Save sketched routes as:", defaultName);
-      if (input === null) return;
-      const saved = await saveSketch(input.trim() || defaultName, sessionRoutes);
-      linkRouteSave(SKETCHES_KEY, saved);
-      alert("Routes saved.");
-    } catch (err) {
-      alert("Error saving routes: " + err.message);
-    }
-  };
+  const routeSaves = useRouteSaves({
+    sets: routeSets,
+    library: { savedRoutes, fetchSavedRoutes, saveSketch, updateSketch, saveMission, updateMission, serializeFile },
+    signedIn: Boolean(user),
+    onOpenLibrary: () => openLibrary("routes"),
+  });
 
   const handleLoadSavedRoute = async (entry) => {
     if (entry.kind === "mission") {
       const file = await loadSavedRouteFile(entry.id, entry.file_name);
       const { fileId } = await importMsnxFile(file);
-      linkRouteSave(fileId, entry);
+      routeSaves.adopt(fileId, entry);
     } else {
       const record = await loadSavedRoute(entry.id);
       const routes = record.route_data?.routes;
       if (!routes?.length) throw new Error("This save contains no routes.");
       loadSketchRoutes(routes);
-      linkRouteSave(SKETCHES_KEY, entry);
+      routeSaves.adopt(SKETCHES, entry);
     }
   };
 
   const handleDeleteSavedRoute = async (id) => {
     await deleteSavedRoute(id);
-    setRouteSaveLinks((prev) =>
-      Object.fromEntries(Object.entries(prev).filter(([, link]) => link.id !== id)),
-    );
+    routeSaves.recordChanged(id, { deleted: true });
   };
 
   const toggleRouteSketch = () => {
@@ -657,9 +617,19 @@ function App() {
       return;
     }
     const defaultName = `ROUTE ${sketchedRoutes.length + 1}`;
-    const name = window.prompt("Route name:", defaultName);
-    if (name === null) return; // keep sketching
-    finishSketch(name.trim().toUpperCase() || defaultName);
+    // Cancelling the name keeps the sketch going.
+    setNameAsk({
+      title: "Name the route",
+      subtitle: `${draftPoints.length} points. You can rename it later.`,
+      icon: "route",
+      initialName: defaultName,
+      confirmLabel: "Finish route",
+      upperCase: true,
+      onConfirm: (name) => {
+        finishSketch(name || defaultName);
+        setNameAsk(null);
+      },
+    });
   };
 
   // Stable identities: these are handed to the memoized route layers, which
@@ -676,19 +646,35 @@ function App() {
       // Companion file travels with the mission, e.g. "GOAT SUCKER_threats.ths".
       await exportThsFile(`${(baseName || "mission").replace(/\.msnx$/i, "")}_threats`);
     } catch (err) {
-      alert("The mission exported, but the threats (.ths) export failed: " + err.message);
+      toast({ tone: "warn", message: `The mission exported, but the threats (.ths) could not be: ${err.message}` });
     }
   };
 
-  const handleExportSketchesWithThreats = async () => {
-    await exportSketches();
-    await maybeExportThreats(sessionRoutes.map((r) => r.name).join("_") || "mission");
+  /** Export .msnx for one route set, with the threats beside it as a .ths when asked. */
+  const exportRouteSet = async (set, withThreats) => {
+    try {
+      if (set.kind === "mission") await exportFile(set.key);
+      else await exportSketches(set.routes);
+    } catch (err) {
+      toast({ tone: "error", message: `The mission file could not be made: ${err.message}` });
+      return;
+    }
+    if (withThreats) {
+      await maybeExportThreats(
+        set.kind === "mission" ? set.fileName : set.routes.map((r) => r.name).join("_") || "mission",
+      );
+    }
   };
 
-  const handleExportMissionFileWithThreats = async (fileId) => {
-    await exportFile(fileId);
-    const group = importedRoutes.find((r) => r.fileId === fileId);
-    await maybeExportThreats((group?.fileName || "mission").replace(/\.msnx$/i, ""));
+  // A route set being closed with unsaved changes asks first.
+  const [closingSet, setClosingSet] = useState(null);
+  const dropRouteSet = (set) => {
+    if (set.kind === "mission") set.routes.forEach((route) => removeRoute(route.id));
+    else set.routes.forEach((route) => removeSketchRoute(route.id));
+  };
+  const closeRouteSet = (set) => {
+    if (routeSaves.stateOf(set.key).dirty) setClosingSet(set);
+    else dropRouteSet(set);
   };
 
   const handleAddThreatHere = () => {
@@ -724,22 +710,37 @@ function App() {
         chartElevationFt,
       });
     } else {
-      alert(
-        'Start a route first (Route button), then use "+" on a local point to snap the line to it.',
-      );
+      toast({
+        tone: "warn",
+        message: "Start a route first (Sketch a route), then use + on a local point to snap the line to it.",
+        action: { label: "Open Routes", onClick: () => dock.show("routes") },
+      });
     }
+  };
+
+  const POINT_NAMES = { target: ".LZ", ip: ".RP", turn: ".CP" };
+  const POINT_KINDS = { target: "LZ/PZ (target)", ip: "RP or IP", turn: "checkpoint" };
+
+  /** Asks for a route point's name, then `apply(name)`. */
+  const askPointName = (ptType, initialName, apply) => {
+    setContextMenu(null);
+    setNameAsk({
+      title: "Name the point",
+      subtitle: `A ${POINT_KINDS[ptType] ?? "route point"}. AMPS shows this name.`,
+      icon: "mapPin",
+      initialName,
+      confirmLabel: "OK",
+      upperCase: true,
+      onConfirm: (name) => {
+        apply(name || initialName);
+        setNameAsk(null);
+      },
+    });
   };
 
   const handleAddDesignatedDraftPoint = (ptType) => {
     const { lat, lon } = contextMenu;
-    const defaults = { target: ".LZ", ip: ".RP", turn: ".CP" };
-    const name = window.prompt("Point name:", defaults[ptType] || ".CP");
-    if (name === null) return;
-    addDraftPoint(lat, lon, {
-      ptType,
-      name: name.trim().toUpperCase() || defaults[ptType],
-    });
-    setContextMenu(null);
+    askPointName(ptType, POINT_NAMES[ptType] || ".CP", (name) => addDraftPoint(lat, lon, { ptType, name }));
   };
 
   const findSketchPoint = (routeId, pointId) =>
@@ -751,32 +752,22 @@ function App() {
     const { routeId, pointId } = contextMenu;
     if (kind === "amps") {
       const current = findSketchPoint(routeId, pointId);
-      const defaultName =
-        current?.name || (ptType === "target" ? ".LZ" : ptType === "ip" ? ".RP" : ".CP");
-      const name = window.prompt("Point name:", defaultName);
-      if (name === null) return;
-      designateSketchPoint(routeId, pointId, {
-        kind: "amps",
-        ptType,
-        name: name.trim().toUpperCase() || defaultName,
-      });
-    } else {
-      designateSketchPoint(routeId, pointId, { kind: "shaping" });
+      askPointName(ptType, current?.name || POINT_NAMES[ptType] || ".CP", (name) =>
+        designateSketchPoint(routeId, pointId, { kind: "amps", ptType, name }),
+      );
+      return;
     }
+    designateSketchPoint(routeId, pointId, { kind: "shaping" });
     setContextMenu(null);
   };
 
   const handleRenameSketchPoint = () => {
     const { routeId, pointId } = contextMenu;
     const current = findSketchPoint(routeId, pointId);
-    const name = window.prompt("Point name:", current?.name || ".CP");
-    if (name === null) return;
-    designateSketchPoint(routeId, pointId, {
-      kind: "amps",
-      ptType: current?.ptType ?? "turn",
-      name: name.trim().toUpperCase() || current?.name,
-    });
-    setContextMenu(null);
+    const ptType = current?.ptType ?? "turn";
+    askPointName(ptType, current?.name || ".CP", (name) =>
+      designateSketchPoint(routeId, pointId, { kind: "amps", ptType, name }),
+    );
   };
 
   const handleInsertPointConfirm = () => {
@@ -787,110 +778,10 @@ function App() {
         insertPoint(contextMenu.routeId, contextMenu.lat, contextMenu.lon);
       }
     } catch (err) {
-      alert("Error inserting point: " + err.message);
+      toast({ tone: "error", message: `The point could not be added: ${err.message}` });
     }
     setContextMenu(null);
   };
-
-  const handleOpenHistory = () => {
-    if (!user) {
-      alert("Saving and loading maps and routes is only available to signed-in users.");
-      return;
-    }
-    setIsHistoryModalOpen(true);
-  };
-
-  const updateSavedActiveDiagram = useCallback(
-    async ({ removeAfterSave = false } = {}) => {
-      const diagramId = activeDiagramId;
-      const diagram = workspaceRef.current?.diagramsById?.[diagramId];
-      if (!diagram?.savedId) return false;
-
-      setIsLayerSaveInProgress(true);
-      try {
-        const result = await updateMap(diagram.savedId, serializeActiveDiagram());
-        await fetchHistory();
-        markSaved(
-          {
-            savedId: getSavedMapId(result) ?? diagram.savedId,
-            name: diagram.name,
-          },
-          diagram.id,
-        );
-        if (removeAfterSave) removeDiagram(diagram.id);
-        return true;
-      } catch (err) {
-        alert("Error saving LZ/PZ diagram: " + err.message);
-        return false;
-      } finally {
-        setIsLayerSaveInProgress(false);
-      }
-    },
-    [
-      activeDiagramId,
-      fetchHistory,
-      markSaved,
-      removeDiagram,
-      serializeActiveDiagram,
-      updateMap,
-    ],
-  );
-
-  const handleLayerSave = useCallback(() => {
-    if (!activeDiagram) return;
-    if (!user) {
-      alert("Saving and loading maps and routes is only available to signed-in users.");
-      return;
-    }
-    if (!activeDiagram.savedId) {
-      setIsHistoryModalOpen(true);
-      return;
-    }
-    if (!activeDiagram.dirty) return;
-    void updateSavedActiveDiagram();
-  }, [activeDiagram, updateSavedActiveDiagram, user]);
-
-  const handleLayerRemove = useCallback(() => {
-    if (!activeDiagram) return;
-
-    if (!activeDiagram.savedId || activeDiagram.dirty) {
-      setRemoveConfirmationDiagramId(activeDiagram.id);
-      return;
-    }
-
-    removeDiagram(activeDiagram.id);
-  }, [activeDiagram, removeDiagram]);
-
-  const pendingRemovalDiagram = diagrams.find(
-    (diagram) => diagram.id === removeConfirmationDiagramId,
-  );
-
-  const handleDiscardDiagram = useCallback(() => {
-    if (!removeConfirmationDiagramId) return;
-    removeDiagram(removeConfirmationDiagramId);
-    setRemoveConfirmationDiagramId(null);
-  }, [removeConfirmationDiagramId, removeDiagram]);
-
-  const handleSaveFirstAndRemove = useCallback(() => {
-    const diagram = workspaceRef.current?.diagramsById?.[removeConfirmationDiagramId];
-    if (!diagram) {
-      setRemoveConfirmationDiagramId(null);
-      return;
-    }
-    if (!user) {
-      alert("Saving and loading maps and routes is only available to signed-in users.");
-      return;
-    }
-
-    setRemoveConfirmationDiagramId(null);
-    if (diagram.savedId) {
-      void updateSavedActiveDiagram({ removeAfterSave: true });
-      return;
-    }
-
-    setPendingRemovalDiagramId(diagram.id);
-    setIsHistoryModalOpen(true);
-  }, [removeConfirmationDiagramId, updateSavedActiveDiagram, user]);
 
   const startDiagramAtTarget = useCallback(
     (target, mgrs) => {
@@ -927,11 +818,6 @@ function App() {
     },
     [setActiveDiagram],
   );
-
-  const serializeMapState = () => {
-    pendingSaveDiagramIdRef.current = activeDiagramId;
-    return serializeActiveDiagram();
-  };
 
   const applyMapState = useCallback(
     (snapshot, historyEntry) => {
@@ -980,7 +866,7 @@ function App() {
   // 3. Drawing Controls
   const toggleDrawingMode = () => {
     if (!hasActiveTarget) {
-      alert("Set a target on the map before drawing an LZ/PZ boundary.");
+      toast({ tone: "warn", message: "Set a target on the map before drawing an LZ/PZ boundary." });
       return;
     }
 
@@ -1030,12 +916,166 @@ function App() {
       startDiagramAtTarget([lat, lon], gridInput);
     } catch (err) {
       const detail = err.response?.data?.message || err.response?.data?.error || err.message;
-      alert("Error finding grid: " + detail);
+      toast({ tone: "error", message: `That grid could not be found: ${detail}` });
     } finally {
       setLoading(false);
       setIsMobileMenuOpen(false); // Closes menu if they searched from the sidebar
     }
   };
+
+  // --- The redesign's frame: top bar, dock, Library and imports (docs/MENU_REDESIGN.md) --------
+
+  const imports = useImports({
+    pack: null,
+    importers: {
+      msnx: importMission,
+      lps: (file, options) => localPoints.importLpsFile(file, options),
+      ths: async (file) => {
+        const count = await importThsFile(file);
+        if (!count) throw new Error("No threats found in this file.");
+        return count;
+      },
+    },
+    destinations: {
+      library: {
+        msnx: (result, item) => routeSaves.queueSave(result.fileId, item.name),
+        lps: (set) => localPoints.savePointSet(set),
+      },
+      pack: { lps: async () => {} },
+    },
+    onDone: (kinds) => {
+      if (kinds.length === 1 && kinds[0] === "ths") dock.show("threats");
+      else if (kinds.includes("msnx")) dock.show("routes");
+      else if (kinds.length > 0) dock.show("imports");
+    },
+  });
+  const pickers = {
+    msnx: useFilePicker({ accept: ".msnx", onFiles: imports.begin }),
+    lps: useFilePicker({ accept: ".lps,.LPS", multiple: true, onFiles: imports.begin }),
+    ths: useFilePicker({ accept: ".ths,.THS", multiple: true, onFiles: imports.begin }),
+    any: useFilePicker({ accept: ".msnx,.lps,.LPS,.ths,.THS", multiple: true, onFiles: imports.begin }),
+  };
+
+  // The Library's lists, loaded once signed in: the LZ/PZ panel offers the recent LZ/PZs, and the
+  // Save dialogs check a new name against what is already saved.
+  const signedInId = user?.id ?? null;
+  useEffect(() => {
+    if (signedInId == null || !feat.cloud_save) return;
+    fetchHistory();
+    fetchSavedRoutes();
+    // Once per sign-in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signedInId]);
+
+  const openSavedLz = async (entry) => {
+    const snapshot = await loadMap(entry.id);
+    const loadedId = applyMapState(snapshot, entry);
+    if (loadedId) lzSaves.setSavedAt((prev) => ({ ...prev, [loadedId]: entry.updated_at }));
+    dock.show("lz");
+  };
+  const sessionLzIds = new Set(diagrams.map((d) => d.savedId).filter((id) => id != null));
+  const sessionRouteIds = new Set(routeSets.map((set) => routeSaves.stateOf(set.key).link?.id).filter((id) => id != null));
+  const sessionPointIds = new Set(localPoints.pointSets.map((set) => set.savedId).filter((id) => id != null));
+  const librarySources = {
+    lz: {
+      entries: history,
+      loading: isLoadingHistory,
+      error: historyError,
+      openIds: sessionLzIds,
+      refresh: fetchHistory,
+      onOpen: openSavedLz,
+      onDelete: async (entry) => {
+        await deleteMap(entry.id);
+        const open = Object.values(workspaceRef.current?.diagramsById ?? {}).find((d) => String(d.savedId) === String(entry.id));
+        if (open) clearSaved(open.id);
+      },
+      onRenamed: (entry, name) => {
+        const open = Object.values(workspaceRef.current?.diagramsById ?? {}).find((d) => String(d.savedId) === String(entry.id));
+        if (!open) return;
+        const wasDirty = open.dirty;
+        lzWorkspace.setDiagramName(name, open.id);
+        if (!wasDirty) markDirty(false, open.id);
+      },
+    },
+    routes: {
+      entries: savedRoutes,
+      loading: isLoadingSaved,
+      error: savedRoutesError,
+      openIds: sessionRouteIds,
+      refresh: fetchSavedRoutes,
+      onOpen: async (entry) => {
+        await handleLoadSavedRoute(entry);
+        dock.show("routes");
+      },
+      onDelete: (entry) => handleDeleteSavedRoute(entry.id),
+      onRenamed: (entry, name) => routeSaves.recordChanged(entry.id, { name }),
+    },
+    points: {
+      entries: localPoints.savedPointSets,
+      loading: localPoints.isLoadingSavedSets,
+      error: localPoints.savedSetsError,
+      openIds: sessionPointIds,
+      refresh: localPoints.fetchSavedPointSets,
+      onOpen: async (entry) => {
+        await localPoints.loadSavedPointSet(entry);
+        dock.show("imports");
+      },
+      onDelete: (entry) => localPoints.deleteSavedPointSet(entry.id),
+      onRenamed: (entry, name) =>
+        localPoints.setPointSets((prev) => prev.map((set) => (set.savedId === entry.id ? { ...set, name } : set))),
+    },
+  };
+  const recentLz = history.filter((entry) => !sessionLzIds.has(entry.id)).slice(0, 3);
+
+  const lzUnsaved = diagrams.some((d) => d.status === "analyzed" && (d.savedId == null || d.dirty));
+  const routesUnsaved = routeSets.some((set) => routeSaves.stateOf(set.key).dirty);
+  const importCount = localPoints.pointSets.length + routeSets.filter((set) => set.kind === "mission").length + imports.threatFiles.length;
+  const railItems = [
+    { key: "lz", label: "LZ/PZ", icon: "hexagon", dot: lzUnsaved ? "warn" : null, dotLabel: "Unsaved changes" },
+    { key: "routes", label: "Routes", icon: "route", dot: routesUnsaved ? "warn" : null, dotLabel: "Unsaved changes", hidden: !feat.routes },
+    { key: "threats", label: "Threats", icon: "diamond", count: threats.length, hidden: !feat.threats },
+    { key: "imports", label: "Imports", icon: "download", count: importCount },
+  ];
+
+  const sketchedPlan = {
+    updateRoutePlan,
+    updatePointPlanOverride,
+    setPointClock: setSketchPointClock,
+    updatePointName: updateSketchPointName,
+    refreshRouteElevations,
+    applyForecastWinds,
+  };
+  const importedPlan = {
+    updateRoutePlan: updateImportedRoutePlan,
+    updatePointPlanOverride: updateImportedPointOverride,
+    setPointClock: setImportedPointClock,
+    updatePointName: updateImportedPointName,
+    refreshRouteElevations: refreshImportedElevations,
+    applyForecastWinds: applyImportedForecastWinds,
+  };
+  const localPointNames = localPoints.pointSets.flatMap((set) =>
+    set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, elevationFt: p.elevationFt })),
+  );
+
+  // Ctrl/⌘ S saves what the dock is showing: the route set with unsaved changes when Routes is open,
+  // else the active LZ/PZ. The browser's own "save page" never appears.
+  useEffect(() => {
+    const onKey = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      if (document.querySelector('[role="dialog"]')) return;
+      if (dock.panel === "routes" && routeSets.length > 0) {
+        const set = routeSets.find((candidate) => routeSaves.stateOf(candidate.key).dirty) ?? routeSets[0];
+        routeSaves.save(set.key);
+        return;
+      }
+      if (activeDiagramId) lzSaves.save(activeDiagramId);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const closingState = closingSet ? routeSaves.stateOf(closingSet.key) : null;
 
   return (
     <div className="app-container">
@@ -1051,35 +1091,6 @@ function App() {
         }`}
       >
         <div className="sidebar-header">
-          {/* On mobile the account + save controls live here (hidden on
-              desktop, where they float over the map instead). */}
-          <div className="mobile-account-row">
-            {feat.cloud_save && (
-            <button
-              className={`floating-save-btn ${user ? "" : "disabled"}`}
-              onClick={handleOpenHistory}
-              title={
-                user
-                  ? "Save / load maps & routes"
-                  : "Saving and loading is only available to signed-in users"
-              }
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                width="22"
-                height="22"
-              >
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                <polyline points="17 21 17 13 7 13 7 21" />
-                <polyline points="7 3 7 8 15 8" />
-              </svg>
-            </button>
-            )}
-            <UserMenu variant="mobile" />
-          </div>
           <button
             className="close-menu-btn mobile-only"
             onClick={() => setIsMobileMenuOpen(false)}
@@ -1148,83 +1159,18 @@ function App() {
           width={sidebarWidth}
         />
       )}
-      <div className="map-area">
-        <UnitBadge />
-        <div className="floating-topright">
-          {feat.cloud_save && (
-          <button
-            className={`floating-save-btn ${user ? "" : "disabled"}`}
-            onClick={handleOpenHistory}
-            title={
-              user
-                ? "Save / load maps & routes"
-                : "Saving and loading maps and routes is only available to signed-in users"
-            }
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              width="22"
-              height="22"
-            >
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-              <polyline points="17 21 17 13 7 13 7 21" />
-              <polyline points="7 3 7 8 15 8" />
-            </svg>
-          </button>
-          )}
-          <UserMenu variant="desktop" />
-        </div>
-        <RoutesPanel
-          features={feat}
-          routes={importedRoutes}
-          removeRoute={removeRoute}
-          clearRoutes={clearRoutes}
-          exportFile={handleExportMissionFileWithThreats}
-          toggleVisibility={toggleRouteVisibility}
-          sketchedRoutes={sketchedRoutes}
-          removeSketchRoute={removeSketchRoute}
-          toggleSketchVisibility={toggleSketchVisibility}
-          exportSketches={handleExportSketchesWithThreats}
-          threats={{
-            threats,
-            onImportThs: importThsFile,
-            onAddThreat: () => beginAddThreat(mapCenter[0], mapCenter[1]),
-            onEdit: beginEditThreat,
-            onRemove: removeThreat,
-            onToggleVisibility: toggleThreatVisibility,
-            onExportKmz: () => setShowThreatExport(true),
-          }}
-          onForeFlight={setForeFlightRoute}
-          onSaveMissionGroup={handleSaveMissionGroup}
-          onSaveSketches={handleSaveSketches}
-          localPointNames={localPoints.pointSets.flatMap((set) =>
-            set.points.map((p) => ({
-              name: p.name,
-              lat: p.lat,
-              lon: p.lon,
-              elevationFt: p.elevationFt,
-            })),
-          )}
-          sketchedPlan={{
-            updateRoutePlan,
-            updatePointPlanOverride,
-            setPointClock: setSketchPointClock,
-            updatePointName: updateSketchPointName,
-            refreshRouteElevations,
-            applyForecastWinds,
-          }}
-          importedPlan={{
-            updateRoutePlan: updateImportedRoutePlan,
-            updatePointPlanOverride: updateImportedPointOverride,
-            setPointClock: setImportedPointClock,
-            updatePointName: updateImportedPointName,
-            refreshRouteElevations: refreshImportedElevations,
-            applyForecastWinds: applyImportedForecastWinds,
-          }}
+      <div className="map-area" {...imports.dragProps}>
+        <TopBar
+          user={user}
+          isAdmin={Boolean(user?.is_admin)}
+          onSignOut={logout}
+          onOpenLibrary={() => openLibrary("lz")}
+          onImport={(kind) => pickers[kind]?.open()}
+          canImport={{ msnx: feat.msnx_import, ths: feat.threats }}
+          onOpenMenu={isMobile ? () => setIsMobileMenuOpen(true) : undefined}
         />
+        <div className={`shell-map${dock.collapsed ? " shell-map--dock-collapsed" : ""}`}>
+        <UnitBadge />
         <MapStyleSwitcher mapStyle={mapStyle} setMapStyle={setMapStyle} />
         <MobileGridInput
           gridInput={gridInput}
@@ -1315,25 +1261,6 @@ function App() {
           onMapMove={setMapCenter}
         />
 
-        <ActiveLzWindow
-          diagrams={diagrams}
-          activeDiagramId={activeDiagramId}
-          onSelect={handleSelectDiagram}
-          onSave={handleLayerSave}
-          onRemove={handleLayerRemove}
-          onView3D={(diagramId) => {
-            // The 3D window always shows the active LZ, so a row's 3D button
-            // makes its LZ active first.
-            if (diagramId && diagramId !== activeDiagramId) {
-              handleSelectDiagram(diagramId);
-            }
-            setIs3DOpen(true);
-          }}
-          canSaveActive={canEditGraphics}
-          isSaving={isLayerSaveInProgress}
-          initialPosition={{ x: 16, y: 86 }}
-        />
-
         <div className="alert-queue">
           {proximityAlerts.map((alert) => (
             <div key={alert.id} className="proximity-alert">
@@ -1341,6 +1268,106 @@ function App() {
             </div>
           ))}
         </div>
+        {imports.overlay}
+        </div>
+
+        <Dock items={railItems} dock={dock}>
+          {dock.panel === "lz" && (
+            <LzPanel
+              diagrams={diagrams}
+              activeDiagramId={activeDiagramId}
+              savedAt={lzSaves.savedAt}
+              savingId={lzSaves.savingId}
+              recent={feat.cloud_save ? recentLz : []}
+              onSelect={handleSelectDiagram}
+              onSave={(id) => lzSaves.save(id)}
+              onSaveAs={lzSaves.saveAs}
+              onRename={(id, name) => lzWorkspace.setDiagramName(name, id)}
+              onClose={lzSaves.close}
+              onView3D={(id) => {
+                // The 3D window always shows the active LZ, so a card's 3D button makes its LZ active first.
+                if (id && id !== activeDiagramId) handleSelectDiagram(id);
+                setIs3DOpen(true);
+              }}
+              onOpenRecent={(entry) =>
+                openSavedLz(entry).catch((err) => toast({ tone: "error", message: `“${entry.name}” could not be opened: ${err.message}` }))
+              }
+              onBrowseAll={() => openLibrary("lz")}
+              onCollapse={() => dock.setCollapsed(true)}
+            />
+          )}
+          {dock.panel === "routes" && (
+            <RoutesDockPanel
+              sets={routeSets}
+              stateOf={routeSaves.stateOf}
+              threatCount={feat.threats ? threats.length : 0}
+              actions={{
+                save: (set) => routeSaves.save(set.key),
+                saveAs: (set) => routeSaves.saveAs(set.key),
+                rename: (set, name) => routeSaves.rename(set.key, name),
+                close: closeRouteSet,
+                export: (set, { withThreats }) => exportRouteSet(set, withThreats),
+                share: setForeFlightRoute,
+                toggleVisibility: (set, id) => (set.kind === "mission" ? toggleRouteVisibility(id) : toggleSketchVisibility(id)),
+                removeRoute: (set, id) => (set.kind === "mission" ? removeRoute(id) : removeSketchRoute(id)),
+              }}
+              plan={(set) => (set.kind === "mission" ? importedPlan : sketchedPlan)}
+              localPointNames={localPointNames}
+              sketch={{
+                active: isSketching,
+                name: `ROUTE ${sketchedRoutes.length + 1}`,
+                points: draftPoints.length,
+                enabled: feat.routes,
+                onStart: startSketch,
+                onCancel: cancelSketch,
+                onFinish: toggleRouteSketch,
+              }}
+              onImportMsnx={pickers.msnx.open}
+              canImportMsnx={feat.msnx_import}
+              onCollapse={() => dock.setCollapsed(true)}
+            />
+          )}
+          {dock.panel === "threats" && (
+            <ThreatsDockPanel
+              threats={threats}
+              onAdd={() => beginAddThreat(mapCenter[0], mapCenter[1])}
+              onImport={pickers.ths.open}
+              onEdit={beginEditThreat}
+              onRemove={removeThreat}
+              onRemoveAll={() => threats.forEach((threat) => removeThreat(threat.id))}
+              onToggleVisibility={toggleThreatVisibility}
+              onExportThs={() =>
+                Promise.resolve(exportThsFile("threats")).catch((err) => toast({ tone: "error", message: `The .ths could not be made: ${err.message}` }))
+              }
+              onExportKmz={() => setShowThreatExport(true)}
+              onCollapse={() => dock.setCollapsed(true)}
+            />
+          )}
+          {dock.panel === "imports" && (
+            <ImportsPanel
+              pointSets={localPoints.pointSets}
+              missions={routeSets
+                .filter((set) => set.kind === "mission")
+                .map((set) => ({ key: set.key, fileName: set.fileName, summary: setSummary(set.routes), saved: Boolean(routeSaves.stateOf(set.key).link) }))}
+              threatFiles={imports.threatFiles}
+              onImport={pickers.any.open}
+              onTogglePoints={localPoints.togglePointSetVisibility}
+              onSavePoints={
+                feat.cloud_save
+                  ? (set) =>
+                      localPoints
+                        .savePointSet(set)
+                        .then(() => toast({ message: `Saved “${set.name}” to your Library`, action: { label: "Open Library", onClick: () => openLibrary("points") } }))
+                        .catch((err) => toast({ tone: "error", message: `“${set.name}” could not be saved: ${err.message}` }))
+                  : undefined
+              }
+              onRemovePoints={localPoints.removePointSet}
+              onOpenRoutes={() => dock.show("routes")}
+              onOpenThreats={() => dock.show("threats")}
+              onCollapse={() => dock.setCollapsed(true)}
+            />
+          )}
+        </Dock>
       </div>
 
       {/* GLOBAL CONTEXT MENU */}
@@ -1575,68 +1602,41 @@ function App() {
         />
       )}
 
-      <LzDiagramRemoveDialog
-        diagram={pendingRemovalDiagram}
-        isSaving={isLayerSaveInProgress}
-        onCancel={() => setRemoveConfirmationDiagramId(null)}
-        onDiscard={handleDiscardDiagram}
-        onSaveFirst={handleSaveFirstAndRemove}
-      />
-
-      <HistoryModal
-        isOpen={isHistoryModalOpen}
-        onClose={() => {
-          setIsHistoryModalOpen(false);
-          setPendingRemovalDiagramId(null);
-        }}
-        history={history}
-        isLoadingHistory={isLoadingHistory}
-        fetchHistory={fetchHistory}
-        saveMap={saveMap}
-        loadMap={loadMap}
-        updateMap={updateMap}
-        deleteMap={deleteMap}
-        buildSnapshot={serializeMapState}
-        applySnapshot={applyMapState}
-        activeMapId={activeDiagram?.savedId ?? null}
-        activeName={activeDiagram?.name ?? ""}
-        canSave={canEditGraphics}
-        saveDisabledReason={
-          !hasActiveTarget
-            ? "Set a target on the map and analyze the LZ/PZ before saving."
-            : "Analyze the active LZ/PZ before saving it."
-        }
-        onSaved={({ id, name }) => {
-          const diagramId = pendingSaveDiagramIdRef.current ?? activeDiagramId;
-          const diagram = workspaceRef.current?.diagramsById?.[diagramId];
-          if (!diagram) return;
-          markSaved(
-            {
-              ...(id != null ? { savedId: id } : {}),
-              name,
+      {lzSaves.dialogs}
+      {routeSaves.dialogs}
+      {imports.dialog}
+      {nameAsk && <NameDialog {...nameAsk} onCancel={() => setNameAsk(null)} />}
+      {closingSet && closingState && (
+        <ConfirmDialog
+          title={`Save changes to ${closingState.name}?`}
+          text="You have unsaved changes. If you close these routes now they are lost."
+          icon="alertTriangle"
+          iconTone="warn"
+          confirmLabel="Save"
+          confirmIcon="save"
+          secondary={{
+            label: "Don’t save",
+            tone: "danger-soft",
+            onClick: () => {
+              dropRouteSet(closingSet);
+              setClosingSet(null);
             },
-            diagram.id,
-          );
-          if (pendingRemovalDiagramId === diagram.id) {
-            removeDiagram(diagram.id);
-            setPendingRemovalDiagramId(null);
-          }
-          pendingSaveDiagramIdRef.current = null;
-        }}
-        onLoaded={applyMapState}
-        onDeleted={({ id }) => {
-          const deletedDiagram = Object.values(
-            workspaceRef.current?.diagramsById ?? {},
-          ).find((diagram) => String(diagram.savedId) === String(id));
-          if (deletedDiagram) clearSaved(deletedDiagram.id);
-        }}
-        savedRoutes={savedRoutes}
-        isLoadingSaved={isLoadingSaved}
-        fetchSavedRoutes={fetchSavedRoutes}
-        onLoadRoute={handleLoadSavedRoute}
-        onDeleteRoute={handleDeleteSavedRoute}
-        localPoints={localPoints}
-      />
+          }}
+          onCancel={() => setClosingSet(null)}
+          onConfirm={() => {
+            const set = closingSet;
+            setClosingSet(null);
+            routeSaves.save(set.key, { then: () => dropRouteSet(set) });
+          }}
+        />
+      )}
+      {libraryTab && (
+        <LibraryDialog initialTab={libraryTab} sources={librarySources} onClose={() => setLibraryTab(null)} />
+      )}
+      {pickers.msnx.element}
+      {pickers.lps.element}
+      {pickers.ths.element}
+      {pickers.any.element}
 
       {exportSuccess && (
         <div className="success-toast">

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 :root {
   --ff-bg-dark: #111827;       /* Very dark navy */
@@ -124,7 +124,7 @@ body, html, .App {
   flex: 1; /* This tells this div to take up ALL available vertical space */
   overflow-y: auto; /* Enable the scrollbar only for this section */
   padding: 8px;
-  
+
   /* Standard scrollbar styling so you can actually see it */
   scrollbar-width: thin;
   scrollbar-color: var(--ff-border) transparent;
@@ -813,112 +813,10 @@ body.export-mode-active .leaflet-control-container {
     display: none;
 }
 
-/* Account + save cluster shown inside the mobile menu (the on-map floating
-   version is hidden on mobile to keep the top bar clear). */
-.mobile-account-row {
-    display: none;
-}
-
 .sidebar-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-}
-
-/* Floating cluster over the map (top-right): save/load + auth */
-.floating-topright {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 1100;
-    display: flex;
-    align-items: stretch;
-    gap: 10px;
-}
-
-.floating-auth {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    background: rgba(30, 30, 35, 0.92);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
-.floating-save-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px 12px;
-    background: rgba(30, 30, 35, 0.92);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    color: #e5e7eb;
-    cursor: pointer;
-}
-
-.floating-save-btn:hover {
-    color: white;
-    border-color: rgba(255, 255, 255, 0.3);
-}
-
-.floating-save-btn.disabled {
-    color: #6b7280;
-    cursor: not-allowed;
-}
-
-.floating-save-btn.disabled:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-}
-
-.floating-auth .user-avatar {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    flex-shrink: 0;
-}
-
-.floating-auth .user-avatar-fallback {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #3b82f6;
-    color: white;
-    font-weight: 700;
-    font-size: 0.85rem;
-}
-
-.floating-auth .user-name {
-    color: #e5e7eb;
-    font-size: 0.85rem;
-    font-weight: 600;
-    max-width: 140px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.floating-auth .logout-btn {
-    background: none;
-    border: 1px solid #475569;
-    color: #9ca3af;
-    font-size: 0.75rem;
-    padding: 4px 8px;
-    border-radius: 6px;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.floating-auth .logout-btn:hover {
-    color: white;
-    border-color: #94a3b8;
 }
 
 /* Unit badge next to the map zoom controls */
@@ -981,55 +879,6 @@ body.export-mode-active .leaflet-control-container {
     }
 }
 
-/* Floating routes panel over the map */
-.floating-routes-panel {
-    position: absolute;
-    top: 100px;
-    left: 12px;
-    z-index: 1100;
-    width: 720px;
-    background: rgba(30, 30, 35, 0.92);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    color: #e0e0e0;
-    overflow: hidden;
-}
-
-.floating-routes-panel .routes-panel-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background: rgba(0, 0, 0, 0.25);
-    cursor: move;
-    font-size: 0.85rem;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    user-select: none;
-}
-
-.floating-routes-panel .collapse-btn {
-    background: none;
-    border: none;
-    color: #9ca3af;
-    cursor: pointer;
-    font-size: 0.85rem;
-    padding: 0 4px;
-    line-height: 1;
-}
-
-.floating-routes-panel .collapse-btn:hover {
-    color: white;
-}
-
-.floating-routes-panel .routes-panel-body {
-    padding: 8px 10px 10px;
-    max-height: 55vh;
-    overflow-y: auto;
-}
-
 /* Tablet / Phone Layout */
 @media (max-width: 850px) {
     .mobile-hamburger-btn {
@@ -1077,27 +926,6 @@ body.export-mode-active .leaflet-control-container {
 
     .close-menu-btn.mobile-only:hover {
         color: white;
-    }
-
-    /* On mobile the save/auth cluster lives in the menu, not floating over the
-       crowded top bar (where it overlapped the hamburger + search). */
-    .floating-topright {
-        display: none;
-    }
-
-    .mobile-account-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    /* Keep the routes/threats panel from sliding under the right-hand quick
-       buttons on narrow screens, but give the dense plan editor as much width
-       as will fit. */
-    .floating-routes-panel {
-        left: 8px;
-        width: min(360px, calc(100vw - 84px));
-        max-height: 62vh;
     }
 }
 
@@ -1213,7 +1041,7 @@ body.export-mode-active .leaflet-control-container {
   text-align: center;
   width: max-content;
   max-width: 90vw;
-  
+
   /* Smooth drop-in animation */
   animation: dropInToast 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
@@ -1258,11 +1086,10 @@ body.export-mode-active .leaflet-control-container {
 @media (min-width: 640px) {
   .controls-footer { gap: 12px; }
   .footer-brand-text { gap: 8px; }
-  
+
   .footer-logo {
     width: 100px;
   }
-  
 }
 
 /* --- 3. DESKTOP BREAKPOINT (Screens wider than 1024px) --- */
@@ -1298,6 +1125,10 @@ body.export-mode-active .leaflet-control-container {
   --surface-3: #21262f;
   --glass: rgba(19, 22, 28, 0.93);
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  /* The redesign: the primary button's fill (white on it is 5.2:1; on --ff-accent only 2.6:1),
+     and Mission Packs' identity colour, never used for state. */
+  --primary-fill: #3f6fa3;
+  --pack: #a89ae6;
 }
 
 body,
@@ -1533,8 +1364,7 @@ html,
 }
 
 .ff-btn,
-.ff-action-btn,
-.floating-save-btn {
+.ff-action-btn {
   min-height: 36px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -1547,8 +1377,7 @@ html,
 
 .ff-btn:active,
 .ff-action-btn:active,
-.ff-tool-btn:active,
-.floating-save-btn:active {
+.ff-tool-btn:active {
   transform: translateY(1px);
 }
 
@@ -1694,36 +1523,6 @@ input:checked + .slider:before {
   color: var(--ff-accent-hover);
 }
 
-.floating-topright {
-  top: 14px;
-  right: 14px;
-  gap: 7px;
-}
-
-.floating-save-btn,
-.floating-auth {
-  border-color: var(--hairline-strong);
-  border-radius: 8px;
-  background: var(--glass);
-  box-shadow: var(--deck-shadow);
-  backdrop-filter: blur(16px);
-}
-
-.floating-save-btn {
-  min-width: 40px;
-  padding: 8px 10px;
-  color: var(--ff-text-muted);
-}
-
-.floating-save-btn:hover {
-  border-color: var(--ff-accent);
-  color: var(--ff-text-main);
-}
-
-.floating-auth {
-  padding: 7px 10px;
-}
-
 .unit-badge {
   top: 13px;
   left: 62px;
@@ -1731,21 +1530,11 @@ input:checked + .slider:before {
   height: 44px;
 }
 
-.floating-routes-panel,
 .export-modal-container.glass-panel {
   border-color: var(--hairline-strong);
   border-radius: 10px;
   background: var(--glass);
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.5);
-}
-
-.floating-routes-panel .routes-panel-header {
-  border-bottom: 1px solid var(--hairline);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--ff-text-main);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .proximity-alert {
@@ -2186,18 +1975,6 @@ input:checked + .slider:before {
 
 .leaflet-control-attribution a {
   color: #8b95a1 !important;
-}
-
-/* Floating LZ workspace window — align shell with the neutral system */
-.active-lz-window {
-  border-color: var(--hairline-strong) !important;
-  background: var(--glass) !important;
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.5) !important;
-}
-
-.active-lz-window__header {
-  border-bottom-color: var(--hairline) !important;
-  background: rgba(255, 255, 255, 0.03) !important;
 }
 
 /* Global scrollbars (WebKit) — thin, neutral */

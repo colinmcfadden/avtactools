@@ -1,0 +1,473 @@
+/*
+ * The redesign's frame around the map (docs/MENU_REDESIGN.md §3): a 48 px top bar right of the
+ * sidebar, and a dock on the right (a 344 px panel and a 56 px rail of icons). Below 1100 px wide the
+ * dock becomes a bottom sheet, as the Android app's is: the rail turns into a row of tabs along the
+ * sheet's top, and the sheet rests at a peek, half way or full height.
+ */
+
+.shell-topbar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  height: 48px;
+  box-sizing: border-box;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: rgba(18, 21, 25, 0.97);
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+  color: var(--ff-text-main);
+}
+.shell-topbar--pack { border-bottom-color: rgba(168, 154, 230, 0.45); }
+.shell-topbar__switcher {
+  box-sizing: border-box;
+  height: 34px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  color: var(--ff-text-main);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: none;
+  max-width: 280px;
+}
+.shell-topbar__switcher:hover { background: var(--surface-3); }
+.shell-topbar__switcher--pack { border-color: rgba(168, 154, 230, 0.55); background: rgba(168, 154, 230, 0.1); }
+.shell-topbar__switcher-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-topbar__context { font-size: 12px; color: #8a94a1; margin-left: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.shell-topbar__status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #82d4ae; white-space: nowrap; }
+.shell-topbar__status-dot { width: 7px; height: 7px; border-radius: 4px; background: var(--ff-success); }
+.shell-topbar__status--queued { color: #f0c56f; }
+.shell-topbar__status--queued .shell-topbar__status-dot { background: #f0b429; }
+.shell-topbar__status--offline { color: #b9c1cb; }
+.shell-topbar__status--offline .shell-topbar__status-dot { background: #6f7885; }
+.shell-topbar__status--finished { color: #b9c1cb; }
+.shell-topbar__end { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+.shell-topbar__button {
+  box-sizing: border-box;
+  height: 34px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  color: var(--ff-text-main);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.shell-topbar__button:hover { background: var(--surface-3); }
+.shell-topbar__divider { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.1); margin: 0 2px; }
+.shell-topbar__account {
+  box-sizing: border-box;
+  height: 34px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--ff-text-main);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.shell-topbar__account:hover { background: rgba(255, 255, 255, 0.05); }
+
+/* The map sits between the top bar and the dock, so a target set in the middle of it is in the middle
+   of what can be seen. */
+.shell-map { position: absolute; top: 48px; left: 0; right: 400px; bottom: 0; }
+.shell-map--dock-collapsed { right: 56px; }
+
+/* -- The dock ------------------------------------------------------------------------------- */
+
+.shell-dock {
+  position: absolute;
+  right: 0;
+  top: 48px;
+  bottom: 0;
+  z-index: 1050;
+  display: flex;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+}
+.shell-dock__panel {
+  width: 344px;
+  flex: none;
+  box-sizing: border-box;
+  background: var(--ff-panel-bg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+}
+.shell-dock--collapsed .shell-dock__panel { display: none; }
+.shell-dock__head {
+  height: 60px;
+  flex: none;
+  box-sizing: border-box;
+  padding: 0 10px 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+.shell-dock__title { font-size: 15px; font-weight: 700; color: #f3f5f7; display: flex; align-items: center; gap: 8px; }
+.shell-dock__subtitle { font-size: 11.5px; color: var(--ff-text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shell-dock__body { flex: 1; min-height: 0; overflow-y: auto; position: relative; padding: 16px 16px 24px; scrollbar-width: thin; }
+.shell-dock__foot { flex: none; display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--hairline); background: var(--ff-panel-bg); }
+.shell-dock__rail {
+  width: 56px;
+  flex: none;
+  box-sizing: border-box;
+  background: #121519;
+  border-left: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  padding-top: 6px;
+}
+.shell-rail__item {
+  position: relative;
+  box-sizing: border-box;
+  width: 56px;
+  height: 62px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-family: inherit;
+  cursor: pointer;
+  background: transparent;
+  color: var(--ff-text-muted);
+}
+.shell-rail__item:hover { color: #dfe4ea; background: rgba(255, 255, 255, 0.03); }
+.shell-rail__item--active { background: var(--surface-2); color: #fff; box-shadow: inset 2px 0 0 var(--ff-accent); }
+.shell-rail__item--pack.shell-rail__item--active { box-shadow: inset 2px 0 0 var(--pack); }
+.shell-rail__label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+.shell-rail__dot {
+  position: absolute;
+  top: 9px;
+  left: 33px;
+  width: 9px;
+  height: 9px;
+  border-radius: 5px;
+  background: #f0b429;
+  box-shadow: 0 0 0 2px #121519;
+}
+.shell-rail__dot--pack { background: var(--pack); }
+.shell-rail__count {
+  position: absolute;
+  top: 7px;
+  left: 31px;
+  min-width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #2b313b;
+  color: var(--ff-text-main);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px #121519;
+}
+
+/* -- Panel sections --------------------------------------------------------------------------- */
+
+.shell-section { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; min-height: 20px; gap: 8px; }
+.shell-section + .shell-list,
+.shell-list + .shell-section { margin-top: 0; }
+.shell-spacer { height: 18px; }
+.shell-list { display: flex; flex-direction: column; gap: 8px; }
+.shell-hint { display: flex; gap: 8px; align-items: flex-start; margin-top: 14px; font-size: 12px; line-height: 1.45; color: var(--ff-text-muted); }
+.shell-hint svg { margin-top: 1px; }
+.shell-empty { font-size: 12.5px; line-height: 1.5; color: var(--ff-text-muted); padding: 6px 2px 2px; }
+
+/* An item in a panel: a document the person works on (an LZ/PZ, a route set). */
+.shell-card {
+  box-sizing: border-box;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid #65798d;
+  border-radius: 8px;
+  padding: 10px 10px 10px 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  width: 100%;
+  color: inherit;
+}
+.shell-card__hit { display: block; background: none; border: 0; padding: 0; margin: 0; text-align: left; font-family: inherit; color: inherit; cursor: pointer; }
+.shell-card__hit:focus-visible { outline: 2px solid var(--ff-accent); outline-offset: 4px; border-radius: 4px; }
+.shell-card:hover { border-color: rgba(255, 255, 255, 0.14); border-left-color: #8195aa; }
+.shell-card--active {
+  display: block;
+  cursor: default;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline-strong);
+  border-left: 3px solid #f4b83f;
+  padding: 12px 12px 12px 13px;
+}
+.shell-card--active:hover { border-color: var(--hairline-strong); border-left-color: #f4b83f; }
+.shell-card--pack { border-left-color: var(--pack); }
+.shell-card--active.shell-card--pack,
+.shell-card--active.shell-card--pack:hover { border-left-color: var(--pack); }
+.shell-card--saved.shell-card--active,
+.shell-card--saved.shell-card--active:hover { border-left-color: var(--ff-success); }
+.shell-card__main { flex: 1; min-width: 0; }
+.shell-card__row { display: flex; align-items: center; gap: 6px; }
+.shell-card__name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: #eef1f4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shell-card--active .shell-card__name { font-size: 14px; color: #f3f5f7; }
+.shell-card__name-input { flex: 1; min-width: 0; height: 28px; font-size: 13px; font-weight: 700; padding: 0 8px; }
+.shell-card__grid { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 11.5px; color: #9fb0bf; margin-top: 2px; }
+.shell-card__chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; align-items: center; }
+.shell-card--active .shell-card__chips { gap: 6px; margin-top: 10px; }
+.shell-card__meta { font-size: 11.5px; color: #8a94a1; }
+.shell-card__actions { display: flex; gap: 8px; margin-top: 12px; }
+.shell-card__foot { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 11.5px; color: var(--ff-text-muted); }
+.shell-card__foot > span:first-of-type { flex: 1; }
+.shell-card__people { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11.5px; color: #c9c2f2; }
+
+/* A row in a list (Recent in Library, Library). */
+.shell-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  box-sizing: border-box;
+  padding: 0 4px 0 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #97a0ab;
+}
+.shell-row__main { flex: 1; min-width: 0; }
+.shell-row__name { font-size: 12.5px; font-weight: 600; color: #e3e7ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shell-row__meta { font-size: 11px; color: #8a94a1; }
+
+/* A route set's card (Routes panel). */
+.shell-set {
+  box-sizing: border-box;
+  background: var(--surface-2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 12px 12px 10px;
+}
+.shell-set--pack { border-color: rgba(168, 154, 230, 0.35); }
+.shell-set__name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.03em; color: #f3f5f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shell-set__check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #c9d0d8; cursor: pointer; margin-top: 10px; }
+.shell-set__check input { width: 15px; height: 15px; margin: 0; accent-color: var(--ff-accent); }
+.shell-set__divider { height: 1px; background: var(--hairline); margin: 10px 0 2px; }
+.shell-route { display: flex; align-items: center; gap: 6px; height: 42px; box-sizing: border-box; padding: 0 2px 0 0; }
+.shell-route--hidden { opacity: 0.55; }
+.shell-route__swatch { width: 10px; height: 10px; border-radius: 5px; flex: none; }
+.shell-route__main { flex: 1; min-width: 0; }
+.shell-route__name { font-size: 12.5px; font-weight: 700; color: #f0f3f6; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shell-route__meta { font-size: 11px; color: #8a94a1; white-space: nowrap; }
+
+/* A threat's row. */
+.shell-threat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 10px 6px 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+.shell-threat--hidden { opacity: 0.55; }
+.shell-threat__icon {
+  display: flex;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(214, 107, 100, 0.14);
+  align-items: center;
+  justify-content: center;
+  color: #e48a83;
+  overflow: hidden;
+}
+.shell-threat__icon img { max-width: 28px; max-height: 28px; }
+.shell-threat__name { font-size: 13px; font-weight: 700; color: #f3f5f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shell-threat__meta { font-size: 11.5px; color: #9aa4af; margin-top: 1px; }
+.shell-box { box-sizing: border-box; background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 8px; padding: 12px; }
+.shell-notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  background: rgba(213, 160, 63, 0.08);
+  border: 1px solid rgba(213, 160, 63, 0.3);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #e6cd98;
+}
+.shell-notice b { color: #f3d9a0; }
+.shell-notice svg { margin-top: 1px; color: #e3b45c; }
+.shell-notice--info { background: rgba(90, 167, 212, 0.08); border-color: rgba(90, 167, 212, 0.3); color: #c8e2f2; }
+.shell-notice--info b { color: #e3f1fa; }
+.shell-notice--info svg { color: var(--ff-accent); }
+.shell-notice--pack { background: rgba(168, 154, 230, 0.08); border-color: rgba(168, 154, 230, 0.3); color: #d9d2f8; }
+.shell-notice--pack b { color: #ebe6fd; }
+.shell-notice--pack svg { color: var(--pack); }
+.shell-danger-link { background: none; border: 0; padding: 0; margin: 0; font-family: inherit; font-size: 12px; font-weight: 600; color: #f0a9a4; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+/* -- The route plan editor (feature/msnxImport/RoutePlanSection.jsx) -------------------------------- */
+
+.plan { box-sizing: border-box; margin: 2px 0 4px; background: var(--ff-bg-dark); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 8px 12px; }
+.plan__fields { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; }
+.plan__field { flex: none; min-width: 0; }
+.plan__label { display: block; font-size: 9.5px; line-height: 12px; height: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ff-text-muted); margin-bottom: 3px; white-space: nowrap; }
+.plan__input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  background: #0e1115;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 5px;
+  color: var(--ff-text-main);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  padding: 0 7px;
+  outline: none;
+  -moz-appearance: textfield;
+}
+.plan__input::-webkit-outer-spin-button,
+.plan__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.plan__input[type="number"] { padding: 0 5px; }
+.plan__input:focus { border-color: var(--ff-accent); box-shadow: 0 0 0 2px rgba(90, 167, 212, 0.2); }
+.plan__input--text { font-family: inherit; }
+.plan__select { padding: 0 2px 0 5px; font-family: inherit; font-size: 11.5px; cursor: pointer; }
+.plan__status { margin-top: 6px; font-size: 11px; color: #8a94a1; }
+.plan__points { margin-top: 10px; }
+.plan__point { padding: 9px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.plan__point-head { display: flex; align-items: center; gap: 8px; }
+.plan__glyph { flex: none; width: 14px; display: flex; justify-content: center; }
+.plan__time { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 11.5px; color: #8a94a1; width: 58px; text-align: right; flex: none; }
+.plan__time--set { color: #92c9ea; }
+.plan__clock { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.plan__clock .plan__input { width: 96px; flex: none; }
+.plan__values { display: flex; gap: 4px; margin-top: 6px; align-items: flex-end; flex-wrap: wrap; }
+.plan__computed { display: flex; justify-content: space-between; gap: 8px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 11px; color: #8a94a1; margin-top: 6px; }
+.plan__totals { display: flex; justify-content: space-between; padding-top: 9px; border-top: 1px solid rgba(255, 255, 255, 0.07); font-size: 12px; font-weight: 700; color: #e3e7ec; }
+.plan__tools { display: flex; gap: 6px; margin-top: 10px; }
+.plan__tools .ui-btn { padding: 0 6px; gap: 5px; letter-spacing: 0.03em; }
+.plan__note { margin-top: 8px; font-size: 11px; line-height: 1.4; color: #6f7885; }
+.plan__warning { margin-top: 6px; font-size: 11.5px; color: #f0c56f; display: flex; gap: 6px; align-items: flex-start; }
+
+/* -- Narrow windows: the dock becomes a bottom sheet (as on Android) ----------------------------------- */
+
+.shell-sheet__handle { display: none; }
+
+@media (max-width: 1100px) {
+  .shell-map,
+  .shell-map--dock-collapsed { right: 0; }
+  .shell-dock {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    height: var(--sheet-height, 132px);
+    flex-direction: column;
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.45);
+    border-radius: 14px 14px 0 0;
+    overflow: hidden;
+    transition: height 0.2s ease;
+  }
+  .shell-dock__panel { width: 100%; flex: 1; min-height: 0; }
+  .shell-dock__rail {
+    width: 100%;
+    flex: none;
+    flex-direction: row;
+    padding: 0 6px;
+    border-left: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .shell-rail__item { width: auto; flex: 1; height: 54px; }
+  .shell-rail__item--active { box-shadow: inset 0 -2px 0 var(--ff-accent); }
+  .shell-rail__item--pack.shell-rail__item--active { box-shadow: inset 0 -2px 0 var(--pack); }
+  .shell-rail__dot, .shell-rail__count { left: calc(50% + 6px); }
+  .shell-sheet__handle {
+    display: block;
+    width: 100%;
+    height: 18px;
+    flex: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: #121519;
+    cursor: grab;
+    touch-action: none;
+  }
+  .shell-sheet__handle::after {
+    content: "";
+    display: block;
+    width: 40px;
+    height: 4px;
+    margin: 7px auto 0;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.28);
+  }
+  .shell-sheet__handle:focus-visible { outline: 2px solid var(--ff-accent); outline-offset: -2px; }
+  .shell-dock__head { height: 52px; }
+  .shell-dock__collapse { display: none; }
+}
+
+.shell-topbar__menu { display: none; }
+
+@media (max-width: 850px) {
+  .shell-topbar { left: 0; padding: 0 8px; gap: 6px; }
+  .shell-topbar__menu {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--ff-text-main);
+    cursor: pointer;
+  }
+  /* The menu button lives in the top bar now. */
+  .mobile-hamburger-btn { display: none !important; }
+  .shell-topbar__context { display: none; }
+  .shell-topbar__button-label,
+  .shell-topbar__account-name { display: none; }
+  .shell-topbar__switcher { max-width: 46vw; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-dock { transition: none; }
+}

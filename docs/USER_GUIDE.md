@@ -4,10 +4,12 @@ EZ-PZ is a map-based planning tool for helicopter landing zone / pickup zone (LZ
 
 ![App overview](images/01-overview.png)
 
-The interface has two parts:
+The interface has four parts:
 
 - **Left panel** — MGRS search, LZ/PZ analysis data, placement tools, export, and route tools.
-- **Map** — the working area. Floating over it: the unit badge and zoom controls (top-left), the **Routes** panel (appears when routes exist), and the **save/load + account** cluster (top-right).
+- **Top bar** — where your work is saved (**Library**, your own; Mission Packs come later), **Import**, the **Library** button, and your account (sign out is in its menu).
+- **Map** — the working area, with the unit badge and zoom controls at its top-left.
+- **Dock** (right) — one panel at a time, picked from the icons on its right edge: **LZ/PZ**, **Routes**, **Threats** and **Imports**. Click the open panel's icon again to fold it away. A small amber dot on an icon means something there has unsaved changes. On a narrow window the dock is a sheet along the bottom: drag its handle up or down, or tap a tab.
 
 ---
 
@@ -104,7 +106,7 @@ Symbols match AMPS iconography, and designations survive export/re-import. Each 
 
 ### Importing a .msnx
 
-Click **Upload** and select a `.msnx` file. Every route in the mission renders in its own color — designated points with their proper symbols and labels, serpentine points as small dots:
+Use **Import → Mission file** in the top bar, **Import .msnx** at the foot of the Routes panel, or drop the file anywhere on the map (see *Importing files* below). Every route in the mission renders in its own color — designated points with their proper symbols and labels, serpentine points as small dots:
 
 ![Imported mission alongside a sketch](images/10-import.png)
 
@@ -112,26 +114,38 @@ Imported routes are fully editable: drag points (serpentine geometry updates too
 
 ### The Routes panel
 
-All routes appear in the floating **Routes** panel (draggable by its header, collapsible with ▲):
+Routes are listed in the dock's **Routes** panel, one card per *route set*: the routes you sketched this session, and each imported mission file.
 
-![Routes panel](images/11-routes-panel.png)
-
-- **Eye** — hide/show a route without deleting it.
-- **×** — remove a route.
-- **Export .msnx** — per group: imported files re-export with your edits; sketched routes export as a brand-new mission file.
+- **Save** — the first time, asks for a name; after that it saves without asking. The card says *Not saved yet*, *Unsaved changes* or *Saved · 14:02*.
+- **Export .msnx** — sketched routes export as a new mission file; an imported file re-exports with your edits. Tick **Include threats as a .ths file** to get the threats beside it.
+- On each route: the **arrow** opens its plan (date, temperature, fuel flow, and the altitude, speed and wind *to* each point; **Get winds** and **Get elevations** fill them in), the **paper plane** sends it to ForeFlight, the **eye** hides it, and **⋯** removes it.
+- **⋯** on a set: **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
+- **Sketch a route** and **Import .msnx** are at the foot of the panel.
 
 ### Opening exports in AMPS
 
 Exported files deliberately contain geometry only — after opening one in AMPS, **recalculate the route** to regenerate performance data (fuel, timing, elevations, speeds).
 
-## 6. Account & saved maps
+## 6. Saving and the Library
 
-The top-right cluster holds the save/load button and Google sign-in:
+**Save is on the thing you are working on.** The open LZ/PZ's card in the **LZ/PZ** panel has a **Save** button, and so does each route set in **Routes**. The first save asks for a name (a name already in your Library offers *Keep both* or *Replace*); every later save happens without asking and shows a short note at the bottom of the screen. **Ctrl S** (**⌘ S** on a Mac) saves whatever the dock is showing.
 
-![Account cluster](images/14-auth-cluster.png)
+- An LZ/PZ must be analyzed before it can be saved. Saving captures the target, boundary, analysis, everything placed on it and the doghouse edits. Threats and routes are not part of it.
+- **Close** (in an LZ/PZ's **⋯** menu) takes it out of this session; with unsaved changes it asks *Cancel / Don't save / Save*.
 
-- **Sign in with Google** to enable saving. Once signed in, the cluster shows your profile picture, name, and a log-out button.
-- The **save/load button** (disk icon) opens the Saved Maps window: name and save the current map state, or load/update/delete previous saves. Saving captures the full picture — target, analysis, all placed tools, and doghouse edits. The button is grayed out until you sign in.
+**The Library** (top bar) is everything you have saved, in three tabs: LZ/PZ, Routes and Local points. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
+
+Your account menu (your name, top right) holds **Sign out**, and for admins a link to the admin dashboard.
+
+### Importing files
+
+**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`) and threats (`.ths`). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; threats always stay in this session. Anything it cannot read is listed with the reason and left out.
+
+The **Imports** panel lists what you have brought in, with where it lives; mission files and threat files link to the panel where they are edited.
+
+### Threats
+
+Threats have their own panel. They stay in this browser tab only: they are never saved to your account. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first, because they cannot be brought back.
 
 ## 7. The unit badge
 
@@ -146,4 +160,4 @@ The A Co. 1-171st GSAB Falcons patch sits next to the zoom controls. Give it a c
 - **First action after idle is slow** — the backend spins down when unused; the first analysis/search after a while can take up to a minute while it wakes. Subsequent requests are fast.
 - **Sign-in button does nothing / login popup blocked** — make sure your browser allows popups for the site, and give a slow backend a moment to respond after choosing an account.
 - **Imported route looks like a straight line between two named points** — that's correct: the serpentine shaping points still exist (small dots). If a route is cluttering the view, hide it with the eye toggle instead of deleting.
-- **On mobile**, the left panel is behind the ☰ button, and quick-access tool buttons appear along the map edge.
+- **On mobile**, the left panel is behind the ☰ button at the left of the top bar, quick-access tool buttons appear along the map edge, and the dock is a sheet along the bottom.

@@ -1,6 +1,15 @@
 # Menu redesign (web)
 
-**Status:** proposal. Nothing here is built. Web only; the Android app can adopt the same flows later.
+**Status:** phases 1 to 5 are built on `feat/menu-redesign` (October 2026): the primitives, the save flows, the Library and top bar, the dock with its panels and the bottom sheet on narrow windows, and imports. Phase 6 (the Mission Packs screens) is in progress. Web only; the Android app can adopt the same flows later.
+
+What was decided while building, beyond this document:
+
+- **Narrow windows** (below 1100 px): the dock is a bottom sheet, as the Android app's is. The rail becomes a row of tabs on the sheet; the sheet rests at a peek, half or nearly full height (drag the handle, or tap it to step up); a phone starts at the peek. The phone's ☰ for the left panel moved into the top bar.
+- **The map sits between the top bar and the dock** (`.shell-map`), so a target set by grid lands in the middle of what can be seen; `MapView` tells Leaflet when its box changes size.
+- **Map overlays** are listed in the Import menu as not available yet: reading KMZ or GeoTIFF needs a new library (§9).
+- **Imports default**: local points go to the Library (the open pack when there is one), mission files stay in the session; the person can change either in the review.
+- The Library rows show no grid: the list API does not return one, and adding it changes the recorded responses the Android client is held to. Add `grid` to the LZ summary when the apps are next touched.
+- The route plan editor's Winds button moved beside Get elevations: the mockup's row overflowed the 344 px panel.
 
 **Design:** <https://claude.ai/artifact/4X3YxNxSYD4vggYkDf6m9A> (20 screens, private to Colin). An agent signed in as him can read a screen with the Artifact tool: `action: "read"`, `url` as above, `path: "project/<Screen>.dc.html"` (screen names are in the table at the end). The screens are inline-styled mockups, so treat them as a visual reference and rebuild them from the CSS variables in `frontend/src/App.css`, not by copying markup.
 

@@ -72,6 +72,19 @@ function MapUpdater({ center, targetId }) {
   return null;
 }
 
+// Leaflet only notices the window being resized, not its own box: the sidebar folding and the dock
+// opening or closing change the map's size, so watch the container and tell Leaflet.
+function SizeWatcher() {
+  const map = useMap();
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map]);
+  return null;
+}
+
 function MapInteractionHandler({
   isDrawingLZ,
   setDrawingPoints,
@@ -294,6 +307,7 @@ const MapView = ({
 
       {/* Logic to Zoom when target changes */}
       <MapUpdater center={targetLocation} targetId={activeDiagramId} />
+      <SizeWatcher />
 
       <MsnxRouteLayer
         routes={importedRoutes}

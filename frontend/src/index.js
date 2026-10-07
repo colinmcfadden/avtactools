@@ -5,6 +5,7 @@ import './index.css';
 import App from './App';
 import { AuthProvider } from './feature/auth/AuthContext';
 import AuthGate from './feature/auth/AuthGate';
+import { ToastProvider } from './feature/ui/Toast';
 import reportWebVitals from './reportWebVitals';
 import Viewer3DDemo from './feature/viewer3d/Viewer3DDemo';
 
@@ -25,7 +26,9 @@ root.render(
     <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}>
       <AuthProvider>
         <AuthGate>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </AuthGate>
       </AuthProvider>
     </GoogleOAuthProvider>

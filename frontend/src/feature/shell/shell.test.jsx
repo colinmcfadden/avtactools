@@ -1,0 +1,153 @@
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import React from "react";
+import useRouteSaves, { routesFingerprint } from "../saveDialog/useRouteSaves";
+import { ToastProvider } from "../ui/Toast";
+import Dock, { useDock } from "./Dock";
+import LzPanel, { lzStateChips } from "./LzPanel";
+
+const texts = (chips) => chips.map((chip) => chip.text);
+
+describe("an LZ/PZ's state", () => {
+  it("says how far along it is, and whether it is saved", () => {
+    expect(texts(lzStateChips({ status: "draft" }))).toEqual(["No target", "Analyze to save"]);
+    expect(texts(lzStateChips({ status: "targeted", target: {} }))).toEqual(["Target set", "Analyze to save"]);
+    expect(texts(lzStateChips({ status: "analyzed", target: {}, savedId: null }))).toEqual(["Analyzed", "Not saved yet"]);
+    expect(texts(lzStateChips({ status: "analyzed", target: {}, savedId: 4, dirty: true }))).toEqual(["Analyzed", "Unsaved changes"]);
+    expect(texts(lzStateChips({ status: "analyzed", target: {}, savedId: 4, dirty: false }))).toEqual(["Analyzed", "Saved"]);
+  });
+
+  it("in a pack is synced, from the Library, or read-only, never unsaved", () => {
+    const d = { status: "analyzed", target: {}, savedId: null, dirty: true };
+    expect(texts(lzStateChips(d, { pack: { name: "OP DK" } }))).toEqual(["Analyzed", "Synced"]);
+    expect(texts(lzStateChips(d, { pack: { fromLibrary: true, originalChanged: true } }))).toEqual(["Analyzed", "Original changed"]);
+    expect(texts(lzStateChips(d, { pack: { finished: true } }))).toEqual(["Analyzed", "Read-only"]);
+  });
+});
+
+describe("the LZ/PZ panel", () => {
+  const diagrams = [
+    { id: "a", name: "LZ HAWK", status: "analyzed", target: { mgrs: "16S GC 1 2" }, savedId: 7, dirty: true },
+    { id: "b", name: "", status: "targeted", target: { mgrs: "16S GC 3 4" }, savedId: null },
+  ];
+
+  it("saves the active one, opens the others, and offers what is recent in the Library", () => {
+    const onSave = jest.fn();
+    const onSelect = jest.fn();
+    const onOpenRecent = jest.fn();
+    render(
+      <LzPanel
+        diagrams={diagrams}
+        activeDiagramId="a"
+        recent={[{ id: 9, name: "PZ OAK", updated_at: "2026-08-25T21:02:00" }]}
+        onSave={onSave}
+        onSelect={onSelect}
+        onOpenRecent={onOpenRecent}
+        onView3D={() => {}}
+        onClose={() => {}}
+        onRename={() => {}}
+        onSaveAs={() => {}}
+        onBrowseAll={() => {}}
+      />,
+    );
+    const active = screen.getByRole("region", { name: "LZ HAWK, active" });
+    expect(within(active).getByText("Unsaved changes")).toBeInTheDocument();
+    fireEvent.click(within(active).getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith("a");
+
+    // An LZ/PZ without a name is numbered by its place in the session.
+    fireEvent.click(screen.getByRole("button", { name: "Open LZ/PZ 2" }));
+    expect(onSelect).toHaveBeenCalledWith("b");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open PZ OAK" }));
+    expect(onOpenRecent).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }));
+  });
+
+  it("in a pack has no Save, and says where the work goes", () => {
+    render(
+      <LzPanel
+        diagrams={diagrams}
+        activeDiagramId="a"
+        pack={{ name: "OP DK", memberCount: 4 }}
+        presence={(id) => (id === "a" ? [{ id: 2, name: "Sam Bell" }] : [])}
+        onSave={() => {}}
+        onSelect={() => {}}
+        onView3D={() => {}}
+        onClose={() => {}}
+        onRename={() => {}}
+        onSaveAs={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.getByText("Saved to OP DK as you work. 4 members can see it.")).toBeInTheDocument();
+    expect(screen.getByText("Sam B. is also here")).toBeInTheDocument();
+  });
+});
+
+describe("the dock", () => {
+  const items = [
+    { key: "lz", label: "LZ/PZ", icon: "hexagon", dot: "warn" },
+    { key: "threats", label: "Threats", icon: "diamond", count: 2 },
+  ];
+  const Harness = () => {
+    const dock = useDock("lz");
+    return (
+      <Dock items={items} dock={dock}>
+        <div>panel {dock.panel}</div>
+      </Dock>
+    );
+  };
+
+  it("shows one panel, picks another from the rail, and folds away when its own icon is clicked", () => {
+    render(<Harness />);
+    expect(screen.getByText("panel lz")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Threats" })).toHaveTextContent("2");
+    fireEvent.click(screen.getByRole("button", { name: "Threats" }));
+    expect(screen.getByText("panel threats")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Threats" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Threats" }));
+    expect(screen.getByRole("button", { name: "Threats" })).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+describe("whether a route set is saved", () => {
+  const route = (id, extra = {}) => ({ id, name: id.toUpperCase(), points: [{ id: `${id}-1`, lat: 34, lon: -84 }], plan: { tempC: 15 }, ...extra });
+
+  it("ignores hiding a route", () => {
+    expect(routesFingerprint([route("a", { visible: false })])).toBe(routesFingerprint([route("a", { visible: true })]));
+    expect(routesFingerprint([route("a", { plan: { tempC: 20 } })])).not.toBe(routesFingerprint([route("a")]));
+  });
+
+  it("is clean once saved, unsaved after a change, and later saves go to the same record without asking", async () => {
+    const library = {
+      savedRoutes: [],
+      saveSketch: jest.fn().mockResolvedValue({ id: 31, name: "RED", updated_at: "2026-10-07T12:00:00" }),
+      updateSketch: jest.fn().mockResolvedValue({ id: 31, updated_at: "2026-10-07T12:05:00" }),
+    };
+    let routes = [route("a")];
+    const { result, rerender } = renderHook(
+      ({ sets }) => useRouteSaves({ sets, library, signedIn: true }),
+      { initialProps: { sets: [{ key: "sketches", kind: "sketch", routes }] }, wrapper: ToastProvider },
+    );
+    expect(result.current.stateOf("sketches")).toMatchObject({ link: null, dirty: true });
+
+    // The first save asks for a name in the Save dialog.
+    act(() => {
+      result.current.save("sketches");
+    });
+    render(<ToastProvider>{result.current.dialogs}</ToastProvider>);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "RED" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    await waitFor(() => expect(library.saveSketch).toHaveBeenCalledWith("RED", routes));
+    await waitFor(() => expect(result.current.stateOf("sketches")).toMatchObject({ link: { id: 31, name: "RED" }, dirty: false }));
+
+    routes = [route("a", { plan: { tempC: 21 } })];
+    rerender({ sets: [{ key: "sketches", kind: "sketch", routes }] });
+    expect(result.current.stateOf("sketches").dirty).toBe(true);
+
+    await act(async () => {
+      await result.current.save("sketches");
+    });
+    expect(library.updateSketch).toHaveBeenCalledWith(31, routes, "RED");
+    expect(result.current.stateOf("sketches").dirty).toBe(false);
+  });
+});
