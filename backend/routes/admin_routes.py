@@ -29,7 +29,7 @@ from models import (
 import pack_support
 import sync_support as sync
 from entitlements import (
-    FEATURES, FEATURE_KEYS, resolve_features,
+    DEFAULT_OFF, FEATURES, features_from_form, resolve_features,
     is_admin, is_super_admin, account_active, affiliation_ok,
 )
 from amps_package import inspect_amps_package
@@ -92,6 +92,7 @@ def _inject():
     return {
         'csrf_token': _csrf_token,
         'FEATURES': FEATURES,
+        'DEFAULT_OFF': DEFAULT_OFF,
         'resolve_features': resolve_features,
         'is_admin': is_admin,
         'is_super_admin': is_super_admin,
@@ -282,7 +283,7 @@ def set_features(uid):
     _check_csrf()
     user = _load_target(uid)
     enabled = set(request.form.getlist('feature'))
-    user.features = {key: (key in enabled) for key in FEATURE_KEYS}
+    user.features = features_from_form(enabled)
     db.session.commit()
     flash('Feature access updated.', 'ok')
     return redirect(url_for('admin.user_detail', uid=uid))

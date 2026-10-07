@@ -102,7 +102,12 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 
 Entitlement keys (`entitlements.FEATURES`): `lz_pz_tools`, `routes`,
 `msnx_import`, `threats`, `cloud_save`, `exports`, `aircraft_profiles`,
-`mission_packs`. A missing key means **enabled**, so new features default on.
+`mission_packs`. A missing key means **enabled**, so new features default on,
+except a feature in `entitlements.DEFAULT_OFF` (not launched yet: today
+`mission_packs`, which ships with the menu redesign). That one is off for everyone
+but admins and the testers an admin ticks it for, and only a tick is ever stored,
+never an "off" (`features_from_form`), so launching it is removing it from
+`DEFAULT_OFF`: everyone then has it, people whose access an admin edited included.
 
 ---
 

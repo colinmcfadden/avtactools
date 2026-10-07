@@ -134,7 +134,7 @@
       {% for key, label, desc in FEATURES %}
       <label class="feature-item">
         <input type="checkbox" name="feature" value="{{ key }}" {{ 'checked' if features[key] }}>
-        <span><strong>{{ label }}</strong><small>{{ desc }}</small></span>
+        <span><strong>{{ label }}</strong><small>{{ desc }}{% if key in DEFAULT_OFF %} Not launched yet: off for everyone except people it is ticked for here.{% endif %}</small></span>
       </label>
       {% endfor %}
     </div>

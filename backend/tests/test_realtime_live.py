@@ -106,7 +106,9 @@ class LiveChainTests(unittest.TestCase):
     def person(self, name):
         email = f'{name.lower()}-{uuid.uuid4().hex[:6]}@example.com'
         requests.post(f'{self.api}/__test__/clear-rate-limits')
-        requests.post(f'{self.api}/__test__/account', json={'email': email, 'password': PASSWORD, 'name': name}).raise_for_status()
+        # Packs are not launched (entitlements.DEFAULT_OFF): each person is a tester, as an admin would make them.
+        requests.post(f'{self.api}/__test__/account', json={'email': email, 'password': PASSWORD, 'name': name,
+                                                            'features': {'mission_packs': True}}).raise_for_status()
         token = requests.post(f'{self.api}/api/auth/login', json={'email': email, 'password': PASSWORD}).json()['access_token']
         return {'email': email, 'head': {'Authorization': f'Bearer {token}'}, 'token': token}
 

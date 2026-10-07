@@ -14,6 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 import pack_support  # noqa: E402
 from auth_harness import PASSWORD, NativeAuthCase  # noqa: E402
+from entitlements import resolve_features  # noqa: E402
 from models import (  # noqa: E402
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember,
     SavedLZ, Team, TeamMember, User, db,
@@ -59,12 +60,18 @@ class PackCase(NativeAuthCase):
 
     # -- people ------------------------------------------------------------
 
-    def person(self, email, name):
+    def person(self, email, name, packs=True):
+        """A signed-in person. Mission packs are not launched (entitlements.DEFAULT_OFF), so by default the
+        person is given them as an admin gives a tester; ``packs=False`` leaves them as anyone else is."""
         self.assertEqual(self.client.post('/api/auth/register', json={
             'name': name, 'email': email, 'password': PASSWORD}).status_code, 202)
         self.assertEqual(self.client.post('/api/auth/verify-email', json={
             'token': self.tokens[-1], 'password': PASSWORD}).status_code, 200)
         session = self.login(email=email)
+        if packs:
+            with self.app.app_context():
+                db.session.get(User, session['user']['id']).features = {'mission_packs': True}
+                db.session.commit()
         return {'id': session['user']['id'], 'email': email, 'name': name,
                 'head': {'Authorization': f'Bearer {session["access_token"]}'}}
 
@@ -188,6 +195,24 @@ class PackBasicsTests(PackCase):
                              ('get', '/api/invites'), ('get', '/api/users/search?q=co')):
             response = self.call(self.sam, method, path, json={'name': 'X'})
             self.assertEqual((response.status_code, response.get_json()['code']), (403, 'feature_disabled'), path)
+
+    def test_until_launch_nobody_has_packs_unless_given_them(self):
+        dana = self.person('dana@example.com', 'Dana', packs=False)
+        self.assertFalse(self.ok(self.call(dana, 'get', '/api/auth/me'))['features']['mission_packs'])
+        response = self.call(dana, 'get', '/api/packs')
+        self.assertEqual((response.status_code, response.get_json()['code']), (403, 'feature_disabled'))
+        # An invitation reaches nobody who cannot open packs yet: the link is refused the same way.
+        uuid_ = self.new_pack()['uuid']
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{uuid_}/invites', json={'email': dana['email']}), 201)
+        self.assertEqual(self.call(dana, 'post', '/api/invites/accept', json={'token': 'x'}).status_code, 403)
+        # A tester has them.
+        self.assertTrue(self.ok(self.call(self.sam, 'get', '/api/auth/me'))['features']['mission_packs'])
+
+    def test_launching_turns_packs_on_for_everyone_with_nothing_stored(self):
+        dana = self.person('dana@example.com', 'Dana', packs=False)
+        with patch('entitlements.DEFAULT_OFF', frozenset()):
+            self.assertTrue(self.ok(self.call(dana, 'get', '/api/auth/me'))['features']['mission_packs'])
+            self.ok(self.call(dana, 'get', '/api/packs'))
 
     def test_everything_needs_a_token(self):
         for method, path in (('get', '/api/packs'), ('post', '/api/packs/x/ops'), ('get', '/api/teams'),
@@ -1056,6 +1081,39 @@ class AdminTests(PackCase):
     def test_only_an_admin_sees_them(self):
         self.assertEqual(self.client.get('/admin/packs').status_code, 302)
         self.assertEqual(self.client.get('/admin/teams').status_code, 302)
+
+    def stored_features(self, who):
+        with self.app.app_context():
+            return db.session.get(User, who['id']).features
+
+    def save_features(self, who, *ticked):
+        response = self.admin.post(f'/admin/users/{who["id"]}/features', data={'csrf': 'token', 'feature': list(ticked)})
+        self.assertEqual(response.status_code, 302)
+
+    def test_saving_someone_s_features_never_stores_an_off_for_packs(self):
+        dana = self.person('dana@example.com', 'Dana', packs=False)
+        page = self.admin.get(f'/admin/users/{dana["id"]}').get_data(as_text=True)
+        self.assertIn('Not launched yet', page)
+        # Turning another feature off for them stores every launched feature, and nothing for packs...
+        self.save_features(dana, 'lz_pz_tools', 'routes', 'msnx_import', 'cloud_save', 'exports', 'aircraft_profiles')
+        stored = self.stored_features(dana)
+        self.assertEqual(stored['threats'], False)
+        self.assertNotIn('mission_packs', stored)
+        self.assertEqual(self.call(dana, 'get', '/api/packs').status_code, 403)
+        # ...so when packs launch, they have them like everyone else, and keep threats off.
+        with patch('entitlements.DEFAULT_OFF', frozenset()):
+            features = self.ok(self.call(dana, 'get', '/api/auth/me'))['features']
+            self.assertEqual((features['mission_packs'], features['threats']), (True, False))
+        # Ticking packs makes them a tester.
+        self.save_features(dana, 'mission_packs', 'threats')
+        self.assertEqual(self.stored_features(dana)['mission_packs'], True)
+        self.ok(self.call(dana, 'get', '/api/packs'))
+
+    def test_an_admin_always_has_packs(self):
+        with self.app.app_context():
+            admin = User.query.filter_by(email='admin@example.com').first()
+            self.assertTrue(resolve_features(admin)['mission_packs'])
+            self.assertFalse(resolve_features(User(email='x@example.com'))['mission_packs'])
 
     def test_deleting_a_user_from_the_dashboard_hands_their_packs_on(self):
         uuid_ = self.new_pack()['uuid']

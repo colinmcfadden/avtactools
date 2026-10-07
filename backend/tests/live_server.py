@@ -113,7 +113,8 @@ def create_app():
     def make_account():
         body = request.get_json()
         user = User(email=body["email"].lower(), name=body.get("name", "Test Pilot"), role="user",
-                    google_id=f"local:{uuid.uuid4()}", access_approved=bool(body.get("approved", True)))
+                    google_id=f"local:{uuid.uuid4()}", access_approved=bool(body.get("approved", True)),
+                    features=body.get("features"))
         db.session.add(user)
         db.session.flush()
         db.session.add(LocalCredential(

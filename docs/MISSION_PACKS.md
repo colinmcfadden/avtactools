@@ -15,6 +15,12 @@ screen uses yet. The web's pack screens are built inside the menu redesign's doc
 and workspace switcher (`docs/MENU_REDESIGN.md` on `docs/menu-redesign`, §8),
 after its phases 1–5.
 
+**Off until it launches.** Packs ship together with the menu redesign (the owner,
+2026-10-07). Until then `mission_packs` is in `entitlements.DEFAULT_OFF`: every
+route answers 403 `feature_disabled` except to admins and to testers an admin
+ticks it for on the user's page in the dashboard. Launching is taking it out of
+`DEFAULT_OFF`, in the same release as the screens.
+
 ---
 
 ## 1. Decisions
