@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Icon from "../ui/Icon";
 import "./shell.css";
 
@@ -10,7 +10,8 @@ import "./shell.css";
  *
  * Below 1100 px wide the dock is a bottom sheet (shell.css), as in the Android app: the rail is a row of
  * tabs along its top, and it rests at a peek, half the window or nearly all of it. Dragging its handle
- * moves between them; picking a tab opens it to half if it was at the peek.
+ * moves between them; picking a tab opens it to half if it was at the peek. The map ends where the sheet
+ * begins, so a target set by grid lands in view.
  */
 
 const NARROW = "(max-width: 1100px)";
@@ -31,6 +32,52 @@ const useNarrow = () => {
 const sheetHeights = () => {
   const h = window.innerHeight;
   return { peek: PEEK, half: Math.round(h * 0.48), full: h - 56 };
+};
+
+// How long the sheet takes to settle at a new height: its transition in shell.css.
+const SETTLE_MS = 200;
+
+/**
+ * Ends the map where the sheet begins, so a target set by grid lands in view and the map-style
+ * switcher shows. The map is the dock's sibling and cannot read a variable set on the dock, so the
+ * sheet's height (`--sheet-height`) and the map's bottom (`--map-bottom`) go on their shared parent,
+ * the map area, where shell.css reads both. `height` is null outside the bottom-sheet layout.
+ *
+ * The map's box changes only while the sheet is still: dragged, the sheet slides over a map that
+ * reaches down to the peek; eased up, over the map's old bottom, which follows once it arrives. No gap
+ * opens between them, and Leaflet re-fits once per move, not every frame (each re-fit re-renders the
+ * app through the map's moveend).
+ */
+const useMapAboveSheet = (asideRef, height, dragging) => {
+  const mapBottom = useRef(null);
+  useLayoutEffect(() => {
+    const frame = asideRef.current?.parentElement;
+    if (!frame || height === null) return undefined;
+    const setMapBottom = (px) => {
+      mapBottom.current = px;
+      frame.style.setProperty("--map-bottom", `${px}px`);
+    };
+    frame.style.setProperty("--sheet-height", `${height}px`);
+    if (dragging) setMapBottom(PEEK);
+    else if (mapBottom.current === null || height <= mapBottom.current) setMapBottom(height);
+    else {
+      const settled = setTimeout(() => setMapBottom(height), SETTLE_MS);
+      return () => clearTimeout(settled);
+    }
+    return undefined;
+  }, [asideRef, height, dragging]);
+
+  // Out of the bottom-sheet layout the map sits beside the dock again (shell.css's wide rules).
+  const sheetLayout = height !== null;
+  useLayoutEffect(() => {
+    if (!sheetLayout) return undefined;
+    const frame = asideRef.current?.parentElement;
+    return () => {
+      mapBottom.current = null;
+      frame?.style.removeProperty("--sheet-height");
+      frame?.style.removeProperty("--map-bottom");
+    };
+  }, [asideRef, sheetLayout]);
 };
 
 /** Which panel shows, and whether it is folded away. */
@@ -82,6 +129,20 @@ const Dock = ({ items, dock, children }) => {
   const [sheet, setSheet] = useState(() => (typeof window !== "undefined" && window.innerWidth < 700 ? "peek" : "half"));
   const drag = useRef(null);
   const [dragHeight, setDragHeight] = useState(null);
+  const asideRef = useRef(null);
+
+  // The sheet's heights follow the window's (a tablet turned on its side), and the map's bottom with them.
+  const [, setResized] = useState(0);
+  useEffect(() => {
+    if (!narrow) return undefined;
+    const onResize = () => setResized((n) => n + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [narrow]);
+
+  const sheetHeight = narrow ? dragHeight ?? sheetHeights()[sheet] : null;
+  const dragging = dragHeight !== null;
+  useMapAboveSheet(asideRef, sheetHeight, dragging);
 
   const pick = (key) => {
     if (narrow) {
@@ -117,10 +178,14 @@ const Dock = ({ items, dock, children }) => {
     setDragHeight(null);
   };
 
-  const style = narrow ? { "--sheet-height": `${dragHeight ?? sheetHeights()[sheet]}px`, transition: dragHeight !== null ? "none" : undefined } : undefined;
   const collapsed = !narrow && dock.collapsed;
   return (
-    <aside className={`shell-dock${collapsed ? " shell-dock--collapsed" : ""}`} style={style} aria-label="Panels">
+    <aside
+      ref={asideRef}
+      className={`shell-dock${collapsed ? " shell-dock--collapsed" : ""}`}
+      style={dragging ? { transition: "none" } : undefined}
+      aria-label="Panels"
+    >
       {narrow && (
         <button
           type="button"
