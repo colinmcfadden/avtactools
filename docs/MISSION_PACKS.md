@@ -9,11 +9,12 @@ Not the offline download the native plan used to call a "mission pack": that is
 now a **map pack** (`docs/NATIVE_APPS_PLAN.md`, Offline strategy).
 
 **Status:** steps 1–3 are built: the backend (packs, items, the operation stream,
-the log, finish, teams, invites, search), the live service (§6), and the web's
-sync client (`frontend/src/feature/missionPacks/`: `useMissionPack`), which no
-screen uses yet. The web's pack screens are built inside the menu redesign's dock
-and workspace switcher (`docs/MENU_REDESIGN.md` on `docs/menu-redesign`, §8),
-after its phases 1–5.
+the log, finish, teams, invites, search, seen markers), the live service (§6), and
+the web's side of everything below the screens (`frontend/src/feature/missionPacks/`):
+the sync client (`useMissionPack`), a call for every route (`packApi`), invitation
+links, and the editors kept in step with an open pack (§5a). No screen uses it yet:
+the pack screens are built inside the menu redesign's dock and workspace switcher
+(`docs/MENU_REDESIGN.md` on `docs/menu-redesign`, §8), after its phases 1–5.
 
 **Off until it launches.** Packs ship together with the menu redesign (the owner,
 2026-10-07). Until then `mission_packs` is in `entitlements.DEFAULT_OFF`: every
@@ -166,6 +167,40 @@ The web does all of this in `feature/missionPacks/`: `packSession.js` is the sta
 5. Take everyone else's events from the live stream (§6) when the pack has a `live_url`; otherwise, and while the stream is down, poll `GET …/events?since=<seq>` every few seconds (not while the page is hidden). An event that skips a number means one was missed: fetch from your `seq`. A type a client does not know it skips.
 6. If an event the server applied does not apply to your copy, your copy has drifted (it should never happen): load the pack again and keep what is pending on top.
 7. When the pack is finished (423, or a `pack.finish` event), switch to read-only, say who finished it and when, and keep the edits that were never taken (`session.dropped`) so the person can save them to the library. A 400 or 413 drops that batch only.
+
+## 5a. The editors and an open pack (web)
+
+The editors are not changed to know about packs: every LZ/PZ stays in the workspace
+(`useLzWorkspace`), every route in the sketch (`useRouteSketch`, now in sets: each
+route's `setId`), every point set in `useLocalPoints`. A pack item open in one of them
+has an id naming the pack and the item (`packRef.js`). `usePackLz`, `usePackRoutes`
+and `usePackPoints` join them to the pack, on one engine (`usePackItemSync`):
+
+- **A change made here is sent once the item has been still for 400 ms**, so a drag
+  is one change, not one per frame, as the operations `packDiff.js` works out (an
+  object's changed fields as one patch there; list elements by id: removed, inserted
+  after their neighbour, patched, or moved), with a sentence for the history ("Sam B.
+  moved Chalk 2 on LZ IBIS.": `describeLzChange` and its route and point peers).
+- **What is sent is the change from the version the editor was last in step with**,
+  never from the pack's latest, so it lands on top of whatever others did meanwhile:
+  both stand, or on one field the later one. A change waiting here is sent before
+  anyone else's is applied, so nothing made here is lost under it. An item still in an
+  older shape (an old library LZ copied in) is brought to today's in the same send, so
+  every change's path exists on the server; nothing is sent for merely opening one.
+- **Someone else's change is put into the editor, keeping what is each person's own**:
+  an LZ's view (base map, outline, slope map), its slope raster while the boundary is
+  the same, its library link and unsaved flag; a route's being hidden; a point set's
+  colour and visibility. None of that is ever in a pack.
+- A change the pack will not take (finished, or this person may only look) is put back
+  to the pack's version, and `droppedVersions` rebuilds the person's own version of what
+  they had changed, to save to their library as "NAME (my edits)" (`packActions.js`).
+- An item someone removed leaves the editor. `usePackSeen` moves the person's seen
+  marker while they look, and `changedSince` says which items changed since.
+
+These hooks are tested against the real editors and a fake pack that applies every
+operation as the server would (`fakePack.js`), including a change here and one there in
+the same moment, a drag that goes on after someone else's change arrived, and the same
+field changed by two people.
 
 ## 6. The live stream
 
