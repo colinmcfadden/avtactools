@@ -68,10 +68,12 @@ const paneFor = (map, name, zIndex) => {
   return pane;
 };
 
-const labelIcon = ({ kind, text }) => {
+// A line value sits just inside the edge it is on (`edge`): its pill is moved off the point inward.
+const labelIcon = ({ kind, edge, text }) => {
   const pill = document.createElement("span");
   pill.textContent = text;
-  return L.divIcon({ className: `mgrs-grid-label mgrs-grid-label--${kind}`, html: pill, iconSize: [0, 0] });
+  const at = edge ? ` mgrs-grid-label--${edge}` : "";
+  return L.divIcon({ className: `mgrs-grid-label mgrs-grid-label--${kind}${at}`, html: pill, iconSize: [0, 0] });
 };
 
 /** The view's ground scale at its centre, as Leaflet's Web Mercator gives it. */

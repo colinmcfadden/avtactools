@@ -39,6 +39,9 @@
 }
 .mgrs-grid-label--easting > span { transform: translate(-50%, 4px); }
 .mgrs-grid-label--northing > span { transform: translate(4px, -50%); }
+/* Where an edge was covered, a value goes on the opposite one (mgrsGrid.js): pulled inside it. */
+.mgrs-grid-label--bottom > span { transform: translate(-50%, calc(-100% - 4px)); }
+.mgrs-grid-label--right > span { transform: translate(calc(-100% - 4px), -50%); }
 .mgrs-grid-label--gzd > span,
 .mgrs-grid-label--square > span { transform: translate(-50%, -50%); }
 .mgrs-grid-label--gzd > span { color: var(--mgrs-grid-zone); }

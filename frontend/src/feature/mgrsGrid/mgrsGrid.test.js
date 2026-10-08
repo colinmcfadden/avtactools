@@ -357,6 +357,7 @@ describe("labels", () => {
     eastings.forEach((label) => {
       expect(label.lat).toBe(view.bounds.south);
       expect(label.box[3]).toBeLessThanOrEqual(view.height);
+      expect(label.edge).toBe("bottom");
       expect(Math.abs(toUtmInZone(label.lat, label.lon, label.zone).easting - label.value)).toBeLessThan(1e-3);
     });
     expect(grid.labels.some((l) => l.kind === "northing")).toBe(true);
@@ -366,7 +367,10 @@ describe("labels", () => {
     const { view, grid } = gridAt(34.78, -84.08, 14, {}, [390, 700]);
     const eastings = grid.labels.filter((l) => l.kind === "easting");
     expect(eastings.length).toBeGreaterThan(1);
-    eastings.forEach((label) => expect(label.lat).toBe(view.bounds.north));
+    eastings.forEach((label) => {
+      expect(label.lat).toBe(view.bounds.north);
+      expect(label.edge).toBe("top");
+    });
   });
 
   it("label northings down the right when the left is covered", () => {
@@ -377,6 +381,7 @@ describe("labels", () => {
     northings.forEach((label) => {
       expect(label.box[2]).toBeGreaterThan(view.width - 60);
       expect(label.box[2]).toBeLessThanOrEqual(view.width);
+      expect(label.edge).toBe("right");
       expect(Math.abs(toUtmInZone(label.lat, label.lon, label.zone).northing - label.value)).toBeLessThan(1e-3);
     });
   });
