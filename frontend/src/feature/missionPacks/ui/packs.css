@@ -275,3 +275,5 @@
 /* The Invite button sits level with the field and the role beside it (its label is a spacer). */
 .packs-invite > .packs-invite__go { width: auto; }
 .packs-invite__go .ui-btn { height: 36px; }
+/* The pack's own ⋯ menu, at the end of the panel's title line. */
+.packs-panel__more { margin-left: auto; }

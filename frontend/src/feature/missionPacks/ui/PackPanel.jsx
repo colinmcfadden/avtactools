@@ -256,7 +256,8 @@ const History = ({ packUuid, headSeq, newSince, me, members, items, api }) => {
  * the others who have it open now (presence); `me`: this person's user id; `newSince`: how far they
  * had looked when the panel opened. `audience`: how many can open it, its shared team included (the
  * members listed are only its own). `actions`: open, close, rename, saveCopy, updateFromOriginal,
- * remove, invite, members, addFromLibrary, finish, reopen.
+ * remove, invite, members, addFromLibrary, finish, reopen, duplicate, and for the pack itself renamePack,
+ * describePack, leavePack, deletePack (its ⋯ menu offers what the server lets this person do).
  */
 const PackPanel = ({ pack, members = [], audience, items = [], openIds, people = [], me, newSince = 0, readOnly, actions, tab, setTab, dropped = 0, onKeepDropped, status, api = packApi, onCollapse }) => {
   const role = pack.role;
@@ -266,11 +267,24 @@ const PackPanel = ({ pack, members = [], audience, items = [], openIds, people =
   const editingOf = (uuid) => people.find((p) => p.focus?.item === uuid && p.focus?.holding);
   const newCount = items.filter((item) => changedSince(item, newSince, me)).length;
   const here = people.length;
+  // Rename and describe as the server allows (editors and the owner, not once finished). Leave is offered
+  // to everyone, and says what to do instead to an owner (hand it over first) or to someone who has the
+  // pack only through a shared team (not a member to leave); only a member's Leave is destructive.
+  const leaves = role !== "owner" && members.some((m) => m.user_id === me);
+  const packMenu = [
+    { icon: "pencil", title: "Rename", onSelect: actions.renamePack, hidden: readOnly || !canEdit },
+    { icon: "pencil", title: "Edit description", onSelect: actions.describePack, hidden: readOnly || !canEdit },
+    { icon: "layers", title: "Duplicate as a new pack", onSelect: actions.duplicate },
+    { divider: true },
+    { icon: "logOut", title: "Leave pack", danger: leaves, onSelect: actions.leavePack },
+    { icon: "trash", title: "Delete pack", danger: true, onSelect: actions.deletePack, hidden: role !== "owner" },
+  ];
 
   return (
     <>
       <PanelHead title={pack.name} subtitle={`Mission Pack · you are ${ROLE_WORDS[role] ?? "a member"}`} onCollapse={onCollapse}>
         {finished ? <Chip icon="lock">Finished</Chip> : <Chip tone="pack">Active</Chip>}
+        <MoreMenu label={`More actions for ${pack.name}`} items={packMenu} className="packs-panel__more" />
       </PanelHead>
       <div className="shell-dock__body">
         {dropped > 0 && (

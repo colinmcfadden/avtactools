@@ -233,3 +233,46 @@ describe("inviting from the Members dialog", () => {
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
   });
 });
+
+describe("handing a pack over", () => {
+  const pack = { uuid: "p1", name: "OP DK", role: "owner", team: null };
+  const handApi = () => ({
+    getPack: jest.fn().mockResolvedValue({
+      members: [
+        { user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: "owner" },
+        { user_id: 2, name: "Sam Bell", email: "sam.bell@army.mil", role: "editor" },
+      ],
+    }),
+    listPackInvites: jest.fn().mockResolvedValue({ invites: [] }),
+    changeMember: jest.fn().mockResolvedValue({}),
+  });
+  const dialog = (api) => (
+    <ToastProvider>
+      <MembersDialog pack={pack} teams={[]} me={1} api={api} onChanged={() => {}} onClose={() => {}} />
+    </ToastProvider>
+  );
+
+  it("asks before making someone the owner, says the owner becomes an editor, then hands it over", async () => {
+    const api = handApi();
+    render(dialog(api));
+    await settle();
+    fireEvent.change(screen.getByLabelText("Role of Sam Bell"), { target: { value: "owner" } });
+    expect(api.changeMember).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Make Sam Bell the owner of OP DK?" })).toBeInTheDocument();
+    expect(screen.getByText(/You become an editor/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Make owner" }));
+    expect(api.changeMember).toHaveBeenCalledWith("p1", 2, "owner");
+    await settle();
+    expect(screen.getByText("Sam Bell owns OP DK now. You are an editor.")).toBeInTheDocument();
+  });
+
+  it("changes nothing on Cancel", async () => {
+    const api = handApi();
+    render(dialog(api));
+    await settle();
+    fireEvent.change(screen.getByLabelText("Role of Sam Bell"), { target: { value: "owner" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(api.changeMember).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Role of Sam Bell")).toHaveValue("editor");
+  });
+});

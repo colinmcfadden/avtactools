@@ -40,6 +40,7 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
   const picker = useRef(null);
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState(null);
+  const [handingTo, setHandingTo] = useState(null);
   // The live session learns of a share from its event, which names the team by id and role only.
   // The name is the one the server gave in its answer to the share, else the owner's own team list
   // has it (a pack can only be shared with a team its owner is in).
@@ -204,10 +205,16 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
                       aria-label={`Role of ${member.name || member.email}`}
                       value={member.role}
                       disabled={busy}
-                      onChange={(event) => run(() => api.changeMember(pack.uuid, member.user_id, event.target.value), `${member.name || member.email} is ${event.target.value === "viewer" ? "a viewer" : "an editor"} now`)}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        // A pack has one owner: handing it over is asked first, as it cannot be taken back here.
+                        if (next === "owner") setHandingTo(member);
+                        else run(() => api.changeMember(pack.uuid, member.user_id, next), `${member.name || member.email} is ${next === "viewer" ? "a viewer" : "an editor"} now`);
+                      }}
                     >
                       <option value="editor">Editor</option>
                       <option value="viewer">Viewer</option>
+                      <option value="owner">Owner</option>
                     </select>
                     <button type="button" className="ui-btn ui-btn--ghost ui-btn--30 ui-btn--square" aria-label={`Take ${member.name || member.email} off the pack`} onClick={() => setRemoving(member)}>
                       <Icon name="x" size={15} />
@@ -257,6 +264,21 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
             const member = removing;
             setRemoving(null);
             run(() => api.removeMember(pack.uuid, member.user_id), `${member.name || member.email} is no longer in ${pack.name}`);
+          }}
+        />
+      )}
+      {handingTo && (
+        <ConfirmDialog
+          title={`Make ${handingTo.name || handingTo.email} the owner of ${pack.name}?`}
+          text="A pack has one owner. You become an editor: you can still change what is in it, but only they can manage members, finish, reopen or delete it, or hand it back to you."
+          icon="users"
+          iconTone="warn"
+          confirmLabel="Make owner"
+          onCancel={() => setHandingTo(null)}
+          onConfirm={() => {
+            const member = handingTo;
+            setHandingTo(null);
+            run(() => api.changeMember(pack.uuid, member.user_id, "owner"), `${member.name || member.email} owns ${pack.name} now. You are an editor.`);
           }}
         />
       )}

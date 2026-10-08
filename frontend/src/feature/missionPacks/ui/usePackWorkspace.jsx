@@ -14,6 +14,7 @@ import { usePackRoutes } from "../usePackRoutes";
 import { changedSince, usePackSeen } from "../usePackSeen";
 import MembersDialog from "./MembersDialog";
 import NewPackDialog from "./NewPackDialog";
+import PackDescriptionDialog from "./PackDescriptionDialog";
 import { AddFromLibraryDialog, AddToPackDialog, kindWords } from "./PackDialogs";
 import TeamsDialog from "./TeamsDialog";
 import { usePacksHome } from "./usePacksHome";
@@ -135,6 +136,8 @@ export const usePackWorkspace = ({
   const [dialog, setDialog] = useState(null);
   const [panelTab, setPanelTab] = useState("items");
   const closedHere = useRef(new Set());
+  // The pack this person is leaving or deleting, whose going is theirs and not news to them.
+  const leaving = useRef(null);
 
   const reportGone = useCallback((localId, name) => toast({ tone: "info", message: `“${name}” was removed from the pack.` }), [toast]);
   const reportRefused = useCallback(
@@ -223,6 +226,7 @@ export const usePackWorkspace = ({
       else unpark();
       if (target && open) lz.hydrateWorkspace(EMPTY_WORKSPACE);
       closedHere.current = new Set();
+      if (target) leaving.current = null;
       setPackUuid(target);
       store(target);
       setPanelTab("items");
@@ -238,10 +242,11 @@ export const usePackWorkspace = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A pack that has gone (deleted, or no longer this person's to see): back to the Library.
+  // A pack that has gone (deleted, or no longer this person's to see): back to the Library. One this
+  // person is leaving or deleting goes too, and is not news to them.
   useEffect(() => {
     if (liveStatus !== "gone" || !open) return;
-    toast({ tone: "warn", message: `${meta?.name ?? "That pack"} is no longer available to you.` });
+    if (leaving.current !== open) toast({ tone: "warn", message: `${meta?.name ?? "That pack"} is no longer available to you.` });
     home.refresh();
     openPack(null);
   }, [liveStatus, open, meta?.name, toast, home, openPack]);
@@ -415,8 +420,32 @@ export const usePackWorkspace = ({
       finish: () => setDialog({ kind: "finish" }),
       reopen: () => setDialog({ kind: "reopen" }),
       duplicate: () => setDialog({ kind: "duplicate" }),
+      renamePack: () => setDialog({ kind: "renamePack" }),
+      describePack: () => setDialog({ kind: "describePack" }),
+      leavePack: () => setDialog({ kind: "leavePack" }),
+      deletePack: () => setDialog({ kind: "deletePack" }),
     }),
     [openItem, closeItem, library],
+  );
+
+  // Leaving or deleting the open pack: back to the Library, and the switcher asked again so it is no
+  // longer listed. A refusal (an owner must hand the pack over first) leaves everything as it was.
+  const goOut = useCallback(
+    async (work, done) => {
+      const uuid = open;
+      leaving.current = uuid;
+      try {
+        await work(uuid);
+      } catch (err) {
+        leaving.current = null;
+        toast({ tone: "error", message: packApi.packErrorMessage(err) });
+        return;
+      }
+      home.refresh();
+      openPack(null);
+      toast(done);
+    },
+    [open, home, openPack, toast],
   );
 
   // -- The edits a pack would not take ---------------------------------------------------------------
@@ -442,6 +471,23 @@ export const usePackWorkspace = ({
         : { tone: "error", message: `Saved ${saved} of ${versions.length}. Check the connection and try again.` },
     );
   }, [session, dropped, library, toast, onOpenLibrary]);
+
+  // -- Who can open it ---------------------------------------------------------------------------------------
+
+  // The switcher's line for the open pack is asked again when who can open it may have changed: its
+  // members, or the team it is shared with (packAudience reads the team's count from it).
+  const members = session?.members;
+  const audienceKey = meta ? `${meta.team?.id ?? ""}:${(members ?? []).map((m) => m.user_id).join(",")}` : null;
+  const shared = Boolean(meta?.team);
+  const lastAudienceKey = useRef(null);
+  const { refresh: refreshHome } = home;
+  useEffect(() => {
+    if (!audienceKey) return;
+    const previous = lastAudienceKey.current;
+    lastAudienceKey.current = { pack: open, key: audienceKey };
+    if (shared && previous?.pack === open && previous.key !== audienceKey) refreshHome();
+  }, [open, audienceKey, shared, refreshHome]);
+  const audience = packAudience(meta, members, home.packs.find((p) => p.uuid === open));
 
   // -- Dialogs ---------------------------------------------------------------------------------------------
 
@@ -572,6 +618,125 @@ export const usePackWorkspace = ({
         }}
       />
     );
+  } else if (dialog?.kind === "renamePack" && meta) {
+    dialogs = (
+      <NameDialog
+        title={`Rename ${meta.name}`}
+        subtitle="Everyone in the pack sees the new name."
+        initialName={meta.name}
+        confirmLabel="Rename"
+        upperCase
+        onCancel={close}
+        onConfirm={async (name) => {
+          if (name !== meta.name) {
+            try {
+              await packApi.updatePack(open, { name });
+            } catch (err) {
+              throw new Error(packApi.packErrorMessage(err));
+            }
+            refreshAll();
+            toast({ tone: "pack", message: `Renamed ${meta.name} to ${name}.` });
+          }
+          close();
+        }}
+      />
+    );
+  } else if (dialog?.kind === "describePack" && meta) {
+    dialogs = (
+      <PackDescriptionDialog
+        packName={meta.name}
+        initial={meta.description ?? ""}
+        onCancel={close}
+        onSave={async (description) => {
+          if (description !== (meta.description ?? "")) {
+            try {
+              await packApi.updatePack(open, { description });
+            } catch (err) {
+              throw new Error(packApi.packErrorMessage(err));
+            }
+            refreshAll();
+            toast({ tone: "pack", message: description ? `Saved the description of ${meta.name}.` : `Took the description off ${meta.name}.` });
+          }
+          close();
+        }}
+      />
+    );
+  } else if (dialog?.kind === "leavePack" && meta && meta.role === "owner") {
+    // The server's rule (owner_must_transfer): a pack always has an owner.
+    dialogs = (
+      <ConfirmDialog
+        title={`Hand ${meta.name} over first`}
+        text="A pack always has an owner. In Members, choose Owner beside someone's name; you then become an editor and can leave."
+        icon="users"
+        iconTone="pack"
+        confirmLabel="Open Members"
+        confirmIcon="users"
+        onCancel={close}
+        onConfirm={() => setDialog({ kind: "members" })}
+      />
+    );
+  } else if (dialog?.kind === "leavePack" && meta && !(session?.members ?? []).some((m) => m.user_id === me)) {
+    // In it only through the team it is shared with: there is no membership to end.
+    const team = (meta.team && home.teams.find((t) => t.id === meta.team.id)) || meta.team;
+    dialogs = (
+      <ConfirmDialog
+        title={`You have ${meta.name} through ${team?.name || "a team"}`}
+        text="It is shared with the team, so it opens for everyone in it. Its owner can stop sharing it, or you can leave the team under Manage teams."
+        icon="users"
+        iconTone="pack"
+        cancelLabel="Close"
+        confirmLabel="Manage teams"
+        onCancel={close}
+        onConfirm={() => {
+          home.refresh();
+          setDialog({ kind: "teams" });
+        }}
+      />
+    );
+  } else if (dialog?.kind === "leavePack" && meta) {
+    // Someone in the team the pack is shared with keeps it through the team after leaving.
+    const viaTeam = meta.team ? home.teams.find((t) => t.id === meta.team.id) : null;
+    dialogs = (
+      <ConfirmDialog
+        title={`Leave ${meta.name}?`}
+        text={[
+          viaTeam
+            ? `You can still open it through ${viaTeam.name}, which it is shared with, as ${meta.team.role === "viewer" ? "a viewer" : "an editor"}.`
+            : "It stops opening for you, and only its owner can add you again.",
+          "What you added stays in the pack.",
+        ]}
+        icon="logOut"
+        iconTone="danger"
+        confirmLabel="Leave pack"
+        confirmTone="danger"
+        onCancel={close}
+        onConfirm={() => {
+          close();
+          goOut((uuid) => packApi.removeMember(uuid, me), { message: `You left ${meta.name}.` });
+        }}
+      />
+    );
+  } else if (dialog?.kind === "deletePack" && meta) {
+    dialogs = (
+      <ConfirmDialog
+        title={`Delete ${meta.name}?`}
+        text={[
+          audience > 1
+            ? `It is deleted for all ${audience} people who can open it, with every item in it and its history.`
+            : "It is deleted with every item in it and its history.",
+          "This cannot be undone. Anyone who wants to keep an item can save a copy to their Library first.",
+        ]}
+        icon="trash"
+        iconTone="danger"
+        confirmLabel="Delete pack"
+        confirmTone="danger"
+        onCancel={close}
+        onConfirm={() => {
+          close();
+          goOut((uuid) => packApi.deletePack(uuid), { message: `Deleted ${meta.name}.` });
+        }}
+      />
+    );
   } else if (dialog?.kind === "rename" && item) {
     dialogs = (
       <NameDialog
@@ -689,21 +854,6 @@ export const usePackWorkspace = ({
             : liveStatus === "polling"
               ? "polling"
               : "live";
-
-  // The switcher's line for the open pack is asked again when who can open it may have changed: its
-  // members, or the team it is shared with (packAudience reads the team's count from it).
-  const members = session?.members;
-  const audienceKey = meta ? `${meta.team?.id ?? ""}:${(members ?? []).map((m) => m.user_id).join(",")}` : null;
-  const shared = Boolean(meta?.team);
-  const lastAudienceKey = useRef(null);
-  const { refresh: refreshHome } = home;
-  useEffect(() => {
-    if (!audienceKey) return;
-    const previous = lastAudienceKey.current;
-    lastAudienceKey.current = { pack: open, key: audienceKey };
-    if (shared && previous?.pack === open && previous.key !== audienceKey) refreshHome();
-  }, [open, audienceKey, shared, refreshHome]);
-  const audience = packAudience(meta, members, home.packs.find((p) => p.uuid === open));
 
   const packForPanels = meta
     ? {
