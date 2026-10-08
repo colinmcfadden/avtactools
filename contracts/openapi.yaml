@@ -3189,7 +3189,7 @@ components:
           nullable: true
           additionalProperties: false
           description: Where a copy from someone's library came from. Null for an item made in the pack.
-          required: [kind, uuid, revision, original]
+          required: [kind, uuid, revision, original, original_updated_at, pack_changes, last_pack_change]
           properties:
             kind: { type: string, enum: [lz, route, pointset] }
             uuid:
@@ -3206,6 +3206,38 @@ components:
               description: |
                 Only for the member who copied it in (the original is their private record); null for
                 everyone else, and for a copy whose `uuid` is null.
+            original_updated_at:
+              type: string
+              nullable: true
+              description: |
+                When the original last changed, while it is `same` or `changed`; null otherwise and for
+                everyone but the member who copied it in.
+            pack_changes:
+              type: integer
+              nullable: true
+              minimum: 0
+              description: |
+                While `original` is `changed`: the edits made to the item's content in the pack since it
+                was copied in or last updated from the original, which updating would replace. Operations
+                sent as one edit (one after another, by one person, with one summary) count once; a rename
+                is not counted, since updating keeps the name. Null otherwise.
+            last_pack_change:
+              type: object
+              nullable: true
+              additionalProperties: false
+              description: The newest of those edits, while `pack_changes` is above 0; null otherwise.
+              required: [actor, summary, created_at]
+              properties:
+                actor:
+                  type: object
+                  additionalProperties: false
+                  required: [id, name]
+                  description: Who made it, as the log has them (id null for a deleted account).
+                  properties:
+                    id: { type: integer, nullable: true }
+                    name: { type: string }
+                summary: { type: string, description: The edit's sentence in the History panel. }
+                created_at: { type: string }
         data:
           description: The same JSON the library keeps (lz_data, route_data, or the list of points). Present wherever the item is returned whole.
 

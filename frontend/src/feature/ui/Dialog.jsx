@@ -122,11 +122,12 @@ export default Dialog;
 /**
  * A question with a confirming answer (Delete, Remove all, Save), an optional second one (Don't save),
  * and Cancel. The confirming answer is the one that is drawn as such; a destructive one is red, and
- * never the only way out.
+ * never the only way out. `children` go under the text (a warning box, which a paragraph cannot hold).
  */
 export const ConfirmDialog = ({
   title,
   text,
+  children,
   icon = "alertTriangle",
   iconTone,
   confirmLabel,
@@ -171,6 +172,7 @@ export const ConfirmDialog = ({
         // eslint-disable-next-line react/no-array-index-key
         <p key={i} className="ui-dialog__text">{line}</p>
       ))}
+      {children}
     </Dialog>
   );
 };

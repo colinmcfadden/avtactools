@@ -161,21 +161,75 @@ def event_body(event):
     }
 
 
-def original_state(item, viewer_id):
+def original_of(item, viewer_id):
     """Whether the library record an item was copied from has moved on: only its owner may know.
 
-    ``same``, ``changed`` or ``deleted`` for the person who copied it in; None for
-    everyone else, since the original is their private record, and for a copy with no
-    ``source_uuid`` (one made from a record saved before sync, before copying named it):
-    looking that up would find whichever of their unnamed records came first.
+    ``(state, record)``. The state is ``same``, ``changed`` or ``deleted`` for the person who
+    copied it in; None for everyone else, since the original is their private record, and for
+    a copy with no ``source_uuid`` (one made from a record saved before sync, before copying
+    named it): looking that up would find whichever of their unnamed records came first. The
+    record is there when the state is ``same`` or ``changed``.
     """
     if not item.source_kind or not item.source_uuid or item.created_by is None or item.created_by != viewer_id:
-        return None
+        return None, None
     model = LIBRARY_MODELS.get(item.source_kind)
     original = model.query.filter_by(user_id=viewer_id, client_uuid=item.source_uuid).first() if model else None
     if original is None or original.deleted_at is not None:
-        return 'deleted'
-    return 'changed' if (original.revision or 0) > (item.source_revision or 0) else 'same'
+        return 'deleted', None
+    return ('changed' if (original.revision or 0) > (item.source_revision or 0) else 'same'), original
+
+
+# What changes an item's content. Not a rename: updating from the original keeps the pack's name.
+CONTENT_OPS = ('set', 'patch', 'upsert', 'insert', 'remove')
+
+
+def pack_changes(item):
+    """What updating an item from its original would replace: the edits made to its content in the pack
+    since it was copied in or last updated from the original. ``(count, newest edit)``.
+
+    One edit goes as several operations that share its sentence (an element moved in a list is a remove
+    and an insert), so a run of them by one person with one summary counts once, as a person counts them.
+    """
+    applied = (MissionPackEvent.pack_id == item.pack_id, MissionPackEvent.item_uuid == item.uuid,
+               MissionPackEvent.status == 'applied')
+    since = db.session.query(func.max(MissionPackEvent.seq)).filter(
+        *applied, MissionPackEvent.op_type.in_(('item.create', 'item.replace'))).scalar() or 0
+    edits = (db.session.query(MissionPackEvent.user_id, MissionPackEvent.actor_name, MissionPackEvent.summary,
+                              MissionPackEvent.created_at)
+             .filter(*applied, MissionPackEvent.op_type.in_(CONTENT_OPS), MissionPackEvent.seq > since)
+             .order_by(MissionPackEvent.seq).all())
+    count, previous = 0, None
+    for edit in edits:
+        who_and_what = (edit.user_id, edit.actor_name, edit.summary)
+        if who_and_what != previous:
+            count += 1
+        previous = who_and_what
+    return count, (edits[-1] if edits else None)
+
+
+def source_body(item, viewer_id):
+    """Where a copy came from, and for whoever copied it, how far the original and the copy have moved
+    apart: when the original last changed, and while there is something to update to, what updating
+    would replace. Like ``original``, these are theirs alone and null for everyone else."""
+    if not item.source_kind:
+        return None
+    state, original = original_of(item, viewer_id)
+    body = {
+        'kind': item.source_kind,
+        'uuid': item.source_uuid,
+        'revision': item.source_revision,
+        'original': state,
+        'original_updated_at': iso(original.updated_at) if original is not None else None,
+        'pack_changes': None,
+        'last_pack_change': None,
+    }
+    if state == 'changed':
+        count, last = pack_changes(item)
+        body['pack_changes'] = count
+        if last is not None:
+            body['last_pack_change'] = {'actor': {'id': last.user_id, 'name': last.actor_name},
+                                        'summary': last.summary, 'created_at': iso(last.created_at)}
+    return body
 
 
 def item_body(item, viewer_id, known, full=True):
@@ -189,12 +243,7 @@ def item_body(item, viewer_id, known, full=True):
         'updated_by': person(item.updated_by, known),
         'created_at': iso(item.created_at),
         'updated_at': iso(item.updated_at),
-        'source': None if not item.source_kind else {
-            'kind': item.source_kind,
-            'uuid': item.source_uuid,
-            'revision': item.source_revision,
-            'original': original_state(item, viewer_id),
-        },
+        'source': source_body(item, viewer_id),
     }
     if full:
         body['data'] = item.data

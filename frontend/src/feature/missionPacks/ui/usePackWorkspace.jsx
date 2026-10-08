@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { shortName } from "../../ui/Avatar";
 import { ConfirmDialog } from "../../ui/Dialog";
+import Icon from "../../ui/Icon";
 import NameDialog from "../../ui/NameDialog";
 import { dateAtTime } from "../../ui/time";
 import { copyFromLibrary, deleteItemOp, droppedVersions, myEditsName, saveVersionToLibrary } from "../packActions";
@@ -94,6 +96,73 @@ export const packAudience = (meta, members, listed) => {
   const own = members?.length ?? meta.member_count ?? 1;
   if (!meta.team) return own;
   return Math.max(own, listed?.audience_count ?? meta.audience_count ?? own);
+};
+
+// The last edit an update would replace, after the count: "…, including Jess R.’s last, “set the
+// landing heading of LZ HAWK to 270°”." The sentence was written with the editor's name in front.
+const lastChangeWords = (count, last, me) => {
+  const summary = (last?.summary ?? "").trim().replace(/\.$/, "");
+  if (count === 1) return summary ? `: ${summary}.` : ".";
+  if (!last?.actor) return ".";
+  const name = last.actor.name ?? "";
+  const whose = me != null && last.actor.id === me ? "your" : `${shortName(name)}’s`;
+  const what = name && summary.startsWith(`${name} `) ? summary.slice(name.length + 1) : summary;
+  return what ? `, including ${whose} last, “${what}”.` : `, including ${whose} last.`;
+};
+
+/**
+ * Update a copy from its Library original (mockup 17-B): when the original changed, and what in the
+ * pack the update replaces. Those are asked of the server as the dialog opens, because the item as the
+ * pack was loaded does not follow edits made since; a sentence whose facts did not come back is left
+ * out, and only the plain warning stands in for the count.
+ */
+export const UpdateFromOriginalDialog = ({ packUuid, item, me, getItem = packApi.getItem, onCancel, onConfirm }) => {
+  const [fresh, setFresh] = useState({ status: "loading", source: null });
+  useEffect(() => {
+    let current = true;
+    getItem(packUuid, item.uuid).then(
+      (answer) => current && setFresh({ status: "done", source: answer?.item?.source ?? null }),
+      () => current && setFresh({ status: "failed", source: null }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [getItem, packUuid, item.uuid]);
+  const { status, source } = fresh;
+  const changedAt = source?.original_updated_at ? dateAtTime(source.original_updated_at) : "";
+  const count = Number.isInteger(source?.pack_changes) ? source.pack_changes : null;
+  let warning = null;
+  if (count > 0) {
+    warning = (
+      <>
+        <b>{count} {count === 1 ? "change" : "changes"} made in the pack will be replaced</b>
+        {lastChangeWords(count, source.last_pack_change, me)} The history keeps what was there.
+      </>
+    );
+  } else if (count === null && status !== "loading") {
+    warning = "Changes made to it in the pack will be replaced. The history keeps what was there.";
+  }
+  return (
+    <ConfirmDialog
+      title={`Update “${item.name}” from Library?`}
+      text={changedAt
+        ? `Your Library version changed ${changedAt}. Updating replaces the pack copy with it.`
+        : "Updating replaces the pack copy with your Library version."}
+      icon="refresh"
+      iconTone="warn"
+      confirmLabel="Update from original"
+      confirmIcon="refresh"
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
+      {warning && (
+        <div className="ui-callout" style={{ marginTop: 12 }}>
+          <Icon name="alertTriangle" size={16} />
+          <span>{warning}</span>
+        </div>
+      )}
+    </ConfirmDialog>
+  );
 };
 
 export const usePackWorkspace = ({
@@ -778,15 +847,10 @@ export const usePackWorkspace = ({
     );
   } else if (dialog?.kind === "update" && item) {
     dialogs = (
-      <ConfirmDialog
-        title={`Update “${item.name}” from Library?`}
-        text={[
-          "Updating replaces the pack’s copy with your Library version.",
-          `Changes made in the pack${item.updated_by && item.updated_by.id !== me ? `, including ${item.updated_by.name}’s last at ${dateAtTime(item.updated_at)},` : ""} will be replaced. The history keeps what was there.`,
-        ]}
-        icon="refresh"
-        iconTone="warn"
-        confirmLabel="Update from original"
+      <UpdateFromOriginalDialog
+        packUuid={open}
+        item={item}
+        me={me}
         onCancel={close}
         onConfirm={() => {
           close();

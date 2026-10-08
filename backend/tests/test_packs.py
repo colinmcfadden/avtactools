@@ -444,7 +444,9 @@ class LibraryTests(PackCase):
         body = self.ok(self.copy_in(item='lz-a'), 201)
         item = body['item']
         self.assertEqual((item['uuid'], item['name'], item['data']), ('lz-a', 'LZ HAWK', LZ_DATA))
-        self.assertEqual(item['source'], {'kind': 'lz', 'uuid': self.lz['client_uuid'], 'revision': 1, 'original': 'same'})
+        self.assertEqual(item['source'], {'kind': 'lz', 'uuid': self.lz['client_uuid'], 'revision': 1, 'original': 'same',
+                                          'original_updated_at': self.lz['updated_at'], 'pack_changes': None,
+                                          'last_pack_change': None})
         self.assertEqual(body['event']['summary'], 'Colin added "LZ HAWK" (copied from their library).')
         self.assertEqual(body['event']['op']['source'], {'kind': 'lz', 'uuid': self.lz['client_uuid'], 'revision': 1})
 
@@ -470,6 +472,48 @@ class LibraryTests(PackCase):
         self.assertEqual(body['item']['source']['original'], 'same')
         self.assertEqual((body['event']['type'], body['event']['op']['data']['name'], body['event']['op']['source_revision']),
                          ('item.replace', 'NEW', 2))
+
+    def heading(self, item, value, summary):
+        return self.op('patch', item, path=['flightData'], value={'landingHeading': value}, summary=summary)
+
+    def test_whoever_copied_it_learns_what_updating_would_replace(self):
+        self.member(self.uuid, self.sam)
+        self.ok(self.copy_in(item='lz-a'), 201)
+        # Sam's one edit goes as two operations with one sentence, then another edit; Colin renames
+        # the copy (updating keeps the name) and an edit to something gone is skipped: neither counts.
+        self.ok(self.send(self.uuid, self.heading('lz-a', 90, 'Sam set the landing heading of LZ HAWK to 090°.'),
+                          self.heading('lz-a', 95, 'Sam set the landing heading of LZ HAWK to 090°.'), who=self.sam))
+        self.ok(self.send(self.uuid, self.op('item.rename', 'lz-a', name='LZ HAWK 2')))
+        self.ok(self.send(self.uuid, self.op('patch', 'lz-a', path=['graphics', 'helicopters', {'id': 'gone'}],
+                                             value={'heading': 1})))
+        self.ok(self.send(self.uuid, self.heading('lz-a', 270, 'Sam set the landing heading of LZ HAWK to 270°.'),
+                          who=self.sam))
+        source = self.item(self.pack(self.uuid), 'lz-a')['source']
+        self.assertEqual((source['pack_changes'], source['last_pack_change']), (None, None))   # nothing to update to
+
+        edited = self.ok(self.call(self.colin, 'put', f'/api/lz/{self.lz["id"]}', json={'lz_data': {**LZ_DATA, 'name': 'NEW'}}))
+        source = self.ok(self.call(self.colin, 'get', f'/api/packs/{self.uuid}/items/lz-a'))['item']['source']
+        self.assertEqual((source['original'], source['original_updated_at'], source['pack_changes']),
+                         ('changed', edited['updated_at'], 2))
+        self.assertEqual(source['last_pack_change']['actor'], {'id': self.sam['id'], 'name': 'Sam'})
+        self.assertEqual(source['last_pack_change']['summary'], 'Sam set the landing heading of LZ HAWK to 270°.')
+        self.assertTrue(source['last_pack_change']['created_at'])
+        theirs = self.ok(self.call(self.sam, 'get', f'/api/packs/{self.uuid}/items/lz-a'))['item']['source']
+        self.assertEqual([theirs[k] for k in ('original', 'original_updated_at', 'pack_changes', 'last_pack_change')],
+                         [None, None, None, None])
+
+        # Updating starts the count again: only what is done to the copy after it counts.
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/lz-a/update-from-original'))
+        self.ok(self.send(self.uuid, self.heading('lz-a', 180, 'Colin set the landing heading of NEW to 180°.')))
+        self.ok(self.call(self.colin, 'put', f'/api/lz/{self.lz["id"]}', json={'lz_data': {**LZ_DATA, 'name': 'NEWER'}}))
+        source = self.item(self.pack(self.uuid), 'lz-a')['source']
+        self.assertEqual((source['pack_changes'], source['last_pack_change']['actor']['name']), (1, 'Colin'))
+
+    def test_an_original_changed_with_nothing_changed_in_the_pack_replaces_nothing(self):
+        self.ok(self.copy_in(item='lz-a'), 201)
+        self.ok(self.call(self.colin, 'put', f'/api/lz/{self.lz["id"]}', json={'lz_data': {**LZ_DATA, 'name': 'NEW'}}))
+        source = self.item(self.pack(self.uuid), 'lz-a')['source']
+        self.assertEqual((source['original'], source['pack_changes'], source['last_pack_change']), ('changed', 0, None))
 
     def test_nobody_else_can_reach_into_someone_elses_library(self):
         self.member(self.uuid, self.sam)
@@ -567,7 +611,9 @@ class LegacyLibraryTests(PackCase):
     def test_copying_one_names_it_and_the_copy_follows_that_one_only(self):
         item = self.copy(self.bravo, 'lz-b')
         bravo, alpha = self.lz(self.bravo), self.lz(self.alpha)
-        self.assertEqual(item['source'], {'kind': 'lz', 'uuid': bravo.client_uuid, 'revision': 1, 'original': 'same'})
+        self.assertEqual(item['source'], {'kind': 'lz', 'uuid': bravo.client_uuid, 'revision': 1, 'original': 'same',
+                                          'original_updated_at': self.long_ago.isoformat(), 'pack_changes': None,
+                                          'last_pack_change': None})
         self.assertIsNotNone(bravo.client_uuid)
         self.assertIsNone(alpha.client_uuid)                                     # only what was copied
         self.assertEqual((bravo.revision, bravo.updated_at), (1, self.long_ago))  # being named is not an edit
@@ -596,7 +642,9 @@ class LegacyLibraryTests(PackCase):
             db.session.commit()
         self.edit(self.alpha, 'ALPHA EDITED')
         pack = self.pack(self.uuid)
-        self.assertEqual(self.item(pack, 'lz-b')['source'], {'kind': 'lz', 'uuid': None, 'revision': 1, 'original': None})
+        self.assertEqual(self.item(pack, 'lz-b')['source'], {'kind': 'lz', 'uuid': None, 'revision': 1, 'original': None,
+                                                             'original_updated_at': None, 'pack_changes': None,
+                                                             'last_pack_change': None})
         self.assertEqual(check_response(load_spec(), '/api/packs/{uuid}', 'get', 200, pack), [])
         response = self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/lz-b/update-from-original')
         self.assertEqual((response.status_code, response.get_json()['code']), (409, 'original_unknown'))
@@ -1307,7 +1355,11 @@ class ContractTests(PackCase):
         self.conforms(self.call(self.sam, 'put', f'/api/packs/{uuid_}/seen', json={'seq': 1}), '/api/packs/{uuid}/seen', 'put', 404)
         self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}'), '/api/packs/{uuid}', 'get', 200)
         self.conforms(self.call(self.colin, 'get', f'/api/packs/{uuid_}/items/lz-a'), '/api/packs/{uuid}/items/{item}', 'get', 200)
+        self.ok(self.send(uuid_, self.op('patch', 'lz-a', path=['flightData'], value={'landingHeading': 90})))
         self.ok(self.call(self.colin, 'put', f'/api/lz/{lz["id"]}', json={'name': 'NEW'}))
+        changed = self.call(self.colin, 'get', f'/api/packs/{uuid_}/items/lz-a')
+        self.conforms(changed, '/api/packs/{uuid}/items/{item}', 'get', 200)
+        self.assertEqual(changed.get_json()['item']['source']['pack_changes'], 1)
         self.conforms(self.call(self.colin, 'post', f'/api/packs/{uuid_}/items/lz-a/update-from-original'),
                       '/api/packs/{uuid}/items/{item}/update-from-original', 'post', 200)
         self.conforms(self.call(self.colin, 'post', f'/api/packs/{uuid_}/items/lz-a/library'),
