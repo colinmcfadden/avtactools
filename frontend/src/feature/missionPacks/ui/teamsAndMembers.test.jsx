@@ -155,6 +155,13 @@ describe("sharing a pack with a team", () => {
     expect(screen.getByText("Shared with B CO to view")).toBeInTheDocument();
   });
 
+  it("counts a team's members in words that agree with the number", async () => {
+    render(dialog(membersApi(), pack, [bco, { id: 9, name: "D CO", member_count: 1, role: "owner" }]));
+    await settle();
+    expect(screen.getByRole("option", { name: "B CO · 3 members · not shared with this pack" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "D CO · 1 member · not shared with this pack" })).toBeInTheDocument();
+  });
+
   it("shows what a team it is shared with can do, and changes it", async () => {
     const api = membersApi();
     api.updatePack.mockResolvedValue({ ...pack, team: { id: 7, name: "B CO", member_count: 3, role: "viewer" } });

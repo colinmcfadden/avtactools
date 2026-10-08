@@ -174,7 +174,7 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
                   <div className="packs-team-share__main">
                     <select className="ui-input ui-input--36" aria-label="Team to share with" value={shareTo ?? ""} onChange={(event) => setShareTeam(Number(event.target.value))}>
                       {shareable.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name} · {t.member_count} members · not shared with this pack</option>
+                        <option key={t.id} value={t.id}>{t.name} · {t.member_count} {t.member_count === 1 ? "member" : "members"} · not shared with this pack</option>
                       ))}
                     </select>
                   </div>
