@@ -138,6 +138,8 @@ export const usePackWorkspace = ({
   const closedHere = useRef(new Set());
   // The pack this person is leaving or deleting, whose going is theirs and not news to them.
   const leaving = useRef(null);
+  const openNow = useRef(open);
+  openNow.current = open;
 
   const reportGone = useCallback((localId, name) => toast({ tone: "info", message: `“${name}” was removed from the pack.` }), [toast]);
   const reportRefused = useCallback(
@@ -442,7 +444,8 @@ export const usePackWorkspace = ({
         return;
       }
       home.refresh();
-      openPack(null);
+      // Unless another pack was opened while the answer came.
+      if (openNow.current === uuid) openPack(null);
       toast(done);
     },
     [open, home, openPack, toast],
