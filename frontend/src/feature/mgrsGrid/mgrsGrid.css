@@ -1,12 +1,13 @@
 /* The MGRS grid (MgrsGridLayer). It goes over imagery, topo and the VFR sectional alike, so
    the lines are light with a thin dark halo: noticeable on any of them, thin enough to see the
    map through (the halo is what shows on the light topo and VFR maps, the line on imagery).
-   100 km lines are heavier; zone and band boundaries heaviest, in an orange no planning graphic
-   uses. */
+   100 km lines are heavier; zone and band boundaries heaviest, white dashes over a solid dark
+   halo. Not a colour: routes take any of eight (red through orange to pink), the LZ boundary is
+   amber and threat rings amber and red, so a coloured zone line could be read as one of them. */
 .map-mgrs-grid {
   --mgrs-grid-line: rgba(255, 255, 255, 0.85);
   --mgrs-grid-major: rgba(255, 255, 255, 0.92);
-  --mgrs-grid-zone: #ffb347;
+  --mgrs-grid-zone: #ffffff;
   --mgrs-grid-halo: rgba(0, 0, 0, 0.45);
 }
 
@@ -17,7 +18,8 @@
 
 .mgrs-grid__line--minor { stroke: var(--mgrs-grid-line); stroke-width: 1px; }
 .mgrs-grid__line--major { stroke: var(--mgrs-grid-major); stroke-width: 1.75px; }
-.mgrs-grid__line--zone { stroke: var(--mgrs-grid-zone); stroke-width: 2.5px; }
+.mgrs-grid__line--zone { stroke: var(--mgrs-grid-zone); stroke-width: 2.5px; stroke-dasharray: 12 6; }
+.mgrs-grid__halo--zone { stroke: rgba(0, 0, 0, 0.6); }
 
 /* Labels: 11 px pills on a translucent dark ground. mgrsGrid.js keeps them apart by these sizes
    (about 7 px a character, 10 px of padding, 17 px tall); the icon is a point and the pill is
