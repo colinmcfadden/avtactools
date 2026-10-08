@@ -223,9 +223,14 @@ const MapView = ({
       style={{ height: "100%", width: "100%" }}
       preserveDrawingBuffer={true}
       preferCanvas={true}
+      // Fractional zoom keeps a trackpad pinch or swipe smooth. With a 0.1 snap Leaflet no
+      // longer rounds a wheel notch up to a whole level, so the wheel rate is set here: 30 px
+      // per level gives about one level per mouse notch on Windows Chrome at 100–150% display
+      // scaling (Leaflet divides each notch by 2 × devicePixelRatio there). At 120, a notch was
+      // 0.2–0.3 of a level and the +/− buttons 0.1, which made a laptop slow to zoom and pan.
       zoomSnap={0.1}
-      zoomDelta={0.1}
-      wheelPxPerZoomLevel={120}
+      zoomDelta={1}
+      wheelPxPerZoomLevel={30}
       updateWhenZooming={false}
     >
       {/* Base Layer - driven by the mapStyles registry */}
