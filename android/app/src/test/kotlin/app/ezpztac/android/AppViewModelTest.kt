@@ -78,7 +78,12 @@ class AppViewModelTest {
         var offlineTooLong = false
         val calls = mutableListOf<String>()
 
-        override suspend fun restore(): AuthState { calls += "restore"; state.value = stored; return stored }
+        /** As [app.ezpztac.network.ApiClient.restore]: the store is read once per process, and after that the state is what it is. */
+        override suspend fun restore(): AuthState {
+            calls += "restore"
+            if (state.value == AuthState.Unknown) state.value = stored
+            return state.value
+        }
         override suspend fun endSessionIfOfflineTooLong(): Boolean {
             calls += "grace"
             if (!offlineTooLong) return false
@@ -213,6 +218,17 @@ class AppViewModelTest {
         assertEquals(0, r.scheduler.requested)
         assertTrue("its plans were not wiped", "wipe" !in r.accounts.log)
         assertTrue("refreshUser" !in r.backend.calls)                                       // no point asking a server that cannot be reached
+    }
+
+    @Test
+    fun `a session a background sync found ended before the app was opened still says why at launch`() = runTest(dispatcher) {
+        // WorkManager ran a sync in this process before the activity started, and the server had ended the session: the launch must not
+        // turn that into a plain sign-in screen.
+        val ended = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "session_revoked")
+        val r = rig(owner = 1, configure = { state.value = ended })
+        assertEquals(Gate.SignedOut(SignedOutReason.SESSION_ENDED, "session_revoked"), r.model.gate.value)   // which AppRoot shows with its notice
+        assertTrue("refreshUser" !in r.backend.calls)
+        assertEquals(0, r.scheduler.requested)
     }
 
     // -- What the server says ------------------------------------------------------------------------------

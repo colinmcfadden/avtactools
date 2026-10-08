@@ -14,7 +14,7 @@ import javax.inject.Singleton
 interface AuthBackend {
     val state: StateFlow<AuthState>
 
-    /** Reads the stored session. Nothing is asked of the server. */
+    /** Reads the stored session, once per process; after that it is the state as it is now. Nothing is asked of the server. */
     suspend fun restore(): AuthState
 
     /** Ends the session on this device if the server has not confirmed the account for too long. */

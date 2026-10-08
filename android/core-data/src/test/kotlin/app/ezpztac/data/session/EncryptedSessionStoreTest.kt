@@ -1,6 +1,7 @@
 package app.ezpztac.data.session
 
 import app.ezpztac.network.ApiUser
+import app.ezpztac.network.EndedSession
 import app.ezpztac.network.StoredSession
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -92,6 +93,47 @@ class EncryptedSessionStoreTest {
         assertFalse(file.exists())
         assertNull(store.read())
         store.clear()                                                                        // clearing nothing is fine
+    }
+
+    // -- A session the server ended ------------------------------------------------------------
+
+    @Test
+    fun `a session the server ended is replaced by the note of why, which the next process reads`() = runBlocking<Unit> {
+        val store = EncryptedSessionStore(file, box())
+        store.write(session())
+        store.end(EndedSession("session_revoked"))
+
+        val reopened = EncryptedSessionStore(file, box())                                    // the app opened after a background sync ended it
+        assertNull(reopened.read())                                                          // no session: the tokens are gone from the file
+        assertEquals(EndedSession("session_revoked"), reopened.ended())
+        assertEquals(EndedSession("session_revoked"), reopened.ended())                      // reading the session did not discard the note
+        assertEquals(listOf("session.bin"), dir.list()!!.toList())
+        assertFalse(file.readBytes().toString(Charsets.ISO_8859_1).contains("ACCESS-TOKEN-123"))
+    }
+
+    @Test
+    fun `a note with no code is still a note`() = runBlocking<Unit> {
+        val store = EncryptedSessionStore(file, box())
+        store.end(EndedSession(null))
+        assertEquals(EndedSession(null), EncryptedSessionStore(file, box()).ended())
+    }
+
+    @Test
+    fun `signing in again or signing out takes the note away, and a session has none`() = runBlocking<Unit> {
+        val store = EncryptedSessionStore(file, box())
+        assertNull(store.ended())
+        store.write(session())
+        assertNull(store.ended())
+
+        store.end(EndedSession("session_revoked"))
+        store.write(session(access = "again"))
+        assertNull(store.ended())
+        assertEquals("again", store.read()!!.accessToken)
+
+        store.end(EndedSession("session_revoked"))
+        store.clear()
+        assertNull(store.ended())
+        assertFalse(file.exists())
     }
 
     @Test

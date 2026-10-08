@@ -919,6 +919,16 @@ client is built around not losing one:
 - Failures are typed: `NetworkException` (with `requestMayHaveBeenSent`), `SessionEndedException`,
   `AffiliationRequiredException`, `RevisionConflictException` (carries the server's copy),
   `RateLimitedException`, `ApiException`.
+- **The stored session is read once per process** (`restore`; after that it returns the state as it is). The shell and a background
+  sync both ask, in either order or at once, and a second read would put back what the first found over what has happened since: a
+  session the server or the 14-day rule ended, a refresh's newer user. What it read is set only if nothing else set the state while it
+  read (a compare-and-set; everything else writes the store first). It takes no lock: a launch must not wait behind a refresh a sync
+  has in flight, which can take 20 s on a poor signal.
+- **A session the server ended leaves a note in its place** (`SessionStore.end`, `EndedSession`, with the server's `code`): the
+  file holds the session or the note, never both, so ending one is one atomic rename. A sync WorkManager runs with the app closed
+  may be what finds the session ended, and that process is gone by the time anyone opens the app: the note is how the launch still
+  says why ("Your session expired", or the 14 days) instead of showing a plain sign-in. A call that finds no session reads it too,
+  so calls refused together do not turn "ended" into "not signed in". Signing in or out removes it.
 
 **The sync engine** (`core-sync`; rules in the plan's "Sync and conflicts", server side in `backend/sync_support.py`):
 - **Nothing is overwritten, ever.** An edit is sent with the revision it was based on; a server that has moved on answers 409
@@ -964,6 +974,12 @@ client is built around not losing one:
 - Built since: WorkManager scheduling (`SyncScheduler`: a sync on demand and every 6 hours; not yet seen on a device),
   conflict choices in the Diagrams, Routes and Points sections (`ConflictPanel`), and the 14-day "sign in again" rule
   (`OfflineGrace`).
+- **A scheduled sync can run in a process WorkManager started, with no activity and so no shell** (`EngineSyncRunner`). Only `AppViewModel` used to
+  read the stored session, so such a sync found nobody signed in and did nothing. In a process nobody has read it in (`AuthState.Unknown`) the
+  runner now does what the shell does at launch: `restore`, then the 14-day rule (`OfflineGrace`) before any call, because a refresh would stamp
+  the session as confirmed and the person would never be asked to sign in again. A process already launched is left alone (the rule is applied
+  at launch, never to someone in the middle of their work). It syncs only when the device's plans are the signed-in account's
+  (`Ownership.Yours`): another account's stay unsent, and an unclaimed device is the shell's to claim.
 
 **The app module and the Android build.**
 - **Convention plugins** in `android/build-logic`: `ezpz.kotlin-library` (pure modules), and for Android

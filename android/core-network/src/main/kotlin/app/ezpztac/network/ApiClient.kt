@@ -70,7 +70,8 @@ public class ApiResponse internal constructor(
  *   it, a refresh is never abandoned half-way when the caller goes away, and a refresh whose answer
  *   may have been lost is repeated with the same token for a short while, which the server accepts
  *   as a lost response (`refresh_reuse_detected` otherwise: a copy of a token).
- * - A session the server ended is cleared, announced on [state], and raised as [SessionEndedException].
+ * - A session the server ended is replaced by a note of why ([EndedSession]), announced on [state], and raised as
+ *   [SessionEndedException].
  * - Errors become typed exceptions ([ApiException] and its subclasses); a body the server did not
  *   write (a proxy's error page) is still an [ApiException] with the status.
  */
@@ -91,13 +92,25 @@ public class ApiClient(
     /** Who is signed in. [AuthState.Unknown] until [restore] has read the store. */
     public val state: StateFlow<AuthState> get() = holder.state
 
-    /** Reads the stored session at launch. */
+    /**
+     * Reads the stored session, once in the life of the process; after that it returns the state as it is. The shell asks at launch, and so
+     * does a sync WorkManager runs, in either order or at once: a second read would put back what the first found over what has happened
+     * since (a session the server or the offline rule ended, a refresh's newer user).
+     *
+     * What it read is set only if nothing else has set the state meanwhile. Everything else writes the store before it sets the state, so a
+     * read that was overtaken loses to what overtook it. No lock is taken: a launch must not wait behind a refresh another call has in
+     * flight, which can take 20 s on a poor signal.
+     */
     public suspend fun restore(): AuthState {
+        val current = holder.state.value
+        if (current != AuthState.Unknown) return current
         val stored = sessions.read()
-        val restored = if (stored != null) AuthState.SignedIn(stored.user)
-        else AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN)
-        holder.set(restored)
-        return restored
+        val restored = when {
+            stored != null -> AuthState.SignedIn(stored.user)
+            else -> sessions.ended()?.let { AuthState.SignedOut(SignedOutReason.SESSION_ENDED, it.code) }
+                ?: AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN)
+        }
+        return holder.setIfUnknown(restored)
     }
 
     /**
@@ -119,7 +132,7 @@ public class ApiClient(
     public suspend fun endSessionIfOfflineTooLong(): Boolean = refreshLock.withLock {
         val stored = sessions.read() ?: return@withLock false
         if (!OfflineGrace.expired(stored, nowSeconds())) return@withLock false
-        sessions.clear()
+        sessions.end(EndedSession("offline_too_long"))
         holder.set(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"))
         true
     }
@@ -168,9 +181,9 @@ public class ApiClient(
      * result is used.
      */
     private suspend fun refreshAfterRefusal(failedAccessToken: String): StoredSession = refreshLock.withLock {
-        val current = sessions.read() ?: throw endedWithoutStoring(SignedOutReason.NOT_SIGNED_IN, null, "You are signed out.")
+        val current = sessions.read() ?: throw noSession()
         if (current.accessToken != failedAccessToken) return@withLock current
-        val refreshToken = current.refreshToken ?: throw end(SignedOutReason.SESSION_ENDED, "no_refresh_token", "This session has expired. Sign in again.")
+        val refreshToken = current.refreshToken ?: throw end("no_refresh_token", "This session has expired. Sign in again.")
         // Once the request is on its way it is carried through to the end, even if whoever asked has
         // gone away: a response that arrives with nowhere to be stored would spend the token for nothing.
         withContext(NonCancellable) { rotate(current, refreshToken) }
@@ -195,7 +208,7 @@ public class ApiClient(
                     }
                     response.status == 401 || response.status == 403 -> {
                         val error = parseError(response)
-                        throw end(SignedOutReason.SESSION_ENDED, error.code, error.message)
+                        throw end(error.code, error.message)
                     }
                     else -> throw map(response)                                       // a 5xx is repeated below: it may have rotated first
                 }
@@ -222,7 +235,7 @@ public class ApiClient(
         val refresh = tokens.refreshToken
         if (previousRefresh != null && refresh == null) {
             // A refresh that returns no refresh token cannot be carried on: the old one is spent.
-            throw end(SignedOutReason.SESSION_ENDED, "no_refresh_token", "This session has expired. Sign in again.")
+            throw end("no_refresh_token", "This session has expired. Sign in again.")
         }
         val session = StoredSession(
             accessToken = tokens.accessToken,
@@ -236,9 +249,19 @@ public class ApiClient(
         return session
     }
 
-    private suspend fun end(reason: SignedOutReason, code: String?, message: String): SessionEndedException {
-        sessions.clear()
-        return endedWithoutStoring(reason, code, message)
+    /** The server ended the session. The note left in its place is what lets a later launch say so ([restore]). */
+    private suspend fun end(code: String?, message: String): SessionEndedException {
+        sessions.end(EndedSession(code))
+        return endedWithoutStoring(SignedOutReason.SESSION_ENDED, code, message)
+    }
+
+    /**
+     * A call that finds no session. If the server ended it, it says so again: calls refused together find the session gone once the first
+     * of them has had the refresh refused, and saying "not signed in" would wipe the reason the person is about to be shown.
+     */
+    private suspend fun noSession(): SessionEndedException {
+        val ended = sessions.ended() ?: return endedWithoutStoring(SignedOutReason.NOT_SIGNED_IN, null, "You are signed out.")
+        return endedWithoutStoring(SignedOutReason.SESSION_ENDED, ended.code, "This session has expired. Sign in again.")
     }
 
     private fun endedWithoutStoring(reason: SignedOutReason, code: String?, message: String): SessionEndedException {
@@ -284,7 +307,7 @@ public class ApiClient(
     }
 
     private suspend fun executeSigned(call: Call): Raw {
-        val session = sessions.read() ?: throw endedWithoutStoring(SignedOutReason.NOT_SIGNED_IN, null, "You are signed out.")
+        val session = sessions.read() ?: throw noSession()
         val first = send(call, session.accessToken)
         if (!isAuthRefusal(first)) return first
 
@@ -292,7 +315,7 @@ public class ApiClient(
         val second = send(call, renewed.accessToken)
         if (isAuthRefusal(second)) {
             // A token the server has just issued is refused: there is nothing more to try.
-            throw end(SignedOutReason.SESSION_ENDED, "unauthorized_after_refresh", "This session has expired. Sign in again.")
+            throw end("unauthorized_after_refresh", "This session has expired. Sign in again.")
         }
         return second
     }

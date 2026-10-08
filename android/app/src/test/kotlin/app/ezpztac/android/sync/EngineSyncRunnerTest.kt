@@ -1,0 +1,253 @@
+package app.ezpztac.android.sync
+
+import app.ezpztac.android.ApiClientBackend
+import app.ezpztac.android.AuthBackend
+import app.ezpztac.data.AccountScope
+import app.ezpztac.data.DiagramRepository
+import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.Ownership
+import app.ezpztac.data.RouteRepository
+import app.ezpztac.data.RouteSession
+import app.ezpztac.network.ApiClient
+import app.ezpztac.network.ApiUser
+import app.ezpztac.network.AppConfig
+import app.ezpztac.network.AuthState
+import app.ezpztac.network.ClientInfo
+import app.ezpztac.network.InMemorySessionStore
+import app.ezpztac.network.NetworkException
+import app.ezpztac.network.SignedOutReason
+import app.ezpztac.network.StoredSession
+import app.ezpztac.sync.ApiSyncApi
+import app.ezpztac.sync.FakeServer
+import app.ezpztac.sync.InMemorySyncStore
+import app.ezpztac.sync.RecordKind
+import app.ezpztac.sync.RecordingScheduler
+import app.ezpztac.sync.SequentialIds
+import app.ezpztac.sync.SyncApi
+import app.ezpztac.sync.SyncEngine
+import app.ezpztac.sync.SyncRepository
+import app.ezpztac.sync.doc
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.util.Collections
+
+/**
+ * The scheduled sync. WorkManager can start the app's process just to run it, with no activity and so no shell to read the stored session
+ * first: the runner has to do what the shell does at launch itself, and has to keep to the shell's rule that only the plans of the account
+ * signed in are synced.
+ */
+class EngineSyncRunnerTest {
+    private fun user(id: Int) = ApiUser(
+        id = id, email = "pilot$id@example.com", name = "Pilot $id", role = "user", isAdmin = false, isActive = true, features = emptyMap(), accessOk = true,
+    )
+
+    /** The session as a process sees it: [AuthState.Unknown] until something reads the store, as [ApiClient] has it. */
+    private class FakeAuth(
+        private val stored: AuthState,
+        initial: AuthState = AuthState.Unknown,
+        /** Whether the stored session is past the 14 days without the server ([app.ezpztac.network.OfflineGrace]). */
+        private val offlineTooLong: Boolean = false,
+    ) : AuthBackend {
+        override val state = MutableStateFlow(initial)
+        var restores = 0
+        var graceChecks = 0
+
+        /** As [ApiClient.restore]: the store is read once, and after that the state is what it is. */
+        override suspend fun restore(): AuthState {
+            if (state.value != AuthState.Unknown) return state.value
+            restores++
+            state.value = stored
+            return stored
+        }
+
+        override suspend fun endSessionIfOfflineTooLong(): Boolean {
+            graceChecks++
+            if (!offlineTooLong || state.value !is AuthState.SignedIn) return false
+            state.value = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long")
+            return true
+        }
+
+        override suspend fun refreshUser(): ApiUser = error("not the runner's to ask")
+        override suspend fun config(): AppConfig = error("not the runner's to ask")
+        override suspend fun logout(): Boolean = error("not the runner's to ask")
+    }
+
+    /** Whose plans are on the device, and nothing else: the runner reads it and never claims or wipes. */
+    private class FakeAccounts(private val owner: Int?) : AccountScope {
+        val asked = mutableListOf<Int>()
+        override suspend fun ownership(userId: Int): Ownership {
+            asked += userId
+            return when (owner) {
+                null -> Ownership.Unclaimed
+                userId -> Ownership.Yours
+                else -> Ownership.SomeoneElses(unsyncedChanges = 1)
+            }
+        }
+        override suspend fun claim(userId: Int): Unit = error("the shell claims a device, not a background sync")
+        override suspend fun wipe(): Unit = error("the shell wipes a device, not a background sync")
+    }
+
+    /** The plans on the device: one change made here that nobody has sent. */
+    private class Device {
+        val store = InMemorySyncStore()
+        val ids = SequentialIds("d")
+        val records = SyncRepository(store, ids)
+
+        suspend fun withAChange() = apply { records.create(RecordKind.LZ, "LZ HAWK", doc("v" to 1), uuid = "made-here") }
+    }
+
+    /** One process's runner, wired as Hilt wires it. */
+    private fun TestScope.runner(api: SyncApi, device: Device, auth: AuthBackend, accounts: AccountScope) = EngineSyncRunner(
+        SyncEngine(api, device.store, device.ids),
+        auth,
+        accounts,
+        DiagramSession(DiagramRepository(device.records, device.store, RecordingScheduler()), backgroundScope),
+        RouteSession(RouteRepository(device.records, device.store, RecordingScheduler()), backgroundScope),
+    )
+
+    private class Rig(val runner: EngineSyncRunner, val auth: FakeAuth, val accounts: FakeAccounts, val server: FakeServer, val device: SyncRepository)
+
+    /** A runner over a device with a change to send, and a server that holds one record this device has not seen. */
+    private suspend fun TestScope.rig(auth: FakeAuth, owner: Int?): Rig {
+        val device = Device().withAChange()
+        val server = FakeServer()
+        server.createElsewhere(RecordKind.LZ, "made-elsewhere", "LZ CROW", doc("v" to 1))
+        val accounts = FakeAccounts(owner)
+        return Rig(runner(server, device, auth, accounts), auth, accounts, server, device.records)
+    }
+
+    @Test
+    fun `a process the app did not start reads the stored session and syncs`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals(1, r.auth.restores)
+        assertEquals(1, r.auth.graceChecks)                                       // and asked about the 14 days, as the shell does at launch
+        assertEquals(listOf("LZ CROW", "LZ HAWK"), r.server.live(RecordKind.LZ).map { it.name }.sorted())      // what was made here went up
+        assertEquals(listOf("LZ CROW", "LZ HAWK"), r.device.records(RecordKind.LZ).map { it.name }.sorted())   // and what was made elsewhere came down
+        assertEquals(0, r.device.pending())
+    }
+
+    @Test
+    fun `a process the app did not start, with the session past the 14 days, ends it and asks nothing of the server`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1)), offlineTooLong = true), owner = 1)
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())                       // the person has to sign in: trying again cannot help
+
+        // A refresh would have stamped the session as confirmed, and the person would never have been asked to sign in again.
+        assertEquals(emptyList<String>(), r.server.log)
+        assertEquals(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"), r.auth.state.value)
+        assertEquals(emptyList<Int>(), r.accounts.asked)
+        assertEquals(1, r.device.pending())                                      // the change waits for them
+    }
+
+    @Test
+    fun `another account's plans on the device are neither sent nor pulled over, and that is not retried`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 2)
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())                       // only the person can settle whose they are, in the app
+
+        assertEquals(listOf(1), r.accounts.asked)
+        assertEquals(emptyList<String>(), r.server.log)                          // not one call: nothing of account 2's went up under account 1
+        assertEquals(listOf("LZ HAWK"), r.device.records(RecordKind.LZ).map { it.name })
+        assertEquals(1, r.device.pending())                                      // still owed, for account 2 to send when they are back
+    }
+
+    @Test
+    fun `a device nobody has claimed is left for the app to claim`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = null)
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals(emptyList<String>(), r.server.log)                          // the shell claims it once the person is past the gate, then asks for a sync
+        assertEquals(1, r.device.pending())
+    }
+
+    @Test
+    fun `with no stored session there is nothing to do, and nothing is asked of the server`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN)), owner = 1)
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals(1, r.auth.restores)
+        assertEquals(emptyList<Int>(), r.accounts.asked)
+        assertEquals(emptyList<String>(), r.server.log)
+        assertEquals(1, r.device.pending())
+    }
+
+    @Test
+    fun `a session the process already knows is not read again`() = runTest {
+        // The app read it at launch and the server has since ended it: nothing here may turn "your session ended" into anything else.
+        val ended = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "session_revoked")
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1)), initial = ended), owner = 1)
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals(0, r.auth.restores)
+        assertEquals(0, r.auth.graceChecks)
+        assertEquals(ended, r.auth.state.value)
+        assertEquals(emptyList<String>(), r.server.log)
+    }
+
+    @Test
+    fun `in the app's own process, signed in already, it syncs without reading the store or signing anyone out`() = runTest {
+        // The 14 days are the shell's to apply, at launch: a sync must not sign out someone who is in the middle of using the app.
+        val r = rig(FakeAuth(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), initial = AuthState.SignedIn(user(1)), offlineTooLong = true), owner = 1)
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals(0, r.auth.restores)
+        assertEquals(0, r.auth.graceChecks)
+        assertEquals(AuthState.SignedIn(user(1)), r.auth.state.value)
+        assertEquals(0, r.device.pending())
+    }
+
+    @Test
+    fun `a cold process with no signal asks to be tried again`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
+        r.server.failAll = NetworkException("no signal", null, requestMayHaveBeenSent = false)
+
+        assertEquals(SyncOutcome.Retry, r.runner.runOnce())
+
+        assertEquals(1, r.auth.restores)
+        assertTrue(r.server.log.isNotEmpty())                                     // it got as far as trying
+        assertEquals(1, r.device.pending())
+    }
+
+    /** A server that has ended the session: every token is refused, and so is the refresh. Answered here, so nothing goes over the network. */
+    private fun serverThatEndedTheSession(asked: MutableList<String>) = OkHttpClient.Builder().addInterceptor { chain ->
+        val path = chain.request().url.encodedPath
+        asked += path
+        val body = if (path == "/api/auth/refresh") """{"code": "refresh_reuse_detected", "error": "This session has expired. Sign in again."}"""
+        else """{"msg": "Token has been revoked"}"""
+        Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(401).message("Unauthorized")
+            .body(body.toResponseBody("application/json".toMediaType())).build()
+    }.build()
+
+    @Test
+    fun `a session the server ended in a process the app did not start still says why when the app is opened`() = runTest {
+        // The real client and store: the reason has to outlive the process that found it, which is gone by the time anyone opens the app.
+        val sessions = InMemorySessionStore(StoredSession("access-1", "refresh-1", refreshExpiresAtEpochSeconds = null, user = user(1)))
+        val asked = Collections.synchronizedList(mutableListOf<String>())
+        val http = serverThatEndedTheSession(asked)
+        fun process() = ApiClient("https://ezpz.invalid/", http, ClientInfo.android("1.4.0", 212), sessions)
+        val cold = process()
+        val device = Device().withAChange()
+
+        assertEquals(SyncOutcome.Done, runner(ApiSyncApi(cold), device, ApiClientBackend(cold), FakeAccounts(owner = 1)).runOnce())
+
+        assertTrue(asked.contains("/api/auth/refresh"))
+        assertEquals(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "refresh_reuse_detected"), process().restore())
+        assertEquals(1, device.records.pending())                                 // the change waits for the person to sign in again
+    }
+}
