@@ -240,7 +240,9 @@ class LocalRasterCatalog:
 
     def __init__(self):
         self._entries: list[RasterEntry] = []
-        self._refreshed_at = 0.0
+        # Never scanned. Not 0.0: time.monotonic() counts from boot on Linux, so on a machine up for less than the refresh
+        # interval (a fresh container host, a CI runner) a zero looked like a scan moments ago and every DEM went unseen.
+        self._refreshed_at = float("-inf")
         # Requests run on several threads; one rescan of every DEM is enough.
         self._refresh_lock = threading.Lock()
 

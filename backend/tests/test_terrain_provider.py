@@ -36,25 +36,28 @@ class HornSlopeTests(unittest.TestCase):
         self.assertAlmostEqual(west["noseLowMaxDeg"], 45.0, places=1)
         self.assertAlmostEqual(north["crossSlopeMaxDeg"], 45.0, places=1)
 
+    @staticmethod
+    def _write_ramp(directory):
+        raster_path = Path(directory) / "test-lz.tif"
+        # ~11 m cells at this latitude; the terrain rises one metre per cell east.
+        elevation = np.tile(np.arange(120, dtype=np.float32), (120, 1))
+        with rasterio.open(
+            raster_path,
+            "w",
+            driver="GTiff",
+            height=elevation.shape[0],
+            width=elevation.shape[1],
+            count=1,
+            dtype=elevation.dtype,
+            crs="EPSG:4326",
+            transform=from_origin(-117.10, 34.10, 0.0001, 0.0001),
+            nodata=-9999,
+        ) as dataset:
+            dataset.write(elevation, 1)
+
     def test_local_geotiff_is_preferred_when_it_covers_the_requested_area(self):
         with tempfile.TemporaryDirectory() as directory:
-            raster_path = Path(directory) / "test-lz.tif"
-            # ~11 m cells at this latitude; the terrain rises one metre per cell east.
-            elevation = np.tile(np.arange(120, dtype=np.float32), (120, 1))
-            with rasterio.open(
-                raster_path,
-                "w",
-                driver="GTiff",
-                height=elevation.shape[0],
-                width=elevation.shape[1],
-                count=1,
-                dtype=elevation.dtype,
-                crs="EPSG:4326",
-                transform=from_origin(-117.10, 34.10, 0.0001, 0.0001),
-                nodata=-9999,
-            ) as dataset:
-                dataset.write(elevation, 1)
-
+            self._write_ramp(directory)
             with patch.dict("os.environ", {"TERRAIN_DATA_DIR": directory}, clear=False):
                 grid = LocalRasterCatalog().load_best((34.094, -117.094, 34.098, -117.090))
 
@@ -62,6 +65,17 @@ class HornSlopeTests(unittest.TestCase):
         self.assertEqual(grid.source, "local_highres_cog")
         self.assertLess(grid.resolution_m, 15.0)
         self.assertTrue(np.isfinite(grid.elevation_m).all())
+
+    def test_a_new_catalog_scans_on_a_machine_that_booted_moments_ago(self):
+        # time.monotonic() counts from boot on Linux: a CI runner or a fresh host is seconds into it, inside the refresh
+        # interval, and a catalog that took 0 for "never scanned" served its empty list (502 on every LZ) for five minutes.
+        with tempfile.TemporaryDirectory() as directory:
+            self._write_ramp(directory)
+            with patch.dict("os.environ", {"TERRAIN_DATA_DIR": directory}, clear=False), \
+                    patch("terrain_provider.time.monotonic", return_value=5.0):
+                grid = LocalRasterCatalog().load_best((34.094, -117.094, 34.098, -117.090))
+
+        self.assertIsNotNone(grid)
 
 
 if __name__ == "__main__":

@@ -74,5 +74,5 @@ jobs:
           tests/test_network_fixtures.py tests/test_contract_fixtures.py tests/test_openapi_contract.py
           tests/test_sync.py tests/test_aircraft_sync.py tests/test_native_sessions.py
           tests/test_schema_sync.py tests/test_app_config.py tests/test_client_header.py tests/test_auth.py
-          tests/test_affiliation_gate.py
+          tests/test_affiliation_gate.py tests/test_terrain_provider.py
           tests/test_packs.py tests/test_pack_ops.py tests/test_realtime.py tests/test_realtime_live.py
