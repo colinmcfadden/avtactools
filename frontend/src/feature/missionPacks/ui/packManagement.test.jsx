@@ -78,6 +78,7 @@ const setup = ({ role = "owner", status = "active", members = [colin, sam], team
     return (
       <>
         <div data-testid="workspace">{packs.open ?? "Library"}</div>
+        <button type="button" onClick={() => packs.openPack("p2")}>Open OP EAGLE</button>
         {packs.meta && (
           <PackPanel
             pack={packs.meta}
@@ -220,6 +221,19 @@ describe("leaving the pack", () => {
     await settle();
     expect(toast).toHaveBeenCalledWith({ tone: "error", message: "Make someone else the owner first." });
     expect(screen.getByTestId("workspace")).toHaveTextContent("p1");
+  });
+
+  it("leaves another pack opened while the answer came where it is", async () => {
+    setup({ role: "editor", me: 2 });
+    let answer;
+    packApi.removeMember.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    await settle();
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Leave pack" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Leave pack" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open OP EAGLE" }));
+    await act(async () => answer({ status: "removed" }));
+    expect(screen.getByTestId("workspace")).toHaveTextContent("p2");
   });
 
   it("tells the owner to hand it over first, and opens Members to do it", async () => {
