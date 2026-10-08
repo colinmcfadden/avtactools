@@ -59,7 +59,7 @@ Last refreshed: 2026-10-08 (everything merged to `develop`; mission packs and th
      Applying someone else's change through `setQuietly` marks the document unsaved: diff against a base that already has it, or it is sent
      back. A route point saved by an old web release may have no `id`, and then the diff sends its list whole. Point sets have no editing
      session (the web cannot edit points either). `AuthLinks` reads only `auth=verify|reset`: `?invite=<token>` needs its own link type kept
-     across sign-in. Edits a finished pack refuses are saved to the Library as "NAME (my offline edits)": nothing is dropped silently.
+     across sign-in. Edits a finished pack refuses are saved to the Library as "NAME (my edits)", the web's name (owner, 2026-10-08): nothing is dropped silently.
 2. **The redesigned shell** to `docs/native-design/` (the AP and AT screens): the navigation bar (LZ/PZ, Routes, Threats, Imports), the
    workspace chip, Import, the Library page, the save dialog, the import review; the tablet layout (material3-adaptive). Settle §5's design
    decisions first. `HomeViewModel` (346 lines, 21 dependencies) has no notion of a workspace; the Library-or-pack workspace belongs here.

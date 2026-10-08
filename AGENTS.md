@@ -742,6 +742,20 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   `normalizeProfile` gives an empty profile the `generic` icon but no profile the
   UH-60L icon, and would turn a `null` number into 0 (unreachable: the API's
   columns are NOT NULL); `feat!:` commits release nothing (§12).
+- Mission-pack web behaviour the fixtures pin and the web should fix first (it changes behaviour), then
+  regenerate. The first two are bugs, their cases marked `webBug: true` in `contracts/fixtures/packs/` so a
+  native port can find them and not copy them. **A sentence or name cut through an emoji**: the history's sentences are cut to 300 and
+  "NAME (my edits)" to 100 UTF-16 units (`.slice`), which can leave a lone surrogate; the server cannot
+  store one (UTF-8 encoding fails, so `POST …/ops` answers 500, and a batch that met a 5xx is sent again
+  unchanged, so every later edit to the pack waits behind it), and Kotlin's encoder would send `?` in its
+  place. Cut so that no character is split (and consider dropping unpaired surrogates in
+  `pack_support.clean_summary` and the name check). **`packDiff.js` reads fields through the prototype**:
+  a field named `constructor`, `toString`, `valueOf` and the like that one version lacks makes `diffData`
+  throw and `sameData` call null and missing different, and a changed `__proto__` key is dropped from its
+  patch; read only own fields (`has(obj, key)`) and keep `__proto__` as data. **A 422 batch is dropped**:
+  `packSession.batchFailed` drops a batch refused with 422 (the JWT library's answer to a token it cannot
+  read) as `http_422`, where a 401 waits for the person to sign in again; decide whether 422 should wait
+  too (`packs/session.json` pins today's behaviour).
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.

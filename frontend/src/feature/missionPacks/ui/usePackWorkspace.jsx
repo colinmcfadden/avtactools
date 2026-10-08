@@ -8,6 +8,7 @@ import { copyFromLibrary, deleteItemOp, droppedVersions, myEditsName, saveVersio
 import * as packApi from "../packApi";
 import { packDiagramId } from "../packLz";
 import { packLocalRef } from "../packRef";
+import { actorName, renameSummary, updateFromOriginalSummary } from "../packSentences";
 import { useInviteLink } from "../useInviteLink";
 import { useMissionPack } from "../useMissionPack";
 import { usePackLz } from "../usePackLz";
@@ -177,7 +178,7 @@ export const usePackWorkspace = ({
   onOpenLibrary,
 }) => {
   const me = user?.id ?? null;
-  const actor = user?.name || user?.email || "Someone";
+  const actor = actorName(user);
   const home = usePacksHome({ enabled });
   const [packUuid, setPackUuid] = useState(() => (enabled ? readStored() : null));
   const open = enabled ? packUuid : null;
@@ -820,7 +821,7 @@ export const usePackWorkspace = ({
         onCancel={close}
         onConfirm={(name) => {
           if (name !== item.name) {
-            const refused = live.edit([{ type: "item.rename", item: item.uuid, name, summary: `${actor} renamed "${item.name}" to "${name}".` }]);
+            const refused = live.edit([{ type: "item.rename", item: item.uuid, name, summary: renameSummary(actor, item.name, name) }]);
             if (refused) reportRefused(refused);
           }
           close();
@@ -854,7 +855,7 @@ export const usePackWorkspace = ({
         onCancel={close}
         onConfirm={() => {
           close();
-          run(() => packApi.updateFromOriginal(open, item.uuid, `${actor} updated "${item.name}" from their library.`), { message: `Updated “${item.name}” from your Library` });
+          run(() => packApi.updateFromOriginal(open, item.uuid, updateFromOriginalSummary(actor, item.name)), { message: `Updated “${item.name}” from your Library` });
         }}
       />
     );

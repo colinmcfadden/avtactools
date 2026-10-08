@@ -82,10 +82,15 @@ operations it produces.
 **The rules are a contract.** `frontend/src/feature/missionPacks/packOps.js` is the
 reference. It writes `contracts/fixtures/packs/ops.json` (134 cases), and
 `backend/pack_ops.py` is held to every case (`tests/test_pack_ops.py`). The Kotlin
-applier will be too. Change the rules on the web first and regenerate:
+applier will be too. The rest of what a client does is pinned beside it, for the
+native apps: how an editor's change becomes operations (`packs/diff.json`), one
+change as sent (`packs/edit.json`), the history's sentences and new items' names
+(`packs/describe.json`), what of an item is each person's own (`packs/shared.json`)
+and how an open pack is held (`packs/session.json`); `contracts/README.md` lists
+them. Change the rules on the web first and regenerate:
 
 ```powershell
-cd frontend; $env:UPDATE_CONTRACTS="1"; $env:CI="true"; npx react-scripts test --watchAll=false src/contracts/packOpsFixtures
+cd frontend; $env:UPDATE_CONTRACTS="1"; $env:CI="true"; npx react-scripts test --watchAll=false src/contracts/pack
 ```
 
 | Operation | Fields | Does |
@@ -171,8 +176,8 @@ site's links (`AuthLinks`).
 ## 5. How a client keeps up
 
 The web does all of this in `feature/missionPacks/`: `packSession.js` is the state
-(pure, and the part a native port follows), `packClient.js` the network, and
-`useMissionPack(packUuid, me)` the React side.
+(pure, and the part a native port follows: `contracts/fixtures/packs/session.json`),
+`packClient.js` the network, and `useMissionPack(packUuid, me)` the React side.
 
 1. `GET /api/packs/<uuid>` returns the items **as of `head_seq`**. A writer holds the pack's row while it writes, and this read waits for it (`FOR SHARE` on Postgres).
 2. Apply your own edits at once, and send them in batches to `POST …/ops` with `base_seq` set to the last `seq` you have, one batch in flight at a time. Send a drag as one operation when the finger lifts, not one per frame.
@@ -196,7 +201,10 @@ and `usePackPoints` join them to the pack, on one engine (`usePackItemSync`):
   is one change, not one per frame, as the operations `packDiff.js` works out (an
   object's changed fields as one patch there; list elements by id: removed, inserted
   after their neighbour, patched, or moved), with a sentence for the history ("Sam B.
-  moved Chalk 2 on LZ IBIS.": `describeLzChange` and its route and point peers).
+  moved Chalk 2 on LZ IBIS.": `describeLzChange` and its route and point peers,
+  `packs/describe.json`). `composeEdit` (`packEdit.js`, `packs/edit.json`) puts one
+  change together: a rename first, then whatever brings an older item to today's
+  shape, then the change, every operation with the one sentence.
 - **What is sent is the change from the version the editor was last in step with**,
   never from the pack's latest, so it lands on top of whatever others did meanwhile:
   both stand, or on one field the later one. A change waiting here is sent before
@@ -209,7 +217,8 @@ and `usePackPoints` join them to the pack, on one engine (`usePackItemSync`):
   colour and visibility. None of that is ever in a pack.
 - A change the pack will not take (finished, or this person may only look) is put back
   to the pack's version, and `droppedVersions` rebuilds the person's own version of what
-  they had changed, to save to their library as "NAME (my edits)" (`packActions.js`).
+  they had changed, to save to their library as "NAME (my edits)" (`myEditsName`,
+  `packs/shared.json`).
 - An item someone removed leaves the editor. `usePackSeen` moves the person's seen
   marker while they look, and `changedSince` says which items changed since. "Since"
   is the server's `seen_seq` for that pack as it loads: nothing is marked new until the
@@ -339,7 +348,7 @@ Its docstring has the `docker run` line.
 1. **Packs for one person** (backend: done; web screens: done on `feat/menu-redesign`). Tables, pack routes, copy-in from the library, the operation stream and the log, finish.
 2. **Sharing** (backend: done). Teams, name search, email invites, roles, members.
 3. **Live sync** (done; not deployed). The live service (§6), the API's `NOTIFY`, and the web's sync client with polling where there is no service (Fly). Deploying it is an owner step: a Coolify app for `/backend/realtime`, a public hostname for it through the Cloudflare Tunnel, and `REALTIME_PUBLIC_URL` on the API. Supabase's Session pooler should carry `LISTEN`; it has not been tried against it yet.
-4. **Android.** Room migration (pack, pack_item, pack_member, pack_op_outbox, pack_event), a `PackSyncEngine` beside the existing engine, OkHttp's WebSocket, an offline outbox, pack screens. Operations refused because the pack was finished meanwhile are saved to the library as "NAME (my offline edits)": nothing is silently dropped. Record the pack routes' responses in `contracts/fixtures/network/responses.json` then.
+4. **Android.** Room migration (pack, pack_item, pack_member, pack_op_outbox, pack_event), a `PackSyncEngine` beside the existing engine, OkHttp's WebSocket, an offline outbox, pack screens. Operations refused because the pack was finished meanwhile are saved to the library as "NAME (my edits)", the web's name for them (`myEditsName`, held to `contracts/fixtures/packs/shared.json`): nothing is silently dropped. Record the pack routes' responses in `contracts/fixtures/network/responses.json` then.
 5. **History and finish UI**: done on the web; Android with step 4.
 
 **Not in v1:** rewinding a pack to an earlier point (the log makes it possible

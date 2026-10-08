@@ -23,7 +23,8 @@ contracts/
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
-│  ├─ packs/        ops.json                        reference: the web app (packOps.js)
+│  ├─ packs/        ops.json, diff.json, edit.json, shared.json, describe.json, session.json
+│  │                reference: the web app (feature/missionPacks/)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
 └─ scripts/         generators: the fixtures PyGeodesy owns, and tokens.py
 ```
@@ -64,6 +65,9 @@ reference is.
 | `network/priority.json` | `frontend/src/contracts/networkFixtures.test.js` | — | `core-network` |
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | — (the Android applier comes with pack sync; `docs/MISSION_PACKS.md`) |
+| `packs/diff.json` | `frontend/src/contracts/packDiffFixtures.test.js` | — | — (pack sync: the operations an editor's change is sent as) |
+| `packs/shared.json`, `packs/describe.json`, `packs/edit.json` | `frontend/src/contracts/packSharedFixtures.test.js` | — | — (pack sync: what is each person's own, the history's sentences and new items' names, how one edit is put together) |
+| `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | — (pack sync: how an open pack is held) |
 
 iOS joins this table when it starts; it reads the same files.
 
@@ -77,6 +81,38 @@ are fixtures too: the web suite fails if a rebuild differs from what is committe
 the Kotlin reader is always tested on the files the web would produce today.
 Everything inside is invented; no file from a real mission. A real, unclassified AMPS
 export from the owner would be added as a further case, and is the better test.
+
+### The `packs/` fixtures
+
+Mission packs (`docs/MISSION_PACKS.md`) are edited through id-addressed operations, and the web's
+`frontend/src/feature/missionPacks/` is the reference for every step a client takes. The native apps' pack
+sync is held to these files:
+
+| File | What it pins | Web code |
+|---|---|---|
+| `ops.json` | What one operation does to a pack's items (the server applies it the same way) | `packOps.js` |
+| `diff.json` | The operations an editor's change to an item is sent as, in order | `packDiff.js` |
+| `edit.json` | One change as sent: the rename, the operations that bring an old item to today's shape, the change, one sentence on each | `packEdit.js` (`composeEdit`, from `usePackItemSync`) |
+| `shared.json` | What of an item is each person's own and never sent; a set's points made ready; the name and library form of a person's own version of an item ("NAME (my edits)") | `packLz.js`, `packRoutes.js`, `usePackPoints.js`, `packSentences.js`, `packActions.js` |
+| `describe.json` | The history's sentences, who a person is in them, and how a new item is named and made | `packLz.js`, `packRoutes.js`, `usePackPoints.js`, `packSentences.js`, `packActions.js` |
+| `session.json` | How an open pack is held: edits made here, batches, the server's events and refusals, reloads, what is shown, and what is kept when the pack will not take an edit | `packSession.js` |
+
+- **`webBug: true`** marks a case that pins a known web bug, kept because the web is the reference until it
+  is fixed and the file regenerated (`AGENTS.md` §15): a sentence or name cut through an emoji (a lone
+  surrogate the server cannot store), and fields read through JavaScript's prototype in `packDiff.js`. A
+  port's test finds them by the mark and does not copy them; the web suite fails if a mark no longer
+  matches a bug, so each goes when the web is fixed.
+- A key missing from a case is JavaScript's `undefined`. In `session.json` an absent key and a null one are
+  different (the session builds some shapes narrower than the server's types); each file's `description`
+  says how to read it.
+- `session.json` is written with values up to 800 characters on one line and longer ones broken up, so a
+  regenerated scenario diffs step by step.
+
+```powershell
+cd frontend
+$env:UPDATE_CONTRACTS="1"; $env:CI="true"; npx react-scripts test --watchAll=false src/contracts/pack
+Remove-Item Env:UPDATE_CONTRACTS; npx react-scripts test --watchAll=false src/contracts/pack src/feature/missionPacks
+```
 
 ### The `network/` fixtures
 

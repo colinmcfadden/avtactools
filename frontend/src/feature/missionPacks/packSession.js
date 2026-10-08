@@ -274,3 +274,30 @@ export const visibleItems = (session) =>
   [...session.order, ...Object.keys(session.view).filter((uuid) => !session.order.includes(uuid))]
     .filter((uuid) => session.view[uuid] && !session.view[uuid].deleted)
     .map((uuid) => ({ ...(session.info[uuid] || { uuid, pendingCreate: true }), ...session.view[uuid], uuid }));
+
+/**
+ * The edits this person made that the pack will never take (it was finished, or they were made a
+ * viewer, or removed, while the edits were on their way: the session's `dropped`), as their own
+ * version of each item they touched: the pack's confirmed item with those edits applied in order.
+ * What cannot apply any more (its target gone) is left out, as the pack would have left it.
+ * [{ uuid, kind, name, data }], in the order the items were first touched. (packActions.js
+ * re-exports it, where the screens find it beside saving to the library.)
+ */
+export const droppedVersions = (session) => {
+  const versions = new Map();
+  (session?.dropped ?? []).forEach(({ op }) => {
+    if (!op?.item) return;
+    if (!versions.has(op.item)) {
+      const confirmed = session.confirmed?.[op.item];
+      versions.set(op.item, { [op.item]: confirmed && !confirmed.deleted ? confirmed : null });
+    }
+    const items = versions.get(op.item);
+    // An item made here and never taken starts from its own item.create.
+    const result = applyPackOp(items[op.item] ? items : {}, op);
+    if (result.status === "applied") versions.set(op.item, result.items);
+  });
+  return [...versions.entries()]
+    .map(([uuid, items]) => ({ uuid, item: items[uuid] }))
+    .filter(({ item }) => item && !item.deleted)
+    .map(({ uuid, item }) => ({ uuid, kind: item.kind, name: item.name, data: item.data }));
+};
