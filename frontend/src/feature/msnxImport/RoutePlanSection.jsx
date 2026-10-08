@@ -318,10 +318,11 @@ const RoutePlanSection = ({
                           ))}
                         </select>
                       </Field>
-                      <Field label="Wind °T" width={32} htmlFor={`${rowId}-wdir`}>
+                      <Field label="Wind °T / KT" width={32} htmlFor={`${rowId}-wdir`}>
                         <input
                           id={`${rowId}-wdir`}
                           className="plan__input"
+                          aria-label={`Wind direction at ${pointName}, degrees true`}
                           type="number"
                           min="0"
                           max="360"
@@ -334,7 +335,8 @@ const RoutePlanSection = ({
                         />
                       </Field>
                       {/* One label over the wind's two boxes, as over altitude and speed: at 11 px a "KT"
-                          label of its own over this 28 px box ran into WIND °T. */}
+                          label of its own over this 28 px box ran into WIND °T, so the shared label
+                          carries both units (a crew must see what the number is in). */}
                       <Field label="" width={28}>
                         <input
                           className="plan__input"

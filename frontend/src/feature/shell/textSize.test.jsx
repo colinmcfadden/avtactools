@@ -84,9 +84,10 @@ describe("the route plan editor's labels", () => {
         applyForecastWinds={() => {}}
       />,
     );
-    // A "KT" label of its own ran into WIND °T once both were 11 px.
+    // A "KT" label of its own ran into WIND °T once both were 11 px; the shared label shows both units.
     expect(screen.queryByText("KT")).toBeNull();
-    expect(screen.getByLabelText("Wind °T")).toBeInTheDocument();
+    expect(screen.getByText("Wind °T / KT")).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: "Wind direction at .CP1, degrees true" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Wind speed at .CP1, knots" })).toBeInTheDocument();
   });
 });
