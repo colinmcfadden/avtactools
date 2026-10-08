@@ -165,9 +165,11 @@ def original_state(item, viewer_id):
     """Whether the library record an item was copied from has moved on: only its owner may know.
 
     ``same``, ``changed`` or ``deleted`` for the person who copied it in; None for
-    everyone else, since the original is their private record.
+    everyone else, since the original is their private record, and for a copy with no
+    ``source_uuid`` (one made from a record saved before sync, before copying named it):
+    looking that up would find whichever of their unnamed records came first.
     """
-    if not item.source_kind or item.created_by is None or item.created_by != viewer_id:
+    if not item.source_kind or not item.source_uuid or item.created_by is None or item.created_by != viewer_id:
         return None
     model = LIBRARY_MODELS.get(item.source_kind)
     original = model.query.filter_by(user_id=viewer_id, client_uuid=item.source_uuid).first() if model else None

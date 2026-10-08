@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,6 +25,7 @@ from routes.lz_routes import lz_bp  # noqa: E402
 from routes.pack_routes import pack_bp  # noqa: E402
 from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
+from routes.sync_routes import sync_bp  # noqa: E402
 from routes.team_routes import team_bp  # noqa: E402
 
 LZ_DATA = {
@@ -531,6 +532,75 @@ class LibraryTests(PackCase):
         self.ok(self.send(self.uuid, self.op('item.create', 'ps-1', kind='pointset', name='EMPTY', data=[])))
         response = self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/ps-1/library')
         self.assertEqual((response.status_code, response.get_json()['code']), (400, 'empty_point_set'))
+
+
+class LegacyLibraryTests(PackCase):
+    """Records saved before sync have no client_uuid until something names them, and a copy finds its
+    original by that name: without one it would find whichever unnamed record came first."""
+
+    extra_blueprints = PackCase.extra_blueprints + (sync_bp,)
+
+    def setUp(self):
+        super().setUp()
+        self.uuid = self.new_pack()['uuid']
+        self.long_ago = datetime(2025, 1, 2, 3, 4, 5)
+        with self.app.app_context():
+            # BRAVO was last edited before ALPHA, so the feed gives it the earlier place.
+            rows = [SavedLZ(user_id=self.colin['id'], name=name, lz_data={**LZ_DATA, 'name': name}, revision=1,
+                            created_at=self.long_ago, updated_at=self.long_ago + timedelta(days=days))
+                    for name, days in (('ALPHA', 1), ('BRAVO', 0))]
+            db.session.add_all(rows)
+            db.session.commit()
+            self.alpha, self.bravo = (row.id for row in rows)
+
+    def copy(self, lz_id, item, status=201):
+        return self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items',
+                                 json={'item': item, 'source': {'kind': 'lz', 'id': lz_id}}), status)['item']
+
+    def lz(self, lz_id):
+        with self.app.app_context():
+            return db.session.get(SavedLZ, lz_id)
+
+    def edit(self, lz_id, name):
+        self.ok(self.call(self.colin, 'put', f'/api/lz/{lz_id}', json={'lz_data': {**LZ_DATA, 'name': name}}))
+
+    def test_copying_one_names_it_and_the_copy_follows_that_one_only(self):
+        item = self.copy(self.bravo, 'lz-b')
+        bravo, alpha = self.lz(self.bravo), self.lz(self.alpha)
+        self.assertEqual(item['source'], {'kind': 'lz', 'uuid': bravo.client_uuid, 'revision': 1, 'original': 'same'})
+        self.assertIsNotNone(bravo.client_uuid)
+        self.assertIsNone(alpha.client_uuid)                                     # only what was copied
+        self.assertEqual((bravo.revision, bravo.updated_at), (1, self.long_ago))  # being named is not an edit
+        self.assertEqual(self.copy(self.bravo, 'lz-b', status=200)['uuid'], 'lz-b')    # asked again: the same copy
+
+        self.edit(self.alpha, 'ALPHA EDITED')
+        self.assertEqual(self.item(self.pack(self.uuid), 'lz-b')['source']['original'], 'same')
+        self.edit(self.bravo, 'BRAVO EDITED')
+        self.assertEqual(self.item(self.pack(self.uuid), 'lz-b')['source']['original'], 'changed')
+        body = self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/lz-b/update-from-original'))
+        self.assertEqual(body['item']['data']['name'], 'BRAVO EDITED')
+        self.assertEqual(self.copy(self.alpha, 'lz-a')['source']['uuid'], self.lz(self.alpha).client_uuid)
+
+    def test_a_device_knows_it_by_the_same_name_and_in_the_same_place(self):
+        item = self.copy(self.bravo, 'lz-b')
+        changes = self.ok(self.call(self.colin, 'get', '/api/sync/changes'))['changes']
+        self.assertEqual([c['name'] for c in changes], ['BRAVO', 'ALPHA'])
+        self.assertEqual(changes[0]['client_uuid'], item['source']['uuid'])
+        self.assertTrue(changes[1]['client_uuid'])
+
+    def test_a_copy_that_cannot_say_where_it_came_from_has_no_original(self):
+        self.copy(self.bravo, 'lz-b')
+        with self.app.app_context():
+            # As a copy of an unnamed record was stored before copying named it.
+            MissionPackItem.query.filter_by(uuid='lz-b').one().source_uuid = None
+            db.session.commit()
+        self.edit(self.alpha, 'ALPHA EDITED')
+        pack = self.pack(self.uuid)
+        self.assertEqual(self.item(pack, 'lz-b')['source'], {'kind': 'lz', 'uuid': None, 'revision': 1, 'original': None})
+        self.assertEqual(check_response(load_spec(), '/api/packs/{uuid}', 'get', 200, pack), [])
+        response = self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/lz-b/update-from-original')
+        self.assertEqual((response.status_code, response.get_json()['code']), (409, 'original_unknown'))
+        self.assertEqual(self.item(self.pack(self.uuid), 'lz-b')['data']['name'], 'BRAVO')
 
 
 class FinishTests(PackCase):

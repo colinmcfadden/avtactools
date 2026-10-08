@@ -197,6 +197,26 @@ def assign_missing(user_id):
     db.session.commit()
 
 
+def give_identity(record):
+    """Give one record that predates sync its ``client_uuid`` now, rather than at the next read of the feed.
+
+    For something that has to name the record before then (a mission pack remembers what it copied by
+    it). The name is the one ``assign_missing`` would give, and the feed still gives the record its
+    place in the order when it is read: the feed names every record before it reads any, so one with no
+    name has never been fed and no device knows it by another. Only this row changes, and its
+    ``updated_at`` stays, because being named is not an edit and the library lists by it. Two requests
+    naming it at once agree on the first name. The caller commits; returns the name.
+    """
+    model = type(record)
+    db.session.execute(
+        update(model).where(model.id == record.id, model.client_uuid.is_(None))
+        .values(client_uuid=new_client_uuid(), updated_at=model.updated_at)
+        .execution_options(synchronize_session=False)
+    )
+    db.session.refresh(record)
+    return record.client_uuid
+
+
 def _change(kind, record):
     body = {
         'type': kind,

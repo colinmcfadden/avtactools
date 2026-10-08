@@ -598,6 +598,10 @@ def copy_in(pack_uuid):
         return _error('That record cannot be read.', 400, 'unreadable_source')
     if _too_large(data):
         return _error('That is larger than 5 MB.', 413, 'item_too_large')
+    if record.client_uuid is None:
+        # Saved before sync: the item finds its original again by this name, and without one it would
+        # match whichever of the person's unnamed records came first.
+        sync.give_identity(record)
 
     packs.lock(pack)
     if pack.status == 'finished':
@@ -655,6 +659,10 @@ def update_from_original(pack_uuid, item_uuid):
     if not item.source_kind or item.created_by != me.id:
         return _error('Only the person who copied this in from their library can update it from the original.',
                       403, 'not_your_original')
+    if not item.source_uuid:
+        # Copied before copying named the record: which of their records it was is not known.
+        return _error('This copy does not say which record in your library it came from, so it cannot be updated '
+                      'from it. Copy the original in again instead.', 409, 'original_unknown')
     model = packs.LIBRARY_MODELS[item.source_kind]
     original = model.query.filter_by(user_id=me.id, client_uuid=item.source_uuid, deleted_at=None).first()
     if original is None:

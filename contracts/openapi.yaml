@@ -1739,6 +1739,8 @@ paths:
       description: |
         Only the member who copied it in may (`not_your_original` otherwise): the original is
         their private record. Logged as an `item.replace` event carrying the new content.
+        `original_gone` (409) when the original has been deleted; `original_unknown` (409) for a
+        copy whose `source.uuid` is null, which cannot say which record it came from.
       security:
         - bearer: []
       requestBody:
@@ -3037,7 +3039,7 @@ components:
         (413, with `item`), `invalid_name`, `invalid_description`, `invalid_uuid`, `uuid_taken`,
         `not_in_team`, `invalid_role`, `invalid_source`, `invalid_item`, `source_not_found`,
         `mission_not_supported`, `unreadable_source`, `item_exists`, `item_not_found`,
-        `not_your_original`, `original_gone`, `empty_point_set`, `feature_disabled`,
+        `not_your_original`, `original_gone`, `original_unknown`, `empty_point_set`, `feature_disabled`,
         `not_a_teammate`, `already_member`, `member_not_found`, `owner_must_transfer`,
         `invalid_email`, `invite_not_found`, `invite_gone` / `invite_expired` (410),
         `rate_limited` (429), `team_not_found`, `team_managers_only`, `invalid_query`.
@@ -3190,13 +3192,20 @@ components:
           required: [kind, uuid, revision, original]
           properties:
             kind: { type: string, enum: [lz, route, pointset] }
-            uuid: { type: string }
+            uuid:
+              type: string
+              nullable: true
+              description: |
+                The original's `client_uuid`. Copying in a record saved before sync gives it one first;
+                null only for a copy made before that was so, which cannot be traced to its original.
             revision: { type: integer }
             original:
               type: string
               nullable: true
               enum: [same, changed, deleted]
-              description: Only for the member who copied it in (the original is their private record); null for everyone else.
+              description: |
+                Only for the member who copied it in (the original is their private record); null for
+                everyone else, and for a copy whose `uuid` is null.
         data:
           description: The same JSON the library keeps (lz_data, route_data, or the list of points). Present wherever the item is returned whole.
 
