@@ -62,6 +62,40 @@ describe("the LZ/PZ panel", () => {
     expect(onOpenRecent).toHaveBeenCalledWith(expect.objectContaining({ id: 9 }));
   });
 
+  it("exports a card from the ⋯ menu once the LZ/PZ is analysed", () => {
+    const onExportCard = jest.fn();
+    const panel = (activeDiagramId) => (
+      <LzPanel
+        diagrams={diagrams}
+        activeDiagramId={activeDiagramId}
+        onSave={() => {}}
+        onSelect={() => {}}
+        onView3D={() => {}}
+        onClose={() => {}}
+        onRename={() => {}}
+        onSaveAs={() => {}}
+        onExportCard={onExportCard}
+      />
+    );
+    const { rerender } = render(panel("a"));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for LZ HAWK" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Export LZ card" }));
+    expect(onExportCard).toHaveBeenCalledWith("a");
+
+    // One with only a target has no card to export yet.
+    rerender(panel("b"));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for LZ/PZ 2" }));
+    expect(screen.getByRole("menuitem", { name: "Export LZ card" })).toBeDisabled();
+  });
+
+  it("has no Export LZ card where exports are turned off", () => {
+    render(
+      <LzPanel diagrams={diagrams} activeDiagramId="a" onSave={() => {}} onSelect={() => {}} onView3D={() => {}} onClose={() => {}} onRename={() => {}} onSaveAs={() => {}} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions for LZ HAWK" }));
+    expect(screen.queryByRole("menuitem", { name: "Export LZ card" })).toBeNull();
+  });
+
   it("in a pack has no Save, and says where the work goes", () => {
     render(
       <LzPanel

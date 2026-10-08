@@ -236,6 +236,7 @@ const LzPanel = ({
       { icon: "pencil", title: "Rename", onSelect: () => setRenamingId(diagram.id), hidden: readOnly },
       { icon: "copy", title: pack ? "Save a copy to Library…" : "Save as…", onSelect: () => (pack ? onSave(diagram.id, { copy: true }) : onSaveAs(diagram.id)), disabled: diagram.status !== "analyzed" },
       { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack?.(diagram.id), hidden: Boolean(pack) || !onAddToPack, disabled: diagram.savedId == null, text: diagram.savedId == null ? "Save it first" : undefined },
+      // Exporting changes nothing, so it stays in a pack this person cannot change.
       { icon: "download", title: "Export LZ card", onSelect: () => onExportCard?.(diagram.id), hidden: !onExportCard, disabled: diagram.status !== "analyzed" },
       { divider: true },
       { icon: "x", title: pack ? "Close here" : "Close", text: pack ? "It stays in the pack" : `Takes ${title} out of this session`, onSelect: () => onClose(diagram.id) },

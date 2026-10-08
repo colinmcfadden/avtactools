@@ -39,3 +39,47 @@ describe("the sidebar's Routes card", () => {
     expect(container.querySelector(".ff-card-routes")).toBeNull();
   });
 });
+
+describe("the sidebar's Export card", () => {
+  const analysed = {
+    features: { lz_pz_tools: true, exports: true, routes: false },
+    targetLocation: [34, -84],
+    mapData: { mgrs: "16S GC 1 2" },
+    enableExportMode: jest.fn(),
+    setIsExporting: jest.fn(),
+    showHeatmap: false,
+    setShowHeatmap: () => {},
+    showLZOutline: true,
+    setShowLZOutline: () => {},
+    performTerrainAnalysis: () => {},
+    toggleDrawingMode: () => {},
+    canAnalyze: false,
+    canDrawBoundary: false,
+    diagramStatus: "analyzed",
+  };
+
+  it("exports an analysed LZ/PZ that may not be changed (a finished pack), while its tools stay off", () => {
+    const enableExportMode = jest.fn();
+    const setIsExporting = jest.fn();
+    renderControls({
+      ...analysed,
+      enableExportMode,
+      setIsExporting,
+      exportBox: [[34, -84], [34.01, -83.99]],
+      canUseDiagramTools: false,
+      canSaveDiagram: false,
+      canExport: true,
+    });
+    expect(screen.getByText("Helo", { selector: ".btn-label" }).closest("button")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Set Capture Area" }));
+    expect(enableExportMode).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Export LZ Card" }));
+    expect(setIsExporting).toHaveBeenCalledWith(true);
+  });
+
+  it("does not export what is not analysed", () => {
+    renderControls({ ...analysed, diagramStatus: "targeted", canUseDiagramTools: false, canSaveDiagram: false, canExport: false });
+    expect(screen.getByRole("button", { name: "Set Capture Area" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export LZ Card" })).toBeDisabled();
+  });
+});

@@ -53,6 +53,9 @@ const Controls = ({
   canDrawBoundary: canDrawBoundaryProp,
   canUseDiagramTools: canUseDiagramToolsProp,
   canSaveDiagram: canSaveDiagramProp,
+  // Exporting a card changes nothing, so it needs an analysed LZ/PZ but not the right to edit it (a
+  // finished Mission Pack, or a viewer of one, can still export).
+  canExport: canExportProp,
   diagramStatus,
   diagramReadinessText,
   readinessText,
@@ -91,6 +94,7 @@ const Controls = ({
     canDrawBoundaryProp !== undefined ||
     canUseDiagramToolsProp !== undefined ||
     canSaveDiagramProp !== undefined ||
+    canExportProp !== undefined ||
     Boolean(diagramStatus) ||
     Boolean(diagramReadinessText) ||
     Boolean(readinessText);
@@ -99,7 +103,7 @@ const Controls = ({
   const canDrawBoundary = canDrawBoundaryProp ?? true;
   const canUseDiagramTools = canUseDiagramToolsProp ?? true;
   const canSaveDiagram = canSaveDiagramProp ?? canUseDiagramTools;
-  const canExport = canUseDiagramTools && canSaveDiagram;
+  const canExport = canExportProp ?? (canUseDiagramTools && canSaveDiagram);
   const readinessMessage =
     diagramReadinessText ??
     readinessText ??

@@ -22,6 +22,8 @@ const MobileQuickAccess = ({
     canAnalyze: canAnalyzeProp,
     canUseDiagramTools: canUseDiagramToolsProp,
     canSaveDiagram: canSaveDiagramProp,
+    // An analysed LZ/PZ can be exported by someone who may not change it (a finished Mission Pack).
+    canExport: canExportProp,
     diagramStatus,
     diagramReadinessText,
     readinessText,
@@ -35,12 +37,13 @@ const MobileQuickAccess = ({
     canAnalyzeProp !== undefined ||
     canUseDiagramToolsProp !== undefined ||
     canSaveDiagramProp !== undefined ||
+    canExportProp !== undefined ||
     Boolean(diagramStatus) ||
     Boolean(diagramReadinessText) ||
     Boolean(readinessText);
   const canUseDiagramTools = canUseDiagramToolsProp ?? true;
   const canSaveDiagram = canSaveDiagramProp ?? canUseDiagramTools;
-  const canExport = canUseDiagramTools && canSaveDiagram;
+  const canExport = canExportProp ?? (canUseDiagramTools && canSaveDiagram);
   const readinessMessage =
     diagramReadinessText ??
     readinessText ??

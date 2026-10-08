@@ -22,6 +22,7 @@ import { useUnit } from "./feature/unit/useUnit";
 import { usePzMarker } from "./feature/pzMarker/usePzMarker";
 import { useTerrain } from "./feature/terrain/useTerrain";
 import { useExport } from "./feature/export/useExport";
+import useCaptureArea from "./feature/export/useCaptureArea";
 import { useAuth } from "./feature/auth/AuthContext";
 import { useSavedMaps } from "./feature/savedMaps/useSavedMaps";
 import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
@@ -370,24 +371,6 @@ function App() {
     profiles: aircraftProfiles,
     activeProfile,
   });
-  const {
-    exportBox,
-    isExporting,
-    setIsExporting,
-    exportProgress,
-    setExportProgress,
-    isExportModalOpen,
-    setIsExportModalOpen,
-    exportSuccess,
-    enableExportMode,
-    updateExportBox,
-    deleteExportBox,
-    handleExportComplete,
-    handleFinalExport,
-  } = useExport(targetLocation, {
-    exportBox: activeGraphics.exportBox ?? null,
-    setExportBox,
-  });
 
   const handleTerrainData = useCallback(
     (nextTerrainData, diagramId) => {
@@ -623,6 +606,30 @@ function App() {
   const inPack = Boolean(packs.open);
   const packReadOnly = inPack && packs.readOnly;
   const editable = !packReadOnly;
+  // Set up here, once it is known whether this person may change the pack: where they may not, an LZ
+  // card's capture area is theirs alone (useCaptureArea).
+  const captureArea = useCaptureArea({
+    own: !editable,
+    diagramId: activeDiagramId,
+    shared: activeGraphics.exportBox ?? null,
+    setShared: setExportBox,
+  });
+  const {
+    exportBox,
+    setExportBox: setCaptureArea,
+    isExporting,
+    setIsExporting,
+    exportProgress,
+    setExportProgress,
+    isExportModalOpen,
+    setIsExportModalOpen,
+    exportSuccess,
+    enableExportMode,
+    updateExportBox,
+    deleteExportBox,
+    handleExportComplete,
+    handleFinalExport,
+  } = useExport(targetLocation, captureArea);
   // The pack's route set new routes go into (the last one chosen, else the first).
   const [packRouteTarget, setPackRouteTarget] = useState(null);
   const packRouteSetFor = () =>
@@ -1109,6 +1116,33 @@ function App() {
     else if (packItemOf(id)) packs.packLz.openItem(packLocalRef(id).item);
   };
 
+  // ⋯ > Export LZ card takes the sidebar's path on the active LZ/PZ (the export always works on that
+  // one), so a card made active by it is exported once it is: its capture area, or one set around the
+  // target first for the person to adjust. Exporting changes nothing, so a read-only pack can.
+  const [cardExportFor, setCardExportFor] = useState(null);
+  const exportCard = (id) => {
+    setCardExportFor(id);
+    if (id !== workspaceRef.current?.activeDiagramId) selectCard(id);
+  };
+  useEffect(() => {
+    if (cardExportFor == null) return;
+    const id = cardExportFor;
+    setCardExportFor(null);
+    if (id !== activeDiagramId || !canEditGraphics || isExporting) return;
+    if (exportBox) {
+      setIsExporting(true);
+      return;
+    }
+    enableExportMode();
+    toast({
+      tone: "info",
+      message: "Capture area set around the target. Move or resize it on the map, then export.",
+      action: { label: "Export now", onClick: () => exportCard(id) },
+    });
+    // Only when asked: what is active and its capture area are read then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardExportFor]);
+
   // A pack's route sets, as the Routes panel shows them.
   const packRouteSets = inPack
     ? packs.packRoutes.open.map((uuid) => {
@@ -1273,6 +1307,7 @@ function App() {
           canDrawBoundary={hasActiveTarget && editable}
           canUseDiagramTools={canEditGraphics && editable}
           canSaveDiagram={canEditGraphics && editable}
+          canExport={canEditGraphics}
           diagramStatus={diagramStatus}
           diagramReadinessText={diagramReadinessText}
           compact={sidebarCompact}
@@ -1363,6 +1398,7 @@ function App() {
           canAnalyze={canAnalyze && editable}
           canUseDiagramTools={canEditGraphics && editable}
           canSaveDiagram={canEditGraphics && editable}
+          canExport={canEditGraphics}
           diagramStatus={diagramStatus}
           diagramReadinessText={diagramReadinessText}
         />
@@ -1411,7 +1447,7 @@ function App() {
           isExporting={isExporting}
           onExportComplete={handleExportComplete}
           setExportProgress={setExportProgress}
-          setExportBox={setExportBox}
+          setExportBox={setCaptureArea}
           setIsExporting={setIsExporting}
           isDrawingLZ={isDrawingLZ}
           drawingPoints={drawingPoints}
@@ -1505,6 +1541,7 @@ function App() {
                 openSavedLz(entry).catch((err) => toast({ tone: "error", message: `“${entry.name}” could not be opened: ${err.message}` }))
               }
               onBrowseAll={() => openLibrary("lz")}
+              onExportCard={feat.exports ? exportCard : undefined}
               onCollapse={() => dock.setCollapsed(true)}
             />
           )}

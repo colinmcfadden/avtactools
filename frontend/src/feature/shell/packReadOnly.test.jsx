@@ -43,6 +43,27 @@ describe("the LZ/PZ panel for a viewer of a live pack", () => {
     expect(screen.getByRole("menuitem", { name: /^Save a copy to Library/ })).toBeInTheDocument();
   });
 
+  it("still offers Export LZ card, in a finished pack too: exporting changes nothing", () => {
+    const onExportCard = jest.fn();
+    render(
+      <LzPanel
+        diagrams={diagrams}
+        activeDiagramId="a"
+        pack={{ name: "OP DK", memberCount: 4, finished: true, readOnly: true }}
+        onSave={() => {}}
+        onSelect={() => {}}
+        onView3D={() => {}}
+        onClose={() => {}}
+        onRename={() => {}}
+        onSaveAs={() => {}}
+        onExportCard={onExportCard}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "More actions for LZ HAWK" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Export LZ card" }));
+    expect(onExportCard).toHaveBeenCalledWith("a");
+  });
+
   it("still lets an editor rename", () => {
     renderLzPanel(editorPack);
     expect(screen.getByRole("button", { name: "Rename LZ HAWK" })).toBeInTheDocument();
