@@ -79,3 +79,9 @@ android/local.properties
 *.jks
 *.keystore
 *.p12
+
+# --- NATIVE DESIGN HANDOFF ---
+# The screens themselves (82 screenshots, ~25 MB, and their HTML sources) stay local: the Design canvas is the
+# original (docs/native-design/README.md). The README, outlines and tokens are committed.
+/docs/native-design/png/
+/docs/native-design/screens/

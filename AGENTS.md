@@ -27,9 +27,9 @@ mission planning system).
 - **Status:** public beta. Version lives in `frontend/package.json` and
   `backend/version.py`, both written by semantic-release.
 - **Repo:** `github.com/colinmcfadden/avtactools` · default branch `develop`.
-- **Native apps:** Android (Kotlin) first, then iOS and iPadOS (Swift). Started:
-  the pure-Kotlin core modules and the golden fixtures exist (§17). Read
-  `docs/NATIVE_APPS_PLAN.md` before any mobile work.
+- **Native apps:** Android (Kotlin) first, then iOS and iPadOS (Swift). Android
+  has the plan's P0–P2 (§17; where it stands and what is next: `docs/HANDOFF.md`);
+  iOS is not started. Read `docs/NATIVE_APPS_PLAN.md` before any mobile work.
 
 ---
 
@@ -138,10 +138,10 @@ avtactools/
 │  ├─ src/utils/             Coordinates, MGRS (`mgrs.js`), LZ dictionary, helicopter capacity
 │  ├─ public/                msnx_template.msnx, static assets; public/cesium/ is copied at build
 │  └─ scripts/copy-cesium.js prestart/prebuild: copies Cesium's static build into public/
-├─ android/                  Gradle project for the Android app (§17); pure-Kotlin core modules so far
+├─ android/                  Gradle project for the Android app (§17): pure-Kotlin core modules, Android libraries, the app
 ├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17)
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
-├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md; HANDOFF.md (where the Android build stands, what is next)
+├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md; HANDOFF.md (where the Android build stands, what is next); native-design/ (the menu redesign for Android and iOS, phone and tablet: screenshots, outlines, sources, tokens; read its README before native UI work)
 ├─ .github/workflows/        release.yaml (semantic-release); android.yaml, contracts.yaml (path-filtered tests)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
 └─ backend/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
@@ -753,7 +753,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
+  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/native-design/README.md`, `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
   "where things stand, what is next" note for whoever picks the Android work up; refresh it with each commit that moves either.
 
 ---
