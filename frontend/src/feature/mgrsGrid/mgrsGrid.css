@@ -1,0 +1,45 @@
+/* The MGRS grid (MgrsGridLayer). It goes over imagery, topo and the VFR sectional alike, so
+   the lines are light with a thin dark halo: noticeable on any of them, thin enough to see the
+   map through (the halo is what shows on the light topo and VFR maps, the line on imagery).
+   100 km lines are heavier; zone and band boundaries heaviest, in an orange no planning graphic
+   uses. */
+.map-mgrs-grid {
+  --mgrs-grid-line: rgba(255, 255, 255, 0.85);
+  --mgrs-grid-major: rgba(255, 255, 255, 0.92);
+  --mgrs-grid-zone: #ffb347;
+  --mgrs-grid-halo: rgba(0, 0, 0, 0.45);
+}
+
+.mgrs-grid__halo { stroke: var(--mgrs-grid-halo); }
+.mgrs-grid__halo--minor { stroke-width: 3px; }
+.mgrs-grid__halo--major { stroke-width: 4px; }
+.mgrs-grid__halo--zone { stroke-width: 5px; }
+
+.mgrs-grid__line--minor { stroke: var(--mgrs-grid-line); stroke-width: 1px; }
+.mgrs-grid__line--major { stroke: var(--mgrs-grid-major); stroke-width: 1.75px; }
+.mgrs-grid__line--zone { stroke: var(--mgrs-grid-zone); stroke-width: 2.5px; }
+
+/* Labels: 11 px pills on a translucent dark ground. mgrsGrid.js keeps them apart by these sizes
+   (about 7 px a character, 10 px of padding, 17 px tall); the icon is a point and the pill is
+   moved off it: below the top edge, right of the left edge, or centred on its point. */
+.mgrs-grid-label { pointer-events: none; }
+.mgrs-grid-label > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 5px;
+  border-radius: 9px;
+  background: rgba(12, 16, 22, 0.62);
+  color: var(--ff-text-main, #e7eaee);
+  font-family: var(--mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 11px;
+  white-space: nowrap;
+}
+.mgrs-grid-label--easting > span { transform: translate(-50%, 4px); }
+.mgrs-grid-label--northing > span { transform: translate(4px, -50%); }
+.mgrs-grid-label--gzd > span,
+.mgrs-grid-label--square > span { transform: translate(-50%, -50%); }
+.mgrs-grid-label--gzd > span { color: var(--mgrs-grid-zone); }
+.mgrs-grid-label--square > span { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); }

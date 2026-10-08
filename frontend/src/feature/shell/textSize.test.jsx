@@ -7,9 +7,13 @@ import ThreatsDockPanel from "./ThreatsDockPanel";
 import TopBar from "./TopBar";
 
 // docs/MENU_REDESIGN.md §3 keeps text at 11 px or more. jsdom applies no stylesheet, so the
-// redesign's own sheets are read, and the components are checked for sizes set inline over them.
+// redesign's own sheets are read (and the map's MGRS grid, which is newer), and the components are
+// checked for sizes set inline over them.
 
-const SHEETS = ["ui/ui.css", "shell/shell.css", "missionPacks/ui/packs.css", "library/library.css", "imports/imports.css"];
+const SHEETS = [
+  "ui/ui.css", "shell/shell.css", "missionPacks/ui/packs.css", "library/library.css", "imports/imports.css",
+  "mgrsGrid/mgrsGrid.css",
+];
 // Initials in an 18 or 14 px circle beside the name written out; ui.css says why.
 const EXEMPT = [".ui-avatar--sm", ".ui-avatar--xs"];
 

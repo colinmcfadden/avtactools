@@ -28,6 +28,7 @@ import MsnxRouteLayer, {
 import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
 import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
+import MgrsGridLayer from "../feature/mgrsGrid/MgrsGridLayer";
 import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
 
 // The slope PNG already carries its own per-band alpha (145-185 of 255, rising
@@ -194,6 +195,7 @@ const MapView = ({
   handleLZRightClick,
   setContextMenu,
   mapStyle,
+  showMgrsGrid,
   localPointSets,
   onAddLocalPointToRoute,
   threats,
@@ -240,6 +242,9 @@ const MapView = ({
         crossOrigin="anonymous"
         {...activeMapStyle.options}
       />
+
+      {/* The MGRS grid, over any base map; screen only, never on an LZ card */}
+      {showMgrsGrid && <MgrsGridLayer />}
 
       <MapInteractionHandler
         isDrawingLZ={isDrawingLZ}
