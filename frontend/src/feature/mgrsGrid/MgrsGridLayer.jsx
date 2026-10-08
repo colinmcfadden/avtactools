@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
+import { SCREEN_ONLY_CLASS } from "../export/captureFilter";
 import { mgrsGrid } from "./mgrsGrid";
 import "./mgrsGrid.css";
 
@@ -17,7 +18,6 @@ import "./mgrsGrid.css";
 
 export const GRID_PANE = "mgrsGridPane";
 export const LABEL_PANE = "mgrsGridLabelPane";
-export const SCREEN_ONLY_CLASS = "map-screen-only";
 export const GRID_Z_INDEX = 350;
 export const LABEL_Z_INDEX = 360;
 

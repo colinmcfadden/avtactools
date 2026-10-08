@@ -437,6 +437,7 @@ body.export-mode-active .leaflet-control-container {
 
 .hide-ui-for-export .leaflet-control-container,
 .hide-ui-for-export .ff-panel,
+.hide-ui-for-export .map-screen-only,
 .hide-ui-for-export .export-handle, 
 .hide-ui-for-export .export-box-handle {
     display: none !important;

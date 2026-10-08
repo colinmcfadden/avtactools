@@ -3,12 +3,12 @@ import fs from "fs";
 import L from "leaflet";
 import path from "path";
 import React from "react";
+import { SCREEN_ONLY_CLASS } from "../export/captureFilter";
 import MgrsGridLayer, {
   GRID_PANE,
   GRID_Z_INDEX,
   LABEL_PANE,
   LABEL_Z_INDEX,
-  SCREEN_ONLY_CLASS,
   attachMgrsGrid,
 } from "./MgrsGridLayer";
 
