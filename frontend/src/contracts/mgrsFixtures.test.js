@@ -4,7 +4,7 @@ import { readFixture } from "./readFixture";
 // contracts/fixtures/mgrs/forward.json is computed by PyGeodesy, the library
 // behind /api/convert-to-mgrs. Every case here is a point where the browser's
 // own conversion has to give the server's answer to the metre. (The inverse,
-// grid to lat/lon, stays on the server for the web; the native apps port it.)
+// grid to lat/lon, is held to inverse.json in mgrsInverseFixtures.test.js.)
 const forward = readFixture("mgrs/forward.json");
 
 describe("MGRS forward fixtures (PyGeodesy)", () => {
