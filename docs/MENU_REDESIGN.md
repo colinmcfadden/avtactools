@@ -10,7 +10,14 @@ What was decided while building, beyond this document:
 - **Opening a saved route set never merges it into unsaved sketches.** Opened while the session has sketches of its own, it gets its own card with its own Save state; opened into a session with none, it becomes the session's sketches. Each set is compared with what it was when last saved or opened.
 - **Missions come in one way**: the sidebar's Import MSNX is gone; the Import menu, the Routes panel's footer and a drop on the map all go through the review.
 - **Library lists that fail say so**: a tab that could not load says it could not be loaded and offers Try again (never "Nothing saved yet"); one that could not refresh keeps its rows, marked as possibly out of date.
-- **Export from the Routes panel reports in toasts**, and the threats `.ths` beside a mission is made only when the `.msnx` was.
+- **Export from the Routes panel reports in toasts**, and the threats `.ths` beside a mission is made only when the `.msnx` was. **Export .msnx stays a plain button** (the owner, 2026-10-08): mockup 02's chevron is not built, and the checkbox carries the threats.
+- **No red border on a threat card** (the owner, 2026-10-08): in mockup 03 it only echoed *Terrain mask on*, which the card's chip already says.
+- **⋯ > Export LZ card** on an LZ/PZ card takes the sidebar's path: it makes that LZ/PZ active, exports its capture area, or sets one around the target and offers *Export now*.
+- **The sidebar's analysis card** reads *Re-analyze* once analysed, with "Analyzed. Planning graphics, export and save are unlocked." In a read-only pack it says "Analyzed. Read-only here: viewing and export still work." instead of mockup 16's unlocked sentence, which would not be true there.
+- **An imported mission's card goes by its file name** (`GOAT SUCKER.msnx`, as mockup 02) until it is given another name; the *Imported* chip is blue.
+- **Text is 11 px or more in the frame** (§3), the mockups' 9.5–10 px micro-labels included: the rail labels are tracked tighter to fit 56 px, and the route plan's wind boxes share one label, *WIND °T / KT*, because a separate KT label collided at 11 px. The left sidebar and the map's own controls predate the redesign and still have smaller text.
+- **The Library footer links to Mission Packs** when packs are on and none is open; the link closes the Library and opens the switcher, whose open state `App` now holds.
+- **The map zooms a whole level per wheel notch and per +/− press** (`MapView`): with a 0.1 zoom snap Leaflet does not round a notch up to a level, so the wheel rate is set (30 px per level) for about one level per notch at 100–150% display scaling.
 - **Map overlays** are listed in the Import menu as not available yet: reading KMZ or GeoTIFF needs a new library (§9).
 - **Imports default**: local points go to the Library (the open pack when there is one), mission files stay in the session; the person can change either in the review.
 - The Library rows show no grid: the list API does not return one, and adding it changes the recorded responses the Android client is held to. Add `grid` to the LZ summary when the apps are next touched.

@@ -148,7 +148,18 @@ caller is not in is a 404, so its existence is not revealed.
 finished the pack and when), `pack_read_only` (a viewer), `owner_only`,
 `invalid_op` (with `index` and `reason`), `item_too_large` (413),
 `mission_not_supported`, `not_your_original`, `not_a_teammate`,
-`owner_must_transfer`, and `invite_gone` / `invite_expired` (410).
+`owner_must_transfer`, `original_unknown` (409: an item copied before its record had a
+`client_uuid`, so which record it came from is not known), and `invite_gone` /
+`invite_expired` (410).
+
+**Counts and originals.** A pack's summary and body carry `audience_count`: everyone who can
+open it, its own members and the team it is shared with, each person once. An item's `source`
+carries `original_updated_at` (when the copier's Library record last changed), `pack_changes`
+(edits to its content in the pack since it was copied or last updated; one edit made of
+several operations counts once, and a rename does not count, because updating from the
+original keeps the pack's name) and `last_pack_change` (who and the sentence). Copying in a
+Library record that has no `client_uuid` yet (every record saved before sync) gives it one
+first, so the copy names that record and no other.
 
 **Invitation links** are `<FRONTEND_URL>/?invite=<token>`. The web takes the token
 out of the address before anything renders and accepts it once the person is signed
@@ -244,6 +255,21 @@ to the app by `usePackWorkspace`. Things worth keeping true:
   finished pack, with the reason; points the pack refuses stay in the session; points sent to the
   Library or the session are not shown until the person switches back to the Library, and the review
   and a toast say so.
+- **The pack's ⋯ menu**: Rename and Edit description (editors and the owner, not in a finished
+  pack), Duplicate as a new pack, Leave pack (an owner is told to hand it over first: Members, Owner
+  beside someone's name, after which they are an editor), Delete pack (owner, confirmed; never the
+  prominent button). After leaving or deleting, the Library opens.
+- **Member counts are `audience_count`**, so a pack shared with a team reads "18 members" in the
+  switcher, on the LZ/PZ card ("18 members can see it") and in Add to pack.
+- **Sharing with a team** offers *Can edit* or *Can view*, as New pack does, and the role can be
+  changed later. Invite: pick the person or type the address, choose the role, then Invite.
+- **Update from original asks the server as the dialog opens** (`GET …/items/<item>`), because the
+  item as the pack was loaded does not follow edits made since: it says when the Library version
+  changed and how many pack edits will be replaced, naming the last. A fact that did not come back is
+  left out. "Original changed" itself is worked out when the pack loads, so a Library edit made while
+  the pack is open shows after the pack is opened again.
+- **Exporting an LZ card works in a read-only pack.** There the capture area is the person's own
+  (`useCaptureArea`) and is never sent to the pack, since the pack would refuse it.
 
 ## 6. The live stream
 
