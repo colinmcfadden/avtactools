@@ -60,6 +60,7 @@ import useImports, { movePointsToPack } from "./feature/imports/useImports";
 import ImportsPanel from "./feature/imports/ImportsPanel";
 import { setSummary } from "./feature/saveDialog/useRouteSaves";
 import { ConfirmDialog } from "./feature/ui/Dialog";
+import { useMenu } from "./feature/ui/Menu";
 import { PanelHead } from "./feature/shell/Dock";
 import usePackWorkspace from "./feature/missionPacks/ui/usePackWorkspace";
 import PackPanel from "./feature/missionPacks/ui/PackPanel";
@@ -442,6 +443,11 @@ function App() {
   // The Library dialog: null when closed, else the tab it opens on.
   const [libraryTab, setLibraryTab] = useState(null);
   const openLibrary = useCallback((tab = "lz") => setLibraryTab(tab), []);
+  // The top bar's workspace switcher, held here so the Library's footer can open it.
+  const workspaceSwitcher = useMenu();
+  const openWorkspaceSwitcher = () => {
+    if (!workspaceSwitcher.open) workspaceSwitcher.toggle();
+  };
   // One name asked for at a time (a route being finished, a route point being named).
   const [nameAsk, setNameAsk] = useState(null);
 
@@ -1328,6 +1334,7 @@ function App() {
           pack={packs.topPack}
           packStatus={packs.topStatus ?? "live"}
           people={packPeople}
+          switcher={workspaceSwitcher}
           renderSwitcher={
             feat.mission_packs
               ? ({ open, close, anchorRef }) => (
@@ -1900,6 +1907,8 @@ function App() {
           openLabel={inPack ? "Add to pack" : "Open"}
           openingLabel={inPack ? "Adding" : "Opening"}
           subtitle={inPack ? `Everything you have saved. Adding one puts a copy of it in ${packs.meta?.name ?? "the pack"}.` : undefined}
+          // Already in a pack, the switcher is a click away in the top bar and the sentence would not fit.
+          onOpenPacks={feat.mission_packs && !inPack ? openWorkspaceSwitcher : undefined}
         />
       )}
       {pickers.msnx.element}

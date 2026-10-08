@@ -114,7 +114,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
             {failed && total === 0 ? `Your ${meta.noun[1]} are not loaded` : `${total} ${total === 1 ? meta.noun[0] : meta.noun[1]}`}
             {onOpenPacks && (
               <>
-                {" · Working with a team? "}
+                {" · "}
                 <button
                   type="button"
                   className="ui-link"
@@ -123,7 +123,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                     onOpenPacks();
                   }}
                 >
-                  Open a Mission Pack
+                  Working with a team? Open a Mission Pack
                 </button>
               </>
             )}

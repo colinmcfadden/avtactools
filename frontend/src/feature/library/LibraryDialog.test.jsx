@@ -16,10 +16,10 @@ const source = (patch = {}) => ({
   ...patch,
 });
 
-const show = (sources) =>
+const show = (sources, props = {}) =>
   render(
     <ToastProvider>
-      <LibraryDialog sources={{ lz: source(), routes: source(), points: source(), ...sources }} onClose={() => {}} />
+      <LibraryDialog sources={{ lz: source(), routes: source(), points: source(), ...sources }} onClose={() => {}} {...props} />
     </ToastProvider>,
   );
 
@@ -60,5 +60,20 @@ describe("the Library", () => {
     fireEvent.click(screen.getByRole("tab", { name: /Local points/ }));
     expect(screen.getByText("Loading…")).toBeInTheDocument();
     expect(screen.queryByText(/could not be loaded/)).toBeNull();
+  });
+
+  it("links its footer to Mission Packs: the Library closes and the workspace switcher opens", () => {
+    const onClose = jest.fn();
+    const onOpenPacks = jest.fn();
+    show({}, { onClose, onOpenPacks });
+    expect(screen.getByText(/^0 saved LZ\/PZs/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Working with a team? Open a Mission Pack" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOpenPacks).toHaveBeenCalledTimes(1);
+  });
+
+  it("has no Mission Pack link where packs are not offered", () => {
+    show({});
+    expect(screen.queryByText(/Working with a team/)).toBeNull();
   });
 });

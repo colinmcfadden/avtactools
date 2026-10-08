@@ -4,6 +4,8 @@ import useRouteSaves, { routesFingerprint } from "../saveDialog/useRouteSaves";
 import { ToastProvider } from "../ui/Toast";
 import Dock, { useDock } from "./Dock";
 import LzPanel, { lzStateChips } from "./LzPanel";
+import TopBar from "./TopBar";
+import { useMenu } from "../ui/Menu";
 
 const texts = (chips) => chips.map((chip) => chip.text);
 
@@ -114,6 +116,34 @@ describe("the LZ/PZ panel", () => {
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.getByText("Saved to OP DK as you work. 4 members can see it.")).toBeInTheDocument();
     expect(screen.getByText("Sam B. is also here")).toBeInTheDocument();
+  });
+});
+
+describe("the top bar's workspace switcher", () => {
+  // As in App.js: the switcher's menu is held outside the bar, so the Library's footer can open it.
+  const Harness = () => {
+    const switcher = useMenu();
+    return (
+      <>
+        <TopBar
+          switcher={switcher}
+          renderSwitcher={({ open, close }) => (open ? <div role="menu" aria-label="Workspace"><button type="button" onClick={close}>Done</button></div> : null)}
+        />
+        <button type="button" onClick={() => !switcher.open && switcher.toggle()}>Open a Mission Pack</button>
+      </>
+    );
+  };
+
+  it("opens from elsewhere as well as from its own button", () => {
+    render(<Harness />);
+    expect(screen.queryByRole("menu", { name: "Workspace" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open a Mission Pack" }));
+    expect(screen.getByRole("menu", { name: "Workspace" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Change workspace/ })).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("menu", { name: "Workspace" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Change workspace/ }));
+    expect(screen.getByRole("menu", { name: "Workspace" })).toBeInTheDocument();
   });
 });
 

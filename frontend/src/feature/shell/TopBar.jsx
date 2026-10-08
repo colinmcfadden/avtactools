@@ -32,6 +32,8 @@ const TopBar = ({
   packStatus = "live",
   people = [],
   renderSwitcher,
+  // The switcher's menu (useMenu), when the caller holds it so it can open it from elsewhere.
+  switcher: heldSwitcher,
   onImport,
   canImport = {},
   onOpenLibrary,
@@ -40,7 +42,8 @@ const TopBar = ({
   onSignOut,
   onOpenMenu,
 }) => {
-  const switcher = useMenu();
+  const ownSwitcher = useMenu();
+  const switcher = heldSwitcher ?? ownSwitcher;
   const imports = useMenu();
   const account = useMenu();
   const status = STATUS[packStatus] ?? STATUS.live;
