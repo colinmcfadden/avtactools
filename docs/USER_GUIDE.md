@@ -22,7 +22,7 @@ Type an MGRS grid in the **MGRS Target** box and press **GO**. The map flies to 
 You can also **right-click anywhere on the map** → **Set as Target** to move the target without typing a grid.
 
 - Doghouse values (heading, time, distance, airspeed) are editable — click a value and enter a new one.
-- Toggle **Topo Map** for a topographic basemap instead of satellite.
+- Use **Layers** (bottom left of the map) to switch between **Satellite**, **Topo** and the **VFR** sectional, and to turn on the **MGRS grid** over any of them. The grid draws zone boundaries, 100 km squares, and lines at 10 km, 1 km or 100 m as you zoom in, labelled with the zone, the square and each line's digits, so a grid reference can be read straight off the map. It is for planning on screen only: it never appears on an exported LZ card.
 
 ## 2. Analyze the LZ
 

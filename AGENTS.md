@@ -98,6 +98,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Imports** | One way in for `.msnx`, `.LPS` and `.ths`: the Import menu, the Imports panel, or a drop on the map. A file's type is read from its content (zip = mission; SQLite with `Points` or `THREATS`), then a review dialog says where each goes (Library, this session, the open pack; threats only ever this session) | `feature/imports/` | — |
 | **Threats** | `.ths` import/export, terrain-masking viewshed, KMZ, QR | `feature/threats/` | `routes/threat_routes.py`, `ths_export.py`, `threat_download_store.py`, `threat_template.ths` |
 | **Weather** | METAR, NOTAMs, winds aloft | `feature/weather/` | `routes/weather_routes.py` |
+| **Map layers** | The base map (satellite, topo, VFR sectional) and an **MGRS grid** over any of them, from the Layers control: zone and band boundaries (white dashes), 100 km squares, and lines at 10 km, 1 km or 100 m as the zoom allows (about 70 px apart), labelled with the zone, the square and the lines' principal digits; a label whose edge is covered (a phone's search bar) goes on the opposite edge. On or off is remembered per browser (`ezpz.mgrsGrid`), never saved with a plan. **Screen only**: the owner's call, 2026-10-08; it is left off LZ card exports | `feature/mapStyles/`, `feature/mgrsGrid/`, `feature/export/captureFilter.js` | — |
 | **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
 | **Mission packs** | A shared container of LZs, sketched route sets and point sets a team plans one operation in. Members edit it through a server-ordered stream of id-addressed operations, every change is logged, and the owner can finish it (read-only for everyone). Teams, email invites, and name search limited to teammates. Edits reach everyone through a live stream (a separate service), or by polling where it is not running. Design and rules: `docs/MISSION_PACKS.md` | `feature/missionPacks/` (the sync client `useMissionPack`; `packApi` for every route; invitation links; the editors kept in step with an open pack, `usePackLz` / `usePackRoutes` / `usePackPoints` on `usePackItemSync`: `docs/MISSION_PACKS.md` §5a; the screens in `feature/missionPacks/ui/`: the workspace switcher, the Pack panel with Items and History, New pack, Members, Teams, Add to pack, the finished banner and other people's pointers, joined to the app by `usePackWorkspace`) | `routes/pack_routes.py`, `routes/team_routes.py`, `pack_ops.py`, `pack_support.py`, `realtime/service.py` |
 | **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
@@ -551,7 +552,12 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
 (`utils/mgrs.js`: Krüger-series transverse Mercator, matched against the
 backend's PyGeodesy at 5,649 points worldwide — `contracts/fixtures/mgrs`, run
 by Jest — every one identical) — the cursor readout converts on every mouse
-move, so never call the API for it.
+move, so never call the API for it. The browser has the inverse too (`fromUtm`,
+`mgrsToLatLon`, and `toUtmInZone` for a point in a zone it is not in; ported from
+the Android `MgrsConverter`), held to `contracts/fixtures/mgrs/inverse.json`
+(`contracts/mgrsInverseFixtures.test.js`). The MGRS grid overlay computes every line
+in its own zone with them, so a point on a line reads as that line's round value in
+the cursor readout (checked to the metre against PyGeodesy on the live map).
 Digits are truncated, not rounded, and the zone is zero-padded (`05R`), as
 PyGeodesy writes it. Heights are feet in the UI; the backend
 computes in metres and converts at the edges (e.g. `/api/elevations` returns
