@@ -5,15 +5,21 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-04 (after saved missions and drag on the map; the initial build, P0–P2, is complete apart from the ATAK package).
+Last refreshed: 2026-10-08 (everything merged to `develop`; mission packs and the native screen redesign are next).
 
 ---
 
 ## 1. Where things stand
 
-- **Branch:** `claude/jolly-wozniak-i7rlrq` (all Android work). Push with `git push -u origin claude/jolly-wozniak-i7rlrq`.
-  `develop` is the PR target; **no PR has been opened** (the owner has not asked). Codex's threat UI branch
-  `feat/android-threat-ui` (`bd43777`) is already merged into this branch.
+- **Branch:** `develop`. On 2026-10-08 it was fast-forwarded over the whole stack that had been waiting: the Android branch
+  (`claude/jolly-wozniak-i7rlrq`, which already held Codex's `feat/android-threat-ui`), then `feat/mission-packs`, then the web
+  menu redesign (`feat/menu-redesign` and its fixes, `fix/menu-redesign-ui`). New Android work goes on its own branch off
+  `develop` (`feat/android-…`), with a PR back to it. The backend restructure (`refactor/backend-structure`) is **not** in
+  `develop` and nothing here depends on it.
+- **Mission packs and the web menu redesign are built on the web and backend** (`docs/MISSION_PACKS.md`, `docs/MENU_REDESIGN.md`),
+  still off for everyone but admins and ticked testers (`entitlements.DEFAULT_OFF`), and the live service is not deployed (clients
+  poll). **Android has none of it yet.** The native screens for both are in `docs/native-design/` (read its README; the screenshots
+  themselves are gitignored).
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
   state is in AGENTS.md §17's table. **Not in P2 yet:** an ATAK data package. (Saved missions, which keep the `.msnx` as the document and write edits back into it, and dragging and turning on the map are built: AGENTS.md §17, *Saved missions* and *Dragging and turning on the map*.)
@@ -24,35 +30,56 @@ Last refreshed: 2026-10-04 (after saved missions and drag on the map; the initia
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output,
   `FLAG_SECURE` and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
   "not verifiable here" in AGENTS.md). The first device run is the first real test of all of them.
-- **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`, §3) was **green on the pushed head**
-  (the commit that added this note and the one before it). Re-run it after any change before pushing.
-
-### Working tree
-
-Clean and pushed at the time of writing (check `git status` and `git log origin/claude/jolly-wozniak-i7rlrq..HEAD`).
-The threat slice (task #51) is committed: Codex's UI (`bd43777`), the ring/marker fix (`6404151`) and the held-threat card,
-remove-all and mission-with-threats export on top of them.
+- **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`, §3) was **green on the Android branch's
+  head** before the merge. Nothing in Android changed with the merge; CI's `android.yaml` runs on the push to `develop` and on every
+  PR that touches `android/`, `contracts/` or `backend/`. Re-run it after any change before pushing.
+- **The owner's Windows workstation** had no Android SDK and only JDK 11 on 2026-10-08 (Gradle 9 needs 17 to run); the owner is
+  installing them. Until they are there, build in a cloud session (§3). `android/local.properties` names the SDK on each machine.
 
 ---
 
 ## 2. Next work, in order
 
-1. **Optionally mutation-check the threat slice** (task #51 is landed): `HomeViewModel.mapTapped` ordering, `ThreatStore`,
+1. **Mission packs, engine first, no screens** (`docs/MISSION_PACKS.md` §8 step 4). The screens wait for the redesigned shell (item 2),
+   because their home, the workspace switcher and the Pack tab, only exists there; building them in today's sheet would build them twice.
+   The web did it in the same order.
+   - **Contracts first, on the web.** Only the operation rules are pinned (`contracts/fixtures/packs/ops.json`, 134 cases). Also pin, from
+     `frontend/src/feature/missionPacks/`: `packDiff.js` (the operations an edit becomes), `packSession.js` (the client's state: pending,
+     confirmed, replay, finished and dropped), which fields of an LZ and a route set are each person's own and never in a pack
+     (`packLz.sharedLzData`, `packRoutes.sharedRouteData`), and the history sentences (`describeLzChange` and its peers). Record the pack
+     routes' real responses in `contracts/fixtures/network/responses.json` (`backend/tests/test_network_fixtures.py`).
+   - **Then Android**: the operation applier held to `ops.json`; the diff and session held to their fixtures; typed calls for the pack, team
+     and invite routes in `core-network` (they go through `ApiClient`'s internals, so they live there) and the live stream on OkHttp's own
+     WebSocket (no new dependency); a `PackSyncEngine` beside `SyncEngine` over a `PackStore`, with Room tables in a version 3 database that
+     `AccountScope.wipe` also clears; the live-server scenarios (`backend/tests/live_server.py` already serves the pack and team routes and
+     makes accounts with `features`, so a test account can have `mission_packs`).
+   - **Seams found in the code** (2026-10-08): `DocumentSession` already writes through a `DocumentStore` interface, but `DiagramSession` and
+     `RouteSession` bind it to the Library repositories, and `reidentify`/`follow` assume a Library record. `DiagramNormalizer` keeps graphics
+     whole but drops unknown top-level, analysis and view keys, so diff the normalized base against the normalized edit, as the web does.
+     Applying someone else's change through `setQuietly` marks the document unsaved: diff against a base that already has it, or it is sent
+     back. A route point saved by an old web release may have no `id`, and then the diff sends its list whole. Point sets have no editing
+     session (the web cannot edit points either). `AuthLinks` reads only `auth=verify|reset`: `?invite=<token>` needs its own link type kept
+     across sign-in. Edits a finished pack refuses are saved to the Library as "NAME (my offline edits)": nothing is dropped silently.
+2. **The redesigned shell** to `docs/native-design/` (the AP and AT screens): the navigation bar (LZ/PZ, Routes, Threats, Imports), the
+   workspace chip, Import, the Library page, the save dialog, the import review; the tablet layout (material3-adaptive). Settle §5's design
+   decisions first. `HomeViewModel` (346 lines, 21 dependencies) has no notion of a workspace; the Library-or-pack workspace belongs here.
+3. **The pack screens** in that shell: the switcher, New pack, the Pack panel (Items, History), Members, the finished banner, invitations.
+4. **Optionally mutation-check the threat slice**: `HomeViewModel.mapTapped` ordering, `ThreatStore`,
    `ShareExport` retention and `ThreatsViewModel`, the way the weather code was (surviving mutants become tests).
-2. **Open files from outside the app** (#52): **built** — `.LPS` and `.ths` from Files, mail and the share sheet, asked about before anything is
+5. **Open files from outside the app** (#52): **built** — `.LPS` and `.ths` from Files, mail and the share sheet, asked about before anything is
    imported (AGENTS.md §17, *Files from other apps*). Still to do on a device: confirm Files/Gmail/the share sheet offer the app and hand over a
    readable address, and what media type real senders use (the manifest declares octet-stream and the two SQLite types, nothing broader).
-3. **Mission import and saved missions** (#53, #54): **built.** An `.msnx` opened from outside, or chosen with the Routes tab's *Import mission*, is offered and **kept as the saved document**
+6. **Mission import and saved missions** (#53, #54): **built.** An `.msnx` opened from outside, or chosen with the Routes tab's *Import mission*, is offered and **kept as the saved document**
    (`kind: mission`, with its file, synced); the person's changes are written back into the file (AGENTS.md §17, *Saved missions*). Tried against a real AMPS mission on an emulator. Still to
    do: the sheet and the file picker on the *tablet* with real missions of other shapes (one with a point moved, inserted and renamed, then opened in AMPS to confirm it opens), and what an
    open mission does when a pull replaces its record while it is open (it is overwritten by the next save, as for sets).
-4. **Route hand-off**: **GPX and Garmin FPL built** (a route shared from its card; AGENTS.md §17, *Sharing a route with another app*). Not built: an ATAK data package (a zip with a
+7. **Route hand-off**: **GPX and Garmin FPL built** (a route shared from its card; AGENTS.md §17, *Sharing a route with another app*). Not built: an ATAK data package (a zip with a
    manifest) or KML/KMZ, and threats to ATAK; both want the owner's say on what ATAK crews expect. **Dragging on the map is built** (a long press picks up a graphic, a threat or a route
    point; a tap holds it and shows the bar with the turn buttons); boundary corners are not draggable yet. The admin-attached AMPS template (`resolveExportTemplate`) is not built.
-5. **Later phases** (plan): P3 offline packs / on-device viewshed / the remaining exports; P4 the 3D view. The online terrain mask is built (the held
+8. **Later phases** (plan): P3 offline map packs / on-device viewshed / the remaining exports; P4 the 3D view. The online terrain mask is built (the held
    threat's *Show terrain mask*; AGENTS.md §17, *The terrain mask*); KMZ and QR calls exist on the backend but **no Android call is made**. The owner approved a transient send *only when the person
    explicitly asks* and the server must not retain it; an offline viewshed is not built.
-6. **When the initial build is done: the dev environment / device login session** the owner asked for (§4).
+9. **When the initial build is done: the dev environment / device login session** the owner asked for (§4).
 
 ---
 
@@ -130,9 +157,9 @@ obvious) and, after a failure, `Last failure: HTTP 401 · invalid_credentials ·
 Other things that stop a sign-in, in the order they usually bite:
 - **The default server** (`https://prod-ezpz-api.mcfadd.in/`) sits behind Cloudflare; an *Access* policy or a down tunnel answers
   with HTML, which the client reports as an unreadable answer (`Last failure: HTTP 200 · unreadable_response`, or a 403).
-- **The native-auth backend** (`refresh_tokens.py`, `config_routes.py`, the `X-EZPZ-Client` header, `/api/auth/refresh`) exists **only on this
-  branch**. A server run from `develop`/`main` signs in but sends no refresh token (the session then lapses after 24 h) and has no
-  `/api/config`. Run the backend from this branch locally; a deployed one is **the owner's** to deploy.
+- **The native-auth backend** (`refresh_tokens.py`, `config_routes.py`, the `X-EZPZ-Client` header, `/api/auth/refresh`) is on `develop`
+  but not on `main`. A server run from `main` (and so, likely, a deployed one) signs in but sends no refresh token (the session then lapses after 24 h) and has no
+  `/api/config`. Run the backend from `develop` locally; a deployed one is **the owner's** to deploy.
 - **Too many attempts** (429) after repeated failures for one address: the screen says so; wait or restart the local backend.
 - **Google sign-in** needs `-Pezpz.googleClientId`, an Android OAuth client for `app.ezpztac.unreleased.debug` + the debug SHA-1 in the
   same Google Cloud project, and that client ID in the backend's `GOOGLE_CLIENT_IDS`.
@@ -148,7 +175,11 @@ Other things that stop a sign-in, in the order they usually bite:
 - Real `.LPS`, `.ths` and AMPS `.msnx` samples beyond the fixtures, for the readers and writers.
 - Vercel *Ignored Build Step* so app-only PRs skip a web preview.
 - Whether the 48-hour threat retention should run from the last change (as built) or the first.
-- Whether and when to open a PR to `develop`.
+- **For the redesigned screens** (`docs/native-design/README.md`, "Decisions to settle"): the save model (recommended: keep autosave, so the
+  chips mean "not in the Library yet" rather than "unsaved"; the app is offline-first and the system can end it at any time); the new
+  neutral palette in `contracts/tokens/tokens.json` (nothing on the web reads that file) and what becomes of the red night palette, which
+  was not redesigned; several LZ/PZs open at once ("3 open · this session"; the app opens one at a time); and what to do with what the
+  screens show and the app does not have (3D, map overlays, which need a new library).
 
 ---
 
