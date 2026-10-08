@@ -507,50 +507,79 @@ const placeLabels = ({ view, pieces, frame, spacing, metersPerPixel, options }) 
   }
 
   if (minor) {
-    // Eastings along the top of the view, where each line crosses it.
-    const top = view.north;
-    pieces.forEach(({ west, east, offset }) => {
-      stripsAtLatitude(top).forEach((strip) => {
-        const a = Math.max(strip.west, west);
-        const b = Math.min(strip.east, east);
-        if (b <= a) return;
-        const eastingAt = (lon) => project(strip.zone, top, lon).e;
-        multiplesIn(eastingAt(a), eastingAt(b), spacing).forEach((value) => {
-          if (alongEastEdge(strip.zone, strip.east, value)) return;
-          const lon = solve(eastingAt, a, b, value);
-          const text = principalDigits(value, spacing);
-          const x = frame.x(lon + offset);
-          const y = frame.y(top) + LABEL.edgePx;
-          const w = labelWidth(text);
-          place(
-            { kind: "easting", text, zone: strip.zone, value, lat: top, lon: lon + offset },
-            [x - w / 2, y, x + w / 2, y + LABEL.heightPx],
-          );
+    // Eastings where each line crosses one edge of the view. Returns the lines whose label did not
+    // fit there, so they can try the opposite edge; `only` limits the run to those.
+    const eastingsAlong = (lat, labelTop, only) => {
+      const missed = new Set();
+      pieces.forEach(({ west, east, offset }) => {
+        stripsAtLatitude(lat).forEach((strip) => {
+          const a = Math.max(strip.west, west);
+          const b = Math.min(strip.east, east);
+          if (b <= a) return;
+          const eastingAt = (lon) => project(strip.zone, lat, lon).e;
+          multiplesIn(eastingAt(a), eastingAt(b), spacing).forEach((value) => {
+            if (alongEastEdge(strip.zone, strip.east, value)) return;
+            const key = `${offset}:${strip.zone}:${value}`;
+            if (only && !only.has(key)) return;
+            const lon = solve(eastingAt, a, b, value);
+            const text = principalDigits(value, spacing);
+            const x = frame.x(lon + offset);
+            const w = labelWidth(text);
+            const placedHere = place(
+              { kind: "easting", text, zone: strip.zone, value, lat, lon: lon + offset },
+              [x - w / 2, labelTop, x + w / 2, labelTop + LABEL.heightPx],
+            );
+            if (!placedHere) missed.add(key);
+          });
         });
       });
-    });
+      return missed;
+    };
+    // Along the top first; a line whose label is blocked there (on a phone the search bar covers
+    // that strip) is labelled along the bottom instead, so both halves of a reference can be read.
+    const missedTop = eastingsAlong(view.north, frame.y(view.north) + LABEL.edgePx);
+    if (missedTop.size) {
+      eastingsAlong(view.south, frame.y(view.south) - LABEL.edgePx - LABEL.heightPx, missedTop);
+    }
 
-    // Northings down the left of the view: the first piece holds its left edge.
-    const left = pieces[0];
-    if (left && Math.abs(left.west + left.offset - view.west) < 1e-9) {
-      const lon = left.west;
+    // Northings down one side of the view, the same way: the left first, then the right.
+    const northingsAlong = (piece, lon, labelLeft, only) => {
+      const missed = new Set();
+      if (!piece) return missed;
       STRIPS.filter((strip) => lon >= strip.west && lon < strip.east).forEach((strip) => {
         const s = Math.max(strip.south, view.south);
         const n = Math.min(strip.north, view.north);
         if (n <= s) return;
         const northingAt = (lat) => project(strip.zone, lat, lon).y;
         multiplesIn(northingAt(s), northingAt(n), spacing).forEach((y) => {
-          const lat = solve(northingAt, s, n, y);
           const value = northingValue(y);
+          // By value only: the two sides of the view can be in different zones, and what the
+          // fallback must give is the row's digits.
+          const key = `${value}`;
+          if (only && !only.has(key)) return;
+          const lat = solve(northingAt, s, n, y);
           const text = principalDigits(value, spacing);
           const py = frame.y(lat);
-          const x = LABEL.edgePx;
-          place(
-            { kind: "northing", text, zone: strip.zone, value, lat, lon: view.west },
+          const x = labelLeft(text);
+          const placedHere = place(
+            { kind: "northing", text, zone: strip.zone, value, lat, lon: lon + piece.offset },
             [x, py - LABEL.heightPx / 2, x + labelWidth(text), py + LABEL.heightPx / 2],
           );
+          if (!placedHere) missed.add(key);
         });
       });
+      return missed;
+    };
+    // The first piece holds the view's left edge, the last its right edge.
+    const left = pieces[0];
+    const leftEdge = left && Math.abs(left.west + left.offset - view.west) < 1e-9 ? left : null;
+    const missedLeft = northingsAlong(leftEdge, leftEdge?.west, () => LABEL.edgePx);
+    const right = pieces[pieces.length - 1];
+    const rightEdge = right && Math.abs(right.east + right.offset - view.east) < 1e-9 ? right : null;
+    if (rightEdge && (missedLeft.size || !leftEdge)) {
+      // A hair inside the edge, so the strip it falls in is the one the view ends in.
+      northingsAlong(rightEdge, rightEdge.east - 1e-9, (text) => frame.width - LABEL.edgePx - labelWidth(text),
+        leftEdge ? missedLeft : null);
     }
   }
 

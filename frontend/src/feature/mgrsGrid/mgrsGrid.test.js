@@ -348,6 +348,39 @@ describe("labels", () => {
     grid.labels.forEach((label) => expect(overlap(label.box, avoid[0])).toBe(false));
   });
 
+  it("label eastings along the bottom when the top is covered, as a phone's search bar covers it", () => {
+    // A 390 x 700 phone view whose top 60 px are the search bar and zoom buttons.
+    const avoid = [[0, 0, 390, 60]];
+    const { view, grid } = gridAt(34.78, -84.08, 14, { avoid }, [390, 700]);
+    const eastings = grid.labels.filter((l) => l.kind === "easting");
+    expect(eastings.length).toBeGreaterThan(1);
+    eastings.forEach((label) => {
+      expect(label.lat).toBe(view.bounds.south);
+      expect(label.box[3]).toBeLessThanOrEqual(view.height);
+      expect(Math.abs(toUtmInZone(label.lat, label.lon, label.zone).easting - label.value)).toBeLessThan(1e-3);
+    });
+    expect(grid.labels.some((l) => l.kind === "northing")).toBe(true);
+  });
+
+  it("keep eastings along the top, and add none along the bottom, when the top is clear", () => {
+    const { view, grid } = gridAt(34.78, -84.08, 14, {}, [390, 700]);
+    const eastings = grid.labels.filter((l) => l.kind === "easting");
+    expect(eastings.length).toBeGreaterThan(1);
+    eastings.forEach((label) => expect(label.lat).toBe(view.bounds.north));
+  });
+
+  it("label northings down the right when the left is covered", () => {
+    const avoid = [[0, 0, 60, 700]];
+    const { view, grid } = gridAt(34.78, -84.08, 14, { avoid }, [390, 700]);
+    const northings = grid.labels.filter((l) => l.kind === "northing");
+    expect(northings.length).toBeGreaterThan(1);
+    northings.forEach((label) => {
+      expect(label.box[2]).toBeGreaterThan(view.width - 60);
+      expect(label.box[2]).toBeLessThanOrEqual(view.width);
+      expect(Math.abs(toUtmInZone(label.lat, label.lon, label.zone).northing - label.value)).toBeLessThan(1e-3);
+    });
+  });
+
   it("stop at the cap, the finest first", () => {
     const { grid } = gridAt(34.78, -84.08, 8, { maxLabels: 5 });
     expect(grid.labels).toHaveLength(5);
