@@ -44,6 +44,9 @@ tasks.withType<Test>().configureEach {
         outputs.upToDateWhen { false }                      // a picture is only drawn by a run that runs
     }
     systemProperty("ezpz.contracts", contractsDir.asFile.absolutePath)
+    // As in ezpz.kotlin-library: no JDK 24+ cap on an XML entity's size, because Android's own parser has none.
+    systemProperty("jdk.xml.maxGeneralEntitySizeLimit", "0")
+    systemProperty("jdk.xml.totalEntitySizeLimit", "0")
     inputs.dir(contractsDir).withPropertyName("contractFixtures")
     testLogging {
         events("failed", "skipped")

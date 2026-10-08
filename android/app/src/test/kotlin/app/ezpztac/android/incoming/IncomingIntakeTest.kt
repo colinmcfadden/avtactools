@@ -95,7 +95,8 @@ class IncomingIntakeTest {
     @Test
     fun `a file path is never read, even when the file is there`() = runTest {
         val own = java.io.File(context.filesDir, "secret.txt").apply { writeText("private") }
-        intake().accept(view(Uri.fromFile(own).toString()))
+        // From the URI Java makes (forward slashes everywhere): Uri.fromFile keeps a Windows path's backslashes in one segment.
+        intake().accept(view(Uri.parse(own.toURI().toString()).toString()))
         val held = incoming.files.value.single() as IncomingFile.Unreadable
         assertEquals("secret.txt", held.name)
         assertEquals(IncomingIntake.NOT_SHARED, held.reason)

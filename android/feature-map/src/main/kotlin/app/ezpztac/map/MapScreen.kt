@@ -65,10 +65,10 @@ fun MapScreen(
     onGpsPermissionResult: (Boolean) -> Unit,
     onLocateMe: () -> Unit,
     onFaceNorth: () -> Unit,
+    modifier: Modifier = Modifier,
     /** The slope heat map's button, present only while the open diagram has a slope measured. */
     slope: SlopeToggleUi? = null,
     onToggleSlope: () -> Unit = {},
-    modifier: Modifier = Modifier,
     /** Space the bottom sheet takes, so the crosshair stays in the middle of what is still showing. */
     bottomInset: androidx.compose.ui.unit.Dp = 0.dp,
     /** Anything that floats over the map and the readout, placed in the screen's own box (so `Modifier.align` works): a tool that is only there while it is in use. */

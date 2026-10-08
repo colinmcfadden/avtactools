@@ -43,6 +43,10 @@ tasks.withType<Test>().configureEach {
     // JUnit does not run a @Test that returns a value (`= runBlocking { ...; assertThrows<E> { } }` does, quietly):
     // it reports a warning and moves on, so the test counts as present and never executes. Make that a failure.
     systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
+    // JDK 24 and later cap an XML entity at 100,000 characters by default, and a real mission's legs.xml has lines of a
+    // megabyte. Android's parser has no such cap, so the tests run without it whichever JDK runs Gradle (CI's 17 has none).
+    systemProperty("jdk.xml.maxGeneralEntitySizeLimit", "0")
+    systemProperty("jdk.xml.totalEntitySizeLimit", "0")
     inputs.dir(contractsDir).withPropertyName("contractFixtures")
     // The mission template the web app bundles is what the `.msnx` writer is built from, and its tests read it from there.
     inputs.file(rootProject.layout.projectDirectory.file("../frontend/public/msnx_template.msnx")).withPropertyName("missionTemplate").optional()
