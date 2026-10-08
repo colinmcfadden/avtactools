@@ -432,17 +432,43 @@ cd ..\android; .\gradlew.bat installDebug "-Pezpz.apiUrl=http://10.0.2.2:5000/"
 
 # Frontend — http://localhost:3000
 cd frontend
+Copy-Item .env.example .env                   # once; without it sign-in silently fails (below)
 npm install
 npm start                                     # copies Cesium into public/cesium first
 ```
 
 `.claude/launch.json` defines the `frontend` preview server.
 
+**What trips a fresh machine** (found setting up a Windows laptop with only Python 3.14, October 2026):
+- **`frontend/.env` must exist.** `api.js` takes its base URL from `REACT_APP_API_URL` with no fallback and there is no dev proxy, so without it every call
+  goes to the dev server itself and sign-in fails with no clear error. Copy `.env.example` (it points at `http://127.0.0.1:5000/api`) and restart `npm start`.
+- **Open `http://localhost:3000`, not `127.0.0.1:3000`**: `CORS_ORIGINS` defaults to `http://localhost:3000`, and emailed links use `FRONTEND_URL`'s same default.
+- **Python 3.14 works** (torch, ultralytics, rasterio and the rest have wheels). `psycopg2-binary` is pinned at 2.9.11 because 2.9.10 had no 3.14 wheel and its
+  source build stops at `pg_config`, failing the whole `pip install -r requirements.txt`; 2.9.11 also has the image's 3.11 wheels, and
+  `tests/test_realtime_live.py` passed with it against Postgres 18.
+- **PowerShell may refuse `Activate.ps1`** (execution policy): call the venv's interpreter directly, `.\venv\Scripts\python.exe app.py`. Plain `python` is
+  then the system one, which may have some of the packages and fail on the first missing import.
+- `python app.py` runs Flask's reloader: two processes of about 1.1 GB each (SAM). The first start downloads `sam_b.pt` (358 MB) into `backend/`.
+
+**Testing mission packs locally** (they are off for non-admins until launch, §4):
+- `dev_user.py` takes `--password` for a non-interactive run (on Windows `getpass` reads the console, so a piped password hangs) and `--name` (give each test
+  account its own: the default is the same for all). `--admin` gives every feature, `mission_packs` included, and pack roles still behave normally for an
+  admin. To test as a non-admin, sign in at `http://127.0.0.1:5000/admin` as the admin, open the user, tick *Mission packs* under Feature access, and have
+  them reload the app: features are read when the page loads. Accepting an invitation needs the feature too, so tick it before they open the link.
+- Two people means **two browser profiles**, not two tabs: tabs in one profile share `localStorage` (the session token and the remembered open pack,
+  `ezpz.openPack`). Keep both windows visible: polling (every 3 s) pauses while a tab is hidden.
+- On SQLite there is no live service, so nobody shows as "here now" and edits arrive by polling. That is correct. `tests/test_realtime_live.py` runs
+  the whole live chain against a local Postgres (its docstring has a `docker run` line; with Docker in Windows-containers mode, a throwaway cluster from
+  an installed PostgreSQL's own `initdb` / `pg_ctl` on another port does the same).
+- **Running `npm install` at the repo root installs husky's commit hook by setting `core.hooksPath` in the repository's git config**, which every worktree
+  shares; a checkout without the root `node_modules` then fails every commit at the hook. To get commitlint in a worktree without that, use
+  `npm ci --ignore-scripts` and run `npx --no -- commitlint --from <base> --to HEAD` yourself.
+
 **An app signing in against this backend needs an account in *this* database.** The local SQLite file (`backend/ezpz.db`) holds none of the
 production accounts, and the login route answers "Invalid email or password." for a wrong password, an unknown address and an unverified one alike
 (on purpose). `python dev_user.py you@example.com [--admin]` makes a verified, `.mil`-cleared account there; it refuses anything but a local SQLite
-database. The Android procedure is in `docs/HANDOFF.md` §4. Run it from `backend/` with the Python the backend runs under; **the owner's venv is not
-at `backend/venv`** (the block above is how to make one, not where it is), so give them a command that does not assume a path, or ask.
+database. The Android procedure is in `docs/HANDOFF.md` §4. Run it from `backend/` with the Python the backend runs under; **the owner's venv
+differs between machines** (on one it is not at `backend/venv`, on another it is), so give them a command that does not assume a path, or ask.
 
 ### Tests
 
