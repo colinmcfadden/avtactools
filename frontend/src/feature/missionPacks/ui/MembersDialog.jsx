@@ -146,7 +146,7 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
             {sharedWith ? (
               <div className="packs-team-share" style={{ marginTop: 14 }}>
                 <Icon name="users" size={16} />
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="packs-team-share__main">
                   <div className="packs-person__name">{sharedWith.name || "A team"}</div>
                   <div className="packs-person__meta">Shared with this team</div>
                 </div>
@@ -171,7 +171,7 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
               shareable.length > 0 && (
                 <div className="packs-team-share" style={{ marginTop: 14 }}>
                   <Icon name="users" size={16} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="packs-team-share__main">
                     <select className="ui-input ui-input--36" aria-label="Team to share with" value={shareTo ?? ""} onChange={(event) => setShareTeam(Number(event.target.value))}>
                       {shareable.map((t) => (
                         <option key={t.id} value={t.id}>{t.name} · {t.member_count} members · not shared with this pack</option>

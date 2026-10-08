@@ -279,3 +279,13 @@
 .packs-panel__more { margin-left: auto; }
 /* What a team the pack is shared with may do, beside its name. */
 .packs-team-share__role { flex: none; width: 112px; }
+/* The team's name, or the choice of team, takes what the role and the button leave. */
+.packs-team-share__main { flex: 1; min-width: 0; }
+/* On a phone that would leave the name or the choice no width at all (the role and the button
+   need about 310 px), so they go on a line below it: the role takes what the button leaves, and
+   the button goes on a line of its own where even that is too narrow. */
+@media (max-width: 560px) {
+  .packs-team-share { flex-wrap: wrap; }
+  .packs-team-share__main { flex-basis: calc(100% - 40px); }
+  .packs-team-share__role { flex: 1 1 96px; width: auto; min-width: 0; }
+}
