@@ -52,7 +52,7 @@
 }
 
 .ui-btn--26 { height: 26px; }
-.ui-btn--28 { height: 28px; padding: 0 10px; font-size: 10.5px; }
+.ui-btn--28 { height: 28px; padding: 0 10px; }
 .ui-btn--30 { height: 30px; }
 .ui-btn--34 { height: 34px; }
 .ui-btn--38 { height: 38px; padding: 0 18px; }
@@ -110,7 +110,7 @@
 /* -- Text -------------------------------------------------------------------------------- */
 
 .ui-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -127,7 +127,7 @@
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: var(--surface-2);
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 10.5px;
+  font-size: 11px;
   color: #b9c1cb;
 }
 .ui-visually-hidden {
@@ -144,7 +144,7 @@
 .ui-field { width: 100%; position: relative; }
 .ui-field__label {
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -432,11 +432,13 @@ select.ui-input { cursor: pointer; }
   border-radius: 13px;
   background: var(--ff-accent);
   color: #0f1216;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.02em;
   box-shadow: 0 0 0 2px #121519;
 }
+/* The two small sizes stay under the 11 px floor: each sits beside the name written out (or a member
+   count) as a mark of who it is, and two initials at 11 px would not fit an 18 px circle. */
 .ui-avatar--sm { width: 18px; height: 18px; border-radius: 9px; font-size: 8px; box-shadow: none; }
 .ui-avatar--xs { width: 14px; height: 14px; border-radius: 7px; font-size: 6.5px; box-shadow: none; }
 .ui-avatar--lg { width: 32px; height: 32px; border-radius: 16px; font-size: 11px; }

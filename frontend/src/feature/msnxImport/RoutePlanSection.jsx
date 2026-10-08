@@ -158,7 +158,7 @@ const RoutePlanSection = ({
               onChange={(e) => updateRoutePlan(route.id, { date: e.target.value })}
             />
           </Field>
-          <Field label="Temp °C" width={46} htmlFor={`${id}-temp`}>
+          <Field label="Temp °C" width={50} htmlFor={`${id}-temp`}>
             <input
               id={`${id}-temp`}
               className="plan__input"
@@ -333,12 +333,14 @@ const RoutePlanSection = ({
                           }
                         />
                       </Field>
-                      <Field label="KT" width={28} htmlFor={`${rowId}-wspd`}>
+                      {/* One label over the wind's two boxes, as over altitude and speed: at 11 px a "KT"
+                          label of its own over this 28 px box ran into WIND °T. */}
+                      <Field label="" width={28}>
                         <input
-                          id={`${rowId}-wspd`}
                           className="plan__input"
                           type="number"
                           min="0"
+                          aria-label={`Wind speed at ${pointName}, knots`}
                           value={windOver.speedKts}
                           onChange={(e) =>
                             updatePointPlanOverride(route.id, rp.id, {

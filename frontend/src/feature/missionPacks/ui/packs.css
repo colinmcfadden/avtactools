@@ -123,7 +123,7 @@
 /* History. */
 .packs-history__filters { display: flex; gap: 8px; margin-bottom: 12px; }
 .packs-history__filters .ui-input { height: 32px; font-size: 12px; cursor: pointer; }
-.packs-history__divider { display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ff-text-muted); }
+.packs-history__divider { display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ff-text-muted); }
 .packs-history__divider::after { content: ""; flex: 1; height: 1px; background: rgba(255, 255, 255, 0.08); }
 .packs-history__divider--new { color: #c9c2f2; }
 .packs-history__divider--new::after { background: rgba(168, 154, 230, 0.4); }

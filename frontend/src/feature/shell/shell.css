@@ -164,7 +164,8 @@
 .shell-rail__item:hover { color: #dfe4ea; background: rgba(255, 255, 255, 0.03); }
 .shell-rail__item--active { background: var(--surface-2); color: #fff; box-shadow: inset 2px 0 0 var(--ff-accent); }
 .shell-rail__item--pack.shell-rail__item--active { box-shadow: inset 2px 0 0 var(--pack); }
-.shell-rail__label { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+/* Tracked tighter than other labels so the widest, THREATS, is 52 px at 11 px and fits the 56 px rail. */
+.shell-rail__label { font-size: 11px; font-weight: 700; letter-spacing: 0.01em; text-transform: uppercase; }
 .shell-rail__dot {
   position: absolute;
   top: 9px;
@@ -187,7 +188,7 @@
   border-radius: 8px;
   background: #2b313b;
   color: var(--ff-text-main);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -343,7 +344,8 @@
 .plan { box-sizing: border-box; margin: 2px 0 4px; background: var(--ff-bg-dark); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 8px 12px; }
 .plan__fields { display: flex; gap: 6px; align-items: flex-end; flex-wrap: wrap; }
 .plan__field { flex: none; min-width: 0; }
-.plan__label { display: block; font-size: 9.5px; line-height: 12px; height: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ff-text-muted); margin-bottom: 3px; white-space: nowrap; }
+/* One line, so the inputs stay level: a label may run on over its pair's unlabelled select, never into the next label. */
+.plan__label { display: block; font-size: 11px; line-height: 12px; height: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ff-text-muted); margin-bottom: 3px; white-space: nowrap; }
 .plan__input {
   box-sizing: border-box;
   width: 100%;

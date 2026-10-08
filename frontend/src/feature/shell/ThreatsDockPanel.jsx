@@ -100,9 +100,10 @@ const ThreatsDockPanel = ({ threats, onAdd, onImport, onEdit, onRemove, onRemove
                   <Icon name="upload" size={15} />
                   <span>Export .ths for AMPS</span>
                 </button>
-                <button type="button" className="ui-btn" style={{ fontSize: 10 }} onClick={onExportKmz}>
+                {/* "/ Aero app" does not fit at the 11 px floor; the dialog this opens names all three. */}
+                <button type="button" className="ui-btn" onClick={onExportKmz}>
                   <Icon name="send" size={15} />
-                  <span>Export for ForeFlight / ATAK / Aero app</span>
+                  <span>Export for ForeFlight / ATAK</span>
                 </button>
               </div>
               <div style={{ marginTop: 10, fontSize: 11.5, lineHeight: 1.45, color: "#8a94a1" }}>

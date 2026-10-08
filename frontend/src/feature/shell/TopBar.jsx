@@ -67,7 +67,7 @@ const TopBar = ({
           <Icon name={pack ? "layers" : "library"} size={16} color={pack ? "var(--pack)" : undefined} />
           <span className="shell-topbar__switcher-name">{pack ? pack.name : "Library"}</span>
           {pack && (
-            <span className={`ui-chip ${pack.status === "finished" ? "" : "ui-chip--pack"}`} style={{ height: 18, fontSize: 10 }}>
+            <span className={`ui-chip ${pack.status === "finished" ? "" : "ui-chip--pack"}`} style={{ height: 18 }}>
               {pack.status === "finished" ? "Finished" : "Pack"}
             </span>
           )}
