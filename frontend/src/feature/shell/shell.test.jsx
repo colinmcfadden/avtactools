@@ -4,6 +4,7 @@ import useRouteSaves, { routesFingerprint } from "../saveDialog/useRouteSaves";
 import { ToastProvider } from "../ui/Toast";
 import Dock, { useDock } from "./Dock";
 import LzPanel, { lzStateChips } from "./LzPanel";
+import RoutesDockPanel from "./RoutesDockPanel";
 import TopBar from "./TopBar";
 import { useMenu } from "../ui/Menu";
 
@@ -144,6 +145,39 @@ describe("the top bar's workspace switcher", () => {
     expect(screen.queryByRole("menu", { name: "Workspace" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Change workspace/ }));
     expect(screen.getByRole("menu", { name: "Workspace" })).toBeInTheDocument();
+  });
+});
+
+describe("an imported mission's card in the Routes panel", () => {
+  const mission = {
+    key: "msnxfile-1",
+    kind: "mission",
+    fileName: "GOAT SUCKER.msnx",
+    routes: [{ id: "r1", name: "ROUTE 1", color: "#e85", points: [{ id: "p1", lat: 34, lon: -84 }], plan: {} }],
+  };
+  const panel = (state) => (
+    <RoutesDockPanel
+      sets={[mission]}
+      stateOf={() => ({ dirty: false, saving: false, savedAt: null, ...state })}
+      actions={{ save: () => {}, saveAs: () => {}, rename: () => {}, close: () => {}, export: () => {}, toggleVisibility: () => {}, removeRoute: () => {} }}
+      plan={() => ({})}
+      sketch={{ active: false, name: "ROUTE 2", points: 0, enabled: true, onStart: () => {}, onCancel: () => {}, onFinish: () => {} }}
+    />
+  );
+
+  it("goes by its file name until it is given a name of its own, and says it was imported", () => {
+    const { rerender } = render(panel({ name: "GOAT SUCKER", link: null, dirty: true }));
+    const card = screen.getByRole("region", { name: "GOAT SUCKER.msnx" });
+    expect(within(card).getByRole("heading", { name: "GOAT SUCKER.msnx" })).toBeInTheDocument();
+    expect(within(card).getByText("Imported").closest(".ui-chip")).toHaveClass("ui-chip--info");
+
+    // Saved under the name the file gave it, it is still known by the file (mockup Routes).
+    rerender(panel({ name: "GOAT SUCKER", link: { id: 4, name: "GOAT SUCKER" } }));
+    expect(screen.getByRole("heading", { name: "GOAT SUCKER.msnx" })).toBeInTheDocument();
+
+    rerender(panel({ name: "OP GOAT", link: { id: 4, name: "OP GOAT" } }));
+    expect(screen.getByRole("heading", { name: "OP GOAT" })).toBeInTheDocument();
+    expect(screen.queryByText("GOAT SUCKER.msnx")).toBeNull();
   });
 });
 

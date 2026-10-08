@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import RoutePlanSection from "../msnxImport/RoutePlanSection";
 import { formatDuration } from "../msnxImport/routeCalc";
-import { routeTotals, setSummary } from "../saveDialog/useRouteSaves";
+import { defaultSetName, routeTotals, setSummary } from "../saveDialog/useRouteSaves";
 import Avatar, { shortName } from "../ui/Avatar";
 import Chip from "../ui/Chip";
 import Icon from "../ui/Icon";
@@ -81,6 +81,9 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
   const readOnly = Boolean(set.pack?.finished);
   const clean = !set.pack && state.link && !state.dirty;
   const name = state.name;
+  // An imported mission goes by its file ("GOAT SUCKER.msnx") until it is given a name of its own.
+  const byFile = set.kind === "mission" && !set.pack && Boolean(set.fileName) && name === defaultSetName(set);
+  const title = byFile ? set.fileName : name;
 
   const commitRename = () => {
     setRenaming(false);
@@ -89,9 +92,9 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
   };
 
   return (
-    <section className={`shell-set${set.pack ? " shell-set--pack" : ""}`} aria-label={name}>
+    <section className={`shell-set${set.pack ? " shell-set--pack" : ""}`} aria-label={title}>
       <div className="shell-card__row">
-        {set.kind === "mission" && <Icon name="file" size={14} color="#9fb0bf" />}
+        {set.kind === "mission" && !byFile && <Icon name="file" size={14} color="#9fb0bf" />}
         {renaming ? (
           <input
             className="ui-input shell-card__name-input"
@@ -112,13 +115,13 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
             }}
           />
         ) : (
-          <h3 className="shell-set__name" style={{ margin: 0 }}>{name}</h3>
+          <h3 className="shell-set__name" style={{ margin: 0 }}>{title}</h3>
         )}
         {!renaming && !readOnly && actions.rename && (
           <button
             type="button"
             className="ui-btn ui-btn--ghost ui-btn--26 ui-btn--square"
-            aria-label={`Rename ${name}`}
+            aria-label={`Rename ${title}`}
             onClick={() => {
               setDraft(name);
               setRenaming(true);
@@ -128,7 +131,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
           </button>
         )}
         <MoreMenu
-          label={`More actions for ${name}`}
+          label={`More actions for ${title}`}
           items={[
             { icon: "route", title: "Sketch a route into this set", onSelect: () => actions.sketchInto?.(set), hidden: !set.pack || readOnly || !actions.sketchInto },
             { icon: "copy", title: set.pack ? "Save a copy to Library…" : "Save as…", onSelect: () => actions.saveAs(set) },
@@ -139,7 +142,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
         />
       </div>
       <div className="shell-card__chips" style={{ marginTop: 7 }}>
-        {set.kind === "mission" && !set.pack && <Chip icon="download">Imported</Chip>}
+        {set.kind === "mission" && !set.pack && <Chip tone="info" icon="download">Imported</Chip>}
         {stateChip(set, state)}
         <span className="shell-card__meta">{setSummary(set.routes)}</span>
       </div>
