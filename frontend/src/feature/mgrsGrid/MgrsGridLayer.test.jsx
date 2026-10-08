@@ -112,9 +112,17 @@ describe("the MGRS grid layer", () => {
   });
 
   it("leaves nothing behind, and stops listening, when taken off", () => {
+    // Leaflet keeps a map's listeners by event type; the grid's must all go with it.
+    const listeners = () => ["moveend", "zoomend", "resize"].map((type) => (map._events?.[type] || []).length);
+    const before = listeners();
     const detach = attachMgrsGrid(map);
     expect(pathsWithLines().length).toBeGreaterThan(0);
+    expect(listeners()).not.toEqual(before);
     detach();
+    expect(listeners()).toEqual(before);
+    expect(pane(GRID_PANE).querySelector("svg")).toBeNull();
+    expect(pane(GRID_PANE).childElementCount).toBe(0);
+    expect(pane(LABEL_PANE).childElementCount).toBe(0);
     expect(drawnPaths()).toHaveLength(0);
     expect(labelTexts()).toHaveLength(0);
     act(() => {
