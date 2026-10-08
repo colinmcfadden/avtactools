@@ -1,4 +1,4 @@
 # The live service's own image (backend/realtime/Dockerfile). websockets was approved for it on 2026-10-05;
 # psycopg2 is the API's driver, pinned to the same version.
 websockets==17.2
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.11
