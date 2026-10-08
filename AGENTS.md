@@ -770,7 +770,7 @@ The plan, decisions and phases are in `docs/NATIVE_APPS_PLAN.md`; this is what
 exists and the rules for working on it.
 
 **Layout.** `android/` is a Gradle project (Kotlin 2.4, Gradle 9.8, Android Gradle
-Plugin 9.4, JDK 17 toolchain); `contracts/` holds the golden fixtures and the
+Plugin 9.4; compiles to JDK 17, and builds and tests on JDK 21 or later, which Robolectric's SDK 36 sandbox needs); `contracts/` holds the golden fixtures and the
 design tokens. iOS is not started.
 
 | Module | What it is | State |

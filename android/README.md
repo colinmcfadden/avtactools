@@ -36,7 +36,9 @@ the web about a grid, a capacity or a leg time.
 
 ## Build and test
 
-Needs a JDK 17 or newer. On the owner's machine (PowerShell):
+Needs a JDK 21 or newer to run (the code compiles to 17, but Robolectric's sandbox for Android SDK 36 refuses an
+older Java); Android Studio's bundled JDK will do (`$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"`).
+On the owner's machine (PowerShell):
 
 ```powershell
 cd android
