@@ -289,3 +289,12 @@
   .packs-team-share__main { flex-basis: calc(100% - 40px); }
   .packs-team-share__role { flex: 1 1 96px; width: auto; min-width: 0; }
 }
+/* The invite row is the same: beside the role and the Invite button the person field is about
+   80 px on a 375 px phone (12 px at 320), too narrow to read an address while typing it, and its
+   suggestions and hint are held to that column. The field takes the first line; the role and
+   the button share the second, as far below the hint as stacked fields are elsewhere. */
+@media (max-width: 560px) {
+  .packs-invite { flex-wrap: wrap; row-gap: 12px; }
+  .packs-invite > .ui-field:first-child { flex-basis: 100%; }
+  .packs-invite > .packs-invite__as { flex: 1 1 96px; width: auto; }
+}
