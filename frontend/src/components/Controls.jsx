@@ -7,6 +7,20 @@ import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import { symbolDataUri } from "../feature/symbols/milsym";
 import packageJson from "../../package.json";
 
+/**
+ * The line under Analyze: what the active LZ/PZ needs next, or what it allows once analysed. Where the
+ * person may not change it (a finished Mission Pack, or a viewer of one) the tools stay off, so it does
+ * not say they are unlocked.
+ */
+export const diagramReadiness = ({ hasTarget, analyzed, editable = true }) =>
+  !hasTarget
+    ? "Set a target on the map to initialize an LZ/PZ diagram."
+    : !analyzed
+      ? "Target set. Analyze the LZ to unlock planning graphics, export, and save."
+      : editable
+        ? "Analyzed. Planning graphics, export and save are unlocked."
+        : "Analyzed. Read-only here: viewing and export still work.";
+
 const Controls = ({
   aircraftProfiles,
   activeAircraftProfile,
@@ -115,6 +129,7 @@ const Controls = ({
         ? "Analyze the LZ to unlock planning tools."
         : null);
   const analysisEnabled = Boolean(targetLocation) && canAnalyze;
+  const analyzed = diagramStatus === "analyzed";
   const showAnalyzeAction = hasLifecycleProps || legacyCanAnalyze;
 
   useEffect(() => {
@@ -322,11 +337,13 @@ const Controls = ({
                 title={
                   !analysisEnabled
                     ? readinessMessage || "Set a target on the map before analyzing the LZ."
-                    : "Analyze the active LZ/PZ diagram"
+                    : analyzed
+                      ? "Analyze the active LZ/PZ diagram again"
+                      : "Analyze the active LZ/PZ diagram"
                 }
                 className={`ff-action-btn ff-btn primary ${!analysisEnabled ? "disabled" : ""}`}
               >
-                Analyze the LZ
+                {analyzed ? "Re-analyze" : "Analyze the LZ"}
               </button>
             </div>
           )}

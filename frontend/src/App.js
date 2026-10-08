@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import MapView from "./components/MapView";
-import Controls from "./components/Controls";
+import Controls, { diagramReadiness } from "./components/Controls";
 import "./App.css";
 import { convertToLatLongString } from "./utils/Helpers";
 import { toMgrs } from "./utils/mgrs";
@@ -157,10 +157,6 @@ function App() {
   const showHeatmap = activeDiagram?.view?.showHeatmap ?? false;
   const showLZOutline = activeDiagram?.view?.showLZOutline ?? true;
   const diagramStatus = activeDiagram?.status ?? "no_target";
-  const diagramReadinessText = !hasActiveTarget
-    ? "Set a target on the map to initialize an LZ/PZ diagram."
-    : !canEditGraphics
-      ? "Target set. Analyze the LZ to unlock planning graphics, export, and save." : "";
 
   const updateActiveAnalysis = useCallback(
     (key, nextValue) => {
@@ -606,6 +602,7 @@ function App() {
   const inPack = Boolean(packs.open);
   const packReadOnly = inPack && packs.readOnly;
   const editable = !packReadOnly;
+  const diagramReadinessText = diagramReadiness({ hasTarget: hasActiveTarget, analyzed: canEditGraphics, editable });
   // Set up here, once it is known whether this person may change the pack: where they may not, an LZ
   // card's capture area is theirs alone (useCaptureArea).
   const captureArea = useCaptureArea({
