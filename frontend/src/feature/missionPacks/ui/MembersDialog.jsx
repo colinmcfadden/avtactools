@@ -51,6 +51,8 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
   };
   const shareable = teams.filter((t) => t.id !== pack.team?.id);
   const [shareTeam, setShareTeam] = useState(shareable[0]?.id ?? null);
+  // What the team may do, as when a pack is made: edit, or only view.
+  const [shareRole, setShareRole] = useState("editor");
   // What was picked, or the first team once the one picked (or none, while it was shared) is not offered.
   const shareTo = shareable.some((t) => t.id === shareTeam) ? shareTeam : shareable[0]?.id ?? null;
 
@@ -146,8 +148,21 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
                 <Icon name="users" size={16} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="packs-person__name">{sharedWith.name || "A team"}</div>
-                  <div className="packs-person__meta">Shared with this team · they can {sharedWith.role === "viewer" ? "view" : "edit"}</div>
+                  <div className="packs-person__meta">Shared with this team</div>
                 </div>
+                <select
+                  className="ui-input ui-input--36 packs-team-share__role"
+                  aria-label={`What ${sharedWith.name || "the team"} can do`}
+                  value={sharedWith.role === "viewer" ? "viewer" : "editor"}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    share({ team_id: sharedWith.id, team_role: next }, `${sharedWith.name || "The team"} can ${next === "viewer" ? "only view" : "edit"} this pack now`);
+                  }}
+                >
+                  <option value="editor">Can edit</option>
+                  <option value="viewer">Can view</option>
+                </select>
                 <button type="button" className="ui-btn ui-btn--ghost ui-btn--30" disabled={busy} onClick={() => share({ team_id: null }, `${sharedWith.name || "The team"} no longer has this pack`)}>
                   Stop sharing
                 </button>
@@ -163,11 +178,25 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
                       ))}
                     </select>
                   </div>
+                  <select
+                    className="ui-input ui-input--36 packs-team-share__role"
+                    aria-label="What the team can do"
+                    value={shareRole}
+                    onChange={(event) => setShareRole(event.target.value)}
+                  >
+                    <option value="editor">Can edit</option>
+                    <option value="viewer">Can view</option>
+                  </select>
                   <button
                     type="button"
                     className="ui-btn ui-btn--pack ui-btn--34"
                     disabled={busy || shareTo == null}
-                    onClick={() => share({ team_id: shareTo, team_role: "editor" }, `Shared with ${shareable.find((t) => t.id === shareTo).name}`)}
+                    onClick={() =>
+                      share(
+                        { team_id: shareTo, team_role: shareRole },
+                        `Shared with ${shareable.find((t) => t.id === shareTo).name}${shareRole === "viewer" ? " to view" : ""}`,
+                      )
+                    }
                   >
                     Share with team
                   </button>

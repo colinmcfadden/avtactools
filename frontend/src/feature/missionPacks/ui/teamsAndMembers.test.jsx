@@ -112,7 +112,8 @@ describe("sharing a pack with a team", () => {
     // Even with no list of teams to look in, the answer to the share names it.
     rerender(dialog(api, { ...pack, team: fromEvent }, []));
     expect(screen.getByText("B CO", { selector: ".packs-person__name" })).toBeInTheDocument();
-    expect(screen.getByText("Shared with this team · they can edit")).toBeInTheDocument();
+    expect(screen.getByText("Shared with this team")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "What B CO can do" })).toHaveValue("editor");
 
     api.updatePack.mockResolvedValue({ ...pack, team: null });
     fireEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
@@ -139,6 +140,35 @@ describe("sharing a pack with a team", () => {
     fireEvent.click(screen.getByRole("button", { name: "Share with team" }));
     expect(api.updatePack).toHaveBeenLastCalledWith("p1", { team_id: 7, team_role: "editor" });
     await settle();
+  });
+
+  it("shares with a team to view only, as a new pack can be", async () => {
+    const api = membersApi();
+    api.updatePack.mockResolvedValue({ ...pack, team: { id: 7, name: "B CO", member_count: 3, role: "viewer" } });
+    render(dialog(api, pack, [bco]));
+    await settle();
+    expect(screen.getByRole("combobox", { name: "What the team can do" })).toHaveValue("editor");
+    fireEvent.change(screen.getByRole("combobox", { name: "What the team can do" }), { target: { value: "viewer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Share with team" }));
+    expect(api.updatePack).toHaveBeenCalledWith("p1", { team_id: 7, team_role: "viewer" });
+    await settle();
+    expect(screen.getByText("Shared with B CO to view")).toBeInTheDocument();
+  });
+
+  it("shows what a team it is shared with can do, and changes it", async () => {
+    const api = membersApi();
+    api.updatePack.mockResolvedValue({ ...pack, team: { id: 7, name: "B CO", member_count: 3, role: "viewer" } });
+    const { rerender } = render(dialog(api, { ...pack, team: fromEvent }, [bco]));
+    await settle();
+    const role = screen.getByRole("combobox", { name: "What B CO can do" });
+    expect(role).toHaveValue("editor");
+    fireEvent.change(role, { target: { value: "viewer" } });
+    expect(api.updatePack).toHaveBeenCalledWith("p1", { team_id: 7, team_role: "viewer" });
+    await settle();
+    expect(screen.getByText("B CO can only view this pack now")).toBeInTheDocument();
+    // The pack.share event that follows says so.
+    rerender(dialog(api, { ...pack, team: { id: 7, role: "viewer" } }, [bco]));
+    expect(screen.getByRole("combobox", { name: "What B CO can do" })).toHaveValue("viewer");
   });
 });
 

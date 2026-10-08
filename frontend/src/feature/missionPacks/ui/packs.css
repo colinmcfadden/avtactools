@@ -277,3 +277,5 @@
 .packs-invite__go .ui-btn { height: 36px; }
 /* The pack's own ⋯ menu, at the end of the panel's title line. */
 .packs-panel__more { margin-left: auto; }
+/* What a team the pack is shared with may do, beside its name. */
+.packs-team-share__role { flex: none; width: 112px; }
