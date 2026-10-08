@@ -272,3 +272,6 @@
 /* Room under a finished pack's banner for the map's own controls. */
 .shell-map--banner .leaflet-top,
 .shell-map--banner .unit-badge { margin-top: 64px; }
+/* The Invite button sits level with the field and the role beside it (its label is a spacer). */
+.packs-invite > .packs-invite__go { width: auto; }
+.packs-invite__go .ui-btn { height: 36px; }

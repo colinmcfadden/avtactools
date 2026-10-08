@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "../../ui/Avatar";
 import Dialog, { ConfirmDialog } from "../../ui/Dialog";
 import Icon from "../../ui/Icon";
@@ -22,7 +22,8 @@ const daysLeft = (iso) => {
   return days <= 1 ? "expires today" : `expires in ${days} days`;
 };
 
-const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = [], me, api = packApi, onChanged, onClose }) => {
+/** `focusInvite`: opened from Invite, so the invite field takes the focus (else the dialog's first control). */
+const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = [], me, focusInvite = false, api = packApi, onChanged, onClose }) => {
   const { show } = useToast();
   const owner = pack.role === "owner";
   // The live session knows members by the events that added them (no email, no last look): the
@@ -34,6 +35,9 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
   useEffect(loadMembers, [loadMembers]);
   const [invites, setInvites] = useState([]);
   const [role, setRole] = useState("editor");
+  // Who the invite field holds: a teammate chosen from the suggestions, or an email address typed.
+  const [choice, setChoice] = useState(null);
+  const picker = useRef(null);
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState(null);
   // The live session learns of a share from its event, which names the team by id and role only.
@@ -58,10 +62,11 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
   }, [api, owner, pack.uuid]);
   useEffect(loadInvites, [loadInvites]);
 
-  const run = async (work, done) => {
+  const run = async (work, done, after) => {
     setBusy(true);
     try {
       await work();
+      after?.();
       if (done) show({ message: done });
       onChanged?.();
       loadInvites();
@@ -76,11 +81,18 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
   const share = (fields, done) =>
     run(async () => setAnswered((await api.updatePack(pack.uuid, fields))?.team ?? null), done);
 
-  const invite = (pick) =>
+  // Sent only from the Invite button or Enter, with the role beside it; the field empties once it is done.
+  const invite = (pick) => {
+    if (!pick || busy) return;
     run(
       () => (pick.user ? api.addMember(pack.uuid, pick.user.id, role) : api.inviteToPack(pack.uuid, pick.email, role)),
       pick.user ? `${pick.user.name || pick.user.email} is in ${pack.name} now` : `Invited ${pick.email}`,
+      () => {
+        picker.current?.clear();
+        picker.current?.focus();
+      },
     );
+  };
 
   const hereIds = new Set(here.map((p) => p.user_id));
   return (
@@ -92,6 +104,7 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
         iconTone="pack"
         width="xwide"
         onClose={onClose}
+        initialFocus={focusInvite && owner ? picker : undefined}
         note={
           <span style={{ display: "inline-flex", gap: 6, alignItems: "flex-start" }}>
             <Icon name="info" size={13} style={{ marginTop: 2, flex: "none" }} />
@@ -103,13 +116,28 @@ const MembersDialog = ({ pack, members: initialMembers = [], teams = [], here = 
         {owner && (
           <>
             <div className="packs-invite">
-              <PersonPicker exclude={members.map((m) => m.user_id)} search={api.searchPeople} onPick={invite} label="Invite" />
+              <PersonPicker
+                select
+                handle={picker}
+                exclude={members.map((m) => m.user_id)}
+                search={api.searchPeople}
+                onChange={setChoice}
+                onPick={invite}
+                label="Invite"
+              />
               <div className="ui-field packs-invite__as">
                 <label className="ui-field__label" htmlFor="members-invite-as">As</label>
                 <select id="members-invite-as" className="ui-input ui-input--36" value={role} onChange={(event) => setRole(event.target.value)}>
                   <option value="editor">Editor</option>
                   <option value="viewer">Viewer</option>
                 </select>
+              </div>
+              <div className="ui-field packs-invite__go">
+                <span className="ui-field__label" aria-hidden="true">&nbsp;</span>
+                <button type="button" className="ui-btn ui-btn--primary" disabled={busy || !choice} onClick={() => invite(choice)}>
+                  <Icon name="userPlus" size={15} />
+                  Invite
+                </button>
               </div>
             </div>
             {sharedWith ? (

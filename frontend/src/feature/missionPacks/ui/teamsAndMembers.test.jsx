@@ -141,3 +141,95 @@ describe("sharing a pack with a team", () => {
     await settle();
   });
 });
+
+describe("inviting from the Members dialog", () => {
+  const pack = { uuid: "p1", name: "OP DK", role: "owner", team: null };
+  const jamie = { id: 5, name: "Jamie Ortiz", email: "jamie.ortiz@army.mil" };
+  const inviteApi = () => ({
+    getPack: jest.fn().mockResolvedValue({ members: [{ user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: "owner" }] }),
+    listPackInvites: jest.fn().mockResolvedValue({ invites: [] }),
+    searchPeople: jest.fn().mockResolvedValue({ users: [jamie] }),
+    addMember: jest.fn().mockResolvedValue({ member: { user_id: 5, role: "viewer" } }),
+    inviteToPack: jest.fn().mockResolvedValue({}),
+  });
+  const dialog = (api, extra = {}) => (
+    <ToastProvider>
+      <MembersDialog pack={pack} teams={[]} me={1} api={api} onChanged={() => {}} onClose={() => {}} {...extra} />
+    </ToastProvider>
+  );
+  const field = () => screen.getByRole("combobox", { name: "Invite" });
+  const inviteButton = () => screen.getByRole("button", { name: "Invite" });
+
+  it("chooses a teammate from the suggestions, and adds them only from Invite, with the role chosen after", async () => {
+    const api = inviteApi();
+    render(dialog(api));
+    await settle();
+    expect(inviteButton()).toBeDisabled();
+
+    fireEvent.change(field(), { target: { value: "Jam" } });
+    fireEvent.click(await screen.findByRole("option", { name: /Jamie Ortiz/ }));
+    // Chosen, not added: the field names them and nothing was sent.
+    expect(api.addMember).not.toHaveBeenCalled();
+    expect(field()).toHaveValue("Jamie Ortiz");
+    expect(screen.queryByRole("option", { name: /Jamie Ortiz/ })).toBeNull();
+    expect(inviteButton()).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText("As"), { target: { value: "viewer" } });
+    fireEvent.click(inviteButton());
+    expect(api.addMember).toHaveBeenCalledWith("p1", 5, "viewer");
+    await settle();
+    expect(screen.getByText("Jamie Ortiz is in OP DK now")).toBeInTheDocument();
+    expect(field()).toHaveValue("");
+    expect(inviteButton()).toBeDisabled();
+  });
+
+  it("takes a suggestion on Enter and sends on the next, and sends a typed email on Enter", async () => {
+    const api = inviteApi();
+    render(dialog(api));
+    await settle();
+
+    fireEvent.change(field(), { target: { value: "Jam" } });
+    await screen.findByRole("option", { name: /Jamie Ortiz/ });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(field()).toHaveValue("Jamie Ortiz");
+    expect(api.addMember).not.toHaveBeenCalled();
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(api.addMember).toHaveBeenCalledWith("p1", 5, "editor");
+    await settle();
+
+    // Typing over the name forgets the person chosen.
+    fireEvent.change(field(), { target: { value: "sgt.lopez@army" } });
+    expect(inviteButton()).toBeDisabled();
+    fireEvent.change(field(), { target: { value: "Sgt.Lopez@army.mil" } });
+    expect(inviteButton()).toBeEnabled();
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(api.inviteToPack).toHaveBeenCalledWith("p1", "sgt.lopez@army.mil", "editor");
+    await settle();
+    expect(screen.getByText("Invited sgt.lopez@army.mil")).toBeInTheDocument();
+  });
+
+  it("keeps what was typed when the invitation is refused", async () => {
+    const api = inviteApi();
+    api.inviteToPack.mockRejectedValue({ response: { status: 429, data: { code: "rate_limited" } } });
+    api.packErrorMessage = () => "Too many invitations for now. Try again later.";
+    render(dialog(api));
+    await settle();
+    fireEvent.change(field(), { target: { value: "sgt.lopez@army.mil" } });
+    fireEvent.click(inviteButton());
+    await settle();
+    expect(screen.getByText("Too many invitations for now. Try again later.")).toBeInTheDocument();
+    expect(field()).toHaveValue("sgt.lopez@army.mil");
+  });
+
+  it("puts the focus in the invite field when opened from Invite, and on the dialog's first control otherwise", async () => {
+    const api = inviteApi();
+    const { unmount } = render(dialog(api, { focusInvite: true }));
+    await settle();
+    expect(field()).toHaveFocus();
+    unmount();
+
+    render(dialog(inviteApi()));
+    await settle();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+});

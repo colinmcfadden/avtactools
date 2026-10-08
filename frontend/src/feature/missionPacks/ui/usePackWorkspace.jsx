@@ -392,7 +392,7 @@ export const usePackWorkspace = ({
       saveCopy: (item) => setDialog({ kind: "saveCopy", item }),
       updateFromOriginal: (item) => setDialog({ kind: "update", item }),
       remove: (item) => setDialog({ kind: "remove", item }),
-      invite: () => setDialog({ kind: "members" }),
+      invite: () => setDialog({ kind: "members", focusInvite: true }),
       members: () => setDialog({ kind: "members" }),
       addFromLibrary: () => {
         library.refreshAll?.();
@@ -453,7 +453,18 @@ export const usePackWorkspace = ({
       />
     );
   } else if (dialog?.kind === "members" && meta) {
-    dialogs = <MembersDialog pack={meta} members={session?.members ?? []} teams={home.teams} here={others} me={me} onChanged={refreshAll} onClose={close} />;
+    dialogs = (
+      <MembersDialog
+        pack={meta}
+        members={session?.members ?? []}
+        teams={home.teams}
+        here={others}
+        me={me}
+        focusInvite={Boolean(dialog.focusInvite)}
+        onChanged={refreshAll}
+        onClose={close}
+      />
+    );
   } else if (dialog?.kind === "teams") {
     dialogs = <TeamsDialog teams={home.teams} me={me} onChanged={home.refresh} onClose={close} />;
   } else if (dialog?.kind === "addToPack") {
