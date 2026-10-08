@@ -12,6 +12,12 @@ import "./packs.css";
 
 const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set" };
 
+// Everyone who can open the pack, the team it is shared with included, as the switcher counts them.
+const people = (p) => {
+  const n = p.audience_count ?? p.member_count;
+  return `${n} ${n === 1 ? "member" : "members"}`;
+};
+
 /** A: copying one Library item into a pack of the person's choice. */
 export const AddToPackDialog = ({ itemName, packs = [], onAdd, onCancel }) => {
   const usable = (p) => p.status !== "finished" && p.role !== "viewer";
@@ -65,9 +71,7 @@ export const AddToPackDialog = ({ itemName, packs = [], onAdd, onCancel }) => {
                   <span className="ui-choice__text">
                     {p.status === "finished"
                       ? `Finished ${shortDate(p.finished_at)}. Reopen it to add items.`
-                      : p.role === "viewer"
-                        ? `${p.member_count} members · you can view only`
-                        : `${p.member_count} ${p.member_count === 1 ? "member" : "members"} · you can edit`}
+                      : `${people(p)} · ${p.role === "viewer" ? "you can view only" : "you can edit"}`}
                   </span>
                 </span>
               </label>

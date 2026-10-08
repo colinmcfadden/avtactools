@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React, { useRef } from "react";
 import { ToastProvider } from "../../ui/Toast";
+import { AddToPackDialog } from "./PackDialogs";
 import PackPanel, { whenText } from "./PackPanel";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 
@@ -185,5 +186,28 @@ describe("the pack panel", () => {
     expect(screen.getByText(/2 of your changes were/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Save my version to Library/ }));
     expect(onKeepDropped).toHaveBeenCalled();
+  });
+});
+
+describe("adding a Library item to a pack", () => {
+  it("counts everyone who can open each pack, a shared team included", () => {
+    render(
+      <AddToPackDialog
+        itemName="LZ HAWK (SHOPE)"
+        packs={[
+          { uuid: "a", name: "OP DK", status: "active", role: "owner", member_count: 1, audience_count: 1 },
+          // Shared with an 18-person team: one member in their own right, eighteen who can open it.
+          { uuid: "c", name: "B CO FIELD EX", status: "active", role: "editor", member_count: 1, audience_count: 18, team: { id: 7, role: "editor" } },
+          { uuid: "v", name: "OP IBIS", status: "active", role: "viewer", member_count: 1, audience_count: 12, team: { id: 8, role: "viewer" } },
+          { uuid: "b", name: "OP RAZORBILL", status: "finished", role: "editor", member_count: 2, audience_count: 2, finished_at: "2026-09-22T18:00:00" },
+        ]}
+        onAdd={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText("18 members · you can edit")).toBeInTheDocument();
+    expect(screen.getByText("12 members · you can view only")).toBeInTheDocument();
+    expect(screen.getByText("1 member · you can edit")).toBeInTheDocument();
+    expect(screen.getByText("Finished Sep 22. Reopen it to add items.")).toBeInTheDocument();
   });
 });
