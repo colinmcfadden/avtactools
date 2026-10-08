@@ -69,7 +69,7 @@ const ThreatsDockPanel = ({ threats, onAdd, onImport, onEdit, onRemove, onRemove
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button type="button" className="ui-btn ui-btn--grow" onClick={onAdd}>
+          <button type="button" className="ui-btn ui-btn--primary ui-btn--grow" onClick={onAdd}>
             <Icon name="plus" size={15} />
             <span>Add threat</span>
           </button>
