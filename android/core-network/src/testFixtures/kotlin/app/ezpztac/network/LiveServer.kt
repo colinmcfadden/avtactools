@@ -1,5 +1,12 @@
 package app.ezpztac.network
 
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -29,9 +36,26 @@ public class LiveServer private constructor(private val process: Process, public
         }
     }
 
-    /** A verified account. [approved] false leaves it outside the `.mil` / approval gate. */
-    public fun makeAccount(email: String, password: String = PASSWORD, approved: Boolean = true) {
-        post("/__test__/account", """{"email":"$email","password":"$password","approved":$approved}""")
+    /**
+     * A verified account, and its id. [approved] false leaves it outside the `.mil` / approval gate. [features] are its entitlements
+     * as an admin would store them: mission packs are off unless ticked (`"mission_packs" to true`). [name] is what a pack's log and
+     * its members list call them.
+     */
+    public fun makeAccount(
+        email: String,
+        password: String = PASSWORD,
+        approved: Boolean = true,
+        features: Map<String, Boolean>? = null,
+        name: String? = null,
+    ): Int {
+        val body = buildJsonObject {
+            put("email", email)
+            put("password", password)
+            put("approved", approved)
+            if (features != null) put("features", JsonObject(features.mapValues { JsonPrimitive(it.value) }))
+            if (name != null) put("name", name)
+        }
+        return ApiJson.parseToJsonElement(post("/__test__/account", body.toString())).jsonObject.getValue("id").jsonPrimitive.int
     }
 
     /**
@@ -82,6 +106,8 @@ public class LiveServer private constructor(private val process: Process, public
                     environment()["EZPZ_ACCESS_TOKEN_SECONDS"] = accessTokenSeconds.toString()
                     environment()["PYTHONUNBUFFERED"] = "1"
                     environment()["PYTHONDONTWRITEBYTECODE"] = "1"
+                    // A developer's own setting would hand every pack a live stream that is not running here: the tests poll the log.
+                    environment().remove("REALTIME_PUBLIC_URL")
                 }
                 .start()
 

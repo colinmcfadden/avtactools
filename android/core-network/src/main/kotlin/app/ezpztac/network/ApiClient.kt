@@ -292,6 +292,8 @@ public class ApiClient(
         val callPriority: CallPriority = CallPriority.NORMAL,
         /** A different read timeout from the client's. Heavy work gets a long one on its own. */
         val readTimeoutSeconds: Long? = null,
+        /** The account this call is for. Under any other session it is refused before it is sent ([OtherAccountException]). */
+        val asUser: Int? = null,
     )
 
     internal suspend fun execute(call: Call): ApiResponse {
@@ -308,16 +310,25 @@ public class ApiClient(
 
     private suspend fun executeSigned(call: Call): Raw {
         val session = sessions.read() ?: throw noSession()
+        checkAccount(call, session)
         val first = send(call, session.accessToken)
         if (!isAuthRefusal(first)) return first
 
+        // The session found after a refusal may not be the one the call was sent with: someone else can have signed in meanwhile.
         val renewed = refreshAfterRefusal(session.accessToken)
+        checkAccount(call, renewed)
         val second = send(call, renewed.accessToken)
         if (isAuthRefusal(second)) {
             // A token the server has just issued is refused: there is nothing more to try.
             throw end("unauthorized_after_refresh", "This session has expired. Sign in again.")
         }
         return second
+    }
+
+    private fun checkAccount(call: Call, session: StoredSession) {
+        if (call.asUser != null && session.user.id != call.asUser) {
+            throw OtherAccountException("This was waiting to be sent for another account, which is no longer signed in here.")
+        }
     }
 
     /**
@@ -406,7 +417,7 @@ public class ApiClient(
             raw.status == 409 && error.code == "revision_conflict" ->
                 RevisionConflictException(error.message, (error.json?.get("server") as? JsonObject) ?: JsonObject(emptyMap()))
             raw.status == 429 -> RateLimitedException(error.message, raw.headers["Retry-After"]?.trim()?.toLongOrNull())
-            else -> ApiException(raw.status, error.code, error.message)
+            else -> ApiException(raw.status, error.code, error.message, body = error.json)
         }
     }
 
