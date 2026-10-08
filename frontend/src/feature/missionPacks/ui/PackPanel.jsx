@@ -254,11 +254,13 @@ const History = ({ packUuid, headSeq, newSince, me, members, items, api }) => {
 /**
  * `pack`: the pack's summary; `items`: its visible items; `openIds`: the uuids open here; `people`:
  * the others who have it open now (presence); `me`: this person's user id; `newSince`: how far they
- * had looked when the panel opened. `actions`: open, close, rename, saveCopy, updateFromOriginal,
+ * had looked when the panel opened. `audience`: how many can open it, its shared team included (the
+ * members listed are only its own). `actions`: open, close, rename, saveCopy, updateFromOriginal,
  * remove, invite, members, addFromLibrary, finish, reopen.
  */
-const PackPanel = ({ pack, members = [], items = [], openIds, people = [], me, newSince = 0, readOnly, actions, tab, setTab, dropped = 0, onKeepDropped, status, api = packApi, onCollapse }) => {
+const PackPanel = ({ pack, members = [], audience, items = [], openIds, people = [], me, newSince = 0, readOnly, actions, tab, setTab, dropped = 0, onKeepDropped, status, api = packApi, onCollapse }) => {
   const role = pack.role;
+  const memberCount = audience ?? members.length;
   const canEdit = role === "owner" || role === "editor";
   const finished = pack.status === "finished";
   const editingOf = (uuid) => people.find((p) => p.focus?.item === uuid && p.focus?.holding);
@@ -295,7 +297,7 @@ const PackPanel = ({ pack, members = [], items = [], openIds, people = [], me, n
         <div className="packs-panel__people">
           <AvatarStack people={members.map((m) => ({ id: m.user_id, name: m.name || m.email }))} max={4} size="sm" />
           <span>
-            <b>{members.length} {members.length === 1 ? "member" : "members"}</b>
+            <b>{memberCount} {memberCount === 1 ? "member" : "members"}</b>
             {here > 0 && <span className="packs-panel__here"> · {here} here now</span>}
           </span>
           <span style={{ flex: 1 }} />

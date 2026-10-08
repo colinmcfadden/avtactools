@@ -3065,8 +3065,8 @@ components:
     PackSummary:
       type: object
       additionalProperties: false
-      required: [uuid, name, description, status, role, owner, team, head_seq, seen_seq, member_count, item_count,
-                 item_counts, finished_at, finished_by, created_at, updated_at]
+      required: [uuid, name, description, status, role, owner, team, head_seq, seen_seq, member_count, audience_count,
+                 item_count, item_counts, finished_at, finished_by, created_at, updated_at]
       properties:
         uuid: { type: string }
         name: { type: string }
@@ -3080,6 +3080,10 @@ components:
         head_seq: { type: integer, minimum: 0, description: The number of the pack's latest event. }
         seen_seq: { type: integer, minimum: 0, description: "The newest event the caller has seen (PUT .../seen); 0 if never." }
         member_count: { type: integer, minimum: 0, description: "Members in their own right, not counting a shared team." }
+        audience_count:
+          type: integer
+          minimum: 0
+          description: "Everyone who can open the pack, each once: its members and the members of the team it is shared with."
         item_count: { type: integer, minimum: 0 }
         item_counts: { $ref: "#/components/schemas/PackItemCounts" }
         finished_at: { type: string, nullable: true }
@@ -3092,8 +3096,8 @@ components:
     Pack:
       type: object
       additionalProperties: false
-      required: [uuid, name, description, status, role, owner, team, head_seq, seen_seq, member_count, item_count,
-                 item_counts, finished_at, finished_by, created_at, updated_at, members, items, live_url]
+      required: [uuid, name, description, status, role, owner, team, head_seq, seen_seq, member_count, audience_count,
+                 item_count, item_counts, finished_at, finished_by, created_at, updated_at, members, items, live_url]
       description: A PackSummary, with its members and every live item, as of `head_seq`.
       properties:
         uuid: { type: string }
@@ -3108,6 +3112,7 @@ components:
         head_seq: { type: integer, minimum: 0 }
         seen_seq: { type: integer, minimum: 0 }
         member_count: { type: integer, minimum: 0 }
+        audience_count: { type: integer, minimum: 0 }
         item_count: { type: integer, minimum: 0 }
         item_counts: { $ref: "#/components/schemas/PackItemCounts" }
         finished_at: { type: string, nullable: true }

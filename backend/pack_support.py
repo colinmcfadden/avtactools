@@ -221,6 +221,15 @@ def item_counts(pack):
     return counts
 
 
+def audience_count(pack):
+    """Everyone who can open the pack, each once: its members, and the members of the team it is shared
+    with. ``member_count`` is only the first, so a pack shared with an 18-person team would say 1."""
+    people = select(MissionPackMember.user_id).where(MissionPackMember.pack_id == pack.id)
+    if pack.team_id:
+        people = people.union(select(TeamMember.user_id).where(TeamMember.team_id == pack.team_id))
+    return db.session.execute(select(func.count()).select_from(people.subquery())).scalar()
+
+
 def seen_seq(pack, user_id):
     row = MissionPackSeen.query.filter_by(pack_id=pack.id, user_id=user_id).first() if user_id is not None else None
     return row.seen_seq if row else 0
@@ -255,6 +264,7 @@ def pack_summary(pack, role, user_id=None):
         'head_seq': pack.head_seq,
         'seen_seq': seen_seq(pack, user_id),
         'member_count': MissionPackMember.query.filter_by(pack_id=pack.id).count(),
+        'audience_count': audience_count(pack),
         'item_count': sum(counts.values()),
         'item_counts': counts,
         'finished_at': iso(pack.finished_at),

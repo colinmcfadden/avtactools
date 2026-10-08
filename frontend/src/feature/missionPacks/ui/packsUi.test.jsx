@@ -27,7 +27,9 @@ describe("the workspace switcher", () => {
     );
   };
   const packs = [
-    { uuid: "a", name: "OP DK", status: "active", role: "owner", member_count: 4, item_counts: { lz: 3, route: 2 } },
+    { uuid: "a", name: "OP DK", status: "active", role: "owner", member_count: 4, audience_count: 4, item_counts: { lz: 3, route: 2 } },
+    // Shared with an 18-person team: one member in their own right, eighteen who can open it.
+    { uuid: "c", name: "B CO FIELD EX", status: "active", role: "editor", member_count: 1, audience_count: 18, team: { id: 7, role: "editor" } },
     { uuid: "b", name: "OP RAZORBILL", status: "finished", role: "editor", member_count: 2, finished_at: "2026-09-22T18:00:00" },
   ];
 
@@ -48,6 +50,7 @@ describe("the workspace switcher", () => {
     expect(screen.getByText("Personal · 12 LZ/PZs, 4 route sets, 3 point sets")).toBeInTheDocument();
     expect(screen.getByText("1 LZ/PZ with unsaved changes")).toBeInTheDocument();
     expect(screen.getByText("4 members · you are Owner")).toBeInTheDocument();
+    expect(screen.getByText("18 members · you are Editor")).toBeInTheDocument();
     expect(screen.getByText("2 here now")).toBeInTheDocument();
     expect(screen.getByText("3 LZ/PZ · 2 route sets")).toBeInTheDocument();
     expect(screen.getByText(/Finished Sep 22 · read-only/)).toBeInTheDocument();
@@ -131,6 +134,11 @@ describe("the pack panel", () => {
     // An editor adds from the Library; only an owner finishes.
     expect(screen.getByRole("button", { name: /Add from Library/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Finish pack/ })).toBeNull();
+  });
+
+  it("counts everyone who can open it, a shared team included, not only its own members", () => {
+    renderPanel("items", { audience: 18 });
+    expect(screen.getByText("18 members")).toBeInTheDocument();
   });
 
   it("shows the history newest first, what is new, and an edit the pack skipped in plain words", async () => {

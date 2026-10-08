@@ -1487,6 +1487,7 @@ function App() {
             <PackPanel
               pack={packs.meta}
               members={packs.session?.members ?? []}
+              audience={packs.packForPanels?.memberCount}
               items={packs.items}
               openIds={packs.openIds}
               people={packs.others}

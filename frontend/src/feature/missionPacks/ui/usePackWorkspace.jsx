@@ -81,6 +81,20 @@ export const topBarPack = (open, meta, packs = []) => {
   return { name: listed?.name ?? "Mission Pack", status: listed?.status };
 };
 
+/**
+ * How many people can open the pack: "18 members" in the switcher, "18 members can see it" on a card.
+ * Its own members are known live, from the session. Those it reaches through a shared team only the
+ * server can count (someone joining the team changes it with no event in the pack), so with a team it
+ * is the switcher's line for the pack (`listed`, asked again whenever the members or the team change),
+ * else the count the pack came with; never fewer than its own members.
+ */
+export const packAudience = (meta, members, listed) => {
+  if (!meta) return null;
+  const own = members?.length ?? meta.member_count ?? 1;
+  if (!meta.team) return own;
+  return Math.max(own, listed?.audience_count ?? meta.audience_count ?? own);
+};
+
 export const usePackWorkspace = ({
   enabled,
   user,
@@ -676,13 +690,29 @@ export const usePackWorkspace = ({
               ? "polling"
               : "live";
 
+  // The switcher's line for the open pack is asked again when who can open it may have changed: its
+  // members, or the team it is shared with (packAudience reads the team's count from it).
+  const members = session?.members;
+  const audienceKey = meta ? `${meta.team?.id ?? ""}:${(members ?? []).map((m) => m.user_id).join(",")}` : null;
+  const shared = Boolean(meta?.team);
+  const lastAudienceKey = useRef(null);
+  const { refresh: refreshHome } = home;
+  useEffect(() => {
+    if (!audienceKey) return;
+    const previous = lastAudienceKey.current;
+    lastAudienceKey.current = { pack: open, key: audienceKey };
+    if (shared && previous?.pack === open && previous.key !== audienceKey) refreshHome();
+  }, [open, audienceKey, shared, refreshHome]);
+  const audience = packAudience(meta, members, home.packs.find((p) => p.uuid === open));
+
   const packForPanels = meta
     ? {
         uuid: meta.uuid,
         name: meta.name,
         status: meta.status,
         role: meta.role,
-        memberCount: session?.members?.length ?? meta.member_count ?? 1,
+        // Everyone who can open it, its shared team included ("N members can see it").
+        memberCount: audience,
         finished: meta.status === "finished",
         // Finished, or a viewer: either way the pack takes no change from this person.
         readOnly,

@@ -9,7 +9,8 @@ import "./packs.css";
  * The workspace switcher (screen Switcher): where edits go. The Library first, then the packs this
  * person is in, with invitations waiting above them. Switching never discards the Library's open
  * work: it stays as it was, and is there again on the way back. Only the open pack says who else
- * is in it: the others would need a connection each to know.
+ * is in it: the others would need a connection each to know. A pack's members are everyone who can
+ * open it, the team it is shared with included.
  */
 
 const ROLE_WORDS = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
@@ -153,7 +154,7 @@ const WorkspaceSwitcher = ({
               <span className="packs-switcher__meta">
                 {done
                   ? `Finished ${shortDate(p.finished_at)} · read-only`
-                  : `${plural(p.member_count ?? 1, "member")} · you are ${ROLE_WORDS[p.role] ?? p.role}`}
+                  : `${plural(p.audience_count ?? p.member_count ?? 1, "member")} · you are ${ROLE_WORDS[p.role] ?? p.role}`}
               </span>
               {!done && (counts || (isCurrent && here > 0)) && (
                 <span className="packs-switcher__chips">

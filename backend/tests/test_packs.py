@@ -695,6 +695,24 @@ class TeamShareTests(PackCase):
         response = self.call(self.colin, 'put', f'/api/packs/{self.uuid}', json={'team_role': 'owner'})
         self.assertEqual(response.get_json()['code'], 'invalid_role')
 
+    def test_everyone_who_can_open_it_is_counted_once(self):
+        # Colin owns it and Sam has it through the team: two, though only Colin is a member.
+        got = self.pack(self.uuid)
+        self.assertEqual((got['member_count'], got['audience_count']), (1, 2))
+        # Sam a member too is still one person; Alex, outside the team, adds one.
+        self.member(self.uuid, self.sam, role='editor')
+        self.member(self.uuid, self.alex, role='viewer')
+        [listed] = self.ok(self.call(self.colin, 'get', '/api/packs'))['packs']
+        self.assertEqual((listed['member_count'], listed['audience_count']), (3, 3))
+        # Someone joining the team later can open it, so is counted.
+        dana = self.person('dana@example.com', 'Dana')
+        link = self.ok(self.call(self.colin, 'post', f'/api/teams/{self.squad["id"]}/invites', json={}), 201)
+        self.ok(self.call(dana, 'post', '/api/invites/accept', json={'token': link['token']}))
+        self.assertEqual(self.pack(self.uuid, who=self.alex)['audience_count'], 4)
+        # Unshared, only the members can.
+        self.ok(self.call(self.colin, 'put', f'/api/packs/{self.uuid}', json={'team_id': None}))
+        self.assertEqual(self.pack(self.uuid)['audience_count'], 3)
+
     def test_deleting_the_team_unshares_its_packs(self):
         self.ok(self.call(self.colin, 'delete', f'/api/teams/{self.squad["id"]}'))
         self.assertEqual(self.call(self.sam, 'get', f'/api/packs/{self.uuid}').status_code, 404)
