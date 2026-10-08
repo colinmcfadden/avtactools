@@ -59,13 +59,13 @@ export const openSession = (pack, me) => {
 
 /**
  * The server's copy again (after a gap too long to replay, or if this copy ever
- * disagreed with the server), with the edits still pending kept on top.
+ * disagreed with the server), with the edits still pending kept on top. The copy
+ * holds every edit the server took up to its head_seq, ours among them. A copy that
+ * is read-only is settled as an event that made it so would be (see settle).
  */
 export const reloadSession = (session, pack) => {
   const fresh = openSession(pack, session.me);
-  const pending = fresh.readOnly ? [] : session.pending;
-  const lost = fresh.readOnly ? session.pending.map(({ op }) => ({ op, reason: "read_only" })) : [];
-  return withView({ ...fresh, pending, dropped: [...session.dropped, ...lost] });
+  return settle(withoutReached({ ...fresh, pending: session.pending, dropped: session.dropped }));
 };
 
 /**
@@ -151,12 +151,19 @@ const applyPackEvent = (session, event) => {
   return { ...session, pack, members, gone, readOnly };
 };
 
-// An item.replace is an update from the original, which only whoever copied the item in may make. It
-// takes the original as it is now, so for them it is the same again (only they are told either way).
+// An item.replace is an update from the original, which the server lets only whoever copied the item in
+// make, and only of a copy that names its original. Afterwards the source says what the server would then
+// say (pack_support.source_body). To them the original is the same again, and while it is the same the
+// server counts nothing an update would replace: pack_changes and last_pack_change are null. The event does
+// not say when the original last changed (original_updated_at): the update leaves the original as it was,
+// but it may have changed between the pack being loaded and the update, so that is not known here (null)
+// until the pack is loaded again. Everyone else is never told anything about another person's original:
+// all four are null.
 const replacedSource = (session, source, event) => {
   if (!source) return source;
-  const original = event.actor?.id === session.me && source.original ? "same" : source.original;
-  return { ...source, revision: event.op.source_revision, original };
+  const mine = event.actor?.id === session.me && Boolean(source.uuid);
+  return { ...source, revision: event.op.source_revision, original: mine ? "same" : null,
+    original_updated_at: null, pack_changes: null, last_pack_change: null };
 };
 
 const applyItemEvent = (session, event) => {
@@ -206,30 +213,65 @@ export const receive = (session, events) => {
 const withHead = (session) =>
   session.seq > (session.pack.head_seq ?? 0) ? { ...session, pack: { ...session.pack, head_seq: session.seq } } : session;
 
-// A pack that turned read-only (finished, or our role lowered) will never take what is still pending.
+// What may be dropped: the edits the server has not said it took. One it took (acked) is the pack's, whatever
+// happens to the pack after, so it is never offered back as the person's own; it stays until it is confirmed.
+const untaken = (entry) => entry.state === "queued" || entry.state === "sent";
+
+// Dropped in the order they were made (pending's order), all at once: droppedVersions applies them in that order.
+const dropUntaken = (session, reason) => withView({
+  ...session,
+  pending: session.pending.filter((entry) => !untaken(entry)),
+  dropped: [...session.dropped, ...session.pending.filter(untaken).map(({ op }) => ({ op, reason }))],
+});
+
+// A pack that turned read-only (finished, or our role lowered) takes nothing more, so what is queued is dropped.
+// Not while a batch is out: the server decides only when the batch reaches the pack, so it may take it yet (it
+// took it before the finish, or takes it after a reopen). Its answer settles it: a refusal drops it with what is
+// queued behind it, a 200 acks it and what is queued is dropped then. Dropping the queued edits first would put
+// them before older ones in `dropped`, and my version would end on the older value. A pack that is gone drops the
+// batch out too: the client stops, and nothing hears its answer.
 const settle = (session) => {
-  if ((!session.readOnly && !session.gone) || session.pending.length === 0) return withView(session);
-  const reason = session.gone ? "gone" : session.pack.status === "finished" ? "pack_finished" : "read_only";
-  return withView({
-    ...session,
-    pending: [],
-    dropped: [...session.dropped, ...session.pending.map(({ op }) => ({ op, reason }))],
-  });
+  const waiting = session.pending.some((entry) => entry.state === "sent");
+  if (!session.gone && (!session.readOnly || waiting)) return withView(session);
+  if (!session.pending.some(untaken)) return withView(session);
+  return dropUntaken(session, session.gone ? "gone" : session.pack.status === "finished" ? "pack_finished" : "read_only");
+};
+
+// An edit the server took is in `confirmed` once seq has reached the event its result named, whether or
+// not that event was applied here: a reload, or events that came before the batch's answer, can move seq
+// past it, and receive passes over what it already has. Left pending it would wait for an event that never
+// comes and be applied over the view for good, over a later change to the same field too. One whose result
+// named no seq waits for its event, as there is nothing else to go by.
+const withoutReached = (session) => {
+  const reached = (entry) => entry.state === "acked" && entry.seq != null && entry.seq <= session.seq;
+  return session.pending.some(reached) ? { ...session, pending: session.pending.filter((entry) => !reached(entry)) } : session;
 };
 
 /** The answer to a batch: its events (everything after base_seq) are applied. */
 export const batchAnswered = (session, answer) => {
-  const { session: next, gap } = receive(session, answer.events || []);
-  // Our operations whose events were not in this page (has_more) are confirmed but not yet seen: never resent.
-  const answered = new Set((answer.results || []).map((r) => r.client_op_id));
-  const pending = next.pending.map((entry) => (answered.has(entry.op.client_op_id) ? { ...entry, state: "acked" } : entry));
-  return { session: withView({ ...next, pending }), catchUp: gap || Boolean(answer.has_more) || pending.some((e) => e.state === "acked") };
+  // What the results say the server took is acked before the page is read, so nothing on it (a finish or a
+  // removal, on a page that ends there: has_more) can drop it. Each is held until its event comes or seq reaches
+  // the event its result names (a skipped one too: its event changes nothing), and is never sent again.
+  const answered = new Map((answer.results || []).map((r) => [r.client_op_id, r]));
+  const pending = session.pending.map((entry) => {
+    const result = answered.get(entry.op.client_op_id);
+    return result ? { ...entry, state: "acked", seq: result.seq ?? null } : entry;
+  });
+  const { session: next, gap } = receive({ ...session, pending }, answer.events || []);
+  const after = withoutReached(next);
+  return { session: withView(after), catchUp: gap || Boolean(answer.has_more) || after.pending.some((e) => e.state === "acked") };
 };
 
 /**
- * A batch the server did not take. `failure` is { status, code, reason } from the
- * response, or { status: 0 } when nothing came back (sent again later, unchanged,
- * which the server recognises by each operation's client_op_id).
+ * A batch the server did not take. `failure` is { status, code, reason, finished_by,
+ * finished_at } from the response (packApi.failureOf), or { status: 0 } when nothing
+ * came back (sent again later, unchanged, which the server recognises by each
+ * operation's client_op_id). Only what the server has not said it took is dropped.
+ *
+ * Known gap (docs/MISSION_PACKS.md §5, rule 7): a batch whose answer was lost may
+ * have been taken. Sent again, it is refused (423, 403 pack_read_only, or a 413 with
+ * another operation in it) before the server looks for what it already has, so the
+ * refusal cannot say, and it is dropped with the rest. Only the server can close that.
  */
 export const batchFailed = (session, failure) => {
   const { status = 0, code } = failure;
@@ -237,37 +279,33 @@ export const batchFailed = (session, failure) => {
   const others = session.pending.filter((entry) => entry.state !== "sent");
   const drop = (entries, reason) => entries.map(({ op }) => ({ op, reason }));
 
-  // Nothing changed on the server: sent again as it was. A 401 waits for the person to sign in again.
+  // Sent again as it was, and the next answer decides: none came (the server may have taken it), or it was
+  // refused before it was looked at (a 401 waits for the person to sign in again). Not settled here, in a pack
+  // seen read-only either: the batch may have been taken, and only the server can say.
   if (status === 0 || status === 401 || status === 429 || status >= 500) {
     return withView({ ...session, pending: session.pending.map((e) => (e.state === "sent" ? { ...e, state: "queued" } : e)) });
   }
+  // From here the pack takes nothing more of ours, but what it took already (acked) stays.
   if (status === 423) {
     const pack = { ...session.pack, status: "finished" };
-    if (failure.finished_by) Object.assign(pack, { finished_by: failure.finished_by, finished_at: failure.finished_at });
-    return withView({ ...session, pack, readOnly: true, pending: [], dropped: [...session.dropped, ...drop(session.pending, "pack_finished")] });
+    // Each the body has, null too: whoever finished it may have deleted their account since, and when still holds.
+    if (failure.finished_by !== undefined) pack.finished_by = failure.finished_by;
+    if (failure.finished_at !== undefined) pack.finished_at = failure.finished_at;
+    return dropUntaken({ ...session, pack, readOnly: true }, "pack_finished");
   }
   if (status === 403 && code === "pack_read_only") {
-    return withView({ ...session, pack: { ...session.pack, role: "viewer" }, readOnly: true, pending: [],
-      dropped: [...session.dropped, ...drop(session.pending, "read_only")] });
+    return dropUntaken({ ...session, pack: { ...session.pack, role: "viewer" }, readOnly: true }, "read_only");
   }
   if (status === 404 || status === 403) {
-    return withView({ ...session, gone: status === 404 ? "not_found" : "forbidden", pending: [],
-      dropped: [...session.dropped, ...drop(session.pending, "gone")] });
+    return dropUntaken({ ...session, gone: status === 404 ? "not_found" : "forbidden" }, "gone");
   }
-  // 400 (a malformed operation: our bug) or 413 (too large): this batch is not taken; the rest still goes.
-  return withView({ ...session, pending: others, dropped: [...session.dropped, ...drop(sent, failure.reason || code || `http_${status}`)] });
+  // 400 (a malformed operation: our bug) or 413 (too large): this batch is not taken; the rest still goes, unless
+  // the pack turned read-only while it was out, when the rest is dropped behind it, in order.
+  return settle({ ...session, pending: others, dropped: [...session.dropped, ...drop(sent, failure.reason || code || `http_${status}`)] });
 };
 
 /** Every edit not yet taken given up for `reason` (the person who made them signed out). Taken ones stay. */
-export const abandon = (session, reason) => {
-  const lost = session.pending.filter((entry) => entry.state === "queued" || entry.state === "sent");
-  if (lost.length === 0) return session;
-  return withView({
-    ...session,
-    pending: session.pending.filter((entry) => !lost.includes(entry)),
-    dropped: [...session.dropped, ...lost.map(({ op }) => ({ op, reason }))],
-  });
-};
+export const abandon = (session, reason) => (session.pending.some(untaken) ? dropUntaken(session, reason) : session);
 
 /** What the person sees: live items in the order they were added, with what the pack knows about each. */
 export const visibleItems = (session) =>
@@ -276,9 +314,10 @@ export const visibleItems = (session) =>
     .map((uuid) => ({ ...(session.info[uuid] || { uuid, pendingCreate: true }), ...session.view[uuid], uuid }));
 
 /**
- * The edits this person made that the pack will never take (it was finished, or they were made a
- * viewer, or removed, while the edits were on their way: the session's `dropped`), as their own
- * version of each item they touched: the pack's confirmed item with those edits applied in order.
+ * The edits this person made that the pack did not take (it was finished, or they were made a
+ * viewer, or removed, while the edits were on their way: the session's `dropped`, in the order
+ * they were made), as their own version of each item they touched: the pack's confirmed item
+ * with those edits applied in order.
  * What cannot apply any more (its target gone) is left out, as the pack would have left it.
  * [{ uuid, kind, name, data }], in the order the items were first touched. (packActions.js
  * re-exports it, where the screens find it beside saving to the library.)

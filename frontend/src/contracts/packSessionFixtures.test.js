@@ -237,6 +237,12 @@ const ACKED_ANSWER = answer(
   [{ client_op_id: "op-1", seq: 7, status: "applied", reason: null }],
   { hasMore: true, headSeq: 7 },
 );
+// lz-1 as a reload finds it after ACKED_ANSWER's events (4 and 5), before op-1 (7)...
+const EAGLE_AT_5 = packItem("lz-1", "lz", "LZ EAGLE", { ...LZ_DATA, flightData: { callSign: "HAWK 7", landingHeading: 270 } },
+  { seq: 5, createdSeq: 2, revision: 3 });
+// ...and once the server has applied our heading of 90 to it, at `seq`.
+const HEADING_90_AT = (seq) => packItem("lz-1", "lz", "LZ EAGLE", { ...LZ_DATA, flightData: { callSign: "HAWK 7", landingHeading: 90 } },
+  { seq, createdSeq: 2, revision: 4, updatedBy: SAM });
 
 // The smallest edit there is, so the scenario that fills a batch stays small: it records every session it passes through.
 const MANY = Array.from({ length: MAX_BATCH + 1 }, (_, i) => ({ type: "set", item: "lz-1", path: ["n"], value: i }));
@@ -253,6 +259,11 @@ const copiedPack = (source) => packBody({
 const UPDATE_FROM_ORIGINAL = server(4, {
   type: "item.replace", item: "lz-1", data: { ...LZ_DATA, flightData: { callSign: "HAWK 6", landingHeading: 180 } }, source_revision: 3,
 }, SAM);
+// A copy made while the pack is open (its source as item.create's event gives it), then updated from the original by its copier.
+const COPIED_IN = (copier) => server(4, { ...create("lz-5", "lz", "LZ CROW", NEW_LZ("d-5", "LZ CROW")), source: COPIED }, copier);
+const UPDATED_IN = (copier) => server(5, {
+  type: "item.replace", item: "lz-5", data: { ...NEW_LZ("d-5", "LZ CROW"), status: "analyzed" }, source_revision: 3,
+}, copier, { summary: `${copier.name} updated "LZ CROW" from the original in their library.` });
 
 // -- The scenarios ------------------------------------------------------------------------------------------------
 
@@ -364,6 +375,11 @@ const SCENARIOS = [
     pack: copiedPack({ ...sourceFor(false), uuid: null, revision: 1 }), steps: [S.receive(UPDATE_FROM_ORIGINAL)] },
   { name: "an item.replace of an item with no source leaves its source null", me: SAM.id, pack: copiedPack(null),
     steps: [S.receive(UPDATE_FROM_ORIGINAL)] },
+  { name: "an item I copied in while the pack was open, then updated from the original, reads the same again, its source in the server's shape",
+    me: SAM.id, pack: PACK,
+    steps: [S.receive(COPIED_IN(SAM)), S.receive(UPDATED_IN(SAM))] },
+  { name: "someone else's copy, made and updated while the pack is open, tells me nothing about its original", me: SAM.id, pack: PACK,
+    steps: [S.receive(COPIED_IN(COLIN)), S.receive(UPDATED_IN(COLIN))] },
   { name: "the pack's head follows the newest event, ours included", me: SAM.id, pack: PACK,
     steps: [
       S.receive(theirs(4, setHeading(90)), theirs(5, setHeading(95))),
@@ -413,12 +429,16 @@ const SCENARIOS = [
     steps: [S.receive(server(4, { type: "member.add", user_id: ALEX.id, name: "Alex", role: "editor" }))] },
   { name: "someone who accepted an invitation joins", me: SAM.id, pack: PACK,
     steps: [S.receive(server(4, { type: "member.join", user_id: ALEX.id, name: "Alex", role: "viewer" }, ALEX))] },
-  { name: "my role lowered to viewer makes the pack read-only, and what is pending is dropped as read_only", me: SAM.id, pack: PACK,
+  { name: "my role lowered to viewer makes the pack read-only, and what is queued is dropped as read_only", me: SAM.id, pack: PACK,
+    steps: [S.edit(setHeading(90)), S.receive(server(4, { type: "member.role", user_id: SAM.id, name: "Sam", role: "viewer" }))] },
+  { name: "my role lowered to viewer while a batch is out drops nothing until its answer: a 403 then drops it with what was queued "
+    + "behind it, as read_only, in the order they were made", me: SAM.id, pack: PACK,
     steps: [
       S.edit(setHeading(90)),
       S.nextBatch(),
       S.edit(setHeading(91)),
       S.receive(server(4, { type: "member.role", user_id: SAM.id, name: "Sam", role: "viewer" })),
+      S.batchFailed({ status: 403, code: "pack_read_only" }),
     ] },
   { name: "my role raised to editor lets me edit", me: SAM.id, pack: VIEWER_PACK,
     steps: [S.receive(server(4, { type: "member.role", user_id: SAM.id, name: "Sam", role: "editor" })), S.edit(setHeading(90))] },
@@ -435,6 +455,15 @@ const SCENARIOS = [
     )] },
   { name: "me removed from a pack not shared with a team: gone, and what is pending is dropped as gone", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.receive(server(4, { type: "member.remove", user_id: SAM.id, name: "Sam" }))] },
+  { name: "me removed while an edit the server took is unseen: that edit stays, and only what it did not take is dropped as gone", me: SAM.id,
+    pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.batchAnswered(ACKED_ANSWER),
+      S.edit(setHeading(91)),
+      S.receive(server(6, { type: "member.remove", user_id: SAM.id, name: "Sam" })),
+    ] },
   { name: "me removed from a pack shared with a team: still in it through the team, and still editing", me: SAM.id, pack: SHARED,
     steps: [S.edit(setHeading(90)), S.receive(server(4, { type: "member.remove", user_id: SAM.id, name: "Sam" })), S.edit(setHeading(91))] },
   { name: "made a viewer and the pack finished in one delivery: what is pending is dropped as pack_finished", me: SAM.id, pack: PACK,
@@ -457,7 +486,7 @@ const SCENARIOS = [
       S.edit(setHeading(90)),
       S.receive(server(4, { type: "member.remove", user_id: SAM.id, name: "Sam" }), server(5, FINISH)),
     ] },
-  { name: "a finish seen while an edit the server took is unseen drops that edit too, though its event follows a reopen", me: SAM.id, pack: PACK,
+  { name: "a finish seen while an edit the server took is unseen keeps that edit, which its event confirms after a reopen", me: SAM.id, pack: PACK,
     steps: [
       S.edit(setHeading(90)),
       S.nextBatch(),
@@ -465,6 +494,43 @@ const SCENARIOS = [
         { hasMore: true, headSeq: 7 })),
       S.receive(server(5, FINISH)),
       S.receive(server(6, REOPEN), ours(7, setHeading(90), "op-1")),
+    ] },
+  { name: "a finish seen while a batch is out drops nothing until its answer: a 423 then drops it with what was queued behind it, in the "
+    + "order they were made, so my version ends on my last edit", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.edit(setHeading(91)),
+      S.receive(server(4, FINISH)),
+      S.batchFailed({ status: 423, code: "pack_finished", finished_at: at(4), finished_by: COLIN }),
+    ] },
+  { name: "a finish seen while a batch is out that is then refused as too large: it is dropped as item_too_large, and what was queued "
+    + "behind it as pack_finished, in order", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.edit(setHeading(91)),
+      S.receive(server(4, FINISH)),
+      S.batchFailed({ status: 413, code: "item_too_large" }),
+    ] },
+  { name: "a finish seen while a batch is out whose answer was lost: it goes again with what was queued behind it, and the pack decides "
+    + "(reopened, it takes both)", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.edit(setHeading(91)),
+      S.receive(server(4, FINISH)),
+      S.batchFailed({ status: 0 }),
+      S.nextBatch(),
+      S.batchAnswered(answered(server(5, REOPEN), ours(6, setHeading(90), "op-1"), ours(7, setHeading(91), "op-2"))),
+    ] },
+  { name: "me removed while a batch is out: gone drops it at once with what is queued, as gone, since its answer is not waited for",
+    me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.edit(setHeading(91)),
+      S.receive(server(4, { type: "member.remove", user_id: SAM.id, name: "Sam" })),
     ] },
   { name: "events this version does not act on are passed over, their numbers counted", me: SAM.id, pack: PACK,
     steps: [S.receive(
@@ -531,6 +597,26 @@ const SCENARIOS = [
       S.nextBatch(),
       S.batchAnswered(answered(ours(4, { type: "remove", item: "lz-1", path: HELO("h-9") }, "op-1", { status: "skipped", reason: "target_missing" }))),
     ] },
+  // The results are read before the page: a page that ends where the pack is read-only, or I am out of it, drops none of what they name.
+  { name: "an answer whose page ends at a finish (has_more) keeps what its results say was taken, and drops what was queued behind it; "
+    + "the events after the page, a reopen and ours, confirm the taken one", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.edit(setHeading(91)),
+      S.batchAnswered(answer([theirs(4, setCallSign("HAWK 7")), server(5, FINISH)], [{ client_op_id: "op-1", seq: 7, status: "applied", reason: null }],
+        { hasMore: true, headSeq: 7 })),
+      S.receive(server(6, REOPEN), ours(7, setHeading(90), "op-1")),
+    ] },
+  { name: "an answer whose page ends at my removal (has_more; I was added back after) keeps what its results say was taken, and drops "
+    + "only what was queued, as gone", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.edit(setHeading(91)),
+      S.batchAnswered(answer([server(4, { type: "member.remove", user_id: SAM.id, name: "Sam" })],
+        [{ client_op_id: "op-1", seq: 6, status: "applied", reason: null }], { hasMore: true, headSeq: 6 })),
+    ] },
 
   // -- A batch the server did not take ----------------------------------------------------------------------------
   { name: "a batch that got no answer is sent again as it was", me: SAM.id, pack: PACK,
@@ -545,16 +631,36 @@ const SCENARIOS = [
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.edit(setHeading(91)), S.batchFailed({ status: 502 }), S.nextBatch()] },
   { name: "a batch refused because the pack was finished drops everything pending and says who finished it", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.edit(setHeading(91)), S.batchFailed(FINISHED_423)] },
-  { name: "a 423 that names nobody marks the pack finished, and leaves who finished it and when as they were", me: SAM.id, pack: PACK,
+  { name: "a 423 that names nobody (whoever finished the pack has since deleted their account) marks it finished, says when, and finished_by "
+    + "is null", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.batchFailed({ status: 423, code: "pack_finished", finished_at: at(8), finished_by: null })] },
-  { name: "a 423 drops, as well, edits the server took whose events were not seen yet", me: SAM.id, pack: PACK,
+  { name: "a 423 keeps an edit the server took whose event was not seen yet, and drops only what it did not take", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.batchAnswered(ACKED_ANSWER), S.edit(setHeading(91)), S.nextBatch(), S.batchFailed(FINISHED_423)] },
   { name: "a batch refused because I may only view drops everything pending as read_only", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.edit(setHeading(91)), S.batchFailed({ status: 403, code: "pack_read_only" })] },
+  { name: "a batch refused because I may only view keeps an edit the server took, and drops only what it did not take", me: SAM.id, pack: PACK,
+    steps: [S.edit(setHeading(90)), S.nextBatch(), S.batchAnswered(ACKED_ANSWER), S.edit(setHeading(91)), S.nextBatch(),
+      S.batchFailed({ status: 403, code: "pack_read_only" })] },
   { name: "a batch refused with another 403 means the pack is no longer this person's to see", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.edit(setHeading(91)), S.batchFailed({ status: 403, code: "feature_disabled" })] },
   { name: "a batch refused with 404 means the pack is gone, and a later edit is refused as gone", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.batchFailed({ status: 404, code: "pack_not_found" }), S.edit(setHeading(91))] },
+  { name: "a batch refused with 404 keeps an edit the server took: the pack had it, so it is not mine to save", me: SAM.id, pack: PACK,
+    steps: [S.edit(setHeading(90)), S.nextBatch(), S.batchAnswered(ACKED_ANSWER), S.edit(setHeading(91)), S.nextBatch(),
+      S.batchFailed({ status: 404, code: "pack_not_found" })] },
+  // The server refuses a finished pack (423) or a viewer (403) before it looks for the operations it already has, so the refusal
+  // cannot say that the first send was taken. docs/MISSION_PACKS.md §5, rule 7.
+  { name: "a batch whose answer was lost, refused with 423 when sent again, is dropped though the server took it the first time, and "
+    + "its event, seen after, leaves it dropped and offered back: the 423 cannot say (a known gap, pinned as the web does it, an open "
+    + "question)", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.batchFailed({ status: 0 }),
+      S.nextBatch(),
+      S.batchFailed({ status: 423, code: "pack_finished", finished_at: at(5), finished_by: COLIN }),
+      S.receive(ours(4, setHeading(90), "op-1"), server(5, FINISH)),
+    ] },
   { name: "a malformed batch drops that batch only, with the reason the server gave, and the rest still goes", me: SAM.id, pack: PACK,
     steps: [
       S.edit(setHeading(90)),
@@ -604,14 +710,31 @@ const SCENARIOS = [
         ours(6, setHeading(90), "op-1", { summary: 'Sam edited "LZ EAGLE".' }),
       )),
     ] },
-  { name: "a reload into a pack where I am now a viewer drops what is pending as read_only", me: SAM.id, pack: PACK,
+  { name: "a reload into a pack where I am now a viewer, while a batch is out, drops nothing until its answer: a 403 then drops it with "
+    + "what was queued behind it, as read_only", me: SAM.id, pack: PACK,
     steps: [
       S.edit(setHeading(90)),
       S.nextBatch(),
       S.edit(setHeading(91)),
       S.reload(packBody({ role: "viewer", headSeq: 5, members: [member(COLIN, "owner"), member(SAM, "viewer")] })),
+      S.batchFailed({ status: 403, code: "pack_read_only" }),
     ] },
-  { name: "a reload into a finished pack drops what is pending as read_only too", me: SAM.id, pack: PACK,
+  { name: "a reload into a finished pack while a batch is out keeps it out: its answer, naming an event the reload has passed, confirms "
+    + "it, and nothing is offered back", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.reload(packBody({
+        headSeq: 5,
+        status: "finished",
+        finishedAt: at(5),
+        finishedBy: COLIN,
+        items: [packItem("lz-1", "lz", "LZ HAWK", { ...LZ_DATA, flightData: { callSign: "HAWK 6", landingHeading: 90 } },
+          { seq: 4, createdSeq: 2, revision: 2, updatedBy: SAM }), PS_ITEM],
+      })),
+      S.batchAnswered(answered(ours(4, setHeading(90), "op-1"))),
+    ] },
+  { name: "a reload into a finished pack drops what is pending as pack_finished", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.reload(packBody(FINISHED))] },
   { name: "a reload keeps what was dropped before it", me: SAM.id, pack: PACK,
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.batchFailed({ status: 413, code: "item_too_large" }), S.reload(PACK)] },
@@ -629,7 +752,8 @@ const SCENARIOS = [
       })),
       S.receive(theirs(6, setCallSign("HAWK 8")), ours(7, setHeading(90), "op-1")),
     ] },
-  { name: "a reload into a pack where I am now a viewer drops, as well, edits the server took whose events were not seen", me: SAM.id, pack: PACK,
+  { name: "a reload into a pack where I am now a viewer, past an edit the server took, ends that edit's wait and drops the rest as read_only",
+    me: SAM.id, pack: PACK,
     steps: [
       S.edit(setHeading(90)),
       S.nextBatch(),
@@ -639,12 +763,67 @@ const SCENARIOS = [
         role: "viewer",
         headSeq: 7,
         members: [member(COLIN, "owner"), member(SAM, "viewer")],
+        items: [HEADING_90_AT(7), PS_ITEM],
+      })),
+    ] },
+  { name: "a reload into a pack where I am now a viewer, short of an edit the server took, keeps that edit until its event comes, "
+    + "and drops the rest as read_only", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.batchAnswered(ACKED_ANSWER),
+      S.edit(setHeading(91)),
+      S.reload(packBody({ role: "viewer", headSeq: 5, members: [member(COLIN, "owner"), member(SAM, "viewer")], items: [EAGLE_AT_5, PS_ITEM] })),
+      S.receive(theirs(6, setCallSign("HAWK 8")), ours(7, setHeading(90), "op-1")),
+    ] },
+  { name: "a reload past an edit the server took ends its wait, as its event will not come again, and a later change to that field shows",
+    me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.batchAnswered(ACKED_ANSWER),
+      S.reload(packBody({ headSeq: 7, items: [HEADING_90_AT(7), PS_ITEM] })),
+      S.receive(theirs(8, setHeading(180), COLIN, { summary: 'Colin edited "LZ EAGLE".' })),
+    ] },
+  { name: "an operation the server skipped, passed by a reload before its event came, ends its wait the same way", me: SAM.id, pack: PACK,
+    steps: [
+      S.edit({ type: "remove", item: "lz-1", path: HELO("h-9") }),
+      S.nextBatch(),
+      S.batchAnswered(answer([theirs(4, setCallSign("HAWK 7"))], [{ client_op_id: "op-1", seq: 5, status: "skipped", reason: "target_missing" }],
+        { hasMore: true, headSeq: 5 })),
+      S.reload(packBody({
+        headSeq: 5,
         items: [
-          packItem("lz-1", "lz", "LZ EAGLE", { ...LZ_DATA, flightData: { callSign: "HAWK 7", landingHeading: 90 } },
-            { seq: 7, createdSeq: 2, revision: 4, updatedBy: SAM }),
+          packItem("lz-1", "lz", "LZ HAWK", { ...LZ_DATA, flightData: { callSign: "HAWK 7", landingHeading: 270 } }, { seq: 4, createdSeq: 2, revision: 2 }),
           PS_ITEM,
         ],
       })),
+    ] },
+  { name: "a batch answered after a reload that already holds its event is confirmed by its result, and asks for no catch-up", me: SAM.id,
+    pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.reload(packBody({ headSeq: 6, items: [HEADING_90_AT(6), PS_ITEM] })),
+      S.batchAnswered(answered(
+        theirs(4, rename("lz-1", "LZ EAGLE")),
+        theirs(5, setCallSign("HAWK 7"), COLIN, { summary: 'Colin edited "LZ EAGLE".' }),
+        ours(6, setHeading(90), "op-1", { summary: 'Sam edited "LZ EAGLE".' }),
+      )),
+    ] },
+  { name: "a batch sent again after its answer was lost, answered from the log with a seq a reload has passed, is confirmed by that result",
+    me: SAM.id, pack: PACK,
+    steps: [
+      S.edit(setHeading(90)),
+      S.nextBatch(),
+      S.batchFailed({ status: 0 }),
+      S.reload(packBody({
+        headSeq: 4,
+        items: [packItem("lz-1", "lz", "LZ HAWK", { ...LZ_DATA, flightData: { callSign: "HAWK 6", landingHeading: 90 } },
+          { seq: 4, createdSeq: 2, revision: 2, updatedBy: SAM }), PS_ITEM],
+      })),
+      S.nextBatch(),
+      S.batchAnswered(answer([], [{ client_op_id: "op-1", seq: 4, status: "applied", reason: null }])),
     ] },
 
   // -- What the person sees ---------------------------------------------------------------------------------------
@@ -705,19 +884,19 @@ const SCENARIOS = [
     steps: [S.edit(setHeading(90)), S.nextBatch(), S.edit(setCallSign("HAWK 9")), S.batchFailed({ status: 413, code: "item_too_large" })] },
   { name: "a rename the pack would not take names my version", me: SAM.id, pack: PACK,
     steps: [S.edit([rename("lz-1", "LZ EAGLE"), setHeading(90)]), S.nextBatch(), S.batchFailed(FINISHED_423)] },
-  { name: "an item made here that a finish dropped comes back from its own item.create, though the pack has since deleted it", me: SAM.id,
-    pack: PACK,
+  // The batch was out when the finish was seen, so it waited for its answer: the pack, reopened, took it after all.
+  { name: "an item made here, in flight when a finish was seen, waits for its answer: the pack, reopened, took it (and has since deleted "
+    + "it), so nothing is offered back", me: SAM.id, pack: PACK,
     steps: [
       S.edit(create("lz-2", "lz", "LZ CROW", NEW_LZ("d-2", "LZ CROW"))),
       S.nextBatch(),
-      S.batchAnswered(answer([theirs(4, setCallSign("HAWK 7"))], [{ client_op_id: "op-1", seq: 7, status: "applied", reason: null }],
-        { hasMore: true, headSeq: 7 })),
-      S.receive(server(5, FINISH)),
-      S.receive(
-        server(6, REOPEN),
-        ours(7, create("lz-2", "lz", "LZ CROW", NEW_LZ("d-2", "LZ CROW")), "op-1"),
-        theirs(8, deleteItem("lz-2"), COLIN, { summary: 'Colin removed "LZ CROW".' }),
-      ),
+      S.receive(server(4, FINISH)),
+      S.batchAnswered(answered(
+        server(4, FINISH),
+        server(5, REOPEN),
+        ours(6, create("lz-2", "lz", "LZ CROW", NEW_LZ("d-2", "LZ CROW")), "op-1"),
+        theirs(7, deleteItem("lz-2"), COLIN, { summary: 'Colin removed "LZ CROW".' }),
+      )),
     ] },
 ];
 
@@ -799,21 +978,31 @@ const sessionFixture = () => withoutClockOrRandomness(() => ({
     + "of one) and newId hands out \"op-1\", \"op-2\", ... counted per scenario, one per operation taken, none for a refused "
     + "edit; nextBatch: nextBatch(session); receive {events}: receive(session, events), the events oldest first as "
     + "GET /api/packs/<uuid>/events and the live stream send them (`PackEvent`); batchAnswered {answer}: "
-    + "batchAnswered(session, answer), the 200 body of POST /api/packs/<uuid>/ops (`PackOpsResult`); batchFailed {failure}: "
+    + "batchAnswered(session, answer), the 200 body of POST /api/packs/<uuid>/ops (`PackOpsResult`): each pending entry a "
+    + "result names is acked with that result's seq first, then its events are received (so a page that ends where the pack is "
+    + "read-only or I am out of it drops none of what the results say was taken); batchFailed {failure}: "
     + "batchFailed(session, failure), where failure is {status, code, reason, finished_by, finished_at} read from a "
     + "refusal's status and body (packApi.failureOf), status 0 when no answer came, a key the body did not have absent; "
-    + "abandon {reason}: abandon(session, reason); reload {pack}: reloadSession(session, pack), a fresh GET body. "
+    + "abandon {reason}: abandon(session, reason); reload {pack}: reloadSession(session, pack), a fresh GET body, with what is "
+    + "pending kept on top less the acked entries its head_seq has reached, and a read-only copy settled as a pack event that "
+    + "makes the pack read-only settles it (below). "
     + "`result` is what the function returned besides the session, and only these have one: edit {refused: null, or why "
     + "nothing was taken}; nextBatch null (nothing queued, or a batch is already out) or {batch: {ops, base_seq}}, the body "
     + "to POST; receive {gap} (true: an event is missing before one given; fetch from session.seq); batchAnswered "
-    + "{catchUp} (true: fetch events from session.seq). "
+    + "{catchUp} (true: fetch events from session.seq; true when an event was missing, the page has_more, or an acked entry "
+    + "still waits). "
     + "`session` is the whole session afterwards: me; pack (the body without members and items, kept current by pack "
     + "events; its head_seq follows the newest event applied); members; confirmed (uuid to {kind, name, data, deleted}: "
     + "the items as the server has confirmed them as of event `seq`; a deleted one stays, name \"\" and data null); info "
     + "(uuid to the item's body without data, for each live confirmed item); order (the confirmed uuids in the order they "
-    + "were added); seq; pending ([{op, state}]: edits made here, each op carrying its client_op_id, state queued, sent "
-    + "(in the batch out) or acked (taken by the server, its event not yet seen)); dropped ([{op, reason}]: edits the pack "
-    + "will never take); readOnly; gone (null, removed, not_found or forbidden); diverged (an event the server applied "
+    + "were added); seq; pending ([{op, state}], an acked one {op, state, seq}: edits made here, each op carrying its "
+    + "client_op_id, state queued, sent (in the batch out) or acked (taken by the server, its event not yet seen here; seq "
+    + "is the event number its result named, null if it named none). An acked entry leaves pending when its event arrives, "
+    + "or as soon as session.seq reaches its seq, its effect then being in confirmed whether or not that event was applied "
+    + "here (a reload, or events seen before the batch's answer, can move seq past it); one with seq null waits for its "
+    + "event); dropped ([{op, reason}]: edits given up as not taken, in the order they were made: only queued and sent ones "
+    + "are ever dropped, never an acked one, which the pack has; one known exception is below); readOnly; gone (null, removed, "
+    + "not_found or forbidden); diverged (an event the server applied "
     + "did not apply here: load the pack again); view (confirmed with every pending op applied over it in order, by the "
     + "rules of packs/ops.json). "
     + "`visible` is visibleItems(session): the live items of `view`, those in `order` first, then the ones made here in the "
@@ -826,9 +1015,24 @@ const sessionFixture = () => withoutClockOrRandomness(() => ({
     + "dropped op touched, in the order first touched, rebuilt from the item as now confirmed (from nothing, for one made "
     + "here or now deleted) with those ops applied in order, an op that does not apply passed over; an item that ends "
     + "deleted or never made is left out. "
-    + "Refusals: a batch that got no answer, a 401, a 429 or a 5xx is sent again unchanged; 423 drops everything pending as "
-    + "pack_finished; 403 pack_read_only everything as read_only; any other 403, or a 404, everything as gone; any other "
-    + "status (400, 409, 413, 422, ...) drops that batch only, named by the body's reason, else its code, else http_<status>. "
+    + "Settling (after every receive, reload, batchAnswered, and a 400/413-like refusal): a session that is gone (an event "
+    + "removed me from a pack not shared with a team) drops everything not taken, queued and sent, as gone at once, since "
+    + "nothing waits for the answer of a batch out; a read-only one (finished, or I am a viewer) drops what is queued, as "
+    + "pack_finished when the pack is finished, else read_only, but not while a batch is out: the server decides only when "
+    + "the batch reaches the pack, which may take it yet (it took it before the finish, or takes it after a reopen), so "
+    + "nothing is dropped until that batch is answered, and then everything in the order it was made. "
+    + "Refusals: a batch that got no answer, a 401, a 429 or a 5xx is sent again unchanged, and is not settled, in a pack "
+    + "seen read-only either (the server may have taken it; nextBatch sends it again, with what is queued behind it); 423 "
+    + "drops everything not taken (queued or sent) as pack_finished and takes finished_by and finished_at from the failure, "
+    + "each one it has, null included (one absent leaves the pack's as it was); 403 pack_read_only drops everything not "
+    + "taken as read_only; any other 403, or a 404, everything not taken as gone; an acked entry stays pending through all "
+    + "three; any other status (400, 409, 413, 422, ...) drops that batch only, named by the body's reason, else its code, "
+    + "else http_<status>, and the rest is then settled. "
+    + "The known exception, pinned as the web does it and an open question for the server: a batch whose answer was lost "
+    + "may have been taken, and sent again it is refused (423, 403 pack_read_only, or a 413 with another operation in it) "
+    + "before the server looks for the operations it already has, so it is dropped with the rest and offered back although "
+    + "the pack has it; the same when a read-only pack is seen (an event or a reload) after its answer was lost and before "
+    + "it goes again. "
     + "So a 422, which the sign-in library answers for a token it cannot read, is dropped as http_422 where a 401 waits for "
     + "the person to sign in again; that may be a web bug (AGENTS.md §15) and is pinned as the web does it today. "
     + "Every input is shaped as the server sends it: packSession.js also has defaults for what the server always sends "
@@ -841,7 +1045,13 @@ const sessionFixture = () => withoutClockOrRandomness(() => ({
     + "{id, role}, with no name or member_count (from a team, it keeps the old team's name and member_count until the pack "
     + "is loaded again); an item's info after its item.create event has source null or the event's source ({kind, uuid, "
     + "revision} for a copy from a library) with original: null added, and no original_updated_at, pack_changes or "
-    + "last_pack_change; an item.replace by me keeps whatever else the source held. (A pack.share that named a team and no "
+    + "last_pack_change. After an item.replace, a source (where there is one) is in the server's shape (pack_support.source_body): "
+    + "revision is the event's source_revision; original is \"same\" when the actor is me and the source names an original "
+    + "(uuid not null), else null (the server lets only whoever copied an item in update it, only from an original the copy "
+    + "names, and tells nobody else anything about that original); original_updated_at, pack_changes and last_pack_change are "
+    + "null (the server counts nothing an update would replace while the original is the same, gives none of the three to "
+    + "anyone but the copier, and the event does not say when the original last changed, so original_updated_at is not "
+    + "known until the pack is loaded again). (A pack.share that named a team and no "
     + "team_role would leave pack.team's role absent; the server always sends one, and no scenario has it.) So a port holds "
     + "the session's pack, members and info as JSON, or in types whose fields are left out when absent, never decoding them "
     + "into the server's types and writing them out again, which would add nulls or fail. Objects compare without regard "
@@ -901,6 +1111,19 @@ describe("mission pack session fixture", () => {
       ["pack_finished", "read_only", "gone", "bad_path", "item_too_large", "http_400", "http_409", "http_422", "signed_out"]);
     has(sessions.map((s) => s.gone), [null, "removed", "not_found", "forbidden"]);
     has(sessions.flatMap((s) => s.pending.map((p) => p.state)), ["queued", "sent", "acked"]);
+    // Every result names its event (the server's always do), and only an acked entry carries one.
+    sessions.flatMap((s) => s.pending).forEach((p) => expect(p.state === "acked" ? Number.isInteger(p.seq) : !("seq" in p)).toBe(true));
+    // An acked entry that left pending through a reload, before its event was applied here.
+    expect(steps.some((s, i) => s.do === "reload" && steps[i - 1].session.pending.some((p) => p.state === "acked")
+      && !s.session.pending.some((p) => p.state === "acked"))).toBe(true);
+    // A pack seen read-only while a batch is out holds it (and what is queued behind it) for that batch's answer...
+    expect(sessions.some((s) => s.readOnly && !s.gone && s.pending.some((p) => p.state === "sent")
+      && s.pending.some((p) => p.state === "queued"))).toBe(true);
+    // ...so what is dropped is always in the order it was made (newId counts up in that order, per scenario).
+    sessions.forEach((s) => {
+      const made = s.dropped.map((d) => Number(d.op.client_op_id.slice("op-".length)));
+      expect(made).toEqual([...made].sort((a, b) => a - b));
+    });
     expect(sessions.some((s) => s.diverged)).toBe(true);
     expect(steps.some((s) => s.visible.some((item) => item.pendingCreate))).toBe(true);
     expect(scenarios.filter((s) => s.dropped_versions.length > 0).length).toBeGreaterThanOrEqual(5);
