@@ -1,6 +1,7 @@
 package app.ezpztac.data
 
 import app.ezpztac.model.Diagram
+import app.ezpztac.model.DiagramJson
 import app.ezpztac.model.DiagramNormalizer
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
@@ -12,11 +13,9 @@ import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.sync.SyncStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.encodeToJsonElement
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,7 +47,6 @@ class DiagramRepository @Inject constructor(
     private val feed: RecordFeed,
     private val scheduler: SyncScheduler,
 ) {
-    private val json = Json { encodeDefaults = true; explicitNulls = true }
     private val env = DiagramNormalizer.Environment()
 
     /** The diagrams, as a list that updates itself (a sync that brings one in, an edit, a delete). */
@@ -62,7 +60,7 @@ class DiagramRepository @Inject constructor(
         val uuid = java.util.UUID.randomUUID().toString()
         val diagram = checkNotNull(
             DiagramNormalizer.fromTarget(
-                target = json.encodeToJsonElement(DiagramTarget.serializer(), target), mgrs = target.mgrs, id = uuid, name = name, env = env,
+                target = DiagramJson.encode(target), mgrs = target.mgrs, id = uuid, name = name, env = env,
             ),
         ) { "the target is not a position" }
         sync.create(RecordKind.LZ, name, serialize(diagram), uuid = uuid)
@@ -125,6 +123,5 @@ class DiagramRepository @Inject constructor(
         )
     }
 
-    private fun serialize(diagram: Diagram): JsonObject =
-        json.encodeToJsonElement(Diagram.serializer(), DiagramNormalizer.serialize(diagram)) as JsonObject
+    private fun serialize(diagram: Diagram): JsonObject = DiagramJson.encode(DiagramNormalizer.serialize(diagram))
 }

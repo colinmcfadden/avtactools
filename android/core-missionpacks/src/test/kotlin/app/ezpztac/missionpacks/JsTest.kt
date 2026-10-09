@@ -133,4 +133,133 @@ class JsTest {
         assertFalse(Js.truthy(null))
         assertFalse(Js.truthy(JsonPrimitive(Double.NaN)))
     }
+
+    @Test
+    fun `a value is read as a number as JavaScript's Number reads it`() {
+        // ["0x5A", "0o17", "0b11", " ", "", "\u00A0 42 \uFEFF", "1e2", "+90", ".5", "5.", "Infinity", "-Infinity", "-0x5A", "1_000",
+        //  "270°", "\u200B90", "0x", "0o19", "abc"].map(Number), then true, false, null, [], [7], [[7]], ["8"], [1, 2], [null], {}.
+        val texts = listOf(
+            "0x5A" to 90.0, "0o17" to 15.0, "0b11" to 3.0, "0XFF" to 255.0, " " to 0.0, "" to 0.0, "\u00A0 42 \uFEFF" to 42.0,
+            "1e2" to 100.0, "+90" to 90.0, ".5" to 0.5, "5." to 5.0, "Infinity" to Double.POSITIVE_INFINITY,
+            "-Infinity" to Double.NEGATIVE_INFINITY, "\u2028\t7\n" to 7.0,
+        )
+        texts.forEach { (text, number) -> assertEquals(number, Js.toNumber(JsonPrimitive(text)), "Number(${JsonPrimitive(text)})") }
+        listOf("-0x5A", "1_000", "270°", "\u200B90", "\u001C90", "0x", "0o19", "abc", ".", "e5", "infinity", "1e", "0x1p3").forEach {
+            assertTrue(Js.toNumber(JsonPrimitive(it)).isNaN(), "Number(${JsonPrimitive(it)}) is NaN")
+        }
+        fun of(text: String) = Js.toNumber(Json.parseToJsonElement(text))
+        assertEquals(1.0, of("true"))
+        assertEquals(0.0, of("false"))
+        assertEquals(0.0, of("null"))
+        assertEquals(0.0, of("[]"))
+        assertEquals(7.0, of("[7]"))
+        assertEquals(7.0, of("[[7]]"))
+        assertEquals(8.0, of("[\"8\"]"))
+        assertEquals(0.0, of("[null]"))
+        assertTrue(of("[1, 2]").isNaN())
+        assertTrue(of("{}").isNaN())
+        assertTrue(Js.toNumber(null).isNaN())                                            // undefined
+        assertEquals(-12.5, of("-1.25e1"))
+        // Past 2^53 the digits are rounded to the nearest double, as JavaScript reads them.
+        assertEquals(9.007199254740992E15, Js.toNumber(JsonPrimitive("0x20000000000001")))
+    }
+
+    @Test
+    fun `Math round takes a half up, toward positive infinity`() {
+        // [44.5, 359.5, -0.5, -1.5, 2.5, 0.49999999999999994, -2.6, 4503599627370497].map(Math.round)
+        listOf(44.5 to 45.0, 359.5 to 360.0, -0.5 to 0.0, -1.5 to -1.0, 2.5 to 3.0, 0.49999999999999994 to 0.0, -2.6 to -3.0, 4503599627370497.0 to 4503599627370497.0)
+            .forEach { (value, rounded) -> assertEquals(rounded, Js.round(value), "Math.round($value)") }
+        assertTrue(Js.round(Double.NaN).isNaN())
+        assertEquals(Double.POSITIVE_INFINITY, Js.round(Double.POSITIVE_INFINITY))
+    }
+
+    @Test
+    fun `a value is written as a template literal writes it`() {
+        fun text(json: String) = Js.text(Json.parseToJsonElement(json))
+        assertEquals("0", Js.text(JsonPrimitive(-0.0)))                                 // `${-0}`
+        assertEquals("0", JsonPrimitive(Js.round(-0.4)).let(Js::text))
+        assertEquals("1e+21", text("1e21"))
+        assertEquals("90", text("90.0"))
+        assertEquals("0.1", text("0.1"))
+        assertEquals("270°", text("\"270°\""))
+        assertEquals("true", text("true"))
+        assertEquals("null", text("null"))
+        assertEquals("undefined", Js.text(null))
+        assertEquals("1,,a,2,3", text("[1, null, \"a\", [2, 3]]"))
+        assertEquals("[object Object]", text("{\"a\": 1}"))
+        assertEquals("", text("[]"))
+    }
+
+    @Test
+    fun `text is trimmed as JavaScript trims it`() {
+        assertEquals("LZ CROW", Js.trim("\u00A0\uFEFFLZ CROW\u3000\u2028"))
+        assertEquals("lz crow", Js.trim("  lz crow\t\n"))
+        assertEquals("\u200BLZ", Js.trim("\u200BLZ "))                              // a zero-width space is not a space
+        assertEquals("\u001C", Js.trim("\u001C"))                                    // Kotlin's trim takes it; JavaScript's does not
+        assertEquals("", Js.trim("\u00A0\uFEFF\u00A0"))
+        // Every other space JavaScript takes, the ends of the U+2000 run among them.
+        assertEquals("LZ", Js.trim("\u1680\u2000\u200A\u202F\u205FLZ\u2029\u000B\u000C"))
+    }
+
+    @Test
+    fun `a cut never splits a character`() {
+        val heli = "🚁"
+        assertEquals("abc", Js.cut("abcdef", 3))
+        assertEquals("abcdef", Js.cut("abcdef", 6))
+        assertEquals("ab", Js.cut("ab$heli", 3))                                         // the web's slice leaves "ab\uD83D"
+        assertEquals("ab$heli", Js.cut("ab${heli}c", 4))
+        assertEquals("", Js.cut(heli, 1))
+        assertEquals("", Js.cut("abc", 0))
+    }
+
+    @Test
+    fun `a field is read as JavaScript reads one, own fields only`() {
+        val obj = Json.parseToJsonElement("""{"a": 1, "n": null}""")
+        assertEquals(JsonPrimitive(1), Js.prop(obj, "a"))
+        assertEquals(JsonNull, Js.prop(obj, "n"))
+        assertNull(Js.prop(obj, "missing"))
+        assertNull(Js.prop(obj, "constructor"))                                           // never through the prototype
+        val list = Json.parseToJsonElement("""["x", "y"]""")
+        assertEquals(JsonPrimitive("y"), Js.prop(list, "1"))
+        assertEquals(JsonPrimitive(2), Js.prop(list, "length"))
+        assertNull(Js.prop(list, "2"))
+        assertNull(Js.prop(list, "01"))
+        assertEquals(JsonPrimitive("b"), Js.prop(JsonPrimitive("ab"), "1"))
+        assertNull(Js.prop(JsonPrimitive(5), "0"))
+        assertNull(Js.prop(JsonNull, "a"))
+        assertNull(Js.prop(null, "a"))
+    }
+
+    @Test
+    fun `keys, values and a spread are JavaScript's`() {
+        val obj = Json.parseToJsonElement("""{"b": 1, "2": 2, "a": 3}""")
+        assertEquals(listOf("2", "b", "a"), Js.keys(obj))
+        assertEquals(listOf(JsonPrimitive(2), JsonPrimitive(1), JsonPrimitive(3)), Js.values(obj).map { it as JsonPrimitive })
+        assertEquals(listOf("0", "1"), Js.keys(Json.parseToJsonElement("[1, 2]")))
+        assertEquals(listOf("0", "1"), Js.keys(JsonPrimitive("AB")))
+        assertEquals(emptyList<String>(), Js.keys(JsonPrimitive(5)))
+        // {...["a", "b"]}, {..."AB"}, {...null}, {...5}
+        assertEquals(mapOf("0" to JsonPrimitive("a"), "1" to JsonPrimitive("b")), Js.spread(Json.parseToJsonElement("""["a", "b"]""")))
+        assertEquals(mapOf("0" to JsonPrimitive("A"), "1" to JsonPrimitive("B")), Js.spread(JsonPrimitive("AB")))
+        assertTrue(Js.spread(JsonNull).isEmpty())
+        assertTrue(Js.spread(JsonPrimitive(5)).isEmpty())
+    }
+
+    @Test
+    fun `a Map's key is SameValueZero, and an object is only ever itself`() {
+        var n = 0
+        val unique = { (n++).toString() }
+        fun key(text: String) = Js.mapKey(Json.parseToJsonElement(text), unique)
+        assertEquals(key("1"), key("1.0"))
+        assertEquals(key("-0"), key("0"))
+        assertTrue(key("1") != key("\"1\""))
+        assertTrue(key("null") != Js.mapKey(null, unique))                               // null is not undefined
+        assertTrue(key("true") != key("\"true\""))
+        assertTrue(key("{}") != key("{}"))
+        assertTrue(Js.sameValue(JsonPrimitive(1), JsonPrimitive(1.0)))
+        val shared = Json.parseToJsonElement("{}")
+        assertFalse(Js.sameValue(shared, shared))
+        assertTrue(Js.sameValue(null, null))
+        assertFalse(Js.sameValue(null, JsonNull))
+    }
 }
