@@ -25,6 +25,11 @@ public data class StoredSession(
     val verifiedAtEpochSeconds: Long? = null,
 )
 
+/** An access token and the account it is for, so it is never passed on for anyone else ([ApiClient.accessTokens]). */
+internal data class AccessToken(val userId: Int, val token: String) {
+    override fun toString(): String = "AccessToken(user $userId)"                      // never the token itself, in a log or a failed test
+}
+
 /**
  * How long a device may go without the server confirming the account before it must sign in again: 14 days, as the owner decided
  * (docs/NATIVE_APPS_PLAN.md, "Risks and decisions"). It is the one place access that was withdrawn is noticed by a device that never

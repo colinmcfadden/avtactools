@@ -4,7 +4,11 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -26,6 +30,8 @@ import okhttp3.Request
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.io.IOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -89,8 +95,23 @@ public class ApiClient(
     private val holder = AuthStateHolder()
     private val refreshLock = Mutex()
 
+    // The last announcement is replayed: a stream reads its hello's token and only then starts listening, so a refresh landing
+    // in between would otherwise go unheard, and the service would go on checking a token that lapses.
+    private val token = MutableSharedFlow<AccessToken?>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
     /** Who is signed in. [AuthState.Unknown] until [restore] has read the store. */
     public val state: StateFlow<AuthState> get() = holder.state
+
+    /**
+     * An announcement each time the session's token changes: the one just stored (a sign-in, a refresh) with whose it is, or null when the
+     * session was cleared or ended. A live stream listens so it can pass a new token on ([openPackLive]), because the service checks access
+     * again with the last one it was given. It reports changes, not the state: a process that has changed nothing has announced nothing, so
+     * the token in use is read from the store ([storedAccessToken]). Not a StateFlow, which would swallow a sign-out in a process that never
+     * announced a token (null, then null).
+     */
+    internal val accessTokens: SharedFlow<AccessToken?> = token.asSharedFlow()
+
+    internal suspend fun storedAccessToken(): AccessToken? = sessions.read()?.let { AccessToken(it.user.id, it.accessToken) }
 
     /**
      * Reads the stored session, once in the life of the process; after that it returns the state as it is. The shell asks at launch, and so
@@ -133,6 +154,7 @@ public class ApiClient(
         val stored = sessions.read() ?: return@withLock false
         if (!OfflineGrace.expired(stored, nowSeconds())) return@withLock false
         sessions.end(EndedSession("offline_too_long"))
+        token.tryEmit(null)
         holder.set(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"))
         true
     }
@@ -171,6 +193,7 @@ public class ApiClient(
             false
         }
         sessions.clear()
+        token.tryEmit(null)
         holder.set(AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN))
         return acknowledged
     }
@@ -245,6 +268,7 @@ public class ApiClient(
             verifiedAtEpochSeconds = nowSeconds(),
         )
         sessions.write(session)                                                         // before anything relies on it
+        token.tryEmit(AccessToken(session.user.id, session.accessToken))
         holder.set(AuthState.SignedIn(tokens.user))
         return session
     }
@@ -265,6 +289,7 @@ public class ApiClient(
     }
 
     private fun endedWithoutStoring(reason: SignedOutReason, code: String?, message: String): SessionEndedException {
+        token.tryEmit(null)
         holder.set(AuthState.SignedOut(reason, code))
         return SessionEndedException(reason, code, message)
     }
@@ -388,6 +413,19 @@ public class ApiClient(
 
     private fun networkFailure(e: IOException): NetworkException = classify(e)
 
+    // -- Live streams ------------------------------------------------------------------
+
+    /**
+     * What a live stream connects with: every call's connections and settings, plus a ping. A pong that does not come back in time
+     * fails the socket, so a connection that died without a word is noticed, and the traffic keeps a quiet one open behind
+     * Cloudflare, which drops a connection idle for 100 s. Built on first use, once.
+     */
+    internal val liveHttp: OkHttpClient by lazy { http.newBuilder().pingInterval(LIVE_PING_SECONDS, TimeUnit.SECONDS).build() }
+
+    /** Opens a WebSocket, saying which app it is as every call does. Its token goes in its first message ([openPackLive]), not in a header. */
+    internal fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket =
+        liveHttp.newWebSocket(request.newBuilder().header(ClientInfo.HEADER, clientInfo.header).build(), listener)
+
     // -- Reading answers ---------------------------------------------------------------
 
     internal inline fun <reified T> decode(response: ApiResponse): T = try {
@@ -457,6 +495,9 @@ public class ApiClient(
 
         /** An analysis, viewshed or export can take the server a long while; its own timeout is 180 s. */
         const val HEAVY_READ_TIMEOUT_SECONDS: Long = 190
+
+        /** A live stream's ping: a little more often than the service's own (30 s), and well inside Cloudflare's 100 s idle timeout. */
+        const val LIVE_PING_SECONDS: Long = 25
     }
 }
 
