@@ -15,14 +15,20 @@ import androidx.room.RoomDatabase
  * until the version is raised and a migration written.
  */
 @Database(
-    entities = [RecordEntity::class, OutboxEntity::class, SyncStateEntity::class, BlobEntity::class],
-    version = 2,
+    entities = [
+        RecordEntity::class, OutboxEntity::class, SyncStateEntity::class, BlobEntity::class,
+        PackEntity::class, PackItemEntity::class, PackOpEntity::class, PackOwnEntity::class,
+    ],
+    version = 3,
     exportSchema = true,
     // 2: a record can carry a file (a mission's `.msnx`): two columns on the record, two on a send in progress, and the table the bytes live in.
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    // 3: mission packs: four new tables, nothing existing altered.
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 internal abstract class EzpzDatabase : RoomDatabase() {
     abstract fun syncDao(): SyncDao
+
+    abstract fun packDao(): PackDao
 
     companion object {
         const val FILE_NAME = "ezpz.db"

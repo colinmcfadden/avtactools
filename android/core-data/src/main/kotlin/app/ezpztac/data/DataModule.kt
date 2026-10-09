@@ -1,8 +1,13 @@
 package app.ezpztac.data
 
 import android.content.Context
+import app.ezpztac.missionpacks.PackApi
+import app.ezpztac.missionpacks.PackEngine
+import app.ezpztac.missionpacks.PackKeeper
+import app.ezpztac.missionpacks.PackStore
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.SyncRepository
+import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.sync.SyncStore
 import dagger.Module
 import dagger.Provides
@@ -14,7 +19,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
-/** The one database, and what is built on it: the sync store and the repository the screens edit records through. */
+/**
+ * The one database, and what is built on it: the sync store and the repository the screens edit records through, and the mission packs'
+ * store and engine.
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 internal object DataModule {
@@ -59,6 +67,25 @@ internal object DataModule {
     @Singleton
     fun threatMasks(api: ThreatMaskApi, store: ThreatStore): ThreatMasks =
         ThreatMasks(api, store, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+
+    /** Every mission pack held on the device, with the edits to them not yet taken or kept (docs/MISSION_PACKS.md). */
+    @Provides
+    @Singleton
+    fun packStore(database: EzpzDatabase): PackStore = RoomPackStore(database)
+
+    /** What a pack would not take of a person's edits is kept in their library, as `NAME (my edits)`. */
+    @Provides
+    @Singleton
+    fun packKeeper(store: SyncStore): PackKeeper = LibraryPackKeeper(store)
+
+    /**
+     * Mission packs outlive any screen (a pack closed with edits still going out sends them), so the engine runs in a scope of its own.
+     * It asks for a sync when the background has work: edits a pack refused, kept in the library, or a drain that could not finish.
+     */
+    @Provides
+    @Singleton
+    fun packEngine(api: PackApi, store: PackStore, keeper: PackKeeper, scheduler: SyncScheduler): PackEngine =
+        PackEngine(api, store, keeper, CoroutineScope(SupervisorJob() + Dispatchers.Default), requestBackgroundDrain = scheduler::requestSync)
 
     /** An analysis outlives the screen that asked for it (the person may leave while the server works), and applies its result on the main thread, where edits are made. */
     @Provides
