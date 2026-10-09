@@ -704,6 +704,178 @@ class FinishTests(PackCase):
         self.assertEqual([e['type'] for e in self.events(self.uuid)].count('pack.finish'), 1)
 
 
+class LostAnswerTests(PackCase):
+    """A batch whose answer was lost is sent again as it was (docs/MISSION_PACKS.md §5, step 4). When the pack refuses that
+    resend, the refusal says which of its operations the pack already has (``taken``), so the client keeps those as the pack's
+    and offers back only the rest."""
+
+    def setUp(self):
+        super().setUp()
+        self.uuid = self.new_pack()['uuid']
+        self.member(self.uuid, self.sam)
+        self.add_lz(self.uuid)
+
+    def batch(self):
+        return [self.op('item.rename', 'lz-1', name='LZ EAGLE'),
+                self.op('patch', 'lz-1', path=['graphics', 'helicopters', {'id': 'h-9'}], value={'lat': 1}),   # no h-9: skipped
+                self.op('set', 'lz-1', path=['flightData', 'landingHeading'], value=90)]
+
+    def refused(self, response, status, code):
+        body = response.get_json()
+        self.assertEqual((response.status_code, body.get('code')), (status, code), body)
+        return body
+
+    def finish(self):
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/finish'))
+
+    def make_viewer(self, who):
+        self.ok(self.call(self.colin, 'put', f'/api/packs/{self.uuid}/members/{who["id"]}', json={'role': 'viewer'}))
+
+    def test_a_lost_answer_sent_again_to_a_pack_finished_meanwhile_lists_what_the_pack_took(self):
+        batch = self.batch()
+        taken = self.ok(self.send(self.uuid, *batch))['results']          # the answer that never arrived
+        self.finish()
+        head = self.pack(self.uuid)['head_seq']
+        body = self.refused(self.send(self.uuid, *batch), 423, 'pack_finished')
+        self.assertEqual(body['taken'], taken)
+        self.assertEqual(body['finished_by']['name'], 'Colin')
+        self.assertEqual(self.pack(self.uuid)['head_seq'], head)
+
+    def test_a_skipped_operation_is_listed_as_skipped_with_its_reason(self):
+        batch = self.batch()
+        self.ok(self.send(self.uuid, *batch))
+        self.finish()
+        body = self.refused(self.send(self.uuid, *batch), 423, 'pack_finished')
+        self.assertEqual([(t['client_op_id'], t['status'], t['reason']) for t in body['taken']], [
+            (batch[0]['client_op_id'], 'applied', None),
+            (batch[1]['client_op_id'], 'skipped', 'target_missing'),
+            (batch[2]['client_op_id'], 'applied', None),
+        ])
+
+    def test_a_lost_answer_sent_again_by_someone_made_a_viewer_meanwhile_lists_what_the_pack_took(self):
+        batch = self.batch()
+        taken = self.ok(self.send(self.uuid, *batch, who=self.sam))['results']
+        self.make_viewer(self.sam)
+        body = self.refused(self.send(self.uuid, *batch, who=self.sam), 403, 'pack_read_only')
+        self.assertEqual(body['taken'], taken)
+
+    def test_a_batch_refused_as_too_large_lists_what_was_taken_before_and_keeps_none_of_the_rest(self):
+        first = self.batch()
+        taken = self.ok(self.send(self.uuid, *first))['results']
+        head = self.pack(self.uuid)['head_seq']
+        # No answer came, so the edits made since went out with it: the batch grew by one that is too large.
+        with patch.object(pack_support, 'MAX_ITEM_BYTES', 2000):
+            response = self.send(self.uuid, *first, self.op('set', 'lz-1', path=['notes'], value='x' * 3000))
+        body = self.refused(response, 413, 'item_too_large')
+        self.assertEqual((body['item'], body['taken']), ('lz-1', taken))
+        got = self.pack(self.uuid)
+        self.assertEqual((got['head_seq'], self.item(got, 'lz-1')['data'].get('notes')), (head, None))
+
+    def test_a_refusal_of_operations_the_pack_never_saw_lists_none(self):
+        with patch.object(pack_support, 'MAX_ITEM_BYTES', 2000):
+            too_large = self.send(self.uuid, self.op('set', 'lz-1', path=['notes'], value='x' * 3000))
+        self.assertEqual(self.refused(too_large, 413, 'item_too_large')['taken'], [])
+        self.make_viewer(self.sam)
+        self.assertEqual(self.refused(self.send(self.uuid, *self.batch(), who=self.sam), 403, 'pack_read_only')['taken'], [])
+        self.finish()
+        self.assertEqual(self.refused(self.send(self.uuid, *self.batch()), 423, 'pack_finished')['taken'], [])
+
+    def test_someone_not_in_the_pack_is_told_nothing_even_of_operations_they_sent_while_in_it(self):
+        batch = self.batch()
+        self.ok(self.send(self.uuid, *batch, who=self.sam))
+        self.ok(self.call(self.colin, 'delete', f'/api/packs/{self.uuid}/members/{self.sam["id"]}'))
+        self.finish()
+        for who in (self.sam, self.alex):
+            response = self.send(self.uuid, *batch, who=who)
+            self.assertEqual((response.status_code, response.get_json()), (404, {'error': 'Not found', 'code': 'pack_not_found'}))
+
+    def test_only_the_callers_own_operations_in_this_pack_are_listed(self):
+        mine = self.op('item.rename', 'lz-1', name='MINE')
+        self.ok(self.send(self.uuid, mine))
+        sams = self.op('item.rename', 'lz-1', name='SAMS')
+        self.ok(self.send(self.uuid, sams, who=self.sam))
+        other = self.new_pack(name='OP OTHER')['uuid']
+        elsewhere = self.op('item.create', 'lz-9', kind='lz', name='ELSEWHERE', data={})
+        self.ok(self.send(other, elsewhere))
+        self.finish()
+        body = self.refused(self.send(self.uuid, sams, elsewhere, mine), 423, 'pack_finished')
+        self.assertEqual([t['client_op_id'] for t in body['taken']], [mine['client_op_id']])
+
+    def test_what_was_taken_is_listed_in_the_logs_order_whatever_order_it_is_sent_in(self):
+        # Ids that sort against the log's order: the lookup goes through the (pack, client_op_id) index, so rows can come
+        # back in id order, and ids that happen to sort as their seqs do would let a missing sort pass.
+        first = dict(self.op('item.rename', 'lz-1', name='A'), client_op_id='zz-first')
+        second = dict(self.op('item.rename', 'lz-1', name='B'), client_op_id='aa-second')
+        before = self.ok(self.send(self.uuid, first))['results'] + self.ok(self.send(self.uuid, second))['results']
+        self.finish()
+        body = self.refused(self.send(self.uuid, self.op('item.rename', 'lz-1', name='C'), second, first), 423, 'pack_finished')
+        self.assertEqual(body['taken'], before)
+        self.assertLess(body['taken'][0]['seq'], body['taken'][1]['seq'])
+
+    # A removal, a role change and a deletion each hold the pack's lock while they work, and a batch that arrives meanwhile
+    # waits for it. Who the caller is must then be read again, or the answer is decided by what they were before.
+
+    def waiting_for_the_lock_while(self, change):
+        """``change(pack)`` made and committed by someone else just before this request gets the pack's lock."""
+        real = pack_support.lock
+
+        def lock(pack):
+            change(pack)
+            db.session.commit()
+            return real(pack)
+        return patch.object(pack_support, 'lock', new=lock)
+
+    def pack_id(self):
+        with self.app.app_context():
+            return MissionPack.query.filter_by(uuid=self.uuid).one().id
+
+    def test_someone_removed_while_their_resend_waited_for_the_lock_is_told_nothing_of_what_the_pack_took(self):
+        batch = self.batch()
+        self.ok(self.send(self.uuid, *batch, who=self.sam))            # the answer that never arrived
+        self.finish()
+        head = self.pack(self.uuid)['head_seq']
+        sam = self.sam['id']
+        with self.waiting_for_the_lock_while(
+                lambda pack: MissionPackMember.query.filter_by(pack_id=pack.id, user_id=sam).delete()):
+            response = self.send(self.uuid, *batch, who=self.sam)
+        self.assertEqual((response.status_code, response.get_json()), (404, {'error': 'Not found', 'code': 'pack_not_found'}))
+        self.assertEqual(self.pack(self.uuid)['head_seq'], head)
+
+    def test_a_batch_that_waited_for_the_lock_while_the_pack_was_deleted_writes_nothing_into_it(self):
+        def tombstone(pack):
+            # The tombstone alone, the members left in place, so this holds the deletion check and not only the membership one.
+            pack.deleted_at = pack_support.now()
+        pack_id = self.pack_id()
+        events = len(self.db_rows(MissionPackEvent, pack_id=pack_id))
+        with self.waiting_for_the_lock_while(tombstone):
+            response = self.send(self.uuid, self.op('item.create', 'lz-2', kind='lz', name='LZ CROW', data={}), who=self.sam)
+        self.assertEqual((response.status_code, response.get_json()), (404, {'error': 'Not found', 'code': 'pack_not_found'}))
+        self.assertEqual(len(self.db_rows(MissionPackEvent, pack_id=pack_id)), events)
+        self.assertEqual(self.db_rows(MissionPackItem, pack_id=pack_id, uuid='lz-2'), [])
+
+    def test_someone_made_a_viewer_while_their_resend_waited_for_the_lock_is_refused_as_one_and_told_what_the_pack_took(self):
+        batch = self.batch()
+        taken = self.ok(self.send(self.uuid, *batch, who=self.sam))['results']
+        head = self.pack(self.uuid)['head_seq']
+        sam = self.sam['id']
+        with self.waiting_for_the_lock_while(
+                lambda pack: MissionPackMember.query.filter_by(pack_id=pack.id, user_id=sam).update({'role': 'viewer'})):
+            response = self.send(self.uuid, *batch, self.op('item.rename', 'lz-1', name='LZ CROW'), who=self.sam)
+        self.assertEqual(self.refused(response, 403, 'pack_read_only')['taken'], taken)
+        got = self.pack(self.uuid)
+        self.assertEqual((got['head_seq'], self.item(got, 'lz-1')['name']), (head, 'LZ EAGLE'))
+
+    def test_a_malformed_batch_is_refused_before_the_pack_is_looked_at_so_it_lists_nothing(self):
+        # Whether a batch is well formed depends on its operations alone, so one the pack took is well formed when it is sent
+        # again as it was. A 400 is a client's own mistake, and comes before the server knows whether the caller is in the pack.
+        batch = self.batch()
+        self.ok(self.send(self.uuid, *batch))
+        self.assertEqual(self.ok(self.send(self.uuid, *batch))['results'][0]['client_op_id'], batch[0]['client_op_id'])
+        for who in (self.colin, self.alex):
+            body = self.refused(self.send(self.uuid, *batch, self.op('set', 'lz-1', path=[], value=1), who=who), 400, 'invalid_op')
+            self.assertNotIn('taken', body)
+
+
 class DuplicateTests(PackCase):
     def test_a_duplicate_is_a_new_pack_with_copies_and_no_link_to_anyones_library(self):
         source = self.new_pack()
@@ -1395,6 +1567,31 @@ class ContractTests(PackCase):
         self.conforms(self.call(self.alex, 'post', f'/api/invites/{invite_id}/accept'), '/api/invites/{invite_id}/accept', 'post', 200)
         self.conforms(self.call(self.colin, 'delete', f'/api/packs/{uuid_}/members/{self.sam["id"]}'),
                       '/api/packs/{uuid}/members/{user_id}', 'delete', 200)
+
+    def test_a_refusal_that_lists_what_the_pack_took(self):
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam)
+        self.add_lz(uuid_)
+        mine = [self.op('item.rename', 'lz-1', name='A'), self.op('remove', 'lz-1', path=['graphics', 'helicopters', {'id': 'zz'}])]
+        self.ok(self.send(uuid_, *mine, who=self.sam))
+        with patch.object(pack_support, 'MAX_ITEM_BYTES', 2000):
+            too_large = self.send(uuid_, *mine, self.op('set', 'lz-1', path=['notes'], value='x' * 3000), who=self.sam)
+        self.conforms(too_large, '/api/packs/{uuid}/ops', 'post', 413)
+        self.ok(self.call(self.colin, 'put', f'/api/packs/{uuid_}/members/{self.sam["id"]}', json={'role': 'viewer'}))
+        read_only = self.send(uuid_, *mine, who=self.sam)
+        self.conforms(read_only, '/api/packs/{uuid}/ops', 'post', 403)
+        self.ok(self.call(self.colin, 'put', f'/api/packs/{uuid_}/members/{self.sam["id"]}', json={'role': 'editor'}))
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{uuid_}/finish'))
+        finished = self.send(uuid_, *mine, who=self.sam)
+        self.conforms(finished, '/api/packs/{uuid}/ops', 'post', 423)
+        for response in (too_large, read_only, finished):
+            self.assertEqual([t['status'] for t in response.get_json()['taken']], ['applied', 'skipped'])
+        body = finished.get_json()
+        self.assertTrue(check_response(self.spec, '/api/packs/{uuid}/ops', 'post', 423,
+                                       dict(body, taken=[dict(body['taken'][0], status='pending')])))
+        self.assertTrue(check_response(self.spec, '/api/packs/{uuid}/ops', 'post', 423,
+                                       dict(body, taken=[dict(body['taken'][0], surprise=1)])))
+        self.assertTrue(check_response(self.spec, '/api/packs/{uuid}/ops', 'post', 423, dict(body, taken={})))
 
     def test_the_checker_catches_a_broken_pack(self):
         body = self.new_pack()

@@ -247,34 +247,50 @@ const withoutReached = (session) => {
   return session.pending.some(reached) ? { ...session, pending: session.pending.filter((entry) => !reached(entry)) } : session;
 };
 
+// What the server says it took of the batch out ([{client_op_id, seq, status, reason}]: an answer's results, or a
+// refusal's `taken`) is acked: held until its event comes or seq reaches the event it names (a skipped one too: its
+// event changes nothing), and never sent again or dropped. Only the batch out ("sent") is read: every entry of it
+// still pending is "sent" (receive removed the ones already confirmed, and a pack seen gone dropped the rest), and a
+// name that is not in it (an edit still queued, which the server has never seen, or one an earlier answer acked) is
+// not about this batch and is left as it was. Anything but a list says nothing.
+const acked = (session, results) => {
+  const said = new Map((Array.isArray(results) ? results : []).map((r) => [r.client_op_id, r]));
+  if (said.size === 0) return session;
+  return {
+    ...session,
+    pending: session.pending.map((entry) => {
+      const result = entry.state === "sent" ? said.get(entry.op.client_op_id) : undefined;
+      return result ? { ...entry, state: "acked", seq: result.seq ?? null } : entry;
+    }),
+  };
+};
+
 /** The answer to a batch: its events (everything after base_seq) are applied. */
 export const batchAnswered = (session, answer) => {
   // What the results say the server took is acked before the page is read, so nothing on it (a finish or a
-  // removal, on a page that ends there: has_more) can drop it. Each is held until its event comes or seq reaches
-  // the event its result names (a skipped one too: its event changes nothing), and is never sent again.
-  const answered = new Map((answer.results || []).map((r) => [r.client_op_id, r]));
-  const pending = session.pending.map((entry) => {
-    const result = answered.get(entry.op.client_op_id);
-    return result ? { ...entry, state: "acked", seq: result.seq ?? null } : entry;
-  });
-  const { session: next, gap } = receive({ ...session, pending }, answer.events || []);
+  // removal, on a page that ends there: has_more) can drop it.
+  const { session: next, gap } = receive(acked(session, answer.results), answer.events || []);
   const after = withoutReached(next);
   return { session: withView(after), catchUp: gap || Boolean(answer.has_more) || after.pending.some((e) => e.state === "acked") };
 };
 
 /**
  * A batch the server did not take. `failure` is { status, code, reason, finished_by,
- * finished_at } from the response (packApi.failureOf), or { status: 0 } when nothing
+ * finished_at, taken } from the response (packApi.failureOf), or { status: 0 } when nothing
  * came back (sent again later, unchanged, which the server recognises by each
  * operation's client_op_id). Only what the server has not said it took is dropped.
  *
- * Known gap (docs/MISSION_PACKS.md §5, rule 7): a batch whose answer was lost may
- * have been taken. Sent again, it is refused (423, 403 pack_read_only, or a 413 with
- * another operation in it) before the server looks for what it already has, so the
- * refusal cannot say, and it is dropped with the rest. Only the server can close that.
+ * A batch whose answer was lost may have been taken. Sent again, it can be refused (the
+ * pack was finished, I was made a viewer, or what was added to it is too large), and the
+ * refusal's `taken` (docs/MISSION_PACKS.md §4) names what of it the pack has: that is
+ * acked, as an answer's results are, and only the rest is dropped. A server from before
+ * `taken` says nothing, and the whole batch is dropped (§5, rule 7).
  */
-export const batchFailed = (session, failure) => {
+export const batchFailed = (given, failure) => {
   const { status = 0, code } = failure;
+  // Read whatever the status (the server sends it on 403 pack_read_only, 413 and 423). One a reload has passed is the
+  // pack's already, and its event will not come again (withoutReached).
+  const session = withoutReached(acked(given, failure.taken));
   const sent = session.pending.filter((entry) => entry.state === "sent");
   const others = session.pending.filter((entry) => entry.state !== "sent");
   const drop = (entries, reason) => entries.map(({ op }) => ({ op, reason }));

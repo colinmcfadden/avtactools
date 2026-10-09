@@ -777,6 +777,8 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("pack: finish, by an editor", ask(colin, "post", f"{here}/finish"))
         self.rec("pack: finish", ask(sam, "post", f"{here}/finish"))
         self.rec("ops: a finished pack", ask(colin, "post", ops, json=delete_points))
+        # A batch whose answer was lost, sent again after the pack was finished: the refusal says what the pack took of it.
+        self.rec("ops: a batch the pack took, sent again once it was finished", ask(colin, "post", ops, json=edits))
         self.rec("pack: rename a finished pack", ask(colin, "put", here, json={"name": "Mine"}))
         self.rec("item: copy in, to a finished pack", ask(colin, "post", items, json={"source": {"kind": "lz", "id": saved["id"]}, "item": "lz-4"}))
         self.rec("item: update from the original, in a finished pack", ask(colin, "post", f"{items}/lz-2/update-from-original", json={}))
@@ -818,6 +820,14 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("team: delete, by an admin", ask(sam, "delete", here_team))
         self.rec("team member: remove", ask(colin, "delete", f"{here_team}/members/{sam['id']}"))
         self.rec("team: delete", ask(colin, "delete", here_team))
+
+        # Last, so the events it adds move no number above: a batch whose answer was lost, sent again by someone who may now
+        # only view. The refusal says what the pack took of it.
+        lost = {"ops": [{"type": "set", "item": "lz-1", "path": ["flightData", "callSign"], "value": "SAM 6", "client_op_id": "op-15"}]}
+        self.assertEqual(ask(colin, "put", f"{members}/{sam['id']}", json={"role": "editor"}).status_code, 200)
+        self.assertEqual(ask(sam, "post", ops, json=lost).status_code, 200)
+        self.assertEqual(ask(colin, "put", f"{members}/{sam['id']}", json={"role": "viewer"}).status_code, 200)
+        self.rec("ops: a batch the pack took, sent again by someone who may now only view", ask(sam, "post", ops, json=lost))
 
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()

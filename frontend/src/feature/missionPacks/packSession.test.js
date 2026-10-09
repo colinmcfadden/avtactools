@@ -448,18 +448,19 @@ describe("edits the server took but whose event is not seen yet", () => {
   });
 });
 
+const FINISH = { type: "pack.finish" };
+const FINISHED_423 = { status: 423, code: "pack_finished", finished_by: COLIN, finished_at: T };
+const states = (session) => session.pending.map((e) => [e.op.value, e.state]);
+const drops = (session) => session.dropped.map((d) => [d.op.value, d.reason]);
+
 describe("a pack that turns read-only while a batch is out", () => {
-  const FINISH = { type: "pack.finish" };
   const MADE_VIEWER = { type: "member.role", user_id: SAM.id, role: "viewer" };
-  const FINISHED_423 = { status: 423, code: "pack_finished", finished_by: COLIN, finished_at: T };
 
   /** 90 sent, 91 queued behind it. */
   const outAndQueued = () => {
     const sent = nextBatch(mine(open(), setHeading(90)).session).session;
     return mine(sent, setHeading(91)).session;
   };
-  const states = (session) => session.pending.map((e) => [e.op.value, e.state]);
-  const drops = (session) => session.dropped.map((d) => [d.op.value, d.reason]);
 
   it("drops nothing until the batch is answered, as the server may take it yet, and refuses new edits meanwhile", () => {
     const seen = [
@@ -525,14 +526,112 @@ describe("a pack that turns read-only while a batch is out", () => {
     expect(removed.gone).toBe("removed");
     expect(drops(removed)).toEqual([[90, "gone"], [91, "gone"]]);
   });
+});
 
-  it("is a known gap when the answer to a first send was lost: the resend's 423 cannot say it was taken, so it is dropped", () => {
-    // Taken at 4 the first time; the 423 to the resend comes before the server looks for what it already has.
+// The first send was taken but its answer was lost, so the same batch went again (with what was made meanwhile), and the
+// pack refused it: finished, or I was made a viewer, or what was added to it was too large. The refusal says what of the
+// batch the pack already has (`taken`, docs/MISSION_PACKS.md §4), and that is the pack's, not mine to save.
+describe("a batch sent again after its answer was lost, and refused", () => {
+  const took = (id, seq, status = "applied", reason = null) => ({ client_op_id: id, seq, status, reason });
+  const held = (session) => session.pending.map((e) => [e.op.client_op_id, e.state, e.seq]);
+  const dropIds = (session) => session.dropped.map((d) => [d.op.client_op_id, d.reason]);
+
+  /** 90 sent and its answer lost, 91 made meanwhile: both go again, in one batch. */
+  const resent = () => {
     const lost = batchFailed(nextBatch(mine(open(), setHeading(90)).session).session, { status: 0 });
-    const refused = batchFailed(nextBatch(lost).session, FINISHED_423);
-    expect(drops(refused)).toEqual([[90, "pack_finished"]]);
+    return nextBatch(mine(lost, setHeading(91)).session);
+  };
+
+  it("keeps what a 423 says the pack took the first time and drops only the rest, so my version ends on my last edit", () => {
+    const again = resent();
+    expect(again.batch.ops.map((op) => op.value)).toEqual([90, 91]);
+    const refused = batchFailed(again.session, { ...FINISHED_423, taken: [took("op-1", 4)] });
+    expect(held(refused)).toEqual([["op-1", "acked", 4]]);
+    expect(drops(refused)).toEqual([[91, "pack_finished"]]);
+    expect(refused.readOnly).toBe(true);
+    expect(heading(refused)).toBe(90); // the pack's, until its event shows it
+    expect(droppedVersions(refused).map((v) => v.data.flightData.landingHeading)).toEqual([91]);
     const seen = receive(refused, [ev(4, setHeading(90), { actor: SAM, clientOpId: "op-1" }), ev(5, FINISH)]).session;
-    expect(drops(seen)).toEqual([[90, "pack_finished"]]); // still offered back: docs/MISSION_PACKS.md §5, rule 7
+    expect(seen.pending).toEqual([]);
+    expect(drops(seen)).toEqual([[91, "pack_finished"]]);
+    expect(heading(seen)).toBe(90);
+  });
+
+  it("keeps what a 403 pack_read_only says the pack took, one it skipped too, and drops the rest as read_only", () => {
+    const remove = { type: "remove", item: "lz-1", path: ["graphics", "helicopters", { id: "h-9" }] };
+    const lost = batchFailed(nextBatch(edit(open(), [setHeading(90), remove], newId).session).session, { status: 0 });
+    const again = nextBatch(mine(lost, setHeading(91)).session);
+    expect(again.batch.ops.map((op) => op.client_op_id)).toEqual(["op-1", "op-2", "op-3"]);
+    const refused = batchFailed(again.session, { status: 403, code: "pack_read_only",
+      taken: [took("op-1", 4), took("op-2", 5, "skipped", "target_missing")] });
+    expect(held(refused)).toEqual([["op-1", "acked", 4], ["op-2", "acked", 5]]);
+    expect(dropIds(refused)).toEqual([["op-3", "read_only"]]);
+    expect(refused.pack.role).toBe("viewer");
+  });
+
+  it("keeps what a 413 says the pack took when the batch grew by an edit too large, drops only that batch's rest, and "
+    + "sends what was queued behind it", () => {
+    const lost = batchFailed(nextBatch(mine(open(), setHeading(90)).session).session, { status: 0 });
+    const again = nextBatch(mine(lost, setCallSign("HAWK 9")).session);
+    const queued = mine(again.session, setHeading(92)).session;
+    const refused = batchFailed(queued, { status: 413, code: "item_too_large", taken: [took("op-1", 4)] });
+    expect(held(refused)).toEqual([["op-1", "acked", 4], ["op-3", "queued", undefined]]);
+    expect(dropIds(refused)).toEqual([["op-2", "item_too_large"]]);
+    expect(nextBatch(refused).batch.ops.map((op) => op.client_op_id)).toEqual(["op-3"]);
+  });
+
+  it("lets go at once of what it says the pack took when a reload has already passed that event, which will not come again", () => {
+    const lost = batchFailed(nextBatch(mine(open(), setHeading(90)).session).session, { status: 0 });
+    const loaded = reloadSession(lost, reloaded(4, { landingHeading: 90, callSign: "HAWK 6" }));
+    const again = nextBatch(loaded);
+    expect(again.batch.base_seq).toBe(4);
+    const refused = batchFailed(again.session, { ...FINISHED_423, taken: [took("op-1", 4)] });
+    expect(refused.pending).toEqual([]);
+    expect(refused.dropped).toEqual([]);
+    expect(heading(refused)).toBe(90);
+  });
+
+  it("from a server that does not say what it took (no taken) drops the whole batch, as before", () => {
+    // Passes before and after the change: an older server's refusal reads as nothing taken.
+    const again = resent();
+    expect(drops(batchFailed(again.session, FINISHED_423))).toEqual([[90, "pack_finished"], [91, "pack_finished"]]);
+    expect(drops(batchFailed(again.session, { ...FINISHED_423, taken: "op-1" }))).toEqual([[90, "pack_finished"], [91, "pack_finished"]]);
+  });
+});
+
+// What the server says it took (a refusal's `taken`, an answer's results) is about the batch out. The server names only
+// operations of the batch it was sent, but a client that took any name at its word would ack an edit the server has never
+// seen: never sent, never offered back, and drawn over the view until an event that need not come.
+describe("what the server says it took is read for the batch out only", () => {
+  const took = (id, seq) => ({ client_op_id: id, seq, status: "applied", reason: null });
+
+  it("a 423 whose taken names an edit still queued drops it with the batch, as the pack has never seen it", () => {
+    const out = nextBatch(mine(open(), setHeading(90)).session).session;
+    const refused = batchFailed(mine(out, setHeading(91)).session, { ...FINISHED_423, taken: [took("op-2", 9)] });
+    expect(refused.pending).toEqual([]);
+    expect(drops(refused)).toEqual([[90, "pack_finished"], [91, "pack_finished"]]);
+  });
+
+  it("a 413 whose taken names an edit still queued and one an earlier answer acked leaves both as they were, and the "
+    + "queued one goes next", () => {
+    const first = nextBatch(mine(open(), setHeading(90)).session).session;
+    const answered = batchAnswered(first, { head_seq: 4, results: [took("op-1", 4)], events: [], has_more: false }).session;
+    const out = nextBatch(mine(answered, setHeading(91)).session).session;
+    const refused = batchFailed(mine(out, setHeading(92)).session,
+      { status: 413, code: "item_too_large", taken: [took("op-1", 7), took("op-3", 8)] });
+    expect(refused.pending.map((e) => [e.op.client_op_id, e.state, e.seq])).toEqual([["op-1", "acked", 4], ["op-3", "queued", undefined]]);
+    expect(drops(refused)).toEqual([[91, "item_too_large"]]);
+    expect(nextBatch(refused).batch.ops.map((op) => op.client_op_id)).toEqual(["op-3"]);
+  });
+
+  it("an answer whose results name an edit still queued leaves it queued, and it goes next", () => {
+    const out = nextBatch(mine(open(), setHeading(90)).session).session;
+    const { session } = batchAnswered(mine(out, setHeading(91)).session, {
+      head_seq: 4, has_more: false, results: [took("op-1", 4), took("op-2", 5)],
+      events: [ev(4, setHeading(90), { actor: SAM, clientOpId: "op-1" })],
+    });
+    expect(states(session)).toEqual([[91, "queued"]]);
+    expect(nextBatch(session).batch.ops.map((op) => op.client_op_id)).toEqual(["op-2"]);
   });
 });
 

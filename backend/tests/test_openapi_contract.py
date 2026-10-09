@@ -181,6 +181,17 @@ class PackSessionFixtureTests(unittest.TestCase):
         for step in answered:
             self.conforms(self.answer, step["answer"], "answer")
 
+    def test_what_a_refusal_says_the_pack_took_is_what_the_server_sends(self):
+        # `taken` (what of a refused batch the pack's log already has) comes only on the ops route's 403 pack_read_only,
+        # 413 and 423, as a list of the same results a 200 carries.
+        taken = SPEC["components"]["schemas"]["PackError"]["properties"]["taken"]
+        failures = [step["failure"] for step in self.steps if step["do"] == "batchFailed"]
+        carrying = [failure for failure in failures if "taken" in failure]
+        self.assertGreater(len([failure for failure in carrying if failure["taken"]]), 3)
+        for failure in carrying:
+            self.conforms(taken, failure["taken"], f"taken of a {failure['status']}")
+            self.assertTrue(failure["status"] in (413, 423) or failure.get("code") == "pack_read_only", failure)
+
     def test_every_batch_the_session_sends_is_one_the_route_takes(self):
         batches = [step["result"]["batch"] for step in self.steps if step["do"] == "nextBatch" and step["result"]]
         self.assertGreater(len(batches), 20)

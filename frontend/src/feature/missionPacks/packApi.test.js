@@ -115,6 +115,17 @@ describe("packApi and the contract", () => {
 
 const refused = (status, data) => Object.assign(new Error("refused"), { response: { status, data } });
 
+describe("failureOf", () => {
+  it("passes on what of a refused batch the pack already has, and leaves it out when the server did not say", () => {
+    const taken = [{ client_op_id: "op-1", seq: 4, status: "applied", reason: null }];
+    expect(packApi.failureOf(refused(423, { code: "pack_finished", finished_by: null, finished_at: "2026-10-05T13:00:05", taken })))
+      .toEqual({ status: 423, code: "pack_finished", reason: undefined, finished_by: null, finished_at: "2026-10-05T13:00:05", taken });
+    expect(packApi.failureOf(refused(403, { code: "pack_read_only", taken: [] })).taken).toEqual([]);
+    expect(packApi.failureOf(refused(423, { code: "pack_finished" })).taken).toBeUndefined(); // an older server
+    expect(packApi.failureOf(Object.assign(new Error("Network Error"), {}))).toEqual({ status: 0 });
+  });
+});
+
 describe("packErrorMessage", () => {
   it("says what the server's code means, in the app's words, never the server's text", () => {
     const error = refused(423, { code: "pack_finished", error: "This pack was finished by Colin." });

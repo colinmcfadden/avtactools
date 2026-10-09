@@ -82,18 +82,23 @@ def _load(pack_uuid, user_id, need=None):
     if role is None:
         return None, None, _error('Not found', 404, 'pack_not_found')
     if need == 'edit' and role not in packs.EDIT_ROLES:
-        return None, None, _error('You can view this pack but not change it.', 403, 'pack_read_only')
+        return None, None, _read_only()
     if need == 'owner' and role != 'owner':
         return None, None, _error("Only the pack's owner can do that.", 403, 'owner_only')
     return pack, role, None
 
 
-def _finished(pack):
+def _read_only(**extra):
+    return _error('You can view this pack but not change it.', 403, 'pack_read_only', **extra)
+
+
+def _finished(pack, **extra):
     who = packs.names([pack.finished_by]).get(pack.finished_by) or 'its owner'
     return _error(
         f"This pack was finished by {who}. It is read-only for everyone until the owner reopens it.",
         423, 'pack_finished',
         finished_at=packs.iso(pack.finished_at), finished_by=packs.person(pack.finished_by, packs.names([pack.finished_by])),
+        **extra,
     )
 
 
@@ -390,6 +395,22 @@ def apply_ops(pack_uuid):
     again. A malformed operation refuses the whole batch (400) before anything is
     applied. With ``base_seq``, the answer also carries every event after it, so
     the client can rebase its unconfirmed edits in one round trip.
+
+    A resend can be refused although the pack took the batch the first time: the
+    pack was finished (423), the caller made a viewer (403 ``pack_read_only``), or
+    the batch grew by an edit that is too large (413). Those three refusals always
+    carry ``taken``: the operations of this batch the log already has, the caller's
+    own, in log order, each as its result would have been (possibly none). So the
+    client keeps them as the pack's and offers back only the rest. Nothing is said
+    to someone not in the pack (a bare 404), and a 400 says nothing either: it is
+    decided from the operations alone, before the pack is looked at, and a batch the
+    pack took is well formed when it is sent again as it was.
+
+    Whether the caller is in the pack, as what, and whether the pack is still there are
+    read again under the pack's lock: a removal, a role change or a deletion holds that
+    lock while it works, and a batch that waited for it is answered as the pack is now,
+    not as it was when the batch arrived. A role that comes through a team is best
+    effort: a change to a team's members does not take the lock of the packs it is on.
     """
     me = _me()
     body = request.get_json(silent=True)
@@ -418,15 +439,24 @@ def apply_ops(pack_uuid):
         if 'summary' in op and not isinstance(op['summary'], str):
             return malformed('bad_summary')
 
-    pack, _role, refused = _load(pack_uuid, me.id, need='edit')
+    pack, _role, refused = _load(pack_uuid, me.id)
     if refused:
         return refused
+    # Under the lock even for a viewer, so ``taken`` cannot miss a first send of this batch that is still being applied.
     packs.lock(pack)
-    if pack.status == 'finished':
-        return _finished(pack)
-
+    # Read again now the lock is held (it refreshed the pack): what _load saw may have changed while this waited for it.
+    role = packs.role_of(pack, me.id) if pack.deleted_at is None else None
+    if role is None:
+        return _error('Not found', 404, 'pack_not_found')
     done = {e.client_op_id: e for e in MissionPackEvent.query.filter(
         MissionPackEvent.pack_id == pack.id, MissionPackEvent.client_op_id.in_(seen)).all()}
+    # Plain values, made before a 413 below rolls the session back.
+    taken = [_result(e) for e in sorted(done.values(), key=lambda e: e.seq) if e.user_id == me.id]
+    if role not in packs.EDIT_ROLES:
+        return _read_only(taken=taken)
+    if pack.status == 'finished':
+        return _finished(pack, taken=taken)
+
     # Deleted items too: a uuid is never reused.
     rows = {i.uuid: i for i in MissionPackItem.query.filter(
         MissionPackItem.pack_id == pack.id, MissionPackItem.uuid.in_({op['item'] for op in ops})).all()}
@@ -455,7 +485,7 @@ def apply_ops(pack_uuid):
         after = state[item_uuid]
         if not after['deleted'] and _too_large(after['data']):
             db.session.rollback()
-            return _error('That would make the item larger than 5 MB.', 413, 'item_too_large', item=item_uuid)
+            return _error('That would make the item larger than 5 MB.', 413, 'item_too_large', item=item_uuid, taken=taken)
         row = rows[item_uuid]
         if row is None:
             row = MissionPackItem(pack_id=pack.id, uuid=item_uuid, kind=after['kind'], revision=0, created_by=me.id)

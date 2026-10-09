@@ -1543,6 +1543,17 @@ paths:
         more), so the client can rebase its unconfirmed edits; without it, just this batch's.
         Viewers get 403 `pack_read_only`; a finished pack 423 `pack_finished`; an item that
         would pass 5 MB 413 `item_too_large`.
+
+        Those three refusals always carry `taken` (a server from before it sent none: read that
+        as none): the operations of this batch the pack's log already has, the caller's own, in
+        log order, each as its result in a 200 would be; empty when there are none. A batch
+        whose answer was lost and that is refused when it is sent again (the pack finished, the
+        caller made a viewer, or the batch grew by an edit that is too large) may have been
+        taken the first time: what `taken` lists is the pack's and is not to be offered back
+        as the person's own; the rest of the batch was not taken. A 400 carries no `taken`: it
+        is decided from the operations alone, before the pack is looked at, and a batch the
+        pack took is well formed when it is sent again as it was. Someone not in the pack gets
+        a bare 404.
       security:
         - bearer: []
       requestBody:
@@ -3053,6 +3064,14 @@ components:
         finished_by:
           nullable: true
           allOf: [{ $ref: "#/components/schemas/Person" }]
+        taken:
+          type: array
+          description: |
+            On `POST /api/packs/{uuid}/ops` only, and always on its 403 `pack_read_only`, 413
+            `item_too_large` and 423 `pack_finished`: the operations of the refused batch the pack
+            already has (the caller's own, in log order, possibly none). They were taken by an
+            earlier send of the batch whose answer was lost; the rest of the batch was not taken.
+          items: { $ref: "#/components/schemas/PackOpResult" }
 
     PackTeam:
       type: object
@@ -3283,19 +3302,22 @@ components:
         results:
           type: array
           description: One per operation sent, in order.
-          items:
-            type: object
-            additionalProperties: false
-            required: [client_op_id, seq, status, reason]
-            properties:
-              client_op_id: { type: string }
-              seq: { type: integer, minimum: 1 }
-              status: { type: string, enum: [applied, skipped] }
-              reason: { type: string, nullable: true }
+          items: { $ref: "#/components/schemas/PackOpResult" }
         events:
           type: array
           items: { $ref: "#/components/schemas/PackEvent" }
         has_more: { type: boolean }
+
+    PackOpResult:
+      type: object
+      additionalProperties: false
+      required: [client_op_id, seq, status, reason]
+      description: How one operation went, as the pack's log has it.
+      properties:
+        client_op_id: { type: string }
+        seq: { type: integer, minimum: 1 }
+        status: { type: string, enum: [applied, skipped] }
+        reason: { type: string, nullable: true, description: "Why it was skipped (contracts/fixtures/packs/ops.json); null when applied." }
 
     PackEventPage:
       type: object
