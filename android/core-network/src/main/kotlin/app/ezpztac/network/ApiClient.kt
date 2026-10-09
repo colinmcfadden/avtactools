@@ -1,7 +1,6 @@
 package app.ezpztac.network
 
 import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.BufferOverflow
@@ -395,19 +394,18 @@ public class ApiClient(
             .build()
         val timeout = call.readTimeoutSeconds ?: if (PriorityPaths.isHeavy(call.path)) HEAVY_READ_TIMEOUT_SECONDS else null
         val client = timeout?.let { http.newBuilder().readTimeout(it, TimeUnit.SECONDS).build() } ?: http
-        // Reading the body is blocking network work, and the call resumes on whatever thread asked: from a screen, that is the main thread, where Android refuses it
-        // (NetworkOnMainThreadException). So the whole exchange is on the I/O threads, whoever is asking.
-        return withContext(Dispatchers.IO) {
-            try {
-                client.newCall(request).await().use { response ->
-                    if (!call.binary) return@use Raw(response.code, response.headers, response.body?.string().orEmpty())
-                    // A file is read as bytes; an error's body is still text, which is what the error mapping reads.
-                    val bytes = response.body?.bytes() ?: ByteArray(0)
-                    if (response.code in 200..299) Raw(response.code, response.headers, "", bytes) else Raw(response.code, response.headers, String(bytes, Charsets.UTF_8))
-                }
-            } catch (e: IOException) {
-                throw networkFailure(e)
+        // The answer is read whole inside the call, on OkHttp's own threads. Not on the thread that asked: from a screen that is the main thread, where Android
+        // refuses it (NetworkOnMainThreadException). And not after the call has handed the response over: a read blocks without looking at the coroutine, so a call
+        // cancelled then read on until the whole answer had come or a read timed out (190 s for heavy work), holding the priority gate for work nobody wanted.
+        return try {
+            client.newCall(request).exchange { response ->
+                if (!call.binary) return@exchange Raw(response.code, response.headers, response.body?.string().orEmpty())
+                // A file is read as bytes; an error's body is still text, which is what the error mapping reads.
+                val bytes = response.body?.bytes() ?: ByteArray(0)
+                if (response.code in 200..299) Raw(response.code, response.headers, "", bytes) else Raw(response.code, response.headers, String(bytes, Charsets.UTF_8))
             }
+        } catch (e: IOException) {
+            throw networkFailure(e)
         }
     }
 
@@ -501,16 +499,21 @@ public class ApiClient(
     }
 }
 
-/** Waits for a call to finish, and cancels it if the coroutine is cancelled. */
-private suspend fun okhttp3.Call.await(): Response = suspendCancellableCoroutine { continuation: CancellableContinuation<Response> ->
+/**
+ * Sends the call and reads its answer with [read] on OkHttp's thread, as one wait: a coroutine cancelled at any point, before the answer or while it
+ * arrives, cancels the call, which fails the read at once. A cancelled wait ignores whatever the call does after.
+ */
+private suspend fun <T> okhttp3.Call.exchange(read: (Response) -> T): T = suspendCancellableCoroutine { continuation: CancellableContinuation<T> ->
     continuation.invokeOnCancellation { cancel() }
     enqueue(object : Callback {
         override fun onFailure(call: okhttp3.Call, e: IOException) {
-            if (!continuation.isCancelled) continuation.resumeWith(Result.failure(e))
+            continuation.resumeWith(Result.failure(e))
         }
 
         override fun onResponse(call: okhttp3.Call, response: Response) {
-            continuation.resume(response) { _, value, _ -> value.close() }
+            // Whatever the reading throws goes to the caller. OkHttp swallows an IOException thrown here (it logs it and calls nothing else), which would leave the
+            // call waiting for ever, and a heavy one holding the priority gate; anything else would end OkHttp's thread, and on Android the app.
+            continuation.resumeWith(runCatching { response.use(read) })
         }
     })
 }

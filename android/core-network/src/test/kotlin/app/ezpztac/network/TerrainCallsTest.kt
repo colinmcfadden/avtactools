@@ -165,7 +165,7 @@ class TerrainCallsTest {
         Rig(readTimeoutSeconds = 1).use { rig ->
             rig.serve { Recorded.mock("analyze-field").setBodyDelay(2, TimeUnit.SECONDS) }
             assertEquals("4050", rig.client.analyzeField(target).elevation)
-            assertThrows<NetworkException> { rig.client.changes() }.also { assertTrue(it.requestMayHaveBeenSent) }
+            assertThrows<NetworkException> { withTimeout(5_000) { rig.client.changes() } }.also { assertTrue(it.requestMayHaveBeenSent) }
         }
     }
 

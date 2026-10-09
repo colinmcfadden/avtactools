@@ -714,8 +714,15 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   module's outputs: a test then fails for no visible reason (one did: "expected NO DATA but was LANDING"). Touch the restored file
   (the harness does) and confirm with `./gradlew :<module>:clean :<module>:test --no-build-cache` before believing a failure.
 - **A call resumes on the thread that made it, and Android forbids reading a response there.** `ApiClient` read the body after `await()`, on the main thread when a view model started the call, so the
-  first call made from a screen (the threat mask) failed with `NetworkOnMainThreadException` while every JVM test passed. The whole exchange is now on `Dispatchers.IO` inside `send`, and
-  `ApiClientThreadTest` fails without that (it records the thread that reads the body). Calls from a worker or a service scope never showed it.
+  first call made from a screen (the threat mask) failed with `NetworkOnMainThreadException` while every JVM test passed. The answer is now read whole on OkHttp's own threads, inside the
+  call (`exchange` in `ApiClient.kt`), and `ApiClientThreadTest` fails without that (it records the thread that reads the body). Calls from a worker or a service scope never showed it.
+- **A cancelled call must stop reading, and a mock server must not outsleep its own shutdown.** A blocked read does not look at the coroutine, so a heavy call cancelled once its headers
+  had come read on until the whole answer was in (or a read timed out, 190 s), holding the priority gate; reading inside the cancellable call fixed it, and `ApiClientCallsTest` cancels at
+  both moments. What that read throws must be handed to the waiting coroutine: OkHttp only logs an IOException thrown from `onResponse`, so the call would wait for ever.
+  `ApiClientCallsTest` cuts an answer off part way to hold that, and every test that reaches a failed read has a timeout, so a regression fails instead of hanging the run.
+  The test that should have shown it was flaky instead: MockWebServer's `setBodyDelay` is a `Thread.sleep` that closing the socket does not end, and `shutdown` gives its
+  threads 5 s, so a 5 s delay cancelled just after the request arrived failed now and then with "Gave up waiting for queue to shut down". Hold a request with `SocketPolicy.NO_RESPONSE`
+  (or a latch released before the server closes) and trickle an answer with `throttleBody`, which stops when the socket closes.
 - **Android's XML parser throws where the JVM's does not.** `DocumentBuilderFactory.setXIncludeAware(false)` is `UnsupportedOperationException` on Android, so the mission reader refused *every*
   mission on a device while every JVM test passed; nothing had run on a device until a real file was tried. Any parser setting is best effort (`try`), the text check is what holds, and a
   feature that reads a file needs one trial on a device, not only under Robolectric.
