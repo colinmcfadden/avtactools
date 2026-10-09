@@ -126,6 +126,18 @@ class LibraryPackKeeperTest {
     }
 
     @Test
+    fun `a version as large as a pack item is kept, and the library reads it back`() = runBlocking<Unit> {
+        // Edits refused as too large are kept by definition over the server's 5 MB, past a cursor window.
+        val big = lz.copy(key = "p-1:lz-9:op-8", data = json("""{"notes": "${"x".repeat(5 * 1024 * 1024 + 1)}"}"""))
+        val kept = keeper.keep("p-1", listOf(big))
+        assertTrue(kept.single() is KeptOutcome.Saved)
+        // The library's lists, its next send and keeping it again all read it.
+        assertEquals(big.data.toString(), store.transaction { records(RecordKind.LZ) }.single().data.toString())
+        assertEquals(listOf(Operation.CREATE), store.transaction { outbox() }.map { it.operation })
+        assertEquals(kept, keeper.keep("p-1", listOf(big)))
+    }
+
+    @Test
     fun `a version is named by its key alone`() {
         assertEquals(LibraryPackKeeper.uuidFor("p-1:lz-1:op-3"), LibraryPackKeeper.uuidFor("p-1:lz-1:op-3"))
         assertTrue(LibraryPackKeeper.uuidFor("p-1:lz-1:op-3") != LibraryPackKeeper.uuidFor("p-1:lz-1:op-4"))

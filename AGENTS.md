@@ -995,10 +995,12 @@ client is built around not losing one:
 - **Room traps.** `@Insert(onConflict = REPLACE)` deletes and re-inserts, which moves an edited record to the end of the list:
   use `@Upsert`. The Room KSP argument is `room.schemaLocation` (`room.schemaDirectory` is the *Gradle plugin's* name and is
   ignored here, with only a warning). **A row bigger than the 2 MB cursor window cannot be read at all** (`SQLiteBlobTooBigException`;
-  Robolectric's native SQLite enforces it too, so a test finds it): a mission-pack item may be 5 MB, so `RoomPackStore` reads a long
-  value in parts with `substr` (`RoomPackStoreTest` keeps a 3 MB item). The library's `record` and `blob` tables read whole rows and do
-  not yet. And `Json.encodeToString` writes every number again (`2.50` comes back `2.5`, an integer past 2^53 rounded);
-  `JsonElement.toString()` keeps each literal's text, which the pack store relies on.
+  Robolectric's native SQLite enforces it too, so a test finds it): a mission-pack item may be 5 MB, a library document as large, a
+  mission's file larger. So a query reads such a column only when it is short, with its length beside it, and a longer one is read in
+  parts with `substr` in the same transaction (`LongValues`; `RoomPackStore`, and `RoomSyncStore` for a record's document, a send's
+  and a file; their tests keep 3–5 MB values). A new query on one of those columns must do the same. And `Json.encodeToString` writes a
+  number again (`2.50` comes back `2.5`, an integer past a `Long`'s range rounded); `JsonElement.toString()` keeps each literal's text,
+  which the pack store relies on (the library's store still encodes, harmlessly for the values it holds).
 - **A route record is the web's saved route, not one route.** `/api/routes` takes a multipart form (`name`, `kind`, `route_data` as JSON text, `client_uuid`,
   and for a mission an `.msnx` file); a `sketch` record's `route_data` is the *set* of routes drawn together, which is what the web saves, so a record here
   is that document whole (`SketchRoute` and the sketch ops know its routes). The change feed carries `kind`, `file_name`, `has_file` and `data` (the

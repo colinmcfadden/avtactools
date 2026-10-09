@@ -29,13 +29,13 @@ internal class RoomPackStore(private val database: EzpzDatabase) : PackStore {
         val row = dao.pack(pack)?.takeIf { it.userId == me } ?: return@withTransaction null
         val confirmed = LinkedHashMap<String, PackItemState>()
         val info = LinkedHashMap<String, JsonObject>()
-        dao.items(pack, READ_PART).forEach { item ->
-            val data = item.data ?: readInParts(item.size) { from, count -> dao.itemDataPart(pack, item.uuid, from, count) }
+        dao.items(pack, LongValues.TEXT_PART).forEach { item ->
+            val data = item.data ?: LongValues.text(item.size) { from, count -> dao.itemDataPart(pack, item.uuid, from, count) }
             confirmed[item.uuid] = PackItemState(item.kind, item.name, data.toElement(), item.deleted)
             item.info?.let { info[item.uuid] = it.toObject() }
         }
-        val ops = dao.ops(pack, READ_PART).map { read ->
-            read to (read.op ?: readInParts(read.size) { from, count -> dao.opPart(pack, read.clientOpId, from, count) }).toObject()
+        val ops = dao.ops(pack, LongValues.TEXT_PART).map { read ->
+            read to (read.op ?: LongValues.text(read.size) { from, count -> dao.opPart(pack, read.clientOpId, from, count) }).toObject()
         }
         val pending = ops.filter { (read) -> read.state != PackOpState.DROPPED.name }.map { (read, op) ->
             val state = PendingState.valueOf(read.state)
@@ -113,6 +113,9 @@ internal class RoomPackStore(private val database: EzpzDatabase) : PackStore {
     override suspend fun prune(me: Int, keep: Int) {
         database.withTransaction {
             dao.byLastOpened(me).drop(keep).filter { dao.opCount(it) == 0 }.forEach { forgetIn(it) }
+            // Own fields carry no account: those of a pack no longer held (written as it was forgotten) are let go here, so a copy
+            // stored later, perhaps another account's, does not start with them. The engine prunes only with no pack open.
+            dao.deleteOwnWithoutPack()
         }
     }
 
@@ -174,24 +177,9 @@ internal class RoomPackStore(private val database: EzpzDatabase) : PackStore {
         }
     }
 
-    // A value too long to read in one go, read [READ_PART] characters at a time and put together. SQLite counts characters (code points)
-    // in a text, so a part never splits one.
-    private suspend fun readInParts(size: Int, part: suspend (from: Int, count: Int) -> String?): String {
-        val whole = StringBuilder(size)
-        var from = 1
-        while (from <= size) {
-            whole.append(checkNotNull(part(from, READ_PART)) { "a value went while it was read" })
-            from += READ_PART
-        }
-        return whole.toString()
-    }
-
     private companion object {
         // Below SQLite's oldest limit on the values one statement takes (999).
         const val IN_CHUNK = 500
-
-        // Characters read at a time: at most 1 MB in UTF-8 even if every one takes four bytes, well inside a 2 MB cursor window.
-        const val READ_PART = 256 * 1024
     }
 }
 

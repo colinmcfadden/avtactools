@@ -112,6 +112,10 @@ internal interface PackDao {
     @Query("DELETE FROM pack_own WHERE packUuid = :pack")
     suspend fun deleteAllOwn(pack: String)
 
+    /** Own fields of packs no longer held: written after their pack was forgotten. */
+    @Query("DELETE FROM pack_own WHERE packUuid NOT IN (SELECT uuid FROM pack)")
+    suspend fun deleteOwnWithoutPack()
+
     @Query("DELETE FROM pack")
     suspend fun wipePacks()
 

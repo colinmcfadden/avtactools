@@ -1,6 +1,7 @@
 package app.ezpztac.data
 
 import android.content.Context
+import android.database.sqlite.SQLiteConstraintException
 import androidx.test.core.app.ApplicationProvider
 import app.ezpztac.missionpacks.PackFailure
 import app.ezpztac.missionpacks.PackSession
@@ -186,6 +187,26 @@ class RoomPackStoreTest {
         assertNull(store.load("p-1", COLIN))
         assertNull(store.own("p-1", "lz-1"))
         assertTrue(store.owed(COLIN).isEmpty())
+    }
+
+    @Test
+    fun `the database itself refuses two edits under one name in a pack`() = runBlocking<Unit> {
+        val dao = database.packDao()
+        val op = PackOpEntity(0, "p-1", SAM, "op-1", "{}", PackOpState.QUEUED.name, null, null, null)
+        dao.insertOp(op)
+        dao.insertOp(op.copy(packUuid = "p-2"))                                     // the same name in another pack is another edit
+        assertThrows(SQLiteConstraintException::class.java) { runBlocking { dao.insertOp(op) } }
+    }
+
+    @Test
+    fun `pruning lets go of own fields whose pack is no longer held, and keeps the rest`() = runBlocking<Unit> {
+        store.write(null, PackSessions.open(body(items = 1), SAM), SAM)
+        val view = json("""{"view": {"baseMap": "topo"}}""")
+        store.putOwn("p-1", "lz-1", view)
+        store.putOwn("p-forgotten", "lz-1", view)                                   // written as its pack was forgotten
+        store.prune(SAM, keep = 10)
+        assertEquals(view.toString(), store.own("p-1", "lz-1").toString())
+        assertNull(store.own("p-forgotten", "lz-1"))
     }
 
     @Test

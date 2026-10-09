@@ -19,8 +19,11 @@ import java.util.UUID
  * Nothing a person made is lost silently (owner decision, 2026-10-08).
  *
  * A version's record is named for good by its key ([uuidFor]), so keeping it again (the app stopped between keeping it and letting the
- * edits go) finds the record and makes no second one, even if it has been deleted since and the deletion is still waiting to go. Each is
- * kept in a transaction of its own; the engine never calls this inside a pack transaction, so the two stores' transactions never nest.
+ * edits go) finds the record and makes no second one, even if it has been deleted since and the deletion is still waiting to go. A record
+ * gone for good (deleted before it was ever sent, or its deletion confirmed) cannot be found, and is made again: that takes a failure in
+ * the moment between keeping and letting go, and the person deleting the copy before the next keep, which an app start does first.
+ * Each is kept in a transaction of its own; the engine never calls this inside a pack transaction, so the two stores' transactions never
+ * nest. A version can be as large as a pack item (5 MB, or more for edits refused as too large); the library reads it in parts.
  */
 internal class LibraryPackKeeper(private val store: SyncStore) : PackKeeper {
     override suspend fun keep(pack: String, versions: List<KeptVersion>): List<KeptOutcome> = versions.map { keepOne(it) }
