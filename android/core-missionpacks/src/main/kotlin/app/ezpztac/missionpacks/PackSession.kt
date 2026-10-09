@@ -299,6 +299,14 @@ public object PackSessions {
     public fun restored(session: PackSession): PackSession = batchFailed(session, PackFailure(status = 0))
 
     /**
+     * The session with its [PackSession.view] worked out again: the pending edits applied over the confirmed items, in
+     * order (with none, the view is the confirmed items themselves), and nothing else changed. A store that does not keep
+     * the view rebuilds it with this when it reads a session back, and does nothing more to it ([PackStore.load]).
+     */
+    public fun withView(session: PackSession): PackSession =
+        session.copy(view = session.pending.fold(session.confirmed) { items, entry -> PackOps.apply(items, entry.op).items })
+
+    /**
      * The session without the dropped edits named by their client_op_id, once they have been kept in the library or the
      * person let them go. The web keeps them for as long as the page lives; here they are kept on the device until then.
      */
@@ -347,10 +355,6 @@ public object PackSessions {
     private fun objects(value: JsonElement?): List<JsonObject> = (value as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
 
     private fun readOnlyFor(role: JsonElement?, status: JsonElement?): Boolean = text(status) == "finished" || text(role) == "viewer"
-
-    // Every pending edit applied over the confirmed items, in order. With none, the view is the confirmed items themselves.
-    private fun withView(session: PackSession): PackSession =
-        session.copy(view = session.pending.fold(session.confirmed) { items, entry -> PackOps.apply(items, entry.op).items })
 
     // JavaScript's `key: value` in an object literal or a spread: a value that is undefined (a key the source did not have)
     // leaves the key out of the JSON, so here it is taken away.
