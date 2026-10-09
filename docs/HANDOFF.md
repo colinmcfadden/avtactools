@@ -5,21 +5,33 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-08 (everything merged to `develop`; mission packs and the native screen redesign are next).
+Last refreshed: 2026-10-09 (the Android mission-pack engine is half built on `feat/android-mission-packs`: A1–A10 done,
+A11–A15 next, then the redesigned screens).
 
 ---
 
 ## 1. Where things stand
 
-- **Branch:** `develop`. On 2026-10-08 it was fast-forwarded over the whole stack that had been waiting: the Android branch
-  (`claude/jolly-wozniak-i7rlrq`, which already held Codex's `feat/android-threat-ui`), then `feat/mission-packs`, then the web
-  menu redesign (`feat/menu-redesign` and its fixes, `fix/menu-redesign-ui`). New Android work goes on its own branch off
-  `develop` (`feat/android-…`), with a PR back to it. The backend restructure (`refactor/backend-structure`) is **not** in
-  `develop` and nothing here depends on it.
+- **Branch:** `feat/android-mission-packs` (pushed; a PR to `develop` once the engine is done). It is `develop` plus the mission-pack
+  work below. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
+  `claude/jolly-wozniak-i7rlrq`, `feat/mission-packs`, the web menu redesign `feat/menu-redesign` and `fix/menu-redesign-ui`), then
+  took the fixes that made CI green on it: the tests run on JDK 21 (`ed6ec02`), no machine's JDK in the shared Gradle settings
+  (`7be70fe`), a lint error (`9d4d128`) and the terrain catalog's boot-time bug (`75f9450`). The backend restructure
+  (`refactor/backend-structure`) is **not** in `develop` and nothing here depends on it.
 - **Mission packs and the web menu redesign are built on the web and backend** (`docs/MISSION_PACKS.md`, `docs/MENU_REDESIGN.md`),
   still off for everyone but admins and ticked testers (`entitlements.DEFAULT_OFF`), and the live service is not deployed (clients
-  poll). **Android has none of it yet.** The native screens for both are in `docs/native-design/` (read its README; the screenshots
-  themselves are gitignored).
+  poll). **Android has the pack engine half built and no screens** (next bullet). The native screens for both are in
+  `docs/native-design/` (read its README; the screenshots themselves are gitignored).
+- **The Android mission-pack engine** is built to `docs/ANDROID_MISSION_PACKS_PLAN.md` (the design, the owner's decisions, the
+  commit plan with each step marked done or to do); AGENTS.md §17's `core-missionpacks` and `core-network` rows say what each piece
+  holds now. **Done:** A1 a background sync restores the session in a process the app did not start; A2 every pack, team, invitation
+  and search response recorded with strict types; A3 a typed call for each route; A4 the live stream; A5–A8 the new pure module
+  `core-missionpacks`: the operation rules, the diff, the client session, each person's own fields and the history sentences, all held
+  to `contracts/fixtures/packs`; A9 the client that sends, catches up and follows one pack, offline included; A10 the engine that runs
+  every pack and keeps what a pack refuses (`99bc493`). On the web and server, first: five web session bugs fixed (`67554b1`), a refused
+  ops batch says which of its operations it already took (`taken`, `718ed9c`), and every pack write route reads the caller's role
+  and the pack's deletion again under the pack's lock (`f204a8f`). **Not built:** A11 (Room, database version 3), A12 (the editors
+  edit pack items), A13 (the app runs packs), A14 (invitation links), A15 (docs), then the screens. Nothing a person sees has changed.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
   state is in AGENTS.md §17's table. **Not in P2 yet:** an ATAK data package. (Saved missions, which keep the `.msnx` as the document and write edits back into it, and dragging and turning on the map are built: AGENTS.md §17, *Saved missions* and *Dragging and turning on the map*.)
@@ -30,30 +42,39 @@ Last refreshed: 2026-10-08 (everything merged to `develop`; mission packs and th
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output,
   `FLAG_SECURE` and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
   "not verifiable here" in AGENTS.md). The first device run is the first real test of all of them.
-- **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`, §3) was **green on the Android branch's
-  head** before the merge. Nothing in Android changed with the merge; CI's `android.yaml` runs on the push to `develop` and on every
-  PR that touches `android/`, `contracts/` or `backend/`. Re-run it after any change before pushing.
-- **The owner's Windows workstation** had no Android SDK and only JDK 11 on 2026-10-08 (Gradle 9 needs 17 to run); the owner is
-  installing them. Until they are there, build in a cloud session (§3). `android/local.properties` names the SDK on each machine.
+- **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`, §3): green for every engine commit,
+  A1–A10, on the owner's workstation (the live-server tests ran, none skipped). CI was green on `develop` at `ed6ec02` (Android on
+  JDK 21, the backend's contract tests) and runs again on the PR. Re-run it after any change before pushing.
+- **The owner's Windows workstation builds the app** since 2026-10-08 (§3 has the setup): a full build is about 7 minutes warm, 36
+  minutes cold. The owner works from more than one PC; whichever builds needs §3's setup and its own `android/local.properties`.
 
 ---
 
 ## 2. Next work, in order
 
-1. **Mission packs, engine first, no screens** (`docs/MISSION_PACKS.md` §8 step 4). The screens wait for the redesigned shell (item 2),
-   because their home, the workspace switcher and the Pack tab, only exists there; building them in today's sheet would build them twice.
-   The web did it in the same order.
-   - **Contracts first, on the web.** Only the operation rules are pinned (`contracts/fixtures/packs/ops.json`, 134 cases). Also pin, from
+1. **Finish the mission-pack engine: A11–A15**, in that order (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Commit plan* items 13–17: what
+   each builds, its tests and its check). A11 keeps packs and their unsent edits on the device (database version 3, migration tests
+   2→3 and 1→3, `AccountScope` wipes them, `LibraryPackKeeper`, the Hilt providers). A12 lets the existing LZ and route editors edit a
+   pack item (`DocumentSession.document`/`owe`, a pack store for `DiagramSession`/`RouteSession`, `PackItemStore`, `PackEditorSync`,
+   `PackWorkspace`): the most delicate step (baselines, someone else's change through `setQuietly` without breaking undo, threading).
+   A13 runs packs with the app (`PackRuntime`, the gate in `AppViewModel`, `appStopped` on ON_STOP flushing both sessions,
+   `NetworkWatcher`, the sync runner draining packs before the Library). A14 accepts `?invite=<token>` once signed in (`InviteLinks`
+   beside `AuthLinks`). A15 writes it down (AGENTS.md §17 'Mission packs', §15's web candidates, MISSION_PACKS §8, this file).
+   **How A1–A10 were built:** one commit per step, each implemented, then reviewed by two independent reviewers, fixed, and committed
+   only with its module's tests and the full build green; about an hour a commit, and the reviews found real bugs. The owner was
+   offered a lighter process for A11–A15 (one agent and the full build, an independent review only for A11 and A12): not yet answered.
+   The background on what came before follows (the contracts and seams below are done or settled).
+   - **Contracts first, on the web** (done: `38e9d7b`, `02100c1`; `contracts/README.md` lists them). At the start only the operation rules were pinned (`contracts/fixtures/packs/ops.json`, 134 cases). Also pin, from
      `frontend/src/feature/missionPacks/`: `packDiff.js` (the operations an edit becomes), `packSession.js` (the client's state: pending,
      confirmed, replay, finished and dropped), which fields of an LZ and a route set are each person's own and never in a pack
      (`packLz.sharedLzData`, `packRoutes.sharedRouteData`), and the history sentences (`describeLzChange` and its peers). Record the pack
      routes' real responses in `contracts/fixtures/network/responses.json` (`backend/tests/test_network_fixtures.py`).
-   - **Then Android**: the operation applier held to `ops.json`; the diff and session held to their fixtures; typed calls for the pack, team
+   - **Then Android** (A1–A10 done; the Room tables are A11): the operation applier held to `ops.json`; the diff and session held to their fixtures; typed calls for the pack, team
      and invite routes in `core-network` (they go through `ApiClient`'s internals, so they live there) and the live stream on OkHttp's own
      WebSocket (no new dependency); a `PackSyncEngine` beside `SyncEngine` over a `PackStore`, with Room tables in a version 3 database that
      `AccountScope.wipe` also clears; the live-server scenarios (`backend/tests/live_server.py` already serves the pack and team routes and
      makes accounts with `features`, so a test account can have `mission_packs`).
-   - **Seams found in the code** (2026-10-08): `DocumentSession` already writes through a `DocumentStore` interface, but `DiagramSession` and
+   - **Seams found in the code** (2026-10-08; still true, and A12 is where they are met): `DocumentSession` already writes through a `DocumentStore` interface, but `DiagramSession` and
      `RouteSession` bind it to the Library repositories, and `reidentify`/`follow` assume a Library record. `DiagramNormalizer` keeps graphics
      whole but drops unknown top-level, analysis and view keys, so diff the normalized base against the normalized edit, as the web does.
      Applying someone else's change through `setQuietly` marks the document unsaved: diff against a base that already has it, or it is sent
@@ -101,6 +122,15 @@ cd android; .\gradlew.bat test testDebugUnitTest lintDebug assembleDebug --conti
 python contracts/scripts/mgrs_fixtures.py check     # fixtures vs PyGeodesy
 ```
 
+- **On the owner's Windows PCs:** Gradle needs JDK 21 or later to run the tests (Robolectric's Android SDK 36 sandbox); Android
+  Studio's bundled one will do (`$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"` in PowerShell before
+  `.\gradlew.bat`). `android/local.properties` (gitignored) holds `sdk.dir=C\:/Users/<you>/AppData/Local/Android/Sdk`, with
+  `platforms;android-37.0` installed. The live tests want `EZPZ_LIVE_PYTHON` set to a Python with `backend/requirements.txt`
+  (the backend's venv). Opening the project in Android Studio writes `android/gradle/gradle-daemon-jvm.properties`: gitignored, each
+  machine's own. A JDK path committed in `android/gradle.properties` once broke every other machine and CI; keep machine paths out.
+- **Pushing when Git Credential Manager gets in the way** (a *Select an account* window, or `/dev/tty` in an agent session with no
+  terminal): push with the GitHub CLI's sign-in for that one command, in Git Bash:
+  `git -c credential.helper= -c "credential.helper=!'/c/Program Files/GitHub CLI/gh.exe' auth git-credential" push origin <branch>`.
 - `LiveServerTest` / `LiveAccountTest` run the real Flask routes in a child process and need `EZPZ_LIVE_PYTHON`; without it
   they are skipped (CI sets it). One of them (`the public config needs no token`) timed out once on a cold start while
   other builds ran, and passed on rerun.
@@ -166,7 +196,15 @@ Other things that stop a sign-in, in the order they usually bite:
 
 ---
 
-## 5. Owner decisions still open
+## 5. Owner decisions
+
+**Made on 2026-10-08, for mission packs** (in `docs/ANDROID_MISSION_PACKS_PLAN.md`): edits a pack refused are kept as "NAME (my
+edits)", the web's name; signing out keeps unsent pack edits for that same account and sends them at its next sign-in, never under
+another (a deliberate difference from the web, which drops them); refused edits go to the Library by themselves whenever their pack
+is not open; `feature_disabled`, `affiliation_required` and an ended session pause the queue rather than drop it. Also approved and
+done: the five web session fixes, the `taken` field, and the role re-read under the lock on every pack write route.
+
+**Still open:**
 
 - **`applicationId`** — permanent once published; release builds are refused until `-Pezpz.applicationId=<id>` is passed.
 - **Mapbox token** — if it is URL-restricted, a native app (no web referrer) may be refused; give the apps their own via
