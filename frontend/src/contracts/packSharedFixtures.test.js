@@ -8,6 +8,9 @@ import { packLocalId } from "../feature/missionPacks/packRef";
 import { describeRouteChange, routeSetData, routesFromItem, sharedRouteData } from "../feature/missionPacks/packRoutes";
 import { actorName, createSummary, newItemOp, updateFromOriginalSummary } from "../feature/missionPacks/packSentences";
 import { describePointsChange, newPointSetOp, pointsForPack } from "../feature/missionPacks/usePackPoints";
+import { ROUTE_COLORS } from "../feature/msnxImport/colorPalette";
+import { defaultRoutePlan } from "../feature/msnxImport/routeCalc";
+import { restoreSketchRoute } from "../feature/msnxImport/useRouteSketch";
 
 const fs = require("fs");
 const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
@@ -262,10 +265,274 @@ const LIBRARY = [
   ["no route set (null) is saved as one with no routes", "route", null],
 ];
 
-const sharedFixture = () => withoutClockOrRandomness(() => ({
+// Today's shape of an item, as an editor here works on it and gives it back (usePackLz's and usePackRoutes's
+// currentShape). It is what composeEdit's reshape (edit.json) brings the pack's data to before an editor's first change,
+// so a client that shaped an item otherwise would reshape what every other client wrote. Where the web's shape loses a
+// field, or disagrees with its own editor, the case is marked webBug for a port not to copy.
+const PACK_UUID = "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31";
+const lzShapeOf = (it) => lzItemData(lzDiagramFromItem(PACK_UUID, it));
+const routeShapeOf = (it) => routeSetData(routesFromItem(it, packLocalId(PACK_UUID, it.uuid)));
+
+// An LZ/PZ as an old library save copied into a pack may hold it: no mapData, no PZ markers or other graphics lists,
+// an analysis without its boundaries. The editor works on today's shape of it.
+const OLD_LZ = {
+  schemaVersion: 2,
+  status: "analyzed",
+  target: DIAGRAM.target,
+  flightData: { callSign: "HAWK 6" },
+  analysis: { gridElevation: "4050" },
+  graphics: { helicopters: [{ id: 1759900000001, lat: 34.7837, lon: -84.0823, heading: 270, profileRef: "uh60l" }] },
+};
+
+// An LZ/PZ as this version writes it into a pack (lzItemData): its shape is itself.
+const LZ_TODAY = {
+  schemaVersion: 2,
+  status: "analyzed",
+  target: DIAGRAM.target,
+  mapData: { zoom: 17, mgrs: "16S GD 66993 52949" },
+  flightData: { callSign: "HAWK 6", landing_hdg: "270°", takeoff_hdg: "090°" },
+  analysis: {
+    customLZ: null,
+    detectedLZ: [[34.7832, -84.0828], [34.7844, -84.0828], [34.7844, -84.0814]],
+    results: { status: "success", elevation: "4050" },
+    gridElevation: "4050",
+    latLong: "34.78382, -84.08219",
+  },
+  graphics: {
+    doghouses: [{ id: "lz-hawk-sp1", role: "takeoff", lat: 34.783817, lon: -84.08519, id_val: "[SP1]", heading: "090°" }],
+    helicopters: [{ id: 1759900000001, lat: 34.7837, lon: -84.0823, heading: 270, profileRef: "uh60l" }],
+    pzMarkers: [],
+    sectorsOfFire: [],
+    goArounds: [{ id: "ga-1759900000006", lat: 34.7808, lon: -84.08219, direction: "left", rotation: 0 }],
+    units: [],
+    measurements: [],
+    exportBox: null,
+  },
+};
+
+const PZ_OLD = { id: "pz-old", lat: 34.7832, lon: -84.0812 };
+const GA_OLD = { id: "ga-old", lat: 34.7808, lon: -84.08219, direction: "left" };
+
+// The names useLzWorkspace.normalizeLzDiagram reads, at each level the shape is built at. Every one of them is either in
+// the shape or deliberately left out of it (an own field, a slope raster, an old name read into its new place), so a
+// client that keeps the fields it does not know must keep none of these. Any other name there is one the web drops.
+const LZ_ANALYSIS_NAMES = ["customLZ", "detectedLZ", "terrainData", "results", "analysisResults", "gridElevation", "latLong"];
+const LZ_GRAPHICS_NAMES = [
+  "doghouses", "helicopters", "pzMarkers", "pzMarker", "sectorsOfFire", "goArounds", "goAround", "units", "measurements", "exportBox",
+];
+const LZ_VIEW_NAMES = ["mapStyle", "showLZOutline", "showHeatmap"];
+const LZ_READ_NAMES = {
+  top: [
+    "schemaVersion", "status", "target", "targetLocation", "gridInput", "mapData", "flightData", "analysis", "graphics",
+    "id", "savedId", "dirty", "createdAt", "updatedAt", "view", "name", "created_at", "updated_at",
+    // A flat snapshot's: read from the top when there is no analysis, graphics or view object, and never kept there.
+    ...LZ_ANALYSIS_NAMES, ...LZ_GRAPHICS_NAMES, ...LZ_VIEW_NAMES,
+  ],
+  target: ["lat", "lon", "mgrs", "latitude", "lng", "longitude"],
+  analysis: LZ_ANALYSIS_NAMES,
+  graphics: LZ_GRAPHICS_NAMES,
+};
+const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+// The fields of an LZ/PZ's data the web does not know, by level: what its shape loses.
+const unknownLzFields = (data) => {
+  if (!isPlainObject(data)) return [];
+  const unknown = (level, value) => (isPlainObject(value) ? Object.keys(value).filter((key) => !LZ_READ_NAMES[level].includes(key)) : []);
+  return [
+    ...unknown("top", data).map((key) => [key]),
+    ...unknown("target", data.target).map((key) => ["target", key]),
+    ...unknown("analysis", data.analysis).map((key) => ["analysis", key]),
+    ...unknown("graphics", data.graphics).map((key) => ["graphics", key]),
+  ];
+};
+
+// [name, data, webBug]: an LZ/PZ item's data as the pack has it; undefined is "not given". webBug: the web's shape loses
+// a field a newer version wrote, which a port keeps (the description says how its test treats the case).
+const LZ_SHAPES = [
+  ["an LZ/PZ already in today's shape is its own shape", LZ_TODAY],
+  ["an LZ/PZ an older version saved gains the lists, map data and analysis fields it lacked", OLD_LZ],
+  ["each person's own fields and the slope raster are taken out, as `lz` takes them out, so alone they ask for no reshape", DIAGRAM],
+  ["no graphics at all: every list is empty and there is no LZ card area", { status: "targeted", target: DIAGRAM.target, graphics: {} }],
+  ["PZ markers and go-arounds under their old names are read as pzMarkers and goArounds, and the old names dropped", {
+    status: "analyzed", target: DIAGRAM.target, graphics: { helicopters: [], pzMarker: [PZ_OLD], goAround: [GA_OLD] },
+  }],
+  ["an old name is read where the new one is null, and not where it is an empty list", {
+    status: "analyzed", target: DIAGRAM.target, graphics: { pzMarkers: null, pzMarker: [PZ_OLD], goArounds: [], goAround: [GA_OLD] },
+  }],
+  ["a flat snapshot from before diagrams were versioned is read as one diagram", {
+    targetLocation: [34.783817, -84.08219],
+    gridInput: "16S GD 66993 52949",
+    flightData: { callSign: "OLD 1" },
+    customLZ: [[34.7831, -84.0829], [34.7845, -84.0829], [34.7845, -84.0813]],
+    analysisResults: { areaSqFt: 90000 },
+    gridElevation: 4050,
+    helicopters: [{ id: "h1", lat: 34.7837, lon: -84.0823 }],
+    pzMarker: [PZ_OLD],
+    goAround: [GA_OLD],
+    exportBox: { north: 34.79, south: 34.778, east: -84.075, west: -84.09 },
+    mapStyle: "satellite",
+    terrainData: { width: 1 },
+  }],
+  ["fields this version does not know are dropped: at the top, in the target, the analysis and the graphics", {
+    schemaVersion: 2,
+    status: "analyzed",
+    weather: { wind: "270/12" },
+    target: { ...DIAGRAM.target, elevationFt: 4050 },
+    analysis: { detectedLZ: DIAGRAM.analysis.detectedLZ, futureAnalysis: true, terrainData: null },
+    graphics: { helicopters: [], futureGraphics: [{ id: "f-1" }] },
+  }, true],
+  ["inside the map data, the flight data, the results and each graphic nothing is dropped", {
+    status: "analyzed",
+    target: DIAGRAM.target,
+    mapData: { zoom: 17, futureMap: [1, null] },
+    flightData: { callSign: "HAWK 6", futureFlight: { keep: true }, landing_hdg: null },
+    analysis: { results: { status: "success", futureResult: 1 } },
+    graphics: { helicopters: [{ id: 1, lat: 34.7837, lon: -84.0823, futureHeli: "kept", label: null }], exportBox: { north: 34.79, future: 1 } },
+  }],
+  ["any schemaVersion is 2", { schemaVersion: 1, status: "targeted", target: DIAGRAM.target }],
+  ["the status is worked out again: an LZ/PZ with no target is a draft, analysed or not", { status: "analyzed", target: null, analysis: DIAGRAM.analysis }],
+  ["a found boundary makes an LZ/PZ analysed whatever its status says", { status: "targeted", target: DIAGRAM.target, analysis: { detectedLZ: DIAGRAM.analysis.detectedLZ } }],
+  ["the test is JavaScript's truthiness, so an empty found boundary makes it analysed too", { status: "targeted", target: DIAGRAM.target, analysis: { detectedLZ: [] } }],
+  ["results of 0 do not make it analysed, and nor does a drawn boundary alone", {
+    status: "targeted", target: DIAGRAM.target, analysis: { results: 0, customLZ: [[34.7831, -84.0829], [34.7845, -84.0829], [34.7845, -84.0813]] },
+  }],
+  ["a status this version does not know is targeted", { status: "surveyed", target: DIAGRAM.target }],
+  ["analysis results under their old name are read as results", { status: "targeted", target: DIAGRAM.target, analysis: { analysisResults: { elevation: "4050" } } }],
+  ["a target is read from latitude and lng, its numbers from text, and its grid from the map data", {
+    status: "targeted", target: { latitude: "34.783817", lng: "-84.08219" }, mapData: { mgrs: "16S GD 66993 52949" },
+  }],
+  ["a target that is not a position is none, so the LZ/PZ is a draft", { status: "targeted", target: { lat: "north", lon: -84.08219 } }],
+  // A target's numbers are JavaScript's Number(), exactly.
+  ["hexadecimal text is a number: \"0x22\" is 34", { status: "targeted", target: { lat: "0x22", lon: "-84.08219" }, mapData: { mgrs: "16S GD 66993 52949" } }],
+  ["empty text is 0, so a target of two empty texts is at 0, 0", { status: "targeted", target: { lat: "", lon: "" } }],
+  ["true is 1 and an empty list is 0", { status: "targeted", target: { lat: true, lon: [] } }],
+  ["a list is read by its text, so a one-element list is its element: in targetLocation, with the grid from gridInput", {
+    targetLocation: [[34.783817], ["-84.08219"]], gridInput: "16S GD 66993 52949",
+  }],
+  // The grid: the first of the target's, the map data's and gridInput that is given, if it is not blank.
+  ["a grid that is blank to JavaScript's trim is none: the byte order mark alone", { status: "targeted", target: { lat: 34.783817, lon: -84.08219 }, mapData: { mgrs: "﻿" } }],
+  ["a grid JavaScript's trim does not take is kept: U+001C alone", { status: "targeted", target: { lat: 34.783817, lon: -84.08219 }, mapData: { mgrs: "\u001C" } }],
+  ["a blank grid on the target hides the map data's, and is kept as it is", {
+    status: "targeted", target: { lat: 34.783817, lon: -84.08219, mgrs: "  " }, mapData: { mgrs: "16S GD 66993 52949" },
+  }],
+  ["an analysis and graphics that are not objects are read from the top, as a flat snapshot has them", {
+    status: "analyzed", target: DIAGRAM.target, analysis: "pending", graphics: null, gridElevation: "4050", helicopters: [{ id: "h1" }],
+  }],
+  ["list elements that are not objects are kept as they are, and a list that is not a list is empty", {
+    status: "analyzed", target: DIAGRAM.target, graphics: { helicopters: [{ id: "h1" }, 7, "x", null], pzMarkers: "not a list", units: { u1: {} } },
+  }],
+  ["map data and flight data that are not objects are empty", { status: "targeted", target: DIAGRAM.target, mapData: [17], flightData: "HAWK 6" }],
+  ["no data (null) is an empty draft", null],
+  ["no data at all (data missing) is an empty draft", undefined],
+  ["data that is a list is an empty draft", [{ status: "analyzed", target: DIAGRAM.target }]],
+  ["data that is text is an empty draft", "LZ HAWK"],
+];
+
+// A route as this version writes it into a pack (routeSetData of the sketch's routes): its shape is itself.
+const RED_TODAY = {
+  id: "sketch-1759900000001-k3j9",
+  name: "RED 1",
+  color: "#FF453A",
+  plan: { ...defaultRoutePlan(), date: "2026-10-08", perPoint: { p3: { clock: "10:00:00" } } },
+  elevations: { p1: 1730, p3: 1810 },
+  points: [
+    { id: "p1", lat: 34.7, lon: -84.1, ele: null, role: "start", kind: "amps", ptType: "target", name: ".TGT" },
+    { id: "p2", lat: 34.71, lon: -84.09, ele: null, role: "waypoint", kind: "shaping" },
+    { id: "p3", lat: 34.72, lon: -84.08, ele: null, role: "waypoint", kind: "amps", ptType: "ip", name: ".RP" },
+  ],
+};
+// A route with no plan, colour or elevations of its own.
+const BARE = (id, extra = {}) => ({ id, name: "RED 1", points: RED_TODAY.points, ...extra });
+// The same points with the shaping one first.
+const SHAPING_FIRST = [RED_TODAY.points[1], RED_TODAY.points[0], RED_TODAY.points[2]];
+
+// What of a route set's data the web's shape loses or reads otherwise than its editor does: a field of the set's own, a
+// version other than 1, and a route that is not an object with an id (which the shape leaves out and the editor keeps,
+// or fails on). Each is a case marked webBug.
+const routeSetQuirks = (data) => {
+  if (!isPlainObject(data)) return [];
+  const own = Object.keys(data).filter((key) => key !== "routes" && !(key === "version" && data.version === 1));
+  const routes = Array.isArray(data.routes) ? data.routes : [];
+  return [...own, ...routes.filter((route) => !isPlainObject(route) || !("id" in route)).map(() => "route without an id")];
+};
+
+// [name, data, webBug]: a route set item's data as the pack has it; undefined is "not given". webBug: see routeSetQuirks.
+const ROUTE_SHAPES = [
+  ["a set already in today's shape is its own shape", { version: 1, routes: [RED_TODAY] }],
+  ["each route loses whether it is hidden and the set it is filed under, and its plan gains the defaults", { version: 1, routes: [SKETCH_RED, SKETCH_BLUE] }],
+  ["routes with no id are left out of the shape (the web's editor keeps them)", { version: 1, routes: [{ name: "GHOST", points: [] }, RED_TODAY] }, true],
+  ["a route whose id is null is kept, and coloured as the text null", { version: 1, routes: [BARE(null)] }],
+  ["routes that are not objects are left out of the shape: null, a number, text, true and a list (the web's editor fails on the null)", {
+    version: 1, routes: [null, 7, "RED 1", true, ["a", "b"], RED_TODAY],
+  }, true],
+  ["a route with no colour, an empty one or a null one is given the colour of its id", {
+    version: 1,
+    routes: [
+      BARE("sketch-1759900000002-m2p8"), BARE("r-2", { color: "" }), BARE("r-3", { color: null }), BARE(""), BARE(1759900000001),
+      BARE(2.5), BARE(`r-${HELI}`), BARE("r-é"),
+    ],
+  }],
+  ["a colour that is given is kept, whatever it is", { version: 1, routes: [BARE("r-1", { color: "#123456" }), BARE("r-2", { color: 5 })] }],
+  ["ground elevations that are missing, null or empty text are none; any others are kept", {
+    version: 1,
+    routes: [BARE("r-1"), BARE("r-2", { elevations: null }), BARE("r-3", { elevations: "" }), BARE("r-4", { elevations: { p1: 0 } }), BARE("r-5", { elevations: [] })],
+  }],
+  ["a route with no plan, or a null one, is given the UH-60L's default plan", { version: 1, routes: [BARE("r-1"), BARE("r-2", { plan: null })] }],
+  ["a plan's own values win whole over the defaults: an object is not merged with the default's, and a null is kept", {
+    version: 1,
+    routes: [BARE("r-1", { plan: { airspeed: { value: 90 }, altitude: null, tempC: 20, perPoint: { p1: { altitude: { value: 300, ref: "msl" } } } } })],
+  }],
+  ["a plan's fields this version does not know are kept", { version: 1, routes: [BARE("r-1", { plan: { futurePlan: { keep: [1, null] } } })] }],
+  ["a plan that is not an object is spread as JavaScript spreads it: a list and text by position, a number not at all", {
+    version: 1, routes: [BARE("r-1", { plan: [] }), BARE("r-2", { plan: ["x"] }), BARE("r-3", { plan: "AB" }), BARE("r-4", { plan: 5 }), BARE("r-5", { plan: false })],
+  }],
+  ["a TOT from before clocks were set on points becomes its point's clock, and its date the plan's", {
+    version: 1,
+    routes: [BARE("r-1", { plan: { tot: { pointId: "p3", time: "10:00:00", date: "2026-07-15" }, perPoint: { p3: { altitude: { value: 300, ref: "msl" } } } } })],
+  }],
+  ["a TOT that names no point is the clock of the first point that is not shaping", {
+    version: 1, routes: [BARE("r-1", { points: SHAPING_FIRST, plan: { tot: { time: "08:30:00" } } })],
+  }],
+  ["a TOT that names no point, on a route with no point to hold it, keeps only its date", {
+    version: 1, routes: [BARE("r-1", { points: [RED_TODAY.points[1]], plan: { tot: { time: "08:30:00", date: "2026-07-15" } } })],
+  }],
+  ["a TOT is dropped unused when a point already holds a clock", {
+    version: 1, routes: [BARE("r-1", { plan: { tot: { pointId: "p3", time: "10:00:00", date: "2026-07-15" }, perPoint: { p1: { clock: "09:00:00" } } } })],
+  }],
+  ["a TOT with no time is dropped and changes nothing", { version: 1, routes: [BARE("r-1", { plan: { tot: { pointId: "p3", date: "2026-07-15" } } })] }],
+  ["fields this version does not know are kept, on a route and on its points", {
+    version: 1, routes: [{ ...RED_TODAY, futureRoute: { keep: true }, points: [{ ...RED_TODAY.points[0], futurePoint: [1] }] }],
+  }],
+  ["a set's other fields are dropped, and its version is 1 whatever it was", { version: 2, futureSetField: "x", routes: [RED_TODAY] }, true],
+  ["routes that are an object are no routes", { version: 1, routes: { "r-1": RED_TODAY } }],
+  ["routes that are null are no routes", { version: 1, routes: null }],
+  ["a set with no routes has none", { version: 1 }],
+  ["no data (null) is a set with no routes", null],
+  ["no data at all (data missing) is a set with no routes", undefined],
+  ["data that is a list is a set with no routes", [RED_TODAY]],
+  ["data that is text is a set with no routes", "MISSION 1"],
+];
+
+const lzItem = (data) => ({ uuid: "lz-1", kind: "lz", name: "LZ HAWK", data });
+const routeItem = (data) => ({ uuid: "rt-1", kind: "route", name: "MISSION 1", data });
+
+// The LZ normaliser stamps the time on a diagram with none, and the shape drops it again: built at two instants, the
+// shapes must come out the same (the "packs/shared.json" test). Nothing else here may reach for the clock.
+const shapes = (clock) => withoutClockOrRandomness(() => ({
+  lzShape: LZ_SHAPES.map(([name, data, bug]) => ({ name, item: lzItem(data), shape: lzShapeOf(lzItem(data)), ...(bug ? { webBug: true } : {}) })),
+  routeShape: ROUTE_SHAPES.map(([name, data, bug]) => ({
+    name, item: routeItem(data), shape: routeShapeOf(routeItem(data)), ...(bug ? { webBug: true } : {}),
+  })),
+}), { clock });
+
+const listed = (names) => `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+const SHAPE_CLOCK = Date.UTC(2026, 9, 5, 13, 0, 0);
+
+// Everything but the shapes, built with neither the clock nor randomness to hand.
+const sharedCases = () => withoutClockOrRandomness(() => ({
   description: "What of a mission-pack item is each person's own and never goes into a pack, as frontend/src/feature/missionPacks/ "
-    + "works it out (the reference; docs/MISSION_PACKS.md §5a), and how a kept version of one is named and saved. Every case is "
-    + "self-contained: its input, then what the web returns. "
+    + "works it out (the reference; docs/MISSION_PACKS.md §5a), how a kept version of one is named and saved, and the shape an "
+    + "editor gives an item it opens. Every case is self-contained: its input, then what the web returns. "
     + "A key missing from a case is JavaScript's undefined (an argument not given), which JSON cannot hold; a port treats it as the "
     + "web treats undefined. Outputs are compared as JSON values (key order does not matter). "
     + "`lz`: packLz.sharedLzData(data) -> `shared`. The top-level fields id, savedId, dirty, createdAt, updatedAt, view and name are "
@@ -297,8 +564,75 @@ const sharedFixture = () => withoutClockOrRandomness(() => ({
     + "an LZ/PZ's document (lz_data) and a set's points (points) as they are; a route set as {version: 1, routes} whatever its "
     + "version and other fields were, routes being data.routes when that is a list and [] otherwise (route_data, sent as JSON "
     + "text with kind sketch). "
-    + "Out of scope here: packRoutes.routesFromItem, the web sketch's own reading of a route item (it leaves out of the editor "
-    + "any route with no id, and fills in the sketch's defaults); a port reads a route item with its own model.",
+    + "`lzShape` and `routeShape`: today's shape of an item ({uuid, kind, name, data}), the document the web's editor works on, "
+    + "given back in the item's form (usePackLz's and usePackRoutes's currentShape). packs/edit.json's reshape brings the pack's "
+    + "data to it before an editor's first change, so a port must give exactly this, except in the cases marked webBug: a "
+    + "client that shaped an item otherwise would reshape what every other client wrote. The shape depends on the data alone: "
+    + `the item's uuid and name, and the pack's (${PACK_UUID} here), make the editor's own id and name, which never reach it. `
+    + "An item already in today's shape is its own shape. Data that is not an object (a list, text) has a shape too, but no "
+    + "operation can bring it there (packs/diff.json never replaces an item's data whole), so composeEdit throws on a change to it. "
+    + "The cases marked `webBug: true` pin two web bugs a port must not copy (AGENTS.md §15 candidates; the web suite fails when "
+    + "a mark no longer matches one, so each goes when the web is fixed). (1) The web drops the fields it does not know, which a "
+    + "newer version wrote: at the top of an LZ/PZ, in its target, its analysis and its graphics object, and at the top of a "
+    + "route set, whose version it also makes 1. So its first change to an item a newer version wrote sends null for each of "
+    + "them, for everyone in the pack. A port keeps them: its test skips these cases and asserts instead that such fields are "
+    + "carried into its shape as they were and that its reshape sends no null for them. (2) The web's route shape leaves out a "
+    + "route that is not an object with an `id`, but its editor does not (useRouteSketch's loadSketchRoutes and replaceRouteSet "
+    + "do not filter): a route with no id stays in it, a number, text, true or a list becomes a route with no id, and a null "
+    + "route throws, so the set cannot be opened. For such a set the editor's document and its shape disagree, and once anything "
+    + "changes the set every pass sends its routes whole again (\"edited MISSION 1\", without end). A port skips these cases "
+    + "and tests its own rule, the same for its editor's document and its shape. "
+    + "`lzShape`: packLz.lzItemData(packLz.lzDiagramFromItem(pack, item)) -> `shape`. The data is read as "
+    + "useLzWorkspace.normalizeLzDiagram reads a saved diagram (workspace/diagram.json holds it rule by rule) and each person's "
+    + "own fields are then taken out as in `lz`, so a shape is always exactly {schemaVersion: 2, status, target, mapData, "
+    + "flightData, analysis: {customLZ, detectedLZ, results, gridElevation, latLong}, graphics: {doghouses, helicopters, "
+    + "pzMarkers, sectorsOfFire, goArounds, units, measurements, exportBox}}, never with a slope raster (terrainData). In it: "
+    + "status is \"draft\" without a target; else \"analyzed\" when data.status is \"analyzed\" or the analysis's detectedLZ or "
+    + "results (below) is truthy as JavaScript has it (an empty list or object is, 0 and \"\" are not; a drawn customLZ does not "
+    + "count); else \"targeted\". target is {lat, lon, mgrs} or null. It is read from data.target when that is neither missing "
+    + "nor null, else from data.targetLocation, and a falsy one is none; a list is [lat, lon]; an object gives lat (latitude "
+    + "when lat is missing or null) and lon (else lng, else longitude). Each number is JavaScript's Number() exactly: decimal "
+    + "text with JavaScript's white space round it, hexadecimal text too (\"0x22\" is 34), empty or blank text 0, true 1, false "
+    + "and null 0, a list by its joined text (a one-element list is its element, [] is 0), an object NaN; the target is null "
+    + "when either is not finite. Its grid is the first of target.mgrs, mapData.mgrs and gridInput that is neither missing nor "
+    + "null (so a blank target.mgrs hides the others), as it is, when that is text which is not blank once trimmed as "
+    + "JavaScript's trim trims (the byte order mark and no-break spaces are taken, U+001C is not); otherwise the target's own "
+    + "mgrs when that is text, as it is, blank too; else \"\". mapData and flightData are copied when they are objects, else {}; "
+    + "customLZ, detectedLZ and results are null when missing or null (results, when it has none, from analysisResults), "
+    + "gridElevation and latLong \"\"; each list is copied element by element, and is [] when missing or not a list; pzMarkers "
+    + "and goArounds are read from pzMarker and goAround when missing or null (not when empty); exportBox is null when missing; "
+    + "an analysis or graphics that is not an object is read from the top of the document, as a flat snapshot from before "
+    + "diagrams were versioned has it. The names the web reads are, at the top, " + listed(LZ_READ_NAMES.top) + "; in a target "
+    + "object, " + listed(LZ_READ_NAMES.target) + "; in an analysis object, " + listed(LZ_READ_NAMES.analysis) + "; in a "
+    + "graphics object, " + listed(LZ_READ_NAMES.graphics) + ". None of these is kept but in its place in the shape: each "
+    + "person's own fields, any terrainData, and the old names and a flat snapshot's (pzMarker, goAround, targetLocation, "
+    + "gridInput, analysisResults, latitude, lng, longitude, and the analysis's, graphics' and view's fields at the top) are "
+    + "read where they apply and never kept as they were, so the reshape sends null for each the data had (packs/diff.json): a "
+    + "client that keeps fields it does not know must not keep these. Any other field at those four levels is one the web does "
+    + "not know and drops (webBug, above). "
+    + "Inside mapData, flightData, results, exportBox and each graphic nothing is dropped. Data null, missing or not an object "
+    + "(a list, text) is an empty draft. The normaliser stamps a time on a diagram that has none and the shape drops it again: "
+    + "these cases are built at two instants and must come out the same. "
+    + "`routeShape`: packRoutes.routeSetData(packRoutes.routesFromItem(item, packRef.packLocalId(pack, item.uuid))) -> `shape`. "
+    + "It is exactly {version: 1, routes}: the set's other fields are dropped and any version is 1 (webBug, above, where that "
+    + "loses something). Its routes are data.routes when that is a list (else there are none), in their order, less every "
+    + "element that is not an object with an `id` (null, numbers, text, booleans, lists and a route with no id are left out: "
+    + "webBug, above; an id of null is kept). Each route is "
+    + "useRouteSketch.restoreSketchRoute's for a set's route, less `visible` and `setId` (as in `routeSet`): its id and every "
+    + "field it has as they are, three filled in. `color`, when missing or falsy (null, \"\"), is the colour of its id: h = 0, "
+    + "then for each code point of JavaScript's String(id) (1759900000001 -> \"1759900000001\", 2.5 -> \"2.5\", null -> \"null\"), "
+    + "taken as its first UTF-16 unit (a character outside the basic plane adds only its high surrogate), h = (h * 31 + unit) "
+    + "mod 2^32; the colour is [\"#FF453A\", \"#0A84FF\", \"#32D74B\", \"#FFD60A\", \"#BF5AF2\", \"#FF9F0A\", \"#64D2FF\", "
+    + "\"#FF375F\"][h mod 8]. A colour given is kept, whatever it is. `elevations`, when missing or falsy, is {}. `plan` is "
+    + "routeCalc.ensureRoutePlan's: the default plan (planning/route.json defaultPlan with no profile: the UH-60L's) with the "
+    + "route's plan, when truthy, spread over it key by key as JavaScript spreads (a value given wins whole, null too: an object "
+    + "is not merged with the default's; a list or text adds its elements by position, \"0\", \"1\", ..., and a number nothing). "
+    + "Then, when the plan has a `tot` with a truthy time and no entry of perPoint has a truthy clock, the plan's date becomes "
+    + "tot.date when that is truthy, and the point tot.pointId names (else the first of the route's points whose kind is not "
+    + "\"shaping\" and whose id is truthy; else none) gets perPoint[id] = its other values and clock: tot.time. `tot` is then "
+    + "dropped, whatever it held. Names, points and fields this version does not know, on a route, its points and its plan, are "
+    + "kept. (A tot to be moved that names no point, on a route whose points are not a list or hold a null, makes the web throw, "
+    + "and so does one to be moved when perPoint is null: no case has either.)",
   generatedBy: GENERATED_BY,
   lz: LZ_SHARED.map(([name, data]) => ({ name, data, shared: sharedLzData(data) })),
   routes: ROUTES_SHARED.map(([name, data]) => ({ name, data, shared: sharedRouteData(data) })),
@@ -307,6 +641,8 @@ const sharedFixture = () => withoutClockOrRandomness(() => ({
   myEditsName: EDIT_NAMES.map(([name, input, bug]) => ({ name, input, output: myEditsName(input), ...(bug ? { webBug: true } : {}) })),
   libraryData: LIBRARY.map(([name, kind, data]) => ({ name, kind, data, saved: libraryData(kind, data) })),
 }));
+
+const sharedFixture = (clock = SHAPE_CLOCK) => ({ ...sharedCases(), ...shapes(clock) });
 
 // == describe.json ================================================================================================
 
@@ -937,30 +1273,14 @@ const describeFixture = () => withoutClockOrRandomness(() => ({
 
 // == edit.json ====================================================================================================
 
-const PACK_UUID = "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31";
 const copyJson = (value) => JSON.parse(JSON.stringify(value ?? []));
 
 // What each editor's hook hands composeEdit (usePackLz, usePackRoutes, usePackPoints): the shared part of an item's
-// raw data, today's shape of it, and the sentence.
+// raw data, today's shape of it (shared.json's lzShape and routeShape), and the sentence.
 const KINDS = {
-  lz: { shared: sharedLzData, currentShape: (item) => lzItemData(lzDiagramFromItem(PACK_UUID, item)), describe: describeLzChange },
-  route: {
-    shared: sharedRouteData,
-    currentShape: (item) => routeSetData(routesFromItem(item, packLocalId(PACK_UUID, item.uuid))),
-    describe: describeRouteChange,
-  },
+  lz: { shared: sharedLzData, currentShape: lzShapeOf, describe: describeLzChange },
+  route: { shared: sharedRouteData, currentShape: routeShapeOf, describe: describeRouteChange },
   pointset: { shared: copyJson, currentShape: (item) => copyJson(item.data), describe: describePointsChange },
-};
-
-// An LZ/PZ as an old library save copied into a pack may hold it: no mapData, no PZ markers or other graphics lists,
-// an analysis without its boundaries. The editor works on today's shape of it.
-const OLD_LZ = {
-  schemaVersion: 2,
-  status: "analyzed",
-  target: TARGET,
-  flightData: { callSign: "HAWK 6" },
-  analysis: { gridElevation: "4050" },
-  graphics: { helicopters: [{ id: 1759900000001, lat: 34.7837, lon: -84.0823, heading: 270, profileRef: "uh60l" }] },
 };
 
 const item = (kind, name, data, uuid = `${packItemId(kind, "1")}`) => ({ uuid, kind, name, data });
@@ -1029,8 +1349,9 @@ const editFixture = (clock) => withoutClockOrRandomness(() => ({
     + "doc}); `mine`, the editor's version now ({name, doc}); `actor`; `shared`, the shared part of the item's raw data, and "
     + "`current`, today's shape of it, which the editor's own code works out (usePackLz: sharedLzData, and lzItemData of the "
     + "normalised diagram; usePackRoutes: sharedRouteData, and the sketch's routes of the set; usePackPoints: the list as it is); "
-    + "a port takes them as given. Then `sent`: null when there is nothing to send, else {ops, name}, or `throws: true` where the "
-    + "content would have to be replaced whole (packs/diff.json). The rules: the editor's name is trimmed as JavaScript's "
+    + "a port takes them as given here (how `current` is worked out is packs/shared.json's lzShape and routeShape). Then "
+    + "`sent`: null when there is nothing to send, else {ops, name}, or `throws: true` where the content would have to be "
+    + "replaced whole (packs/diff.json). The rules: the editor's name is trimmed as JavaScript's "
     + "String.prototype.trim trims (no-break spaces and the byte order mark too, a zero-width space not); it is a rename when "
     + "that is not blank and is not base.name (not the item's name: a name the pack changed meanwhile is not a rename here). The "
     + "content changed when diffData(base.doc, mine.doc) has operations (packs/diff.json). Nothing changed and no rename -> null. "
@@ -1080,7 +1401,13 @@ const said = (cases, pattern) => sentences(cases).some((s) => pattern.test(s));
 const byName = (cases, name) => cases.find((c) => c.name === name).sentence;
 
 describe("mission pack shared-data and history fixtures", () => {
-  it("packs/shared.json", () => settle("packs/shared.json", sharedFixture()));
+  it("packs/shared.json", () => {
+    // The LZ normaliser stamps the time on a diagram it makes, and the shape drops it again: built at two instants,
+    // the file must be the same.
+    const built = sharedFixture(SHAPE_CLOCK);
+    expect(sharedFixture(Date.UTC(2031, 0, 1, 0, 0, 0))).toEqual(built);
+    settle("packs/shared.json", built);
+  });
 
   it("packs/describe.json", () => settle("packs/describe.json", describeFixture()));
 
@@ -1124,6 +1451,121 @@ describe("mission pack shared-data and history fixtures", () => {
     sent.filter((c) => sameData(c.base.doc, c.mine.doc)).forEach((c) => expect([c.name, types(c)]).toEqual([c.name, ["item.rename"]]));
     expect(cases.filter((c) => c.sent === null).length).toBeGreaterThanOrEqual(3);
     expect(cases.filter((c) => c.throws).length).toBe(1);
+  });
+
+  it("gives an item already in today's shape back as it is, so only an older shape is ever reshaped", () => {
+    const { lzShape, routeShape } = sharedFixture();
+    [[lzShape, lzShapeOf, sharedLzData], [routeShape, routeShapeOf, sharedRouteData]].forEach(([cases, shapeOf, shared]) => {
+      // A shape read back is itself: an editor's own document never asks for a reshape.
+      cases.forEach((c) => expect([c.name, shapeOf({ ...c.item, data: c.shape })]).toEqual([c.name, c.shape]));
+      // The first case is in today's shape; most are not, and are reshaped on their first change.
+      expect([cases[0].name, sameData(shared(cases[0].item.data), cases[0].shape)]).toEqual([cases[0].name, true]);
+      expect(cases.filter((c) => !sameData(shared(c.item.data), c.shape)).length).toBeGreaterThan(cases.length * 0.75);
+    });
+  });
+
+  it("gives every shape the same fields, and never anyone's own or a slope raster", () => {
+    const { lzShape, routeShape } = sharedFixture();
+    const keys = (value) => Object.keys(value).sort();
+    lzShape.forEach((c) => {
+      expect([c.name, keys(c.shape)]).toEqual([c.name, ["analysis", "flightData", "graphics", "mapData", "schemaVersion", "status", "target"]]);
+      expect([c.name, keys(c.shape.analysis)]).toEqual([c.name, ["customLZ", "detectedLZ", "gridElevation", "latLong", "results"]]);
+      expect([c.name, keys(c.shape.graphics)]).toEqual([c.name, [...COLLECTIONS, "exportBox"].sort()]);
+    });
+    routeShape.forEach((c) => {
+      expect([c.name, keys(c.shape)]).toEqual([c.name, ["routes", "version"]]);
+      expect([c.name, c.shape.version]).toEqual([c.name, 1]);
+      c.shape.routes.forEach((route) => {
+        expect([c.name, ["id", "color", "elevations", "plan"].filter((key) => !(key in route))]).toEqual([c.name, []]);
+        expect([c.name, ["visible", "setId"].filter((key) => key in route), "tot" in route.plan]).toEqual([c.name, [], false]);
+      });
+    });
+  });
+
+  it("covers each way an editor reshapes an item", () => {
+    const { lzShape, routeShape } = sharedFixture();
+    const lzData = LZ_SHAPES.map(([, data]) => data);
+    // An older shape, own fields with a slope raster, the old graphics names, a flat snapshot, and fields this version
+    // does not know at every level it drops them.
+    expect(lzData).toContain(OLD_LZ);
+    expect(lzData.some((d) => d?.view && d?.savedId && d?.analysis?.terrainData)).toBe(true);
+    expect(lzData.some((d) => d?.graphics?.pzMarker && d?.graphics?.goAround)).toBe(true);
+    expect(lzData.some((d) => d?.targetLocation && d?.helicopters)).toBe(true);
+    expect(lzData.some((d) => d?.weather && d?.target?.elevationFt && d?.analysis?.futureAnalysis && d?.graphics?.futureGraphics)).toBe(true);
+    expect(new Set(lzShape.map((c) => c.shape.status))).toEqual(new Set(["draft", "targeted", "analyzed"]));
+    // Where JavaScript reads a target otherwise than a plain reading would: hexadecimal text, a list, empty text, true,
+    // and grids its trim takes (the byte order mark) and does not take (U+001C).
+    const targets = lzData.map((d) => d?.target ?? d?.targetLocation);
+    expect(targets.some((t) => t?.lat === "0x22")).toBe(true);
+    expect(targets.some((t) => Array.isArray(t) && Array.isArray(t[0]))).toBe(true);
+    expect(targets.some((t) => t?.lat === "") && targets.some((t) => t?.lat === true)).toBe(true);
+    expect(lzData.map((d) => d?.mapData?.mgrs)).toEqual(expect.arrayContaining(["﻿", "\u001C"]));
+    expect(lzShape.some((c) => c.item.data?.target?.mgrs === "  " && c.shape.target.mgrs === "  ")).toBe(true);
+    // The status is JavaScript's truthiness: an empty found boundary counts, results of 0 do not.
+    expect(lzShape.some((c) => sameData(c.item.data?.analysis?.detectedLZ, []) && c.shape.status === "analyzed")).toBe(true);
+    expect(lzShape.some((c) => c.item.data?.analysis?.results === 0 && c.shape.status === "targeted")).toBe(true);
+    // Routes: dropped for having no id or for not being objects, kept with an id of null, given a colour, elevations
+    // and the default plan, and an old TOT moved onto a point.
+    const kept = (c) => c.shape.routes.length;
+    const given = (c) => (Array.isArray(c.item.data?.routes) ? c.item.data.routes.length : 0);
+    expect(routeShape.some((c) => kept(c) < given(c) && c.item.data.routes.some((r) => r && typeof r === "object" && !Array.isArray(r) && !("id" in r)))).toBe(true);
+    expect(routeShape.some((c) => c.item.data?.routes?.some?.((r) => r === null) && c.item.data.routes.some(Array.isArray))).toBe(true);
+    expect(routeShape.some((c) => c.shape.routes.some((r) => r.id === null))).toBe(true);
+    const routes = routeShape.flatMap((c) => (Array.isArray(c.item.data?.routes) ? c.item.data.routes : []).filter((r) => r?.id !== undefined));
+    expect(routes.some((r) => !r.plan) && routes.some((r) => r.plan?.tot?.time) && routes.some((r) => !r.color) && routes.some((r) => !r.elevations)).toBe(true);
+  });
+
+  it("marks as webBug exactly the shapes that lose a field or leave out a route the editor keeps, so each mark goes once the web is fixed", () => {
+    const { lzShape, routeShape } = sharedFixture();
+    // An LZ/PZ: marked when its data has a field the web does not know, and each such field is missing from the shape.
+    lzShape.forEach((c) => {
+      const lost = unknownLzFields(c.item.data);
+      expect([c.name, Boolean(c.webBug)]).toEqual([c.name, lost.length > 0]);
+      lost.forEach((path) => {
+        const parent = path.length === 1 ? c.shape : c.shape[path[0]];
+        expect([c.name, path, isPlainObject(parent) && path[path.length - 1] in parent]).toEqual([c.name, path, false]);
+      });
+    });
+    // A route set: marked when the set has a field of its own or a version other than 1, which the shape loses, or a route
+    // that is not an object with an id, which the shape leaves out and the editor does not. The editor's document is
+    // what loadSketchRoutes makes of the set's routes (each through restoreSketchRoute), less each person's own fields.
+    const setId = packLocalId(PACK_UUID, "rt-1");
+    routeShape.forEach((c) => {
+      const quirks = routeSetQuirks(c.item.data);
+      expect([c.name, Boolean(c.webBug)]).toEqual([c.name, quirks.length > 0]);
+      if (!c.webBug) return;
+      const data = c.item.data;
+      const lostField = Object.keys(data).some((key) => key !== "routes" && !sameData(data[key], c.shape[key]));
+      let editor;
+      try {
+        editor = routeSetData(data.routes.map((route) => restoreSketchRoute(route, setId)));
+      } catch {
+        editor = "throws";
+      }
+      const editorDisagrees = editor === "throws" || editor.routes.length !== c.shape.routes.length;
+      expect([c.name, lostField || editorDisagrees]).toEqual([c.name, true]);
+    });
+    expect(lzShape.filter((c) => c.webBug)).toHaveLength(1);
+    expect(routeShape.filter((c) => c.webBug)).toHaveLength(3);
+  });
+
+  it("colours a route with no colour as the description says", () => {
+    const palette = ["#FF453A", "#0A84FF", "#32D74B", "#FFD60A", "#BF5AF2", "#FF9F0A", "#64D2FF", "#FF375F"];
+    expect(palette).toEqual(ROUTE_COLORS);
+    const colourOf = (id) => {
+      let h = 0;
+      for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) % 2 ** 32;
+      return palette[h % 8];
+    };
+    const coloured = sharedFixture().routeShape.flatMap((c) => {
+      const given = new Map((Array.isArray(c.item.data?.routes) ? c.item.data.routes : []).filter((r) => r?.id !== undefined).map((r) => [r.id, r]));
+      return c.shape.routes.filter((r) => !given.get(r.id).color);
+    });
+    coloured.forEach((route) => expect([route.id, route.color]).toEqual([route.id, colourOf(route.id)]));
+    // Ids long enough to pass 2^32, one outside the basic plane, and more than one colour.
+    expect(coloured.some((route) => String(route.id).length > 7)).toBe(true);
+    expect(coloured.some((route) => /[\uD800-\uDBFF]/.test(String(route.id)))).toBe(true);
+    expect(new Set(coloured.map((route) => route.color)).size).toBeGreaterThan(3);
   });
 
   it("names every kind of change to an LZ/PZ, for every collection", () => {
@@ -1235,7 +1677,7 @@ describe("mission pack shared-data and history fixtures", () => {
   it("changes nothing it was given", () => {
     const inputs = () => JSON.stringify([
       LZ_SHARED, ROUTES_SHARED, ROUTE_SETS, POINT_LISTS, EDIT_NAMES, LIBRARY, LZ_CASES, ROUTE_CASES, POINT_CASES, SUMMARY_CASES,
-      OLD_LZ, LZ, ROUTES, POINTS,
+      OLD_LZ, LZ, ROUTES, POINTS, LZ_SHAPES, ROUTE_SHAPES,
     ]);
     const before = inputs();
     sharedFixture();

@@ -93,15 +93,16 @@ sync is held to these files:
 | `ops.json` | What one operation does to a pack's items (the server applies it the same way) | `packOps.js` |
 | `diff.json` | The operations an editor's change to an item is sent as, in order | `packDiff.js` |
 | `edit.json` | One change as sent: the rename, the operations that bring an old item to today's shape, the change, one sentence on each | `packEdit.js` (`composeEdit`, from `usePackItemSync`) |
-| `shared.json` | What of an item is each person's own and never sent; a set's points made ready; the name and library form of a person's own version of an item ("NAME (my edits)") | `packLz.js`, `packRoutes.js`, `usePackPoints.js`, `packSentences.js`, `packActions.js` |
+| `shared.json` | What of an item is each person's own and never sent; a set's points made ready; the name and library form of a person's own version of an item ("NAME (my edits)"); the shape an editor gives an LZ/PZ or route set it opens, which the reshape in `edit.json` brings an older item to | `packLz.js`, `packRoutes.js` (with `useLzWorkspace.normalizeLzDiagram` and `useRouteSketch.restoreSketchRoute`), `usePackPoints.js`, `packSentences.js`, `packActions.js` |
 | `describe.json` | The history's sentences, who a person is in them, and how a new item is named and made | `packLz.js`, `packRoutes.js`, `usePackPoints.js`, `packSentences.js`, `packActions.js` |
 | `session.json` | How an open pack is held: edits made here, batches, the server's events and refusals, reloads, what is shown, and what is kept when the pack will not take an edit | `packSession.js` |
 
 - **`webBug: true`** marks a case that pins a known web bug, kept because the web is the reference until it
   is fixed and the file regenerated (`AGENTS.md` §15): a sentence or name cut through an emoji (a lone
-  surrogate the server cannot store), and fields read through JavaScript's prototype in `packDiff.js`. A
-  port's test finds them by the mark and does not copy them; the web suite fails if a mark no longer
-  matches a bug, so each goes when the web is fixed.
+  surrogate the server cannot store), fields read through JavaScript's prototype in `packDiff.js`, and in
+  `shared.json`'s shapes a field a newer version wrote, which the web drops (a port keeps it), and a route
+  the web's shape leaves out while its editor keeps it. A port's test finds them by the mark and does not
+  copy them; the web suite fails if a mark no longer matches a bug, so each goes when the web is fixed.
 - A key missing from a case is JavaScript's `undefined`. In `session.json` an absent key and a null one are
   different (the session builds some shapes narrower than the server's types); each file's `description`
   says how to read it.
