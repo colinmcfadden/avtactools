@@ -13,6 +13,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -33,7 +38,8 @@ import kotlin.coroutines.cancellation.CancellationException
  *
  * Open ([open]), it loads the pack and follows it. Stopped ([stop]), or started not open (a drain: the app was ended with edits
  * waiting), it only sends what waits, retried until it is taken or refused, then keeps in the library whatever the pack would not
- * take and halts. [halt] stops at once and gives nothing up: what waits stays on the device, for this account only.
+ * take and halts; opened again before then ([reopen]), it follows the pack once more, with the same batch in flight. [halt] stops at
+ * once and gives nothing up: what waits stays on the device, for this account only.
  *
  * Where it is not like the web, by the owner's decisions (2026-10-08):
  *  - Nothing made here lives only in memory. Every change to the session is written to [store] before anyone sees it: [edit]
@@ -57,7 +63,8 @@ import kotlin.coroutines.cancellation.CancellationException
  */
 internal class PackClient(
     val uuid: String,
-    private val me: PackUser,
+    /** The account it sends as, and the only one whose copy of the pack it reads or writes. */
+    val me: PackUser,
     private val api: PackApi,
     private val store: PackStore,
     private val keeper: PackKeeper,
@@ -69,6 +76,10 @@ internal class PackClient(
     private val requestBackgroundDrain: () -> Unit = {},
     open: Boolean = true,
     foreground: Boolean = true,
+    // Every new state, as it is set: the engine shows the open pack's by it, in step with [state] (a collector would lag behind it).
+    private val onState: (PackState) -> Unit = {},
+    // Whenever [stalled] changes: a background drain stops waiting for a client that cannot get through.
+    private val onStalled: () -> Unit = {},
 ) {
     private enum class Mode { OPEN, DRAINING }
 
@@ -92,11 +103,13 @@ internal class PackClient(
     private var paused = false
     private var visible = foreground
 
-    // Loading: the device's copy has been read; a batch it had out waits for a catch-up first; in step with the server since.
+    // Loading: the device's copy has been read; a batch it had out waits for a catch-up first; in step with the server since; the
+    // pack itself taken from the server (a drain never asks for it).
     private var storeRead = false
     private var needsCatchUp = false
     private var requeueStored = false
     private var ready = false
+    private var fetched = false
 
     private var loading = false
     private var sending = false
@@ -121,6 +134,13 @@ internal class PackClient(
 
     /** Whether it has stopped for good: halted, drained, paused while draining, or gone. */
     val halted: Boolean get() = job.isCompleted || job.isCancelled
+
+    /**
+     * Whether it waits to try again, after a try to send (or to read what it must before sending) that got no answer or met the server
+     * busy or down. Not while the next try is on its way, which may get through.
+     */
+    @Volatile var stalled: Boolean = false
+        private set
 
     // -- What the engine and the screens call ------------------------------------------------------------------------------
 
@@ -159,6 +179,35 @@ internal class PackClient(
         work.launch { stopNow() }
     }
 
+    /**
+     * Follows the pack again: the person opened it while it was still sending what waited (closed a moment ago, or a drain the app
+     * started). The batch in flight stays the one batch in flight, which a second client for the pack could not promise. A drain that
+     * never took the pack from the server takes it now, as every open pack is loaded. False when it has stopped for good, or is
+     * stopping (keeping what the pack refused): a new client is needed then.
+     */
+    suspend fun reopen(): Boolean = withContext(confined) {
+        if (ended || halted) return@withContext false
+        if (mode == Mode.OPEN) return@withContext true
+        mode = Mode.OPEN
+        when {
+            loading -> Unit                                         // the load under way goes on as an open one, and takes the pack
+            !ready -> {
+                clear(Timer.LOAD)
+                work.launch { prepare() }
+            }
+            !fetched -> {
+                ready = false
+                work.launch { prepare() }
+            }
+            else -> {
+                startPolling()
+                connect()
+                catchUp()
+            }
+        }
+        true
+    }
+
     /** Stops at once, giving nothing up: what waits stays on the device. Once this returns, nothing more is written. */
     suspend fun halt() {
         withContext(confined) {
@@ -177,6 +226,18 @@ internal class PackClient(
     suspend fun join() {
         job.join()
     }
+
+    /**
+     * Waits until the device holds the pack (true: read back, or taken from the server and written), or the client has stopped for
+     * good without it (false).
+     */
+    suspend fun onDevice(): Boolean = merge(
+        state.filter { it.session != null }.map { true },
+        flow {
+            job.join()
+            emit(state.value.session != null)
+        },
+    ).first()
 
     /** The app came to the front ([visible]) or went to the back, where it neither follows the pack nor asks for anything new. */
     fun foreground(visible: Boolean) {
@@ -277,6 +338,7 @@ internal class PackClient(
             if (failure == null && mode == Mode.OPEN && !ended) {
                 val pack = api.getPack(uuid, me.id)
                 change { before -> if (before == null) PackSessions.open(pack, me.id) else PackSessions.reload(before, pack) }
+                fetched = true
             }
         } catch (e: CancellationException) {
             throw e
@@ -830,6 +892,7 @@ internal class PackClient(
     private fun publish(change: PackState.() -> PackState) {
         current = current.change()
         mutableState.value = current
+        onState(current)
     }
 
     private fun itemsOf(session: PackSession): List<PackItemView> = PackSessions.visibleItems(session).map { item ->
@@ -853,15 +916,26 @@ internal class PackClient(
             delay(ms)
             timers.remove(timer)
             if (timer == Timer.SEND) askedToWait = false
+            retrying()
             fire()
         }
         timers[timer] = waiting
+        retrying()
         waiting.start()
     }
 
     private fun clear(timer: Timer) {
         timers.remove(timer)?.cancel()
         if (timer == Timer.SEND) askedToWait = false
+        retrying()
+    }
+
+    // [stalled] as the timers have it: a send, or a load before sending, waits to be tried again only after a try that failed.
+    private fun retrying() {
+        val waiting = Timer.SEND in timers || Timer.LOAD in timers
+        if (stalled == waiting) return
+        stalled = waiting
+        onStalled()
     }
 
     private fun clearTimers() {
