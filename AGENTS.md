@@ -728,6 +728,12 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   feature that reads a file needs one trial on a device, not only under Robolectric.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
+- **A queued test dispatcher hides what the main thread does.** A view model's coroutines run on `Dispatchers.Main.immediate`, which runs
+  work resumed on the main thread at once, inside whatever resumed it; `StandardTestDispatcher` as Main runs each in turn. The shell's pack
+  gate passed every test so, and an independent review then proved four ordering bugs with `UnconfinedTestDispatcher` as Main and writes that
+  suspend (as Room's do): packs stopped before a sign-out had written the documents, a new shell stopped them, ON_STOP's writes were cancelled
+  with the view model, and a quick return left them in the back. Test two collectors of one state, or work launched from a lifecycle event,
+  that way (`AppViewModelTest`), and remember a view model is cleared right after ON_STOP when the activity is finishing.
 
 ---
 
@@ -1028,11 +1034,16 @@ client is built around not losing one:
 - **Mission packs run with the app** (`app/packs/`: `PackRuntime` over the engine, `NetworkWatcher`; `AppViewModel`, `EngineSyncRunner`). They run
   only for a signed-in account past the gate, with `mission_packs` on, whose plans the device holds (`packGateFor`), from a collector of its own,
   because the one that works out ownership never hears an admin turn a feature off or on. **Sign-out is not the gate's**: the shell writes and closes
-  the open documents first and only then stops packs, so a pack item's last change reaches its queue; the gate leaves a signed-out state alone.
-  ON_START brings packs to the front and wakes them; ON_STOP (in `AppRoot`, which is always composed) writes the open diagram *and* set of routes at
-  once (the routes were never written early before), sends packs to the back, and asks for a sync while pack edits wait. The background sync
-  drains packs before the library (what a pack refused is kept as a library record, which then goes up in the same run): RETRY from packs, or a
-  drain that throws, makes the run RETRY with the library still synced; PAUSED does not.
+  the open documents first and only then stops packs, so a pack item's last change reaches its queue; the gate leaves a signed-out state alone,
+  and also **an owner not known yet**: every launch and every new shell starts there, and each change of session begins by forgetting it, which a
+  sign-out's collector can do before the gate's has heard of the sign-out (a stop then came before the documents were written, and a new shell
+  stopped packs running for its own account). ON_START brings packs to the front and wakes them; ON_STOP (in `AppRoot`, which is always composed)
+  sends them to the back at once, then writes the open diagram *and* set of routes (the routes were never written early before) and asks for a sync
+  while pack edits wait, in work the shell cannot cut short (`NonCancellable`): an activity that is finishing clears its view model right after
+  ON_STOP. A sync asked for while one runs is not queued again (`KEEP`), and that one leaves the open pack to its own client, so what is left goes
+  at the next launch or periodic sync. Every pack call in the shell is guarded: a broken database never ends the app, nor keeps a sign-out's
+  wipes from running. The background sync drains packs before the library (what a pack refused is kept as a library record, which then goes up in
+  the same run): RETRY from packs, or a drain that throws, makes the run RETRY with the library still synced; PAUSED does not.
 
 **The app module and the Android build.**
 - **Convention plugins** in `android/build-logic`: `ezpz.kotlin-library` (pure modules), and for Android

@@ -24,11 +24,15 @@ import app.ezpztac.network.AppConfig
 import app.ezpztac.network.AuthState
 import app.ezpztac.network.NetworkException
 import app.ezpztac.network.SignedOutReason
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -109,10 +113,16 @@ class AppViewModelTest {
 
     private class FakeAccounts(var owner: Int? = null, var unsynced: Int = 0) : AccountScope {
         val log = mutableListOf<String>()
-        override suspend fun ownership(userId: Int): Ownership = when (owner) {
-            null -> Ownership.Unclaimed
-            userId -> Ownership.Yours
-            else -> Ownership.SomeoneElses(unsynced)
+
+        /** Whose plans these are takes a moment to find out, as a query of Room's does. */
+        var slow = false
+        override suspend fun ownership(userId: Int): Ownership {
+            if (slow) delay(10)
+            return when (owner) {
+                null -> Ownership.Unclaimed
+                userId -> Ownership.Yours
+                else -> Ownership.SomeoneElses(unsynced)
+            }
         }
         override suspend fun claim(userId: Int) { check(owner == null || owner == userId); owner = userId; log += "claim $userId" }
         override suspend fun wipe() { owner = null; unsynced = 0; log += "wipe" }
@@ -151,25 +161,35 @@ class AppViewModelTest {
 
     private class MutableClock(var now: Long = 1_000_000L)
 
-    /** Mission packs as the shell drives them: every call, in order. [onDisable] runs as packs are stopped, to look at what is done by then. */
+    /**
+     * Mission packs as the shell drives them: every call, in order. [onDisable] runs as packs are stopped, to look at what is done by then.
+     * [failing] makes every call that reaches the device's database throw, as a broken one would.
+     */
     private class RecordingPacks : PackRuntime {
         val log = mutableListOf<String>()
         var unsent = 0
+        var failing = false
         var onDisable: suspend () -> Unit = {}
-        override suspend fun enable(user: PackUser) { log += "enable ${user.id} ${user.name}" }
-        override suspend fun disable() { onDisable(); log += "disable" }
+        override suspend fun enable(user: PackUser) { broken(); log += "enable ${user.id} ${user.name}" }
+        override suspend fun disable() { onDisable(); broken(); log += "disable" }
         override fun start() { log += "start" }
         override fun foreground(visible: Boolean) { log += "foreground $visible" }
         override fun wake() { log += "wake" }
-        override suspend fun unsentCount(): Int = unsent
+        override suspend fun unsentCount(): Int { broken(); return unsent }
         override suspend fun drainAll(user: PackUser): DrainOutcome = error("the background sync's, not the shell's")
+        private fun broken() { if (failing) error("the device's database could not be read") }
     }
 
-    /** The device's store, which can be made to fail every write, as a busy or full database would. */
+    /**
+     * The device's store, which can be made to fail every write, as a busy or full database would, or to suspend on every one ([slow]), as
+     * Room's do: a write is then a moment in which something else can run.
+     */
     private class Flaky(private val inner: InMemorySyncStore = InMemorySyncStore()) : SyncStore, RecordFeed by inner {
         var failing = false
+        var slow = false
         override suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T {
             if (failing) error("the database was busy")
+            if (slow) delay(10)
             return inner.transaction(block)
         }
     }
@@ -178,7 +198,10 @@ class AppViewModelTest {
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
         val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val incoming: IncomingFiles,
-        val packs: RecordingPacks, val store: Flaky, val exportsCleared: () -> Int,
+        val packs: RecordingPacks, val store: Flaky,
+        /** Another shell over the same process: the activity finished and opened again, or recreated, while everything else lived on. */
+        val newShell: () -> AppViewModel,
+        val exportsCleared: () -> Int,
     )
 
     private fun TestScope.rig(
@@ -187,6 +210,7 @@ class AppViewModelTest {
         unsynced: Int = 0,
         configure: FakeBackend.() -> Unit = {},
         version: String = "1.7.6",
+        setUpPacks: RecordingPacks.() -> Unit = {},
     ): Rig {
         val backend = FakeBackend(stored).apply(configure)
         val accounts = FakeAccounts(owner, unsynced)
@@ -204,10 +228,11 @@ class AppViewModelTest {
         val threats = ThreatStore(threatVault, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), StandardTestDispatcher(testScheduler)) { clock.now }
         var cleared = 0
         val incoming = IncomingFiles()
-        val packs = RecordingPacks()
-        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, packs, version)
+        val packs = RecordingPacks().apply(setUpPacks)
+        val shell = { AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, packs, version) }
+        val model = shell()
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock, incoming, packs, store) { cleared }
+        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock, incoming, packs, store, shell) { cleared }
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -639,5 +664,99 @@ class AppViewModelTest {
         assertEquals(true, r.session.saveFailed.value)
         assertEquals("LZ CROW", r.session.active.value!!.name)                                // kept, and owed
         assertEquals(listOf("foreground false"), r.packs.log)                                 // the rest still happened
+    }
+
+    // As on a device: the main thread runs work resumed on it at once (Dispatchers.Main.immediate), where the queued test dispatcher runs it in
+    // turn, which can hide a collector seeing a state another has half changed. And the database's writes suspend, as Room's do.
+
+    @Test
+    fun `a session that ends writes and closes the open documents before packs stop, with work on the main thread run at once`() = runTest(dispatcher) {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val r = rig(owner = 1)
+        val made = r.routes.create("MISSION 1")
+        r.routeSession.open(made.id)
+        r.routeSession.edit("Rename set") { it.copy(name = "MISSION 2") }                    // not yet saved: the pause has not passed
+        r.store.slow = true
+        val closedWhenStopped = mutableListOf<Boolean>()
+        r.packs.onDisable = { closedWhenStopped += r.routeSession.active.value == null }
+        r.packs.log.clear()
+
+        r.backend.state.value = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "session_revoked")
+        advanceUntilIdle()
+
+        assertEquals(listOf("disable"), r.packs.log)                                          // once: never while whose plans these are was being worked out
+        assertEquals(listOf(true), closedWhenStopped)
+        assertEquals("MISSION 2", r.routes.open(made.id)!!.name)
+    }
+
+    @Test
+    fun `a new shell in a process where packs run leaves them running while it works out whose plans these are`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.accounts.slow = true
+        r.packs.log.clear()
+        r.newShell()                                                                            // the activity finished and opened again, the process alive
+        advanceUntilIdle()
+        assertEquals(listOf("enable 1 Pilot 1", "start"), r.packs.log)                        // asked again, which changes nothing; never stopped
+    }
+
+    @Test
+    fun `the writes and the sync on the way to the back are not cut short when the shell is cleared at once`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val set = r.routes.create("MISSION 1")
+        r.routeSession.open(set.id)
+        r.routeSession.edit("Rename set") { it.copy(name = "MISSION 2") }
+        r.packs.unsent = 2
+        r.store.slow = true
+        val asked = r.scheduler.requested
+
+        r.model.appStopped()
+        r.model.viewModelScope.cancel()                                                        // Back, or swiped from recents: ON_DESTROY clears the shell at once
+        advanceUntilIdle()
+
+        assertEquals("MISSION 2", r.routes.open(set.id)!!.name)
+        assertEquals(asked + 1, r.scheduler.requested)
+    }
+
+    @Test
+    fun `a quick return to the front leaves packs in the front, however long the writes on the way out take`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val diagram = r.repository.create(DiagramTarget(34.78, -84.08, "16S GD 66993 52949"), "LZ HAWK")
+        r.session.open(diagram.id)
+        r.session.edit("Rename") { it.copy(name = "LZ CROW") }
+        r.store.slow = true
+        r.packs.log.clear()
+
+        r.model.appStopped()
+        r.model.appStarted()                                                                    // a turn of the phone, while the write is still going
+        advanceUntilIdle()
+
+        assertEquals(listOf("foreground false", "foreground true", "wake"), r.packs.log)
+        assertEquals("LZ CROW", r.repository.open(diagram.id)!!.name)
+    }
+
+    @Test
+    fun `packs that cannot be started do not end the app, and are asked again at the next change`() = runTest(dispatcher) {
+        val r = rig(owner = 1, setUpPacks = { failing = true })                                // the device's database could not be read
+        r.model.appStopped()
+        advanceUntilIdle()
+        r.packs.failing = false
+        r.backend.state.value = AuthState.SignedIn(withoutPacks())
+        advanceUntilIdle()
+        r.backend.state.value = AuthState.SignedIn(user())
+        advanceUntilIdle()
+        assertEquals("enable 1 Pilot 1", r.packs.log.last { it.startsWith("enable") })
+    }
+
+    @Test
+    fun `packs that cannot be stopped at sign-out do not keep the threat picture and the rest from being cleared`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.threats.add(Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = Radars.defaultPair()))
+        advanceUntilIdle()
+        r.packs.failing = true
+        r.model.signOut()
+        advanceUntilIdle()
+        assertTrue(r.threats.entries.value.isEmpty())
+        assertNull(r.threatVault.kept)
+        assertEquals(1, r.exportsCleared())
     }
 }
