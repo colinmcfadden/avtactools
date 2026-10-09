@@ -1,10 +1,14 @@
 package app.ezpztac.data
 
 import android.content.Context
+import app.ezpztac.missionpacks.LzPackKind
 import app.ezpztac.missionpacks.PackApi
 import app.ezpztac.missionpacks.PackEngine
 import app.ezpztac.missionpacks.PackKeeper
 import app.ezpztac.missionpacks.PackStore
+import app.ezpztac.missionpacks.RoutePackKind
+import app.ezpztac.model.Diagram
+import app.ezpztac.model.RouteSet
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.SyncScheduler
@@ -50,17 +54,35 @@ internal object DataModule {
     @Singleton
     fun repository(store: SyncStore): SyncRepository = SyncRepository(store)
 
-    /** The open diagram outlives any screen, so its delayed save runs in a scope of its own that is never cancelled with one. */
+    /**
+     * The open diagram outlives any screen, so its delayed save runs in a scope of its own that is never cancelled with one. A mission pack's
+     * LZ/PZ opens in the same session ([lzItems]), so it is edited, undone and saved like one of the person's own.
+     */
     @Provides
     @Singleton
-    fun diagramSession(repository: DiagramRepository): DiagramSession =
-        DiagramSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    fun diagramSession(repository: DiagramRepository, lzItems: PackItemStore<Diagram>): DiagramSession =
+        DiagramSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default), packs = lzItems)
 
-    /** The open set of routes outlives any screen too, for the same reason. */
+    /** The open set of routes outlives any screen too, for the same reason, and a pack's route set opens in it the same way ([routeItems]). */
     @Provides
     @Singleton
-    fun routeSession(repository: RouteRepository): RouteSession =
-        RouteSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    fun routeSession(repository: RouteRepository, routeItems: PackItemStore<RouteSet>): RouteSession =
+        RouteSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default), packs = routeItems)
+
+    /**
+     * Where the diagram session reads and writes a mission pack's LZ/PZs: a save is sent to the pack as operations, never to the library. Its
+     * baselines are kept on the main thread, where edits are made.
+     */
+    @Provides
+    @Singleton
+    fun lzItems(engine: PackEngine, store: PackStore): PackItemStore<Diagram> =
+        PackItemStore(engine, LzPackKind(), store, { it.id }, Dispatchers.Main.immediate)
+
+    /** The same for the route session and a mission pack's sets of routes. */
+    @Provides
+    @Singleton
+    fun routeItems(engine: PackEngine, store: PackStore): PackItemStore<RouteSet> =
+        PackItemStore(engine, RoutePackKind, store, { it.id }, Dispatchers.Main.immediate)
 
     /** A threat's mask is asked for by a press and answered later, and is held in memory with the threats: it is not tied to a screen. */
     @Provides

@@ -5,8 +5,8 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-09 (the Android mission-pack engine is half built on `feat/android-mission-packs`: A1–A10 done,
-A11–A15 next, then the redesigned screens).
+Last refreshed: 2026-10-09 (the Android mission-pack engine on `feat/android-mission-packs`: A1–A12 done, A13–A15 next, then the
+redesigned screens).
 
 ---
 
@@ -30,9 +30,11 @@ A11–A15 next, then the redesigned screens).
   to `contracts/fixtures/packs`; A9 the client that sends, catches up and follows one pack, offline included; A10 the engine that runs
   every pack and keeps what a pack refuses (`99bc493`). On the web and server, first: five web session bugs fixed (`67554b1`), a refused
   ops batch says which of its operations it already took (`taken`, `718ed9c`), and every pack write route reads the caller's role
-  and the pack's deletion again under the pack's lock (`f204a8f`). A11 (Room, database version 3) is done on
-  `feat/android-mission-packs-a11`, built beside A12, to be merged. **Not built:** A12 (the editors
-  edit pack items), A13 (the app runs packs), A14 (invitation links), A15 (docs), then the screens. Nothing a person sees has changed.
+  and the pack's deletion again under the pack's lock (`f204a8f`). Then, built side by side on two PCs and merged (`138bae3`): A11
+  keeps packs and their unsent edits on the device (database version 3, `4b56144`, and `3a616ca` so a record past Android's 2 MB cursor
+  window can still be read), and A12 lets the existing LZ and route editors edit a pack's items (`fb0600d`), handed their pack stores in
+  the commit after the merge. **Not built:** A13 (the app runs packs), A14 (invitation links), A15 (docs), then the screens. Nothing a
+  person sees has changed yet: nothing opens a pack until A13 and the screens.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
   state is in AGENTS.md §17's table. **Not in P2 yet:** an ATAK data package. (Saved missions, which keep the `.msnx` as the document and write edits back into it, and dragging and turning on the map are built: AGENTS.md §17, *Saved missions* and *Dragging and turning on the map*.)
@@ -44,7 +46,7 @@ A11–A15 next, then the redesigned screens).
   `FLAG_SECURE` and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
   "not verifiable here" in AGENTS.md). The first device run is the first real test of all of them.
 - **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`, §3): green for every engine commit,
-  A1–A10, on the owner's workstation (the live-server tests ran, none skipped). CI was green on `develop` at `ed6ec02` (Android on
+  A1–A12 (A11 on the owner's other PC), and for the merge of the two, on the owner's workstation (the live-server tests ran, none skipped). CI was green on `develop` at `ed6ec02` (Android on
   JDK 21, the backend's contract tests) and runs again on the PR. Re-run it after any change before pushing.
 - **The owner's Windows workstation builds the app** since 2026-10-08 (§3 has the setup): a full build is about 7 minutes warm, 36
   minutes cold. The owner works from more than one PC; whichever builds needs §3's setup and its own `android/local.properties`.
@@ -53,17 +55,17 @@ A11–A15 next, then the redesigned screens).
 
 ## 2. Next work, in order
 
-1. **Finish the mission-pack engine: A11–A15**, in that order (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Commit plan* items 13–17: what
-   each builds, its tests and its check). A11 keeps packs and their unsent edits on the device (database version 3, migration tests
-   2→3 and 1→3, `AccountScope` wipes them, `LibraryPackKeeper`, the Hilt providers). A12 lets the existing LZ and route editors edit a
-   pack item (`DocumentSession.document`/`owe`, a pack store for `DiagramSession`/`RouteSession`, `PackItemStore`, `PackEditorSync`,
-   `PackWorkspace`): the most delicate step (baselines, someone else's change through `setQuietly` without breaking undo, threading).
-   A13 runs packs with the app (`PackRuntime`, the gate in `AppViewModel`, `appStopped` on ON_STOP flushing both sessions,
-   `NetworkWatcher`, the sync runner draining packs before the Library). A14 accepts `?invite=<token>` once signed in (`InviteLinks`
-   beside `AuthLinks`). A15 writes it down (AGENTS.md §17 'Mission packs', §15's web candidates, MISSION_PACKS §8, this file).
-   **How A1–A10 were built:** one commit per step, each implemented, then reviewed by two independent reviewers, fixed, and committed
-   only with its module's tests and the full build green; about an hour a commit, and the reviews found real bugs. The owner was
-   offered a lighter process for A11–A15 (one agent and the full build, an independent review only for A11 and A12): not yet answered.
+1. **Finish the mission-pack engine: A13–A15**, in that order (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Commit plan* items 15–17: what
+   each builds, its tests and its check). A11 (Room) and A12 (the editors) are done. A13 runs packs with the app (`PackRuntime`, the
+   gate in `AppViewModel`, `appStopped` on ON_STOP, `NetworkWatcher`, the sync runner draining packs before the Library), and from A12
+   it must: call `PackWorkspace.start()` when packs are enabled; **close both sessions before `engine.disable()`, whatever the reason**
+   (sign-out, Mission Packs turned off, the gate lost), so an unsent change reaches its own account's queue (after `disable()` it can only
+   be kept once that account is back, and is lost if the process ends first); and flush both sessions on ON_STOP. A14 accepts
+   `?invite=<token>` once signed in (`InviteLinks` beside `AuthLinks`). A15 writes it down (AGENTS.md §17 'Mission packs', §15's web
+   candidates, MISSION_PACKS §8, this file). **How they were built:** one commit per step, implemented, reviewed independently, fixed,
+   and committed only with its module's tests and the full build green. A1–A10 had two reviewers each, about an hour a commit; A12 had
+   one, which still found a blocker (a change arriving while an item opened could be reverted for everyone). A lighter process for
+   A13–A15 (one agent and the full build, a review only where a mistake is costly) is the owner's call.
    The background on what came before follows (the contracts and seams below are done or settled).
    - **Contracts first, on the web** (done: `38e9d7b`, `02100c1`; `contracts/README.md` lists them). At the start only the operation rules were pinned (`contracts/fixtures/packs/ops.json`, 134 cases). Also pin, from
      `frontend/src/feature/missionPacks/`: `packDiff.js` (the operations an edit becomes), `packSession.js` (the client's state: pending,
