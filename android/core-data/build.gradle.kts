@@ -14,8 +14,8 @@ android {
 dependencies {
     api(project(":core-model"))
     api(project(":core-sync"))
-    api(project(":core-missionpacks"))
     api(project(":core-planning"))                               // a route being drawn is made by its SketchOps
+    api(project(":core-missionpacks"))                           // mission packs: their engine, kept here in Room
     implementation(project(":core-formats"))                     // a set of routes is exported as an AMPS mission
     implementation(project(":core-geo"))
     implementation(libs.androidx.core.ktx)                       // the platform SQLite helpers a .ths is written with

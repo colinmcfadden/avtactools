@@ -130,6 +130,51 @@ class RoomSyncStoreTest {
         }
     }
 
+    // -- Longer than a cursor window ----------------------------------------------------------
+    // A row over 2 MB cannot be read whole on a device, and Robolectric's SQLite enforces the same window. These are past it, with
+    // characters of one, two and four bytes so the parts are counted in characters, not bytes.
+
+    private val longText = "LZ 🚁 é ".repeat(400_000)
+
+    @Test
+    fun `a document longer than a cursor window comes back whole, alone, in a list and observed`() = runBlocking<Unit> {
+        val document = buildJsonObject {
+            put("notes", longText)
+            put("after", 2.5)
+        }
+        store.transaction { put(lz("a")); put(lz("big", data = document)); put(lz("z")) }
+        assertEquals(document, store.transaction { record(RecordKind.LZ, "big") }!!.data)
+        val listed = store.transaction { records(RecordKind.LZ) }
+        assertEquals(listOf("a", "big", "z"), listed.map { it.uuid })
+        assertEquals(document, listed[1].data)
+        store.observe(RecordKind.LZ).test {
+            val seen = awaitItem()
+            assertEquals(listOf("a", "big", "z"), seen.map { it.uuid })
+            assertEquals(document, seen[1].data)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a send in progress longer than a cursor window is kept exactly`() = runBlocking<Unit> {
+        val sent = Attempt(key = "k-1", version = 2, baseRevision = 1, name = "BIG", data = buildJsonObject { put("notes", longText) })
+        val entry = store.transaction { enqueue(OutboxEntry(0, RecordKind.LZ, "big", Operation.UPDATE, sent = sent, attempts = 1)) }
+        assertEquals(entry, store.transaction { outbox() }.single())
+        assertEquals(entry, store.transaction { entryFor(RecordKind.LZ, "big", Operation.UPDATE) })
+    }
+
+    @Test
+    fun `a file longer than a cursor window comes back byte for byte`() = runBlocking<Unit> {
+        val bytes = ByteArray(5 * 1024 * 1024 + 3) { (it * 31 % 251).toByte() }
+        val id = FileHash.of(bytes)
+        store.transaction {
+            putBlob(id, bytes)
+            put(lz("m").copy(kind = RecordKind.MISSION, file = FileRef(id, "BIG.msnx")))
+        }
+        assertTrue(bytes.contentEquals(store.transaction { blob(id) }))
+        assertNull(store.transaction { blob("no-such-file") })
+    }
+
     // -- Outbox --------------------------------------------------------------------------------
 
     @Test

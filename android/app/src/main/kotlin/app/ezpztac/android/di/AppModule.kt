@@ -38,6 +38,8 @@ import app.ezpztac.data.ApiClientTerrainApi
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.ThreatMaskApi
 import app.ezpztac.data.TerrainApi
+import app.ezpztac.missionpacks.ApiPackApi
+import app.ezpztac.missionpacks.PackApi
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ClientInfo
 import app.ezpztac.network.SessionStore
@@ -118,6 +120,11 @@ object AppModule {
     @Provides
     @Singleton
     fun syncApi(client: ApiClient): SyncApi = ApiSyncApi(client)
+
+    /** What the mission-pack engine asks the server: a pack, its log, and a batch of edits. */
+    @Provides
+    @Singleton
+    fun packApi(client: ApiClient): PackApi = ApiPackApi(client)
 
     @Provides
     @Singleton

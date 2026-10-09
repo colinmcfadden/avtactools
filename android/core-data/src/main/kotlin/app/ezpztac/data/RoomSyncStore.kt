@@ -37,18 +37,45 @@ public class RoomSyncStore internal constructor(private val database: EzpzDataba
      * it can see.
      */
     override fun observe(kind: RecordKind): Flow<List<LocalRecord>> =
-        dao.observe(kind.name).map { rows -> rows.map { it.toModel() } }.distinctUntilChanged()
+        dao.observe(kind.name, LongValues.TEXT_PART).map { rows ->
+            if (rows.none { it.dataSize > LongValues.TEXT_PART }) {
+                rows.map { it.record.toModel() }
+            } else {
+                // A document too long for one read is read again, in parts, in a transaction, so its parts are of one version. It may
+                // have changed (or gone) since the list was read; the list that follows that change shows it.
+                database.withTransaction {
+                    val reading = RoomTransaction(dao)
+                    rows.mapNotNull { row ->
+                        if (row.dataSize > LongValues.TEXT_PART) reading.record(kind, row.record.uuid)?.takeUnless { it.deleted } else row.record.toModel()
+                    }
+                }
+            }
+        }.distinctUntilChanged()
 }
 
 private class RoomTransaction(private val dao: SyncDao) : SyncTransaction {
-    override suspend fun record(kind: RecordKind, uuid: String) = dao.record(kind.name, uuid)?.toModel()
-    override suspend fun records(kind: RecordKind) = dao.records(kind.name).map { it.toModel() }
+    override suspend fun record(kind: RecordKind, uuid: String) = dao.record(kind.name, uuid, LongValues.TEXT_PART)?.let { whole(it) }?.toModel()
+    override suspend fun records(kind: RecordKind) = dao.records(kind.name, LongValues.TEXT_PART).map { whole(it).toModel() }
     override suspend fun put(record: LocalRecord) = dao.put(record.toEntity())
     override suspend fun remove(kind: RecordKind, uuid: String) = dao.remove(kind.name, uuid)
 
-    override suspend fun outbox() = dao.outbox().map { it.toModel() }
+    override suspend fun outbox() = dao.outbox(LongValues.TEXT_PART).map { whole(it).toModel() }
     override suspend fun entryFor(kind: RecordKind, uuid: String, operation: Operation) =
-        dao.entryFor(kind.name, uuid, operation.name)?.toModel()
+        dao.entryFor(kind.name, uuid, operation.name, LongValues.TEXT_PART)?.let { whole(it) }?.toModel()
+
+    // A record or a send whose document was too long to read with the row, with the document read in parts.
+    private suspend fun whole(read: RecordRead): RecordEntity =
+        if (read.dataSize <= LongValues.TEXT_PART) {
+            read.record
+        } else {
+            read.record.copy(data = LongValues.text(read.dataSize) { from, count -> dao.recordDataPart(read.record.kind, read.record.uuid, from, count) })
+        }
+
+    private suspend fun whole(read: OutboxRead): OutboxEntity {
+        val size = read.sentDataSize ?: return read.entry
+        if (size <= LongValues.TEXT_PART) return read.entry
+        return read.entry.copy(sentData = LongValues.text(size) { from, count -> dao.sentDataPart(read.entry.seq, from, count) })
+    }
 
     override suspend fun enqueue(entry: OutboxEntry): OutboxEntry {
         // 0 asks Room for the next number; it is never reused, even after the entry that held it is removed.
@@ -65,7 +92,11 @@ private class RoomTransaction(private val dao: SyncDao) : SyncTransaction {
     override suspend fun cursor(): Int = dao.state(CURSOR) ?: 0
     override suspend fun setCursor(cursor: Int) = dao.setState(SyncStateEntity(CURSOR, cursor))
 
-    override suspend fun blob(id: String): ByteArray? = dao.blob(id)
+    override suspend fun blob(id: String): ByteArray? {
+        val size = dao.blobSize(id) ?: return null
+        // A mission's file can be larger than a cursor window: read in parts then.
+        return if (size <= LongValues.BYTES_PART) dao.blob(id) else LongValues.bytes(size) { from, count -> dao.blobPart(id, from, count) }
+    }
     override suspend fun putBlob(id: String, bytes: ByteArray) = dao.putBlob(BlobEntity(id, bytes))
 
     private companion object {

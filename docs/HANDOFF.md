@@ -30,7 +30,8 @@ A11–A15 next, then the redesigned screens).
   to `contracts/fixtures/packs`; A9 the client that sends, catches up and follows one pack, offline included; A10 the engine that runs
   every pack and keeps what a pack refuses (`99bc493`). On the web and server, first: five web session bugs fixed (`67554b1`), a refused
   ops batch says which of its operations it already took (`taken`, `718ed9c`), and every pack write route reads the caller's role
-  and the pack's deletion again under the pack's lock (`f204a8f`). **Not built:** A11 (Room, database version 3), A12 (the editors
+  and the pack's deletion again under the pack's lock (`f204a8f`). A11 (Room, database version 3) is done on
+  `feat/android-mission-packs-a11`, built beside A12, to be merged. **Not built:** A12 (the editors
   edit pack items), A13 (the app runs packs), A14 (invitation links), A15 (docs), then the screens. Nothing a person sees has changed.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
