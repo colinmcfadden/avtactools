@@ -79,7 +79,10 @@ public sealed interface PackNotice {
     /** While the pack is open, it would not take [count] of the person's edits ([reasons]: `pack_finished`, `read_only`, `gone`, …). */
     public data class Dropped(override val pack: String, val count: Int, val reasons: Set<String>) : PackNotice
 
-    /** The person's own version of the items the pack would not take their edits to was saved to their library ([saved]). */
+    /**
+     * The person's own version of the items the pack would not take their edits to was saved to their library ([saved]). Said by the engine for
+     * edits a pack dropped, and by an editor for a change it held back (the pack paused, closed or gone) when its document closed first.
+     */
     public data class Kept(
         override val pack: String,
         val packName: String?,
@@ -98,4 +101,20 @@ public sealed interface PackNotice {
 
     /** Sending and following stopped for the account's sake ([code]: `feature_disabled`, `other_account`, …); nothing was dropped. */
     public data class Paused(override val pack: String, val code: String?) : PackNotice
+
+    /**
+     * A change made in an editor was put back to the pack's version, because the pack would not take it ([reason]: `read_only`, `paused`,
+     * `gone`, `closed`, …), or nothing was made ([localId] null: a new item the pack refused). Said by the editors joined to the open pack
+     * (core-data's `PackWorkspace`), never by the engine: its own refusals of edits already on their way are [Dropped].
+     */
+    public data class Refused(override val pack: String, val localId: String?, val reason: String) : PackNotice
+
+    /**
+     * The item open in an editor ([localId], called [name]) left it: someone removed it, the pack is gone, or the pack is no longer the open one
+     * (closed or turned off under it). [kept] is what was made of a change here that had not been sent: the person's version, saved to their
+     * library as "NAME (my edits)"; null when there was none, when it is not kept yet (nobody's packs were on: it is kept once its account's
+     * are, and said by [Kept]), or when another account's packs are on (never kept into theirs). Said by the editors joined to the open pack,
+     * never by the engine.
+     */
+    public data class ItemRemoved(override val pack: String, val localId: String, val name: String, val kept: KeptOutcome.Saved?) : PackNotice
 }

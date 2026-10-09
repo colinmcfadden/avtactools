@@ -14,6 +14,7 @@ android {
 dependencies {
     api(project(":core-model"))
     api(project(":core-sync"))
+    api(project(":core-missionpacks"))
     api(project(":core-planning"))                               // a route being drawn is made by its SketchOps
     implementation(project(":core-formats"))                     // a set of routes is exported as an AMPS mission
     implementation(project(":core-geo"))
@@ -22,5 +23,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(testFixtures(project(":core-sync")))
+    testImplementation(testFixtures(project(":core-missionpacks")))
     testImplementation(project(":core-testing"))
 }

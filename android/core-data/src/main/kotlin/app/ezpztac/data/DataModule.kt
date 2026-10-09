@@ -63,6 +63,6 @@ internal object DataModule {
     /** An analysis outlives the screen that asked for it (the person may leave while the server works), and applies its result on the main thread, where edits are made. */
     @Provides
     @Singleton
-    fun analysisService(api: TerrainApi, session: DiagramSession, repository: DiagramRepository): AnalysisService =
-        AnalysisService(api, session, repository, CoroutineScope(SupervisorJob() + Dispatchers.Default), Dispatchers.Main.immediate)
+    fun analysisService(api: TerrainApi, session: DiagramSession): AnalysisService =
+        AnalysisService(api, session, CoroutineScope(SupervisorJob() + Dispatchers.Default), Dispatchers.Main.immediate)
 }
