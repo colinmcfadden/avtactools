@@ -233,6 +233,38 @@ class PackWorkspaceTest {
     }
 
     @Test
+    fun `packs stopped for the account write an open item's last change into its own queue first, and leave the person's own documents open`() = packTest { r ->
+        r.opened()
+        val own = r.routeRepository.create("MISSION 1")                                       // the person's own set, from the library, open beside it
+        assertTrue(r.routes.open(own.id))
+        r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.4}""")) }
+
+        r.workspace.stop()                                                                      // Mission Packs turned off, say
+        runCurrent()
+
+        assertNull("the pack's item is closed", r.diagrams.active.value)
+        assertEquals("the person's own set stays open", own.id, r.routes.active.value?.id)
+        assertNull("nobody runs packs now", r.engine.me.value)
+        assertTrue("nothing refused, nothing kept as the person's own", r.notices.none { it is PackNotice.Refused } && r.keeper.records.isEmpty())
+        // It waits on the device for this account, and goes once packs run for it again.
+        r.engine.enable(SAM)
+        r.advance(10_000)
+        assertEquals(34.4, r.serverData().getValue("graphics").jsonObject.getValue("helicopters").jsonArray[0].jsonObject.getValue("lat").jsonPrimitive.double, 0.0)
+        assertTrue(r.keeper.records.isEmpty())
+    }
+
+    @Test
+    fun `stopping the engine before closing the item would have kept the change as the person's own instead`() = packTest { r ->
+        // What stop() is ordered against: the editor's last change finds the engine stopped, so it can only be kept in the library.
+        r.opened()
+        r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.4}""")) }
+        r.engine.disable()
+        r.diagrams.close()
+        runCurrent()
+        assertEquals(listOf("LZ HAWK (my edits)"), r.keeper.records.map { it.version.name })
+    }
+
+    @Test
     fun `a pack deleted while it is open closes its items in the editors, keeping a change that had not gone`() = packTest { r ->
         r.opened()
         r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.4}""")) }

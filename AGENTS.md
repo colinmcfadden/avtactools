@@ -1031,9 +1031,12 @@ client is built around not losing one:
   the session as confirmed and the person would never be asked to sign in again. A process already launched is left alone (the rule is applied
   at launch, never to someone in the middle of their work). It syncs only when the device's plans are the signed-in account's
   (`Ownership.Yours`): another account's stay unsent, and an unclaimed device is the shell's to claim.
-- **Mission packs run with the app** (`app/packs/`: `PackRuntime` over the engine, `NetworkWatcher`; `AppViewModel`, `EngineSyncRunner`). They run
-  only for a signed-in account past the gate, with `mission_packs` on, whose plans the device holds (`packGateFor`), from a collector of its own,
-  because the one that works out ownership never hears an admin turn a feature off or on. **Sign-out is not the gate's**: the shell writes and closes
+- **Mission packs run with the app** (`app/packs/`: `PackRuntime` over the engine and `PackWorkspace`, `NetworkWatcher`; `AppViewModel`,
+  `EngineSyncRunner`). They run only for a signed-in account past the gate, with `mission_packs` on, whose plans the device holds (`packGateFor`),
+  from a collector of its own, because the one that works out ownership never hears an admin turn a feature off or on. Running them joins the
+  editors to whichever pack is open (`PackWorkspace.start`); **stopping them, whatever the reason, goes through `PackWorkspace.stop`**, which
+  writes and closes whatever of a pack is open in the editors before the engine stops (after, its change could only be kept as the person's
+  own, `PackWorkspaceTest`), and leaves the person's own documents open. **Sign-out is not the gate's**: the shell writes and closes
   the open documents first and only then stops packs, so a pack item's last change reaches its queue; the gate leaves a signed-out state alone,
   and also **an owner not known yet**: every launch and every new shell starts there, and each change of session begins by forgetting it, which a
   sign-out's collector can do before the gate's has heard of the sign-out (a stop then came before the documents were written, and a new shell

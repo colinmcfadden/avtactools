@@ -1,7 +1,7 @@
 # Android mission-pack engine: the plan it is built from
 
-Status (2026-10-09): **A1–A12 are done** on `feat/android-mission-packs` (A11 and A12 built side by side and merged); **A13–A15
-remain**, then the screens. This is the
+Status (2026-10-09): **A1–A13 are done** on `feat/android-mission-packs` (A11 and A12 built side by side and merged, A13 beside A12
+and merged after it); **A14–A15 remain**, then the screens. This is the
 design the engine is being built to: the synthesis of three drafts (fidelity to the web first, offline robustness first, the
 smallest sound change), made on 2026-10-08, with the owner's decisions and the amendments made while building on top. **Where it
 disagrees with the code, the code wins** (AGENTS.md §16), and AGENTS.md §17 says what each module holds now. Read
@@ -26,6 +26,7 @@ What changed under the plan since it was written, all done:
 | A7 | `573883c` | A8 | `4c02e68` |
 | A9 | `c228381` | A10 | `99bc493` |
 | A11 | `4b56144`, `3a616ca` | A12 | `fb0600d`, merged `138bae3` |
+| A13 | `0de2522`, `e832c62`, merged `56657f0` | | |
 
 Not in the plan but done on the way: `72ab5dc` (a flaky network test fixed at its cause).
 

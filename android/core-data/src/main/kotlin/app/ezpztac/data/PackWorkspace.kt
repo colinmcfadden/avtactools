@@ -13,6 +13,7 @@ import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.RouteSet
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -78,6 +79,20 @@ class PackWorkspace @Inject constructor(
             val failed = leave(staying = null)
             engine.closePack()
             failed?.let { throw it }
+        }
+    }
+
+    /**
+     * Packs stop for this account, whatever the reason (signed out, Mission Packs turned off, the `.mil` gate lost): whatever of a pack is
+     * open in the editors is written into its pack and closed first, while the engine still takes it, so its last change waits in this
+     * account's queue on the device (for its next enable, never anyone else's) rather than being refused and kept as "NAME (my edits)". Then
+     * the engine stops. The person's own documents stay open. Nothing here may be cut short, nor keep the engine running: a save that fails
+     * is lost with the stop, as at a sign-out ([DocumentSession.close] closes regardless).
+     */
+    suspend fun stop() {
+        withContext(main + NonCancellable) {
+            leave(staying = null)
+            engine.disable()
         }
     }
 

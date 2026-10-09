@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-09 (the Android mission-pack engine on `feat/android-mission-packs`: A1–A12 done, A13–A15 next, then the
+Last refreshed: 2026-10-09 (the Android mission-pack engine on `feat/android-mission-packs`: A1–A13 done, A14–A15 next, then the
 redesigned screens).
 
 ---
@@ -56,17 +56,15 @@ redesigned screens).
 
 ## 2. Next work, in order
 
-1. **Finish the mission-pack engine: A13–A15**, in that order (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Commit plan* items 15–17: what
-   each builds, its tests and its check). A11 (Room) and A12 (the editors) are done. A13 runs packs with the app (`PackRuntime`, the
-   gate in `AppViewModel`, `appStopped` on ON_STOP, `NetworkWatcher`, the sync runner draining packs before the Library), and from A12
-   it must: call `PackWorkspace.start()` when packs are enabled; **close both sessions before `engine.disable()`, whatever the reason**
-   (sign-out, Mission Packs turned off, the gate lost), so an unsent change reaches its own account's queue (after `disable()` it can only
-   be kept once that account is back, and is lost if the process ends first); and flush both sessions on ON_STOP. A14 accepts
-   `?invite=<token>` once signed in (`InviteLinks` beside `AuthLinks`). A15 writes it down (AGENTS.md §17 'Mission packs', §15's web
-   candidates, MISSION_PACKS §8, this file). **How they were built:** one commit per step, implemented, reviewed independently, fixed,
-   and committed only with its module's tests and the full build green. A1–A10 had two reviewers each, about an hour a commit; A12 had
-   one, which still found a blocker (a change arriving while an item opened could be reverted for everyone). A lighter process for
-   A13–A15 (one agent and the full build, a review only where a mistake is costly) is the owner's call.
+1. **Finish the mission-pack engine: A14–A15**, in that order (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Commit plan* items 16–17: what
+   each builds, its tests and its check). A11 (Room), A12 (the editors) and A13 (the app runs packs) are done; A13 starts the editors'
+   join when packs run (`PackWorkspace.start`) and stops packs through `PackWorkspace.stop`, which writes and closes whatever of a pack is
+   open in the editors before the engine stops, whatever the reason. A14 accepts `?invite=<token>` once signed in (`InviteLinks` beside
+   `AuthLinks`). A15 writes it down (AGENTS.md §17 'Mission packs', §15's web candidates, MISSION_PACKS §8, this file). **How they were
+   built:** one commit per step, implemented, reviewed independently, fixed, and committed only with its module's tests and the full build
+   green. A1–A10 had two reviewers each, about an hour a commit; A11, A12 and A13 one each, and every one found something real (A12 a
+   blocker: a change arriving while an item opened could be reverted for everyone; A13 four ordering bugs a queued test dispatcher hid,
+   AGENTS.md §14). A11–A13 were each built by one agent with the full build and one independent review, at the owner's request.
    The background on what came before follows (the contracts and seams below are done or settled).
    - **Contracts first, on the web** (done: `38e9d7b`, `02100c1`; `contracts/README.md` lists them). At the start only the operation rules were pinned (`contracts/fixtures/packs/ops.json`, 134 cases). Also pin, from
      `frontend/src/feature/missionPacks/`: `packDiff.js` (the operations an edit becomes), `packSession.js` (the client's state: pending,
