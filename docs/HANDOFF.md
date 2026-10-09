@@ -34,8 +34,9 @@ redesigned screens).
   keeps packs and their unsent edits on the device (database version 3, `4b56144`, and `3a616ca` so a record past Android's 2 MB cursor
   window can still be read), and A12 lets the existing LZ and route editors edit a pack's items (`fb0600d`), handed their pack stores in
   the commit after the merge. A13 runs packs with the app (`0de2522`, and `e832c62` for what its review proved), merged after them and
-  joined to A12's editors in the commit after that merge. **Not built:** A14 (invitation links), A15 (docs), then the screens. Nothing a
-  person sees has changed yet: nothing opens a pack until the screens.
+  joined to A12's editors in the commit after that merge. A14 accepts an invitation link once the person can open packs (on
+  `feat/android-mission-packs-a14`). **Not built:** A15 (docs), then the screens. Nothing a person sees has changed yet: nothing opens or
+  shows a pack, or what became of an invitation, until the screens.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
   state is in AGENTS.md §17's table. **Not in P2 yet:** an ATAK data package. (Saved missions, which keep the `.msnx` as the document and write edits back into it, and dragging and turning on the map are built: AGENTS.md §17, *Saved missions* and *Dragging and turning on the map*.)
@@ -56,11 +57,11 @@ redesigned screens).
 
 ## 2. Next work, in order
 
-1. **Finish the mission-pack engine: A14–A15**, in that order (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Commit plan* items 16–17: what
-   each builds, its tests and its check). A11 (Room), A12 (the editors) and A13 (the app runs packs) are done; A13 starts the editors'
-   join when packs run (`PackWorkspace.start`) and stops packs through `PackWorkspace.stop`, which writes and closes whatever of a pack is
-   open in the editors before the engine stops, whatever the reason. A14 accepts `?invite=<token>` once signed in (`InviteLinks` beside
-   `AuthLinks`). A15 writes it down (AGENTS.md §17 'Mission packs', §15's web candidates, MISSION_PACKS §8, this file). **How they were
+1. **Finish the mission-pack engine: A15** (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Commit plan* item 17: what it covers). A11 (Room), A12
+   (the editors), A13 (the app runs packs) and A14 (invitation links) are done; A13 starts the editors' join when packs run
+   (`PackWorkspace.start`) and stops packs through `PackWorkspace.stop`, which writes and closes whatever of a pack is open in the editors
+   before the engine stops, whatever the reason; A14 keeps `?invite=<token>` and accepts it once the person can open packs (`InviteLinks`
+   beside `AuthLinks`). A15 writes it down (AGENTS.md §17 'Mission packs', §15's web candidates, MISSION_PACKS §8, this file). **How they were
    built:** one commit per step, implemented, reviewed independently, fixed, and committed only with its module's tests and the full build
    green. A1–A10 had two reviewers each, about an hour a commit; A11, A12 and A13 one each, and every one found something real (A12 a
    blocker: a change arriving while an item opened could be reverted for everyone; A13 four ordering bugs a queued test dispatcher hid,

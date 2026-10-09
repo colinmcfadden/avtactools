@@ -1,8 +1,20 @@
 package app.ezpztac.android
 
+import androidx.lifecycle.SavedStateHandle
+import app.ezpztac.android.packs.PackInvites
 import app.ezpztac.android.packs.PackRuntime
+import app.ezpztac.auth.AuthRoute
 import app.ezpztac.missionpacks.DrainOutcome
+import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.missionpacks.PackUser
+import app.ezpztac.network.ApiException
+import app.ezpztac.network.Invite
+import app.ezpztac.network.InviteAccepted
+import app.ezpztac.network.PackItemCounts
+import app.ezpztac.network.PackPerson
+import app.ezpztac.network.PackSummary
+import app.ezpztac.network.RateLimitedException
+import kotlinx.coroutines.CompletableDeferred
 import app.ezpztac.sync.InMemorySyncStore
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.RecordingScheduler
@@ -194,15 +206,29 @@ class AppViewModelTest {
         }
     }
 
+    /** The server's answer to an invitation link: OP DK joined as an editor, unless [answer] says otherwise. Every token asked about, in order. */
+    private class FakeInvites : PackInvites {
+        val asked = mutableListOf<String>()
+        var answer: suspend (String) -> InviteAccepted = { joinedPack() }
+        override suspend fun accept(token: String): InviteAccepted {
+            asked += token
+            return answer(token)
+        }
+    }
+
     private class Rig(
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
         val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val incoming: IncomingFiles,
-        val packs: RecordingPacks, val store: Flaky,
-        /** Another shell over the same process: the activity finished and opened again, or recreated, while everything else lived on. */
-        val newShell: () -> AppViewModel,
+        val packs: RecordingPacks, val store: Flaky, val invites: FakeInvites,
+        /** The shell's saved state, as the activity keeps it through a turn of the phone and the process being ended. */
+        val saved: SavedStateHandle,
+        private val makeShell: (SavedStateHandle) -> AppViewModel,
         val exportsCleared: () -> Int,
-    )
+    ) {
+        /** Another shell over the same process (the activity finished and opened again, or recreated), with [saved] as the state it comes back with. */
+        fun newShell(saved: SavedStateHandle = SavedStateHandle()): AppViewModel = makeShell(saved)
+    }
 
     private fun TestScope.rig(
         stored: AuthState = AuthState.SignedIn(user()),
@@ -229,10 +255,17 @@ class AppViewModelTest {
         var cleared = 0
         val incoming = IncomingFiles()
         val packs = RecordingPacks().apply(setUpPacks)
-        val shell = { AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, packs, version) }
-        val model = shell()
+        val invites = FakeInvites()
+        val shell = { saved: SavedStateHandle ->
+            AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, packs, invites, saved, version)
+        }
+        val saved = SavedStateHandle()
+        val model = shell(saved)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock, incoming, packs, store, shell) { cleared }
+        return Rig(
+            backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock,
+            incoming, packs, store, invites, saved, shell,
+        ) { cleared }
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -759,4 +792,193 @@ class AppViewModelTest {
         assertNull(r.threatVault.kept)
         assertEquals(1, r.exportsCleared())
     }
+
+    // -- Invitation links --------------------------------------------------------------------------
+
+    /** The shell's saved state as the activity gives it back after the process was ended in the back. */
+    private fun Rig.restored() = SavedStateHandle(saved.keys().associateWith { saved.get<Any>(it) })
+
+    @Test
+    fun `an invitation link is kept, never opens the sign-in screens, and is accepted once the person has signed in`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), owner = 1)
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertNull(r.model.pendingLink.value)                                                  // not a screen of the sign-in's
+        assertEquals(emptyList<String>(), r.invites.asked)                                     // nobody to accept it for yet
+
+        r.backend.state.value = AuthState.SignedIn(user())                                     // signed in, the device's plans theirs
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+        assertEquals("You joined OP DK as an editor.", (r.model.inviteState.value as InviteState.Joined).message)
+
+        r.model.retryInvite()
+        r.newShell(r.restored())
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)                                    // done with: never asked about again
+    }
+
+    @Test
+    fun `an invitation waits at the gate, and while the device holds another account's plans`() = runTest(dispatcher) {
+        val held = rig(stored = AuthState.SignedIn(user(accessOk = false)), owner = 1)
+        held.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), held.invites.asked)
+
+        val shared = rig(owner = 2, unsynced = 3)
+        shared.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), shared.invites.asked)
+        shared.model.clearOtherAccountsPlans()
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN), shared.invites.asked)
+    }
+
+    @Test
+    fun `an invitation waits while Mission Packs are off, and is accepted when they are turned on`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedIn(withoutPacks()), owner = 1)
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), r.invites.asked)
+        assertTrue(r.model.inviteState.value is InviteState.Waiting)
+
+        r.backend.state.value = AuthState.SignedIn(user())                                     // an admin ticked them; the refreshed user says so
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+        assertTrue(r.model.inviteState.value is InviteState.Joined)
+    }
+
+    @Test
+    fun `an invitation that met no connection or a busy server is kept for a retry, and one refused for good is let go`() = runTest(dispatcher) {
+        listOf(
+            NetworkException("no signal", null, requestMayHaveBeenSent = false) to true,
+            RateLimitedException("Too many.", retryAfterSeconds = 30) to true,
+            ApiException(503, "unavailable", "Down for a moment.") to true,
+            ApiException(410, "invite_gone", "That invitation was withdrawn.") to false,
+            ApiException(404, "invite_not_found", "No such invitation.") to false,
+        ).forEach { (failure, kept) ->
+            val r = rig(owner = 1)
+            r.invites.answer = { throw failure }
+            r.model.onLink(INVITE_LINK)
+            advanceUntilIdle()
+            assertEquals("$failure", kept, (r.model.inviteState.value as InviteState.Failed).retryable)
+
+            // A retry asks again only while the link is kept; then the process is ended and the next shell finds what was left to do.
+            r.invites.answer = { joinedPack() }
+            r.model.retryInvite()
+            advanceUntilIdle()
+            val restored = r.restored()
+            r.model.viewModelScope.cancel()
+            r.newShell(restored)
+            advanceUntilIdle()
+            if (kept) {
+                assertEquals("$failure", listOf(INVITE_TOKEN, INVITE_TOKEN), r.invites.asked)  // the retry joined it, and it is done with
+                assertTrue("$failure", r.model.inviteState.value is InviteState.Joined)
+            } else {
+                assertEquals("$failure", listOf(INVITE_TOKEN), r.invites.asked)                // let go: never sent again
+                assertTrue("$failure", r.model.inviteState.value is InviteState.Failed)
+            }
+        }
+    }
+
+    @Test
+    fun `an invitation that met no connection is still there for the next shell if the process was ended first`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.invites.answer = { throw NetworkException("no signal", null, requestMayHaveBeenSent = false) }
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        val restored = r.restored()
+        r.model.viewModelScope.cancel()
+        r.invites.answer = { joinedPack() }                                                    // the signal is back
+        r.newShell(restored)
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN, INVITE_TOKEN), r.invites.asked)
+    }
+
+    @Test
+    fun `an invitation is asked about once, however often the shell looks again meanwhile`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val answer = CompletableDeferred<InviteAccepted>()
+        r.invites.answer = { answer.await() }
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertEquals(InviteState.Accepting, r.model.inviteState.value)
+
+        r.model.retryInvite()
+        r.backend.state.value = AuthState.SignedIn(user().copy(name = "Pilot One"))            // a refreshed user: the shell looks again
+        r.model.onLink(INVITE_LINK)                                                            // the link opened again
+        advanceUntilIdle()
+        answer.complete(joinedPack())
+        advanceUntilIdle()
+
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)                                    // a second accept would be refused as used
+        assertTrue(r.model.inviteState.value is InviteState.Joined)
+    }
+
+    @Test
+    fun `an invitation survives the process being ended in the back`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedIn(withoutPacks()), owner = 1)
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        val restored = r.restored()
+        r.model.viewModelScope.cancel()                                                         // the process was ended, the shell with it
+        r.backend.state.value = AuthState.SignedIn(user())                                     // and Mission Packs were turned on meanwhile
+
+        r.newShell(restored)
+        advanceUntilIdle()
+
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+    }
+
+    @Test
+    fun `an invitation is accepted once, after the sign-in, with work on the main thread run at once`() = runTest(dispatcher) {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        val r = rig(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), owner = 1)
+        r.accounts.slow = true
+        r.model.onLink(INVITE_LINK)
+        r.backend.state.value = AuthState.SignedIn(user())
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+        assertTrue(r.model.inviteState.value is InviteState.Joined)
+        r.backend.state.value = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN)              // and a sign-out and back in asks nothing more
+        advanceUntilIdle()
+        r.backend.state.value = AuthState.SignedIn(user())
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+    }
+
+    @Test
+    fun `what became of an invitation is put away once the person has seen it`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertTrue(r.model.inviteState.value is InviteState.Joined)
+        r.model.dismissInvite()
+        assertEquals(InviteState.None, r.model.inviteState.value)
+    }
+
+    @Test
+    fun `a sign-in link still opens its screen, an address carrying both is read for both, and nothing else is an invitation`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), owner = 1)
+        r.model.onLink("https://evil.example/?invite=$INVITE_TOKEN")                           // not the site's
+        r.model.onLink("https://ezpztac.app/r/abc")                                            // a shared route: another feature's
+        r.model.onLink("https://ezpztac.app/?auth=verify&token=abc123&invite=$INVITE_TOKEN")
+        assertEquals(AuthRoute.Verify("abc123"), r.model.pendingLink.value)
+
+        r.backend.state.value = AuthState.SignedIn(user())
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+    }
 }
+
+private const val INVITE_TOKEN = "Xq3v_8yQm2LZk9-WbT4sPa7Rr1Nd5Cf6Hg0Jj2Kk3Ll"
+private const val INVITE_LINK = "https://ezpztac.app/?invite=$INVITE_TOKEN"
+
+/** What the server answers an accepted pack invitation with: OP DK, Colin's, joined as an editor. */
+private fun joinedPack(): InviteAccepted = InviteAccepted(
+    Invite(id = 1, role = "editor", status = "accepted", expiresAt = "2026-10-15T00:00:00Z", createdAt = "2026-10-08T00:00:00Z"),
+    pack = PackSummary(
+        uuid = "p-1", name = "OP DK", description = "", status = "active", role = "editor", owner = PackPerson(1, "Colin M."), headSeq = 0,
+        seenSeq = 0, memberCount = 2, audienceCount = 2, itemCount = 0, itemCounts = PackItemCounts(0, 0, 0),
+        createdAt = "2026-10-08T00:00:00Z", updatedAt = "2026-10-08T00:00:00Z",
+    ),
+)

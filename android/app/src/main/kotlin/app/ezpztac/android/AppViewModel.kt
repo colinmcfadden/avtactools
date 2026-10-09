@@ -1,13 +1,18 @@
 package app.ezpztac.android
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.android.packs.MISSION_PACKS
+import app.ezpztac.android.packs.PackInvites
 import app.ezpztac.android.packs.PackRuntime
+import app.ezpztac.missionpacks.InviteAcceptance
+import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.auth.AuthLinks
 import app.ezpztac.auth.AuthRoute
+import app.ezpztac.auth.InviteLinks
 import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
@@ -17,6 +22,7 @@ import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.Ownership
 import app.ezpztac.network.ApiException
+import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AppConfig
 import app.ezpztac.network.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -54,6 +60,8 @@ class AppViewModel @Inject constructor(
     private val incoming: IncomingFiles,
     private val mapTokens: MapTokenSink,
     private val packs: PackRuntime,
+    invites: PackInvites,
+    private val saved: SavedStateHandle,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
     private val config = MutableStateFlow<AppConfig?>(null)
@@ -66,6 +74,14 @@ class AppViewModel @Inject constructor(
     val gate: StateFlow<Gate> = combine(config, backend.state, ownership) { config, auth, ownership ->
         gateFor(config, auth, ownership, version)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Gate.Starting)
+
+    // An invitation link the app was opened with, until it is accepted or refused for good: kept through a sign-in, a turn of the phone and
+    // the process being ended in the back, as the web keeps it for the tab.
+    private val inviteToken: StateFlow<String?> = saved.getStateFlow(INVITE_TOKEN, null)
+    private val invitation = InviteAcceptance(invites::accept, viewModelScope)
+
+    /** Where an invitation link the app was opened with stands: waiting for Mission Packs, being accepted, joined, or why not. */
+    val inviteState: StateFlow<InviteState> = invitation.state
 
     init {
         viewModelScope.launch {
@@ -95,6 +111,30 @@ class AppViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            // An invitation is accepted once the person is in (signed in, past the gate, the plans here theirs), and asked about again when
+            // Mission Packs are turned on or off for them, or another link comes.
+            combine(gate, inviteToken) { gate, token -> (gate as? Gate.Ready)?.user to token }
+                .distinctUntilChanged()
+                .collect { (user, token) -> acceptInvite(user, token) }
+        }
+    }
+
+    // The link is let go once it is done with (accepted, or refused for good) and still the one kept: a link that came meanwhile stays. One
+    // that met no connection, or a busy or failing server, is kept for a retry.
+    private suspend fun acceptInvite(user: ApiUser?, token: String?) {
+        if (user == null || token == null) return
+        if (invitation.run(token, user.hasFeature(MISSION_PACKS)) && saved.get<String>(INVITE_TOKEN) == token) saved[INVITE_TOKEN] = null
+    }
+
+    /** Asks again about the invitation link that could not get through. */
+    fun retryInvite() {
+        viewModelScope.launch { acceptInvite((gate.value as? Gate.Ready)?.user, inviteToken.value) }
+    }
+
+    /** Puts away what became of the invitation link, once the person has seen it. */
+    fun dismissInvite() {
+        invitation.dismiss()
     }
 
     /**
@@ -222,9 +262,13 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    /** An address the app was opened with. Anything that is not one of the two emailed links is ignored. */
+    /**
+     * An address the app was opened with: one of the two emailed sign-in links, which opens its screen; an invitation, which is kept, never
+     * shown on the sign-in screens, until the person can open packs; or, as the web reads them apart, both. Anything else is ignored.
+     */
     fun onLink(url: String?) {
         AuthLinks.parse(url)?.let { link.value = it }
+        InviteLinks.parse(url)?.let { saved[INVITE_TOKEN] = it }
     }
 
     fun linkHandled() {
@@ -238,6 +282,11 @@ class AppViewModel @Inject constructor(
     /** After the gate is cleared or an admin approves access: learn it, then the account's plans can be looked at. */
     fun recheckAccess() {
         viewModelScope.launch { refreshUserQuietly() }
+    }
+
+    private companion object {
+        // The invitation link waiting to be accepted, in the saved state (the web's sessionStorage key).
+        const val INVITE_TOKEN = "ezpz.packInvite"
     }
 }
 

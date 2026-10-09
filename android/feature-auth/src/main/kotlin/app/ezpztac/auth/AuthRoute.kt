@@ -30,6 +30,20 @@ object AuthLinks {
     val SITE_HOSTS: Set<String> = setOf("ezpztac.app", "www.ezpztac.app")
 
     fun parse(link: String?, hosts: Set<String> = SITE_HOSTS): AuthRoute? {
+        val params = siteQuery(link, hosts)?.toMap() ?: return null
+        val token = params["token"]?.trim().orEmpty()
+        return when (params["auth"]) {
+            "verify" -> AuthRoute.Verify(token)
+            "reset" -> AuthRoute.Reset(token)
+            else -> null
+        }
+    }
+
+    /**
+     * The decoded query parameters of [link], in order, when it is an `https` link to one of [hosts]; null for anything else. Every link
+     * the app takes from outside goes through this ([InviteLinks] too), so none is read from an address another app chose.
+     */
+    internal fun siteQuery(link: String?, hosts: Set<String>): List<Pair<String, String>>? {
         val uri = try {
             URI(link ?: return null)
         } catch (_: java.net.URISyntaxException) {
@@ -37,15 +51,9 @@ object AuthLinks {
         }
         if (!"https".equals(uri.scheme, ignoreCase = true) || uri.host?.lowercase() !in hosts) return null
         val query = uri.rawQuery ?: return null
-        val params = query.split('&').mapNotNull { pair ->
+        return query.split('&').mapNotNull { pair ->
             val i = pair.indexOf('=')
             if (i <= 0) null else decode(pair.substring(0, i)) to decode(pair.substring(i + 1))
-        }.toMap()
-        val token = params["token"]?.trim().orEmpty()
-        return when (params["auth"]) {
-            "verify" -> AuthRoute.Verify(token)
-            "reset" -> AuthRoute.Reset(token)
-            else -> null
         }
     }
 
