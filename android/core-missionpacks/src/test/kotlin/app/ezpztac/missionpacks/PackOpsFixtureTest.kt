@@ -2,9 +2,7 @@ package app.ezpztac.missionpacks
 
 import app.ezpztac.testing.Fixtures
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -209,23 +207,7 @@ class PackOpsFixtureTest {
         assertEquals(expected.getValue("kind").jsonPrimitive.content, actual.kind, "$uuid.kind")
         assertEquals(expected.getValue("name").jsonPrimitive.content, actual.name, "$uuid.name")
         assertEquals(expected.getValue("deleted").jsonPrimitive.boolean, actual.deleted, "$uuid.deleted")
-        val differences = differences(expected.getValue("data"), actual.data, "$uuid.data")
+        val differences = StrictJson.differences(expected.getValue("data"), actual.data, "$uuid.data")
         assertTrue(differences.isEmpty(), differences.joinToString("\n"))
-    }
-
-    // Strict JSON equality: null is not absent, text is not a number, numbers as written, and keys in JavaScript's order.
-    private fun differences(expected: JsonElement, actual: JsonElement, path: String): List<String> = when {
-        expected is JsonObject && actual is JsonObject -> {
-            val order = Js.orderedKeys(actual.keys)
-            if (order != expected.keys.toList()) listOf("$path: keys $order, expected ${expected.keys.toList()}")
-            else expected.keys.flatMap { differences(expected.getValue(it), actual.getValue(it), "$path.$it") }
-        }
-        expected is JsonArray && actual is JsonArray ->
-            if (expected.size != actual.size) listOf("$path: ${actual.size} elements, expected ${expected.size}")
-            else expected.indices.flatMap { differences(expected[it], actual[it], "$path[$it]") }
-        expected is JsonNull || actual is JsonNull -> if (expected is JsonNull && actual is JsonNull) emptyList() else listOf("$path: $actual, expected $expected")
-        expected is JsonPrimitive && actual is JsonPrimitive ->
-            if (expected.isString == actual.isString && expected.content == actual.content) emptyList() else listOf("$path: $actual, expected $expected")
-        else -> listOf("$path: $actual, expected $expected")
     }
 }

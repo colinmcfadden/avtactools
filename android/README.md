@@ -17,7 +17,7 @@ android/
 ├─ core-formats/    reads AMPS .msnx, .LPS and .ths files; the rows of a .ths export
 ├─ core-network/    the API client: transport, sign-in, token refresh, typed routes, request priority
 ├─ core-sync/       the sync engine: outbox, pull by cursor, conflicts kept side by side
-├─ core-missionpacks/ mission packs (not map packs): what one operation does to a pack's items, held to ../contracts/fixtures/packs
+├─ core-missionpacks/ mission packs (not map packs): what one operation does to a pack's items and the operations an edit becomes, held to ../contracts/fixtures/packs
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
 ├─ core-data/       Room/sync repositories plus the encrypted short-lived threat picture and native .ths transfer
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
