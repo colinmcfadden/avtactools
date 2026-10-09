@@ -57,6 +57,19 @@ internal object Js {
 
     fun isString(value: JsonElement?): Boolean = value is JsonPrimitive && value.isString
 
+    /**
+     * Whether JavaScript takes [value] as true (`if (value)`, `value || other`): everything but a missing key, null, false,
+     * 0, -0, NaN and "". An empty object or list is true.
+     */
+    fun truthy(value: JsonElement?): Boolean = when (value) {
+        null, JsonNull -> false
+        is JsonObject, is JsonArray -> true
+        is JsonPrimitive -> when {
+            value.isString -> value.content.isNotEmpty()
+            else -> numberOf(value)?.let { it != 0.0 && !it.isNaN() } ?: (value.content == "true")
+        }
+    }
+
     /** An element's id: text or a finite number. The number 1 is not the text "1". */
     fun isId(value: JsonElement?): Boolean = isString(value) || numberOf(value)?.isFinite() == true
 

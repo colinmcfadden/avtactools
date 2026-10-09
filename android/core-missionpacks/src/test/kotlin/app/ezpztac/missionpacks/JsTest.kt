@@ -121,4 +121,16 @@ class JsTest {
         assertThrows<IllegalArgumentException> { Js.idKey(JsonNull) }
         assertThrows<IllegalArgumentException> { Js.idKey(JsonObject(emptyMap())) }
     }
+
+    @Test
+    fun `truthiness is JavaScript's`() {
+        // [false, 0, -0, 0.0, "", null, true, 1, -1, 0.5, " ", "0", "false", [], {}].map((x) => !!x), then undefined and NaN.
+        val values = Json.parseToJsonElement("""[false, 0, -0, 0.0, "", null, true, 1, -1, 0.5, " ", "0", "false", [], {}]""").jsonArray
+        assertEquals(
+            listOf(false, false, false, false, false, false, true, true, true, true, true, true, true, true, true),
+            values.map { Js.truthy(it) },
+        )
+        assertFalse(Js.truthy(null))
+        assertFalse(Js.truthy(JsonPrimitive(Double.NaN)))
+    }
 }

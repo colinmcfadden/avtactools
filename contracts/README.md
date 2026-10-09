@@ -67,7 +67,7 @@ reference is.
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | `core-missionpacks` (`PackOps`: every case, strictly: status, reason, null kept apart from absent, keys in JavaScript's order; `PackOpsFixtureTest`) |
 | `packs/diff.json` | `frontend/src/contracts/packDiffFixtures.test.js` | — | `core-missionpacks` (`PackDiff`: the operations an editor's change is sent as, every case strictly and in order, each rebuilt with `PackOps`, and every `sameData` pair; the `webBug` cases and pairs are not copied and have tests of the right behaviour; `PackDiffFixtureTest`) |
 | `packs/shared.json`, `packs/describe.json`, `packs/edit.json` | `frontend/src/contracts/packSharedFixtures.test.js` | — | — (pack sync: what is each person's own, the history's sentences and new items' names, how one edit is put together) |
-| `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | — (pack sync: how an open pack is held) |
+| `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | `core-missionpacks` (`PackSessions`: every scenario step by step, with the whole session, what is visible, each answer and the `dropped_versions`, strictly: null kept apart from absent, keys in JavaScript's order; `PackSessionFixtureTest`) |
 
 iOS joins this table when it starts; it reads the same files.
 
