@@ -17,6 +17,7 @@ android/
 ├─ core-formats/    reads AMPS .msnx, .LPS and .ths files; the rows of a .ths export
 ├─ core-network/    the API client: transport, sign-in, token refresh, typed routes, request priority
 ├─ core-sync/       the sync engine: outbox, pull by cursor, conflicts kept side by side
+├─ core-missionpacks/ mission packs (not map packs): what one operation does to a pack's items, held to ../contracts/fixtures/packs
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
 ├─ core-data/       Room/sync repositories plus the encrypted short-lived threat picture and native .ths transfer
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
@@ -28,7 +29,7 @@ android/
 └─ build-logic/     the convention plugins every module uses
 ```
 
-Not here yet: `core-packs`, offline threat viewsheds, KMZ/QR export, full LZ-card exports and 3D.
+Not here yet: `core-mappacks` (offline map packs), offline threat viewsheds, KMZ/QR export, full LZ-card exports and 3D.
 
 Every module is tested against the golden fixtures in [`../contracts`](../contracts/README.md),
 the same files the web app's tests read, so the app cannot quietly disagree with
