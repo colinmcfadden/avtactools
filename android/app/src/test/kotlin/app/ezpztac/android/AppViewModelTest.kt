@@ -1,10 +1,16 @@
 package app.ezpztac.android
 
+import app.ezpztac.android.packs.PackRuntime
+import app.ezpztac.missionpacks.DrainOutcome
+import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.sync.InMemorySyncStore
+import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.RecordingScheduler
 import app.ezpztac.sync.SequentialIds
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.SyncScheduler
+import app.ezpztac.sync.SyncStore
+import app.ezpztac.sync.SyncTransaction
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
@@ -145,10 +151,34 @@ class AppViewModelTest {
 
     private class MutableClock(var now: Long = 1_000_000L)
 
+    /** Mission packs as the shell drives them: every call, in order. [onDisable] runs as packs are stopped, to look at what is done by then. */
+    private class RecordingPacks : PackRuntime {
+        val log = mutableListOf<String>()
+        var unsent = 0
+        var onDisable: suspend () -> Unit = {}
+        override suspend fun enable(user: PackUser) { log += "enable ${user.id} ${user.name}" }
+        override suspend fun disable() { onDisable(); log += "disable" }
+        override fun start() { log += "start" }
+        override fun foreground(visible: Boolean) { log += "foreground $visible" }
+        override fun wake() { log += "wake" }
+        override suspend fun unsentCount(): Int = unsent
+        override suspend fun drainAll(user: PackUser): DrainOutcome = error("the background sync's, not the shell's")
+    }
+
+    /** The device's store, which can be made to fail every write, as a busy or full database would. */
+    private class Flaky(private val inner: InMemorySyncStore = InMemorySyncStore()) : SyncStore, RecordFeed by inner {
+        var failing = false
+        override suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T {
+            if (failing) error("the database was busy")
+            return inner.transaction(block)
+        }
+    }
+
     private class Rig(
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
-        val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val incoming: IncomingFiles, val exportsCleared: () -> Int,
+        val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val incoming: IncomingFiles,
+        val packs: RecordingPacks, val store: Flaky, val exportsCleared: () -> Int,
     )
 
     private fun TestScope.rig(
@@ -162,7 +192,7 @@ class AppViewModelTest {
         val accounts = FakeAccounts(owner, unsynced)
         val scheduler = FakeScheduler()
         val tokens = FakeTokens()
-        val store = InMemorySyncStore()
+        val store = Flaky()
         val repository = DiagramRepository(SyncRepository(store, SequentialIds("t")), store, RecordingScheduler())
         val session = DiagramSession(repository, backgroundScope)
         val routes = RouteRepository(SyncRepository(store, SequentialIds("r")), store, RecordingScheduler())
@@ -174,9 +204,10 @@ class AppViewModelTest {
         val threats = ThreatStore(threatVault, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), StandardTestDispatcher(testScheduler)) { clock.now }
         var cleared = 0
         val incoming = IncomingFiles()
-        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, version)
+        val packs = RecordingPacks()
+        val model = AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, packs, version)
         advanceUntilIdle()
-        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock, incoming) { cleared }
+        return Rig(backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock, incoming, packs, store) { cleared }
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -494,5 +525,119 @@ class AppViewModelTest {
         advanceUntilIdle()
         assertTrue(r.model.gate.value is Gate.Ready)
         assertEquals(emptyList<String>(), r.accounts.log)
+    }
+
+    // -- Mission packs -----------------------------------------------------------------------------
+
+    private fun withoutPacks(id: Int = 1) = user(id).copy(features = mapOf("mission_packs" to false))
+
+    @Test
+    fun `packs run for the account signed in, past the gate, with Mission Packs on, whose plans the device holds`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        assertEquals(listOf("enable 1 Pilot 1", "start"), r.packs.log.filter { it.startsWith("enable") || it == "start" })
+    }
+
+    @Test
+    fun `packs never run for an account held at the gate, without Mission Packs, or on another account's plans`() = runTest(dispatcher) {
+        listOf(
+            rig(stored = AuthState.SignedIn(user(accessOk = false)), owner = 1),
+            rig(stored = AuthState.SignedIn(withoutPacks()), owner = 1),
+            rig(owner = 2, unsynced = 3),                                                       // nothing of account 2's may go as account 1
+        ).forEach { r -> assertTrue(r.packs.log.toString(), r.packs.log.none { it.startsWith("enable") }) }
+    }
+
+    @Test
+    fun `nobody signed in runs no packs`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN))
+        assertTrue(r.packs.log.toString(), r.packs.log.none { it.startsWith("enable") || it == "start" })
+    }
+
+    @Test
+    fun `an admin turning Mission Packs off stops them, and on again runs them, with no sign-in between`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.packs.log.clear()
+        r.backend.state.value = AuthState.SignedIn(withoutPacks())                             // a refreshed user: same id, same access
+        advanceUntilIdle()
+        assertEquals(listOf("disable"), r.packs.log)
+        r.backend.state.value = AuthState.SignedIn(user())
+        advanceUntilIdle()
+        assertEquals(listOf("disable", "enable 1 Pilot 1", "start"), r.packs.log)
+    }
+
+    @Test
+    fun `clearing another account's plans runs packs for the person who cleared them`() = runTest(dispatcher) {
+        val r = rig(owner = 2, unsynced = 3)
+        r.model.clearOtherAccountsPlans()
+        advanceUntilIdle()
+        assertEquals("enable 1 Pilot 1", r.packs.log.last { it.startsWith("enable") })
+    }
+
+    @Test
+    fun `signing out writes and closes the open documents before packs stop, so their last change reaches the pack`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val made = r.routes.create("MISSION 1")
+        r.routeSession.open(made.id)
+        r.routeSession.edit("Rename set") { it.copy(name = "MISSION 2") }                    // not yet saved: the pause has not passed
+        var closedFirst = false
+        r.packs.onDisable = { closedFirst = r.routeSession.active.value == null && r.routes.open(made.id)?.name == "MISSION 2" }
+        r.packs.log.clear()
+        r.model.signOut()
+        advanceUntilIdle()
+        assertEquals(listOf("disable"), r.packs.log)                                          // once, and only after
+        assertTrue(closedFirst)
+    }
+
+    @Test
+    fun `coming to the front follows an open pack again and tries now what could not get through`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.packs.log.clear()
+        r.model.appStarted()
+        assertEquals(listOf("foreground true", "wake"), r.packs.log)
+    }
+
+    @Test
+    fun `going to the back writes the open diagram and set of routes at once, then sends packs to the back`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val diagram = r.repository.create(DiagramTarget(34.78, -84.08, "16S GD 66993 52949"), "LZ HAWK")
+        r.session.open(diagram.id)
+        r.session.edit("Rename") { it.copy(name = "LZ CROW") }
+        val set = r.routes.create("MISSION 1")
+        r.routeSession.open(set.id)
+        r.routeSession.edit("Rename set") { it.copy(name = "MISSION 2") }
+        r.packs.log.clear()
+        val asked = r.scheduler.requested
+
+        r.model.appStopped()
+        advanceUntilIdle()
+
+        assertEquals("LZ CROW", r.repository.open(diagram.id)!!.name)
+        assertEquals("MISSION 2", r.routes.open(set.id)!!.name)                               // the set of routes was never written at once before
+        assertEquals(listOf("foreground false"), r.packs.log)
+        assertEquals(asked, r.scheduler.requested)                                            // no pack edit waits: nothing more to ask for
+    }
+
+    @Test
+    fun `going to the back with pack edits waiting asks for a sync, so they go even if the process is ended`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.packs.unsent = 2
+        val asked = r.scheduler.requested
+        r.model.appStopped()
+        advanceUntilIdle()
+        assertEquals(asked + 1, r.scheduler.requested)
+    }
+
+    @Test
+    fun `a write that fails on the way to the back keeps the change, and the rest still happens`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val diagram = r.repository.create(DiagramTarget(34.78, -84.08, "16S GD 66993 52949"), "LZ HAWK")
+        r.session.open(diagram.id)
+        r.session.edit("Rename") { it.copy(name = "LZ CROW") }
+        r.store.failing = true
+        r.packs.log.clear()
+        r.model.appStopped()
+        advanceUntilIdle()
+        assertEquals(true, r.session.saveFailed.value)
+        assertEquals("LZ CROW", r.session.active.value!!.name)                                // kept, and owed
+        assertEquals(listOf("foreground false"), r.packs.log)                                 // the rest still happened
     }
 }

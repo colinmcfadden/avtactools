@@ -2,6 +2,9 @@ package app.ezpztac.android
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.android.packs.MISSION_PACKS
+import app.ezpztac.android.packs.PackRuntime
+import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.auth.AuthLinks
 import app.ezpztac.auth.AuthRoute
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -46,6 +50,7 @@ class AppViewModel @Inject constructor(
     private val exports: ExportCleaner,
     private val incoming: IncomingFiles,
     private val mapTokens: MapTokenSink,
+    private val packs: PackRuntime,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
     private val config = MutableStateFlow<AppConfig?>(null)
@@ -72,11 +77,54 @@ class AppViewModel @Inject constructor(
                 .distinctUntilChangedBy { (it as? AuthState.SignedIn)?.let { s -> s.user.id to s.user.accessOk } ?: it }
                 .collect { auth -> onAuth(auth) }
         }
+        viewModelScope.launch {
+            // Mission packs run for the account while it may have them: apart from the collector above, which does not hear a feature
+            // turned on or off by an admin (a refreshed user with the same id and access).
+            combine(backend.state, ownership, ::packGateFor).distinctUntilChanged().collect { gate ->
+                when (gate) {
+                    is PackGate.Run -> {
+                        packs.enable(gate.user)
+                        packs.start()
+                    }
+                    PackGate.Stop -> packs.disable()
+                    PackGate.Leave -> Unit
+                }
+            }
+        }
     }
 
-    /** The app has come to the front. Nothing runs while it is not, so a threat picture that went 48 hours unchanged is forgotten now. */
+    /**
+     * The app has come to the front. Nothing runs while it is not, so a threat picture that went 48 hours unchanged is forgotten now, and
+     * an open pack is followed again, with whatever could not get through tried now.
+     */
     fun appStarted() {
         threats.expireIfOld()
+        packs.foreground(true)
+        packs.wake()
+    }
+
+    /**
+     * The app is going out of sight, and the system may end the process without warning: the open diagram and set of routes are written
+     * now rather than after the usual pause, each whatever becomes of the other. An open pack stops being followed (what waits still
+     * goes), and a sync is asked for while edits to a pack wait, so they go even if the process is ended.
+     */
+    fun appStopped() {
+        viewModelScope.launch {
+            flushQuietly { session.flush() }
+            flushQuietly { routeSession.flush() }
+            packs.foreground(false)
+            if (packs.unsentCount() > 0) sync.requestSync()
+        }
+    }
+
+    private suspend fun flushQuietly(flush: suspend () -> Unit) {
+        try {
+            flush()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Still owed: the session keeps the changes and says so ([app.ezpztac.data.DocumentSession.saveFailed]); the next save tries again.
+        }
     }
 
     private suspend fun onAuth(auth: AuthState) {
@@ -85,6 +133,9 @@ class AppViewModel @Inject constructor(
             if (auth is AuthState.SignedOut) {
                 sync.cancelAll()
                 closeOpenDocuments()
+                // Only once the open documents are written: the last change to a pack's item reaches the pack's queue first. What waits
+                // stays on the device for this account's next sign-in, and is never sent as anyone else.
+                packs.disable()
                 weather.clear()                                                  // where this account's landing zones are does not stay for the next person
                 threats.wipe()                                                   // nor does the threat picture: it is the most sensitive thing on the device
                 exports.clear()                                                  // nor a .ths or mission that was shared: they are in the clear in the cache
@@ -176,4 +227,27 @@ class AppViewModel @Inject constructor(
     fun recheckAccess() {
         viewModelScope.launch { refreshUserQuietly() }
     }
+}
+
+/** What mission packs should do for the session and the device's plans as they are now. */
+internal sealed interface PackGate {
+    /** Run for [user]. */
+    data class Run(val user: PackUser) : PackGate
+
+    /** Stop: signed in, but not someone packs may run for here now. */
+    data object Stop : PackGate
+
+    /** Nothing: the session is not known yet, or the person signed out, where the open documents are written before packs stop. */
+    data object Leave : PackGate
+}
+
+/**
+ * Packs run only for a signed-in account past the `.mil` gate, with Mission Packs on, whose plans the device holds. Another account's plans
+ * on the device, or not knowing yet whose they are, stops them, so nothing of one person's is sent as another's.
+ */
+internal fun packGateFor(auth: AuthState, ownership: Ownership?): PackGate {
+    if (auth !is AuthState.SignedIn) return PackGate.Leave
+    val user = auth.user
+    if (!user.accessOk || !user.hasFeature(MISSION_PACKS) || ownership != Ownership.Yours) return PackGate.Stop
+    return PackGate.Run(PackUser(user.id, user.name))
 }

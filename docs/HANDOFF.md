@@ -30,9 +30,9 @@ A11–A15 next, then the redesigned screens).
   to `contracts/fixtures/packs`; A9 the client that sends, catches up and follows one pack, offline included; A10 the engine that runs
   every pack and keeps what a pack refuses (`99bc493`). On the web and server, first: five web session bugs fixed (`67554b1`), a refused
   ops batch says which of its operations it already took (`taken`, `718ed9c`), and every pack write route reads the caller's role
-  and the pack's deletion again under the pack's lock (`f204a8f`). A11 (Room, database version 3) is done on
-  `feat/android-mission-packs-a11`, built beside A12, to be merged. **Not built:** A12 (the editors
-  edit pack items), A13 (the app runs packs), A14 (invitation links), A15 (docs), then the screens. Nothing a person sees has changed.
+  and the pack's deletion again under the pack's lock (`f204a8f`). A11 (Room, database version 3) is done and on
+  `feat/android-mission-packs`; A13 (the app runs packs) is done on `feat/android-mission-packs-a13`, built beside A12, to be merged after it
+  (the plan's step 15 says what the merge adds). **Not built:** A12 (the editors edit pack items), A14 (invitation links), A15 (docs), then the screens. Nothing a person sees has changed.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
   state is in AGENTS.md §17's table. **Not in P2 yet:** an ATAK data package. (Saved missions, which keep the `.msnx` as the document and write edits back into it, and dragging and turning on the map are built: AGENTS.md §17, *Saved missions* and *Dragging and turning on the map*.)

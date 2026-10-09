@@ -7,6 +7,8 @@ import app.ezpztac.android.AuthBackend
 import app.ezpztac.android.BuildConfig
 import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
+import app.ezpztac.android.packs.EnginePackRuntime
+import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
 import app.ezpztac.sync.SyncRepository
@@ -222,6 +224,9 @@ interface AppBindings {
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner
+
+    @Binds
+    fun packRuntime(impl: EnginePackRuntime): PackRuntime
 
     @Binds
     fun conflictResolver(impl: SyncEngine): ConflictResolver

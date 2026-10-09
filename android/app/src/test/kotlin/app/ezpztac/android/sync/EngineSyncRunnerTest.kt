@@ -2,6 +2,9 @@ package app.ezpztac.android.sync
 
 import app.ezpztac.android.ApiClientBackend
 import app.ezpztac.android.AuthBackend
+import app.ezpztac.android.packs.PackRuntime
+import app.ezpztac.missionpacks.DrainOutcome
+import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
@@ -96,6 +99,28 @@ class EngineSyncRunnerTest {
         override suspend fun wipe(): Unit = error("the shell wipes a device, not a background sync")
     }
 
+    /**
+     * Mission packs as the runner drives them: who it drained for, in order. [drain] is what the drain does on the device (keeping what a
+     * pack refused writes a library record), and [outcome] what it says; [fails] makes it throw.
+     */
+    private class FakePacks(var outcome: DrainOutcome = DrainOutcome.DONE) : PackRuntime {
+        val drained = mutableListOf<PackUser>()
+        var drain: suspend () -> Unit = {}
+        var fails = false
+        override suspend fun drainAll(user: PackUser): DrainOutcome {
+            drained += user
+            if (fails) error("the pack store could not be read")
+            drain()
+            return outcome
+        }
+        override suspend fun enable(user: PackUser) = error("the shell's, not the runner's")
+        override suspend fun disable() = error("the shell's, not the runner's")
+        override fun start() = error("the shell's, not the runner's")
+        override fun foreground(visible: Boolean) = error("the shell's, not the runner's")
+        override fun wake() = error("the shell's, not the runner's")
+        override suspend fun unsentCount(): Int = error("the shell's, not the runner's")
+    }
+
     /** The plans on the device: one change made here that nobody has sent. */
     private class Device {
         val store = InMemorySyncStore()
@@ -106,15 +131,16 @@ class EngineSyncRunnerTest {
     }
 
     /** One process's runner, wired as Hilt wires it. */
-    private fun TestScope.runner(api: SyncApi, device: Device, auth: AuthBackend, accounts: AccountScope) = EngineSyncRunner(
+    private fun TestScope.runner(api: SyncApi, device: Device, auth: AuthBackend, accounts: AccountScope, packs: PackRuntime = FakePacks()) = EngineSyncRunner(
         SyncEngine(api, device.store, device.ids),
         auth,
         accounts,
+        packs,
         DiagramSession(DiagramRepository(device.records, device.store, RecordingScheduler()), backgroundScope),
         RouteSession(RouteRepository(device.records, device.store, RecordingScheduler()), backgroundScope),
     )
 
-    private class Rig(val runner: EngineSyncRunner, val auth: FakeAuth, val accounts: FakeAccounts, val server: FakeServer, val device: SyncRepository)
+    private class Rig(val runner: EngineSyncRunner, val auth: FakeAuth, val accounts: FakeAccounts, val server: FakeServer, val device: SyncRepository, val packs: FakePacks)
 
     /** A runner over a device with a change to send, and a server that holds one record this device has not seen. */
     private suspend fun TestScope.rig(auth: FakeAuth, owner: Int?): Rig {
@@ -122,7 +148,8 @@ class EngineSyncRunnerTest {
         val server = FakeServer()
         server.createElsewhere(RecordKind.LZ, "made-elsewhere", "LZ CROW", doc("v" to 1))
         val accounts = FakeAccounts(owner)
-        return Rig(runner(server, device, auth, accounts), auth, accounts, server, device.records)
+        val packs = FakePacks()
+        return Rig(runner(server, device, auth, accounts, packs), auth, accounts, server, device.records, packs)
     }
 
     @Test
@@ -222,6 +249,61 @@ class EngineSyncRunnerTest {
         assertEquals(1, r.auth.restores)
         assertTrue(r.server.log.isNotEmpty())                                     // it got as far as trying
         assertEquals(1, r.device.pending())
+    }
+
+    // -- Mission packs -------------------------------------------------------------------------------
+
+    @Test
+    fun `packs are drained before the library's sync, so what a pack refused and kept goes up in the same run`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
+        // Keeping what a pack refused writes a record of the person's to the library.
+        r.packs.drain = { r.device.create(RecordKind.LZ, "LZ HAWK (my edits)", doc("v" to 2), uuid = "kept") }
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals(listOf(PackUser(1, "Pilot 1")), r.packs.drained)
+        assertTrue(r.server.live(RecordKind.LZ).any { it.name == "LZ HAWK (my edits)" })
+        assertEquals(0, r.device.pending())
+    }
+
+    @Test
+    fun `a pack that could not get through has the run tried again, and the library still syncs`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
+        r.packs.outcome = DrainOutcome.RETRY
+
+        assertEquals(SyncOutcome.Retry, r.runner.runOnce())
+
+        assertEquals(0, r.device.pending())
+    }
+
+    @Test
+    fun `what only the account can unblock is not tried again by the scheduler`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
+        r.packs.outcome = DrainOutcome.PAUSED                                     // signed out, the feature off: it goes at the next sign-in
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+    }
+
+    @Test
+    fun `a drain that fails does not keep the library from syncing, and the run is tried again`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
+        r.packs.fails = true
+
+        assertEquals(SyncOutcome.Retry, r.runner.runOnce())
+
+        assertEquals(0, r.device.pending())
+    }
+
+    @Test
+    fun `an account without Mission Packs, held at the gate, or on another account's plans is not drained`() = runTest {
+        listOf(
+            rig(FakeAuth(stored = AuthState.SignedIn(user(1).copy(features = mapOf("mission_packs" to false)))), owner = 1),
+            rig(FakeAuth(stored = AuthState.SignedIn(user(1).copy(accessOk = false))), owner = 1),
+            rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 2),
+        ).forEach { r ->
+            r.runner.runOnce()
+            assertEquals(emptyList<PackUser>(), r.packs.drained)
+        }
     }
 
     /** A server that has ended the session: every token is refused, and so is the refresh. Answered here, so nothing goes over the network. */
