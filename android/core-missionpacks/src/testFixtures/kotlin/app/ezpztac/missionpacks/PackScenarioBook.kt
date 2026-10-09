@@ -168,6 +168,9 @@ public object PackScenarioBook {
         },
         PackScenario("a batch out when the app was ended: the pack's events confirm it when the app starts again, and it is never applied twice") { env ->
             val s = opDk(env)
+            // In the back, as an app about to be ended is: it no longer follows the pack, so no poll hears the pack take the batch, and confirms
+            // it, before the app is ended with it out (which would leave nothing for the start to find).
+            s.b.engine.foreground(false)
             val answer = s.b.network.holdNextAnswer()
             assertNull(s.b.edit(setHeading(77)))
             val id = s.b.opIds.last()
