@@ -50,6 +50,8 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
     val context = LocalContext.current
     // Nothing runs while the app is out of sight, so what has expired meanwhile (a threat picture left for 48 hours) is dealt with as it comes back.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.appStarted() }
+    // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.appStopped() }
     val google = remember(context) {
         BuildConfig.GOOGLE_SERVER_CLIENT_ID.takeIf { it.isNotBlank() }?.let<String, GoogleSignInProvider> { CredentialManagerGoogleSignIn(context, it) }
     }

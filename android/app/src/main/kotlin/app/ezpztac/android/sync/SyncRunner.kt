@@ -1,11 +1,17 @@
 package app.ezpztac.android.sync
 
 import app.ezpztac.android.AuthBackend
+import app.ezpztac.android.packs.MISSION_PACKS
+import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteSession
+import app.ezpztac.missionpacks.DrainOutcome
+import app.ezpztac.missionpacks.PackUser
+import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AuthState
+import kotlinx.coroutines.CancellationException
 import app.ezpztac.sync.StopReason
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncReport
@@ -39,6 +45,7 @@ class EngineSyncRunner @Inject constructor(
     private val engine: SyncEngine,
     private val auth: AuthBackend,
     private val accounts: AccountScope,
+    private val packs: PackRuntime,
     private val diagrams: DiagramSession,
     private val routes: RouteSession,
 ) : SyncRunner {
@@ -54,12 +61,27 @@ class EngineSyncRunner @Inject constructor(
         // Only this account's own plans: another account's are never uploaded under this one, and a device nobody has claimed is left to the
         // shell, which claims it once the person is past the gate and then asks for a sync itself.
         if (accounts.ownership(user.id) != Ownership.Yours) return SyncOutcome.Done
+        // Mission packs first: what a pack refused is kept in the library as a record of the person's, which then goes up with the rest.
+        val drained = drainPacks(user)
         val report = engine.sync()
         // A record the engine gave a new identity while it was open: the open document follows it, or its next save would fork it.
         report.recreated.forEach { (old, new) ->
             diagrams.follow(old, new)
             routes.follow(old, new)
         }
-        return outcomeOf(report)
+        return if (drained == DrainOutcome.RETRY) SyncOutcome.Retry else outcomeOf(report)
+    }
+
+    // Only for an account that may have packs: past the gate, the feature on. What only the account can unblock (PAUSED) is not tried again
+    // by WorkManager; it goes at the next sign-in. A failure here never stops the library's own sync.
+    private suspend fun drainPacks(user: ApiUser): DrainOutcome {
+        if (!user.accessOk || !user.hasFeature(MISSION_PACKS)) return DrainOutcome.DONE
+        return try {
+            packs.drainAll(PackUser(user.id, user.name))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            DrainOutcome.RETRY
+        }
     }
 }

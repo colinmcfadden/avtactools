@@ -33,8 +33,9 @@ redesigned screens).
   and the pack's deletion again under the pack's lock (`f204a8f`). Then, built side by side on two PCs and merged (`138bae3`): A11
   keeps packs and their unsent edits on the device (database version 3, `4b56144`, and `3a616ca` so a record past Android's 2 MB cursor
   window can still be read), and A12 lets the existing LZ and route editors edit a pack's items (`fb0600d`), handed their pack stores in
-  the commit after the merge. **Not built:** A13 (the app runs packs), A14 (invitation links), A15 (docs), then the screens. Nothing a
-  person sees has changed yet: nothing opens a pack until A13 and the screens.
+  the commit after the merge. A13 runs packs with the app (`0de2522`, and `e832c62` for what its review proved), merged after them and
+  joined to A12's editors in the commit after that merge. **Not built:** A14 (invitation links), A15 (docs), then the screens. Nothing a
+  person sees has changed yet: nothing opens a pack until the screens.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
   state is in AGENTS.md §17's table. **Not in P2 yet:** an ATAK data package. (Saved missions, which keep the `.msnx` as the document and write edits back into it, and dragging and turning on the map are built: AGENTS.md §17, *Saved missions* and *Dragging and turning on the map*.)

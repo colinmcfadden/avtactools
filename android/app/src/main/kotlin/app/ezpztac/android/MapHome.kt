@@ -28,8 +28,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.android.export.ShareExport
 import app.ezpztac.designsystem.Banner
@@ -120,8 +118,6 @@ fun MapHome(
     LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
     // A file another app opened with this one (Files, a mail, the share sheet) is put to the person here: nothing is imported until they accept.
     IncomingHost()
-    // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { home.appStopped() }
 
     // Units' symbols are drawn the same way on the map and in the sheet's builder: one renderer, and its cache, for both.
     CompositionLocalProvider(LocalSymbolRenderer provides home.symbols) {
