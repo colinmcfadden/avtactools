@@ -80,6 +80,9 @@ private val TOOLBAR_ABOVE_READOUT = 56.dp
 /** How far from a graphic's point a finger still counts as on it: the platform's minimum touch target is 48 dp across, so 24 dp each way. */
 private const val TOUCH_RADIUS_DP = 24.0
 
+/** Why nothing is being sent: the person can still plan, and needs to know their work is waiting, not lost, and how to end the wait. */
+private const val TOO_OLD = "This version of the app is no longer supported by the server. Until you update it, your changes stay on this phone and nothing is sent."
+
 /** The bar for what is held does not stretch across a tablet. */
 private val HELD_BAR_MAX_WIDTH = 460.dp
 
@@ -107,6 +110,8 @@ fun MapHome(
     inviteAttempt: Int = 0,
     onRetryInvite: () -> Unit = {},
     onDismissInvite: () -> Unit = {},
+    /** This version is below the server's minimum as last heard, with no config to show the update screen: nothing is sent ([Gate.Ready.tooOld]). */
+    tooOld: Boolean = false,
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
 ) {
@@ -160,6 +165,7 @@ fun MapHome(
                     verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
                 ) {
                     if (maintenance != null) Banner(maintenance, BannerKind.Warning)
+                    if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
                     // A new diagram starts at the middle of the map: the grid under the crosshair, or its degrees where there is no grid.
                     DiagramsHost(
                         suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon },

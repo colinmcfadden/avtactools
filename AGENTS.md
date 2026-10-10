@@ -773,7 +773,8 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   on the way (a read timeout after the server took it) is tried again and reads "already used" to someone who has just joined, on the web and
   Android alike. The server could answer a repeat by the same account with what it joined (owner to decide).
 - The Android manifest's verified link filter names only `ezpztac.app`, while `AuthLinks.SITE_HOSTS` also takes `www.ezpztac.app`: a `www.`
-  link opens the browser, not the app. Add the host to the filter (and to the site's `assetlinks.json`) if emails or shared links ever use it.
+  link opens the browser, not the app. Left so (the owner's call, 2026-10-10); add the host to the filter (and to the site's
+  `assetlinks.json`) if emails or shared links ever use it.
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -1050,8 +1051,8 @@ client is built around not losing one:
   while pack edits wait, in work the shell cannot cut short (`NonCancellable`): an activity that is finishing clears its view model right after
   ON_STOP. A sync asked for while one runs is not queued again (`KEEP`), and that one leaves the open pack to its own client, so what is left goes
   at the next launch or periodic sync. Every pack call in the shell is guarded: a broken database never ends the app, nor keeps a sign-out's
-  wipes from running. Below the server's minimum version (as last heard, `MinimumVersion`) they stop, and until a launch's first look at the
-  config has ended they wait as they are (`packGateFor`'s `tooOld` and `looked`); the background sync looks for itself (*The shell's rules*). The background sync drains packs before the library (what a pack refused is kept as a library record, which then goes up in
+  wipes from running. Below the server's minimum version (as last heard, `MinimumVersion`) they stop (`packGateFor`'s `tooOld`), without waiting
+  for a launch's look at the config (the owner's call); the background sync looks for itself (*The shell's rules*). The background sync drains packs before the library (what a pack refused is kept as a library record, which then goes up in
   the same run): RETRY from packs, or a drain that throws, makes the run RETRY with the library still synced; PAUSED does not.
 
 **The app module and the Android build.**
@@ -1087,9 +1088,10 @@ client is built around not losing one:
   server's minimum version is stopped *before* anything else, even sign-in, and **sends nothing while it is** (owner, 2026-10-10: mission packs
   stop, no invitation is accepted, and the library's sync does nothing; what waits stays and goes once the app is updated). Every look at the
   config is remembered first (`MinimumVersion`, one live value in the process) and that is what they all go by: the shell looks at launch and
-  each time the app comes to the front, the background sync looks before it sends (so a device nobody opens hears a raised minimum; the config
-  is public and confirms no session), and until a launch's first look has ended, answered or not, nothing goes out, since the server may have
-  raised it since the device last heard; **maintenance is a banner, never a block**, because planning is
+  each time the app comes to the front, and the background sync looks before it sends (so a device nobody opens hears a raised minimum; the
+  config is public and confirms no session). Nothing waits for a launch's look (the owner's call: the first launch after a raise sends until
+  its config answers). With no config to show the update screen (no signal), planning opens and a banner says why nothing is sent, with
+  *Update* (`Gate.Ready.tooOld`, from the minimum last heard); **maintenance is a banner, never a block**, because planning is
   local; no config at launch (no signal) blocks nothing; a device that has not heard from the server for **14 days** (`OfflineGrace`) must
   sign in again, and its plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
   shown nothing of them, nothing is uploaded under their account, and they choose between clearing them (told how many changes never
@@ -1105,13 +1107,14 @@ client is built around not losing one:
   sign-in screens': the shell keeps the token in its saved state (through a sign-in, a turn of the phone and the process being ended, as the web
   keeps it for the tab) and accepts it once the gate is `Ready` (signed in, past the gate, the plans here theirs) with Mission Packs on; while
   they are off it waits (`InviteState.Waiting`). Only a token of the server's shape (`^[A-Za-z0-9_-]{16,200}$`) is kept, anything else is
-  dropped unsent; it is not accepted while the app may not send (below the server's minimum, or before a launch's first look at the config:
-  accepting joins a shared pack); one request at a time per link however often it is looked at (`InviteAcceptance`: a second accept would be refused as used),
+  dropped unsent; it is not accepted while the app may not send (below the server's minimum as last heard: accepting joins a shared pack);
+  one request at a time per link however often it is looked at (`InviteAcceptance`: a second accept would be refused as used),
   and only the link still kept is asked about; it is let go once accepted or refused for good, and kept for a retry after no connection, a 429,
   a 5xx or a refusal about the account (signed out, the gate, Mission Packs off: **not like the web**, which drops it, as owner decision 4 keeps
   edits). Opening the kept link again asks again. **What became of a link is the account's own**: the shell outlives a sign-out, where the web's
   hook goes with its screen, so `InviteAcceptance` is for one account at a time (a sign-out `forget`s it, an answer that comes after its account
-  has gone is never said, and the accept is made `asUser`); the link itself waits for whoever signs in next, as the web keeps it for the tab.
+  has gone is never said, and the accept is made `asUser`); the link itself waits for whoever signs in next, as the web keeps it for the tab
+  (the owner's call, 2026-10-10).
   The shell exposes `inviteState`, `inviteAttempt`, `retryInvite` and `dismissInvite`, and **a toast above the sheet says what became of it**
   (`InviteNotices`: accepting, joined, waiting, or failed with *Try again* when it may pass; the web toasts a join or a failure), keyed on the
   attempt too, so a retry that fails as the last one did is told again. The toast is lifted clear of the grid readout (a scaffold's toast sits on

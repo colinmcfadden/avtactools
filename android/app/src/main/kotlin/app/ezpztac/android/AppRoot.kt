@@ -1,5 +1,6 @@
 package app.ezpztac.android
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -90,6 +91,8 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 canMakeAircraft = current.user.hasFeature("aircraft_profiles"),
                 // An invitation is only ever accepted here, once the person is in.
                 invite = invite, inviteAttempt = inviteAttempt, onRetryInvite = viewModel::retryInvite, onDismissInvite = viewModel::dismissInvite,
+                // Known too old with no config to show the update screen (no signal): planning opens, nothing is sent, and the sheet says why.
+                tooOld = current.tooOld,
             )
             is Gate.UpdateRequired -> UpdateRequiredScreen(current.minimum)
         }
@@ -129,15 +132,20 @@ fun UpdateRequiredScreen(minimum: String?) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        PrimaryButton("Open the store", onClick = {
-            val store = Intent(Intent.ACTION_VIEW, "market://details?id=${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            runCatching { context.startActivity(store) }.onFailure {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=${context.packageName}".toUri())
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }
-        })
+        PrimaryButton("Open the store", onClick = { openStore(context) })
+    }
+}
+
+/** The app's page in the store, to update it: the store's own app, else its web page. */
+internal fun openStore(context: Context) {
+    val store = Intent(Intent.ACTION_VIEW, "market://details?id=${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(store) }.onFailure {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=${context.packageName}".toUri())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
     }
 }
 

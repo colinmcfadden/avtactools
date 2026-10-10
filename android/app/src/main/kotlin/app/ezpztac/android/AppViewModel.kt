@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -75,8 +76,8 @@ class AppViewModel @Inject constructor(
     /** A link from an email (verify, reset) that has been opened and not yet dealt with. It outranks everything but an update. */
     val pendingLink: StateFlow<AuthRoute?> = link.asStateFlow()
 
-    val gate: StateFlow<Gate> = combine(config, backend.state, ownership) { config, auth, ownership ->
-        gateFor(config, auth, ownership, version)
+    val gate: StateFlow<Gate> = combine(config, backend.state, ownership, minimumVersion.remembered) { config, auth, ownership, minimum ->
+        gateFor(config, auth, ownership, version, minimum)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Gate.Starting)
 
     // An invitation link the app was opened with, until it is accepted or refused for good: kept through a sign-in, a turn of the phone and
@@ -93,15 +94,15 @@ class AppViewModel @Inject constructor(
     /** One more for every try at the link, so the same answer to a new try (a retry that failed as the last one did) is told again. */
     val inviteAttempt: StateFlow<Int> = invitation.attempts
 
-    // Whether this launch has looked at the server's config yet, answered or not. Until it has, nothing goes out: the server may have raised its
-    // minimum version since this device last heard (the owner's decision: nothing is sent below it). After, the minimum remembered decides, which
-    // every look updates first, the background sync's included.
-    private val configLooked = MutableStateFlow(false)
+    // A look at the server's config under way: one at a time, or the launch's and the first coming to the front's would both ask.
     private var configLook: Job? = null
 
-    /** Whether this app may send anything now: the launch has looked at the config, and this version is not below the minimum last heard. */
-    private val mayGoOut: Flow<Boolean> =
-        combine(configLooked, minimumVersion.remembered) { looked, minimum -> looked && !isBelowMinimum(version, minimum) }
+    /**
+     * Whether this app may send anything now: this version is not below the server's minimum as last heard (the owner's decision: nothing is sent
+     * below it), which every look at the config updates first, the background sync's included. Nothing waits for a launch's look (the owner's
+     * call, 2026-10-10): the first launch after the server raised its minimum sends until its config answers.
+     */
+    private val mayGoOut: Flow<Boolean> = minimumVersion.remembered.map { !isBelowMinimum(version, it) }
 
     init {
         viewModelScope.launch {
@@ -120,9 +121,9 @@ class AppViewModel @Inject constructor(
             // Mission packs run for the account while it may have them: apart from the collector above, which does not hear a feature
             // turned on or off by an admin (a refreshed user with the same id and access). A failure (the device's database) is tried
             // again at the next change, or the next launch: it must not end the app. Below the server's minimum version (as last heard)
-            // they stop, and until this launch has looked at the config they wait.
-            combine(backend.state, ownership, minimumVersion.remembered, configLooked) { auth, ownership, minimum, looked ->
-                packGateFor(auth, ownership, tooOld = isBelowMinimum(version, minimum), looked = looked)
+            // they stop.
+            combine(backend.state, ownership, minimumVersion.remembered) { auth, ownership, minimum ->
+                packGateFor(auth, ownership, tooOld = isBelowMinimum(version, minimum))
             }.distinctUntilChanged().collect { gate ->
                 when (gate) {
                     is PackGate.Run -> quietly {
@@ -159,7 +160,7 @@ class AppViewModel @Inject constructor(
 
     // The person in, while the app may send: what the invitation collector asks, read now.
     private fun userWhoMaySend(): ApiUser? =
-        (gate.value as? Gate.Ready)?.user?.takeIf { configLooked.value && !isBelowMinimum(version, minimumVersion.remembered.value) }
+        (gate.value as? Gate.Ready)?.user?.takeIf { !isBelowMinimum(version, minimumVersion.remembered.value) }
 
     /** Puts away what became of the invitation link, once the person has seen it. */
     fun dismissInvite() {
@@ -286,8 +287,6 @@ class AppViewModel @Inject constructor(
             mapTokens.update(fetched.mapbox.publicToken)                  // remembered, so the next start with no signal can draw imagery
         } catch (_: ApiException) {
             // Offline: nothing is blocked for want of a config, and the minimum last heard stands.
-        } finally {
-            configLooked.value = true
         }
     }
 
@@ -359,13 +358,11 @@ internal sealed interface PackGate {
  * another's ([app.ezpztac.missionpacks.PackEngine.enable]).
  *
  * An app [tooOld] for the server (below its minimum version as last heard: [MinimumVersion]) stops them, whatever else is known: what waits
- * stays on the device, and goes once the app is updated. Until this launch has [looked] at the config (answered or not), nothing more is
- * known (the server may have raised its minimum since), so they wait as they are.
+ * stays on the device, and goes once the app is updated.
  */
-internal fun packGateFor(auth: AuthState, ownership: Ownership?, tooOld: Boolean, looked: Boolean): PackGate {
+internal fun packGateFor(auth: AuthState, ownership: Ownership?, tooOld: Boolean): PackGate {
     if (auth !is AuthState.SignedIn) return PackGate.Leave
     if (tooOld) return PackGate.Stop
-    if (!looked) return PackGate.Leave
     val user = auth.user
     if (!user.accessOk || !user.hasFeature(MISSION_PACKS)) return PackGate.Stop
     return when (ownership) {

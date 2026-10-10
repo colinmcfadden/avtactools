@@ -826,7 +826,7 @@ class AppViewModelTest {
     @Test
     fun `a launch with no signal goes by the minimum it last heard, so planning opens and no pack runs`() = runTest(dispatcher) {
         val r = rig(owner = 1, minimum = "9.0.0")                                           // the config cannot be fetched
-        assertEquals(Gate.Ready(user(), null), r.model.gate.value)                          // no config at launch blocks nothing on the screen...
+        assertEquals(Gate.Ready(user(), null, tooOld = true), r.model.gate.value)           // no config blocks nothing on the screen (a banner says why)...
         assertTrue(r.packs.log.toString(), r.packs.log.none { it.startsWith("enable") })   // ...but nothing goes to a pack
         assertEquals("9.0.0", r.minimum.remembered.value)
     }
@@ -838,27 +838,21 @@ class AppViewModelTest {
         assertNull(r.minimum.remembered.value)
     }
 
+    // The owner's call: nothing waits for a launch's look at the config. The first launch after the server raised its minimum sends until the
+    // config answers, and then stops.
     @Test
-    fun `packs and an invitation wait for the launch's look at the config, then go by what it says`() = runTest(dispatcher) {
-        listOf("9.0.0" to false, null to true).forEach { (minimum, goes) ->
-            val held = CompletableDeferred<Unit>()
-            val r = rig(owner = 1, configure = { configHeld = held; config = Result.success(config(minimum = minimum)) })
-            r.model.onLink(INVITE_LINK)
-            advanceUntilIdle()
-            assertTrue("$minimum", r.packs.log.none { it.startsWith("enable") })                 // the server may have raised its minimum since
-            assertEquals("$minimum", emptyList<String>(), r.invites.asked)
-
-            held.complete(Unit)
-            advanceUntilIdle()
-            assertEquals("$minimum", if (goes) "enable 1 Pilot 1" else "disable", r.packs.lastGate())
-            assertEquals("$minimum", if (goes) listOf(INVITE_TOKEN) else emptyList(), r.invites.asked)
-        }
-    }
-
-    @Test
-    fun `with no signal the look ends at once, and the minimum last heard decides`() = runTest(dispatcher) {
-        val r = rig(owner = 1)                                                              // nothing heard, nothing fetched: packs run, as ever
+    fun `packs and an invitation do not wait for the config, and stop once it says the app is too old`() = runTest(dispatcher) {
+        val held = CompletableDeferred<Unit>()
+        val r = rig(owner = 1, configure = { configHeld = held; config = Result.success(config(minimum = "9.0.0")) })
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
         assertEquals("enable 1 Pilot 1", r.packs.lastGate())
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+
+        held.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(Gate.UpdateRequired("9.0.0"), r.model.gate.value)
+        assertEquals("disable", r.packs.lastGate())
     }
 
     @Test
