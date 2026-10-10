@@ -63,7 +63,8 @@ screens).
 ## 2. Next work, in order
 
 1. **The screens**, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
-   AGENTS.md §17, *Mission packs on Android*). First the redesigned shell (2), then the pack screens in it (3); both are drawn in
+   AGENTS.md §17, *Mission packs on Android*). **The plan is `docs/ANDROID_SCREENS_PLAN.md`** (the owner's decisions, the steps S1–S9 and
+   P1–P4, how each is checked), on `feat/android-screens`. First the redesigned shell (2), then the pack screens in it (3); both are drawn in
    `docs/native-design/`. **How the engine was built**, worth keeping for the screens: one commit per step, implemented, reviewed
    independently, fixed, and committed only with its module's tests and the full build green. A1–A10 had two reviewers each; A11–A14 one
    each (A14 a second for its fixes), and every one found something real (A12 a blocker: a change arriving while an item opened could be
