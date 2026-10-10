@@ -21,11 +21,11 @@ Ids are `<form>-<screen>`: `AP` Android phone (412 x 915 dp), `AT` Android table
 
 ## Decisions to settle before building
 
-- **Save model (Android).** The mockups follow the web's save pattern: an LZ/PZ shows "Unsaved changes" until its first Save names it into the Library, later saves are silent with a toast. The Android app today saves every diagram as a synced record automatically (`DocumentSession`, 600 ms after the last edit). Decide whether native keeps autosave (then "Save" becomes "name it and keep it in the Library", and "Unsaved changes" means "not in the Library yet") or adopts session drafts like the web. The screens work either way, but the chip wording depends on it.
+- **Save model (Android). Decided (owner, 2026-10-10): keep today's autosave for now.** The mockups follow the web's save pattern: an LZ/PZ shows "Unsaved changes" until its first Save names it into the Library, later saves are silent with a toast. The Android app saves every diagram and route set automatically (`DocumentSession`, 600 ms after the last edit) and syncs it at once, so work is never lost; that stays. In the redesigned screens *Save* names an item, and the state chips say whether it has synced rather than "Unsaved changes". Saving before syncing (work kept on the device until a first Save puts it in the Library) may come later, once the owner has tried this.
 - **Palette.** The screens use the redesign's neutral avionics palette (`tokens.json`), not the navy in `contracts/tokens/tokens.json` that `core-designsystem` is generated from. The redesign retires the navy on the web; adopting these screens means changing the contract tokens (then `contracts/scripts/tokens.py write`). The red-shifted night palette was not redesigned.
 - **Threat count.** Threats screens list two threats (badge 2); every other screen shows 1. Inherited from the web mockups; harmless, but pick one if screenshots are compared.
 - **Mission Packs are not in the Android app yet** (packs exist on the web and backend; the Android plan is `docs/MISSION_PACKS.md` §8 step 4). The pack screens are designs for that work. Not to be confused with `core-mappacks` in the native plan, which is the offline *map* pack.
-- **Map overlays** (KMZ, GeoTIFF, image plus world file) appear in Import and Imports as in the web design; parsing them needs a new library (AGENTS.md: ask first).
+- **Map overlays** (KMZ, GeoTIFF, image plus world file) appear in Import and Imports as in the web design; parsing them needs a new library (AGENTS.md: ask first). **Decided (owner, 2026-10-10): not in the initial build.** Import and Imports offer `.msnx`, `.LPS` and `.ths`; overlays come later, with a library the owner approves then.
 
 ## Platform architecture
 
