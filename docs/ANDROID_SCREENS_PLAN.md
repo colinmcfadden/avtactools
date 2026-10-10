@@ -1,6 +1,6 @@
 # Android screens: the plan they are built from
 
-Status (2026-10-10): **planned; S1 next.** The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
+Status (2026-10-10): **S1 built** (on `feat/android-screens`); S2 next. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
 reviewed independently, fixed, and committed only with the full build green. **Where this plan disagrees with the code, the code wins**
 (AGENTS.md §16), and AGENTS.md §17 says what each module holds.
@@ -56,12 +56,14 @@ reviewed independently, fixed, and committed only with the full build green. **W
 Each step names what it builds, what holds it, and its check. "Screens" means a Roborazzi picture of each new screen in the dark and night
 palettes, looked at beside the design's own picture of it.
 
-**S1 — The design system.** The palette above in `contracts/tokens/tokens.json` (and `contracts/scripts/tokens.py` for the new names),
-`Theme.kt` building the full Material 3 colour scheme from it, the type scale, shapes (the design's radii), the state chips' colours, the
-icons, and the shared components the screens repeat: the state chip, the badge, the panel header ("LZ/PZ · 3 open · this session" with
-its expand button), a list row (icon, headline, supporting text, trailing actions), the tonal and outlined buttons at the design's 48 dp.
-Tests: `TokenContrastTest` and `ThemeTest` for every palette, the component gallery's screenshots. The app keeps working on today's
-layout, in the new colours.
+**S1 — The design system. Built.** The palette above in `contracts/tokens/tokens.json` (36 Material 3 roles a palette, plus warning,
+success and accent; `contracts/scripts/tokens.py` writes line heights too), `Theme.kt` building every role of the colour scheme from it
+(`surfaceTint` transparent: the redesign separates surfaces by their container colours), the redesign's type scale and corners, the 113
+icons the AP and AT screens draw (`EzpzIcons`, `symbols.py`), `Banner` as the design's tinted notice, toasts in the inverse roles, and
+pill buttons. Tests: `TokenContrastTest` (every text pair the redesign draws, on every surface container, in every palette),
+`ThemeTest` (no role left to Material's stock values; night never bright), `IconGalleryTest` (every icon loads and draws), and the
+galleries' pictures. The app keeps today's layout, in the new colours. **Amended while building:** the shared components the screens
+repeat (the state chip, the badge, the panel header, the list row) are built with the first screen that uses them (S2, S3), not ahead of it.
 
 **S2 — The frame (phone).** `MapHome` becomes the design's frame: the search bar with the account button, the row of chips (workspace,
 Import, Library), the map buttons at the right, the crosshair and readout pill (tap to copy), the sheet, and the `NavigationBar` with its

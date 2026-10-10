@@ -1,5 +1,6 @@
 package app.ezpztac.designsystem
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -31,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
@@ -50,7 +53,8 @@ enum class BannerKind { Error, Warning, Info, Success }
 
 /**
  * An inline notice with a retry or dismiss, in place of the web's blocking `alert()` (docs/NATIVE_APPS_PLAN.md, "App architecture").
- * A screen reader announces it when it appears.
+ * Drawn as the redesign draws a notice (docs/native-design, the Threats panel's): a card tinted with the kind's colour, its border a
+ * little stronger, its icon in that colour and its words in the screen's own. A screen reader announces it when it appears.
  */
 @Composable
 fun Banner(
@@ -60,25 +64,27 @@ fun Banner(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
-    val colors = bannerColors(kind)
+    val tint = bannerTint(kind)
     Surface(
         modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-        color = colors.container,
-        contentColor = colors.content,
-        shape = RoundedCornerShape(Tokens.Radius.md.dp),
+        color = tint.copy(alpha = 0.10f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(Tokens.Radius.lg.dp),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.30f)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.md.dp),
+            modifier = Modifier.padding(start = Tokens.Spacing.md.dp, end = Tokens.Spacing.lg.dp, top = Tokens.Spacing.md.dp, bottom = Tokens.Spacing.md.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
         ) {
-            Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Icon(painterResource(bannerIcon(kind)), contentDescription = null, tint = tint, modifier = Modifier.size(Tokens.Size.iconSmall.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             if (actionLabel != null && onAction != null) {
                 TextButton(
                     onClick = onAction,
                     modifier = Modifier.heightIn(min = Tokens.Size.touchTarget.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = colors.content),
-                ) { Text(actionLabel, fontWeight = FontWeight.Bold) }
+                    colors = ButtonDefaults.textButtonColors(contentColor = tint),
+                ) { Text(actionLabel, fontWeight = FontWeight.SemiBold) }
             }
         }
     }
@@ -95,7 +101,7 @@ fun ToastHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
     SnackbarHost(state, modifier) { data ->
         Snackbar(
             snackbarData = data,
-            shape = RoundedCornerShape(Tokens.Radius.md.dp),
+            shape = RoundedCornerShape(Tokens.Radius.sm.dp),
             containerColor = androidx.compose.ui.graphics.Color(colors.container),
             contentColor = androidx.compose.ui.graphics.Color(colors.content),
             actionColor = androidx.compose.ui.graphics.Color(colors.action),
@@ -104,18 +110,19 @@ fun ToastHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
     }
 }
 
-private class BannerColors(val container: androidx.compose.ui.graphics.Color, val content: androidx.compose.ui.graphics.Color)
-
 @Composable
-private fun bannerColors(kind: BannerKind): BannerColors {
-    val scheme = MaterialTheme.colorScheme
-    val status = EzpzTheme.status
-    return when (kind) {
-        BannerKind.Error -> BannerColors(scheme.error, scheme.onError)
-        BannerKind.Warning -> BannerColors(status.warning, scheme.background)
-        BannerKind.Info -> BannerColors(scheme.surfaceVariant, scheme.onSurface)
-        BannerKind.Success -> BannerColors(status.success, scheme.background)
-    }
+private fun bannerTint(kind: BannerKind): androidx.compose.ui.graphics.Color = when (kind) {
+    BannerKind.Error -> MaterialTheme.colorScheme.error
+    BannerKind.Warning -> EzpzTheme.status.warning
+    BannerKind.Info -> EzpzTheme.status.accent
+    BannerKind.Success -> EzpzTheme.status.success
+}
+
+private fun bannerIcon(kind: BannerKind): Int = when (kind) {
+    BannerKind.Error -> EzpzIcons.errorFill
+    BannerKind.Warning -> EzpzIcons.warning
+    BannerKind.Info -> EzpzIcons.info
+    BannerKind.Success -> EzpzIcons.checkCircleFill
 }
 
 /** A labelled text field, with a hint under it and an error that replaces the hint. Touch target at least 56 dp. */
@@ -213,7 +220,7 @@ fun PrimaryButton(
         onClick = { if (!busy) onClick() },
         enabled = enabled,
         modifier = modifier.fillMaxWidth().heightIn(min = Tokens.Size.touchTarget.dp).semantics { if (busy) stateDescription = "Working" },
-        shape = RoundedCornerShape(Tokens.Radius.md.dp),
+        shape = RoundedCornerShape(50),                                       // the redesign's buttons are pills
         colors = ButtonDefaults.buttonColors(),
     ) {
         if (busy) {
@@ -238,7 +245,7 @@ fun SecondaryButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.fillMaxWidth().heightIn(min = Tokens.Size.touchTarget.dp),
-        shape = RoundedCornerShape(Tokens.Radius.md.dp),
+        shape = RoundedCornerShape(50),                                       // the redesign's buttons are pills
         // A disabled one often carries words that have to be read (a countdown), so its text stays at the secondary-text contrast
         // the palettes are tested to; only the border and the missing tap say it is off.
         // Named, not left to the default: the default drew the label in the muted grey of a disabled button (seen in a screenshot).

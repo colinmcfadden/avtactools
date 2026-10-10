@@ -37,14 +37,38 @@ class ThemeTest {
     }
 
     @Test
-    fun `a toast never lights a cockpit, a dark card in every palette and night's own at night`() {
+    fun `a toast is the design's inverse card by day, and never lights a cockpit at night`() {
         fun brightness(argb: Long) = Color(argb).let { it.red + it.green + it.blue }
+        assertEquals(ToastColors(Tokens.Colors.Dark.inverseSurface, Tokens.Colors.Dark.inverseOnSurface, Tokens.Colors.Dark.inversePrimary), toastColorsFor(Palette.Dark))
+        assertEquals(true, brightness(toastColorsFor(Palette.Night).container) < brightness(Tokens.Colors.Dark.onSurface) / 3)
+        assertEquals(true, brightness(toastColorsFor(Palette.Night).content) < brightness(Tokens.Colors.Dark.onSurface))
+    }
+
+    @Test
+    fun `night is never bright, whatever role a screen draws with`() {
+        fun brightness(argb: Long) = Color(argb).let { it.red + it.green + it.blue }
+        val night = rolesOf(Palette.Night)
+        val brightest = listOf(
+            night.background, night.surface, night.surfaceVariant, night.surfaceContainerLowest, night.surfaceContainerLow, night.surfaceContainer,
+            night.surfaceContainerHigh, night.surfaceContainerHighest, night.primaryContainer, night.secondaryContainer, night.tertiaryContainer,
+            night.errorContainer, night.inverseSurface, night.outlineVariant,
+        ).maxOf(::brightness)
+        assertEquals(true, brightest < brightness(Tokens.Colors.Dark.surfaceContainerHighest))   // every night surface darker than a day card
+    }
+
+    @Test
+    fun `no colour role is left to Material's stock values`() {
         Palette.entries.forEach { palette ->
-            val card = toastColorsFor(palette).container
-            assertEquals("$palette", true, brightness(card) < brightness(Tokens.Colors.Dark.onSurface) / 3)
+            val mode = when (palette) { Palette.Dark -> ThemeMode.Dark; Palette.Light -> ThemeMode.Light; Palette.Night -> ThemeMode.Night }
+            val scheme = colorSchemeFor(mode)
+            val r = rolesOf(palette)
+            assertEquals("$palette", Color(r.surfaceContainerLow), scheme.surfaceContainerLow)
+            assertEquals("$palette", Color(r.secondaryContainer), scheme.secondaryContainer)
+            assertEquals("$palette", Color(r.tertiary), scheme.tertiary)
+            assertEquals("$palette", Color(r.inverseSurface), scheme.inverseSurface)
+            assertEquals("$palette", Color(r.outlineVariant), scheme.outlineVariant)
+            assertEquals("$palette", Color.Transparent, scheme.surfaceTint)
         }
-        assertEquals(Tokens.Colors.Night.surfaceVariant, toastColorsFor(Palette.Night).container)
-        assertEquals(true, brightness(toastColorsFor(Palette.Night).container) < brightness(toastColorsFor(Palette.Dark).container))
     }
 
     @Test

@@ -18,11 +18,14 @@ import androidx.compose.ui.graphics.Color
  */
 enum class ThemeMode { System, Dark, Light, Night }
 
-/** The colours Material 3 has no slot for: a warning (separation, a stale pack) and a success. */
+/**
+ * The colours Material 3 has no slot for: a warning (separation, a change waiting to sync), a success (synced, analysed), and the accent
+ * the redesign draws text buttons and icons in on its dark surfaces.
+ */
 @Immutable
-data class StatusColors(val warning: Color, val success: Color)
+data class StatusColors(val warning: Color, val success: Color, val accent: Color)
 
-private val LocalStatusColors = staticCompositionLocalOf { statusColorsFor(dark = true, night = false) }
+private val LocalStatusColors = staticCompositionLocalOf { statusColorsFor(Palette.Dark) }
 
 /** Read the status colours the way a Material colour is read: `EzpzTheme.status.warning`. */
 object EzpzTheme {
@@ -32,75 +35,103 @@ object EzpzTheme {
         get() = LocalStatusColors.current
 }
 
-private fun color(value: Long) = Color(value)
-
-/** The Material 3 colour scheme for a palette, from the tokens and nothing else. */
-fun colorSchemeFor(mode: ThemeMode, systemDark: Boolean = true): ColorScheme = when (resolve(mode, systemDark)) {
-    Palette.Dark -> darkColorScheme(
-        background = color(Tokens.Colors.Dark.background),
-        surface = color(Tokens.Colors.Dark.surface),
-        surfaceVariant = color(Tokens.Colors.Dark.surfaceVariant),
-        onBackground = color(Tokens.Colors.Dark.onBackground),
-        onSurface = color(Tokens.Colors.Dark.onSurface),
-        onSurfaceVariant = color(Tokens.Colors.Dark.onSurfaceVariant),
-        primary = color(Tokens.Colors.Dark.primary),
-        onPrimary = color(Tokens.Colors.Dark.onPrimary),
-        secondary = color(Tokens.Colors.Dark.secondary),
-        onSecondary = color(Tokens.Colors.Dark.onSecondary),
-        outline = color(Tokens.Colors.Dark.outline),
-        error = color(Tokens.Colors.Dark.error),
-        onError = color(Tokens.Colors.Dark.onError),
-        scrim = color(Tokens.Colors.Dark.scrim),
-    )
-    Palette.Light -> lightColorScheme(
-        background = color(Tokens.Colors.Light.background),
-        surface = color(Tokens.Colors.Light.surface),
-        surfaceVariant = color(Tokens.Colors.Light.surfaceVariant),
-        onBackground = color(Tokens.Colors.Light.onBackground),
-        onSurface = color(Tokens.Colors.Light.onSurface),
-        onSurfaceVariant = color(Tokens.Colors.Light.onSurfaceVariant),
-        primary = color(Tokens.Colors.Light.primary),
-        onPrimary = color(Tokens.Colors.Light.onPrimary),
-        secondary = color(Tokens.Colors.Light.secondary),
-        onSecondary = color(Tokens.Colors.Light.onSecondary),
-        outline = color(Tokens.Colors.Light.outline),
-        error = color(Tokens.Colors.Light.error),
-        onError = color(Tokens.Colors.Light.onError),
-        scrim = color(Tokens.Colors.Light.scrim),
-    )
-    Palette.Night -> darkColorScheme(
-        background = color(Tokens.Colors.Night.background),
-        surface = color(Tokens.Colors.Night.surface),
-        surfaceVariant = color(Tokens.Colors.Night.surfaceVariant),
-        onBackground = color(Tokens.Colors.Night.onBackground),
-        onSurface = color(Tokens.Colors.Night.onSurface),
-        onSurfaceVariant = color(Tokens.Colors.Night.onSurfaceVariant),
-        primary = color(Tokens.Colors.Night.primary),
-        onPrimary = color(Tokens.Colors.Night.onPrimary),
-        secondary = color(Tokens.Colors.Night.secondary),
-        onSecondary = color(Tokens.Colors.Night.onSecondary),
-        outline = color(Tokens.Colors.Night.outline),
-        error = color(Tokens.Colors.Night.error),
-        onError = color(Tokens.Colors.Night.onError),
-        scrim = color(Tokens.Colors.Night.scrim),
-    )
-}
+/** One palette's colour roles, as the tokens give them (0xAARRGGBB). The three palettes are the same names with their own values. */
+internal class Roles(
+    val background: Long, val surface: Long, val surfaceVariant: Long, val onBackground: Long, val onSurface: Long, val onSurfaceVariant: Long,
+    val primary: Long, val onPrimary: Long, val secondary: Long, val onSecondary: Long, val outline: Long, val error: Long, val onError: Long,
+    val warning: Long, val success: Long, val scrim: Long,
+    val surfaceContainerLowest: Long, val surfaceContainerLow: Long, val surfaceContainer: Long, val surfaceContainerHigh: Long,
+    val surfaceContainerHighest: Long, val outlineVariant: Long, val primaryContainer: Long, val onPrimaryContainer: Long,
+    val secondaryContainer: Long, val onSecondaryContainer: Long, val tertiary: Long, val onTertiary: Long, val tertiaryContainer: Long,
+    val onTertiaryContainer: Long, val errorContainer: Long, val onErrorContainer: Long, val inverseSurface: Long, val inverseOnSurface: Long,
+    val inversePrimary: Long, val accent: Long,
+)
 
 internal enum class Palette { Dark, Light, Night }
+
+internal fun rolesOf(palette: Palette): Roles = when (palette) {
+    Palette.Dark -> Tokens.Colors.Dark.run {
+        Roles(
+            background, surface, surfaceVariant, onBackground, onSurface, onSurfaceVariant, primary, onPrimary, secondary, onSecondary, outline,
+            error, onError, warning, success, scrim, surfaceContainerLowest, surfaceContainerLow, surfaceContainer, surfaceContainerHigh,
+            surfaceContainerHighest, outlineVariant, primaryContainer, onPrimaryContainer, secondaryContainer, onSecondaryContainer, tertiary,
+            onTertiary, tertiaryContainer, onTertiaryContainer, errorContainer, onErrorContainer, inverseSurface, inverseOnSurface,
+            inversePrimary, accent,
+        )
+    }
+    Palette.Light -> Tokens.Colors.Light.run {
+        Roles(
+            background, surface, surfaceVariant, onBackground, onSurface, onSurfaceVariant, primary, onPrimary, secondary, onSecondary, outline,
+            error, onError, warning, success, scrim, surfaceContainerLowest, surfaceContainerLow, surfaceContainer, surfaceContainerHigh,
+            surfaceContainerHighest, outlineVariant, primaryContainer, onPrimaryContainer, secondaryContainer, onSecondaryContainer, tertiary,
+            onTertiary, tertiaryContainer, onTertiaryContainer, errorContainer, onErrorContainer, inverseSurface, inverseOnSurface,
+            inversePrimary, accent,
+        )
+    }
+    Palette.Night -> Tokens.Colors.Night.run {
+        Roles(
+            background, surface, surfaceVariant, onBackground, onSurface, onSurfaceVariant, primary, onPrimary, secondary, onSecondary, outline,
+            error, onError, warning, success, scrim, surfaceContainerLowest, surfaceContainerLow, surfaceContainer, surfaceContainerHigh,
+            surfaceContainerHighest, outlineVariant, primaryContainer, onPrimaryContainer, secondaryContainer, onSecondaryContainer, tertiary,
+            onTertiary, tertiaryContainer, onTertiaryContainer, errorContainer, onErrorContainer, inverseSurface, inverseOnSurface,
+            inversePrimary, accent,
+        )
+    }
+}
+
+private fun color(value: Long) = Color(value)
+
+/**
+ * The Material 3 colour scheme for a palette, from the tokens and nothing else: every role is set, so no component falls back to
+ * Material's stock lavender (a near-white flash on the night palette). `surfaceTint` is transparent: the redesign separates surfaces by
+ * their container colours, never by tinting them with the primary.
+ */
+fun colorSchemeFor(mode: ThemeMode, systemDark: Boolean = true): ColorScheme {
+    val palette = resolve(mode, systemDark)
+    val r = rolesOf(palette)
+    return if (palette == Palette.Light) {
+        lightColorScheme(
+            primary = color(r.primary), onPrimary = color(r.onPrimary), primaryContainer = color(r.primaryContainer),
+            onPrimaryContainer = color(r.onPrimaryContainer), inversePrimary = color(r.inversePrimary), secondary = color(r.secondary),
+            onSecondary = color(r.onSecondary), secondaryContainer = color(r.secondaryContainer), onSecondaryContainer = color(r.onSecondaryContainer),
+            tertiary = color(r.tertiary), onTertiary = color(r.onTertiary), tertiaryContainer = color(r.tertiaryContainer),
+            onTertiaryContainer = color(r.onTertiaryContainer), background = color(r.background), onBackground = color(r.onBackground),
+            surface = color(r.surface), onSurface = color(r.onSurface), surfaceVariant = color(r.surfaceVariant),
+            onSurfaceVariant = color(r.onSurfaceVariant), surfaceTint = Color.Transparent, inverseSurface = color(r.inverseSurface),
+            inverseOnSurface = color(r.inverseOnSurface), error = color(r.error), onError = color(r.onError), errorContainer = color(r.errorContainer),
+            onErrorContainer = color(r.onErrorContainer), outline = color(r.outline), outlineVariant = color(r.outlineVariant), scrim = color(r.scrim),
+            surfaceBright = color(r.surfaceContainerLowest), surfaceContainer = color(r.surfaceContainer),
+            surfaceContainerHigh = color(r.surfaceContainerHigh), surfaceContainerHighest = color(r.surfaceContainerHighest),
+            surfaceContainerLow = color(r.surfaceContainerLow), surfaceContainerLowest = color(r.surfaceContainerLowest),
+            surfaceDim = color(r.surfaceContainerHighest),
+        )
+    } else {
+        darkColorScheme(
+            primary = color(r.primary), onPrimary = color(r.onPrimary), primaryContainer = color(r.primaryContainer),
+            onPrimaryContainer = color(r.onPrimaryContainer), inversePrimary = color(r.inversePrimary), secondary = color(r.secondary),
+            onSecondary = color(r.onSecondary), secondaryContainer = color(r.secondaryContainer), onSecondaryContainer = color(r.onSecondaryContainer),
+            tertiary = color(r.tertiary), onTertiary = color(r.onTertiary), tertiaryContainer = color(r.tertiaryContainer),
+            onTertiaryContainer = color(r.onTertiaryContainer), background = color(r.background), onBackground = color(r.onBackground),
+            surface = color(r.surface), onSurface = color(r.onSurface), surfaceVariant = color(r.surfaceVariant),
+            onSurfaceVariant = color(r.onSurfaceVariant), surfaceTint = Color.Transparent, inverseSurface = color(r.inverseSurface),
+            inverseOnSurface = color(r.inverseOnSurface), error = color(r.error), onError = color(r.onError), errorContainer = color(r.errorContainer),
+            onErrorContainer = color(r.onErrorContainer), outline = color(r.outline), outlineVariant = color(r.outlineVariant), scrim = color(r.scrim),
+            surfaceBright = color(r.surfaceContainerHighest), surfaceContainer = color(r.surfaceContainer),
+            surfaceContainerHigh = color(r.surfaceContainerHigh), surfaceContainerHighest = color(r.surfaceContainerHighest),
+            surfaceContainerLow = color(r.surfaceContainerLow), surfaceContainerLowest = color(r.surfaceContainerLowest),
+            surfaceDim = color(r.surfaceContainerLowest),
+        )
+    }
+}
 
 /** The colours of a toast ([ToastHost]): its card, its words and close button, and its one action. */
 internal data class ToastColors(val container: Long, val content: Long, val action: Long)
 
 /**
- * A toast's colours for a palette. In light and dark alike it is the dark palette's raised card, which stands out from a light screen as
- * Material's inverse toast does, without a bright one ever lighting a dark cockpit; at night it is the night palette's own, red on near
- * black. The theme sets none of Material's inverse colours, which a toast would otherwise take: its stock lavender and purple, a near-white
- * flash on the night palette.
+ * A toast's colours for a palette: the redesign's snackbar, Material's inverse roles (a light card on the dark palette, a dark one on the
+ * light). At night the inverse roles are themselves dark, red on near black, so a toast never lights a night cockpit.
  */
-internal fun toastColorsFor(palette: Palette): ToastColors = when (palette) {
-    Palette.Night -> Tokens.Colors.Night.let { ToastColors(it.surfaceVariant, it.onSurface, it.primary) }
-    Palette.Dark, Palette.Light -> Tokens.Colors.Dark.let { ToastColors(it.surfaceVariant, it.onSurface, it.primary) }
-}
+internal fun toastColorsFor(palette: Palette): ToastColors = rolesOf(palette).let { ToastColors(it.inverseSurface, it.inverseOnSurface, it.inversePrimary) }
 
 internal val LocalToastColors = staticCompositionLocalOf { toastColorsFor(Palette.Dark) }
 
@@ -112,19 +143,8 @@ internal fun resolve(mode: ThemeMode, systemDark: Boolean): Palette = when (mode
     ThemeMode.Night -> Palette.Night
 }
 
-internal fun statusColorsFor(dark: Boolean, night: Boolean): StatusColors = when {
-    night -> StatusColors(
-        warning = color(Tokens.Colors.Night.warning),
-        success = color(Tokens.Colors.Night.success),
-    )
-    dark -> StatusColors(
-        warning = color(Tokens.Colors.Dark.warning),
-        success = color(Tokens.Colors.Dark.success),
-    )
-    else -> StatusColors(
-        warning = color(Tokens.Colors.Light.warning),
-        success = color(Tokens.Colors.Light.success),
-    )
+internal fun statusColorsFor(palette: Palette): StatusColors = rolesOf(palette).let {
+    StatusColors(warning = color(it.warning), success = color(it.success), accent = color(it.accent))
 }
 
 @Composable
@@ -135,12 +155,13 @@ fun EzpzTheme(
     val systemDark = isSystemInDarkTheme()
     val palette = resolve(mode, systemDark)
     CompositionLocalProvider(
-        LocalStatusColors provides statusColorsFor(dark = palette != Palette.Light, night = palette == Palette.Night),
+        LocalStatusColors provides statusColorsFor(palette),
         LocalToastColors provides toastColorsFor(palette),
     ) {
         MaterialTheme(
             colorScheme = colorSchemeFor(mode, systemDark),
             typography = ezpzTypography(),
+            shapes = ezpzShapes(),
             content = content,
         )
     }

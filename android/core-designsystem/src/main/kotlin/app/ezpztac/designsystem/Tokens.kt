@@ -6,58 +6,118 @@ object Tokens {
     /** Colours as 0xAARRGGBB, one palette per theme. */
     object Colors {
         object Dark {
-            const val background: Long = 0xFF092137
-            const val surface: Long = 0xFF0F2C47
-            const val surfaceVariant: Long = 0xFF16385A
+            const val background: Long = 0xFF101317
+            const val surface: Long = 0xFF101317
+            const val surfaceVariant: Long = 0xFF2C3139
             const val onBackground: Long = 0xFFE7EAEE
             const val onSurface: Long = 0xFFE7EAEE
-            const val onSurfaceVariant: Long = 0xFF9CA3AF
-            const val primary: Long = 0xFF5AA7D4
-            const val onPrimary: Long = 0xFF092137
-            const val secondary: Long = 0xFF00B5E2
-            const val onSecondary: Long = 0xFF092137
-            const val outline: Long = 0xFF3D84B3
-            const val error: Long = 0xFFEF4444
-            const val onError: Long = 0xFF05080C
-            const val warning: Long = 0xFFF59E0B
-            const val success: Long = 0xFF22C55E
+            const val onSurfaceVariant: Long = 0xFFB4BCC6
+            const val primary: Long = 0xFF9CCBF0
+            const val onPrimary: Long = 0xFF00314F
+            const val secondary: Long = 0xFFB7C9DB
+            const val onSecondary: Long = 0xFF21323F
+            const val outline: Long = 0xFF8A94A1
+            const val error: Long = 0xFFFFB4AB
+            const val onError: Long = 0xFF690005
+            const val warning: Long = 0xFFF0C56F
+            const val success: Long = 0xFF82D4AE
             const val scrim: Long = 0xFF000000
+            const val surfaceContainerLowest: Long = 0xFF0C0F12
+            const val surfaceContainerLow: Long = 0xFF15181D
+            const val surfaceContainer: Long = 0xFF1A1E24
+            const val surfaceContainerHigh: Long = 0xFF23272E
+            const val surfaceContainerHighest: Long = 0xFF2C3139
+            const val outlineVariant: Long = 0xFF2B313B
+            const val primaryContainer: Long = 0xFF3F6FA3
+            const val onPrimaryContainer: Long = 0xFFFFFFFF
+            const val secondaryContainer: Long = 0xFF2B3A4A
+            const val onSecondaryContainer: Long = 0xFFD3E4F7
+            const val tertiary: Long = 0xFFA89AE6
+            const val onTertiary: Long = 0xFF2A2160
+            const val tertiaryContainer: Long = 0xFF3A3360
+            const val onTertiaryContainer: Long = 0xFFE6DEFD
+            const val errorContainer: Long = 0xFF93000A
+            const val onErrorContainer: Long = 0xFFFFDAD6
+            const val inverseSurface: Long = 0xFFE3E7EC
+            const val inverseOnSurface: Long = 0xFF1F2328
+            const val inversePrimary: Long = 0xFF2A6594
+            const val accent: Long = 0xFF92C9EA
         }
         object Light {
             const val background: Long = 0xFFF4F8FB
             const val surface: Long = 0xFFFFFFFF
-            const val surfaceVariant: Long = 0xFFEAF2F8
+            const val surfaceVariant: Long = 0xFFE2E8EE
             const val onBackground: Long = 0xFF1F2937
             const val onSurface: Long = 0xFF1F2937
-            const val onSurfaceVariant: Long = 0xFF6B7280
+            const val onSurfaceVariant: Long = 0xFF4B5563
             const val primary: Long = 0xFF2F6F9F
             const val onPrimary: Long = 0xFFFFFFFF
-            const val secondary: Long = 0xFF0077A0
+            const val secondary: Long = 0xFF4A6178
             const val onSecondary: Long = 0xFFFFFFFF
-            const val outline: Long = 0xFFCFD8E2
+            const val outline: Long = 0xFF737D89
             const val error: Long = 0xFFDC2626
             const val onError: Long = 0xFFFFFFFF
-            const val warning: Long = 0xFFB45309
-            const val success: Long = 0xFF15803D
+            const val warning: Long = 0xFF8A5A00
+            const val success: Long = 0xFF126B33
             const val scrim: Long = 0xFF000000
+            const val surfaceContainerLowest: Long = 0xFFFFFFFF
+            const val surfaceContainerLow: Long = 0xFFF7FAFC
+            const val surfaceContainer: Long = 0xFFEEF3F7
+            const val surfaceContainerHigh: Long = 0xFFE8EEF3
+            const val surfaceContainerHighest: Long = 0xFFE2E8EE
+            const val outlineVariant: Long = 0xFFCFD8E2
+            const val primaryContainer: Long = 0xFFD3E4F7
+            const val onPrimaryContainer: Long = 0xFF0B2F4A
+            const val secondaryContainer: Long = 0xFFDCE7F2
+            const val onSecondaryContainer: Long = 0xFF13293D
+            const val tertiary: Long = 0xFF6C5BC4
+            const val onTertiary: Long = 0xFFFFFFFF
+            const val tertiaryContainer: Long = 0xFFE6DEFD
+            const val onTertiaryContainer: Long = 0xFF2A2160
+            const val errorContainer: Long = 0xFFFFDAD6
+            const val onErrorContainer: Long = 0xFF410002
+            const val inverseSurface: Long = 0xFF2C3139
+            const val inverseOnSurface: Long = 0xFFE7EAEE
+            const val inversePrimary: Long = 0xFF9CCBF0
+            const val accent: Long = 0xFF285F89
         }
         object Night {
             const val background: Long = 0xFF07090C
             const val surface: Long = 0xFF0D1117
-            const val surfaceVariant: Long = 0xFF131920
+            const val surfaceVariant: Long = 0xFF171C23
             const val onBackground: Long = 0xFFCF6B63
             const val onSurface: Long = 0xFFCF6B63
-            const val onSurfaceVariant: Long = 0xFFB8685F
+            const val onSurfaceVariant: Long = 0xFFC26C63
             const val primary: Long = 0xFFD66B64
             const val onPrimary: Long = 0xFF0D1117
             const val secondary: Long = 0xFFCA6159
             const val onSecondary: Long = 0xFF0D1117
-            const val outline: Long = 0xFF6B3A36
+            const val outline: Long = 0xFF94504A
             const val error: Long = 0xFFFF5A4F
             const val onError: Long = 0xFF0D1117
             const val warning: Long = 0xFFC48A2C
-            const val success: Long = 0xFF4C7A4A
+            const val success: Long = 0xFF6E9A5E
             const val scrim: Long = 0xFF000000
+            const val surfaceContainerLowest: Long = 0xFF050608
+            const val surfaceContainerLow: Long = 0xFF0B0E12
+            const val surfaceContainer: Long = 0xFF0F1318
+            const val surfaceContainerHigh: Long = 0xFF141A20
+            const val surfaceContainerHighest: Long = 0xFF171C23
+            const val outlineVariant: Long = 0xFF3A2422
+            const val primaryContainer: Long = 0xFF3A1D1B
+            const val onPrimaryContainer: Long = 0xFFE07A72
+            const val secondaryContainer: Long = 0xFF2A1614
+            const val onSecondaryContainer: Long = 0xFFCF6B63
+            const val tertiary: Long = 0xFFB8687A
+            const val onTertiary: Long = 0xFF0D1117
+            const val tertiaryContainer: Long = 0xFF2E151C
+            const val onTertiaryContainer: Long = 0xFFD27486
+            const val errorContainer: Long = 0xFF3A0F0C
+            const val onErrorContainer: Long = 0xFFFF6B61
+            const val inverseSurface: Long = 0xFF1F1513
+            const val inverseOnSurface: Long = 0xFFCF6B63
+            const val inversePrimary: Long = 0xFFD66B64
+            const val accent: Long = 0xFFD66B64
         }
     }
 
@@ -73,10 +133,10 @@ object Tokens {
 
     /** In dp. */
     object Radius {
-        const val sm: Int = 6
-        const val md: Int = 10
+        const val sm: Int = 8
+        const val md: Int = 12
         const val lg: Int = 16
-        const val sheet: Int = 24
+        const val sheet: Int = 28
     }
 
     /** In dp. The touch target is above the 48 dp platform minimum, for gloves and vibration. */
@@ -88,16 +148,19 @@ object Tokens {
         const val railCollapsed: Int = 72
     }
 
-    /** Size in sp; `mono` is a monospaced face, for grids and key numbers. */
+    /** Size and line height in sp; `mono` is a monospaced face, for grids and key numbers. */
     object Type {
-        data class Style(val size: Int, val weight: Int, val mono: Boolean)
+        data class Style(val size: Int, val lineHeight: Int, val weight: Int, val mono: Boolean)
 
-        val keyNumber = Style(32, 700, true)
-        val headline = Style(24, 600, false)
-        val title = Style(20, 600, false)
-        val body = Style(16, 400, false)
-        val label = Style(14, 500, false)
-        val caption = Style(12, 400, false)
-        val grid = Style(18, 600, true)
+        val headlineSmall = Style(24, 32, 400, false)
+        val titleLarge = Style(22, 28, 400, false)
+        val titleMedium = Style(16, 24, 500, false)
+        val bodyLarge = Style(16, 24, 400, false)
+        val bodyMedium = Style(14, 20, 400, false)
+        val bodySmall = Style(12, 16, 400, false)
+        val labelLarge = Style(14, 20, 500, false)
+        val labelMedium = Style(12, 16, 500, false)
+        val keyNumber = Style(32, 40, 700, true)
+        val grid = Style(18, 24, 600, true)
     }
 }

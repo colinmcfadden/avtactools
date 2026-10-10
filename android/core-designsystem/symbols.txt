@@ -1,0 +1,115 @@
+# The Material Symbols the Android screens draw (docs/native-design: every icon in the AP- and AT- screens).
+# A name, or "name fill" for the filled form. Run symbols.py after changing this list.
+add
+add_circle
+add_location_alt
+adjust
+air
+arrow_back
+arrow_downward
+arrow_drop_down
+arrow_drop_up
+arrow_forward
+block
+calendar_month
+cancel
+check
+chevron_right
+close
+cloud_done
+collections_bookmark
+content_copy
+crisis_alert
+crop_free
+delete
+delete_sweep
+description
+diversity_3
+do_not_disturb_on
+done
+download
+draw
+east
+edit
+encrypted
+error
+expand_less
+expand_more
+file_open
+filter_list
+flag
+flight
+flight_land
+folder
+group
+group_add
+groups
+hexagon
+history
+image
+info
+input
+inventory_2
+landscape
+layers
+left_panel_close
+library_add
+lock
+lock_open
+mail
+map
+more_vert
+move_to_inbox
+my_location
+open_in_new
+person
+person_add
+person_remove
+person_search
+pin_drop
+refresh
+replay
+right_panel_open
+route
+save
+scatter_plot
+schedule
+schedule_send
+search
+search_off
+send
+share
+sort
+south
+swap_horiz
+sync_problem
+task_alt
+terrain
+touch_app
+tune
+update
+upload
+upload_file
+view_in_ar
+visibility
+visibility_off
+warning
+cancel fill
+check_circle fill
+cloud_done fill
+collections_bookmark fill
+crisis_alert fill
+encrypted fill
+error fill
+file_open fill
+flight_land fill
+folder_shared fill
+group_add fill
+groups fill
+hexagon fill
+inventory_2 fill
+location_on fill
+lock fill
+move_to_inbox fill
+person fill
+route fill
