@@ -1,6 +1,6 @@
 # Android screens: the plan they are built from
 
-Status (2026-10-10): **S1 built** (on `feat/android-screens`); S2 next. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
+Status (2026-10-10): **S1 built** (on `feat/android-screens`); **S2 built**, to be tried on a device and reviewed with S1; S3 next. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
 reviewed independently, fixed, and committed only with the full build green. **Where this plan disagrees with the code, the code wins**
 (AGENTS.md §16), and AGENTS.md §17 says what each module holds.
@@ -65,10 +65,35 @@ pill buttons. Tests: `TokenContrastTest` (every text pair the redesign draws, on
 galleries' pictures. The app keeps today's layout, in the new colours. **Amended while building:** the shared components the screens
 repeat (the state chip, the badge, the panel header, the list row) are built with the first screen that uses them (S2, S3), not ahead of it.
 
-**S2 — The frame (phone).** `MapHome` becomes the design's frame: the search bar with the account button, the row of chips (workspace,
-Import, Library), the map buttons at the right, the crosshair and readout pill (tap to copy), the sheet, and the `NavigationBar` with its
-badges (threats on the map, imports). Each panel at first hosts today's section (Diagrams, Routes, Threats, Points), so nothing a person
-can do is lost between steps. The account menu takes today's footer. Tests: which panel is shown, the badges' counts, the account menu.
+**S2 — The frame (phone). Built.** `MapHome` is the design's frame (`app/frame/`: `PhoneFrame`, `Panels`, `AccountMenu`): the search bar
+with the account button, the chips, the map's buttons at the right (icons now; the compass only once the map is turned), the crosshair
+and readout pill (the grid alone, tap to copy), the sheet, and the `NavigationBar` with its counts (threats in the picture, alert colours;
+sets of local points, plain). The LZ/PZ panel holds today's Diagrams and Aircraft sections, Routes and Threats theirs, Imports the local
+points. The account menu takes today's footer: who is signed in, **Night mode** (a device preference, `DisplaySettings`; the map is
+dimmed under it), the version and the notice, Sign out. **Amended while building:**
+- **Three heights need a sheet of our own.** Material 3 (1.4) has two, so `core-designsystem`'s `PanelSheet` is foundation's anchored
+  drag with three detents (lowered to its header, 80 dp; half, 60% of the space; full, below the chips), Material's nested scrolling
+  (a list scrolled up raises the sheet first), the design's handle and `PanelHeader`. Only what shows is laid out, so a footer can be
+  pinned at every height (S4's Routes has one). Picking a tab is the web's rule (`pick`: another panel opens to half if lowered; the
+  one showing lowers, or rises to half); the header's button opens to full and lowers to half; a tap on the handle steps up.
+- **The crosshair is the middle of the map that shows**: the camera's padding is the search bar at the top and, at the bottom, the
+  height the sheet rests at (or is settling at), never more than half's, so a full sheet slides over the map instead of moving it.
+  The crosshair glides with the map (300 ms, the sheet's own time) and what was under it stays under it; a fly-to under way is folded
+  into the new padding, not cut short (`MapHost`). The pill and the floating tools ride on the sheet's edge, no higher than half;
+  toasts go above them, or to the foot of the screen at full height. `CameraState` carries the camera's padding, which the labels'
+  projection reads, so they stay on their points while it glides.
+- **Every panel stays composed and only the chosen one is laid out**, so each keeps its scroll, its file pickers, its export listener
+  (a mission built while another panel shows still reaches the share sheet) and the threat panel's `FLAG_SECURE`.
+- **The workspace chip is a label** ("Personal") until P1 gives it the switcher, and **the Library chip waits for S7** (today each
+  panel lists everything). **Import** opens the system picker for up to five files at a time, each put to the person in the one dialog
+  files from other apps use (`rememberFileImport`), so a file means the same however it arrives.
+- **Routes and Threats are offered only while their features are on**, as on the web (`panelsFor`).
+Tests: the tab rule, which panels are offered, the initials, the counts in words (`PanelsTest`); which panel shows, the tabs, the counts,
+the header's heights, the readout's edge and the camera's padding at each height, and a tap above the sheet reaching the map
+(`PhoneFrameTest`); the account menu (`AccountMenuTest`); night mode kept (`DisplayPreferencesTest`); the sheet's arithmetic
+(`SheetAnchorsTest`); the frame's pictures at each height and at night (`FrameScreenshotTest`, beside AP-Routes and AP-Imports).
+**Not verifiable here:** the real map under the frame (the camera's padding gliding, a fly-to folded into it), the status bar's height
+on a phone (the pictures have none), dragging the sheet by its content, and night mode's dimmed imagery.
 
 **S3 — LZ/PZ.** The session (the working set above), the panel (`Home`: the active LZ/PZ's card, *Also open*, the chips, Save as naming
 with `SaveLz`), the plan page (`LzPlan`: aircraft, analysis and its switches, the tool grid, export, *Sketch a route*), the tools as modes

@@ -115,7 +115,7 @@ class MapProjectionTest {
 
     @Test
     fun `with the bottom reserved for the sheet the camera's centre is the middle of what is above it`() {
-        val v = MapProjection(CameraState(here, 17.0), 1000.0, 2000.0, 1.0, bottomInsetPx = 300.0)
+        val v = MapProjection(CameraState(here, 17.0, paddingBottomPx = 300.0), 1000.0, 2000.0, 1.0)
         val p = v.toScreen(here)
         assertEquals(500.0, p.x, 1e-6)
         assertEquals(850.0, p.y, 1e-6)                                                       // (2000 - 300) / 2, not 1000
@@ -125,9 +125,19 @@ class MapProjectionTest {
     }
 
     @Test
+    fun `with the top reserved too the centre is the middle of what is between them`() {
+        // The search bar covers the top and the sheet the bottom: the crosshair is half way between the two, as the map puts the camera's target.
+        val v = MapProjection(CameraState(here, 17.0, paddingTopPx = 200.0, paddingBottomPx = 600.0), 1000.0, 2000.0, 1.0)
+        assertEquals(800.0, v.toScreen(here).y, 1e-6)                                        // 200 + (2000 - 200 - 600) / 2
+        val back = v.toLatLon(500.0, 800.0)
+        assertEquals(here.lat, back.lat, 1e-9)
+        assertEquals(here.lon, back.lon, 1e-9)
+    }
+
+    @Test
     fun `reserving the bottom moves the picture by half of it and does not change its scale`() {
         val plain = MapProjection(CameraState(here, 17.0), 1000.0, 2000.0)
-        val padded = MapProjection(CameraState(here, 17.0), 1000.0, 2000.0, 1.0, bottomInsetPx = 300.0)
+        val padded = MapProjection(CameraState(here, 17.0, paddingBottomPx = 300.0), 1000.0, 2000.0, 1.0)
         val a = LatLon(here.lat + 0.0004, here.lon + 0.0003)
         assertEquals(plain.toScreen(a).y - 150.0, padded.toScreen(a).y, 1e-6)
         assertEquals(plain.toScreen(a).x, padded.toScreen(a).x, 1e-6)

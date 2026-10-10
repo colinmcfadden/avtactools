@@ -87,7 +87,7 @@ fun GraphicLabelsLayer(host: MapHost, graphics: GraphicsScene, modifier: Modifie
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
         if (camera == null || size == IntSize.Zero || (graphics.separations.isEmpty() && graphics.doghouses.isEmpty() && graphics.units.isEmpty())) return@Box
-        val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density, host.bottomPaddingPx.toDouble())
+        val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density)
         MapLabels.units(graphics, view).forEach { placed -> UnitMarker(placed, footprints) }
         MapLabels.doghouses(graphics, view).forEach { placed -> PlacedDoghouse(placed, camera.bearingDegrees) }
         MapLabels.separations(graphics, view).forEach { label -> SeparationBadge(label) }

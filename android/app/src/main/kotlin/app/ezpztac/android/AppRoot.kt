@@ -85,10 +85,9 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 onClear = viewModel::clearOtherAccountsPlans, onSignOut = viewModel::signOut,
             )
             is Gate.Ready -> MapHome(
+                user = current.user,
                 version = BuildConfig.VERSION_NAME, build = BuildConfig.VERSION_CODE,
                 maintenance = current.maintenance, onSignOut = viewModel::signOut,
-                // An administrator can switch own aircraft off for an account; the server would refuse what it made.
-                canMakeAircraft = current.user.hasFeature("aircraft_profiles"),
                 // An invitation is only ever accepted here, once the person is in.
                 invite = invite, inviteAttempt = inviteAttempt, onRetryInvite = viewModel::retryInvite, onDismissInvite = viewModel::dismissInvite,
                 // Known too old with no config to show the update screen (no signal): planning opens, nothing is sent, and the sheet says why.

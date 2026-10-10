@@ -1,5 +1,7 @@
 package app.ezpztac.workspace
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -11,6 +13,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -23,6 +27,9 @@ import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** What the offer's buttons do. */
 data class IncomingActions(
@@ -49,6 +56,36 @@ fun IncomingHost(viewModel: IncomingViewModel = hiltViewModel()) {
         }
     }
 }
+
+/**
+ * The frame's Import: one or more files chosen in the system's picker, each read and put to the person like a file another app opened with this one,
+ * so a file means the same however it arrives (the web's one way in). What it returns opens the picker. At most [MAX_PICKED] are taken at a time,
+ * as from the share sheet, and the rest are told about.
+ */
+@Composable
+fun rememberFileImport(incoming: IncomingViewModel = hiltViewModel()): () -> Unit {
+    val resolver = LocalContext.current.contentResolver
+    val scope = rememberCoroutineScope()
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult                  // the person backed out
+        scope.launch {
+            for (uri in uris.take(MAX_PICKED)) {
+                when (val picked = withContext(Dispatchers.IO) { PickedFile.read(resolver, uri, tooBig = IncomingViewModel.TOO_BIG) }) {
+                    is PickedFile.Result.Read -> incoming.offer(picked.name, picked.bytes)
+                    is PickedFile.Result.Failed -> incoming.refuse("a file you chose", picked.message)
+                }
+            }
+            if (uris.size > MAX_PICKED) {
+                incoming.refuse("${uris.size - MAX_PICKED} more", "Only the first $MAX_PICKED files are taken at a time. Import the rest once these are dealt with.")
+            }
+        }
+    }
+    // None of these formats has a media type of its own: what a file is comes from what is in it.
+    return { picker.launch(arrayOf("*/*")) }
+}
+
+/** The most files one Import takes: the same as the share sheet's. */
+const val MAX_PICKED = 5
 
 /** The offer itself, without the dialog around it. */
 @Composable

@@ -38,8 +38,8 @@ class IconGalleryTest {
 
     @Test
     fun `every icon in the list is in the object`() {
-        // symbols.txt has 94 outlined and 19 filled; a drift between the list, the drawables and the object shows here first.
-        assertEquals(113, icons.size)
+        // symbols.txt has 98 outlined and 19 filled; a drift between the list, the drawables and the object shows here first.
+        assertEquals(117, icons.size)
         assertEquals(icons.size, icons.map { it.second }.toSet().size)
     }
 

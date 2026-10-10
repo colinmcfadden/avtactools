@@ -9,7 +9,7 @@ import org.junit.Test
 
 class MapLabelsTest {
     private val here = LatLon(34.78, -84.08)
-    private fun view(zoom: Double = 18.0, inset: Double = 0.0) = MapProjection(CameraState(here, zoom), 1000.0, 2000.0, 1.0, inset)
+    private fun view(zoom: Double = 18.0, inset: Double = 0.0) = MapProjection(CameraState(here, zoom, paddingBottomPx = inset), 1000.0, 2000.0, 1.0)
 
     /** Two points [metres] apart east to west, centred on [at], and the line between them. */
     private fun line(metres: Double, at: LatLon = here, gapFt: Double = 120.0, violating: Boolean = false): SceneSeparation {

@@ -2,12 +2,13 @@ package app.ezpztac.map
 
 import android.content.Context
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -21,6 +22,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import app.ezpztac.designsystem.PanelSheetDefaults
 import app.ezpztac.model.LatLon
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -47,17 +49,38 @@ class MapHost {
     var camera: CameraState? by mutableStateOf(null)
         private set
 
-    /**
-     * How far up from the bottom edge the map's logical viewport ends, in pixels. The bottom sheet covers that strip, so the camera's centre (the
-     * crosshair, the readout, where a graphic is put) is the middle of what is still showing, which is where the crosshair is drawn.
-     */
-    var bottomPaddingPx: Int by mutableIntStateOf(0)
-        private set
+    /** The strips at the top and bottom of the map that the app's controls cover, in pixels: the camera's centre is the middle of the rest. */
+    private var padding = Padding(0, 0)
 
-    /** Reserves the bottom [px] pixels for the sheet. MapLibre then reports the centre of the rest as the camera's target. */
-    internal fun setBottomPadding(px: Int) = whenReady { map ->
-        bottomPaddingPx = px
-        map.moveCamera(CameraUpdateFactory.paddingTo(0.0, 0.0, 0.0, px.toDouble()))
+    /** Whether a padding has been set: the first is applied at once, later ones glide. */
+    private var padded = false
+
+    /** A flight under way ([flyTo]): a change of padding while it lasts is folded into it rather than cutting it short. */
+    private var flight: Flight? = null
+
+    private data class Padding(val top: Int, val bottom: Int) {
+        fun array() = doubleArrayOf(0.0, top.toDouble(), 0.0, bottom.toDouble())
+    }
+
+    private class Flight(val target: LatLng, val zoom: Double?, val endsAt: Long)
+
+    /**
+     * Reserves [topPx] at the top of the map and [bottomPx] at its bottom (the search bar, the sheet): MapLibre then reports the middle of the
+     * rest as the camera's target, which is where the crosshair is drawn. What was under the crosshair stays under it, the map gliding to the new
+     * middle as the crosshair does; the first padding is applied at once. A flight under way carries on to its target, framed by the new padding.
+     */
+    internal fun setPadding(topPx: Int, bottomPx: Int) = whenReady { map ->
+        val next = Padding(topPx, bottomPx)
+        if (padded && next == padding) return@whenReady
+        val first = !padded
+        padding = next
+        padded = true
+        val going = flight
+        when {
+            going != null -> fly(map, going.target, going.zoom, (going.endsAt - SystemClock.uptimeMillis()).coerceAtLeast(MIN_FLIGHT_MS))
+            first -> map.moveCamera(CameraUpdateFactory.paddingTo(next.array()))
+            else -> map.easeCamera(CameraUpdateFactory.paddingTo(next.array()), PanelSheetDefaults.SettleMillis)
+        }
         publishCamera(map)
     }
 
@@ -69,12 +92,19 @@ class MapHost {
 
     internal fun detach() {
         map = null
+        flight = null
     }
 
     internal fun publishCamera(map: MapLibreMap) {
         val position = map.cameraPosition
         val target = position.target ?: return
-        camera = CameraState(LatLon(target.latitude, target.longitude), position.zoom, position.bearing)
+        // The camera's own padding, which moves while it glides; what was asked for when the map has none to say.
+        val now = position.padding
+        camera = CameraState(
+            LatLon(target.latitude, target.longitude), position.zoom, position.bearing,
+            paddingTopPx = now?.getOrNull(1) ?: padding.top.toDouble(),
+            paddingBottomPx = now?.getOrNull(3) ?: padding.bottom.toDouble(),
+        )
     }
 
     private fun whenReady(action: (MapLibreMap) -> Unit) {
@@ -83,21 +113,33 @@ class MapHost {
     }
 
     /** Moves the camera with an animation, to [at] and, if given, [zoom]. */
-    fun flyTo(at: LatLon, zoom: Double? = null) = whenReady { map ->
-        val target = LatLng(at.lat, at.lon)
-        val update = if (zoom != null) CameraUpdateFactory.newLatLngZoom(target, zoom) else CameraUpdateFactory.newLatLng(target)
-        map.animateCamera(update, 600)
+    fun flyTo(at: LatLon, zoom: Double? = null) = whenReady { map -> fly(map, LatLng(at.lat, at.lon), zoom, FLIGHT_MS) }
+
+    private fun fly(map: MapLibreMap, target: LatLng, zoom: Double?, durationMs: Long) {
+        val going = Flight(target, zoom, SystemClock.uptimeMillis() + durationMs)
+        flight = going
+        val position = CameraPosition.Builder().target(target).padding(padding.array())
+        if (zoom != null) position.zoom(zoom)
+        map.animateCamera(
+            CameraUpdateFactory.newCameraPosition(position.build()), durationMs.toInt(),
+            object : MapLibreMap.CancelableCallback {
+                // Only this flight's own ending forgets it: one folded into a new padding is cancelled on purpose and replaced.
+                override fun onFinish() { if (flight === going) flight = null }
+                override fun onCancel() { if (flight === going) flight = null }
+            },
+        )
     }
 
     /** Moves the camera at once, for the first frame. */
     fun jumpTo(state: CameraState) = whenReady { map ->
-        map.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(LatLng(state.center.lat, state.center.lon)).zoom(state.zoom).bearing(state.bearingDegrees).build()))
+        val position = CameraPosition.Builder().target(LatLng(state.center.lat, state.center.lon)).zoom(state.zoom).bearing(state.bearingDegrees)
+        map.moveCamera(CameraUpdateFactory.newCameraPosition(position.padding(padding.array()).build()))
     }
 
     /** Turns the map back to north. */
     fun faceNorth() = whenReady { map ->
         val position = map.cameraPosition
-        map.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(position).bearing(0.0).build()), 300)
+        map.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(position).bearing(0.0).padding(padding.array()).build()), 300)
     }
 
     /** Runs [install] each time a style finishes loading (and now, if one has): overlays have to be added again for every style. */
@@ -130,8 +172,8 @@ fun EzpzMap(
     style: MapBaseStyle,
     initial: CameraState,
     modifier: Modifier = Modifier,
-    /** The strip at the bottom that something else covers (the sheet's peek): the crosshair is the middle of the map above it. */
-    bottomInset: Dp = 0.dp,
+    /** The strips at the top and bottom that the app's controls cover (the search bar, the sheet): the crosshair is the middle of the rest. */
+    padding: MapPadding = MapPadding(),
     /** A tap on the map, where it landed. Not told of a drag or a pinch. */
     onTap: (LatLon) -> Unit = {},
     /** A long press at this place: true when something there was picked up, so the finger now drags it (the map does not pan). */
@@ -198,11 +240,23 @@ fun EzpzMap(
     }
 
     LaunchedEffect(style.id, style.tiles) { host.applyStyle(style) }
-    val insetPx = with(LocalDensity.current) { bottomInset.roundToPx() }
-    LaunchedEffect(host, insetPx) { host.setBottomPadding(insetPx) }
+    val topPx = with(LocalDensity.current) { padding.top.roundToPx() }
+    val bottomPx = with(LocalDensity.current) { padding.bottom.roundToPx() }
+    LaunchedEffect(host, topPx, bottomPx) { host.setPadding(topPx, bottomPx) }
 
     AndroidView(factory = { view }, modifier = modifier)
 }
+
+/**
+ * The strips at the [top] and [bottom] of the map that the app's own controls cover: the search bar, and the sheet at the height it rests at. The
+ * camera's centre, where the crosshair is drawn and what the readout names, is the middle of what is between them.
+ */
+@Immutable
+data class MapPadding(val top: Dp = 0.dp, val bottom: Dp = 0.dp)
+
+/** How long a fly-to takes, and the least a flight folded into a new padding is given to finish. */
+private const val FLIGHT_MS = 600L
+private const val MIN_FLIGHT_MS = 150L
 
 private var libraryReady = false
 

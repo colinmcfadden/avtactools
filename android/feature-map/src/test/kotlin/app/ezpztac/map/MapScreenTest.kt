@@ -46,7 +46,7 @@ class MapScreenTest {
                     state = state, camera = camera, gps = gps,
                     onSearch = { log += "search $it" }, onClearSearchError = { log += "clearError" }, onSelectStyle = { log += "style $it" },
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
-                    onFaceNorth = { log += "north" },
+                    onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" },
                     map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40))) },          // stands in for the GPU-drawn map
                 )
             }
@@ -54,23 +54,32 @@ class MapScreenTest {
     }
 
     @Test
-    fun `the readout under the crosshair is the grid first, then the degrees`() {
+    fun `the readout under the crosshair is the grid, and a tap copies it`() {
         show(state())
         compose.onNodeWithText("16S GD 66993 52949").assertIsDisplayed()
-        compose.onNodeWithText("34.78382, -84.08219").assertIsDisplayed()
+        compose.onNodeWithText("34.78382, -84.08219").assertDoesNotExist()                 // the design's pill is the grid alone
         compose.onNodeWithContentDescription("Map centre").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Grid under the crosshair, 16S GD 66993 52949. Tap to copy").performClick()
+        assertEquals(listOf("copy 16S GD 66993 52949"), log)
     }
 
     @Test
-    fun `where there is no grid the readout says so`() {
+    fun `where there is no grid the readout gives the degrees, and copies those`() {
         show(state(readout = Readout(null, "89.90000, 10.00000")))
-        compose.onNodeWithText("No grid here").assertIsDisplayed()
+        compose.onNodeWithText("89.90000, 10.00000").performClick()
+        assertEquals(listOf("copy 89.90000, 10.00000"), log)
     }
 
     @Test
     fun `before the camera has reported there is no readout and no compass`() {
         show(state(readout = null), camera = null)
-        compose.onNodeWithText("No grid here").assertDoesNotExist()
+        compose.onNode(hasContentDescription("Grid under the crosshair", substring = true)).assertDoesNotExist()
+        compose.onNode(hasContentDescription("Face north", substring = true)).assertDoesNotExist()
+    }
+
+    @Test
+    fun `facing north there is no compass to tap`() {
+        show(state(), camera = CameraState(LatLon(34.78, -84.08), 16.0, 0.2))
         compose.onNode(hasContentDescription("Face north", substring = true)).assertDoesNotExist()
     }
 
@@ -83,10 +92,10 @@ class MapScreenTest {
     }
 
     @Test
-    fun `the Go button sends it too`() {
+    fun `the search button sends it too`() {
         show(state())
         compose.onNode(hasSetTextAction()).performTextInput("34.5, -84.1")
-        compose.onNodeWithText("Go").performClick()
+        compose.onNodeWithContentDescription("Search a grid or lat/long").performClick()
         assertEquals(listOf("search 34.5, -84.1"), log)
     }
 

@@ -21,6 +21,7 @@ collections_bookmark
 content_copy
 crisis_alert
 crop_free
+dark_mode
 delete
 delete_sweep
 description
@@ -54,8 +55,11 @@ landscape
 layers
 left_panel_close
 library_add
+location_disabled
+location_searching
 lock
 lock_open
+logout
 mail
 map
 more_vert

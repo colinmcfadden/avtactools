@@ -5,15 +5,19 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-10 (the Android mission-pack engine on `feat/android-mission-packs`: A1–A15 done; next the redesigned
-screens).
+Last refreshed: 2026-10-10 (the redesigned screens on `feat/android-screens`: S1, the design system, committed; S2, the phone's frame,
+built and waiting for the owner's device try and the review of S1 and S2 together).
 
 ---
 
 ## 1. Where things stand
 
-- **Branch:** `feat/android-mission-packs` (pushed; the engine is done, so a PR to `develop` is the owner's call, now or with the screens). It is `develop` plus the mission-pack
-  work below. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
+- **Branch:** `feat/android-screens`, on `feat/android-mission-packs` (pushed; the engine is done, so a PR to `develop` is the owner's call, now or with the screens), which is
+  `develop` plus the mission-pack work below. **The screens so far** (`docs/ANDROID_SCREENS_PLAN.md`): S1 the redesign's palette, type, corners and icons (`4c47435`); S2 the
+  phone's frame: the search bar with the account menu (night mode there), the Personal and Import chips, the map's buttons, the crosshair at the middle of the map that shows
+  with its readout pill (tap to copy), the panel in a sheet with three heights, and the bar of panels with their counts. Each panel still holds today's sections. **To try on
+  a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet moves, dragging the sheet by its content, the status bar's icons, and
+  night mode's dimmed map; none of that can be seen here. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
   `claude/jolly-wozniak-i7rlrq`, `feat/mission-packs`, the web menu redesign `feat/menu-redesign` and `fix/menu-redesign-ui`), then
   took the fixes that made CI green on it: the tests run on JDK 21 (`ed6ec02`), no machine's JDK in the shared Gradle settings
   (`7be70fe`), a lint error (`9d4d128`) and the terrain catalog's boot-time bug (`75f9450`). The backend restructure
@@ -62,7 +66,7 @@ screens).
 
 ## 2. Next work, in order
 
-1. **The screens**, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
+1. **The screens**, S1 and S2 done (S2 to try on a device, then one independent review of S1 and S2 together, then S3), now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
    AGENTS.md §17, *Mission packs on Android*). **The plan is `docs/ANDROID_SCREENS_PLAN.md`** (the owner's decisions, the steps S1–S9 and
    P1–P4, how each is checked), on `feat/android-screens`. First the redesigned shell (2), then the pack screens in it (3); both are drawn in
    `docs/native-design/`. **How the engine was built**, worth keeping for the screens: one commit per step, implemented, reviewed

@@ -29,6 +29,7 @@ object EzpzIcons {
     @DrawableRes val contentCopy: Int = R.drawable.ic_content_copy
     @DrawableRes val crisisAlert: Int = R.drawable.ic_crisis_alert
     @DrawableRes val cropFree: Int = R.drawable.ic_crop_free
+    @DrawableRes val darkMode: Int = R.drawable.ic_dark_mode
     @DrawableRes val delete: Int = R.drawable.ic_delete
     @DrawableRes val deleteSweep: Int = R.drawable.ic_delete_sweep
     @DrawableRes val description: Int = R.drawable.ic_description
@@ -62,8 +63,11 @@ object EzpzIcons {
     @DrawableRes val layers: Int = R.drawable.ic_layers
     @DrawableRes val leftPanelClose: Int = R.drawable.ic_left_panel_close
     @DrawableRes val libraryAdd: Int = R.drawable.ic_library_add
+    @DrawableRes val locationDisabled: Int = R.drawable.ic_location_disabled
+    @DrawableRes val locationSearching: Int = R.drawable.ic_location_searching
     @DrawableRes val lock: Int = R.drawable.ic_lock
     @DrawableRes val lockOpen: Int = R.drawable.ic_lock_open
+    @DrawableRes val logout: Int = R.drawable.ic_logout
     @DrawableRes val mail: Int = R.drawable.ic_mail
     @DrawableRes val map: Int = R.drawable.ic_map
     @DrawableRes val moreVert: Int = R.drawable.ic_more_vert

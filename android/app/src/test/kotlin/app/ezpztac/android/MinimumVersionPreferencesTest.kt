@@ -1,9 +1,7 @@
 package app.ezpztac.android
 
 import android.content.Context
-import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
-import app.ezpztac.designsystem.Tokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -43,18 +41,5 @@ class MinimumVersionPreferencesTest {
         kept.remember(null)
         assertNull(kept.remembered.value)
         assertNull(MinimumVersionPreferences(context).remembered.value)
-    }
-}
-
-/** Where the app's toasts sit over the map: clear of the grid readout, and above whatever floats over it. */
-class ToastLiftTest {
-    @Test
-    fun `with nothing floating, a toast clears the readout as the drawing toolbar does`() {
-        assertEquals(56.dp, toastLift(floatingPx = 0, density = 2.75f))
-    }
-
-    @Test
-    fun `with a toolbar or a held object's bar up, it goes above it, with a gap`() {
-        assertEquals(56.dp + 100.dp + Tokens.Spacing.sm.dp, toastLift(floatingPx = 275, density = 2.75f))
     }
 }

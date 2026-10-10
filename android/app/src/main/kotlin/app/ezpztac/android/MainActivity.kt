@@ -1,14 +1,19 @@
 package app.ezpztac.android
 
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import app.ezpztac.android.incoming.IncomingIntake
 import app.ezpztac.designsystem.EzpzTheme
+import app.ezpztac.designsystem.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -19,8 +24,11 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var intake: IncomingIntake
 
+    @Inject lateinit var display: DisplaySettings
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        // The app is always dark (or night): the system bars' icons are light over it, whatever the system's own theme.
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT), navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
         // A link from an email opens the app on its screen; rotation and recreation do not replay it. Nor does a file: it is read once, when it arrives.
         if (savedInstanceState == null && isNews(intent)) {
@@ -28,7 +36,9 @@ class MainActivity : ComponentActivity() {
             receiveFiles(intent)
         }
         setContent {
-            EzpzTheme {
+            // Night mode is the crew's choice (the account menu), never the system's: the app is dark otherwise.
+            val night by display.night.collectAsStateWithLifecycle()
+            EzpzTheme(if (night) ThemeMode.Night else ThemeMode.Dark) {
                 AppRoot(shell)
             }
         }

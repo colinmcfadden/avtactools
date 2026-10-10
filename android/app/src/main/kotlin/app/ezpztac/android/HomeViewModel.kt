@@ -1,6 +1,8 @@
 package app.ezpztac.android
 
 import androidx.lifecycle.ViewModel
+import app.ezpztac.android.frame.Panel
+import app.ezpztac.android.frame.PanelCounts
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
@@ -165,6 +167,22 @@ class HomeViewModel @Inject constructor(
         }
         ThreatScene.of(entries, held, pictures)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatScene.EMPTY)
+
+    /** What the panel bar's tabs carry: the threats in the picture on this device, and the sets of local points brought in. */
+    val counts: StateFlow<PanelCounts> = combine(threats.entries, localPoints.sets) { entries, sets -> PanelCounts(threats = entries.size, imports = sets.size) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, PanelCounts())
+
+    /**
+     * The panel whose card has the rest of what can be done to the thing held on the map (the held bar's options): the LZ/PZ's for a planning
+     * graphic or a corner of its boundary, the threat's, the route's for one of its points, the local points' for one of theirs. Null when nothing is held.
+     */
+    fun heldPanel(): Panel? = when {
+        selection.selected.value != null || boundaryCorners.held.value != null -> Panel.Lz
+        threatSelection.held.value != null -> Panel.Threats
+        routeSelection.held.value?.pointId != null -> Panel.Routes
+        pointSelection.held.value != null -> Panel.Imports
+        else -> null
+    }
 
     /** Whether a boundary or a route is being drawn: the sheet goes down to its peek so the map is there to tap. */
     val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft) { boundary, route -> boundary != null || route != null }
