@@ -301,6 +301,8 @@ export const createPackClient = ({
           sendRetry += 1;
           later("send", flush, ms);
         } else {
+          // What the refusal says the pack took the first time waits for its events, as an answer's results do.
+          if (active() && state.session.pending.some((entry) => entry.state === "acked")) catchUp();
           flush();
         }
         drained();

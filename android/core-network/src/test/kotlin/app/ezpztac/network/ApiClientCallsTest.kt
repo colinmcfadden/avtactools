@@ -1,21 +1,33 @@
 package app.ezpztac.network
 
 import app.ezpztac.model.LatLon
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import okhttp3.Interceptor
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.asResponseBody
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.SocketPolicy
+import okio.Buffer
+import okio.ForwardingSource
+import okio.buffer
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.assertThrows
 import java.util.concurrent.TimeUnit
 
@@ -508,22 +520,74 @@ class ApiClientCallsTest {
         }
     }
 
+    /** Says when the client starts to read an analysis's answer (it has the status and headers by then, the rest still on its way), and when it lets it go. */
+    private class WatchAnalysisAnswer : Interceptor {
+        val reading = CompletableDeferred<Unit>()
+        val closed = CompletableDeferred<Unit>()
+
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val response = chain.proceed(chain.request())
+            val body = response.body
+            if (body == null || !response.isSuccessful || chain.request().url.encodedPath != "/api/analyze-field") return response
+            val watched = object : ForwardingSource(body.source()) {
+                override fun read(sink: Buffer, byteCount: Long): Long {
+                    reading.complete(Unit)
+                    return super.read(sink, byteCount)
+                }
+
+                override fun close() {
+                    closed.complete(Unit)
+                    super.close()
+                }
+            }
+            return response.newBuilder().body(watched.buffer().asResponseBody(body.contentType(), body.contentLength())).build()
+        }
+    }
+
     @Test
     fun `heavy work that fails or is cancelled lets background work go`() = runBlocking<Unit> {
-        Rig().use { rig ->
+        val answer = WatchAnalysisAnswer()
+        Rig(interceptor = answer).use { rig ->
             rig.serve { request ->
                 if (request.path == "/api/analyze-field") Rig.json(500, """{"error":"SAM failed"}""") else Recorded.mock("sync: nothing new")
             }
             assertThrows<ApiException> { rig.client.execute(heavy()) }
             assertFalse(rig.priority.isBusy)
-            assertEquals(999, kotlinx.coroutines.withTimeout(10_000) { withContext(Dispatchers.Default) { rig.client.changes(999).cursor } })
+            assertEquals(999, withTimeout(10_000) { withContext(Dispatchers.Default) { rig.client.changes(999).cursor } })
 
-            rig.serve { Rig.json(200, "{}").setBodyDelay(5, TimeUnit.SECONDS) }
-            val slow = async(Dispatchers.Default) { runCatching { rig.client.execute(heavy()) } }
-            kotlinx.coroutines.withTimeout(5_000) { while (!rig.priority.isBusy) kotlinx.coroutines.delay(5) }
-            slow.cancel()
-            slow.join()
-            assertFalse(rig.priority.isBusy, "a cancelled analysis must not hold background work back for ever")
+            // Cancelled while the server works on it. The server holds the request and never answers, with no thread of its own asleep: a body
+            // delay is a Thread.sleep that closing the socket does not end, and the server's shutdown waits only 5 s for its threads, so a 5 s
+            // delay cancelled just after the request arrived failed this test now and then ("Gave up waiting for queue to shut down").
+            val arrived = CompletableDeferred<Unit>()
+            rig.serve { arrived.complete(Unit); MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE) }
+            val working = async(Dispatchers.Default) { rig.client.execute(heavy()) }
+            withTimeout(5_000) { arrived.await() }
+            assertTrue(rig.priority.isBusy)
+            assertNotNull(withTimeoutOrNull(5_000) { working.cancelAndJoin() }, "a cancelled analysis went on waiting for its answer")
+            assertFalse(rig.priority.isBusy, "a cancelled analysis must not hold background work back")
+
+            // Cancelled while its answer is arriving, a byte every 100 ms (two minutes in all; a throttled body, unlike a delay, stops when the
+            // socket closes). A read does not look at the coroutine, so unless the call itself is cancelled it reads on, holding the gate, until
+            // the whole answer is in or a read times out.
+            rig.serve { Rig.json(200, """{"pad": "${"x".repeat(1_200)}"}""").throttleBody(1, 100, TimeUnit.MILLISECONDS) }
+            val arriving = async(Dispatchers.Default) { rig.client.execute(heavy()) }
+            withTimeout(5_000) { answer.reading.await() }
+            assertTrue(rig.priority.isBusy)
+            assertNotNull(withTimeoutOrNull(5_000) { arriving.cancelAndJoin() }, "a cancelled analysis went on reading its answer")
+            assertFalse(rig.priority.isBusy, "a cancelled analysis must not hold background work back")
+            assertNotNull(withTimeoutOrNull(5_000) { answer.closed.await() }, "the answer was read on to its end instead of abandoned")
+        }
+    }
+
+    @Test
+    fun `an answer cut off part way is a failure the caller hears of, and lets background work go`() = runBlocking<Unit> {
+        // The answer is read inside OkHttp's callback, and OkHttp only logs an IOException thrown there: unless the client passes it on, the call
+        // waits for ever and holds the gate. The timeout turns that into a failure here rather than a test run that never ends.
+        Rig().use { rig ->
+            rig.serve { Rig.json(200, """{"pad": "${"x".repeat(1_000)}"}""").setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY) }
+            val e = assertThrows<NetworkException> { withTimeout(5_000) { rig.client.execute(heavy()) } }
+            assertTrue(e.requestMayHaveBeenSent)
+            assertFalse(rig.priority.isBusy)
         }
     }
 
@@ -532,12 +596,15 @@ class ApiClientCallsTest {
         Rig(readTimeoutSeconds = 1).use { rig ->
             rig.serve { Rig.json(200, "{}").setBodyDelay(2, TimeUnit.SECONDS) }
             rig.client.execute(heavy().let { ApiClient.Call(it.method, it.path, body = it.body) })     // two seconds is fine for an analysis
-            val e = assertThrows<NetworkException> { rig.client.execute(ApiClient.Call("GET", "/api/anything")) }
+            val e = assertThrows<NetworkException> { withTimeout(5_000) { rig.client.execute(ApiClient.Call("GET", "/api/anything")) } }
             assertTrue(e.requestMayHaveBeenSent)                                                      // ... and a timeout after sending is "may have"
         }
     }
 
+    // A refresh is carried through even if its caller goes (NonCancellable), so a coroutine timeout could not end it: if a failed read stopped
+    // reaching the client, this would wait for ever. JUnit's own timeout, on a thread of its own, fails it instead.
     @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     fun `a refresh gives up on a silent server quickly, so its repeat is inside the grace period`() = runBlocking<Unit> {
         Rig(readTimeoutSeconds = 60, refreshReadTimeoutSeconds = 1).use { rig ->
             val refreshes = java.util.concurrent.atomic.AtomicInteger()

@@ -13,7 +13,11 @@ on:
       - "frontend/src/contracts/**"
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
-      - "frontend/src/feature/msnxImport/routeCalc*"
+      # Every web file a fixture pins, and what it imports: the mission packs' rules, sentences and session
+      # (packs/*.json), the LZ normaliser and the sketch's routes they read through, and the route code.
+      - "frontend/src/feature/missionPacks/**"
+      - "frontend/src/feature/lzWorkspace/**"
+      - "frontend/src/feature/msnxImport/**"
       - "frontend/src/feature/localPoints/**"
       - "frontend/src/feature/threats/**"
       - "backend/requirements.txt"
@@ -26,7 +30,11 @@ on:
       - "frontend/src/contracts/**"
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
-      - "frontend/src/feature/msnxImport/routeCalc*"
+      # Every web file a fixture pins, and what it imports: the mission packs' rules, sentences and session
+      # (packs/*.json), the LZ normaliser and the sketch's routes they read through, and the route code.
+      - "frontend/src/feature/missionPacks/**"
+      - "frontend/src/feature/lzWorkspace/**"
+      - "frontend/src/feature/msnxImport/**"
       - "frontend/src/feature/localPoints/**"
       - "frontend/src/feature/threats/**"
       - "backend/requirements.txt"

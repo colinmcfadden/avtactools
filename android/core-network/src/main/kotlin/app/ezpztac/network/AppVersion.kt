@@ -41,14 +41,21 @@ public class AppVersion private constructor(
  * Whether the server no longer supports this app: [version] is below the minimum it set for [platform]. No
  * minimum (or one this cannot read) means supported: an unreadable value must never lock everyone out.
  */
-public fun AppConfig.updateRequired(platform: String, version: String): Boolean {
-    val minimum = AppVersion.parse(
-        when (platform) {
-            "android" -> minAppVersion.android
-            "ios" -> minAppVersion.ios
-            else -> null
-        },
-    ) ?: return false
+public fun AppConfig.updateRequired(platform: String, version: String): Boolean = isBelowMinimum(
+    version,
+    when (platform) {
+        "android" -> minAppVersion.android
+        "ios" -> minAppVersion.ios
+        else -> null
+    },
+)
+
+/**
+ * Whether [version] is below [minimum], a minimum the server gave (perhaps some time ago, as the device remembers it). No minimum, or
+ * either one unreadable, is not: an unreadable value must never lock everyone out.
+ */
+public fun isBelowMinimum(version: String, minimum: String?): Boolean {
+    val floor = AppVersion.parse(minimum) ?: return false
     val current = AppVersion.parse(version) ?: return false
-    return current < minimum
+    return current < floor
 }

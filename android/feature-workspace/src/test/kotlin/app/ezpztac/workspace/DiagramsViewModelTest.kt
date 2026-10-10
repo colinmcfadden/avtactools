@@ -120,7 +120,7 @@ class DiagramsViewModelTest {
         val resolutions = mutableListOf<Triple<RecordKind, String, SyncEngine.Resolution>>()
         // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and an analysis is work a test waits for.
         val analysis = AnalysisService(
-            terrain, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler),
+            terrain, session, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler),
         )
         val choice = InMemoryAircraftChoice()
         val master = InMemoryMasterProfileStore(masterList)

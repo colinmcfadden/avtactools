@@ -284,18 +284,33 @@ def my_invites():
     return _reply({'invites': [b for b in bodies if b['pack'] or b['team']]})
 
 
-def _accept(invite, me):
+def _unanswerable(invite):
     if invite.status != 'pending':
         return _error('That invitation has already been answered or withdrawn.', 410, 'invite_gone')
     if invite.expires_at <= packs.now():
         return _error('That invitation has expired. Ask for a new one.', 410, 'invite_expired')
+    return None
+
+
+def _accept(invite, me, token_hash=None):
+    """Accept ``invite`` for ``me``. ``token_hash``: the link it was found by, which must still be the invitation's."""
+    refused = _unanswerable(invite)
+    if refused:
+        return refused
 
     joined_pack = joined_team = None
     if invite.pack_id:
         pack = db.session.get(MissionPack, invite.pack_id)
-        if pack is None or pack.deleted_at is not None:
+        # Whoever held the pack's lock meanwhile may have deleted the pack, or withdrawn the invitation or sent it again
+        # with another role or a new link: both are read again once the lock is held, and answered as they would be now.
+        if pack is None or pack.deleted_at is not None or packs.lock(pack) is None:
             return _error('That pack no longer exists.', 410, 'invite_gone')
-        packs.lock(pack)
+        db.session.refresh(invite)
+        if token_hash is not None and invite.token_hash != token_hash:
+            return _error('That invitation link is not valid.', 404, 'invite_not_found')
+        refused = _unanswerable(invite)
+        if refused:
+            return refused
         if MissionPackMember.query.filter_by(pack_id=pack.id, user_id=me.id).first() is None:
             db.session.add(MissionPackMember(pack_id=pack.id, user_id=me.id, role=invite.role,
                                              added_by=invite.invited_by))
@@ -358,8 +373,8 @@ def accept_by_token():
     """Accept from the emailed or shared link, whichever address the person signed in with."""
     me = _me()
     raw = _body().get('token')
-    invite = (MissionPackInvite.query.filter_by(token_hash=packs.token_hash(raw)).first()
-              if isinstance(raw, str) and 0 < len(raw) <= 200 else None)
+    hashed = packs.token_hash(raw) if isinstance(raw, str) and 0 < len(raw) <= 200 else None
+    invite = MissionPackInvite.query.filter_by(token_hash=hashed).first() if hashed is not None else None
     if invite is None:
         return _error('That invitation link is not valid.', 404, 'invite_not_found')
-    return _accept(invite, me)
+    return _accept(invite, me, token_hash=hashed)

@@ -135,12 +135,16 @@ export const searchPeople = (query) => api.get("/users/search", { params: { q: q
 
 // -- Refusals ---------------------------------------------------------------------------
 
-/** What a refused request said, in the shape packSession.batchFailed reads. Status 0: no answer came. */
+/**
+ * What a refused request said, in the shape packSession.batchFailed reads. Status 0: no answer came. `taken` is what of a
+ * refused batch the pack already has (POST .../ops's 403 pack_read_only, 413 and 423); undefined from an older server.
+ */
 export const failureOf = (error) => {
   const response = error?.response;
   if (!response) return { status: 0 };
   const data = response.data && typeof response.data === "object" ? response.data : {};
-  return { status: response.status, code: data.code, reason: data.reason, finished_by: data.finished_by, finished_at: data.finished_at };
+  return { status: response.status, code: data.code, reason: data.reason, finished_by: data.finished_by, finished_at: data.finished_at,
+    taken: data.taken };
 };
 
 const MESSAGES = {

@@ -76,8 +76,9 @@ public object DiagramNormalizer {
         return DiagramTarget(
             lat = parsedLat,
             lon = parsedLon,
-            // `typeof mgrs === "string" && mgrs.trim()` keeps the string as given, untrimmed.
-            mgrs = if (given != null && given.trim().isNotEmpty()) given else own ?: "",
+            // `typeof mgrs === "string" && mgrs.trim()` keeps the string as given, untrimmed. JavaScript's trim, not Kotlin's: a grid of
+            // only a byte order mark is blank there, and one of only U+001C is not.
+            mgrs = if (given != null && JsValue.trim(given).isNotEmpty()) given else own ?: "",
         )
     }
 

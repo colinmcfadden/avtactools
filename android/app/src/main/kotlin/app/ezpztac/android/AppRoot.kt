@@ -1,5 +1,6 @@
 package app.ezpztac.android
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,9 +48,13 @@ private val DEBUG_SERVER: String? = if (BuildConfig.DEBUG) "Server: ${BuildConfi
 fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
     val gate by viewModel.gate.collectAsStateWithLifecycle()
     val link by viewModel.pendingLink.collectAsStateWithLifecycle()
+    val invite by viewModel.inviteState.collectAsStateWithLifecycle()
+    val inviteAttempt by viewModel.inviteAttempt.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // Nothing runs while the app is out of sight, so what has expired meanwhile (a threat picture left for 48 hours) is dealt with as it comes back.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.appStarted() }
+    // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.appStopped() }
     val google = remember(context) {
         BuildConfig.GOOGLE_SERVER_CLIENT_ID.takeIf { it.isNotBlank() }?.let<String, GoogleSignInProvider> { CredentialManagerGoogleSignIn(context, it) }
     }
@@ -84,6 +89,10 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 maintenance = current.maintenance, onSignOut = viewModel::signOut,
                 // An administrator can switch own aircraft off for an account; the server would refuse what it made.
                 canMakeAircraft = current.user.hasFeature("aircraft_profiles"),
+                // An invitation is only ever accepted here, once the person is in.
+                invite = invite, inviteAttempt = inviteAttempt, onRetryInvite = viewModel::retryInvite, onDismissInvite = viewModel::dismissInvite,
+                // Known too old with no config to show the update screen (no signal): planning opens, nothing is sent, and the sheet says why.
+                tooOld = current.tooOld,
             )
             is Gate.UpdateRequired -> UpdateRequiredScreen(current.minimum)
         }
@@ -123,15 +132,20 @@ fun UpdateRequiredScreen(minimum: String?) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        PrimaryButton("Open the store", onClick = {
-            val store = Intent(Intent.ACTION_VIEW, "market://details?id=${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            runCatching { context.startActivity(store) }.onFailure {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=${context.packageName}".toUri())
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }
-        })
+        PrimaryButton("Open the store", onClick = { openStore(context) })
+    }
+}
+
+/** The app's page in the store, to update it: the store's own app, else its web page. */
+internal fun openStore(context: Context) {
+    val store = Intent(Intent.ACTION_VIEW, "market://details?id=${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(store) }.onFailure {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=${context.packageName}".toUri())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
     }
 }
 

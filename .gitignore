@@ -74,6 +74,9 @@ tile_index.json
 .gradle/
 .kotlin/
 android/local.properties
+# Android Studio writes the JDK that runs Gradle here ("updateDaemonJvm"); which JDK that is, is each machine's own
+# choice (android/gradle.properties says so), and CI's JDK 21 would otherwise be made to fetch another one.
+android/gradle/gradle-daemon-jvm.properties
 *.iml
 # Signing material never goes in the repository (docs/NATIVE_APPS_PLAN.md, "Signing and delivery").
 *.jks

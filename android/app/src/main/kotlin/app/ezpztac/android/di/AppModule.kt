@@ -7,6 +7,12 @@ import app.ezpztac.android.AuthBackend
 import app.ezpztac.android.BuildConfig
 import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
+import app.ezpztac.android.MinimumVersion
+import app.ezpztac.android.MinimumVersionPreferences
+import app.ezpztac.android.packs.ApiPackInvites
+import app.ezpztac.android.packs.EnginePackRuntime
+import app.ezpztac.android.packs.PackInvites
+import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
 import app.ezpztac.sync.SyncRepository
@@ -38,6 +44,8 @@ import app.ezpztac.data.ApiClientTerrainApi
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.ThreatMaskApi
 import app.ezpztac.data.TerrainApi
+import app.ezpztac.missionpacks.ApiPackApi
+import app.ezpztac.missionpacks.PackApi
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ClientInfo
 import app.ezpztac.network.SessionStore
@@ -118,6 +126,11 @@ object AppModule {
     @Provides
     @Singleton
     fun syncApi(client: ApiClient): SyncApi = ApiSyncApi(client)
+
+    /** What the mission-pack engine asks the server: a pack, its log, and a batch of edits. */
+    @Provides
+    @Singleton
+    fun packApi(client: ApiClient): PackApi = ApiPackApi(client)
 
     @Provides
     @Singleton
@@ -215,6 +228,15 @@ interface AppBindings {
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner
+
+    @Binds
+    fun packRuntime(impl: EnginePackRuntime): PackRuntime
+
+    @Binds
+    fun packInvites(impl: ApiPackInvites): PackInvites
+
+    @Binds
+    fun minimumVersion(impl: MinimumVersionPreferences): MinimumVersion
 
     @Binds
     fun conflictResolver(impl: SyncEngine): ConflictResolver

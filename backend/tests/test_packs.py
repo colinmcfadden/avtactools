@@ -14,6 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 import pack_support  # noqa: E402
 from auth_harness import PASSWORD, NativeAuthCase  # noqa: E402
+from auth_rate_limit import clear_rate_limits  # noqa: E402
 from entitlements import resolve_features  # noqa: E402
 from models import (  # noqa: E402
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
@@ -33,6 +34,28 @@ LZ_DATA = {
     'flightData': {'callSign': 'HAWK 6', 'landingHeading': 270},
     'graphics': {'helicopters': [{'id': 'h-1', 'lat': 34.5, 'lon': -84.1, 'heading': 270}]},
 }
+
+
+def pack_state(pack_uuid):
+    """What is stored for a pack, as plain values: what a refused write must leave as it was. None when its row is gone."""
+    pack = (db.session.query(MissionPack.id, MissionPack.head_seq, MissionPack.status, MissionPack.deleted_at,
+                             MissionPack.owner_id, MissionPack.team_id, MissionPack.team_role, MissionPack.name,
+                             MissionPack.description)
+            .filter_by(uuid=pack_uuid).first())
+    if pack is None:
+        return None
+    of = {'pack_id': pack.id}
+    return {
+        'pack': tuple(pack),
+        'events': [tuple(e) for e in db.session.query(MissionPackEvent.seq, MissionPackEvent.op_type)
+                   .filter_by(**of).order_by(MissionPackEvent.seq)],
+        'members': sorted(tuple(m) for m in db.session.query(MissionPackMember.user_id, MissionPackMember.role).filter_by(**of)),
+        'items': sorted(tuple(i) for i in db.session.query(MissionPackItem.uuid, MissionPackItem.revision,
+                                                           MissionPackItem.deleted_at).filter_by(**of)),
+        'invites': sorted(tuple(i) for i in db.session.query(MissionPackInvite.email, MissionPackInvite.status,
+                                                             MissionPackInvite.role, MissionPackInvite.token_hash,
+                                                             MissionPackInvite.expires_at).filter_by(**of)),
+    }
 
 
 class PackCase(NativeAuthCase):
@@ -125,6 +148,79 @@ class PackCase(NativeAuthCase):
     def db_rows(self, model, **filters):
         with self.app.app_context():
             return model.query.filter_by(**filters).all()
+
+    def state(self, pack_uuid):
+        with self.app.app_context():
+            return pack_state(pack_uuid)
+
+    # -- races -------------------------------------------------------------
+
+    def waiting_for_the_lock_while(self, change):
+        """``change(pack)``, made and committed by someone else just before this request gets the pack's lock.
+
+        Once: the lock is the real one after that. A change is made in the database only (an ``update`` or ``delete`` with
+        ``synchronize_session=False``), never by setting attributes on objects this request holds: one made in another
+        session could not touch them. The commit expires nothing either, so the request sees the change only by reading
+        again, which is what these tests hold. ``self.before_lock`` is the pack as the request had left it when it asked for
+        the lock (what it had written by then flushed, so a write made before the lock shows), and ``self.settled`` the pack
+        as the change left it: what a refused request must leave as it was.
+        """
+        real = pack_support.lock
+        waiting = [change]
+        self.before_lock = self.settled = None
+
+        def lock(pack, **options):
+            if waiting:
+                self.before_lock = pack_state(pack.uuid)
+                session = db.session()
+                session.expire_on_commit = False
+                try:
+                    waiting.pop()(pack)
+                    session.commit()
+                finally:
+                    session.expire_on_commit = True
+                self.settled = pack_state(pack.uuid)
+            return real(pack, **options)
+        return patch.object(pack_support, 'lock', new=lock)
+
+    def hand_over(self, to):
+        """A change that makes ``to`` the owner, as Colin's other device would."""
+        owner, heir = self.colin['id'], to['id']
+
+        def change(pack):
+            MissionPackMember.query.filter_by(pack_id=pack.id, user_id=owner).update({'role': 'editor'}, synchronize_session=False)
+            MissionPackMember.query.filter_by(pack_id=pack.id, user_id=heir).update({'role': 'owner'}, synchronize_session=False)
+            MissionPack.query.filter_by(id=pack.id).update({'owner_id': heir}, synchronize_session=False)
+        return change
+
+    @staticmethod
+    def made(who, role):
+        """A change that gives ``who`` another role in the pack."""
+        return lambda pack: MissionPackMember.query.filter_by(pack_id=pack.id, user_id=who['id']).update(
+            {'role': role}, synchronize_session=False)
+
+    @staticmethod
+    def removed(who):
+        """A change that takes ``who`` out of the pack."""
+        return lambda pack: MissionPackMember.query.filter_by(pack_id=pack.id, user_id=who['id']).delete(
+            synchronize_session=False)
+
+    @staticmethod
+    def shared_with(team_id):
+        """A change that shares the pack with another team (None: with none), as the owner's other device would."""
+        return lambda pack: MissionPack.query.filter_by(id=pack.id).update({'team_id': team_id}, synchronize_session=False)
+
+    @staticmethod
+    def tombstone(pack):
+        # The tombstone alone, the members left in place, so this holds the deletion check and not only the membership one.
+        MissionPack.query.filter_by(id=pack.id).update({'deleted_at': pack_support.now()}, synchronize_session=False)
+
+    @staticmethod
+    def purge(pack):
+        """The pack gone, rows and all, as when its owner's account is deleted with nobody else in it (``release_account``)."""
+        for model in pack_support.PACK_CONTENT:
+            model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
+        MissionPack.query.filter_by(id=pack.id).delete(synchronize_session=False)
 
 
 class PackBasicsTests(PackCase):
@@ -704,6 +800,418 @@ class FinishTests(PackCase):
         self.assertEqual([e['type'] for e in self.events(self.uuid)].count('pack.finish'), 1)
 
 
+class LostAnswerTests(PackCase):
+    """A batch whose answer was lost is sent again as it was (docs/MISSION_PACKS.md §5, step 4). When the pack refuses that
+    resend, the refusal says which of its operations the pack already has (``taken``), so the client keeps those as the pack's
+    and offers back only the rest."""
+
+    def setUp(self):
+        super().setUp()
+        self.uuid = self.new_pack()['uuid']
+        self.member(self.uuid, self.sam)
+        self.add_lz(self.uuid)
+
+    def batch(self):
+        return [self.op('item.rename', 'lz-1', name='LZ EAGLE'),
+                self.op('patch', 'lz-1', path=['graphics', 'helicopters', {'id': 'h-9'}], value={'lat': 1}),   # no h-9: skipped
+                self.op('set', 'lz-1', path=['flightData', 'landingHeading'], value=90)]
+
+    def refused(self, response, status, code):
+        body = response.get_json()
+        self.assertEqual((response.status_code, body.get('code')), (status, code), body)
+        return body
+
+    def finish(self):
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/finish'))
+
+    def make_viewer(self, who):
+        self.ok(self.call(self.colin, 'put', f'/api/packs/{self.uuid}/members/{who["id"]}', json={'role': 'viewer'}))
+
+    def test_a_lost_answer_sent_again_to_a_pack_finished_meanwhile_lists_what_the_pack_took(self):
+        batch = self.batch()
+        taken = self.ok(self.send(self.uuid, *batch))['results']          # the answer that never arrived
+        self.finish()
+        head = self.pack(self.uuid)['head_seq']
+        body = self.refused(self.send(self.uuid, *batch), 423, 'pack_finished')
+        self.assertEqual(body['taken'], taken)
+        self.assertEqual(body['finished_by']['name'], 'Colin')
+        self.assertEqual(self.pack(self.uuid)['head_seq'], head)
+
+    def test_a_skipped_operation_is_listed_as_skipped_with_its_reason(self):
+        batch = self.batch()
+        self.ok(self.send(self.uuid, *batch))
+        self.finish()
+        body = self.refused(self.send(self.uuid, *batch), 423, 'pack_finished')
+        self.assertEqual([(t['client_op_id'], t['status'], t['reason']) for t in body['taken']], [
+            (batch[0]['client_op_id'], 'applied', None),
+            (batch[1]['client_op_id'], 'skipped', 'target_missing'),
+            (batch[2]['client_op_id'], 'applied', None),
+        ])
+
+    def test_a_lost_answer_sent_again_by_someone_made_a_viewer_meanwhile_lists_what_the_pack_took(self):
+        batch = self.batch()
+        taken = self.ok(self.send(self.uuid, *batch, who=self.sam))['results']
+        self.make_viewer(self.sam)
+        body = self.refused(self.send(self.uuid, *batch, who=self.sam), 403, 'pack_read_only')
+        self.assertEqual(body['taken'], taken)
+
+    def test_a_batch_refused_as_too_large_lists_what_was_taken_before_and_keeps_none_of_the_rest(self):
+        first = self.batch()
+        taken = self.ok(self.send(self.uuid, *first))['results']
+        head = self.pack(self.uuid)['head_seq']
+        # No answer came, so the edits made since went out with it: the batch grew by one that is too large.
+        with patch.object(pack_support, 'MAX_ITEM_BYTES', 2000):
+            response = self.send(self.uuid, *first, self.op('set', 'lz-1', path=['notes'], value='x' * 3000))
+        body = self.refused(response, 413, 'item_too_large')
+        self.assertEqual((body['item'], body['taken']), ('lz-1', taken))
+        got = self.pack(self.uuid)
+        self.assertEqual((got['head_seq'], self.item(got, 'lz-1')['data'].get('notes')), (head, None))
+
+    def test_a_refusal_of_operations_the_pack_never_saw_lists_none(self):
+        with patch.object(pack_support, 'MAX_ITEM_BYTES', 2000):
+            too_large = self.send(self.uuid, self.op('set', 'lz-1', path=['notes'], value='x' * 3000))
+        self.assertEqual(self.refused(too_large, 413, 'item_too_large')['taken'], [])
+        self.make_viewer(self.sam)
+        self.assertEqual(self.refused(self.send(self.uuid, *self.batch(), who=self.sam), 403, 'pack_read_only')['taken'], [])
+        self.finish()
+        self.assertEqual(self.refused(self.send(self.uuid, *self.batch()), 423, 'pack_finished')['taken'], [])
+
+    def test_someone_not_in_the_pack_is_told_nothing_even_of_operations_they_sent_while_in_it(self):
+        batch = self.batch()
+        self.ok(self.send(self.uuid, *batch, who=self.sam))
+        self.ok(self.call(self.colin, 'delete', f'/api/packs/{self.uuid}/members/{self.sam["id"]}'))
+        self.finish()
+        for who in (self.sam, self.alex):
+            response = self.send(self.uuid, *batch, who=who)
+            self.assertEqual((response.status_code, response.get_json()), (404, {'error': 'Not found', 'code': 'pack_not_found'}))
+
+    def test_only_the_callers_own_operations_in_this_pack_are_listed(self):
+        mine = self.op('item.rename', 'lz-1', name='MINE')
+        self.ok(self.send(self.uuid, mine))
+        sams = self.op('item.rename', 'lz-1', name='SAMS')
+        self.ok(self.send(self.uuid, sams, who=self.sam))
+        other = self.new_pack(name='OP OTHER')['uuid']
+        elsewhere = self.op('item.create', 'lz-9', kind='lz', name='ELSEWHERE', data={})
+        self.ok(self.send(other, elsewhere))
+        self.finish()
+        body = self.refused(self.send(self.uuid, sams, elsewhere, mine), 423, 'pack_finished')
+        self.assertEqual([t['client_op_id'] for t in body['taken']], [mine['client_op_id']])
+
+    def test_what_was_taken_is_listed_in_the_logs_order_whatever_order_it_is_sent_in(self):
+        # Ids that sort against the log's order: the lookup goes through the (pack, client_op_id) index, so rows can come
+        # back in id order, and ids that happen to sort as their seqs do would let a missing sort pass.
+        first = dict(self.op('item.rename', 'lz-1', name='A'), client_op_id='zz-first')
+        second = dict(self.op('item.rename', 'lz-1', name='B'), client_op_id='aa-second')
+        before = self.ok(self.send(self.uuid, first))['results'] + self.ok(self.send(self.uuid, second))['results']
+        self.finish()
+        body = self.refused(self.send(self.uuid, self.op('item.rename', 'lz-1', name='C'), second, first), 423, 'pack_finished')
+        self.assertEqual(body['taken'], before)
+        self.assertLess(body['taken'][0]['seq'], body['taken'][1]['seq'])
+
+    # A removal, a role change and a deletion each hold the pack's lock while they work, and a batch that arrives meanwhile
+    # waits for it. Who the caller is must then be read again, or the answer is decided by what they were before. Every
+    # other write to a pack is held to the same in WaitingForTheLockTests.
+
+    def pack_id(self):
+        with self.app.app_context():
+            return MissionPack.query.filter_by(uuid=self.uuid).one().id
+
+    def test_someone_removed_while_their_resend_waited_for_the_lock_is_told_nothing_of_what_the_pack_took(self):
+        batch = self.batch()
+        self.ok(self.send(self.uuid, *batch, who=self.sam))            # the answer that never arrived
+        self.finish()
+        head = self.pack(self.uuid)['head_seq']
+        with self.waiting_for_the_lock_while(self.removed(self.sam)):
+            response = self.send(self.uuid, *batch, who=self.sam)
+        self.assertEqual((response.status_code, response.get_json()), (404, {'error': 'Not found', 'code': 'pack_not_found'}))
+        self.assertEqual(self.pack(self.uuid)['head_seq'], head)
+
+    def test_a_batch_that_waited_for_the_lock_while_the_pack_was_deleted_writes_nothing_into_it(self):
+        pack_id = self.pack_id()
+        events = len(self.db_rows(MissionPackEvent, pack_id=pack_id))
+        with self.waiting_for_the_lock_while(self.tombstone):
+            response = self.send(self.uuid, self.op('item.create', 'lz-2', kind='lz', name='LZ CROW', data={}), who=self.sam)
+        self.assertEqual((response.status_code, response.get_json()), (404, {'error': 'Not found', 'code': 'pack_not_found'}))
+        self.assertEqual(len(self.db_rows(MissionPackEvent, pack_id=pack_id)), events)
+        self.assertEqual(self.db_rows(MissionPackItem, pack_id=pack_id, uuid='lz-2'), [])
+
+    def test_someone_made_a_viewer_while_their_resend_waited_for_the_lock_is_refused_as_one_and_told_what_the_pack_took(self):
+        batch = self.batch()
+        taken = self.ok(self.send(self.uuid, *batch, who=self.sam))['results']
+        head = self.pack(self.uuid)['head_seq']
+        with self.waiting_for_the_lock_while(self.made(self.sam, 'viewer')):
+            response = self.send(self.uuid, *batch, self.op('item.rename', 'lz-1', name='LZ CROW'), who=self.sam)
+        self.assertEqual(self.refused(response, 403, 'pack_read_only')['taken'], taken)
+        got = self.pack(self.uuid)
+        self.assertEqual((got['head_seq'], self.item(got, 'lz-1')['name']), (head, 'LZ EAGLE'))
+
+    def test_a_malformed_batch_is_refused_before_the_pack_is_looked_at_so_it_lists_nothing(self):
+        # Whether a batch is well formed depends on its operations alone, so one the pack took is well formed when it is sent
+        # again as it was. A 400 is a client's own mistake, and comes before the server knows whether the caller is in the pack.
+        batch = self.batch()
+        self.ok(self.send(self.uuid, *batch))
+        self.assertEqual(self.ok(self.send(self.uuid, *batch))['results'][0]['client_op_id'], batch[0]['client_op_id'])
+        for who in (self.colin, self.alex):
+            body = self.refused(self.send(self.uuid, *batch, self.op('set', 'lz-1', path=[], value=1), who=who), 400, 'invalid_op')
+            self.assertNotIn('taken', body)
+
+
+class WaitingForTheLockTests(PackCase):
+    """Every write to a pack takes the pack's lock first, and whoever held it meanwhile may have deleted the pack, removed the
+    writer, made them a viewer, handed the pack to someone else, shared it elsewhere or withdrawn an invitation: each of those
+    holds the lock while it works. A write that waited for it is decided by the pack as it is once the lock is held, never by
+    what was read before: it is answered as the same request sent now would be, and writes nothing (docs/MISSION_PACKS.md §7).
+    The operation stream's own cases are in LostAnswerTests."""
+
+    def setUp(self):
+        super().setUp()
+        self.dana = self.person('dana@example.com', 'Dana')
+        self.squad = self.team(self.colin, self.dana)          # so Colin can add Dana by name, and share a pack with the team
+        self.sams_lz = self.ok(self.call(self.sam, 'post', '/api/lz', json={'name': 'LZ CROW', 'lz_data': LZ_DATA}), 201)
+
+    def fresh(self):
+        """A pack of Colin's: Sam an editor who copied an LZ in from his library (``lz-s``), Alex a viewer, and an invitation
+        waiting for Erin. ``(uuid, invitation id)``."""
+        clear_rate_limits()                                     # each pack sends three invitations
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam)
+        self.member(uuid_, self.alex, role='viewer')
+        self.ok(self.call(self.sam, 'post', f'/api/packs/{uuid_}/items',
+                          json={'item': 'lz-s', 'source': {'kind': 'lz', 'id': self.sams_lz['id']}}), 201)
+        invite = self.ok(self.call(self.colin, 'post', f'/api/packs/{uuid_}/invites', json={'email': 'erin@example.com'}), 201)
+        return uuid_, invite['invite']['id']
+
+    def finish(self, uuid_):
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{uuid_}/finish'))
+
+    def owners_writes(self):
+        """What only the owner (Colin) may do: ``(what, prepare, send)``."""
+        colin, alex = self.colin, self.alex['id']
+        return (
+            ('share it with a team', None,
+             lambda u, i: self.call(colin, 'put', f'/api/packs/{u}', json={'team_id': self.squad['id']})),
+            ('delete it', None, lambda u, i: self.call(colin, 'delete', f'/api/packs/{u}')),
+            ('finish it', None, lambda u, i: self.call(colin, 'post', f'/api/packs/{u}/finish')),
+            ('reopen it', self.finish, lambda u, i: self.call(colin, 'post', f'/api/packs/{u}/reopen')),
+            ('add a teammate', None,
+             lambda u, i: self.call(colin, 'post', f'/api/packs/{u}/members', json={'user_id': self.dana['id']})),
+            ('change a role', None, lambda u, i: self.call(colin, 'put', f'/api/packs/{u}/members/{alex}', json={'role': 'editor'})),
+            ('hand the pack over', None,
+             lambda u, i: self.call(colin, 'put', f'/api/packs/{u}/members/{alex}', json={'role': 'owner'})),
+            ('remove a member', None, lambda u, i: self.call(colin, 'delete', f'/api/packs/{u}/members/{alex}')),
+            ('invite someone', None,
+             lambda u, i: self.call(colin, 'post', f'/api/packs/{u}/invites', json={'email': 'fay@example.com'})),
+            ('send an invitation again', None, lambda u, i: self.call(colin, 'post', f'/api/packs/{u}/invites/{i}/resend')),
+            ('withdraw an invitation', None, lambda u, i: self.call(colin, 'delete', f'/api/packs/{u}/invites/{i}')),
+        )
+
+    def editors_writes(self):
+        """What an editor (Sam) may do."""
+        sam = self.sam
+        return (
+            ('rename the pack', None, lambda u, i: self.call(sam, 'put', f'/api/packs/{u}', json={'name': 'OP SAM'})),
+            ('copy in from the library', None, lambda u, i: self.call(
+                sam, 'post', f'/api/packs/{u}/items', json={'item': 'lz-t', 'source': {'kind': 'lz', 'id': self.sams_lz['id']}})),
+            ('update a copy from its original', None,
+             lambda u, i: self.call(sam, 'post', f'/api/packs/{u}/items/lz-s/update-from-original')),
+        )
+
+    def leaving(self):
+        return (('leave', None, lambda u, i: self.call(self.sam, 'delete', f'/api/packs/{u}/members/{self.sam["id"]}')),)
+
+    def refused_writing_nothing(self, uuid_, change, send, status, code):
+        """``send()`` while ``change`` is made: refused with ``status`` and ``code``, nothing written to the pack before the lock
+        or after it (the pack left as the change left it), no mail."""
+        mail, initial = len(self.mail), self.state(uuid_)
+        with self.waiting_for_the_lock_while(change):
+            response = send()
+        body = response.get_json()
+        self.assertEqual((response.status_code, body.get('code')), (status, code), body)
+        self.assertEqual(self.before_lock, initial)
+        self.assertEqual(self.state(uuid_), self.settled)
+        self.assertEqual(self.mail[mail:], [])
+        return body
+
+    def each_refused(self, writes, change, status, code):
+        """Every one of ``writes``, each on a pack of its own, refused while ``change(pack)`` is made."""
+        for what, prepare, send in writes:
+            with self.subTest(what):
+                uuid_, invite = self.fresh()
+                if prepare:
+                    prepare(uuid_)
+                body = self.refused_writing_nothing(uuid_, change, lambda: send(uuid_, invite), status, code)
+                if status == 404:
+                    self.assertEqual(body, {'error': 'Not found', 'code': 'pack_not_found'})   # nothing said of the pack
+
+    def test_every_write_that_waited_while_the_pack_was_deleted_is_answered_as_for_a_deleted_pack_and_writes_nothing(self):
+        self.each_refused(self.owners_writes() + self.editors_writes() + self.leaving(), self.tombstone, 404, 'pack_not_found')
+
+    def test_every_owners_write_that_waited_while_they_handed_the_pack_over_is_refused_as_not_theirs_and_writes_nothing(self):
+        self.each_refused(self.owners_writes(), self.hand_over(self.sam), 403, 'owner_only')
+
+    def test_every_edit_that_waited_while_its_sender_was_made_a_viewer_is_refused_as_read_only_and_writes_nothing(self):
+        self.each_refused(self.editors_writes(), self.made(self.sam, 'viewer'), 403, 'pack_read_only')
+
+    def test_every_write_that_waited_while_its_sender_was_removed_tells_them_nothing_and_writes_nothing(self):
+        self.each_refused(self.editors_writes() + self.leaving(), self.removed(self.sam), 404, 'pack_not_found')
+
+    def test_a_role_read_again_under_the_lock_is_the_stored_one_not_a_copy_the_session_still_holds(self):
+        uuid_, _invite = self.fresh()
+        sam, held = self.sam['id'], []
+
+        def demote_out_of_sight(pack):
+            # This request's session holds Sam's membership as it was read, and the change does not touch that copy, as one
+            # made in another session would not: only a read of the stored row sees it.
+            held.append(MissionPackMember.query.filter_by(pack_id=pack.id, user_id=sam).one())
+            MissionPackMember.query.filter_by(pack_id=pack.id, user_id=sam).update({'role': 'viewer'}, synchronize_session=False)
+        self.refused_writing_nothing(uuid_, demote_out_of_sight,
+                                     lambda: self.call(self.sam, 'put', f'/api/packs/{uuid_}', json={'name': 'OP SAM'}),
+                                     403, 'pack_read_only')
+
+    # A role that comes through a team is read again too. A change to a team's members does not take the lock of the packs shared
+    # with it, so only one committed before the write takes the lock is seen (docs/MISSION_PACKS.md §7); unsharing does take it.
+
+    def shared_with_sam_through_a_team(self):
+        c_co = self.team(self.colin, self.sam, name='C Co')
+        return c_co, self.new_pack(team_id=c_co['id'])['uuid']             # editors through the team; Sam is not a member
+
+    def test_someone_who_left_the_team_that_let_them_in_while_their_edit_waited_is_told_nothing(self):
+        c_co, uuid_ = self.shared_with_sam_through_a_team()
+        sam = self.sam['id']
+        self.refused_writing_nothing(
+            uuid_, lambda pack: TeamMember.query.filter_by(team_id=c_co['id'], user_id=sam).delete(synchronize_session=False),
+            lambda: self.call(self.sam, 'put', f'/api/packs/{uuid_}', json={'name': 'OP SAM'}), 404, 'pack_not_found')
+
+    def test_someone_whose_team_the_pack_stopped_being_shared_with_while_their_edit_waited_is_told_nothing(self):
+        _c_co, uuid_ = self.shared_with_sam_through_a_team()
+        self.refused_writing_nothing(
+            uuid_, self.shared_with(None),
+            lambda: self.call(self.sam, 'put', f'/api/packs/{uuid_}', json={'name': 'OP SAM'}), 404, 'pack_not_found')
+
+    def test_changing_only_the_teams_role_while_the_pack_was_shared_elsewhere_changes_it_where_it_is_shared_now(self):
+        _c_co, uuid_ = self.shared_with_sam_through_a_team()
+        squad = self.squad['id']
+        with self.waiting_for_the_lock_while(self.shared_with(squad)):                  # Colin's other device
+            body = self.ok(self.call(self.colin, 'put', f'/api/packs/{uuid_}', json={'team_role': 'viewer'}))
+        self.assertEqual((body['team']['id'], body['team']['role']), (squad, 'viewer'))
+        self.assertEqual(self.events(uuid_)[-1]['op'], {'type': 'pack.share', 'team_id': squad, 'team_role': 'viewer'})
+
+    def test_deleting_a_team_leaves_alone_a_pack_shared_with_another_team_while_it_waited(self):
+        c_co, uuid_ = self.shared_with_sam_through_a_team()
+        squad = self.squad['id']
+        with self.waiting_for_the_lock_while(self.shared_with(squad)):
+            self.ok(self.call(self.colin, 'delete', f'/api/teams/{c_co["id"]}'))
+        self.assertEqual((self.pack(uuid_)['team'] or {}).get('id'), squad)
+        self.assertEqual(self.state(uuid_), self.settled)                  # not unshared, and nothing logged
+
+    # Accepting an invitation to a pack takes the pack's lock too.
+
+    def invited(self, uuid_, role='editor'):
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{uuid_}/invites', json={'email': self.sam['email'], 'role': role}), 201)
+        [invite] = self.ok(self.call(self.sam, 'get', '/api/invites'))['invites']
+        return invite['id']
+
+    def accept(self, invite_id):
+        return lambda: self.call(self.sam, 'post', f'/api/invites/{invite_id}/accept')
+
+    def test_an_invitation_accepted_while_its_pack_was_deleted_is_gone_and_joins_nothing(self):
+        uuid_ = self.new_pack()['uuid']
+        body = self.refused_writing_nothing(uuid_, self.tombstone, self.accept(self.invited(uuid_)), 410, 'invite_gone')
+        self.assertEqual(body['error'], 'That pack no longer exists.')
+
+    def test_an_invitation_accepted_while_its_pack_went_with_its_owners_account_is_gone(self):
+        # Nobody else is in the pack, so deleting Colin's account deletes it outright, rows and all (release_account).
+        uuid_ = self.new_pack()['uuid']
+        body = self.refused_writing_nothing(uuid_, self.purge, self.accept(self.invited(uuid_)), 410, 'invite_gone')
+        self.assertEqual(body['error'], 'That pack no longer exists.')
+        self.assertIsNone(self.state(uuid_))
+
+    def test_a_link_replaced_while_its_acceptance_waited_is_not_valid_and_joins_nothing(self):
+        # Sending the invitation again, or inviting the address again, gives it a new link under the pack's lock. The old link
+        # found the invitation before the lock, and is answered as any link that matches nothing: it works for whoever has it.
+        uuid_ = self.new_pack()['uuid']
+        invite_id = self.invited(uuid_)
+        token = self.mail[-1][1][3]
+
+        def new_link(pack):
+            MissionPackInvite.query.filter_by(id=invite_id).update(
+                {'token_hash': pack_support.token_hash('the new link')}, synchronize_session=False)
+        body = self.refused_writing_nothing(
+            uuid_, new_link, lambda: self.call(self.sam, 'post', '/api/invites/accept', json={'token': token}),
+            404, 'invite_not_found')
+        self.assertEqual(body['error'], 'That invitation link is not valid.')
+
+    def test_an_invitation_withdrawn_while_its_acceptance_waited_is_not_accepted(self):
+        uuid_ = self.new_pack()['uuid']
+        invite_id = self.invited(uuid_)
+
+        def withdraw(pack):
+            # Out of sight of the copy of the invitation this request has read, as in another session.
+            MissionPackInvite.query.filter_by(id=invite_id).update({'status': 'revoked'}, synchronize_session=False)
+        body = self.refused_writing_nothing(uuid_, withdraw, self.accept(invite_id), 410, 'invite_gone')
+        self.assertEqual(body['error'], 'That invitation has already been answered or withdrawn.')
+
+    def test_an_invitation_sent_again_as_a_viewer_while_its_acceptance_waited_joins_as_a_viewer(self):
+        uuid_ = self.new_pack()['uuid']
+        invite_id = self.invited(uuid_)
+
+        def as_a_viewer(pack):
+            MissionPackInvite.query.filter_by(id=invite_id).update({'role': 'viewer'}, synchronize_session=False)
+        with self.waiting_for_the_lock_while(as_a_viewer):
+            body = self.ok(self.accept(invite_id)())
+        self.assertEqual((body['pack']['role'], self.pack(uuid_, who=self.sam)['role']), ('viewer', 'viewer'))
+        self.assertEqual(self.events(uuid_)[-1]['op']['role'], 'viewer')
+
+    # Deleting an account takes the lock of every pack it owns or is in.
+
+    def delete_account(self, who):
+        return self.ok(self.call(who, 'delete', '/api/auth/me', json={'confirm': 'DELETE', 'password': PASSWORD}))
+
+    def test_an_account_deleted_while_its_pack_was_handed_over_leaves_the_new_owner_in_place(self):
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.alex)                       # the longest-standing editor, who would inherit it otherwise
+        self.member(uuid_, self.sam)
+        with self.waiting_for_the_lock_while(self.hand_over(self.sam)):
+            self.delete_account(self.colin)
+        got = self.pack(uuid_, who=self.sam)
+        self.assertEqual(got['owner']['name'], 'Sam')
+        self.assertEqual(sorted((m['name'], m['role']) for m in got['members']), [('Alex', 'editor'), ('Sam', 'owner')])
+        self.assertEqual(self.events(uuid_, who=self.sam)[-1]['summary'], 'Colin left: their account was deleted.')
+
+    def test_an_account_deleted_while_a_pack_it_was_in_was_deleted_writes_nothing_into_that_pack(self):
+        uuid_, _invite = self.fresh()
+        with self.waiting_for_the_lock_while(self.tombstone):
+            self.delete_account(self.alex)
+        now = self.state(uuid_)
+        self.assertEqual((now['pack'], now['events']), (self.settled['pack'], self.settled['events']))
+
+    def test_an_account_deleted_while_a_pack_it_was_in_was_handed_to_it_hands_the_pack_on(self):
+        # Sam owned nothing when his deletion looked, so the pack is reached as one he is in. Left his, the account could not
+        # be deleted (``mission_pack.owner_id`` has no ON DELETE), or the pack would be owned by nobody.
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam)
+        with self.waiting_for_the_lock_while(self.hand_over(self.sam)):
+            self.delete_account(self.sam)
+        got = self.pack(uuid_)
+        self.assertEqual((got['owner']['name'], [(m['name'], m['role']) for m in got['members']]), ('Colin', [('Colin', 'owner')]))
+        self.assertEqual([e['summary'] for e in self.events(uuid_)[-2:]],
+                         ["Colin owns the pack now: its owner's account was deleted.", 'Sam left: their account was deleted.'])
+
+    def test_an_account_deleted_while_a_pack_it_was_in_was_left_to_it_alone_deletes_the_pack(self):
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam)
+        colin, sam = self.colin['id'], self.sam['id']
+
+        def left_to_sam(pack):
+            # As Colin's own account deletion would, with Sam the only one left to inherit.
+            MissionPackMember.query.filter_by(pack_id=pack.id, user_id=colin).delete(synchronize_session=False)
+            MissionPackMember.query.filter_by(pack_id=pack.id, user_id=sam).update({'role': 'owner'}, synchronize_session=False)
+            MissionPack.query.filter_by(id=pack.id).update({'owner_id': sam}, synchronize_session=False)
+        with self.waiting_for_the_lock_while(left_to_sam):
+            self.delete_account(self.sam)
+        self.assertIsNone(self.state(uuid_))
+
+
 class DuplicateTests(PackCase):
     def test_a_duplicate_is_a_new_pack_with_copies_and_no_link_to_anyones_library(self):
         source = self.new_pack()
@@ -928,6 +1436,25 @@ class InviteTests(PackCase):
         self.assertNotEqual(first, latest)
         self.assertEqual(self.call(self.sam, 'post', '/api/invites/accept', json={'token': first}).status_code, 404)
         self.ok(self.call(self.sam, 'post', '/api/invites/accept', json={'token': latest}))
+
+    def test_sending_an_invitation_again_leaves_the_pack_where_it_was_in_everyones_list(self):
+        # Resending takes the pack's lock, but nothing in the pack changes and nothing is logged, so it keeps its updated_at,
+        # which GET /api/packs sorts by: it must not jump to the top of everyone's list.
+        self.member(self.uuid, self.sam)
+        invite = self.ok(self.invite('erin@example.com'), 201)['invite']
+        newer = self.new_pack(name='OP NEWER')['uuid']
+        self.member(newer, self.sam)
+        with self.app.app_context():
+            MissionPack.query.filter_by(uuid=self.uuid).update({'updated_at': datetime(2025, 1, 2, 3, 4, 5)})
+            db.session.commit()
+
+        def lists():
+            return [[(p['uuid'], p['updated_at']) for p in self.ok(self.call(who, 'get', '/api/packs'))['packs']]
+                    for who in (self.colin, self.sam)]
+        before = lists()
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/invites/{invite["id"]}/resend'))
+        self.assertEqual(lists(), before)
+        self.assertEqual([uuid_ for uuid_, _ in before[0]], [newer, self.uuid])
 
     def test_what_an_invitation_must_be(self):
         self.member(self.uuid, self.sam)
@@ -1395,6 +1922,31 @@ class ContractTests(PackCase):
         self.conforms(self.call(self.alex, 'post', f'/api/invites/{invite_id}/accept'), '/api/invites/{invite_id}/accept', 'post', 200)
         self.conforms(self.call(self.colin, 'delete', f'/api/packs/{uuid_}/members/{self.sam["id"]}'),
                       '/api/packs/{uuid}/members/{user_id}', 'delete', 200)
+
+    def test_a_refusal_that_lists_what_the_pack_took(self):
+        uuid_ = self.new_pack()['uuid']
+        self.member(uuid_, self.sam)
+        self.add_lz(uuid_)
+        mine = [self.op('item.rename', 'lz-1', name='A'), self.op('remove', 'lz-1', path=['graphics', 'helicopters', {'id': 'zz'}])]
+        self.ok(self.send(uuid_, *mine, who=self.sam))
+        with patch.object(pack_support, 'MAX_ITEM_BYTES', 2000):
+            too_large = self.send(uuid_, *mine, self.op('set', 'lz-1', path=['notes'], value='x' * 3000), who=self.sam)
+        self.conforms(too_large, '/api/packs/{uuid}/ops', 'post', 413)
+        self.ok(self.call(self.colin, 'put', f'/api/packs/{uuid_}/members/{self.sam["id"]}', json={'role': 'viewer'}))
+        read_only = self.send(uuid_, *mine, who=self.sam)
+        self.conforms(read_only, '/api/packs/{uuid}/ops', 'post', 403)
+        self.ok(self.call(self.colin, 'put', f'/api/packs/{uuid_}/members/{self.sam["id"]}', json={'role': 'editor'}))
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{uuid_}/finish'))
+        finished = self.send(uuid_, *mine, who=self.sam)
+        self.conforms(finished, '/api/packs/{uuid}/ops', 'post', 423)
+        for response in (too_large, read_only, finished):
+            self.assertEqual([t['status'] for t in response.get_json()['taken']], ['applied', 'skipped'])
+        body = finished.get_json()
+        self.assertTrue(check_response(self.spec, '/api/packs/{uuid}/ops', 'post', 423,
+                                       dict(body, taken=[dict(body['taken'][0], status='pending')])))
+        self.assertTrue(check_response(self.spec, '/api/packs/{uuid}/ops', 'post', 423,
+                                       dict(body, taken=[dict(body['taken'][0], surprise=1)])))
+        self.assertTrue(check_response(self.spec, '/api/packs/{uuid}/ops', 'post', 423, dict(body, taken={})))
 
     def test_the_checker_catches_a_broken_pack(self):
         body = self.new_pack()

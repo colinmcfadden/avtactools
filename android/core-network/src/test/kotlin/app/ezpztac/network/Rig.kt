@@ -19,12 +19,21 @@ internal class RecordingStore(initial: StoredSession? = null) : SessionStore {
     @Volatile var current: StoredSession? = initial
         private set
 
-    override suspend fun read(): StoredSession? = inner.read()
+    /** Run once, by the next read, before it answers: to stop a read half-way and do something in between. */
+    @Volatile var beforeNextRead: (suspend () -> Unit)? = null
+
+    override suspend fun read(): StoredSession? {
+        val stored = inner.read()
+        beforeNextRead?.let { beforeNextRead = null; it() }
+        return stored
+    }
     override suspend fun write(session: StoredSession) {
         inner.write(session); current = session
         events += "write ${session.accessToken}/${session.refreshToken}"
     }
     override suspend fun clear() { inner.clear(); current = null; events += "clear" }
+    override suspend fun end(ended: EndedSession) { inner.end(ended); current = null; events += "end ${ended.code}" }
+    override suspend fun ended(): EndedSession? = inner.ended()
 }
 
 internal fun session(access: String = "access-1", refresh: String? = "refresh-1") = StoredSession(
@@ -37,7 +46,7 @@ internal fun session(access: String = "access-1", refresh: String? = "refresh-1"
 /** A mock server, a client talking to it, and the pieces a test wants to look at. */
 internal class Rig(
     initial: StoredSession? = session(),
-    time: TimeSource = TimeSource.System,
+    private val time: TimeSource = TimeSource.System,
     interceptor: Interceptor? = null,
     readTimeoutSeconds: Long = 5,
     refreshReadTimeoutSeconds: Long = ApiClient.REFRESH_READ_TIMEOUT_SECONDS,
@@ -48,10 +57,11 @@ internal class Rig(
     val priority = PriorityGate()
 
     val client: ApiClient
+    private val http: OkHttpClient
 
     init {
         server.start()
-        val http = OkHttpClient.Builder()
+        http = OkHttpClient.Builder()
             .connectTimeout(2, TimeUnit.SECONDS)
             .readTimeout(readTimeoutSeconds, TimeUnit.SECONDS)
             .apply { if (interceptor != null) addInterceptor(interceptor) }
@@ -70,6 +80,9 @@ internal class Rig(
     }
 
     fun requestsTo(path: String): List<RecordedRequest> = requests.filter { it.requestUrl?.encodedPath == path }
+
+    /** A new client over the same store and server: what the next process to start would have. */
+    fun nextProcess(): ApiClient = ApiClient(server.url("/").toString(), http, ClientInfo.android("1.4.0", 212), store, PriorityGate(), time)
 
     override fun close() { server.shutdown() }
 

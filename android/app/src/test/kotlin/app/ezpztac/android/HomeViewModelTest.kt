@@ -194,7 +194,7 @@ class HomeViewModelTest {
         val repository = DiagramRepository(sync, store, scheduler)
         val session = DiagramSession(repository, scope.backgroundScope)
         // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and a slope being measured is work a test waits for.
-        val analysis = AnalysisService(server, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
+        val analysis = AnalysisService(server, session, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
         val selection = GraphicSelection()
         val aircraft = AircraftProfiles(
             store, InMemoryMasterProfileStore(listOf(AircraftProfile(), AircraftProfile(id = 2, slug = "ch47f", name = "CH-47F Chinook", designation = "CH-47F", iconKey = "ch47", rotorDiameterM = 18.29))),
@@ -498,31 +498,7 @@ class HomeViewModelTest {
         assertEquals(emptyList<OpenedDiagram>(), r.seen)
     }
 
-    @Test
-    fun `going to the background writes what is unsaved at once`() = runTest(dispatcher) {
-        val r = Rig(this)
-        advanceUntilIdle()
-        val made = r.repository.create(target, "LZ HAWK")
-        r.session.open(made.id)
-        r.session.edit("Rename") { it.copy(name = "LZ CROW") }
-        r.model.appStopped()
-        advanceUntilIdle()                                                                    // far less than the save pause
-        assertEquals("LZ CROW", r.repository.open(made.id)!!.name)
-    }
-
-    @Test
-    fun `a write that fails on the way to the background does not end the app`() = runTest(dispatcher) {
-        val r = Rig(this)
-        advanceUntilIdle()
-        val made = r.repository.create(target, "LZ HAWK")
-        r.session.open(made.id)
-        r.session.edit("Rename") { it.copy(name = "LZ CROW") }
-        r.store.failing = true
-        r.model.appStopped()
-        advanceUntilIdle()
-        assertEquals(true, r.session.saveFailed.value)
-        assertEquals("LZ CROW", r.session.active.value!!.name)                               // kept, and owed
-    }
+    // Going to the background (writing what is unsaved at once) is the shell's: AppViewModelTest.
 
     // -- What the map draws -------------------------------------------------------------------------------------------
 

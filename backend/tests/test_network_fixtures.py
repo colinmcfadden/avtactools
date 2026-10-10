@@ -13,6 +13,7 @@ different, and with it rewrites ``contracts/fixtures/network/responses.json``.
     cd backend; $env:UPDATE_CONTRACTS="1"; python -m pytest tests/test_network_fixtures.py
 """
 
+import io
 import json
 import math
 import os
@@ -35,16 +36,20 @@ import requests  # noqa: E402
 import numpy as np  # noqa: E402
 import rasterio  # noqa: E402
 from rasterio.transform import from_origin  # noqa: E402
+from werkzeug.security import generate_password_hash  # noqa: E402
 
 import refresh_tokens  # noqa: E402
 from auth_harness import ANDROID, PASSWORD, NativeAuthCase  # noqa: E402
+from models import LocalCredential, MissionPackInvite, User, db  # noqa: E402
 from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
+from routes.pack_routes import pack_bp  # noqa: E402
 from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
+from routes.team_routes import team_bp  # noqa: E402
 from routes.weather_routes import weather_bp  # noqa: E402
 from terrain_provider import LocalRasterCatalog  # noqa: E402
 
@@ -92,6 +97,8 @@ def normalise(value, key=None):
             return "pk.<token>"
         if key == "serverVersion":
             return "<version>"
+        if key == "token":
+            return "<token>"                                        # a team's single-use invitation link
         if key == "id" and re.fullmatch(r"[0-9a-f]{32}", value):
             return "<session-id>"
         if UUID.match(value) and value not in KEPT_UUIDS:
@@ -117,7 +124,8 @@ def documented(method, path, status):
 
 
 class NetworkFixtureTests(NativeAuthCase):
-    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp)
+    extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp,
+                        pack_bp, team_bp)
 
     def setUp(self):
         super().setUp()
@@ -126,6 +134,12 @@ class NetworkFixtureTests(NativeAuthCase):
         mil = patch("routes.auth.send_mil_verification_email", side_effect=lambda _email, code, _name: self.mil_codes.append(code) or True)
         mil.start()
         self.addCleanup(mil.stop)
+        # The mission packs' mail is replaced as the auth mail is: the routes run as in production up to the mail call.
+        for sender in ("routes.pack_routes.send_pack_invite_email", "routes.pack_routes.send_pack_added_email",
+                       "routes.team_routes.send_team_invite_email"):
+            mail = patch(sender, return_value=True)
+            mail.start()
+            self.addCleanup(mail.stop)
 
     def rec(self, name, response, *headers):
         """Keep a response: its status, a few headers, and its body (JSON, or None)."""
@@ -156,6 +170,8 @@ class NetworkFixtureTests(NativeAuthCase):
             return True                                                        # the JWT library's refusal of a token
         if response.status_code == 403 and body.get("code") == "affiliation_required":
             return True                                                        # the .mil gate
+        if response.status_code == 403 and body.get("code") == "feature_disabled":
+            return True                                                        # an entitlement the account lacks (mission_packs, on every pack and team route)
         return False
 
     @staticmethod
@@ -508,6 +524,311 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("weather: no position", self.client.get("/api/weather", headers=head))
         self.rec("weather: a position that is not one", self.client.get("/api/weather", headers=head, query_string={"lat": "x", "lng": "1"}))
 
+    def pack_person(self, email, name, features=None):
+        """A signed-in account, made in the database: the sign-ups above have used what one address may make in an hour. Mission packs
+        are not launched (entitlements.DEFAULT_OFF), so ``features`` turns them on as an admin does for a tester, or off."""
+        with self.app.app_context():
+            user = User(email=email, name=name, role="user", google_id=f"local:{email}", access_approved=True, features=features)
+            db.session.add(user)
+            db.session.flush()
+            db.session.add(LocalCredential(user_id=user.id, password_hash=generate_password_hash(PASSWORD),
+                                           email_verified_at=datetime.utcnow(), status="active", session_version=0))
+            db.session.commit()
+            user_id = user.id
+        return {"id": user_id, "head": self.bearer(self.login(ANDROID, email)["access_token"])}
+
+    def packs(self):
+        """Mission packs, teams, invitations and finding people (docs/MISSION_PACKS.md): every route's answer, and every refusal the
+        spec documents but one, ``original_unknown``, which only a copy made before copies named their original can give.
+
+        The pack and the library record are named by the device, as the apps name them, so the recorded paths are the same every
+        run. The live service is not configured, as where clients poll, except for one answer that shows its address."""
+        realtime = patch.dict(os.environ)
+        realtime.start()
+        self.addCleanup(realtime.stop)
+        os.environ.pop("REALTIME_PUBLIC_URL", None)
+
+        pack_uuid = "6d1c2e8a-4b3f-4a51-9e07-2f8b1c5d7a90"
+        scratch_uuid = "a7e3b9c2-1f04-4d6e-8b5a-3c9d0e2f4a61"            # a pack made to be deleted
+        library_uuid = "0c4f8e2b-7a19-4c3d-a6e5-9b1d2f3e4a57"            # a library LZ copied into the pack
+        KEPT_UUIDS.update({pack_uuid, scratch_uuid, library_uuid})
+
+        # An item holds the library's JSON, less what is each person's own (the web's sharedLzData); the server does not look inside.
+        chalk_1, chalk_2 = 1759900000001, 1759900000002
+        hawk = {
+            "schemaVersion": 2, "status": "analyzed",
+            "target": {"lat": 34.783817, "lon": -84.08219, "mgrs": "16S GD 66993 52949"},
+            "mapData": {"zoom": 17},
+            "flightData": {"callSign": "HAWK 6", "landing_hdg": "270°", "takeoff_hdg": "090°"},
+            "analysis": {"latLong": "34.78382, -84.08219", "gridElevation": "4050", "customLZ": None,
+                         "detectedLZ": [[34.7832, -84.0828], [34.7844, -84.0828], [34.7844, -84.0814]]},
+            "graphics": {"doghouses": [], "helicopters": [{"id": chalk_1, "lat": 34.7837, "lon": -84.0823, "heading": 270, "profileRef": "uh60l"}],
+                         "pzMarkers": [], "sectorsOfFire": [], "goArounds": [], "units": [], "measurements": [], "exportBox": None},
+        }
+        routes = {"version": 1, "routes": [{"id": "sketch-1", "name": "ROUTE 1", "color": "#FF453A", "points": [
+            {"id": "p1", "lat": 34.5, "lon": -84.2, "kind": "amps", "ptType": "target", "name": ".TGT", "role": "start"},
+            {"id": "p2", "lat": 34.6, "lon": -84.0, "kind": "amps", "ptType": "target", "name": ".TGT", "role": "waypoint"}]}]}
+        points = [{"id": "lps-0-ab12cd", "name": "BLUE 1", "description": "Landing zone", "group": "LZ", "icon": "lz", "elevationFt": 1730.0,
+                   "lat": 34.5123, "lon": -84.2231}]
+        falcon = {"schemaVersion": 2, "id": library_uuid, "name": "LZ FALCON", "status": "analyzed",
+                  "target": {"lat": 34.70, "lon": -84.15}, "flightData": {"callSign": "FALCON 6"}, "view": {"mapStyle": "satellite"}}
+
+        on = {"mission_packs": True}
+        colin = self.pack_person("colin@example.com", "Colin", on)                  # owns the team and the pack
+        sam = self.pack_person("sam@example.com", "Sam", on)                        # joins the team by its link, then the pack by name
+        alex = self.pack_person("alex@example.com", "Alex", {**on, "cloud_save": False})   # invited by email; keeps no library
+        dana = self.pack_person("dana@example.com", "Dana", on)                     # in nothing, so every pack and team is a 404 to her
+        # Pat is an account an admin has turned packs off for. The "off" is stored, so she stays without them once packs launch
+        # (taken out of entitlements.DEFAULT_OFF); with nothing stored she would have them then, and this refusal would go unrecorded.
+        pat = self.pack_person("pat@example.com", "Pat", {"mission_packs": False})
+
+        def ask(who, method, path, **kwargs):
+            return getattr(self.client, method)(path, headers=who["head"], **kwargs)
+
+        self.rec("packs: an account without mission packs", ask(pat, "get", "/api/packs"))
+
+        # Teams: what sharing a pack and adding someone by name need.
+        team = self.rec("team: create", ask(colin, "post", "/api/teams", json={"name": "B Co 2-10 AVN"})).get_json()
+        here_team = f"/api/teams/{team['id']}"
+        self.rec("team: create, a name that is not one", ask(colin, "post", "/api/teams", json={"name": "  "}))
+        self.rec("teams", ask(colin, "get", "/api/teams"))
+        link = self.rec("team invite: a link", ask(colin, "post", f"{here_team}/invites", json={})).get_json()
+        self.rec("invite: accept from a link", ask(sam, "post", "/api/invites/accept", json={"token": link["token"]}))
+        self.rec("invite: accept from a link already used", ask(sam, "post", "/api/invites/accept", json={"token": link["token"]}))
+        self.rec("invite: accept from a link that is not one", ask(sam, "post", "/api/invites/accept", json={"token": "nonsense"}))
+        stale = ask(colin, "post", f"{here_team}/invites", json={}).get_json()
+        with self.app.app_context():                                                # two weeks pass
+            row = db.session.get(MissionPackInvite, stale["invite"]["id"])
+            row.created_at, row.expires_at = datetime.utcnow() - timedelta(days=15), datetime.utcnow() - timedelta(days=1)
+            db.session.commit()
+        self.rec("invite: accept from a link that has expired", ask(dana, "post", "/api/invites/accept", json={"token": stale["token"]}))
+        to_alex = self.rec("team invite: by email", ask(colin, "post", f"{here_team}/invites", json={"email": "alex@example.com"})).get_json()["invite"]
+        self.rec("team invite: someone in the team", ask(colin, "post", f"{here_team}/invites", json={"email": "sam@example.com"}))
+        self.rec("team invite: not an email address", ask(colin, "post", f"{here_team}/invites", json={"email": "nope"}))
+        self.rec("team invites", ask(colin, "get", f"{here_team}/invites"))
+        self.rec("invites: mine, to a team", ask(alex, "get", "/api/invites"))
+        self.rec("invite: decline one addressed to someone else", ask(sam, "post", f"/api/invites/{to_alex['id']}/decline"))
+        self.rec("invite: decline", ask(alex, "post", f"/api/invites/{to_alex['id']}/decline"))
+        self.rec("invite: decline one already answered", ask(alex, "post", f"/api/invites/{to_alex['id']}/decline"))
+        to_kim = ask(colin, "post", f"{here_team}/invites", json={"email": "kim@example.com"}).get_json()["invite"]
+        self.rec("team invite: withdraw", ask(colin, "delete", f"{here_team}/invites/{to_kim['id']}"))
+        self.rec("team invite: withdraw one that is not waiting", ask(colin, "delete", f"{here_team}/invites/{to_kim['id']}"))
+        self.rec("team: rename, by a member", ask(sam, "put", here_team, json={"name": "Mine"}))
+        self.rec("team invites: by a member", ask(sam, "get", f"{here_team}/invites"))
+        self.rec("team invite: by a member", ask(sam, "post", f"{here_team}/invites", json={}))
+        self.rec("team invite: withdraw, by a member", ask(sam, "delete", f"{here_team}/invites/{to_kim['id']}"))
+        self.rec("team member: remove, by a member", ask(sam, "delete", f"{here_team}/members/{colin['id']}"))
+        self.rec("team: get", ask(colin, "get", here_team))
+        self.rec("team: rename", ask(colin, "put", here_team, json={"name": "B Co"}))
+        self.rec("team: rename, a name that is not one", ask(colin, "put", here_team, json={"name": ""}))
+        self.rec("team member: change a role", ask(colin, "put", f"{here_team}/members/{sam['id']}", json={"role": "admin"}))
+        self.rec("team member: not a role", ask(colin, "put", f"{here_team}/members/{sam['id']}", json={"role": "boss"}))
+        self.rec("team member: change a role, by an admin", ask(sam, "put", f"{here_team}/members/{colin['id']}", json={"role": "member"}))
+        self.rec("team member: someone not in the team", ask(colin, "put", f"{here_team}/members/{dana['id']}", json={"role": "member"}))
+        self.rec("team member: the owner hands the team over first",
+                 ask(colin, "put", f"{here_team}/members/{colin['id']}", json={"role": "member"}))
+        self.rec("team invite: admin, which only the owner gives", ask(sam, "post", f"{here_team}/invites", json={"role": "admin"}))
+        # A team someone is not in answers as one that does not exist.
+        for name, method, path in (("team: get", "get", here_team), ("team: rename", "put", here_team), ("team: delete", "delete", here_team),
+                                   ("team invites", "get", f"{here_team}/invites"), ("team invite", "post", f"{here_team}/invites")):
+            self.rec(f"{name}, a team the caller is not in", ask(dana, method, path, json={"name": "Mine"}))
+
+        # Finding people: teammates only.
+        self.rec("users: search", ask(colin, "get", "/api/users/search", query_string={"q": "sa"}))
+        self.rec("users: search finds only teammates", ask(colin, "get", "/api/users/search", query_string={"q": "alex"}))
+        self.rec("users: search, too short", ask(colin, "get", "/api/users/search", query_string={"q": "s"}))
+
+        # The pack
+        here = f"/api/packs/{pack_uuid}"
+        made = {"name": "OP DK", "description": "Air assault rehearsal", "uuid": pack_uuid}
+        self.rec("pack: create", ask(colin, "post", "/api/packs", json=made))
+        self.rec("pack: create again with the same uuid", ask(colin, "post", "/api/packs", json=made))
+        self.rec("pack: create, a name that is not one", ask(colin, "post", "/api/packs", json={"name": ""}))
+        self.rec("pack: create, a description that is too long", ask(colin, "post", "/api/packs", json={"name": "OP", "description": "x" * 2001}))
+        self.rec("pack: create, a uuid that is not one", ask(colin, "post", "/api/packs", json={"name": "OP", "uuid": "nope"}))
+        self.rec("pack: create, a uuid someone else has", ask(sam, "post", "/api/packs", json={"name": "OP", "uuid": pack_uuid}))
+        self.rec("packs", ask(colin, "get", "/api/packs"), "Cache-Control")
+        self.rec("pack: get", ask(colin, "get", here))
+        with patch.dict(os.environ, {"REALTIME_PUBLIC_URL": "wss://live.example.com"}):
+            self.rec("pack: get, where the live service runs", ask(colin, "get", here))
+        self.rec("pack: access", ask(colin, "get", f"{here}/access"))
+        self.rec("pack: rename and describe", ask(colin, "put", here, json={"name": "OP EAGLE", "description": "Night air assault"}))
+        self.rec("pack: share with a team", ask(colin, "put", here, json={"team_id": team["id"], "team_role": "viewer"}))
+        self.rec("pack: share with a team the owner is not in", ask(colin, "put", here, json={"team_id": 9999}))
+        self.rec("pack: rename, by a viewer", ask(sam, "put", here, json={"name": "Mine"}))
+
+        # The operation stream: everyone's edits, in one order. The first batch carries no base_seq, so only its own events come back.
+        ops = f"{here}/ops"
+        first = self.rec("ops: make an LZ, a route set and a point set", ask(colin, "post", ops, json={"ops": [
+            {"type": "item.create", "item": "lz-1", "kind": "lz", "name": "LZ HAWK", "data": hawk, "client_op_id": "op-1",
+             "summary": 'Colin added the LZ "LZ HAWK".'},
+            {"type": "item.create", "item": "rt-1", "kind": "route", "name": "ROUTES", "data": routes, "client_op_id": "op-2"},
+            {"type": "item.create", "item": "pts-1", "kind": "pointset", "name": "NORTH GA", "data": points, "client_op_id": "op-3"},
+        ]})).get_json()
+        edits = {"base_seq": first["head_seq"], "ops": [
+            {"type": "set", "item": "lz-1", "path": ["graphics", "helicopters", {"id": chalk_1}, "heading"], "value": 300,
+             "client_op_id": "op-4", "summary": "Colin turned Chalk 1 on LZ HAWK."},
+            {"type": "set", "item": "lz-1", "path": ["flightData", "callSign"], "value": None, "client_op_id": "op-5"},
+            {"type": "insert", "item": "lz-1", "path": ["graphics", "helicopters"], "after": None, "client_op_id": "op-6",
+             "value": {"id": chalk_2, "lat": 34.7839, "lon": -84.0821, "heading": 270, "profileRef": "uh60l"}},
+            {"type": "remove", "item": "lz-1", "path": ["graphics", "helicopters", {"id": 1759900009999}], "client_op_id": "op-7"},
+            {"type": "item.rename", "item": "rt-1", "name": "ROUTES NORTH", "client_op_id": "op-8"},
+        ]}
+        self.rec("ops: edits, one skipped, with the events after base_seq", ask(colin, "post", ops, json=edits))
+        self.rec("ops: the same batch again, answered from the log", ask(colin, "post", ops, json=edits))
+        self.rec("ops: a malformed operation", ask(colin, "post", ops, json={"ops": [
+            {"type": "item.delete", "item": "pts-1", "client_op_id": "op-9"},
+            {"type": "set", "item": "lz-1", "path": ["flightData", "callSign"], "client_op_id": "op-10"}]}))
+        self.rec("ops: no operations", ask(colin, "post", ops, json={"ops": []}))
+        delete_points = {"ops": [{"type": "item.delete", "item": "pts-1", "client_op_id": "op-11"}]}
+        self.rec("ops: by a viewer", ask(sam, "post", ops, json=delete_points))
+        self.rec("ops: an item that would pass 5 MB", ask(colin, "post", ops, json={"ops": [
+            {"type": "set", "item": "lz-1", "path": ["notes"], "value": "x" * (5 * 1024 * 1024), "client_op_id": "op-12"}]}))
+
+        # The log, and how far someone has looked in it.
+        self.rec("events: a page", ask(colin, "get", f"{here}/events", query_string={"since": 0, "limit": 3}))
+        self.rec("events: the rest", ask(colin, "get", f"{here}/events", query_string={"since": 3}))
+        self.rec("events: a cursor that is not a number", ask(colin, "get", f"{here}/events", query_string={"since": "x"}))
+        self.rec("seen", ask(colin, "put", f"{here}/seen", json={"seq": 3}))
+        self.rec("seen: not a number", ask(colin, "put", f"{here}/seen", json={"seq": "x"}))
+
+        # Items copied in from the library, updated from it, and saved back to it.
+        items = f"{here}/items"
+        original = ask(colin, "post", "/api/lz", json={"name": "LZ FALCON", "lz_data": falcon, "client_uuid": library_uuid}).get_json()
+        copy_in = {"source": {"kind": "lz", "client_uuid": library_uuid}, "item": "lz-2"}
+        self.rec("item: copy in from the library", ask(colin, "post", items, json=copy_in))
+        self.rec("item: copy in again with the same item", ask(colin, "post", items, json=copy_in))
+        self.rec("item: copy in, an id the pack has", ask(colin, "post", items, json={**copy_in, "item": "lz-1"}))
+        self.rec("item: copy in what is not in the library", ask(colin, "post", items, json={"source": {"kind": "lz", "id": 9999}, "item": "lz-3"}))
+        self.rec("item: copy in, not a kind of record", ask(colin, "post", items, json={"source": {"kind": "threat"}}))
+        self.rec("item: copy in, an id that is not one", ask(colin, "post", items, json={**copy_in, "item": "../lz"}))
+        self.rec("item: copy in, by a viewer", ask(sam, "post", items, json={**copy_in, "item": "lz-3"}))
+        self.rec("item: get", ask(colin, "get", f"{items}/lz-2"))
+        # The original moves on in the library, and the copy in the pack.
+        ask(colin, "put", f"/api/lz/{original['id']}", json={"lz_data": {**falcon, "flightData": {"callSign": "FALCON 1"}}})
+        ask(colin, "post", ops, json={"ops": [{"type": "set", "item": "lz-2", "path": ["flightData", "callSign"], "value": "FALCON 2",
+                                                "client_op_id": "op-13", "summary": "Colin changed the call sign on LZ FALCON."}]})
+        self.rec("item: get, after the original and the copy both changed", ask(colin, "get", f"{items}/lz-2"))
+        self.rec("item: update from the original", ask(colin, "post", f"{items}/lz-2/update-from-original", json={}))
+        self.rec("item: update from the original, an item not copied from the caller's library",
+                 ask(colin, "post", f"{items}/lz-1/update-from-original", json={}))
+        self.rec("item: update from the original, an item not in the pack", ask(colin, "post", f"{items}/lz-9/update-from-original", json={}))
+        ask(colin, "put", f"/api/lz/{original['id']}", json={"lz_data": {**falcon, "notes": "x" * (5 * 1024 * 1024)}})
+        self.rec("item: copy in an original larger than 5 MB", ask(colin, "post", items, json={**copy_in, "item": "lz-3"}))
+        self.rec("item: update from an original larger than 5 MB", ask(colin, "post", f"{items}/lz-2/update-from-original", json={}))
+        ask(colin, "delete", f"/api/lz/{original['id']}")
+        self.rec("item: update from an original that is gone", ask(colin, "post", f"{items}/lz-2/update-from-original", json={}))
+        self.rec("item: get, an item not in the pack", ask(colin, "get", f"{items}/lz-9"))
+        saved = self.rec("item: save to the library", ask(colin, "post", f"{items}/lz-1/library", json={"name": "LZ HAWK (OP EAGLE)"})).get_json()
+        self.rec("item: save to the library, a name that is not one", ask(colin, "post", f"{items}/lz-1/library", json={"name": ""}))
+        self.rec("item: save to the library, an item not in the pack", ask(colin, "post", f"{items}/lz-9/library", json={}))
+        ask(colin, "post", ops, json={"ops": [{"type": "item.create", "item": "pts-2", "kind": "pointset", "name": "NO POINTS", "data": [],
+                                                "client_op_id": "op-14"}]})
+        self.rec("item: save a point set with no points to the library", ask(colin, "post", f"{items}/pts-2/library", json={}))
+        # What the library holds that a pack cannot: an imported AMPS mission, and a record that is not what its kind says.
+        form = {"content_type": "multipart/form-data"}
+        mission = ask(colin, "post", "/api/routes", data={"name": "MISSION", "kind": "mission", "route_data": "{}",
+                                                          "msnx": (io.BytesIO(b"stored, never opened, by the server"), "mission.msnx")}, **form).get_json()
+        self.rec("item: copy in an imported mission", ask(colin, "post", items, json={"source": {"kind": "route", "id": mission["id"]}, "item": "rt-2"}))
+        odd = ask(colin, "post", "/api/routes", data={"name": "ODD", "kind": "sketch", "route_data": "[]"}, **form).get_json()
+        self.rec("item: copy in a record that cannot be read", ask(colin, "post", items, json={"source": {"kind": "route", "id": odd["id"]}, "item": "rt-2"}))
+
+        # Members: a teammate added by name, roles, and handing the pack over.
+        members = f"{here}/members"
+        self.rec("member: add a teammate", ask(colin, "post", members, json={"user_id": sam["id"], "role": "editor"}))
+        self.rec("member: add someone already in", ask(colin, "post", members, json={"user_id": sam["id"]}))
+        self.rec("member: add someone who is not a teammate", ask(colin, "post", members, json={"user_id": alex["id"]}))
+        self.rec("member: add, by an editor", ask(sam, "post", members, json={"user_id": colin["id"]}))
+        self.rec("member: change a role", ask(colin, "put", f"{members}/{sam['id']}", json={"role": "viewer"}))
+        ask(colin, "put", f"{members}/{sam['id']}", json={"role": "editor"})
+        self.rec("member: not a role", ask(colin, "put", f"{members}/{sam['id']}", json={"role": "boss"}))
+        self.rec("member: change the role of someone not in the pack", ask(colin, "put", f"{members}/{dana['id']}", json={"role": "viewer"}))
+        self.rec("member: the owner hands the pack over first", ask(colin, "put", f"{members}/{colin['id']}", json={"role": "editor"}))
+        self.rec("member: change a role, by an editor", ask(sam, "put", f"{members}/{colin['id']}", json={"role": "viewer"}))
+
+        # Invitations to the pack, by email.
+        invites = f"{here}/invites"
+        to_alex = self.rec("pack invite: by email", ask(colin, "post", invites, json={"email": "alex@example.com", "role": "editor"})).get_json()["invite"]
+        self.rec("pack invite: the same address again", ask(colin, "post", invites, json={"email": "Alex@Example.com"}))
+        self.rec("pack invite: not an email address", ask(colin, "post", invites, json={"email": "nope"}))
+        self.rec("pack invite: someone in the pack", ask(colin, "post", invites, json={"email": "sam@example.com"}))
+        self.rec("pack invite: by an editor", ask(sam, "post", invites, json={"email": "kim@example.com"}))
+        self.rec("pack invites", ask(colin, "get", invites))
+        self.rec("pack invites: by an editor", ask(sam, "get", invites))
+        self.rec("pack invite: send again", ask(colin, "post", f"{invites}/{to_alex['id']}/resend"))
+        self.rec("pack invite: send again, one that is not waiting", ask(colin, "post", f"{invites}/9999/resend"))
+        self.rec("pack invite: send again, by an editor", ask(sam, "post", f"{invites}/{to_alex['id']}/resend"))
+        self.rec("invites: mine, to a pack", ask(alex, "get", "/api/invites"))
+        self.rec("invite: accept one addressed to someone else", ask(sam, "post", f"/api/invites/{to_alex['id']}/accept"))
+        self.rec("invite: accept", ask(alex, "post", f"/api/invites/{to_alex['id']}/accept"))
+        self.rec("invite: accept one already answered", ask(alex, "post", f"/api/invites/{to_alex['id']}/accept"))
+        self.rec("item: save to the library, an account without cloud save", ask(alex, "post", f"{items}/lz-1/library", json={}))
+        to_kim = ask(colin, "post", invites, json={"email": "kim@example.com", "role": "viewer"}).get_json()["invite"]
+        self.rec("pack invite: withdraw, by an editor", ask(sam, "delete", f"{invites}/{to_kim['id']}"))
+        self.rec("pack invite: withdraw", ask(colin, "delete", f"{invites}/{to_kim['id']}"))
+        self.rec("pack invite: withdraw one that is not waiting", ask(colin, "delete", f"{invites}/{to_kim['id']}"))
+
+        # Leaving, handing over, finishing and reopening.
+        self.rec("member: remove", ask(colin, "delete", f"{members}/{alex['id']}"))
+        self.rec("member: remove someone not in the pack", ask(colin, "delete", f"{members}/{dana['id']}"))
+        self.rec("member: remove, by an editor", ask(sam, "delete", f"{members}/{colin['id']}"))
+        self.rec("member: the owner leaves", ask(colin, "delete", f"{members}/{colin['id']}"))
+        self.rec("member: hand the pack over", ask(colin, "put", f"{members}/{sam['id']}", json={"role": "owner"}))
+        self.rec("pack: finish, by an editor", ask(colin, "post", f"{here}/finish"))
+        self.rec("pack: finish", ask(sam, "post", f"{here}/finish"))
+        self.rec("ops: a finished pack", ask(colin, "post", ops, json=delete_points))
+        # A batch whose answer was lost, sent again after the pack was finished: the refusal says what the pack took of it.
+        self.rec("ops: a batch the pack took, sent again once it was finished", ask(colin, "post", ops, json=edits))
+        self.rec("pack: rename a finished pack", ask(colin, "put", here, json={"name": "Mine"}))
+        self.rec("item: copy in, to a finished pack", ask(colin, "post", items, json={"source": {"kind": "lz", "id": saved["id"]}, "item": "lz-4"}))
+        self.rec("item: update from the original, in a finished pack", ask(colin, "post", f"{items}/lz-2/update-from-original", json={}))
+        self.rec("pack: reopen, by an editor", ask(colin, "post", f"{here}/reopen"))
+        self.rec("pack: reopen", ask(sam, "post", f"{here}/reopen"))
+        ask(sam, "put", f"{members}/{colin['id']}", json={"role": "owner"})                  # and back
+        self.rec("pack: duplicate", ask(colin, "post", f"{here}/duplicate", json={"name": "OP EAGLE 2"}))
+        self.rec("pack: duplicate, a name that is not one", ask(colin, "post", f"{here}/duplicate", json={"name": ""}))
+        ask(colin, "post", "/api/packs", json={"name": "OP SCRATCH", "uuid": scratch_uuid})
+        self.rec("pack: delete, by an editor", ask(sam, "delete", here))
+        self.rec("pack: delete", ask(colin, "delete", f"/api/packs/{scratch_uuid}"))
+        self.rec("pack: delete one already deleted", ask(colin, "delete", f"/api/packs/{scratch_uuid}"))
+        # Someone not in a pack is told what they would be told if it did not exist, on every route.
+        for name, method, path in (
+                ("pack: get", "get", here), ("pack: rename", "put", here), ("pack: delete", "delete", here),
+                ("pack: access", "get", f"{here}/access"), ("pack: finish", "post", f"{here}/finish"),
+                ("pack: reopen", "post", f"{here}/reopen"), ("pack: duplicate", "post", f"{here}/duplicate"),
+                ("ops", "post", ops), ("events", "get", f"{here}/events"), ("seen", "put", f"{here}/seen"),
+                ("item: copy in", "post", items), ("member: add", "post", members),
+                ("pack invites", "get", invites), ("pack invite", "post", invites)):
+            body = {"name": "Mine", "seq": 1, "user_id": sam["id"], "email": "kim@example.com", **delete_points, **copy_in}
+            self.rec(f"{name}, a pack the caller is not in", ask(dana, method, path, json=body))
+
+        # Thirty invitations an hour per person, to packs and to teams.
+        waiting = ask(colin, "post", invites, json={"email": "kim@example.com"}).get_json()["invite"]
+        for _ in range(30):
+            if ask(colin, "post", f"{invites}/{waiting['id']}/resend").status_code == 429:
+                break
+        self.rec("pack invite: too many", ask(colin, "post", invites, json={"email": "lee@example.com"}))
+        self.rec("pack invite: send again, too many", ask(colin, "post", f"{invites}/{waiting['id']}/resend"))
+        for _ in range(30):
+            if ask(colin, "post", f"{here_team}/invites", json={}).status_code == 429:
+                break
+        self.rec("team invite: too many", ask(colin, "post", f"{here_team}/invites", json={}))
+
+        # The team, last: deleting it stops the pack being shared with it.
+        self.rec("team member: the owner leaves", ask(colin, "delete", f"{here_team}/members/{colin['id']}"))
+        self.rec("team member: remove someone not in the team", ask(colin, "delete", f"{here_team}/members/{dana['id']}"))
+        self.rec("team: delete, by an admin", ask(sam, "delete", here_team))
+        self.rec("team member: remove", ask(colin, "delete", f"{here_team}/members/{sam['id']}"))
+        self.rec("team: delete", ask(colin, "delete", here_team))
+
+        # Last, so the events it adds move no number above: a batch whose answer was lost, sent again by someone who may now
+        # only view. The refusal says what the pack took of it.
+        lost = {"ops": [{"type": "set", "item": "lz-1", "path": ["flightData", "callSign"], "value": "SAM 6", "client_op_id": "op-15"}]}
+        self.assertEqual(ask(colin, "put", f"{members}/{sam['id']}", json={"role": "editor"}).status_code, 200)
+        self.assertEqual(ask(sam, "post", ops, json=lost).status_code, 200)
+        self.assertEqual(ask(colin, "put", f"{members}/{sam['id']}", json={"role": "viewer"}).status_code, 200)
+        self.rec("ops: a batch the pack took, sent again by someone who may now only view", ask(sam, "post", ops, json=lost))
+
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
         self.accounts()
@@ -515,6 +836,7 @@ class NetworkFixtureTests(NativeAuthCase):
         self.threat_mask()
         self.planning()
         self.weather_summary()
+        self.packs()
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "
                            "generated ids and the server version replaced by placeholders. The native apps decode each body "
@@ -531,7 +853,7 @@ class NetworkFixtureTests(NativeAuthCase):
         text = self.dumps(document)
         if UPDATE:
             FIXTURE.parent.mkdir(parents=True, exist_ok=True)
-            FIXTURE.write_text(text, encoding="utf-8")
+            FIXTURE.write_text(text, encoding="utf-8", newline="\n")           # LF on Windows too, as .gitattributes keeps it
             return
         self.assertIsNotNone(committed, f"{FIXTURE} is missing; run with UPDATE_CONTRACTS=1")
         self.assertEqual(committed, json.loads(text), "the server's responses changed; review the diff, then regenerate")

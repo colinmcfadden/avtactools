@@ -92,20 +92,41 @@ open class DocumentSession<D : Any>(
      * when the person signs out or deletes the document, and one that cannot be closed would stay on screen for the next account.
      */
     suspend fun close() {
-        switching.withLock {
-            val closing = _active.value?.let(idOf)
-            try {
-                flush()
-            } finally {
-                closing?.let(store::release)
-                pending?.cancel()
-                undo.clear(); redo.clear(); publishDepths()
-                _active.value = null
-                unsaved = false
-                _saveFailed.value = false
-            }
+        switching.withLock { closeOpen() }
+    }
+
+    /**
+     * Closes document [id] as [close] does, if it is the one open once nothing else is opening or closing; false, and nothing changed, if it is
+     * not. For whoever decided to close it a moment before, such as a mission pack that removed the item: by the time the session is free the
+     * person may have opened another document, which must not be the one closed.
+     */
+    suspend fun closeIfOpen(id: String): Boolean = switching.withLock {
+        if (_active.value?.let(idOf) != id) return@withLock false
+        closeOpen()
+        true
+    }
+
+    // Under [switching].
+    private suspend fun closeOpen() {
+        val closing = _active.value?.let(idOf)
+        try {
+            flush()
+        } finally {
+            closing?.let(store::release)
+            pending?.cancel()
+            undo.clear(); redo.clear(); publishDepths()
+            _active.value = null
+            unsaved = false
+            _saveFailed.value = false
         }
     }
+
+    /**
+     * Document [id]: the open one, as the screens see it now, if it is that one; otherwise as its store has it, or null if there is none. For work
+     * that belongs to a document whichever is open by the time it is done, such as an analysis, so it reads the document through the same store
+     * the session writes it to (a mission pack's LZ/PZ as well as a library record).
+     */
+    suspend fun document(id: String): D? = _active.value?.takeIf { idOf(it) == id } ?: store.open(id)
 
     /**
      * A change to document [id] that is not the person's own edit, such as an analysis that has just come back: it belongs to the document it
@@ -163,9 +184,13 @@ open class DocumentSession<D : Any>(
     /** [change], then [tidy]: done to each version of the document it is applied to, so undo takes what followed the edit back with it. */
     private fun settled(change: (D) -> D): (D) -> D = { d -> tidy(d, change(d)) }
 
+    // Every step is worked out before any is replaced: a change that fails part-way (someone else's, laid over each version) leaves the history
+    // as it was, never half changed.
     private fun patchHistory(change: (D) -> D) {
-        for (i in undo.indices) undo[i] = undo[i].let { Step(it.label, change(it.before), change(it.after), it.key) }
-        for (i in redo.indices) redo[i] = redo[i].let { Step(it.label, change(it.before), change(it.after), it.key) }
+        val undone = undo.map { Step(it.label, change(it.before), change(it.after), it.key) }
+        val redone = redo.map { Step(it.label, change(it.before), change(it.after), it.key) }
+        undo.clear(); undo.addAll(undone)
+        redo.clear(); redo.addAll(redone)
     }
 
     /** Undoes the last edit. Returns its label, or null if there was nothing to undo. */
@@ -188,6 +213,22 @@ open class DocumentSession<D : Any>(
         publishDepths()
         unsaved = true
         pending?.cancel()
+        schedule()
+    }
+
+    /**
+     * The open document is owed a save although no edit just changed it: it differs from what its store has, by a change [tidy] made as it was
+     * opened (a mission pack's LZ/PZ whose doghouses give headings its item lacks, which the pack is to be told of, as the web's doghouse effect
+     * tells it), by a change whose save failed, or by one its store could not take yet (a pack paused for the account's sake). Saved after the
+     * usual pause; a save already waiting is not put off, so a document someone else keeps changing still goes.
+     */
+    fun owe() {
+        if (_active.value == null) return
+        unsaved = true
+        if (pending?.isActive != true) schedule()
+    }
+
+    private fun schedule() {
         pending = scope.launch {
             delay(SAVE_AFTER_STILL_MS)
             // Nothing here may escape: this scope has no one above it, and an uncaught failure would end the app. The changes are kept

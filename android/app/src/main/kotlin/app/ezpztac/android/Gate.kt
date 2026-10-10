@@ -5,6 +5,7 @@ import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AppConfig
 import app.ezpztac.network.AuthState
 import app.ezpztac.network.SignedOutReason
+import app.ezpztac.network.isBelowMinimum
 import app.ezpztac.network.updateRequired
 
 /** What the app shows in place of its own screens, if anything stands in the way. */
@@ -26,8 +27,12 @@ sealed interface Gate {
      */
     data class DataBelongsToSomeoneElse(val user: ApiUser, val unsyncedChanges: Int) : Gate
 
-    /** Everything is in order. [maintenance] is the server's notice, if it is down for work: a banner, never a block, since planning is local. */
-    data class Ready(val user: ApiUser, val maintenance: String?) : Gate
+    /**
+     * Everything is in order. [maintenance] is the server's notice, if it is down for work: a banner, never a block, since planning is local.
+     * [tooOld] is that this version is below the server's minimum as the device last heard it, with no config here to say so (no signal):
+     * planning still opens, nothing is sent (the owner's decision), and a banner says why.
+     */
+    data class Ready(val user: ApiUser, val maintenance: String?, val tooOld: Boolean = false) : Gate
 }
 
 /**
@@ -35,9 +40,10 @@ sealed interface Gate {
  * crew out of planning, and an unreadable minimum version means supported (see [updateRequired]).
  *
  * Order matters: an update comes first, because an app the server no longer supports must not be trusted to talk to it at all, even to
- * sign in; then who is signed in; then the gate; then whose plans are on the device.
+ * sign in; then who is signed in; then the gate; then whose plans are on the device. The minimum [remembered] from an earlier look blocks
+ * nothing on the screen, as no config does not: it only marks [Gate.Ready.tooOld] for the banner.
  */
-fun gateFor(config: AppConfig?, auth: AuthState, ownership: Ownership?, version: String): Gate {
+fun gateFor(config: AppConfig?, auth: AuthState, ownership: Ownership?, version: String, remembered: String? = null): Gate {
     if (config != null && config.updateRequired("android", version)) {
         return Gate.UpdateRequired(config.minAppVersion.android)
     }
@@ -48,7 +54,7 @@ fun gateFor(config: AppConfig?, auth: AuthState, ownership: Ownership?, version:
             !auth.user.accessOk -> Gate.NeedsAffiliation(auth.user)
             ownership == null -> Gate.Starting
             ownership is Ownership.SomeoneElses -> Gate.DataBelongsToSomeoneElse(auth.user, ownership.unsyncedChanges)
-            else -> Gate.Ready(auth.user, maintenanceNotice(config))
+            else -> Gate.Ready(auth.user, maintenanceNotice(config), tooOld = isBelowMinimum(version, remembered))
         }
     }
 }

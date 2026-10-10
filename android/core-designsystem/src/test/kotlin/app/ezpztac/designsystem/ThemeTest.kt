@@ -37,6 +37,17 @@ class ThemeTest {
     }
 
     @Test
+    fun `a toast never lights a cockpit, a dark card in every palette and night's own at night`() {
+        fun brightness(argb: Long) = Color(argb).let { it.red + it.green + it.blue }
+        Palette.entries.forEach { palette ->
+            val card = toastColorsFor(palette).container
+            assertEquals("$palette", true, brightness(card) < brightness(Tokens.Colors.Dark.onSurface) / 3)
+        }
+        assertEquals(Tokens.Colors.Night.surfaceVariant, toastColorsFor(Palette.Night).container)
+        assertEquals(true, brightness(toastColorsFor(Palette.Night).container) < brightness(toastColorsFor(Palette.Dark).container))
+    }
+
+    @Test
     fun `the touch target is above the platform minimum`() {
         assertEquals(true, Tokens.Size.touchTarget >= 56)
     }

@@ -11,15 +11,24 @@ import kotlinx.coroutines.CoroutineScope
  * What is the diagram's own is that its flight data follows its doghouses, as the web's `useDoghouses` effect does whenever they change (editing a
  * doghouse's heading, or analysing, which makes the standard two, sets the landing and takeoff headings): done to each version of the diagram a change
  * is applied to, so undo takes the heading back with the edit.
+ *
+ * A mission pack's LZ/PZ opens here too, under an id naming the pack and the item ([app.ezpztac.missionpacks.PackRef]), so every editor works on it
+ * as on any diagram; it is read from and written to [packs] ([PackItemStore]), never the library.
  */
 class DiagramSession(
     repository: DiagramRepository,
     scope: CoroutineScope,
+    /** Where a mission pack's LZ/PZs are read and written. None: an id naming a pack item opens nothing. */
+    packs: DocumentStore<Diagram>? = null,
 ) : DocumentSession<Diagram>(
-    store = object : DocumentStore<Diagram> {
-        override suspend fun open(uuid: String): Diagram? = repository.open(uuid)
-        override suspend fun save(document: Diagram): Diagram = repository.save(document)
-    },
+    store = PackRoutedStore(
+        library = object : DocumentStore<Diagram> {
+            override suspend fun open(uuid: String): Diagram? = repository.open(uuid)
+            override suspend fun save(document: Diagram): Diagram = repository.save(document)
+        },
+        packs = packs,
+        idOf = { it.id },
+    ),
     scope = scope,
     idOf = { it.id },
     tidy = { before, after -> Doghouses.settle(before, after) },

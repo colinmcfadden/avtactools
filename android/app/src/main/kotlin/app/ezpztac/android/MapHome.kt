@@ -1,11 +1,13 @@
 package app.ezpztac.android
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,23 +20,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.android.export.ShareExport
+import app.ezpztac.android.packs.InviteNotices
+import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.TextAction
+import app.ezpztac.designsystem.ToastHost
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
@@ -73,8 +80,18 @@ private val TOOLBAR_ABOVE_READOUT = 56.dp
 /** How far from a graphic's point a finger still counts as on it: the platform's minimum touch target is 48 dp across, so 24 dp each way. */
 private const val TOUCH_RADIUS_DP = 24.0
 
+/** Why nothing is being sent: the person can still plan, and needs to know their work is waiting, not lost, and how to end the wait. */
+private const val TOO_OLD = "This version of the app is no longer supported by the server. Until you update it, your changes stay on this phone and nothing is sent."
+
 /** The bar for what is held does not stretch across a tablet. */
 private val HELD_BAR_MAX_WIDTH = 460.dp
+
+/**
+ * How far above the sheet's edge a toast sits: clear of the grid readout, as the drawing toolbar is, and above whatever floats there now
+ * ([floatingPx] tall, in pixels at [density]), with a gap between.
+ */
+internal fun toastLift(floatingPx: Int, density: Float): androidx.compose.ui.unit.Dp =
+    if (floatingPx <= 0) TOOLBAR_ABOVE_READOUT else TOOLBAR_ABOVE_READOUT + (floatingPx / density).dp + Tokens.Spacing.sm.dp
 
 /**
  * The signed-in app: the map is the root, with a bottom sheet over it (docs/NATIVE_APPS_PLAN.md, "Mobile UX"). The sheet holds the
@@ -88,6 +105,13 @@ fun MapHome(
     maintenance: String?,
     onSignOut: () -> Unit,
     canMakeAircraft: Boolean = true,
+    /** What became of an invitation link the app was opened with ([InviteNotices]), and the try it answers. */
+    invite: InviteState = InviteState.None,
+    inviteAttempt: Int = 0,
+    onRetryInvite: () -> Unit = {},
+    onDismissInvite: () -> Unit = {},
+    /** This version is below the server's minimum as last heard, with no config to show the update screen: nothing is sent ([Gate.Ready.tooOld]). */
+    tooOld: Boolean = false,
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
 ) {
@@ -104,6 +128,8 @@ fun MapHome(
     val context = LocalContext.current
     val scaffold = rememberBottomSheetScaffoldState()
     val sheetScope = rememberCoroutineScope()
+    // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
+    var floating by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(host) {
         viewModel.commands.collect { command ->
@@ -120,8 +146,8 @@ fun MapHome(
     LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
     // A file another app opened with this one (Files, a mail, the share sheet) is put to the person here: nothing is imported until they accept.
     IncomingHost()
-    // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { home.appStopped() }
+    // An invitation link: said above the sheet, in the scaffold's own toasts.
+    InviteNotices(invite, inviteAttempt, scaffold.snackbarHostState, onRetry = onRetryInvite, onDismiss = onDismissInvite)
 
     // Units' symbols are drawn the same way on the map and in the sheet's builder: one renderer, and its cache, for both.
     CompositionLocalProvider(LocalSymbolRenderer provides home.symbols) {
@@ -129,12 +155,17 @@ fun MapHome(
             scaffoldState = scaffold,
             sheetPeekHeight = PEEK,
             sheetContainerColor = MaterialTheme.colorScheme.surface,
+            // The app's toasts, in its own colours (never bright at night). The scaffold puts them on the sheet's edge, over the grid readout, so
+            // they are lifted clear of it and of whatever floats above it, whose buttons a toast that stays (Try again) would otherwise cover;
+            // with the sheet open they go to the foot of the screen, above the system's buttons.
+            snackbarHost = { ToastHost(it, Modifier.navigationBarsPadding().padding(bottom = toastLift(floating, density.density))) },
             sheetContent = {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.xl.dp, vertical = Tokens.Spacing.md.dp),
                     verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
                 ) {
                     if (maintenance != null) Banner(maintenance, BannerKind.Warning)
+                    if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
                     // A new diagram starts at the middle of the map: the grid under the crosshair, or its degrees where there is no grid.
                     DiagramsHost(
                         suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon },
@@ -168,16 +199,22 @@ fun MapHome(
                 bottomInset = PEEK,
                 // Over the readout, above the sheet's peek: only there while a boundary or a route is being drawn (never both: drawing one refuses the other).
                 overlay = {
-                    val toolbar = Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = PEEK + TOOLBAR_ABOVE_READOUT)
-                    BoundaryToolbarHost(crosshair = state.center, modifier = toolbar)
-                    RouteToolbarHost(crosshair = state.center, modifier = toolbar)
-                    // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
-                    if (!drawing) {
-                        HeldObjectBarHost(
-                            onOptions = { sheetScope.launch { scaffold.bottomSheetState.expand() } },
-                            onDone = home::releaseHeld,
-                            modifier = toolbar.widthIn(max = HELD_BAR_MAX_WIDTH),
-                        )
+                    // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = PEEK + TOOLBAR_ABOVE_READOUT)
+                            .onSizeChanged { floating = it.height },
+                        contentAlignment = Alignment.BottomCenter,
+                    ) {
+                        BoundaryToolbarHost(crosshair = state.center)
+                        RouteToolbarHost(crosshair = state.center)
+                        // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
+                        if (!drawing) {
+                            HeldObjectBarHost(
+                                onOptions = { sheetScope.launch { scaffold.bottomSheetState.expand() } },
+                                onDone = home::releaseHeld,
+                                modifier = Modifier.widthIn(max = HELD_BAR_MAX_WIDTH),
+                            )
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxSize(),

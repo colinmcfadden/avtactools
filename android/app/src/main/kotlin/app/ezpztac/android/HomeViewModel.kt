@@ -323,19 +323,6 @@ class HomeViewModel @Inject constructor(
 
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */
     fun baseMapChosen(id: String) = session.setQuietly { it.copy(view = it.view.copy(mapStyle = id)) }
-
-    /** The app is going out of sight: what has been changed is written now, because the system may end the process without warning. */
-    fun appStopped() {
-        viewModelScope.launch {
-            try {
-                session.flush()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Still owed: the session keeps the changes and says so ([DiagramSession.saveFailed]); the next save tries again.
-            }
-        }
-    }
 }
 
 private fun TerrainAnalysis.toSlopeImage(): SlopeImage? {

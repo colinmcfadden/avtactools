@@ -77,11 +77,13 @@ public sealed interface SlopeState {
  *
  * An analysis is not an edit to take back: it is applied quietly ([DiagramSession.update]). If the area cannot be found nothing changes.
  * If the slope cannot be measured the analysis still stands and [slopes] says so.
+ *
+ * The diagram is read and written through the session ([DiagramSession.document], [DiagramSession.update]), so a mission pack's LZ/PZ is analysed
+ * as a library one is, and its result goes to the pack's item: to the editor when it is open, else to the item itself, while its pack is open.
  */
 public class AnalysisService(
     private val api: TerrainApi,
     private val session: DiagramSession,
-    private val repository: DiagramRepository,
     private val scope: CoroutineScope,
     /** Where a result is applied to a diagram: the thread that edits (the main one in the app). */
     private val applyContext: CoroutineContext,
@@ -180,7 +182,7 @@ public class AnalysisService(
         }
     }
 
-    private suspend fun load(id: String): Diagram? = session.active.value?.takeIf { it.id == id } ?: repository.open(id)
+    private suspend fun load(id: String): Diagram? = session.document(id)
 
     private fun fail(diagramId: String, message: String) {
         _status.value = AnalysisStatus.Failed(diagramId, message)

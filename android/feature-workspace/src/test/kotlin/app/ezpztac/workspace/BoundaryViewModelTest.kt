@@ -64,7 +64,7 @@ class BoundaryViewModelTest {
         val repository = DiagramRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler())
         val session = DiagramSession(repository, scope.backgroundScope)
         val terrain = HeldTerrain()
-        val analysis = AnalysisService(terrain, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
+        val analysis = AnalysisService(terrain, session, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
         val drawing = BoundaryDrawing(session)
         val corners = app.ezpztac.data.BoundaryCorners(session)
         val model = BoundaryViewModel(drawing, session, analysis, corners)

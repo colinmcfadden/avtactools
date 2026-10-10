@@ -5,6 +5,7 @@ matching the contract breaks apps nobody can update. These tests make that a
 failure here first.
 """
 
+import json
 import os
 import sys
 import unittest
@@ -139,6 +140,64 @@ class CheckerCatchesDriftTests(unittest.TestCase):
         self.assertEqual(validate(SPEC, person, {"id": 1, "name": "Colin"}), [])
         self.assertTrue(validate(SPEC, person, {"id": 1}))
         self.assertTrue(validate(SPEC, {"allOf": [{"$ref": "#/components/schemas/Person"}]}, None))
+
+
+class PackSessionFixtureTests(unittest.TestCase):
+    """contracts/fixtures/packs/session.json replays what the server sends a client with a mission pack open.
+
+    The native apps' pack sync is held to that file, so its inputs must be what the spec says the server sends
+    (and what the session sends back must be what the route takes). The web generator checks the required keys by
+    hand; this holds every input to the spec itself, nested types and enums included.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        path = BACKEND_DIR.parent / "contracts" / "fixtures" / "packs" / "session.json"
+        cls.scenarios = json.loads(path.read_text(encoding="utf-8"))["scenarios"]
+        cls.steps = [step for scenario in cls.scenarios for step in scenario["steps"]]
+        schemas = SPEC["components"]["schemas"]
+        cls.pack, cls.event, cls.answer = schemas["Pack"], schemas["PackEvent"], schemas["PackOpsResult"]
+        cls.batch = SPEC["paths"]["/api/packs/{uuid}/ops"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+
+    def conforms(self, schema, value, where):
+        self.assertEqual(validate(SPEC, schema, value), [], where)
+
+    def test_every_pack_a_scenario_opens_or_reloads_is_a_pack(self):
+        for scenario in self.scenarios:
+            self.conforms(self.pack, scenario["pack"], scenario["name"])
+        reloads = [step for step in self.steps if step["do"] == "reload"]
+        self.assertGreater(len(reloads), 3)
+        for step in reloads:
+            self.conforms(self.pack, step["pack"], "reload")
+
+    def test_every_event_and_every_answer_is_what_the_server_sends(self):
+        received = [step for step in self.steps if step["do"] == "receive"]
+        answered = [step for step in self.steps if step["do"] == "batchAnswered"]
+        self.assertGreater(len(received), 30)
+        self.assertGreater(len(answered), 10)
+        for step in received:
+            for event in step["events"]:
+                self.conforms(self.event, event, f"event {event['seq']} {event['type']}")
+        for step in answered:
+            self.conforms(self.answer, step["answer"], "answer")
+
+    def test_what_a_refusal_says_the_pack_took_is_what_the_server_sends(self):
+        # `taken` (what of a refused batch the pack's log already has) comes only on the ops route's 403 pack_read_only,
+        # 413 and 423, as a list of the same results a 200 carries.
+        taken = SPEC["components"]["schemas"]["PackError"]["properties"]["taken"]
+        failures = [step["failure"] for step in self.steps if step["do"] == "batchFailed"]
+        carrying = [failure for failure in failures if "taken" in failure]
+        self.assertGreater(len([failure for failure in carrying if failure["taken"]]), 3)
+        for failure in carrying:
+            self.conforms(taken, failure["taken"], f"taken of a {failure['status']}")
+            self.assertTrue(failure["status"] in (413, 423) or failure.get("code") == "pack_read_only", failure)
+
+    def test_every_batch_the_session_sends_is_one_the_route_takes(self):
+        batches = [step["result"]["batch"] for step in self.steps if step["do"] == "nextBatch" and step["result"]]
+        self.assertGreater(len(batches), 20)
+        for batch in batches:
+            self.conforms(self.batch, batch, "batch")
+            self.assertTrue(1 <= len(batch["ops"]) <= 200)
 
 
 class ClientHeaderSpecMatchesCodeTests(unittest.TestCase):

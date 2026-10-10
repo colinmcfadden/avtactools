@@ -47,6 +47,16 @@ class GateTest {
         assertTrue(gateFor(config(minimum = null), signedIn, Ownership.Yours, "1.7.6") is Gate.Ready)
     }
 
+    // The owner's decision: below the server's minimum nothing is sent. With no config here to show the update screen, the minimum the device last
+    // heard blocks nothing on the screen (planning is local), and only marks the gate for the banner that says why nothing goes.
+    @Test
+    fun `a minimum the device last heard opens planning with no config, marked for the banner`() {
+        assertEquals(Gate.Ready(user(), null, tooOld = true), gateFor(null, signedIn, Ownership.Yours, "1.7.6", remembered = "1.8.0"))
+        assertEquals(Gate.Ready(user(), null, tooOld = false), gateFor(null, signedIn, Ownership.Yours, "1.7.6", remembered = "1.7.6"))
+        assertEquals(Gate.Ready(user(), null, tooOld = false), gateFor(null, signedIn, Ownership.Yours, "1.7.6", remembered = null))
+        assertEquals(Gate.UpdateRequired("1.8.0"), gateFor(config(minimum = "1.8.0"), signedIn, Ownership.Yours, "1.7.6", remembered = "1.8.0"))
+    }
+
     // -- Who is signed in ---------------------------------------------------------------------------
 
     @Test

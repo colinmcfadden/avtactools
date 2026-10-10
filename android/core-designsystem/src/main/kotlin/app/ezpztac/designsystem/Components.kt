@@ -17,6 +17,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -78,6 +81,26 @@ fun Banner(
                 ) { Text(actionLabel, fontWeight = FontWeight.Bold) }
             }
         }
+    }
+}
+
+/**
+ * Where toasts appear: short notices about something that has just happened (the redesign's `Snackbar`, docs/native-design), each with its
+ * words, at most one action and a close button, drawn in the palette's own colours ([toastColorsFor]), never Material's stock ones. A screen
+ * reader announces each, and Material gives one more time when an accessibility service is on.
+ */
+@Composable
+fun ToastHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
+    val colors = LocalToastColors.current
+    SnackbarHost(state, modifier) { data ->
+        Snackbar(
+            snackbarData = data,
+            shape = RoundedCornerShape(Tokens.Radius.md.dp),
+            containerColor = androidx.compose.ui.graphics.Color(colors.container),
+            contentColor = androidx.compose.ui.graphics.Color(colors.content),
+            actionColor = androidx.compose.ui.graphics.Color(colors.action),
+            dismissActionContentColor = androidx.compose.ui.graphics.Color(colors.content),
+        )
     }
 }
 

@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // A link from an email opens the app on its screen; rotation and recreation do not replay it. Nor does a file: it is read once, when it arrives.
-        if (savedInstanceState == null) {
+        if (savedInstanceState == null && isNews(intent)) {
             shell.onLink(intent?.dataString)
             receiveFiles(intent)
         }
@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (!isNews(intent)) return
         shell.onLink(intent.dataString)
         receiveFiles(intent)
     }
@@ -50,3 +51,10 @@ class MainActivity : ComponentActivity() {
         setIntent(Intent(Intent.ACTION_MAIN))
     }
 }
+
+/**
+ * Whether [intent] brings something new. A task reopened from the recent apps after its activity was finished (Back, on Android 10 and 11;
+ * a reboot, on any) is started again with the intent that first started it, flagged as coming from history: a link in it was already read,
+ * and reading it again would accept an invitation twice (the server then answers that it was used) or offer a file again.
+ */
+internal fun isNews(intent: Intent?): Boolean = intent == null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0

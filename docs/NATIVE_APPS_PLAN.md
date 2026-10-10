@@ -167,7 +167,8 @@ Map tiles come from Mapbox and the FAA when online, and from pack files when not
 | `core-symbols` | `SymbolRenderer`: JS engine, SVG rasteriser, caches | `core-model` |
 | `core-network` | API client, auth session, token refresh, request priority | `core-model` |
 | `core-data` | Database, repositories, sync engine | `core-model`, `core-network` |
-| `core-mappacks` | Map-pack download, verification, storage, PMTiles sources | `core-network` |
+| `core-missionpacks` | Mission packs (`docs/MISSION_PACKS.md`): the operations a pack's items are edited with, the client session, sending and following an open pack. Not map packs, which are `core-mappacks` | `core-model`, `core-network` |
+| `core-mappacks` | Map-pack download, verification, storage, PMTiles sources (offline maps; not mission packs, which are `core-missionpacks`) | `core-network` |
 | `core-designsystem` | Tokens, type, colour, shared components (sheet, inspector, readout pill) | — |
 | `feature-auth`, `-map`, `-workspace`, `-analysis`, `-graphics`, `-routes`, `-threats`, `-weather`, `-exports`, `-aircraft`, `-history`, `-mappacks`, `-viewer3d`, `-settings` | One screen family each, with its store | Core modules only |
 
