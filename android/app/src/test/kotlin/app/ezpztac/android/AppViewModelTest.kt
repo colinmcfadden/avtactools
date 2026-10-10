@@ -221,11 +221,17 @@ class AppViewModelTest {
         }
     }
 
+    /** The oldest version the server last said it supports, as the device remembers it. */
+    private class KeptMinimum(var kept: String? = null) : MinimumVersion {
+        override fun remembered() = kept
+        override fun remember(minimum: String?) { kept = minimum }
+    }
+
     private class Rig(
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
         val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val incoming: IncomingFiles,
-        val packs: RecordingPacks, val store: Flaky, val invites: FakeInvites,
+        val packs: RecordingPacks, val store: Flaky, val invites: FakeInvites, val minimum: KeptMinimum,
         /** The shell's saved state, as the activity keeps it through a turn of the phone and the process being ended. */
         val saved: SavedStateHandle,
         private val makeShell: (SavedStateHandle) -> AppViewModel,
@@ -242,6 +248,7 @@ class AppViewModelTest {
         configure: FakeBackend.() -> Unit = {},
         version: String = "1.7.6",
         setUpPacks: RecordingPacks.() -> Unit = {},
+        minimum: String? = null,
     ): Rig {
         val backend = FakeBackend(stored).apply(configure)
         val accounts = FakeAccounts(owner, unsynced)
@@ -261,15 +268,16 @@ class AppViewModelTest {
         val incoming = IncomingFiles()
         val packs = RecordingPacks().apply(setUpPacks)
         val invites = FakeInvites()
+        val kept = KeptMinimum(minimum)
         val shell = { saved: SavedStateHandle ->
-            AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, packs, invites, saved, version)
+            AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, packs, invites, kept, saved, version)
         }
         val saved = SavedStateHandle()
         val model = shell(saved)
         advanceUntilIdle()
         return Rig(
             backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock,
-            incoming, packs, store, invites, saved, shell,
+            incoming, packs, store, invites, kept, saved, shell,
         ) { cleared }
     }
 
@@ -796,6 +804,35 @@ class AppViewModelTest {
         assertTrue(r.threats.entries.value.isEmpty())
         assertNull(r.threatVault.kept)
         assertEquals(1, r.exportsCleared())
+    }
+
+    // -- An app the server no longer supports -------------------------------------------------------
+    // The owner's decision: nothing goes to a shared pack behind the "Update required" screen, where nobody can see what it does.
+
+    /** The last of the pack gate's starts and stops. */
+    private fun RecordingPacks.lastGate() = log.last { it == "disable" || it.startsWith("enable") }
+
+    @Test
+    fun `below the server's minimum version packs stop, and the minimum is remembered for the sync`() = runTest(dispatcher) {
+        val r = rig(owner = 1, configure = { config = Result.success(config(minimum = "9.0.0")) })
+        assertEquals(Gate.UpdateRequired("9.0.0"), r.model.gate.value)
+        assertEquals("disable", r.packs.lastGate())
+        assertEquals("9.0.0", r.minimum.kept)
+    }
+
+    @Test
+    fun `a launch with no signal goes by the minimum it last heard, so planning opens and no pack runs`() = runTest(dispatcher) {
+        val r = rig(owner = 1, minimum = "9.0.0")                                           // the config cannot be fetched
+        assertEquals(Gate.Ready(user(), null), r.model.gate.value)                          // no config at launch blocks nothing on the screen...
+        assertTrue(r.packs.log.toString(), r.packs.log.none { it.startsWith("enable") })   // ...but nothing goes to a pack
+        assertEquals("9.0.0", r.minimum.kept)
+    }
+
+    @Test
+    fun `a config with no minimum forgets the one remembered, and packs run`() = runTest(dispatcher) {
+        val r = rig(owner = 1, minimum = "9.0.0", configure = { config = Result.success(config(minimum = null)) })
+        assertEquals("enable 1 Pilot 1", r.packs.lastGate())
+        assertNull(r.minimum.kept)
     }
 
     // -- Invitation links --------------------------------------------------------------------------

@@ -1050,7 +1050,8 @@ client is built around not losing one:
   while pack edits wait, in work the shell cannot cut short (`NonCancellable`): an activity that is finishing clears its view model right after
   ON_STOP. A sync asked for while one runs is not queued again (`KEEP`), and that one leaves the open pack to its own client, so what is left goes
   at the next launch or periodic sync. Every pack call in the shell is guarded: a broken database never ends the app, nor keeps a sign-out's
-  wipes from running. The background sync drains packs before the library (what a pack refused is kept as a library record, which then goes up in
+  wipes from running. Below the server's minimum version they stop (`packGateFor`'s `tooOld`: the fetched config's minimum, else the one the
+  device last heard), and the background sync does nothing (*The shell's rules*). The background sync drains packs before the library (what a pack refused is kept as a library record, which then goes up in
   the same run): RETRY from packs, or a drain that throws, makes the run RETRY with the library still synced; PAUSED does not.
 
 **The app module and the Android build.**
@@ -1083,7 +1084,9 @@ client is built around not losing one:
   shared components found a blue "Retry" on an amber banner and a busy button that turned grey and hid its own spinner. What cannot be
   seen this way: OpenGL (the 3D view), MapLibre, animation, and the system's own windows (the Google account sheet).
 - **The shell's rules** (`Gate.kt`, `AppViewModel`; each has a test, and mutation runs killed every one of them): an app below the
-  server's minimum version is stopped *before* anything else, even sign-in; **maintenance is a banner, never a block**, because planning is
+  server's minimum version is stopped *before* anything else, even sign-in, and **sends nothing while it is** (owner, 2026-10-10: mission packs
+  stop and the library's sync does nothing; what waits stays and goes once the app is updated). The minimum is remembered (`MinimumVersion`)
+  so a sync WorkManager runs with no shell, and a launch before the config has come, obey it too; **maintenance is a banner, never a block**, because planning is
   local; no config at launch (no signal) blocks nothing; a device that has not heard from the server for **14 days** (`OfflineGrace`) must
   sign in again, and its plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
   shown nothing of them, nothing is uploaded under their account, and they choose between clearing them (told how many changes never

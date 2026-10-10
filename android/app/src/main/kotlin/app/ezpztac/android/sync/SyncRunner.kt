@@ -1,6 +1,7 @@
 package app.ezpztac.android.sync
 
 import app.ezpztac.android.AuthBackend
+import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.packs.MISSION_PACKS
 import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.data.AccountScope
@@ -11,11 +12,13 @@ import app.ezpztac.missionpacks.DrainOutcome
 import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AuthState
+import app.ezpztac.network.isBelowMinimum
 import kotlinx.coroutines.CancellationException
 import app.ezpztac.sync.StopReason
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncReport
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
 
 /** What a scheduled sync should tell WorkManager. */
@@ -48,8 +51,13 @@ class EngineSyncRunner @Inject constructor(
     private val packs: PackRuntime,
     private val diagrams: DiagramSession,
     private val routes: RouteSession,
+    private val minimum: MinimumVersion,
+    @Named("appVersion") private val version: String,
 ) : SyncRunner {
     override suspend fun runOnce(): SyncOutcome {
+        // An app the server no longer supports sends nothing, packs or library, until it is updated (the owner's decision): what waits stays
+        // on the device. Asking again cannot help, and the updated app's launch asks for a sync of its own.
+        if (isBelowMinimum(version, minimum.remembered())) return SyncOutcome.Done
         if (auth.state.value is AuthState.Unknown) {
             // WorkManager can start the process for this alone, with no shell to have read the stored session: this is the process's launch, so do
             // what the shell does at one. The 14-day rule comes before any call, because a refresh would stamp the session as confirmed; a process

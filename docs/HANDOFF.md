@@ -36,7 +36,8 @@ redesigned screens).
   the commit after the merge. A13 runs packs with the app (`0de2522`, and `e832c62` for what its review proved), merged after them and
   joined to A12's editors in the commit after that merge. A14 accepts an invitation link once the person can open packs (on
   `feat/android-mission-packs-a14`), and a toast says what became of it; its review proved one account's answer could be shown to the
-  next account to sign in, and a retry that failed as the last one did left no toast and no way to try again, both fixed. **Not built:**
+  next account to sign in, and a retry that failed as the last one did left no toast and no way to try again, both fixed. Below the
+  server's minimum version the app now sends nothing, packs or library, until it is updated (owner, 2026-10-10). **Not built:**
   A15 (docs), then the screens. Apart from that toast, nothing a person sees has changed yet: nothing opens or shows a pack until the screens.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module

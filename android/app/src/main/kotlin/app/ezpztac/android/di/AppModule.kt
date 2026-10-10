@@ -7,6 +7,8 @@ import app.ezpztac.android.AuthBackend
 import app.ezpztac.android.BuildConfig
 import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
+import app.ezpztac.android.MinimumVersion
+import app.ezpztac.android.MinimumVersionPreferences
 import app.ezpztac.android.packs.ApiPackInvites
 import app.ezpztac.android.packs.EnginePackRuntime
 import app.ezpztac.android.packs.PackInvites
@@ -232,6 +234,9 @@ interface AppBindings {
 
     @Binds
     fun packInvites(impl: ApiPackInvites): PackInvites
+
+    @Binds
+    fun minimumVersion(impl: MinimumVersionPreferences): MinimumVersion
 
     @Binds
     fun conflictResolver(impl: SyncEngine): ConflictResolver

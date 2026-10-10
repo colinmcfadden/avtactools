@@ -25,6 +25,7 @@ import app.ezpztac.network.ApiException
 import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AppConfig
 import app.ezpztac.network.AuthState
+import app.ezpztac.network.isBelowMinimum
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -61,6 +62,7 @@ class AppViewModel @Inject constructor(
     private val mapTokens: MapTokenSink,
     private val packs: PackRuntime,
     invites: PackInvites,
+    private val minimumVersion: MinimumVersion,
     private val saved: SavedStateHandle,
     @Named("appVersion") private val version: String,
 ) : ViewModel() {
@@ -105,8 +107,12 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             // Mission packs run for the account while it may have them: apart from the collector above, which does not hear a feature
             // turned on or off by an admin (a refreshed user with the same id and access). A failure (the device's database) is tried
-            // again at the next change, or the next launch: it must not end the app.
-            combine(backend.state, ownership, ::packGateFor).distinctUntilChanged().collect { gate ->
+            // again at the next change, or the next launch: it must not end the app. Below the server's minimum version they stop: the
+            // config's when it has come, else the one this device last heard, so a launch with no signal obeys it too.
+            val remembered = minimumVersion.remembered()
+            combine(backend.state, ownership, config) { auth, ownership, config ->
+                packGateFor(auth, ownership, tooOld = isBelowMinimum(version, if (config != null) config.minAppVersion.android else remembered))
+            }.distinctUntilChanged().collect { gate ->
                 when (gate) {
                     is PackGate.Run -> quietly {
                         packs.enable(gate.user)
@@ -253,6 +259,7 @@ class AppViewModel @Inject constructor(
     suspend fun loadConfig() {
         try {
             val fetched = backend.config()
+            minimumVersion.remember(fetched.minAppVersion.android)        // for the sync, which never asks, and the next launch with no signal
             config.value = fetched
             mapTokens.update(fetched.mapbox.publicToken)                  // remembered, so the next start with no signal can draw imagery
         } catch (_: ApiException) {
@@ -326,9 +333,13 @@ internal sealed interface PackGate {
  * collector can do that before this one has heard of the sign-out, so a stop then would come before the open documents were written. A
  * different account always passes through a sign-out, which stops packs itself; and the engine, enabled for this one, stops any client of
  * another's ([app.ezpztac.missionpacks.PackEngine.enable]).
+ *
+ * An app [tooOld] for the server (below its minimum version: [MinimumVersion]) stops them, whatever else is known: what waits stays on the
+ * device, and goes once the app is updated.
  */
-internal fun packGateFor(auth: AuthState, ownership: Ownership?): PackGate {
+internal fun packGateFor(auth: AuthState, ownership: Ownership?, tooOld: Boolean): PackGate {
     if (auth !is AuthState.SignedIn) return PackGate.Leave
+    if (tooOld) return PackGate.Stop
     val user = auth.user
     if (!user.accessOk || !user.hasFeature(MISSION_PACKS)) return PackGate.Stop
     return when (ownership) {

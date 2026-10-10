@@ -53,6 +53,16 @@ class AppVersionTest {
         assertFalse(config("1.4.0", null).updateRequired("android", "not a version"))
         assertFalse(config("1.4.0", "1.4.0").updateRequired("web", "0.0.1"))
     }
+
+    @Test
+    fun `a minimum as the device remembers it is read the same way`() {
+        assertTrue(isBelowMinimum("1.3.9", "1.4.0"))
+        assertTrue(isBelowMinimum("1.4.0-beta.1", "1.4.0"))
+        assertFalse(isBelowMinimum("1.4.0", "1.4.0"))
+        assertFalse(isBelowMinimum("1.3.9", null))
+        assertFalse(isBelowMinimum("1.3.9", "garbage"))
+        assertFalse(isBelowMinimum("not a version", "1.4.0"))
+    }
 }
 
 class ClientInfoTest {

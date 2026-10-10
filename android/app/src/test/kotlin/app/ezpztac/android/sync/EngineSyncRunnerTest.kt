@@ -2,6 +2,7 @@ package app.ezpztac.android.sync
 
 import app.ezpztac.android.ApiClientBackend
 import app.ezpztac.android.AuthBackend
+import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.missionpacks.DrainOutcome
 import app.ezpztac.missionpacks.PackUser
@@ -121,6 +122,12 @@ class EngineSyncRunnerTest {
         override suspend fun unsentCount(): Int = error("the shell's, not the runner's")
     }
 
+    /** The oldest version the server last said it supports, as the device remembers it. */
+    private class KeptMinimum(var kept: String? = null) : MinimumVersion {
+        override fun remembered() = kept
+        override fun remember(minimum: String?) = error("the shell's, which asks for the config, not the runner's")
+    }
+
     /** The plans on the device: one change made here that nobody has sent. */
     private class Device {
         val store = InMemorySyncStore()
@@ -131,25 +138,52 @@ class EngineSyncRunnerTest {
     }
 
     /** One process's runner, wired as Hilt wires it. */
-    private fun TestScope.runner(api: SyncApi, device: Device, auth: AuthBackend, accounts: AccountScope, packs: PackRuntime = FakePacks()) = EngineSyncRunner(
+    private fun TestScope.runner(
+        api: SyncApi, device: Device, auth: AuthBackend, accounts: AccountScope, packs: PackRuntime = FakePacks(), minimum: String? = null,
+    ) = EngineSyncRunner(
         SyncEngine(api, device.store, device.ids),
         auth,
         accounts,
         packs,
         DiagramSession(DiagramRepository(device.records, device.store, RecordingScheduler()), backgroundScope),
         RouteSession(RouteRepository(device.records, device.store, RecordingScheduler()), backgroundScope),
+        KeptMinimum(minimum),
+        VERSION,
     )
 
     private class Rig(val runner: EngineSyncRunner, val auth: FakeAuth, val accounts: FakeAccounts, val server: FakeServer, val device: SyncRepository, val packs: FakePacks)
 
     /** A runner over a device with a change to send, and a server that holds one record this device has not seen. */
-    private suspend fun TestScope.rig(auth: FakeAuth, owner: Int?): Rig {
+    private suspend fun TestScope.rig(auth: FakeAuth, owner: Int?, minimum: String? = null): Rig {
         val device = Device().withAChange()
         val server = FakeServer()
         server.createElsewhere(RecordKind.LZ, "made-elsewhere", "LZ CROW", doc("v" to 1))
         val accounts = FakeAccounts(owner)
         val packs = FakePacks()
-        return Rig(runner(server, device, auth, accounts, packs), auth, accounts, server, device.records, packs)
+        return Rig(runner(server, device, auth, accounts, packs, minimum), auth, accounts, server, device.records, packs)
+    }
+
+    // The owner's decision: an app the server no longer supports must not go on writing to shared packs, or the library, behind the "Update
+    // required" screen. WorkManager's process never asks for the config, so it goes by the minimum the app last heard.
+    @Test
+    fun `an app below the minimum the server last gave sends nothing, packs or library, and what waits stays`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1, minimum = "9.0.0")
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())                       // asking again cannot help: the updated app asks for its own
+
+        assertEquals(emptyList<String>(), r.server.log)
+        assertEquals(emptyList<PackUser>(), r.packs.drained)
+        assertEquals(1, r.device.pending())                                       // the change made here, kept for the update
+    }
+
+    @Test
+    fun `at the minimum, or with none, it syncs as ever`() = runTest {
+        listOf(VERSION, "1.0.0", null, "not a version").forEach { minimum ->
+            val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1, minimum = minimum)
+            assertEquals("$minimum", SyncOutcome.Done, r.runner.runOnce())
+            assertEquals("$minimum", 0, r.device.pending())
+            assertEquals("$minimum", 1, r.packs.drained.size)
+        }
     }
 
     @Test
@@ -333,3 +367,5 @@ class EngineSyncRunnerTest {
         assertEquals(1, device.records.pending())                                 // the change waits for the person to sign in again
     }
 }
+
+private const val VERSION = "1.7.6"
