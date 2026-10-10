@@ -331,11 +331,16 @@ answers plain HTTP for health checks).
 | → client | `{"type": "presence", "pack", "people": [{"session", "user_id", "name", "focus"}]}` | Who has the pack open, this socket included |
 | → client | `{"type": "closed", "reason": code}` then a close frame | Why the socket is being closed |
 
-Close codes: **4401** the token was refused (sign in again); **4403** / **4404** the
-pack is not this person's to see; **4410** it was deleted; **4400** / **4408** a bad
-or missing hello (a client bug); **1013** the service could not reach the API or the
-client fell 1,000 messages behind (try again later); **1009** a frame over 8 KB.
-Anything else: reconnect with growing pauses, and poll meanwhile.
+Close codes: **4401** the token was refused (sign in again); **4403** the account may
+not open packs now: the API's `/access` answers 403 only for that (`feature_disabled`,
+or `affiliation_required` from the `.mil` gate), never for the pack itself; **4404** the
+pack is not this person's to see (not in it, or gone); **4410** it was deleted;
+**4400** / **4408** a bad or missing hello (a client bug); **1013** the service could
+not reach the API or the client fell 1,000 messages behind (try again later); **1009**
+a frame over 8 KB. Anything else: reconnect with growing pauses, and poll meanwhile.
+The web takes 4403 as the pack gone; the Android client asks the API and pauses with
+every edit kept, as for any refusal about the account (`AGENTS.md` §15 lists the web's
+side).
 
 **Settings.** On the API, `REALTIME_PUBLIC_URL` (`ws://` or `wss://`) is the
 `live_url` every pack response carries; unset, it is null and clients poll. On the
@@ -369,8 +374,8 @@ Its docstring has the `docker run` line.
 1. **Packs for one person** (backend: done; web screens: done on `feat/menu-redesign`). Tables, pack routes, copy-in from the library, the operation stream and the log, finish.
 2. **Sharing** (backend: done). Teams, name search, email invites, roles, members.
 3. **Live sync** (done; not deployed). The live service (§6), the API's `NOTIFY`, and the web's sync client with polling where there is no service (Fly). Deploying it is an owner step: a Coolify app for `/backend/realtime`, a public hostname for it through the Cloudflare Tunnel, and `REALTIME_PUBLIC_URL` on the API. Supabase's Session pooler should carry `LISTEN`; it has not been tried against it yet.
-4. **Android** (in progress; the plan, the owner's decisions and each step's status are in `docs/ANDROID_MISSION_PACKS_PLAN.md`). Room migration (pack, pack_item, pack_member, pack_op_outbox, pack_event), a `PackSyncEngine` beside the existing engine, OkHttp's WebSocket, an offline outbox, pack screens. Operations refused because the pack was finished meanwhile are saved to the library as "NAME (my edits)", the web's name for them (`myEditsName`, held to `contracts/fixtures/packs/shared.json`): nothing is silently dropped. Record the pack routes' responses in `contracts/fixtures/network/responses.json` then.
-5. **History and finish UI**: done on the web; Android with step 4.
+4. **Android** (the engine done, A1–A15; the screens not started. The plan, the owner's decisions and each step are in `docs/ANDROID_MISSION_PACKS_PLAN.md`, and what is built in `AGENTS.md` §17, *Mission packs on Android*). The pack routes' responses are recorded in `contracts/fixtures/network/responses.json` with strict types; a typed call for every route and the live stream on OkHttp's own WebSocket; the web's pack code ported and held to `contracts/fixtures/packs`; `PackEngine` beside the library's sync engine, with an offline outbox in Room (database version 3, four tables: `pack`, `pack_item`, `pack_op_outbox`, `pack_own`); the existing LZ and route editors joined to a pack's items; packs run with the app and drain in the background sync; invitation links. Edits a pack refused are saved to the library as "NAME (my edits)", the web's name for them (`myEditsName`, held to `contracts/fixtures/packs/shared.json`), whenever the pack is not open: nothing is silently dropped. Still to build: the screens (the switcher, New pack, the Pack panel with Items and History, Members, the finished banner, invitations) in the redesigned shell.
+5. **History and finish UI**: done on the web; Android with the screens of step 4.
 
 **Not in v1:** rewinding a pack to an earlier point (the log makes it possible
 later), imported AMPS missions in packs, and an admin who edits packs.

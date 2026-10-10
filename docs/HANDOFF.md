@@ -5,14 +5,14 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-09 (the Android mission-pack engine on `feat/android-mission-packs`: A1–A13 done, A14–A15 next, then the
-redesigned screens).
+Last refreshed: 2026-10-10 (the Android mission-pack engine on `feat/android-mission-packs`: A1–A15 done; next the redesigned
+screens).
 
 ---
 
 ## 1. Where things stand
 
-- **Branch:** `feat/android-mission-packs` (pushed; a PR to `develop` once the engine is done). It is `develop` plus the mission-pack
+- **Branch:** `feat/android-mission-packs` (pushed; the engine is done, so a PR to `develop` is the owner's call, now or with the screens). It is `develop` plus the mission-pack
   work below. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
   `claude/jolly-wozniak-i7rlrq`, `feat/mission-packs`, the web menu redesign `feat/menu-redesign` and `fix/menu-redesign-ui`), then
   took the fixes that made CI green on it: the tests run on JDK 21 (`ed6ec02`), no machine's JDK in the shared Gradle settings
@@ -20,7 +20,7 @@ redesigned screens).
   (`refactor/backend-structure`) is **not** in `develop` and nothing here depends on it.
 - **Mission packs and the web menu redesign are built on the web and backend** (`docs/MISSION_PACKS.md`, `docs/MENU_REDESIGN.md`),
   still off for everyone but admins and ticked testers (`entitlements.DEFAULT_OFF`), and the live service is not deployed (clients
-  poll). **Android has the pack engine half built and no screens** (next bullet). The native screens for both are in
+  poll). **Android has the pack engine built and no screens** (next bullet). The native screens for both are in
   `docs/native-design/` (read its README; the screenshots themselves are gitignored).
 - **The Android mission-pack engine** is built to `docs/ANDROID_MISSION_PACKS_PLAN.md` (the design, the owner's decisions, the
   commit plan with each step marked done or to do); AGENTS.md §17's `core-missionpacks` and `core-network` rows say what each piece
@@ -39,8 +39,9 @@ redesigned screens).
   next account to sign in, and a retry that failed as the last one did left no toast and no way to try again, both fixed. Below the
   server's minimum version the app now sends nothing, packs, invitations or library, until it is updated, and says so in a banner when it
   cannot show the update screen (owner, 2026-10-10); a second review found the first version still accepted links and heard a raised
-  minimum only at launch, both fixed. **Not built:**
-  A15 (docs), then the screens. Apart from that toast, nothing a person sees has changed yet: nothing opens or shows a pack until the screens.
+  minimum only at launch, both fixed. A15 wrote the whole down (AGENTS.md §17, *Mission packs on Android*; §15 lists the web's side of what
+  the port does not copy). **Not built:** the screens. Apart from that toast and banner, nothing a person sees has changed yet: nothing opens
+  or shows a pack until the screens.
 - **What exists** — the plan's P0 and P1 (shell, auth, map, diagrams, analysis, graphics, units, aircraft, boundary) and P2 (routes: sketch, plan, nav log, winds, elevations, `.msnx`
   export, GPX/FPL hand-off; local points; weather; the local-only threat picture; files opened from Files, mail and the share sheet; a mission's routes brought in as a copy). Per-module
   state is in AGENTS.md §17's table. **Not in P2 yet:** an ATAK data package. (Saved missions, which keep the `.msnx` as the document and write edits back into it, and dragging and turning on the map are built: AGENTS.md §17, *Saved missions* and *Dragging and turning on the map*.)
@@ -52,7 +53,7 @@ redesigned screens).
   `FLAG_SECURE` and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
   "not verifiable here" in AGENTS.md). The first device run is the first real test of all of them.
 - **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`, §3): green for every engine commit,
-  A1–A12 (A11 on the owner's other PC), and for the merge of the two, on the owner's workstation (the live-server tests ran, none skipped). CI was green on `develop` at `ed6ec02` (Android on
+  A1–A15 (A11 on the owner's other PC), and for the merge of A11 and A12, on the owner's workstation (the live-server tests ran, none skipped). CI was green on `develop` at `ed6ec02` (Android on
   JDK 21, the backend's contract tests) and runs again on the PR. Re-run it after any change before pushing.
 - **The owner's Windows workstation builds the app** since 2026-10-08 (§3 has the setup): a full build is about 7 minutes warm, 36
   minutes cold. The owner works from more than one PC; whichever builds needs §3's setup and its own `android/local.properties`.
@@ -61,33 +62,15 @@ redesigned screens).
 
 ## 2. Next work, in order
 
-1. **Finish the mission-pack engine: A15** (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Commit plan* item 17: what it covers). A11 (Room), A12
-   (the editors), A13 (the app runs packs) and A14 (invitation links) are done; A13 starts the editors' join when packs run
-   (`PackWorkspace.start`) and stops packs through `PackWorkspace.stop`, which writes and closes whatever of a pack is open in the editors
-   before the engine stops, whatever the reason; A14 keeps `?invite=<token>` and accepts it once the person can open packs (`InviteLinks`
-   beside `AuthLinks`). A15 writes it down (AGENTS.md §17 'Mission packs', §15's web candidates, MISSION_PACKS §8, this file). **How they were
-   built:** one commit per step, implemented, reviewed independently, fixed, and committed only with its module's tests and the full build
-   green. A1–A10 had two reviewers each, about an hour a commit; A11, A12 and A13 one each, and every one found something real (A12 a
-   blocker: a change arriving while an item opened could be reverted for everyone; A13 four ordering bugs a queued test dispatcher hid,
-   AGENTS.md §14). A11–A13 were each built by one agent with the full build and one independent review, at the owner's request.
-   The background on what came before follows (the contracts and seams below are done or settled).
-   - **Contracts first, on the web** (done: `38e9d7b`, `02100c1`; `contracts/README.md` lists them). At the start only the operation rules were pinned (`contracts/fixtures/packs/ops.json`, 134 cases). Also pin, from
-     `frontend/src/feature/missionPacks/`: `packDiff.js` (the operations an edit becomes), `packSession.js` (the client's state: pending,
-     confirmed, replay, finished and dropped), which fields of an LZ and a route set are each person's own and never in a pack
-     (`packLz.sharedLzData`, `packRoutes.sharedRouteData`), and the history sentences (`describeLzChange` and its peers). Record the pack
-     routes' real responses in `contracts/fixtures/network/responses.json` (`backend/tests/test_network_fixtures.py`).
-   - **Then Android** (A1–A10 done; the Room tables are A11): the operation applier held to `ops.json`; the diff and session held to their fixtures; typed calls for the pack, team
-     and invite routes in `core-network` (they go through `ApiClient`'s internals, so they live there) and the live stream on OkHttp's own
-     WebSocket (no new dependency); a `PackSyncEngine` beside `SyncEngine` over a `PackStore`, with Room tables in a version 3 database that
-     `AccountScope.wipe` also clears; the live-server scenarios (`backend/tests/live_server.py` already serves the pack and team routes and
-     makes accounts with `features`, so a test account can have `mission_packs`).
-   - **Seams found in the code** (2026-10-08; still true, and A12 is where they are met): `DocumentSession` already writes through a `DocumentStore` interface, but `DiagramSession` and
-     `RouteSession` bind it to the Library repositories, and `reidentify`/`follow` assume a Library record. `DiagramNormalizer` keeps graphics
-     whole but drops unknown top-level, analysis and view keys, so diff the normalized base against the normalized edit, as the web does.
-     Applying someone else's change through `setQuietly` marks the document unsaved: diff against a base that already has it, or it is sent
-     back. A route point saved by an old web release may have no `id`, and then the diff sends its list whole. Point sets have no editing
-     session (the web cannot edit points either). `AuthLinks` reads only `auth=verify|reset`: `?invite=<token>` needs its own link type kept
-     across sign-in. Edits a finished pack refuses are saved to the Library as "NAME (my edits)", the web's name (owner, 2026-10-08): nothing is dropped silently.
+1. **The screens**, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
+   AGENTS.md §17, *Mission packs on Android*). First the redesigned shell (2), then the pack screens in it (3); both are drawn in
+   `docs/native-design/`. **How the engine was built**, worth keeping for the screens: one commit per step, implemented, reviewed
+   independently, fixed, and committed only with its module's tests and the full build green. A1–A10 had two reviewers each; A11–A14 one
+   each (A14 a second for its fixes), and every one found something real (A12 a blocker: a change arriving while an item opened could be
+   reverted for everyone; A13 four ordering bugs a queued test dispatcher hid, AGENTS.md §14; A14 one account's invitation shown to the next,
+   and a too-old app still joining packs). Each fix was checked by breaking it and seeing its test fail. The plan's *Deferred to the
+   screens* lists what the screens owe the engine (the keep-or-discard offer for dropped edits, the Library-or-pack workspace, opening a
+   pack once an invitation is accepted, read-only gating, the presence pointer).
 2. **The redesigned shell** to `docs/native-design/` (the AP and AT screens): the navigation bar (LZ/PZ, Routes, Threats, Imports), the
    workspace chip, Import, the Library page, the save dialog, the import review; the tablet layout (material3-adaptive). Settle §5's design
    decisions first. `HomeViewModel` (346 lines, 21 dependencies) has no notion of a workspace; the Library-or-pack workspace belongs here.
