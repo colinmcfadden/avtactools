@@ -96,6 +96,9 @@ class AppViewModelTest {
     ) : AuthBackend {
         override val state = MutableStateFlow<AuthState>(AuthState.Unknown)
         var config: Result<AppConfig> = Result.failure(NetworkException("no signal", null, requestMayHaveBeenSent = false))
+
+        /** Holds the answer to a config call until it is completed: the config still on its way. */
+        var configHeld: CompletableDeferred<Unit>? = null
         var refreshed: Result<ApiUser>? = null
         var offlineTooLong = false
         val calls = mutableListOf<String>()
@@ -119,7 +122,7 @@ class AppViewModelTest {
             state.value = AuthState.SignedIn(user)
             return user
         }
-        override suspend fun config(): AppConfig { calls += "config"; return config.getOrThrow() }
+        override suspend fun config(): AppConfig { calls += "config"; configHeld?.await(); return config.getOrThrow() }
         override suspend fun logout(): Boolean { calls += "logout"; state.value = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN); return true }
     }
 
@@ -222,9 +225,9 @@ class AppViewModelTest {
     }
 
     /** The oldest version the server last said it supports, as the device remembers it. */
-    private class KeptMinimum(var kept: String? = null) : MinimumVersion {
-        override fun remembered() = kept
-        override fun remember(minimum: String?) { kept = minimum }
+    private class KeptMinimum(kept: String? = null) : MinimumVersion {
+        override val remembered = MutableStateFlow(kept)
+        override fun remember(minimum: String?) { remembered.value = minimum }
     }
 
     private class Rig(
@@ -817,7 +820,7 @@ class AppViewModelTest {
         val r = rig(owner = 1, configure = { config = Result.success(config(minimum = "9.0.0")) })
         assertEquals(Gate.UpdateRequired("9.0.0"), r.model.gate.value)
         assertEquals("disable", r.packs.lastGate())
-        assertEquals("9.0.0", r.minimum.kept)
+        assertEquals("9.0.0", r.minimum.remembered.value)
     }
 
     @Test
@@ -825,14 +828,76 @@ class AppViewModelTest {
         val r = rig(owner = 1, minimum = "9.0.0")                                           // the config cannot be fetched
         assertEquals(Gate.Ready(user(), null), r.model.gate.value)                          // no config at launch blocks nothing on the screen...
         assertTrue(r.packs.log.toString(), r.packs.log.none { it.startsWith("enable") })   // ...but nothing goes to a pack
-        assertEquals("9.0.0", r.minimum.kept)
+        assertEquals("9.0.0", r.minimum.remembered.value)
     }
 
     @Test
     fun `a config with no minimum forgets the one remembered, and packs run`() = runTest(dispatcher) {
         val r = rig(owner = 1, minimum = "9.0.0", configure = { config = Result.success(config(minimum = null)) })
         assertEquals("enable 1 Pilot 1", r.packs.lastGate())
-        assertNull(r.minimum.kept)
+        assertNull(r.minimum.remembered.value)
+    }
+
+    @Test
+    fun `packs and an invitation wait for the launch's look at the config, then go by what it says`() = runTest(dispatcher) {
+        listOf("9.0.0" to false, null to true).forEach { (minimum, goes) ->
+            val held = CompletableDeferred<Unit>()
+            val r = rig(owner = 1, configure = { configHeld = held; config = Result.success(config(minimum = minimum)) })
+            r.model.onLink(INVITE_LINK)
+            advanceUntilIdle()
+            assertTrue("$minimum", r.packs.log.none { it.startsWith("enable") })                 // the server may have raised its minimum since
+            assertEquals("$minimum", emptyList<String>(), r.invites.asked)
+
+            held.complete(Unit)
+            advanceUntilIdle()
+            assertEquals("$minimum", if (goes) "enable 1 Pilot 1" else "disable", r.packs.lastGate())
+            assertEquals("$minimum", if (goes) listOf(INVITE_TOKEN) else emptyList(), r.invites.asked)
+        }
+    }
+
+    @Test
+    fun `with no signal the look ends at once, and the minimum last heard decides`() = runTest(dispatcher) {
+        val r = rig(owner = 1)                                                              // nothing heard, nothing fetched: packs run, as ever
+        assertEquals("enable 1 Pilot 1", r.packs.lastGate())
+    }
+
+    @Test
+    fun `a kept link waits while the app is too old, and is accepted once it is not`() = runTest(dispatcher) {
+        val r = rig(owner = 1, minimum = "9.0.0")                                           // known too old, and no config to say otherwise
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        r.model.retryInvite()
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), r.invites.asked)                                  // accepting joins a shared pack: nothing is sent
+        assertEquals(INVITE_TOKEN, r.saved.get<String>(SAVED_INVITE))                       // kept for when it may go
+
+        r.backend.config = Result.success(config(minimum = null))                           // the minimum was lowered, or the app updated
+        r.model.appStarted()
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+    }
+
+    @Test
+    fun `coming to the front looks at the config again, and a raised minimum stops packs then`() = runTest(dispatcher) {
+        val r = rig(owner = 1, configure = { config = Result.success(config(minimum = null)) })
+        assertEquals("enable 1 Pilot 1", r.packs.lastGate())
+        val looks = r.backend.calls.count { it == "config" }
+
+        r.backend.config = Result.success(config(minimum = "9.0.0"))                       // raised while the app was in the back
+        r.model.appStarted()
+        advanceUntilIdle()
+
+        assertEquals(looks + 1, r.backend.calls.count { it == "config" })
+        assertEquals(Gate.UpdateRequired("9.0.0"), r.model.gate.value)
+        assertEquals("disable", r.packs.lastGate())
+    }
+
+    @Test
+    fun `a raised minimum the background sync heard stops packs here at once`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.minimum.remember("9.0.0")                                                         // what the runner does in this process
+        advanceUntilIdle()
+        assertEquals("disable", r.packs.lastGate())
     }
 
     // -- Invitation links --------------------------------------------------------------------------

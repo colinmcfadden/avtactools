@@ -40,6 +40,7 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
@@ -50,6 +51,11 @@ import java.util.Collections
  * signed in are synced.
  */
 class EngineSyncRunnerTest {
+    private fun config(minimum: String?) = AppConfig(
+        1, "1.7.6", AppConfig.MinAppVersion(android = minimum), AppConfig.Maintenance(false, null),
+        AppConfig.Services(false, false), AppConfig.MapboxConfig("pk.x"),
+    )
+
     private fun user(id: Int) = ApiUser(
         id = id, email = "pilot$id@example.com", name = "Pilot $id", role = "user", isAdmin = false, isActive = true, features = emptyMap(), accessOk = true,
     )
@@ -81,7 +87,10 @@ class EngineSyncRunnerTest {
         }
 
         override suspend fun refreshUser(): ApiUser = error("not the runner's to ask")
-        override suspend fun config(): AppConfig = error("not the runner's to ask")
+        /** The server's config, or no answer (the default): the runner asks for the minimum before it sends. */
+        var config: Result<AppConfig> = Result.failure(NetworkException("no signal", null, requestMayHaveBeenSent = false))
+        var configLooks = 0
+        override suspend fun config(): AppConfig { configLooks++; return config.getOrThrow() }
         override suspend fun logout(): Boolean = error("not the runner's to ask")
     }
 
@@ -123,9 +132,9 @@ class EngineSyncRunnerTest {
     }
 
     /** The oldest version the server last said it supports, as the device remembers it. */
-    private class KeptMinimum(var kept: String? = null) : MinimumVersion {
-        override fun remembered() = kept
-        override fun remember(minimum: String?) = error("the shell's, which asks for the config, not the runner's")
+    private class KeptMinimum(kept: String? = null) : MinimumVersion {
+        override val remembered = MutableStateFlow(kept)
+        override fun remember(minimum: String?) { remembered.value = minimum }
     }
 
     /** The plans on the device: one change made here that nobody has sent. */
@@ -139,7 +148,7 @@ class EngineSyncRunnerTest {
 
     /** One process's runner, wired as Hilt wires it. */
     private fun TestScope.runner(
-        api: SyncApi, device: Device, auth: AuthBackend, accounts: AccountScope, packs: PackRuntime = FakePacks(), minimum: String? = null,
+        api: SyncApi, device: Device, auth: AuthBackend, accounts: AccountScope, packs: PackRuntime = FakePacks(), minimum: KeptMinimum = KeptMinimum(),
     ) = EngineSyncRunner(
         SyncEngine(api, device.store, device.ids),
         auth,
@@ -147,11 +156,14 @@ class EngineSyncRunnerTest {
         packs,
         DiagramSession(DiagramRepository(device.records, device.store, RecordingScheduler()), backgroundScope),
         RouteSession(RouteRepository(device.records, device.store, RecordingScheduler()), backgroundScope),
-        KeptMinimum(minimum),
+        minimum,
         VERSION,
     )
 
-    private class Rig(val runner: EngineSyncRunner, val auth: FakeAuth, val accounts: FakeAccounts, val server: FakeServer, val device: SyncRepository, val packs: FakePacks)
+    private class Rig(
+        val runner: EngineSyncRunner, val auth: FakeAuth, val accounts: FakeAccounts, val server: FakeServer, val device: SyncRepository, val packs: FakePacks,
+        val minimum: KeptMinimum,
+    )
 
     /** A runner over a device with a change to send, and a server that holds one record this device has not seen. */
     private suspend fun TestScope.rig(auth: FakeAuth, owner: Int?, minimum: String? = null): Rig {
@@ -160,7 +172,8 @@ class EngineSyncRunnerTest {
         server.createElsewhere(RecordKind.LZ, "made-elsewhere", "LZ CROW", doc("v" to 1))
         val accounts = FakeAccounts(owner)
         val packs = FakePacks()
-        return Rig(runner(server, device, auth, accounts, packs, minimum), auth, accounts, server, device.records, packs)
+        val kept = KeptMinimum(minimum)
+        return Rig(runner(server, device, auth, accounts, packs, kept), auth, accounts, server, device.records, packs, kept)
     }
 
     // The owner's decision: an app the server no longer supports must not go on writing to shared packs, or the library, behind the "Update
@@ -174,6 +187,52 @@ class EngineSyncRunnerTest {
         assertEquals(emptyList<String>(), r.server.log)
         assertEquals(emptyList<PackUser>(), r.packs.drained)
         assertEquals(1, r.device.pending())                                       // the change made here, kept for the update
+    }
+
+    @Test
+    fun `a device nobody opens hears a raised minimum from the server, before it sends anything`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)                       // nothing heard before
+        r.auth.config = Result.success(config(minimum = "9.0.0"))
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals("9.0.0", r.minimum.remembered.value)                                 // and the shell, in this process, goes by it too
+        assertEquals(emptyList<String>(), r.server.log)
+        assertEquals(emptyList<PackUser>(), r.packs.drained)
+        assertEquals(1, r.device.pending())
+    }
+
+    @Test
+    fun `a minimum the server has lowered again lets it sync`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1, minimum = "9.0.0")
+        r.auth.config = Result.success(config(minimum = null))
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertNull(r.minimum.remembered.value)
+        assertEquals(0, r.device.pending())
+        assertEquals(1, r.packs.drained.size)
+    }
+
+    @Test
+    fun `a raised minimum heard while the packs went keeps the library's sync from going`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
+        r.packs.drain = { r.minimum.remember("9.0.0") }                                    // the app, in this process, heard it meanwhile
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals(1, r.device.pending())
+        assertEquals(emptyList<String>(), r.server.log)
+    }
+
+    @Test
+    fun `nobody signed in, or another account's plans, asks nothing about the minimum`() = runTest {
+        val nobody = rig(FakeAuth(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN)), owner = 1)
+        assertEquals(SyncOutcome.Done, nobody.runner.runOnce())
+        assertEquals(0, nobody.auth.configLooks)
+        val other = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 2)
+        assertEquals(SyncOutcome.Done, other.runner.runOnce())
+        assertEquals(0, other.auth.configLooks)
     }
 
     @Test

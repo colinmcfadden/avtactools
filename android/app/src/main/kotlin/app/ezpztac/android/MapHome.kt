@@ -1,6 +1,7 @@
 package app.ezpztac.android
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
@@ -19,11 +20,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -79,6 +84,13 @@ private const val TOUCH_RADIUS_DP = 24.0
 private val HELD_BAR_MAX_WIDTH = 460.dp
 
 /**
+ * How far above the sheet's edge a toast sits: clear of the grid readout, as the drawing toolbar is, and above whatever floats there now
+ * ([floatingPx] tall, in pixels at [density]), with a gap between.
+ */
+internal fun toastLift(floatingPx: Int, density: Float): androidx.compose.ui.unit.Dp =
+    if (floatingPx <= 0) TOOLBAR_ABOVE_READOUT else TOOLBAR_ABOVE_READOUT + (floatingPx / density).dp + Tokens.Spacing.sm.dp
+
+/**
  * The signed-in app: the map is the root, with a bottom sheet over it (docs/NATIVE_APPS_PLAN.md, "Mobile UX"). The sheet holds the
  * diagrams, the aircraft, with the version and a sign-out below; the planning tools go into it as they are built. Opening a diagram takes the map to it.
  */
@@ -111,6 +123,8 @@ fun MapHome(
     val context = LocalContext.current
     val scaffold = rememberBottomSheetScaffoldState()
     val sheetScope = rememberCoroutineScope()
+    // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
+    var floating by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(host) {
         viewModel.commands.collect { command ->
@@ -137,8 +151,9 @@ fun MapHome(
             sheetPeekHeight = PEEK,
             sheetContainerColor = MaterialTheme.colorScheme.surface,
             // The app's toasts, in its own colours (never bright at night). The scaffold puts them on the sheet's edge, over the grid readout, so
-            // they sit where the drawing toolbar does, clear of it; with the sheet open they go to the foot of the screen, above its buttons.
-            snackbarHost = { ToastHost(it, Modifier.navigationBarsPadding().padding(bottom = TOOLBAR_ABOVE_READOUT)) },
+            // they are lifted clear of it and of whatever floats above it, whose buttons a toast that stays (Try again) would otherwise cover;
+            // with the sheet open they go to the foot of the screen, above the system's buttons.
+            snackbarHost = { ToastHost(it, Modifier.navigationBarsPadding().padding(bottom = toastLift(floating, density.density))) },
             sheetContent = {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.xl.dp, vertical = Tokens.Spacing.md.dp),
@@ -178,16 +193,22 @@ fun MapHome(
                 bottomInset = PEEK,
                 // Over the readout, above the sheet's peek: only there while a boundary or a route is being drawn (never both: drawing one refuses the other).
                 overlay = {
-                    val toolbar = Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = PEEK + TOOLBAR_ABOVE_READOUT)
-                    BoundaryToolbarHost(crosshair = state.center, modifier = toolbar)
-                    RouteToolbarHost(crosshair = state.center, modifier = toolbar)
-                    // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
-                    if (!drawing) {
-                        HeldObjectBarHost(
-                            onOptions = { sheetScope.launch { scaffold.bottomSheetState.expand() } },
-                            onDone = home::releaseHeld,
-                            modifier = toolbar.widthIn(max = HELD_BAR_MAX_WIDTH),
-                        )
+                    // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = PEEK + TOOLBAR_ABOVE_READOUT)
+                            .onSizeChanged { floating = it.height },
+                        contentAlignment = Alignment.BottomCenter,
+                    ) {
+                        BoundaryToolbarHost(crosshair = state.center)
+                        RouteToolbarHost(crosshair = state.center)
+                        // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
+                        if (!drawing) {
+                            HeldObjectBarHost(
+                                onOptions = { sheetScope.launch { scaffold.bottomSheetState.expand() } },
+                                onDone = home::releaseHeld,
+                                modifier = Modifier.widthIn(max = HELD_BAR_MAX_WIDTH),
+                            )
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxSize(),

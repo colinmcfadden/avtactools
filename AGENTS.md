@@ -1050,8 +1050,8 @@ client is built around not losing one:
   while pack edits wait, in work the shell cannot cut short (`NonCancellable`): an activity that is finishing clears its view model right after
   ON_STOP. A sync asked for while one runs is not queued again (`KEEP`), and that one leaves the open pack to its own client, so what is left goes
   at the next launch or periodic sync. Every pack call in the shell is guarded: a broken database never ends the app, nor keeps a sign-out's
-  wipes from running. Below the server's minimum version they stop (`packGateFor`'s `tooOld`: the fetched config's minimum, else the one the
-  device last heard), and the background sync does nothing (*The shell's rules*). The background sync drains packs before the library (what a pack refused is kept as a library record, which then goes up in
+  wipes from running. Below the server's minimum version (as last heard, `MinimumVersion`) they stop, and until a launch's first look at the
+  config has ended they wait as they are (`packGateFor`'s `tooOld` and `looked`); the background sync looks for itself (*The shell's rules*). The background sync drains packs before the library (what a pack refused is kept as a library record, which then goes up in
   the same run): RETRY from packs, or a drain that throws, makes the run RETRY with the library still synced; PAUSED does not.
 
 **The app module and the Android build.**
@@ -1085,8 +1085,11 @@ client is built around not losing one:
   seen this way: OpenGL (the 3D view), MapLibre, animation, and the system's own windows (the Google account sheet).
 - **The shell's rules** (`Gate.kt`, `AppViewModel`; each has a test, and mutation runs killed every one of them): an app below the
   server's minimum version is stopped *before* anything else, even sign-in, and **sends nothing while it is** (owner, 2026-10-10: mission packs
-  stop and the library's sync does nothing; what waits stays and goes once the app is updated). The minimum is remembered (`MinimumVersion`)
-  so a sync WorkManager runs with no shell, and a launch before the config has come, obey it too; **maintenance is a banner, never a block**, because planning is
+  stop, no invitation is accepted, and the library's sync does nothing; what waits stays and goes once the app is updated). Every look at the
+  config is remembered first (`MinimumVersion`, one live value in the process) and that is what they all go by: the shell looks at launch and
+  each time the app comes to the front, the background sync looks before it sends (so a device nobody opens hears a raised minimum; the config
+  is public and confirms no session), and until a launch's first look has ended, answered or not, nothing goes out, since the server may have
+  raised it since the device last heard; **maintenance is a banner, never a block**, because planning is
   local; no config at launch (no signal) blocks nothing; a device that has not heard from the server for **14 days** (`OfflineGrace`) must
   sign in again, and its plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
   shown nothing of them, nothing is uploaded under their account, and they choose between clearing them (told how many changes never
@@ -1102,7 +1105,8 @@ client is built around not losing one:
   sign-in screens': the shell keeps the token in its saved state (through a sign-in, a turn of the phone and the process being ended, as the web
   keeps it for the tab) and accepts it once the gate is `Ready` (signed in, past the gate, the plans here theirs) with Mission Packs on; while
   they are off it waits (`InviteState.Waiting`). Only a token of the server's shape (`^[A-Za-z0-9_-]{16,200}$`) is kept, anything else is
-  dropped unsent; one request at a time per link however often it is looked at (`InviteAcceptance`: a second accept would be refused as used),
+  dropped unsent; it is not accepted while the app may not send (below the server's minimum, or before a launch's first look at the config:
+  accepting joins a shared pack); one request at a time per link however often it is looked at (`InviteAcceptance`: a second accept would be refused as used),
   and only the link still kept is asked about; it is let go once accepted or refused for good, and kept for a retry after no connection, a 429,
   a 5xx or a refusal about the account (signed out, the gate, Mission Packs off: **not like the web**, which drops it, as owner decision 4 keeps
   edits). Opening the kept link again asks again. **What became of a link is the account's own**: the shell outlives a sign-out, where the web's
@@ -1111,7 +1115,9 @@ client is built around not losing one:
   The shell exposes `inviteState`, `inviteAttempt`, `retryInvite` and `dismissInvite`, and **a toast above the sheet says what became of it**
   (`InviteNotices`: accepting, joined, waiting, or failed with *Try again* when it may pass; the web toasts a join or a failure), keyed on the
   attempt too, so a retry that fails as the last one did is told again. The toast is lifted clear of the grid readout (a scaffold's toast sits on
-  the sheet's edge, over it). Opening the pack joined waits for the pack screens.
+  the sheet's edge, over it) and of whatever floats above it, a drawing toolbar or the held object's bar, measured (`toastLift`), whose buttons a
+  toast that stays would otherwise cover; on a small phone with a tall bar up it can reach the crosshair. Opening the pack joined waits for the
+  pack screens.
 - **Google sign-in** (`CredentialManagerGoogleSignIn`): Credential Manager, offered only when the build has
   `-Pezpz.googleClientId=<web client ID>` (the audience the server lists in `GOOGLE_CLIENT_IDS`); the app's own Android OAuth
   client (package + signing certificate) must exist in the same Google Cloud project. No test reaches it (it needs Play services and

@@ -29,8 +29,10 @@ import app.ezpztac.network.isBelowMinimum
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -91,13 +93,23 @@ class AppViewModel @Inject constructor(
     /** One more for every try at the link, so the same answer to a new try (a retry that failed as the last one did) is told again. */
     val inviteAttempt: StateFlow<Int> = invitation.attempts
 
+    // Whether this launch has looked at the server's config yet, answered or not. Until it has, nothing goes out: the server may have raised its
+    // minimum version since this device last heard (the owner's decision: nothing is sent below it). After, the minimum remembered decides, which
+    // every look updates first, the background sync's included.
+    private val configLooked = MutableStateFlow(false)
+    private var configLook: Job? = null
+
+    /** Whether this app may send anything now: the launch has looked at the config, and this version is not below the minimum last heard. */
+    private val mayGoOut: Flow<Boolean> =
+        combine(configLooked, minimumVersion.remembered) { looked, minimum -> looked && !isBelowMinimum(version, minimum) }
+
     init {
         viewModelScope.launch {
             backend.restore()
             backend.endSessionIfOfflineTooLong()
             if (backend.state.value is AuthState.SignedIn) refreshUserQuietly()
         }
-        viewModelScope.launch { loadConfig() }
+        lookAtConfig()
         viewModelScope.launch {
             // Whose plans these are is worked out once for each account that signs in here, and again if the gate changes.
             backend.state
@@ -107,11 +119,10 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             // Mission packs run for the account while it may have them: apart from the collector above, which does not hear a feature
             // turned on or off by an admin (a refreshed user with the same id and access). A failure (the device's database) is tried
-            // again at the next change, or the next launch: it must not end the app. Below the server's minimum version they stop: the
-            // config's when it has come, else the one this device last heard, so a launch with no signal obeys it too.
-            val remembered = minimumVersion.remembered()
-            combine(backend.state, ownership, config) { auth, ownership, config ->
-                packGateFor(auth, ownership, tooOld = isBelowMinimum(version, if (config != null) config.minAppVersion.android else remembered))
+            // again at the next change, or the next launch: it must not end the app. Below the server's minimum version (as last heard)
+            // they stop, and until this launch has looked at the config they wait.
+            combine(backend.state, ownership, minimumVersion.remembered, configLooked) { auth, ownership, minimum, looked ->
+                packGateFor(auth, ownership, tooOld = isBelowMinimum(version, minimum), looked = looked)
             }.distinctUntilChanged().collect { gate ->
                 when (gate) {
                     is PackGate.Run -> quietly {
@@ -124,9 +135,9 @@ class AppViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            // An invitation is accepted once the person is in (signed in, past the gate, the plans here theirs), and asked about again when
-            // Mission Packs are turned on or off for them, or another link comes.
-            combine(gate, inviteToken) { gate, token -> (gate as? Gate.Ready)?.user to token }
+            // An invitation is accepted once the person is in (signed in, past the gate, the plans here theirs) and the app may send (accepting
+            // joins a shared pack), and asked about again when Mission Packs are turned on or off for them, or another link comes.
+            combine(gate, inviteToken, mayGoOut) { gate, token, may -> (gate as? Gate.Ready)?.user?.takeIf { may } to token }
                 .distinctUntilChanged()
                 .collect { (user, token) -> acceptInvite(user, token) }
         }
@@ -143,8 +154,12 @@ class AppViewModel @Inject constructor(
 
     /** Asks again about the invitation link that could not get through. */
     fun retryInvite() {
-        viewModelScope.launch { acceptInvite((gate.value as? Gate.Ready)?.user, inviteToken.value) }
+        viewModelScope.launch { acceptInvite(userWhoMaySend(), inviteToken.value) }
     }
+
+    // The person in, while the app may send: what the invitation collector asks, read now.
+    private fun userWhoMaySend(): ApiUser? =
+        (gate.value as? Gate.Ready)?.user?.takeIf { configLooked.value && !isBelowMinimum(version, minimumVersion.remembered.value) }
 
     /** Puts away what became of the invitation link, once the person has seen it. */
     fun dismissInvite() {
@@ -157,6 +172,7 @@ class AppViewModel @Inject constructor(
      */
     fun appStarted() {
         threats.expireIfOld()
+        lookAtConfig()                                                    // the server may have raised its minimum, or begun maintenance, meanwhile
         packs.foreground(true)
         packs.wake()
     }
@@ -255,15 +271,23 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    /** Asks the server for its config. Called at launch and from the "try again" on a banner. */
+    // One look at a time: the launch's and the first coming to the front's would otherwise both ask.
+    private fun lookAtConfig() {
+        if (configLook?.isActive == true) return
+        configLook = viewModelScope.launch { loadConfig() }
+    }
+
+    /** Asks the server for its config: at launch, and each time the app comes to the front ([appStarted]). */
     suspend fun loadConfig() {
         try {
             val fetched = backend.config()
-            minimumVersion.remember(fetched.minAppVersion.android)        // for the sync, which never asks, and the next launch with no signal
+            minimumVersion.remember(fetched.minAppVersion.android)        // first: packs, invitations and the sync all go by it
             config.value = fetched
             mapTokens.update(fetched.mapbox.publicToken)                  // remembered, so the next start with no signal can draw imagery
         } catch (_: ApiException) {
-            // Offline: nothing is blocked for want of a config.
+            // Offline: nothing is blocked for want of a config, and the minimum last heard stands.
+        } finally {
+            configLooked.value = true
         }
     }
 
@@ -334,12 +358,14 @@ internal sealed interface PackGate {
  * different account always passes through a sign-out, which stops packs itself; and the engine, enabled for this one, stops any client of
  * another's ([app.ezpztac.missionpacks.PackEngine.enable]).
  *
- * An app [tooOld] for the server (below its minimum version: [MinimumVersion]) stops them, whatever else is known: what waits stays on the
- * device, and goes once the app is updated.
+ * An app [tooOld] for the server (below its minimum version as last heard: [MinimumVersion]) stops them, whatever else is known: what waits
+ * stays on the device, and goes once the app is updated. Until this launch has [looked] at the config (answered or not), nothing more is
+ * known (the server may have raised its minimum since), so they wait as they are.
  */
-internal fun packGateFor(auth: AuthState, ownership: Ownership?, tooOld: Boolean): PackGate {
+internal fun packGateFor(auth: AuthState, ownership: Ownership?, tooOld: Boolean, looked: Boolean): PackGate {
     if (auth !is AuthState.SignedIn) return PackGate.Leave
     if (tooOld) return PackGate.Stop
+    if (!looked) return PackGate.Leave
     val user = auth.user
     if (!user.accessOk || !user.hasFeature(MISSION_PACKS)) return PackGate.Stop
     return when (ownership) {
