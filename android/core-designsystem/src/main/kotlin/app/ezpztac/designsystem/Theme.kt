@@ -88,6 +88,22 @@ fun colorSchemeFor(mode: ThemeMode, systemDark: Boolean = true): ColorScheme = w
 
 internal enum class Palette { Dark, Light, Night }
 
+/** The colours of a toast ([ToastHost]): its card, its words and close button, and its one action. */
+internal data class ToastColors(val container: Long, val content: Long, val action: Long)
+
+/**
+ * A toast's colours for a palette. In light and dark alike it is the dark palette's raised card, which stands out from a light screen as
+ * Material's inverse toast does, without a bright one ever lighting a dark cockpit; at night it is the night palette's own, red on near
+ * black. The theme sets none of Material's inverse colours, which a toast would otherwise take: its stock lavender and purple, a near-white
+ * flash on the night palette.
+ */
+internal fun toastColorsFor(palette: Palette): ToastColors = when (palette) {
+    Palette.Night -> Tokens.Colors.Night.let { ToastColors(it.surfaceVariant, it.onSurface, it.primary) }
+    Palette.Dark, Palette.Light -> Tokens.Colors.Dark.let { ToastColors(it.surfaceVariant, it.onSurface, it.primary) }
+}
+
+internal val LocalToastColors = staticCompositionLocalOf { toastColorsFor(Palette.Dark) }
+
 /** The default is dark, as the plan says: a bright screen in a cockpit costs the crew their night vision. */
 internal fun resolve(mode: ThemeMode, systemDark: Boolean): Palette = when (mode) {
     ThemeMode.System -> if (systemDark) Palette.Dark else Palette.Light
@@ -120,6 +136,7 @@ fun EzpzTheme(
     val palette = resolve(mode, systemDark)
     CompositionLocalProvider(
         LocalStatusColors provides statusColorsFor(dark = palette != Palette.Light, night = palette == Palette.Night),
+        LocalToastColors provides toastColorsFor(palette),
     ) {
         MaterialTheme(
             colorScheme = colorSchemeFor(mode, systemDark),

@@ -67,6 +67,17 @@ class TokenContrastTest {
     }
 
     @Test
+    fun `a toast's words, close button and action are readable on its card, in every palette`() = Palette.entries.forEach { palette ->
+        val toast = toastColorsFor(palette)
+        fun readable(what: String, foreground: Long) {
+            val ratio = contrast(foreground, toast.container)
+            assertTrue("${palette.name} toast: $what is ${"%.2f".format(ratio)}:1, needs 4.5:1", ratio >= 4.5)
+        }
+        readable("words", toast.content)
+        readable("action", toast.action)                                                 // 14 sp bold is not large text: AA, not 3:1
+    }
+
+    @Test
     fun `status colours and accents stand out from the screen`() = themes.forEach { t ->
         // Icons and large text: 3:1.
         check(t, "warning on background", t.warning, t.background, 3.0)

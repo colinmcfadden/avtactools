@@ -30,9 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.android.export.ShareExport
+import app.ezpztac.android.packs.InviteNotices
+import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.TextAction
+import app.ezpztac.designsystem.ToastHost
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
@@ -86,6 +89,10 @@ fun MapHome(
     maintenance: String?,
     onSignOut: () -> Unit,
     canMakeAircraft: Boolean = true,
+    /** What became of an invitation link the app was opened with ([InviteNotices]). */
+    invite: InviteState = InviteState.None,
+    onRetryInvite: () -> Unit = {},
+    onDismissInvite: () -> Unit = {},
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
 ) {
@@ -118,6 +125,8 @@ fun MapHome(
     LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
     // A file another app opened with this one (Files, a mail, the share sheet) is put to the person here: nothing is imported until they accept.
     IncomingHost()
+    // An invitation link: said above the sheet, in the scaffold's own toasts.
+    InviteNotices(invite, scaffold.snackbarHostState, onRetry = onRetryInvite, onDismiss = onDismissInvite)
 
     // Units' symbols are drawn the same way on the map and in the sheet's builder: one renderer, and its cache, for both.
     CompositionLocalProvider(LocalSymbolRenderer provides home.symbols) {
@@ -125,6 +134,7 @@ fun MapHome(
             scaffoldState = scaffold,
             sheetPeekHeight = PEEK,
             sheetContainerColor = MaterialTheme.colorScheme.surface,
+            snackbarHost = { ToastHost(it) },                                   // the app's toasts, in its own colours (and never bright at night)
             sheetContent = {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.xl.dp, vertical = Tokens.Spacing.md.dp),

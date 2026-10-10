@@ -3,7 +3,8 @@ package app.ezpztac.auth
 /**
  * A mission-pack or team invitation link: `https://<site>/?invite=<token>`, from an email or a team's shared link (`backend/email_service.py`).
  * This reads one into its token, which the shell keeps across sign-in and accepts once the person can open packs (the web's `inviteLink.js`).
- * It is never for the sign-in screens: [AuthLinks] reads those, and a link that is one of them is not an invitation.
+ * It is never for the sign-in screens, which [AuthLinks] reads; an address that carried both (the server never sends one) would be read for
+ * both, as the web takes `?invite=` apart from the sign-in's parameters.
  *
  * As for [AuthLinks], only an `https` link to the site's own hosts counts, since any other app can start the activity with any address; and
  * only a token of the shape the server makes ([TOKEN]): anything else is dropped, never sent.
