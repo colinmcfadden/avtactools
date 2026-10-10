@@ -251,9 +251,12 @@ public suspend fun ApiClient.acceptInvite(id: Int): InviteAccepted = decode(exec
 public suspend fun ApiClient.declineInvite(id: Int): Invite =
     decode<InviteBody>(execute(call("POST", "/api/invites/$id/decline"))).invite
 
-/** Accepts from an emailed or shared link's token, whichever address the caller signed in with. */
-public suspend fun ApiClient.acceptInviteLink(token: String): InviteAccepted =
-    decode(execute(call("POST", "/api/invites/accept", body = buildJsonObject { put("token", token) })))
+/**
+ * Accepts from an emailed or shared link's token, whichever address the caller signed in with. With [asUser], only for that account: under
+ * anyone else's session it is refused before anything is sent ([OtherAccountException]), so a link is never joined for the wrong person.
+ */
+public suspend fun ApiClient.acceptInviteLink(token: String, asUser: Int? = null): InviteAccepted =
+    decode(execute(call("POST", "/api/invites/accept", body = buildJsonObject { put("token", token) }, asUser = asUser)))
 
 // -- Teams ----------------------------------------------------------------------------
 

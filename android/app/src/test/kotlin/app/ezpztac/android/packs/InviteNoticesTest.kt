@@ -66,6 +66,7 @@ class InviteNoticesTest {
 
     private val log = mutableListOf<String>()
     private var state by mutableStateOf<InviteState>(InviteState.None)
+    private var attempt by mutableStateOf(1)
 
     private fun show(first: InviteState) {
         state = first
@@ -75,7 +76,7 @@ class InviteNoticesTest {
                 val host = remember { SnackbarHostState() }
                 Box(Modifier.fillMaxSize()) {
                     ToastHost(host, Modifier.align(Alignment.BottomCenter))
-                    InviteNotices(state, host, onRetry = { log += "retry" }, onDismiss = { log += "dismiss" })
+                    InviteNotices(state, attempt, host, onRetry = { log += "retry" }, onDismiss = { log += "dismiss" })
                 }
             }
         }
@@ -86,8 +87,9 @@ class InviteNoticesTest {
 
     // A state written from the test is only seen by the composition once its change is announced, which idling would do and a clock turned
     // by hand does not.
-    private fun becomes(next: InviteState) {
+    private fun becomes(next: InviteState, nextAttempt: Int = attempt) {
         state = next
+        attempt = nextAttempt
         Snapshot.sendApplyNotifications()
         settle()
     }
@@ -148,5 +150,21 @@ class InviteNoticesTest {
         compose.onNodeWithText("Accepting the invitation…").assertDoesNotExist()
         compose.onNodeWithText(OFFLINE).assertIsDisplayed()
         assertEquals(emptyList<String>(), log)                                                // replaced, not put away
+    }
+
+    // A retry that fails as the last one did, before a frame saw it being accepted: the same state, so only the try it answers tells it apart.
+    // Try again took the last toast away; without this the person is left with nothing on the screen and no way to try again.
+    @Test
+    fun `the same answer to a new try is told again, with its Try again`() {
+        show(InviteState.Failed(OFFLINE, retryable = true))
+        compose.onNodeWithText("Try again").performClick()
+        settle()
+        assertEquals(listOf("retry"), log)
+
+        becomes(InviteState.Failed(OFFLINE, retryable = true), nextAttempt = 2)
+        compose.onNodeWithText(OFFLINE).assertIsDisplayed()
+        compose.onNodeWithText("Try again").performClick()
+        settle()
+        assertEquals(listOf("retry", "retry"), log)
     }
 }

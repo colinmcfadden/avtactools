@@ -18,6 +18,7 @@ class AuthLogicTest {
         assertEquals(AuthRoute.Verify("abc123"), AuthLinks.parse("https://ezpztac.app/?auth=verify&token=abc123"))
         assertEquals(AuthRoute.Reset("xyz"), AuthLinks.parse("https://ezpztac.app/?token=xyz&auth=reset"))
         assertEquals(AuthRoute.Verify("a b+c"), AuthLinks.parse("https://ezpztac.app/?auth=verify&token=a%20b%2Bc"))   // percent-encoded
+        assertEquals(AuthRoute.Verify("first"), AuthLinks.parse("https://ezpztac.app/?auth=verify&token=first&token=second&auth=reset"))   // the first of each, as the web's get
     }
 
     @Test

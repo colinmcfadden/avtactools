@@ -76,12 +76,18 @@ class AppViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Gate.Starting)
 
     // An invitation link the app was opened with, until it is accepted or refused for good: kept through a sign-in, a turn of the phone and
-    // the process being ended in the back, as the web keeps it for the tab.
+    // the process being ended in the back, as the web keeps it for the tab, and so for whoever signs in next, as there.
     private val inviteToken: StateFlow<String?> = saved.getStateFlow(INVITE_TOKEN, null)
+
+    // What became of it is for the account it was accepted as, and asked as that account: nobody who signs in after sees it (it names a pack
+    // and a role), and a sign-out forgets it, as the web's goes with its screen.
     private val invitation = InviteAcceptance(invites::accept, viewModelScope)
 
     /** Where an invitation link the app was opened with stands: waiting for Mission Packs, being accepted, joined, or why not. */
     val inviteState: StateFlow<InviteState> = invitation.state
+
+    /** One more for every try at the link, so the same answer to a new try (a retry that failed as the last one did) is told again. */
+    val inviteAttempt: StateFlow<Int> = invitation.attempts
 
     init {
         viewModelScope.launch {
@@ -120,11 +126,13 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    // The link is let go once it is done with (accepted, or refused for good) and still the one kept: a link that came meanwhile stays. One
-    // that met no connection, or a busy or failing server, is kept for a retry.
+    // Only the link still kept is asked about: the collector works out its next pair while a request is out, and a pair from before the link
+    // was let go (a user refreshed meanwhile) must neither send it again nor say it waits. It is let go once it is done with (accepted, or
+    // refused for good) and still the one kept: a link that came meanwhile stays. One that met no connection, a busy or failing server, or a
+    // refusal about the account (signed out meanwhile, Mission Packs off) is kept for a retry.
     private suspend fun acceptInvite(user: ApiUser?, token: String?) {
-        if (user == null || token == null) return
-        if (invitation.run(token, user.hasFeature(MISSION_PACKS)) && saved.get<String>(INVITE_TOKEN) == token) saved[INVITE_TOKEN] = null
+        if (user == null || token == null || token != saved.get<String>(INVITE_TOKEN)) return
+        if (invitation.run(token, user.hasFeature(MISSION_PACKS), user.id) && saved.get<String>(INVITE_TOKEN) == token) saved[INVITE_TOKEN] = null
     }
 
     /** Asks again about the invitation link that could not get through. */
@@ -182,6 +190,7 @@ class AppViewModel @Inject constructor(
         ownership.value = null
         if (auth !is AuthState.SignedIn) {
             if (auth is AuthState.SignedOut) {
+                invitation.forget()                                              // what became of a link names a pack: it does not stay for the next person
                 sync.cancelAll()
                 closeOpenDocuments()
                 // Only once the open documents are written: the last change to a pack's item reaches the pack's queue first. What waits
@@ -268,7 +277,10 @@ class AppViewModel @Inject constructor(
      */
     fun onLink(url: String?) {
         AuthLinks.parse(url)?.let { link.value = it }
-        InviteLinks.parse(url)?.let { saved[INVITE_TOKEN] = it }
+        InviteLinks.parse(url)?.let { token ->
+            // The link kept, opened again: the person is asking again, perhaps after closing what it said, as a reload asks on the web.
+            if (token == saved.get<String>(INVITE_TOKEN)) retryInvite() else saved[INVITE_TOKEN] = token
+        }
     }
 
     fun linkHandled() {

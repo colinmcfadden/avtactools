@@ -51,7 +51,7 @@ class AppScreenshotTest {
                 val host = remember { SnackbarHostState() }
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     ToastHost(host, Modifier.align(Alignment.BottomCenter))
-                    InviteNotices(state, host, onRetry = {}, onDismiss = {})
+                    InviteNotices(state, 1, host, onRetry = {}, onDismiss = {})
                 }
             }
         }

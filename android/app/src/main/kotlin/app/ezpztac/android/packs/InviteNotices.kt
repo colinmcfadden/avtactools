@@ -25,14 +25,17 @@ fun inviteNoticeFor(state: InviteState): InviteNotice? = when (state) {
 }
 
 /**
- * Tells the person what became of an invitation link, as a toast (the redesign's `Snackbar`, docs/native-design) above the sheet, where it is
- * not missed: the web said nothing, and the person had to open the Library to find out. Every one has a close button. "Try again" asks again
- * ([onRetry]); closing one, or its time running out, puts it away ([onDismiss]), but never while the invitation is still being accepted. It is
- * keyed on the state, so a newer one replaces it, and one not yet put away is shown again after a turn of the phone.
+ * Tells the person what became of an invitation link, as a toast (the redesign's `Snackbar`, docs/native-design) above the sheet. The web
+ * toasts a join or a failure; this also says while the link is being accepted, and that it waits while Mission Packs are off. Every one has a
+ * close button. "Try again" asks again ([onRetry]); closing one, or its time running out, puts it away ([onDismiss]), but never while the
+ * invitation is still being accepted. It is keyed on the state and the [attempt] it answers, so a newer one replaces it, and the same answer
+ * to a new try (a retry that failed as the last one did, before a frame saw it being accepted) is told again rather than lost.
+ *
+ * One toast is shown at a time, so one that stays (being accepted, or Try again) holds back any other until it is answered or closed.
  */
 @Composable
-fun InviteNotices(state: InviteState, snackbars: SnackbarHostState, onRetry: () -> Unit, onDismiss: () -> Unit) {
-    LaunchedEffect(state) {
+fun InviteNotices(state: InviteState, attempt: Int, snackbars: SnackbarHostState, onRetry: () -> Unit, onDismiss: () -> Unit) {
+    LaunchedEffect(state, attempt) {
         val notice = inviteNoticeFor(state) ?: return@LaunchedEffect
         val result = snackbars.showSnackbar(
             message = notice.text,

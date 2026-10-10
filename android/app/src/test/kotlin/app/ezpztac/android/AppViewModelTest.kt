@@ -206,12 +206,17 @@ class AppViewModelTest {
         }
     }
 
-    /** The server's answer to an invitation link: OP DK joined as an editor, unless [answer] says otherwise. Every token asked about, in order. */
+    /**
+     * The server's answer to an invitation link: OP DK joined as an editor, unless [answer] says otherwise. Every token asked about, in order,
+     * and the account each was asked as.
+     */
     private class FakeInvites : PackInvites {
         val asked = mutableListOf<String>()
+        val askedAs = mutableListOf<Int>()
         var answer: suspend (String) -> InviteAccepted = { joinedPack() }
-        override suspend fun accept(token: String): InviteAccepted {
+        override suspend fun accept(token: String, asUser: Int): InviteAccepted {
             asked += token
+            askedAs += asUser
             return answer(token)
         }
     }
@@ -809,12 +814,14 @@ class AppViewModelTest {
         r.backend.state.value = AuthState.SignedIn(user())                                     // signed in, the device's plans theirs
         advanceUntilIdle()
         assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+        assertEquals(listOf(1), r.invites.askedAs)                                             // as the account signed in, and no other
         assertEquals("You joined OP DK as an editor.", (r.model.inviteState.value as InviteState.Joined).message)
+        assertNull(r.saved.get<String>(SAVED_INVITE))                                          // done with: let go
 
         r.model.retryInvite()
         r.newShell(r.restored())
         advanceUntilIdle()
-        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)                                    // done with: never asked about again
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)                                    // never asked about again
     }
 
     @Test
@@ -959,16 +966,148 @@ class AppViewModelTest {
     @Test
     fun `a sign-in link still opens its screen, an address carrying both is read for both, and nothing else is an invitation`() = runTest(dispatcher) {
         val r = rig(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), owner = 1)
-        r.model.onLink("https://evil.example/?invite=$INVITE_TOKEN")                           // not the site's
-        r.model.onLink("https://ezpztac.app/r/abc")                                            // a shared route: another feature's
         r.model.onLink("https://ezpztac.app/?auth=verify&token=abc123&invite=$INVITE_TOKEN")
         assertEquals(AuthRoute.Verify("abc123"), r.model.pendingLink.value)
+        r.model.onLink("https://evil.example/?invite=$OTHER_TOKEN")                            // not the site's: a token of its own, never kept
+        r.model.onLink("http://ezpztac.app/?invite=$OTHER_TOKEN")                              // not encrypted
+        r.model.onLink("https://ezpztac.app/r/abc")                                            // a shared route: another feature's
 
         r.backend.state.value = AuthState.SignedIn(user())
         advanceUntilIdle()
         assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
     }
+
+    // -- Invitation links and accounts ---------------------------------------------------------------
+
+    /** Signs the first account out and the second in, clearing the first's plans so the device is the second's. */
+    private fun TestScope.switchAccounts(r: Rig) {
+        r.backend.state.value = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN)
+        advanceUntilIdle()
+        r.backend.state.value = AuthState.SignedIn(user(2))
+        advanceUntilIdle()
+        r.model.clearOtherAccountsPlans()
+        advanceUntilIdle()
+        assertEquals(Gate.Ready(user(2), null), r.model.gate.value)
+    }
+
+    @Test
+    fun `what became of one account's invitation is never shown to the next account that signs in`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertTrue(r.model.inviteState.value is InviteState.Joined)                            // not yet put away when the first signs out
+
+        switchAccounts(r)
+        assertEquals(InviteState.None, r.model.inviteState.value)                              // nothing of the first's pack and role
+
+        // The second opens the same link: it is asked about again, as the second, never answered from the first's.
+        r.invites.answer = { throw ApiException(410, "invite_gone", "Used.") }
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertEquals(listOf(1, 2), r.invites.askedAs)
+        assertEquals("That invitation has already been used or was withdrawn.", (r.model.inviteState.value as InviteState.Failed).message)
+    }
+
+    @Test
+    fun `an answer that comes after its account signed out is not shown to the next, and the link it used is let go`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val answer = CompletableDeferred<InviteAccepted>()
+        r.invites.answer = { answer.await() }
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertEquals(InviteState.Accepting, r.model.inviteState.value)
+
+        switchAccounts(r)
+        answer.complete(joinedPack())                                                          // the first's answer, once the second is in
+        advanceUntilIdle()
+
+        assertEquals(InviteState.None, r.model.inviteState.value)
+        assertNull(r.saved.get<String>(SAVED_INVITE))                                          // the first joined with it: done with
+        assertEquals(listOf(1), r.invites.askedAs)
+    }
+
+    @Test
+    fun `a link one account could not take yet waits for whoever signs in next, as the web keeps it for the tab`() = runTest(dispatcher) {
+        val r = rig(stored = AuthState.SignedIn(withoutPacks()), owner = 1)
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertTrue(r.model.inviteState.value is InviteState.Waiting)
+
+        switchAccounts(r)
+        assertEquals(listOf(INVITE_TOKEN), r.invites.asked)
+        assertEquals(listOf(2), r.invites.askedAs)
+        assertTrue(r.model.inviteState.value is InviteState.Joined)
+    }
+
+    @Test
+    fun `a refusal about the account keeps the link, which is accepted once the account can take it`() = runTest(dispatcher) {
+        val r = rig(owner = 1)                                                                 // what this device last knew: Mission Packs on
+        r.invites.answer = { throw ApiException(403, "feature_disabled", "Not for this account.") }
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertTrue(r.model.inviteState.value is InviteState.Waiting)
+        assertEquals(INVITE_TOKEN, r.saved.get<String>(SAVED_INVITE))
+
+        r.invites.answer = { joinedPack() }
+        r.backend.state.value = AuthState.SignedIn(withoutPacks())                             // the refreshed user says so...
+        advanceUntilIdle()
+        r.backend.state.value = AuthState.SignedIn(user())                                     // ...until an admin ticks them
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN, INVITE_TOKEN), r.invites.asked)
+        assertTrue(r.model.inviteState.value is InviteState.Joined)
+    }
+
+    // The collector works out its next pair while a request is out. A pair from before the link was let go must not send it again (the server
+    // would answer that it was used) or say it waits for Mission Packs when nothing waits any more.
+    @Test
+    fun `a user refreshed while the link is out asks nothing more once it is let go`() = runTest(dispatcher) {
+        listOf(user().copy(name = "Pilot One"), withoutPacks()).forEach { refreshed ->
+            val r = rig(owner = 1)
+            val answer = CompletableDeferred<InviteAccepted>()
+            r.invites.answer = { answer.await() }
+            r.model.onLink(INVITE_LINK)
+            advanceUntilIdle()
+            r.backend.state.value = AuthState.SignedIn(refreshed)
+            advanceUntilIdle()
+            answer.completeExceptionally(ApiException(410, "invite_expired", "Expired."))
+            advanceUntilIdle()
+            assertEquals("$refreshed", listOf(INVITE_TOKEN), r.invites.asked)
+            assertTrue("$refreshed", r.model.inviteState.value is InviteState.Failed)
+        }
+    }
+
+    @Test
+    fun `a retry that fails as the last one did is a new try, so it is told again`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.invites.answer = { throw NetworkException("no signal", null, requestMayHaveBeenSent = false) }
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        val failed = r.model.inviteState.value
+        val tries = r.model.inviteAttempt.value
+        r.model.retryInvite()
+        advanceUntilIdle()
+        assertEquals(failed, r.model.inviteState.value)                                        // the same answer...
+        assertEquals(tries + 1, r.model.inviteAttempt.value)                                   // ...to a new try
+    }
+
+    @Test
+    fun `opening the link kept again asks again, after its notice was closed`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.invites.answer = { throw NetworkException("no signal", null, requestMayHaveBeenSent = false) }
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        r.model.dismissInvite()                                                                // closed, and nothing on the screen to try again with
+        r.invites.answer = { joinedPack() }                                                    // the signal is back
+        r.model.onLink(INVITE_LINK)
+        advanceUntilIdle()
+        assertEquals(listOf(INVITE_TOKEN, INVITE_TOKEN), r.invites.asked)
+        assertTrue(r.model.inviteState.value is InviteState.Joined)
+    }
 }
+
+/** Where the shell keeps a link waiting to be accepted (the web's sessionStorage key). */
+private const val SAVED_INVITE = "ezpz.packInvite"
+private const val OTHER_TOKEN = "Zz9_another-token-0001"
 
 private const val INVITE_TOKEN = "Xq3v_8yQm2LZk9-WbT4sPa7Rr1Nd5Cf6Hg0Jj2Kk3Ll"
 private const val INVITE_LINK = "https://ezpztac.app/?invite=$INVITE_TOKEN"

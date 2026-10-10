@@ -298,6 +298,7 @@ class PackCallsTest {
             assertEquals(0, refused.status)
             assertThrows<OtherAccountException> { rig.client.packEventsDocument(pack, 0, background = false, asUser = other) }
             assertThrows<OtherAccountException> { rig.client.sendPackOps(pack, JsonObject(emptyMap()), asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.acceptInviteLink("the-link-token", asUser = other) }   // a link is joined for no one else
             assertTrue(rig.requests.isEmpty())
 
             rig.client.packDocument(pack, asUser = me)                                     // the account it was made for goes as ever

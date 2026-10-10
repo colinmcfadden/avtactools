@@ -14,6 +14,13 @@ class InviteLinksTest {
         assertEquals(token, InviteLinks.parse("https://www.ezpztac.app/?invite=$token&view=sat#map"))           // other parameters and a fragment
         assertEquals(token, InviteLinks.parse("https://ezpztac.app/?view=sat&invite=$token"))
         assertEquals(token, InviteLinks.parse("https://ezpztac.app/?invite=$token&invite=Zz9_another-token-0001"))   // the first, as on the web
+        assertEquals(token, InviteLinks.parse("https://ezpztac.app/?&&invite=$token&"))                              // empty pieces are nothing
+    }
+
+    @Test
+    fun `the first invite is the one read, even when it is empty or has no value, as the web's searchParams reads it`() {
+        assertNull(InviteLinks.parse("https://ezpztac.app/?invite&invite=$token"))
+        assertNull(InviteLinks.parse("https://ezpztac.app/?invite=&invite=$token"))
     }
 
     @Test

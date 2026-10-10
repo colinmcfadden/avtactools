@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -89,8 +90,9 @@ fun MapHome(
     maintenance: String?,
     onSignOut: () -> Unit,
     canMakeAircraft: Boolean = true,
-    /** What became of an invitation link the app was opened with ([InviteNotices]). */
+    /** What became of an invitation link the app was opened with ([InviteNotices]), and the try it answers. */
     invite: InviteState = InviteState.None,
+    inviteAttempt: Int = 0,
     onRetryInvite: () -> Unit = {},
     onDismissInvite: () -> Unit = {},
     viewModel: MapViewModel = hiltViewModel(),
@@ -126,7 +128,7 @@ fun MapHome(
     // A file another app opened with this one (Files, a mail, the share sheet) is put to the person here: nothing is imported until they accept.
     IncomingHost()
     // An invitation link: said above the sheet, in the scaffold's own toasts.
-    InviteNotices(invite, scaffold.snackbarHostState, onRetry = onRetryInvite, onDismiss = onDismissInvite)
+    InviteNotices(invite, inviteAttempt, scaffold.snackbarHostState, onRetry = onRetryInvite, onDismiss = onDismissInvite)
 
     // Units' symbols are drawn the same way on the map and in the sheet's builder: one renderer, and its cache, for both.
     CompositionLocalProvider(LocalSymbolRenderer provides home.symbols) {
@@ -134,7 +136,9 @@ fun MapHome(
             scaffoldState = scaffold,
             sheetPeekHeight = PEEK,
             sheetContainerColor = MaterialTheme.colorScheme.surface,
-            snackbarHost = { ToastHost(it) },                                   // the app's toasts, in its own colours (and never bright at night)
+            // The app's toasts, in its own colours (never bright at night). The scaffold puts them on the sheet's edge, over the grid readout, so
+            // they sit where the drawing toolbar does, clear of it; with the sheet open they go to the foot of the screen, above its buttons.
+            snackbarHost = { ToastHost(it, Modifier.navigationBarsPadding().padding(bottom = TOOLBAR_ABOVE_READOUT)) },
             sheetContent = {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.xl.dp, vertical = Tokens.Spacing.md.dp),

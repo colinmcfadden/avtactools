@@ -48,6 +48,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
     val gate by viewModel.gate.collectAsStateWithLifecycle()
     val link by viewModel.pendingLink.collectAsStateWithLifecycle()
     val invite by viewModel.inviteState.collectAsStateWithLifecycle()
+    val inviteAttempt by viewModel.inviteAttempt.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // Nothing runs while the app is out of sight, so what has expired meanwhile (a threat picture left for 48 hours) is dealt with as it comes back.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.appStarted() }
@@ -88,7 +89,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 // An administrator can switch own aircraft off for an account; the server would refuse what it made.
                 canMakeAircraft = current.user.hasFeature("aircraft_profiles"),
                 // An invitation is only ever accepted here, once the person is in.
-                invite = invite, onRetryInvite = viewModel::retryInvite, onDismissInvite = viewModel::dismissInvite,
+                invite = invite, inviteAttempt = inviteAttempt, onRetryInvite = viewModel::retryInvite, onDismissInvite = viewModel::dismissInvite,
             )
             is Gate.UpdateRequired -> UpdateRequiredScreen(current.minimum)
         }
