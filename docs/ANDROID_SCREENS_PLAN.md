@@ -123,7 +123,7 @@ toast says the name it got. The working set is `OpenDiagrams` (`core-data`), kep
   up. *Unit* opens the unit builder (it adds at the crosshair), and *Draw LZ* is today's boundary drawing, asking first when it would clear
   an analysis.
 - **Not offered, because Android does not have them yet:** *3D*, *Export LZ card* and *Set capture area*, *Sketch a route* (from the plan),
-  and the *LZ box* switch. The toast's *Open Library* waits for S7.
+  and the *LZ box* switch; *Plan* stands where the card's *3D* is. The toast's *Open Library* waits for S7.
 - **The sheet could stop taking taps** (found probing S2): new anchors set while the sheet is moving leave foundation's anchored drag a target
   that an untargeted drag never clears, so a change of space while it settled left the sheet "animating" for good, and a draggable that thinks
   it is animating takes every press: nothing in the sheet could be tapped. `PanelSheet` animates to its target whenever the anchors change

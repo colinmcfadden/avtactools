@@ -22,6 +22,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -339,10 +341,19 @@ private fun SmallIconButton(icon: Int, description: String, onClick: () -> Unit)
 
 /** The open LZ/PZ's other actions: rename, close (it stays in the Library) and delete (asked about first, where it is asked). */
 @Composable
-private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRename: () -> Unit, onDelete: () -> Unit) {
+private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRename: () -> Unit, onDelete: () -> Unit, outlined: Boolean = false) {
     var open by remember { mutableStateOf(false) }
     Box {
-        SmallIconButton(EzpzIcons.moreVert, "More actions for ${current.name}") { open = true }
+        if (outlined) {
+            OutlinedIconButton(onClick = { open = true }, modifier = Modifier.size(48.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
+                Icon(
+                    painterResource(EzpzIcons.moreVert), contentDescription = "More actions for ${current.name}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp),
+                )
+            }
+        } else {
+            SmallIconButton(EzpzIcons.moreVert, "More actions for ${current.name}") { open = true }
+        }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
             DropdownMenuItem(text = { Text("Rename") }, onClick = { open = false; onRename() }, leadingIcon = { Icon(painterResource(EzpzIcons.edit), contentDescription = null) })
             DropdownMenuItem(
@@ -410,7 +421,7 @@ fun LzPlanContent(
         Chips(current.chips)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             SaveButton(current, actions.save)
-            LzMoreMenu(current, actions, onRename = { renaming = current.name }, onDelete = { confirmDelete = true })
+            LzMoreMenu(current, actions, onRename = { renaming = current.name }, onDelete = { confirmDelete = true }, outlined = true)
             SavesToLibrary(Modifier.weight(1f))
         }
         renaming?.let { name -> RenameField(name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null }) }
@@ -500,9 +511,9 @@ private fun AircraftRow(aircraft: AircraftUi, onSelect: (String) -> Unit, onMana
                     }
                     Column(Modifier.weight(1f)) {
                         Text("Aircraft", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(aircraft.activeLabel, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(aircraft.activeLabel, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            "${aircraft.spacingM} m spacing · ${aircraft.cruiseKts} kt", style = MaterialTheme.typography.bodySmall,
+                            "${aircraft.spacingM} m spacing · ${aircraft.cruiseKts} kt", style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -538,7 +549,7 @@ private fun AircraftRow(aircraft: AircraftUi, onSelect: (String) -> Unit, onMana
 @Composable
 private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-        SectionLabel("LZ/PZ analysis")
+        if (current.analysis != AnalysisUi.Idle) SectionLabel("LZ/PZ analysis")
         when (val analysis = current.analysis) {
             is AnalysisUi.Running -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -552,18 +563,26 @@ private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
                 Banner(analysis.message, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissAnalysis)
                 if (current.canAnalyze) PillButton("Try again", onClick = actions.analyze, icon = EzpzIcons.refresh)
             }
-            AnalysisUi.Idle -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+            AnalysisUi.Idle -> Row(
+                Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+            ) {
                 val analyzed = current.status == DiagramStatus.ANALYZED
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                    if (analyzed) Icon(painterResource(EzpzIcons.checkCircleFill), contentDescription = null, tint = EzpzTheme.status.success, modifier = Modifier.size(16.dp).padding(top = 2.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        when {
-                            !current.canAnalyze -> "Set a target to analyze this LZ/PZ."
-                            analyzed -> "Analyzed. Planning graphics and save are unlocked."
-                            else -> "Not analyzed yet. Analyzing finds the landing area and measures its slope; it needs a connection."
-                        },
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "LZ/PZ analysis", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.semantics { heading() },
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (analyzed) Icon(painterResource(EzpzIcons.checkCircleFill), contentDescription = null, tint = EzpzTheme.status.success, modifier = Modifier.size(16.dp))
+                        Text(
+                            when {
+                                !current.canAnalyze -> "Set a target to analyze this LZ/PZ."
+                                analyzed -> "Analyzed. Planning graphics and save are unlocked."
+                                else -> "Not analyzed yet. Analyzing finds the landing area and measures its slope; it needs a connection."
+                            },
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 if (current.canAnalyze) {
                     if (analyzed) PillButton("Re-analyze", onClick = actions.analyze, icon = EzpzIcons.refresh, style = PillStyle.Tonal)
