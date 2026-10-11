@@ -26,7 +26,8 @@ enum class PlaceTool(val collection: String, val noun: String, val plural: Strin
 /**
  * The planning tools as modes (docs/native-design: "explicit modes that place at the crosshair or a tap, with Done and Cancel"). While one is on, a tap
  * on the map puts its graphic there (`HomeViewModel.mapTapped` asks this before anything else is held), and so does *Add at the crosshair*. What a mode
- * places is one step to undo, and *Cancel* takes it all back; *Done* keeps it. The mode belongs to the LZ/PZ it was begun on and ends when another opens.
+ * places in a row is one step to undo (an edit in between starts another), *Cancel* takes back everything it placed, and *Done* keeps it. The mode belongs
+ * to the LZ/PZ it was begun on and ends when another opens.
  *
  * A mode has the map's taps as a boundary or a route being drawn does, so it takes [DrawingMode] and is refused while either is drawn (and they while it is on).
  */
@@ -89,17 +90,15 @@ class GraphicPlacement @Inject constructor(
     fun finish() = end()
 
     /**
-     * *Cancel*: what the mode placed is taken back, then it ends. While nothing else has been done since, that is its own undo step dropped (nothing
-     * is left to redo); otherwise the graphics it placed are removed as one more step, so whatever was done in between stays.
+     * *Cancel*: everything the mode placed is taken back as if it had never been placed (`DocumentSession.retract`), then it ends. Neither undo nor redo
+     * brings any of it back, and whatever was done in between (an edit of something else, an undo) stays.
      */
     @Synchronized
     fun cancel() {
         val mode = _placing.value ?: return
         val modeKey = key
-        if (mode.placed.isNotEmpty() && session.active.value?.id == mode.diagramId && modeKey != null && !session.dropLast(modeKey)) {
-            session.edit("Remove ${mode.tool.plural}") { diagram ->
-                mode.placed.fold(diagram) { d, id -> DiagramOps.removeGraphic(d, mode.tool.collection, id) }
-            }
+        if (session.active.value?.id == mode.diagramId && modeKey != null) {
+            session.retract(modeKey) { diagram -> mode.placed.fold(diagram) { d, id -> DiagramOps.removeGraphic(d, mode.tool.collection, id) } }
         }
         end()
     }

@@ -14,6 +14,7 @@ import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.GraphicPlacement
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
+import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.MaskState
 import app.ezpztac.data.PointSelection
@@ -52,6 +53,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -83,6 +85,7 @@ class HomeViewModel @Inject constructor(
     private val routeSelection: RouteSelection,
     private val sketching: RouteSketching,
     private val last: LastDiagram,
+    private val openSet: OpenDiagrams,
     private val lastSet: LastRouteSet,
     private val localPoints: LocalPoints,
     private val pointSelection: PointSelection,
@@ -160,8 +163,22 @@ class HomeViewModel @Inject constructor(
         PointScene.of(sets.filter { it.visible }.map { DrawnPointSet(it.set.id, it.color, it.set.points) }, held?.setId, held?.pointId)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PointScene.EMPTY)
 
-    /** The local-only threat picture: visible markers and their range rings, with the held threat marked. */
-    val threatScene: StateFlow<ThreatScene> = combine(threats.entries, threatSelection.held, threatMasks.states) { entries, held, masks ->
+    /**
+     * Whether the signed-in account has threats (its `threats` feature, which the screen knows from the user: [allowThreats]). Until it says so they are not
+     * drawn, held or counted. An account an administrator has turned threats off for may still have a picture kept on this device from before (up to 48
+     * hours), and with no Threats panel to show it in, it is not put on the map either: the web, whose threats are never kept, never has one to draw.
+     */
+    private val threatsAllowed = MutableStateFlow(false)
+
+    /** Says whether the signed-in account has threats ([threatsAllowed]). Turned off, a threat held is put down. */
+    fun allowThreats(allowed: Boolean) {
+        threatsAllowed.value = allowed
+        if (!allowed) threatSelection.clear()
+    }
+
+    /** The local-only threat picture: visible markers and their range rings, with the held threat marked. Nothing while the account has no threats. */
+    val threatScene: StateFlow<ThreatScene> = combine(threats.entries, threatSelection.held, threatMasks.states, threatsAllowed) { entries, held, masks, allowed ->
+        if (!allowed) return@combine ThreatScene.EMPTY
         // A terrain mask is drawn only for a threat the person asked for one of, and only while it is still that threat's: one moved since is not what it shows.
         val pictures = entries.associate { entry ->
             val mask = (masks[entry.id] as? MaskState.Ready)?.mask?.takeIf { it.isFor(entry.threat) }
@@ -171,7 +188,9 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatScene.EMPTY)
 
     /** What the panel bar's tabs carry: the threats in the picture on this device, and the sets of local points brought in. */
-    val counts: StateFlow<PanelCounts> = combine(threats.entries, localPoints.sets) { entries, sets -> PanelCounts(threats = entries.size, imports = sets.size) }
+    val counts: StateFlow<PanelCounts> = combine(threats.entries, localPoints.sets, threatsAllowed) { entries, sets, allowed ->
+        PanelCounts(threats = if (allowed) entries.size else 0, imports = sets.size)
+    }
         .stateIn(viewModelScope, SharingStarted.Eagerly, PanelCounts())
 
     /**
@@ -193,6 +212,18 @@ class HomeViewModel @Inject constructor(
     val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft, placement.placing) { boundary, route, placing ->
         boundary != null || route != null || placing != null
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /**
+     * What has the map's taps ([isDrawing]): a boundary, a route, or a planning tool by its tool, so that each start takes the sheet down again, the person
+     * having raised it meanwhile. One tool's mode is finished as another begins without the taps ever being let go, so [isDrawing] does not change then.
+     */
+    val drawingWhat: StateFlow<Any?> = combine(drawing.draft, sketching.draft, placement.placing) { boundary, route, placing ->
+        when {
+            boundary != null -> "boundary"
+            route != null -> "route"
+            else -> placing?.tool
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     init {
         // The master list of airframes is the admin's and changes now and then: asked for when the map comes up, and kept for when there is no signal.
@@ -216,7 +247,8 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _opened.subscriptionCount.first { it > 0 }
             if (session.active.value != null) return@launch                              // something was opened in the meantime: it stays
-            val id = last.id() ?: return@launch
+            // Only if it is still open: one the person closed (the last open one, so nothing took its place) stays closed.
+            val id = last.id()?.takeIf { it in openSet.ids.value } ?: return@launch
             try {
                 session.open(id)                                                         // false when it is gone (deleted, or another account's)
             } catch (e: CancellationException) {

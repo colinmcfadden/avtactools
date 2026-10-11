@@ -1,5 +1,8 @@
 package app.ezpztac.designsystem
 
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -49,6 +52,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
@@ -127,11 +132,20 @@ data class SheetAnchors(val loweredPx: Float, val halfPx: Float, val fullPx: Flo
 }
 
 object PanelSheetDefaults {
-    /** Lowered, the handle and the header show: 28 dp of handle, the 48 dp header, and the 4 dp above a panel's first card, none of the card. */
+    /**
+     * Lowered, the handle and the header show: 28 dp of handle, the 48 dp header, and the 4 dp above a panel's first card, none of the card. A header that
+     * is taller (the person's text is larger) makes it taller by as much.
+     */
     val LoweredHeight: Dp = 80.dp
+
+    /** The header's height in the design, which [LoweredHeight] holds. */
+    val HeaderHeight: Dp = 48.dp
 
     /** At half the sheet takes this much of its space: the design's sheet over a phone's map leaves the top third to the map. */
     const val HalfFraction: Float = 0.6f
+
+    /** What a screen reader calls the handle: a button that raises or lowers the sheet, as Material's own drag handle is. */
+    const val HandleDescription: String = "Panel handle"
 
     /** How long the sheet takes to settle at a detent, and so how long whatever follows it (the map's middle) takes too. */
     const val SettleMillis: Int = 300
@@ -257,12 +271,15 @@ fun PanelSheet(
     LaunchedEffect(anchors) {
         if (anchors != null && state.draggable.isAnimationRunning) state.animateTo(state.target)
     }
+    // The header as tall as it wants to be: with the person's text larger than the design's, lowered shows the whole of it, not its top.
+    var headerPx by remember { mutableIntStateOf(0) }
     Surface(
         modifier = modifier
             // Fills the space it is given and lays out only the part that shows, from its edge down.
             .layout { measurable, constraints ->
                 val height = constraints.maxHeight
-                val anchors = SheetAnchors.of(height.toFloat(), topLimit.toPx(), loweredHeight.toPx(), halfFraction)
+                val lowered = loweredHeight.toPx() + (headerPx - PanelSheetDefaults.HeaderHeight.toPx()).coerceAtLeast(0f)
+                val anchors = SheetAnchors.of(height.toFloat(), topLimit.toPx(), lowered, halfFraction)
                 state.updateAnchors(anchors)
                 val edge = state.offsetPx.takeUnless { it.isNaN() } ?: anchors.offsetOf(state.settled)
                 val top = edge.roundToInt().coerceIn(0, height)
@@ -279,10 +296,11 @@ fun PanelSheet(
         Column(Modifier.fillMaxSize()) {
             Box(
                 Modifier.fillMaxWidth()
-                    .clickable(onClickLabel = if (state.stepUp() == SheetDetent.Lowered) lowerLabel else raiseLabel) {
+                    .clickable(onClickLabel = if (state.stepUp() == SheetDetent.Lowered) lowerLabel else raiseLabel, role = Role.Button) {
                         scope.launch { state.animateTo(state.stepUp()) }
                     }
                     .semantics {
+                        contentDescription = PanelSheetDefaults.HandleDescription
                         customActions = listOfNotNull(
                             CustomAccessibilityAction(raiseLabel) { scope.launch { state.animateTo(if (state.settled == SheetDetent.Lowered) SheetDetent.Half else SheetDetent.Full) }; true }
                                 .takeIf { state.settled != SheetDetent.Full },
@@ -297,7 +315,7 @@ fun PanelSheet(
                         .background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp)),
                 )
             }
-            header()
+            Box(Modifier.wrapContentHeight(Alignment.Top, unbounded = true).onSizeChanged { headerPx = it.height }) { header() }
             Box(Modifier.weight(1f).fillMaxWidth()) { content() }
             footer?.invoke()
         }

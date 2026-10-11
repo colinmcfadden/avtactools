@@ -81,12 +81,23 @@ class IncomingViewModel @Inject constructor(
     private val looked = MutableStateFlow<Map<Long, FilePreview>>(emptyMap())
     private val local = MutableStateFlow(Local())
 
+    /**
+     * Whether the signed-in account has threats (its `threats` feature, which the screen knows: [allowThreats]). A threat file is not added to the picture
+     * until it says so: an account an administrator has turned threats off for has no Threats panel to see them in, and the web greys out the file.
+     */
+    private val threatsAllowed = MutableStateFlow(false)
+
+    /** Says whether the signed-in account has threats ([threatsAllowed]). */
+    fun allowThreats(allowed: Boolean) {
+        threatsAllowed.value = allowed
+    }
+
     private data class Local(val busy: Boolean = false, val result: String? = null, val error: String? = null)
 
-    val state: StateFlow<IncomingUiState> = combine(incoming.files, looked, local) { files, seen, now ->
+    val state: StateFlow<IncomingUiState> = combine(incoming.files, looked, local, threatsAllowed) { files, seen, now, threatsOn ->
         val first = files.firstOrNull()
         IncomingUiState(
-            offer = first?.let { offer(it, seen[it.id]) },
+            offer = first?.let { offer(it, seen[it.id], threatsOn) },
             waiting = (files.size - 1).coerceAtLeast(0),
             busy = now.busy, result = now.result, error = now.error,
         )
@@ -112,11 +123,11 @@ class IncomingViewModel @Inject constructor(
         }
     }
 
-    private fun offer(file: IncomingFile, seen: FilePreview?): IncomingOfferUi = when (file) {
+    private fun offer(file: IncomingFile, seen: FilePreview?, threatsOn: Boolean): IncomingOfferUi = when (file) {
         is IncomingFile.Unreadable -> IncomingOfferUi.Problem(file.name, file.reason)
         is IncomingFile.Received -> when (seen) {
             null -> IncomingOfferUi.Reading(file.name)
-            is FilePreview.Threats -> IncomingOfferUi.Threats(file.name, seen.threats.size)
+            is FilePreview.Threats -> if (threatsOn) IncomingOfferUi.Threats(file.name, seen.threats.size) else IncomingOfferUi.Problem(file.name, NO_THREATS)
             is FilePreview.Points -> IncomingOfferUi.Points(file.name, seen.setName, seen.count)
             is FilePreview.Mission -> IncomingOfferUi.Mission(file.name, seen.routes, seen.namedPoints, seen.aircraft)
             is FilePreview.Problem -> IncomingOfferUi.Problem(file.name, seen.message)
@@ -129,6 +140,7 @@ class IncomingViewModel @Inject constructor(
         if (local.value.busy) return                                                                // a second tap while one is being saved does nothing
         when (val seen = looked.value[file.id]) {
             is FilePreview.Threats -> {
+                if (!threatsAllowed.value) return                                                   // offered as a problem: there is nothing to accept
                 val ids = threats.addAll(seen.threats)
                 ids.lastOrNull()?.let(threatSelection::select)
                 incoming.dismiss(file.id)
@@ -210,5 +222,6 @@ class IncomingViewModel @Inject constructor(
     companion object {
         const val TOO_BIG = "That file is too large to be a local points, threat or mission file."
         const val FULL = "EZ/PZ is already holding as many files as it can. Deal with those first, then open this one again."
+        const val NO_THREATS = "Threats are turned off for your account, so this threat file cannot be added."
     }
 }

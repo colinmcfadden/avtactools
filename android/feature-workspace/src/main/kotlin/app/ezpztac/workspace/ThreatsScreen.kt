@@ -95,7 +95,6 @@ fun ThreatsHost(
     val context = LocalContext.current
     val resolver = context.contentResolver
     val scope = rememberCoroutineScope()
-    SecureThreatWindow(context.findActivity(), state.threats.isNotEmpty() || state.editing != null)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
@@ -121,7 +120,17 @@ fun ThreatsHost(
     )
 }
 
-/** Threat rows can be sensitive even though they are unclassified, so keep their window out of screenshots and the app switcher. */
+/**
+ * Keeps the window out of screenshots, screen recording and the app switcher while there is a threat picture or a threat being edited: threat rows can
+ * be sensitive even though they are unclassified. It belongs to what is on screen whenever threats can be (the map's frame, which draws them), not to the
+ * Threats panel, which is composed only while it is offered.
+ */
+@Composable
+fun ThreatWindowGuard(viewModel: ThreatsViewModel = hiltViewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    SecureThreatWindow(LocalContext.current.findActivity(), state.threats.isNotEmpty() || state.editing != null)
+}
+
 @Composable
 private fun SecureThreatWindow(activity: Activity?, secure: Boolean) {
     DisposableEffect(activity, secure) {

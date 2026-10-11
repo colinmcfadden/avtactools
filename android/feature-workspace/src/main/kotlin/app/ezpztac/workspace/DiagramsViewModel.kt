@@ -74,9 +74,10 @@ data class RecentLz(val uuid: String, val name: String, val updated: String?)
 
 /**
  * The chips of an LZ/PZ (the web's `lzStateChips`, with the sync state where the web says whether it is saved: every LZ/PZ here is saved as it is
- * changed, docs/ANDROID_SCREENS_PLAN.md): how far along it is, then whether the server has it, or that it must be analysed before it can be named.
+ * changed, docs/ANDROID_SCREENS_PLAN.md): how far along it is, then whether the server has it, or, until it is analysed, that it must be before it is
+ * saved, whatever it is called.
  */
-internal fun lzChips(status: DiagramStatus, sync: SyncStatus?, conflictOf: String?, madeUp: Boolean): List<LzChip> {
+internal fun lzChips(status: DiagramStatus, sync: SyncStatus?, conflictOf: String?): List<LzChip> {
     val progress = when (status) {
         DiagramStatus.ANALYZED -> LzChip("Analyzed", ChipTone.SUCCESS)
         DiagramStatus.TARGETED -> LzChip("Target set", ChipTone.WARNING)
@@ -84,7 +85,7 @@ internal fun lzChips(status: DiagramStatus, sync: SyncStatus?, conflictOf: Strin
     }
     val saved = when {
         conflictOf != null || sync == SyncStatus.CONFLICT -> LzChip("Conflict copy", ChipTone.ERROR)
-        madeUp && status != DiagramStatus.ANALYZED -> LzChip("Analyze to save", ChipTone.INFO)
+        status != DiagramStatus.ANALYZED -> LzChip("Analyze to save", ChipTone.INFO)          // named or not: it is saved once it is analysed
         sync == SyncStatus.SYNCED -> LzChip("Synced", ChipTone.SUCCESS)
         else -> LzChip("Waiting to sync", ChipTone.WARNING)                        // null too: made a moment ago, the list not caught up yet
     }
@@ -279,9 +280,12 @@ class DiagramsViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.Eagerly, DiagramsUiState())
 
     init {
-        // What is on the map is open: however it was opened (here, a launch putting back the last one, a mission brought in), it joins the set.
+        // What is on the map is open: however it was opened (here, a launch putting back the last one, a mission brought in), it joins the set. And an LZ/PZ
+        // closed from outside (a sign-out, a mission pack that removed it) takes its plan page with it: the next one opened starts from the open LZ/PZs.
         viewModelScope.launch {
-            session.active.collect { diagram -> diagram?.id?.let(openSet::add) }
+            session.active.collect { diagram ->
+                if (diagram != null) openSet.add(diagram.id) else if (page.value == LzPage.PLAN) page.value = LzPage.HOME
+            }
         }
     }
 
@@ -321,7 +325,14 @@ class DiagramsViewModel @Inject constructor(
     fun close(uuid: String) = run("The LZ/PZ could not be closed.") {
         openSet.remove(uuid)
         if (session.active.value?.id == uuid) {
-            session.close()
+            val before = openSet.ids.value.toSet()
+            try {
+                session.close()
+            } finally {
+                // One whose record went while it was open (deleted elsewhere) is kept under a new id by the save that closing makes: it is closed too,
+                // not opened again as the one before it.
+                openSet.ids.value.filterNot { it in before }.forEach(openSet::remove)
+            }
             page.value = LzPage.HOME
             openNext()
         }
@@ -346,6 +357,7 @@ class DiagramsViewModel @Inject constructor(
         if (title.isEmpty()) return fail("Give the LZ/PZ a name.")
         val open = session.active.value ?: return
         val chosen = LzNames.free(title, state.value.otherNames)
+        if (LzNames.isMadeUp(chosen)) return fail(LzNames.MADE_UP_REFUSED)
         run("The LZ/PZ could not be saved.") {
             if (session.active.value?.id != open.id) return@run
             session.edit("Name") { it.copy(name = chosen) }
@@ -415,6 +427,7 @@ class DiagramsViewModel @Inject constructor(
     fun rename(uuid: String, name: String) {
         val title = name.trim()
         if (title.isEmpty()) return fail("A diagram needs a name.")
+        if (LzNames.isMadeUp(title)) return fail(LzNames.MADE_UP_REFUSED)
         run("The diagram could not be renamed.") {
             // The open diagram is the one with unsaved edits in memory, so it is renamed there and saved with them.
             if (session.active.value?.id == uuid) {
@@ -474,7 +487,7 @@ class DiagramsViewModel @Inject constructor(
         sync = listed?.sync,
         conflictOf = listed?.conflictOf,
         madeUpName = LzNames.isMadeUp(diagram.name),
-        chips = lzChips(diagram.status, listed?.sync, listed?.conflictOf, LzNames.isMadeUp(diagram.name)),
+        chips = lzChips(diagram.status, listed?.sync, listed?.conflictOf),
         // The switch is there while the open LZ/PZ has a slope measured for the boundary it has now, as the map's button is.
         slopeShown = slopeShown.takeIf { (slopes[diagram.id] as? SlopeState.Ready)?.let { it.boundaryKey == analysis.boundaryKey(diagram) } == true },
         saveContents = saveContentsOf(diagram),
@@ -555,7 +568,7 @@ class DiagramsViewModel @Inject constructor(
 
     private fun DiagramSummary.toRow(isActive: Boolean) = DiagramRow(
         uuid = uuid, name = name, status = status, grid = target?.mgrs?.takeIf { it.isNotBlank() }, sync = sync, conflictOf = conflictOf, isActive = isActive,
-        chips = lzChips(status, sync, conflictOf, LzNames.isMadeUp(name)),
+        chips = lzChips(status, sync, conflictOf),
     )
 
     private companion object {

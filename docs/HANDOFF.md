@@ -6,7 +6,7 @@ Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh 
 that moves the "where things stand" or "next" sections.
 
 Last refreshed: 2026-10-11 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
-panel committed locally, waiting for the owner's device try and one review of S1–S3 together).
+panel committed locally and reviewed together, the review's fixes in; waiting for the owner's device try).
 
 ---
 
@@ -68,7 +68,7 @@ panel committed locally, waiting for the owner's device try and one review of S1
 
 ## 2. Next work, in order
 
-1. **The screens**, S1–S3 done (to try on a device, then one independent review of S1–S3 together, then S4, Routes), now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
+1. **The screens**, S1–S3 done and reviewed together, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, S3's *Reviewed*); to try on a device, then S4, Routes, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
    AGENTS.md §17, *Mission packs on Android*). **The plan is `docs/ANDROID_SCREENS_PLAN.md`** (the owner's decisions, the steps S1–S9 and
    P1–P4, how each is checked), on `feat/android-screens`. First the redesigned shell (2), then the pack screens in it (3); both are drawn in
    `docs/native-design/`. **How the engine was built**, worth keeping for the screens: one commit per step, implemented, reviewed

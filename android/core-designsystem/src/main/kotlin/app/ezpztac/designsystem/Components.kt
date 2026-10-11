@@ -56,6 +56,9 @@ enum class BannerKind { Error, Warning, Info, Success }
  * Drawn as the redesign draws a notice (docs/native-design, the Threats panel's): a card tinted with the kind's colour, its border a
  * little stronger, its icon in that colour and its words in the screen's own. A screen reader announces it when it appears.
  */
+/** How strongly a notice is tinted with its kind's colour behind words in the screen's own (`TokenContrastTest` holds the pair to AA). */
+internal const val BANNER_TINT = 0.10f
+
 @Composable
 fun Banner(
     text: String,
@@ -67,7 +70,7 @@ fun Banner(
     val tint = bannerTint(kind)
     Surface(
         modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-        color = tint.copy(alpha = 0.10f),
+        color = tint.copy(alpha = BANNER_TINT),
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(Tokens.Radius.lg.dp),
         border = BorderStroke(1.dp, tint.copy(alpha = 0.30f)),

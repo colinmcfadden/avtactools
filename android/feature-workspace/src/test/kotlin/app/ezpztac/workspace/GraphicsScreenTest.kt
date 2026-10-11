@@ -508,7 +508,8 @@ class GraphicsScreenTest {
     fun `a unit is listed with what it is, and is not offered a heading`() {
         show(unitHeld())
         compose.onNodeWithText("Heading", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Hostile · Armor", substring = true).assertIsDisplayed()
+        // The held unit's controls are brought into view, so its row in the list is scrolled to, as a person would.
+        compose.onNodeWithText("Hostile · Armor", substring = true).performScrollTo().assertIsDisplayed()
     }
 }
 

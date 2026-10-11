@@ -1,5 +1,7 @@
 package app.ezpztac.map
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.onRoot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,18 +41,32 @@ class MapScreenTest {
         style: MapBaseStyle = styles.first(),
     ) = MapUiState(styles = styles, style = style, readout = readout, searchError = error)
 
-    private fun show(state: MapUiState, gps: GpsState = GpsState.Off, camera: CameraState? = CameraState(LatLon(34.78, -84.08), 16.0, 30.0), mode: ThemeMode = ThemeMode.Dark) {
+    private fun show(
+        state: MapUiState, gps: GpsState = GpsState.Off, camera: CameraState? = CameraState(LatLon(34.78, -84.08), 16.0, 30.0), mode: ThemeMode = ThemeMode.Dark,
+        padding: MapPadding = MapPadding(),
+    ) {
         compose.setContent {
             EzpzTheme(mode) {
                 MapScreen(
                     state = state, camera = camera, gps = gps,
                     onSearch = { log += "search $it" }, onClearSearchError = { log += "clearError" }, onSelectStyle = { log += "style $it" },
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
-                    onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" },
+                    onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding,
                     map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40))) },          // stands in for the GPU-drawn map
                 )
             }
         }
+    }
+
+    @Test
+    fun `the crosshair is drawn at the middle of the map the padding leaves, where the camera's centre is`() {
+        show(state(), padding = MapPadding(top = 100.dp, bottom = 300.dp))
+        compose.waitForIdle()
+        val screen = compose.onRoot().fetchSemanticsNode().size.height
+        val cross = compose.onNodeWithContentDescription("Map centre").fetchSemanticsNode()
+        val middle = cross.positionInRoot.y + cross.size.height / 2f
+        val expected = with(compose.density) { 100.dp.toPx() + (screen - 100.dp.toPx() - 300.dp.toPx()) / 2f }
+        assertEquals(expected, middle, 1f)
     }
 
     @Test

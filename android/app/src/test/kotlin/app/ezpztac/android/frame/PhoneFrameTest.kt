@@ -1,5 +1,7 @@
 package app.ezpztac.android.frame
 
+import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertTrue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -147,6 +149,9 @@ class PhoneFrameTest {
         show(detent = SheetDetent.Half, onFrame = { frame = it })
         compose.waitForIdle()
         val half = frame!!.padding.bottom
+        val halfHeight = with(compose.density) { sheet.anchors!!.heightOf(SheetDetent.Half).toDp() }
+        assertEquals(halfHeight.value, half.value, 0.5f)                                          // at half, the half sheet's height
+        assertTrue(half > PanelSheetDefaults.LoweredHeight + 100.dp)                               // and not the lowered one's
         compose.onNodeWithContentDescription("Open the LZ/PZ panel full height").performClick()
         compose.waitForIdle()
         assertEquals(SheetDetent.Full, sheet.settled)

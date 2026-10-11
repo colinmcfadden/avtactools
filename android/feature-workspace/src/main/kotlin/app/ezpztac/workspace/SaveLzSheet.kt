@@ -66,6 +66,12 @@ fun SaveLzContent(current: ActiveDiagramUi, otherNames: List<String>, onSave: (S
     var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(current.name, TextRange(0, current.name.length))) }
     val name = field.text.trim()
     val saveAs = if (name.isEmpty()) null else LzNames.free(name, otherNames)
+    // A made-up name is not a name (`LzNames.MADE_UP_REFUSED`): said once Save is pressed, as the design offers the made-up one to type over, not as an error.
+    var tried by rememberSaveable { mutableStateOf(false) }
+    val refused = saveAs != null && LzNames.isMadeUp(saveAs)
+    val save: () -> Unit = {
+        if (refused) tried = true else if (name.isNotEmpty()) onSave(name)
+    }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     Column(
@@ -78,14 +84,14 @@ fun SaveLzContent(current: ActiveDiagramUi, otherNames: List<String>, onSave: (S
         }
         OutlinedTextField(
             value = field,
-            onValueChange = { if (it.text.length <= MAX_NAME) field = it },
+            onValueChange = { if (it.text.length <= MAX_NAME) { field = it; tried = false } },
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
             label = { Text("Name") },
             singleLine = true,
-            isError = name.isEmpty(),
+            isError = name.isEmpty() || (tried && refused),
             shape = RoundedCornerShape(Tokens.Radius.sm.dp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { if (name.isNotEmpty()) onSave(name) }),
+            keyboardActions = KeyboardActions(onDone = { save() }),
             trailingIcon = if (field.text.isNotEmpty()) {
                 { IconButton(onClick = { field = TextFieldValue("") }) { Icon(painterResource(EzpzIcons.cancelFill), contentDescription = "Clear name") } }
             } else {
@@ -95,6 +101,7 @@ fun SaveLzContent(current: ActiveDiagramUi, otherNames: List<String>, onSave: (S
                 Text(
                     when {
                         name.isEmpty() -> "Give it a name."
+                        tried && refused -> LzNames.MADE_UP_REFUSED
                         saveAs != name -> "An LZ/PZ called $name is already in your Library: this one is saved as $saveAs."
                         else -> "You can rename it any time."
                     },
@@ -115,7 +122,7 @@ fun SaveLzContent(current: ActiveDiagramUi, otherNames: List<String>, onSave: (S
                 Text("Saves to your Library", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TextButton(onClick = onCancel) { Text("Cancel") }
-            PillButton("Save", onClick = { onSave(name) }, icon = EzpzIcons.save, enabled = name.isNotEmpty())
+            PillButton("Save", onClick = save, icon = EzpzIcons.save, enabled = name.isNotEmpty())
         }
     }
 }

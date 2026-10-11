@@ -85,18 +85,18 @@ object Tokens {
             const val background: Long = 0xFF07090C
             const val surface: Long = 0xFF0D1117
             const val surfaceVariant: Long = 0xFF171C23
-            const val onBackground: Long = 0xFFCF6B63
-            const val onSurface: Long = 0xFFCF6B63
+            const val onBackground: Long = 0xFFDD726A
+            const val onSurface: Long = 0xFFDD726A
             const val onSurfaceVariant: Long = 0xFFC26C63
             const val primary: Long = 0xFFD66B64
             const val onPrimary: Long = 0xFF0D1117
             const val secondary: Long = 0xFFCA6159
             const val onSecondary: Long = 0xFF0D1117
             const val outline: Long = 0xFF94504A
-            const val error: Long = 0xFFFF5A4F
+            const val error: Long = 0xFFFF6055
             const val onError: Long = 0xFF0D1117
-            const val warning: Long = 0xFFC48A2C
-            const val success: Long = 0xFF6E9A5E
+            const val warning: Long = 0xFFD2942F
+            const val success: Long = 0xFF76A565
             const val scrim: Long = 0xFF000000
             const val surfaceContainerLowest: Long = 0xFF050608
             const val surfaceContainerLow: Long = 0xFF0B0E12
@@ -117,7 +117,7 @@ object Tokens {
             const val inverseSurface: Long = 0xFF1F1513
             const val inverseOnSurface: Long = 0xFFCF6B63
             const val inversePrimary: Long = 0xFFD66B64
-            const val accent: Long = 0xFFD66B64
+            const val accent: Long = 0xFFE5726B
         }
     }
 

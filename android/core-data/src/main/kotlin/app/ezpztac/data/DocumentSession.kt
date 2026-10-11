@@ -194,15 +194,23 @@ open class DocumentSession<D : Any>(
     }
 
     /**
-     * Takes back the last edit, leaving nothing to redo, if it was made under [coalesce]: what a tool mode that is cancelled does with the one step its edits
-     * made. False, changing nothing, when another edit has been made since (or there is none).
+     * Takes back what was done under [coalesce] as if it had never been done: what a tool mode that is cancelled does with what it placed. Its steps go
+     * from the history, undone or not, and [remove] (which takes out of a document what they added) is applied to the document and to every other version
+     * the history holds, so neither undo nor redo brings any of it back, while whatever was done in between stays. A step that [remove] leaves with nothing
+     * to do (an edit of something placed) goes too. Their steps cannot simply be undone: an edit made between two of them splits them, and an undo moves
+     * one to the redo list.
      */
-    fun dropLast(coalesce: Any): Boolean {
-        val last = undo.lastOrNull() ?: return false
-        if (last.key != coalesce) return false
-        undo.removeLast()
-        apply(last.before)
-        return true
+    fun retract(coalesce: Any, remove: (D) -> D) {
+        val before = _active.value ?: return
+        val change = settled(remove)
+        val after = change(before)
+        // Every step is worked out before any is replaced, as in [patchHistory].
+        fun kept(steps: List<Step<D>>) = steps.filter { it.key != coalesce }.map { Step(it.label, change(it.before), change(it.after), it.key) }.filter { it.before != it.after }
+        val undone = kept(undo)
+        val redone = kept(redo)
+        undo.clear(); undo.addAll(undone)
+        redo.clear(); redo.addAll(redone)
+        if (after != before) apply(after) else publishDepths()
     }
 
     /** Undoes the last edit. Returns its label, or null if there was nothing to undo. */

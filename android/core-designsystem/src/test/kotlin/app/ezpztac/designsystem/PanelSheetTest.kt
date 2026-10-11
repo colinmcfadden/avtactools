@@ -1,5 +1,14 @@
 package app.ezpztac.designsystem
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onRoot
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +36,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * The panel sheet under a finger: what [PanelSheetState.heading] says while it settles, and that a change of space while it moves does not leave it taking
@@ -34,6 +44,7 @@ import org.robolectric.annotation.Config
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)                                                         // real text measurement: the header's height depends on it
 class PanelSheetTest {
     @get:Rule
     val compose = createComposeRule()
@@ -41,14 +52,17 @@ class PanelSheetTest {
     private var height by mutableStateOf<Dp?>(null)
     private val clicks = mutableListOf<String>()
 
-    private fun show(state: PanelSheetState) {
+    private fun show(state: PanelSheetState, fontScale: Float = 1f) {
         compose.setContent {
-            EzpzTheme(ThemeMode.Dark) {
-                Box(height?.let { Modifier.fillMaxWidth().height(it) } ?: Modifier.fillMaxSize()) {
-                    PanelSheet(state, topLimit = 120.dp, header = { PanelHeader("Sheet header") }) {
-                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                            Button(onClick = { clicks += "button" }) { Text("A button") }
-                            repeat(40) { Text("row $it", Modifier.height(48.dp)) }
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                EzpzTheme(ThemeMode.Dark) {
+                    Box(height?.let { Modifier.fillMaxWidth().height(it) } ?: Modifier.fillMaxSize()) {
+                        PanelSheet(state, topLimit = 120.dp, header = { PanelHeader("Sheet header", subtitle = "3 open · this session") }) {
+                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                                Button(onClick = { clicks += "button" }) { Text("A button") }
+                                repeat(40) { Text("row $it", Modifier.height(48.dp)) }
+                            }
                         }
                     }
                 }
@@ -117,5 +131,36 @@ class PanelSheetTest {
         assertEquals(state.anchors!!.halfPx, state.offsetPx, 0.5f)                               // at the new half, not the old one
         compose.onNodeWithText("A button").performClick()
         assertEquals(listOf("button"), clicks)
+    }
+
+    @Test
+    fun `the handle is a button with a name, and a tap on it raises the sheet`() {
+        val state = PanelSheetState(SheetDetent.Lowered)
+        show(state)
+        compose.onNodeWithContentDescription(PanelSheetDefaults.HandleDescription)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .performClick()
+        compose.waitForIdle()
+        assertEquals(SheetDetent.Half, state.settled)
+    }
+
+    @Test
+    fun `lowered, the whole header shows however large the text`() {
+        val state = PanelSheetState(SheetDetent.Lowered)
+        show(state, fontScale = 1.5f)
+        val root = compose.onRoot().fetchSemanticsNode().size.height
+        val subtitle = compose.onNodeWithText("3 open · this session").fetchSemanticsNode()
+        val end = subtitle.positionInRoot.y + subtitle.size.height                                // not clipped: where its text really ends
+        assertTrue("the subtitle ends at $end, the screen at $root", end <= root + 0.5f)
+        val lowered = state.anchors!!.heightOf(SheetDetent.Lowered)
+        val design = with(compose.density) { PanelSheetDefaults.LoweredHeight.toPx() }
+        assertTrue("lowered is $lowered px, the design's $design px", lowered > design + 1f)
+    }
+
+    @Test
+    fun `at the design's text size the lowered sheet is the design's height`() {
+        val state = PanelSheetState(SheetDetent.Lowered)
+        show(state)
+        assertEquals(with(compose.density) { PanelSheetDefaults.LoweredHeight.toPx() }, state.anchors!!.heightOf(SheetDetent.Lowered), 1f)
     }
 }

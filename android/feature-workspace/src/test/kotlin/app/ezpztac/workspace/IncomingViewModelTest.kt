@@ -76,6 +76,7 @@ class IncomingViewModelTest {
         val routeSession = RouteSession(routes, scope.backgroundScope)
         val model = IncomingViewModel(incoming, FileInspector(ThreatTransfer(ThsWriter { ByteArray(0) })), threats, selection, sets, MissionImporter(routes, routeSession, MapFocus()))
             .also { it.worker = StandardTestDispatcher(scope.testScheduler) }
+            .also { it.allowThreats(true) }                                                      // the account has threats; one without them says so
         val state get() = model.state.value
         suspend fun savedSets() = syncStore.transaction { records(RecordKind.POINT_SET).size }
         suspend fun savedRouteSets() = syncStore.transaction { records(RecordKind.ROUTE).size }
@@ -117,6 +118,20 @@ class IncomingViewModelTest {
         assertTrue(r.threats.entries.value.isEmpty())
         assertEquals(0, r.savedSets())
         assertTrue(r.state.visible)
+    }
+
+    @Test
+    fun `an account without threats is told so, and accepting adds nothing`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.allowThreats(false)
+        r.incoming.offer("SA-6 site.ths", threatFile)
+        advanceUntilIdle()
+        assertEquals(IncomingOfferUi.Problem("SA-6 site.ths", IncomingViewModel.NO_THREATS), r.state.offer)
+        r.model.accept(); advanceUntilIdle()
+        assertTrue(r.threats.entries.value.isEmpty())
+        assertEquals(1, r.incoming.files.value.size)                                            // still there to be closed
+        r.model.decline()
+        assertTrue(r.incoming.files.value.isEmpty())
     }
 
     @Test

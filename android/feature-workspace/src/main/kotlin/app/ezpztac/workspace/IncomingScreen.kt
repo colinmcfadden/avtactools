@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -43,7 +44,12 @@ data class IncomingActions(
  * says so and nothing else should be tapped meanwhile. Back means "not now". A tap outside does not, so a stray touch cannot lose the file.
  */
 @Composable
-fun IncomingHost(viewModel: IncomingViewModel = hiltViewModel()) {
+fun IncomingHost(
+    /** Whether the account has threats: a threat file is put to the person only then, and otherwise said to be turned off. */
+    threatsAllowed: Boolean,
+    viewModel: IncomingViewModel = hiltViewModel(),
+) {
+    LaunchedEffect(viewModel, threatsAllowed) { viewModel.allowThreats(threatsAllowed) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     if (!state.visible) return
     val actions = IncomingActions(viewModel::accept, viewModel::decline, viewModel::closeResult)

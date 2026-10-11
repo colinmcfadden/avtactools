@@ -868,6 +868,36 @@ class DiagramsViewModelTest {
     }
 
     @Test
+    fun `closing one whose record went meanwhile keeps the work in the Library, and does not open it again`() = runTest(dispatcher) {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))                           // collectors run at once, as on the main thread (AGENTS.md §14)
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val id = r.model.state.value.current!!.uuid
+        r.session.edit("Rename") { it.copy(name = "LZ CROW") }                                   // not saved yet
+        r.repository.delete(id)                                                                 // gone, as if deleted on another device and synced
+        r.model.close(id)
+        advanceUntilIdle()
+        assertNull(r.session.active.value)
+        assertEquals(emptyList<String>(), r.open.ids.value)
+        assertEquals(listOf("LZ CROW"), r.rows.map { it.name })                                  // the work is kept, under a new id
+    }
+
+    @Test
+    fun `an LZ-PZ closed from outside takes its plan page with it`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.showPage(LzPage.PLAN)
+        advanceUntilIdle()
+        r.session.close()                                                                       // a sign-out closes it
+        advanceUntilIdle()
+        r.model.open(r.rows.single().uuid)                                                      // from Recent, after signing in again
+        advanceUntilIdle()
+        assertEquals(LzPage.HOME, r.model.state.value.page)
+    }
+
+    @Test
     fun `closing one that is only also open leaves the one on the map`() = runTest(dispatcher) {
         val r = rig()
         r.model.newAt(here)
@@ -952,6 +982,52 @@ class DiagramsViewModelTest {
         r.model.saveAs("lz hawk")
         advanceUntilIdle()
         assertEquals("lz hawk 2", r.model.state.value.current!!.name)
+    }
+
+    @Test
+    fun `a made-up name is not a name, so saving or renaming to one is refused and nothing is said to be saved`() = runTest(dispatcher) {
+        val r = rig()
+        val notices = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { notices += it } }
+        r.repository.create(DiagramTarget(34.79, -84.08, "16S GD 66993 53949"), "LZ/PZ")      // a name; kept apart from it, another would be LZ/PZ 2
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        r.model.saveAs(r.model.state.value.current!!.name)                                        // the made-up name the sheet offers
+        advanceUntilIdle()
+        assertEquals(LzNames.MADE_UP_REFUSED, r.model.state.value.error)
+        r.model.dismissError()
+        r.model.saveAs("LZ/PZ")                                                                    // taken: kept apart, it would be LZ/PZ 2
+        advanceUntilIdle()
+        assertEquals(LzNames.MADE_UP_REFUSED, r.model.state.value.error)
+        assertTrue("still to be named", r.model.state.value.current!!.canSave)
+        assertEquals(emptyList<String>(), notices)
+        r.model.saveAs("LZ HAWK")
+        advanceUntilIdle()
+        r.model.rename(r.model.state.value.current!!.uuid, "LZ/PZ 7")
+        advanceUntilIdle()
+        assertEquals(LzNames.MADE_UP_REFUSED, r.model.state.value.error)
+        assertEquals("LZ HAWK", r.model.state.value.current!!.name)
+    }
+
+    @Test
+    fun `an LZ-PZ named before it is analysed is not saved until it is`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.rename(r.model.state.value.current!!.uuid, "LZ HAWK")
+        advanceUntilIdle()
+        val named = r.model.state.value.current!!
+        assertFalse(named.madeUpName)
+        assertFalse(named.canSave)
+        assertEquals(LzChip("Analyze to save", ChipTone.INFO), named.chips.last())
+        r.model.analyze()
+        advanceUntilIdle()
+        val analysed = r.model.state.value.current!!
+        assertEquals(LzChip("Analyzed", ChipTone.SUCCESS), analysed.chips.first())
+        assertFalse(LzChip("Analyze to save", ChipTone.INFO) in analysed.chips)
+        assertFalse("named already: nothing to save", analysed.canSave)
     }
 
     @Test

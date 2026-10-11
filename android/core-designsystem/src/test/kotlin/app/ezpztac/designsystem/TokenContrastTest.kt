@@ -61,6 +61,32 @@ class TokenContrastTest {
         }
     }
 
+    /** [foreground] at [alpha] over [background], as the screen draws it: each channel blended and kept to 8 bits. */
+    private fun over(foreground: Long, alpha: Float, background: Long): Long {
+        fun at(c: Long, shift: Int) = (c shr shift) and 0xFF
+        fun mix(shift: Int) = Math.round(at(foreground, shift) * alpha + at(background, shift) * (1 - alpha)).toLong()
+        return (0xFFL shl 24) or (mix(16) shl 16) or (mix(8) shl 8) or mix(0)
+    }
+
+    // The state chips (words in their tone over a tint of it) and the notices (the screen's words over a lighter tint), on every surface container they can
+    // sit on, in the palettes the app draws: dark, and night after dark (MainActivity offers no other). Light is not drawn; its status colours would need
+    // darkening by about a quarter for its chips to pass. The first review of the redesigned screens found night's at 4.3:1.
+    @Test
+    fun `a state chip's words and a notice's words meet AA on their tint, over every surface container`() =
+        listOf(Palette.Dark, Palette.Night).forEach { p ->
+            val r = rolesOf(p)
+            val tones = listOf("success" to r.success, "warning" to r.warning, "error" to r.error, "accent" to r.accent)
+            listOf(
+                "surface" to r.surface, "low" to r.surfaceContainerLow, "container" to r.surfaceContainer, "high" to r.surfaceContainerHigh,
+                "highest" to r.surfaceContainerHighest,
+            ).forEach { (name, container) ->
+                tones.forEach { (tone, color) ->
+                    check(p, "a $tone chip on $name", color, over(color, CHIP_TINT, container), 4.5)
+                    check(p, "a notice's words on a $tone notice on $name", r.onSurface, over(color, BANNER_TINT, container), 4.5)
+                }
+            }
+        }
+
     @Test
     fun `text on each tonal container meets AA`() = eachPalette { p, r ->
         check(p, "onPrimaryContainer on primaryContainer", r.onPrimaryContainer, r.primaryContainer, 4.5)

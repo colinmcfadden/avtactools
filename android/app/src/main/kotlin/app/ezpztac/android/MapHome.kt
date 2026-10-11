@@ -83,6 +83,7 @@ import app.ezpztac.workspace.PointsHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesHost
 import app.ezpztac.workspace.ThreatsHost
+import app.ezpztac.workspace.ThreatWindowGuard
 import app.ezpztac.workspace.ThreatsViewModel
 import app.ezpztac.workspace.rememberFileImport
 import kotlinx.coroutines.flow.filterNotNull
@@ -129,6 +130,7 @@ fun MapHome(
     val night by display.night.collectAsStateWithLifecycle()
     val threatsModel: ThreatsViewModel = hiltViewModel()                  // the threats panel and the mission export share one
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
+    val drawingWhat by home.drawingWhat.collectAsStateWithLifecycle()
     val slopeToggle by home.slopeToggle.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     val density = LocalDensity.current
@@ -146,6 +148,8 @@ fun MapHome(
     var chosen by rememberSaveable { mutableStateOf(Panel.Lz) }
     val panels = remember(user.features) { panelsFor(user) }
     val current = shownPanel(chosen, panels)
+    // Threats are drawn, held and taken in only while the account has them, which is while their panel is offered.
+    val threatsOn = Panel.Threats in panels
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
     var floating by remember { mutableIntStateOf(0) }
 
@@ -158,12 +162,15 @@ fun MapHome(
         }
     }
     LaunchedEffect(host) { snapshotFlow { host.camera }.filterNotNull().collect(viewModel::onCamera) }
-    // A boundary or a route is drawn by tapping the map: the sheet goes down to its header, so the map is there.
-    LaunchedEffect(drawing) { if (drawing) sheet.animateTo(SheetDetent.Lowered) }
+    // A boundary or a route is drawn, or a tool places, by tapping the map: the sheet goes down to its header, so the map is there, each time one starts.
+    LaunchedEffect(drawingWhat) { if (drawingWhat != null) sheet.animateTo(SheetDetent.Lowered) }
+    LaunchedEffect(threatsOn) { home.allowThreats(threatsOn) }
+    // While there are threats on the map, the window is kept out of screenshots, screen recording and the app switcher, whichever panel shows.
+    if (threatsOn) ThreatWindowGuard(threatsModel)
     LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
     LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
     // A file another app opened with this one (Files, a mail, the share sheet, or Import) is put to the person here: nothing is imported until they accept.
-    IncomingHost()
+    IncomingHost(threatsAllowed = threatsOn)
     // An invitation link: said above the sheet, in the frame's own toasts.
     InviteNotices(invite, inviteAttempt, snackbars, onRetry = onRetryInvite, onDismiss = onDismissInvite)
     // What the LZ/PZ panel says once it has happened (an LZ/PZ named), in the same toasts.
@@ -253,7 +260,10 @@ fun MapHome(
                         if (!drawing) {
                             HeldObjectBarHost(
                                 onOptions = {
-                                    home.heldPanel()?.let { chosen = it }
+                                    home.heldPanel()?.let { panel ->
+                                        chosen = panel
+                                        if (panel == Panel.Lz) diagrams.showPage(LzPage.PLAN)     // a graphic's controls are on its LZ/PZ's plan
+                                    }
                                     scope.launch { sheet.animateTo(SheetDetent.Full) }
                                 },
                                 onDone = home::releaseHeld,

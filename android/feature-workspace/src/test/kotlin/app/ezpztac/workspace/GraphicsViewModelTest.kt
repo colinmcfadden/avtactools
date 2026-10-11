@@ -1046,6 +1046,55 @@ class GraphicsViewModelTest {
     }
 
     @Test
+    fun `cancel takes back every placement even when an edit came between two of them, and undo never brings one back`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.SECTOR_OF_FIRE, crosshair)                                     // there before the mode
+        advanceUntilIdle()
+        val sector = GraphicRef("sectorsOfFire", DiagramOps.idText((r.diagram.graphics.sectorsOfFire.single() as JsonObject)["id"]))
+        r.model.beginPlacing(PlaceTool.HELICOPTER)
+        r.model.placeAt(crosshair)
+        advanceUntilIdle()
+        r.model.select(GraphicRef("helicopters", DiagramOps.idText((r.diagram.graphics.helicopters.single() as JsonObject)["id"])))
+        r.model.nudge(0.0, 50.0)                                                                   // an edit of what the mode placed: nothing once it is gone
+        r.model.select(sector)
+        r.model.nudge(100.0, 0.0)                                                                  // splits the mode's placements into two steps
+        r.model.placeAt(elsewhere)
+        advanceUntilIdle()
+        assertEquals(2, r.diagram.graphics.helicopters.size)
+        val moved = r.diagram.graphics.sectorsOfFire.single()
+        r.model.cancelPlacing()
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.helicopters.isEmpty())
+        assertEquals(moved, r.diagram.graphics.sectorsOfFire.single())                           // the edit in between stays
+        assertEquals("placing the sector and moving it", 2, r.state.undoDepth)
+        repeat(5) { r.model.undo() }
+        advanceUntilIdle()
+        assertTrue("no version left in the history has the mode's helicopters", r.diagram.graphics.helicopters.isEmpty())
+        repeat(5) { r.model.redo() }
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.helicopters.isEmpty())
+        assertEquals(moved, r.diagram.graphics.sectorsOfFire.single())                           // and redo still brings the edit back
+    }
+
+    @Test
+    fun `placements undone while the mode is on are not left for redo once it is cancelled`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.beginPlacing(PlaceTool.PZ_MARKER)
+        r.model.placeAt(crosshair)
+        r.model.placeAt(elsewhere)
+        advanceUntilIdle()
+        r.model.undo()
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.pzMarkers.isEmpty())
+        r.model.cancelPlacing()
+        advanceUntilIdle()
+        assertEquals(0, r.state.redoDepth)
+        r.model.redo()
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.pzMarkers.isEmpty())
+    }
+
+    @Test
     fun `go-arounds are placed turning the way their tool says`() = runTest(dispatcher) {
         val r = opened()
         r.model.beginPlacing(PlaceTool.GO_AROUND_RIGHT)

@@ -14,6 +14,12 @@ object LzNames {
     /** Whether [name] is still the made-up one. */
     fun isMadeUp(name: String): Boolean = MADE_UP.matches(name.trim())
 
+    /**
+     * Why a made-up name cannot be what an LZ/PZ is saved or renamed as: it is what says the LZ/PZ has not been named yet, so one saved as `LZ/PZ 1`
+     * would go on offering *Save* (the web, which keeps that apart in its Library, takes it).
+     */
+    const val MADE_UP_REFUSED = "Give it a name of its own: LZ/PZ and a number is what an LZ/PZ is called until it is saved."
+
     /** The first `LZ/PZ n` no LZ/PZ in [taken] is called. */
     fun next(taken: Collection<String>): String {
         val used = taken.map { it.trim().lowercase() }.toSet()

@@ -1,5 +1,6 @@
 package app.ezpztac.workspace
 
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -302,7 +303,7 @@ private fun ActiveLzCard(current: ActiveDiagramUi, actions: LzPanelActions) {
                 SavesToLibrary(Modifier.weight(1f))
             }
             renaming?.let { name ->
-                RenameField(name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null })
+                RenameField(name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null })
             }
             if (confirmDelete) DeleteConfirm(current.name, onDelete = { confirmDelete = false; actions.delete(current.uuid) }, onKeep = { confirmDelete = false })
             if (current.conflictOf != null) {
@@ -314,10 +315,13 @@ private fun ActiveLzCard(current: ActiveDiagramUi, actions: LzPanelActions) {
     }
 }
 
-/** *Save* while the LZ/PZ still has its made-up name and is analysed; disabled until it is analysed (its chip says so); *Saved* once it is named. */
+/**
+ * *Save* while the LZ/PZ still has its made-up name and is analysed; disabled until it is analysed (its chip says so), named or not, since an LZ/PZ is
+ * saved once it is analysed, as on the web; *Saved* once it is both.
+ */
 @Composable
 private fun SaveButton(current: ActiveDiagramUi, save: () -> Unit) {
-    if (current.madeUpName) {
+    if (current.madeUpName || current.status != DiagramStatus.ANALYZED) {
         PillButton("Save", onClick = save, icon = EzpzIcons.save, enabled = current.canSave)
     } else {
         PillButton("Saved", onClick = {}, icon = EzpzIcons.done, enabled = false)
@@ -372,11 +376,28 @@ private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRena
 }
 
 @Composable
-private fun RenameField(name: String, onChange: (String) -> Unit, onDone: (String) -> Unit, onCancel: () -> Unit) {
+private fun RenameField(name: String, was: String, onChange: (String) -> Unit, onDone: (String) -> Unit, onCancel: () -> Unit) {
+    // What is wrong with the name is said at the field, once Save is pressed: the panel's banner can be scrolled out of sight while typing.
+    var refused by rememberSaveable { mutableStateOf<String?>(null) }
+    val done: () -> Unit = {
+        val title = name.trim()
+        refused = when {
+            title.isEmpty() -> "Give it a name."
+            title != was.trim() && LzNames.isMadeUp(title) -> LzNames.MADE_UP_REFUSED
+            else -> null
+        }
+        when {
+            refused != null -> {}
+            title == was.trim() -> onCancel()                                               // nothing to change
+            else -> onDone(title)
+        }
+    }
     Column(Modifier.padding(top = Tokens.Spacing.md.dp, end = Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-        EzpzTextField(value = name, onValueChange = onChange, label = "Name", imeAction = ImeAction.Done, onImeAction = { onDone(name) })
+        EzpzTextField(
+            value = name, onValueChange = { refused = null; onChange(it) }, label = "Name", error = refused, imeAction = ImeAction.Done, onImeAction = done,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            TextAction("Save name", onClick = { onDone(name) })
+            TextAction("Save name", onClick = done)
             TextAction("Cancel", onClick = onCancel)
         }
     }
@@ -424,7 +445,7 @@ fun LzPlanContent(
             LzMoreMenu(current, actions, onRename = { renaming = current.name }, onDelete = { confirmDelete = true }, outlined = true)
             SavesToLibrary(Modifier.weight(1f))
         }
-        renaming?.let { name -> RenameField(name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null }) }
+        renaming?.let { name -> RenameField(name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null }) }
         if (confirmDelete) DeleteConfirm(current.name, onDelete = { confirmDelete = false; actions.delete(current.uuid) }, onKeep = { confirmDelete = false })
         if (current.conflictOf != null) ConflictPanel("LZ/PZ") { actions.resolve(current.uuid, it) }
 
@@ -591,12 +612,13 @@ private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
             }
         }
         current.slopeShown?.let { shown ->
+            // The whole row is the switch, so it is said with its name; the switch itself only shows the state and is not a second target.
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { role = Role.Switch; stateDescription = if (shown) "On" else "Off" },
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = shown, role = Role.Switch, onValueChange = { actions.toggleSlope() }),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Slope map", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Switch(checked = shown, onCheckedChange = { actions.toggleSlope() })
+                Switch(checked = shown, onCheckedChange = null)
             }
         }
     }

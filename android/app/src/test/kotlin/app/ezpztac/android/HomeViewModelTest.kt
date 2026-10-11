@@ -6,6 +6,8 @@ import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
+import app.ezpztac.data.InMemoryOpenDiagramStore
+import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.PointSetRepository
@@ -209,6 +211,7 @@ class HomeViewModelTest {
         val routeSelection = RouteSelection()
         val sketching = RouteSketching(routeSession, aircraft, mode)
         val last = FakeLastDiagram()
+        val openSet = OpenDiagrams(InMemoryOpenDiagramStore())
         val lastSet = FakeLastRouteSet()
         val pointSets = PointSetRepository(sync, store, scheduler)
         val pointViews = PointSetViews(MemoryViews())
@@ -224,14 +227,21 @@ class HomeViewModelTest {
         val corners = BoundaryCorners(session)
         val placement = GraphicPlacement(session, aircraft, mode)
         val model = HomeViewModel(
-            session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection,
+            session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, openSet, lastSet, localPoints, pointSelection,
             threats, threatSelection, weather, MapDrag(session, routeSession, threats), SlopeVisibility(), corners, masks, placement, mapFocus,
             symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
 
+        /** [id] was the diagram on the map when the app was last left: remembered, and among the open ones (the LZ/PZ panel puts what opens there). */
+        fun leftOpen(id: String) {
+            last.stored = id
+            openSet.add(id)
+        }
+
         init {
+            model.allowThreats(true)                                                             // the account has threats, as most do; one without them says so
             if (listening) listen()
         }
 
@@ -258,7 +268,7 @@ class HomeViewModelTest {
     fun `the diagram that was open is open again at launch, and the map is taken to it`() = runTest(dispatcher) {
         val r = Rig(this)
         val made = r.repository.create(target, "LZ HAWK")
-        r.last.stored = made.id
+        r.leftOpen(made.id)
         advanceUntilIdle()
         assertEquals(made.id, r.session.active.value?.id)
         assertEquals(listOf(OpenedDiagram(made.id, LatLon(34.783817, -84.08219), "satellite")), r.seen)
@@ -268,7 +278,7 @@ class HomeViewModelTest {
     fun `it waits until the map is listening, so the event that takes the map there is not lost`() = runTest(dispatcher) {
         val r = Rig(this, listening = false)
         val made = r.repository.create(target, "LZ HAWK")
-        r.last.stored = made.id
+        r.leftOpen(made.id)
         advanceUntilIdle()
         assertEquals(null, r.session.active.value)                                          // nobody to tell yet: nothing opened
         r.listen()
@@ -291,9 +301,9 @@ class HomeViewModelTest {
         val r = Rig(this)
         val made = r.repository.create(target, "LZ HAWK")
         r.repository.delete(made.id)
-        r.last.stored = made.id
+        r.leftOpen(made.id)
         val never = Rig(this)
-        never.last.stored = "never-existed"                                                 // an id this account never had, as after another signs in
+        never.leftOpen("never-existed")                                                 // an id this account never had, as after another signs in
         advanceUntilIdle()
         assertEquals(null, r.session.active.value)
         assertEquals(null, never.session.active.value)
@@ -304,7 +314,7 @@ class HomeViewModelTest {
     fun `a diagram that will not open leaves the app running, with nothing open`() = runTest(dispatcher) {
         val r = Rig(this)
         val made = r.repository.create(target, "LZ HAWK")
-        r.last.stored = made.id
+        r.leftOpen(made.id)
         r.store.failing = true                                                              // the database is busy at launch
         advanceUntilIdle()                                                                  // an uncaught failure here would fail the test
         assertEquals(null, r.session.active.value)
@@ -315,11 +325,21 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `a diagram closed before the app was left stays closed`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.last.stored = made.id                                                             // the last on the map, then closed: no longer among the open ones
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)
+        assertEquals(emptyList<OpenedDiagram>(), r.seen)
+    }
+
+    @Test
     fun `a diagram opened in the meantime is not replaced by the remembered one`() = runTest(dispatcher) {
         val r = Rig(this)
         val old = r.repository.create(target, "LZ HAWK")
         val chosen = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
-        r.last.stored = old.id
+        r.leftOpen(old.id)
         r.session.open(chosen.id)
         advanceUntilIdle()
         assertEquals(chosen.id, r.session.active.value?.id)
@@ -813,6 +833,29 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `each tool begun is told as a new start, so the sheet goes down again, though the map's taps were never let go`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertNull(r.model.drawingWhat.value)
+        r.placement.begin(PlaceTool.HELICOPTER)
+        advanceUntilIdle()
+        assertEquals(PlaceTool.HELICOPTER, r.model.drawingWhat.value)
+        r.placement.begin(PlaceTool.PZ_MARKER)                                                  // finishes the first: drawing never stops
+        advanceUntilIdle()
+        assertEquals(true, r.model.isDrawing.value)
+        assertEquals(PlaceTool.PZ_MARKER, r.model.drawingWhat.value)
+        r.placement.finish()
+        r.drawing.start()
+        advanceUntilIdle()
+        assertEquals("boundary", r.model.drawingWhat.value)
+        r.drawing.addPoint(LatLon(34.7838, -84.0822))                                           // a corner is not a new start
+        advanceUntilIdle()
+        assertEquals("boundary", r.model.drawingWhat.value)
+    }
+
+    @Test
     fun `the map never draws one diagram's corners on another, not even for the moment before they are dropped`() = runTest(dispatcher) {
         val r = Rig(this)
         advanceUntilIdle()
@@ -1088,6 +1131,27 @@ class HomeViewModelTest {
         r.threatSelection.select(hidden)                                                       // a held threat that is hidden marks nothing
         advanceUntilIdle()
         assertTrue(r.model.threatScene.value.pins.none { it.selected })
+    }
+
+    @Test
+    fun `an account without threats has none drawn, held or counted, though a picture is still kept on the device`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threat(LatLon(34.7838, -84.0822))
+        r.threatSelection.select(id)
+        advanceUntilIdle()
+        r.model.allowThreats(false)                                                             // an administrator turned threats off for the account
+        advanceUntilIdle()
+        assertNull("what was held is put down", r.threatSelection.held.value)
+        assertTrue(r.model.threatScene.value.pins.isEmpty())
+        assertEquals(0, r.model.counts.value.threats)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertNull(r.threatSelection.held.value)
+        assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals(1, r.threats.entries.value.size)                                           // kept, for if they are turned on again
+        r.model.allowThreats(true)
+        advanceUntilIdle()
+        assertEquals(listOf(id), r.model.threatScene.value.pins.map { it.id })
     }
 
     @Test

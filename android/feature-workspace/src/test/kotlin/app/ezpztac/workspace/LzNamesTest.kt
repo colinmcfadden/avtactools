@@ -46,19 +46,23 @@ class LzNamesTest {
     fun `the chips say how far along it is, then whether the server has it`() {
         assertEquals(
             listOf(LzChip("Analyzed", ChipTone.SUCCESS), LzChip("Synced", ChipTone.SUCCESS)),
-            lzChips(DiagramStatus.ANALYZED, SyncStatus.SYNCED, null, madeUp = false),
+            lzChips(DiagramStatus.ANALYZED, SyncStatus.SYNCED, null),
         )
         assertEquals(
-            listOf(LzChip("Target set", ChipTone.WARNING), LzChip("Waiting to sync", ChipTone.WARNING)),
-            lzChips(DiagramStatus.TARGETED, SyncStatus.PENDING, null, madeUp = false),
+            listOf(LzChip("Analyzed", ChipTone.SUCCESS), LzChip("Waiting to sync", ChipTone.WARNING)),
+            lzChips(DiagramStatus.ANALYZED, SyncStatus.PENDING, null),
         )
-        assertEquals(LzChip("No target", ChipTone.NEUTRAL), lzChips(DiagramStatus.DRAFT, null, null, madeUp = false).first())
+        assertEquals(LzChip("No target", ChipTone.NEUTRAL), lzChips(DiagramStatus.DRAFT, null, null).first())
     }
 
     @Test
-    fun `one still to be named says it must be analysed first, and a conflict copy says so above all`() {
-        assertEquals(LzChip("Analyze to save", ChipTone.INFO), lzChips(DiagramStatus.TARGETED, SyncStatus.SYNCED, null, madeUp = true).last())
-        assertEquals(LzChip("Synced", ChipTone.SUCCESS), lzChips(DiagramStatus.ANALYZED, SyncStatus.SYNCED, null, madeUp = true).last())
-        assertEquals(LzChip("Conflict copy", ChipTone.ERROR), lzChips(DiagramStatus.TARGETED, SyncStatus.PENDING, "other", madeUp = true).last())
+    fun `until it is analysed it says it must be, named or not, and a conflict copy says so above all`() {
+        assertEquals(
+            listOf(LzChip("Target set", ChipTone.WARNING), LzChip("Analyze to save", ChipTone.INFO)),
+            lzChips(DiagramStatus.TARGETED, SyncStatus.SYNCED, null),
+        )
+        assertEquals(LzChip("Analyze to save", ChipTone.INFO), lzChips(DiagramStatus.DRAFT, SyncStatus.PENDING, null).last())
+        assertEquals(LzChip("Conflict copy", ChipTone.ERROR), lzChips(DiagramStatus.TARGETED, SyncStatus.PENDING, "other").last())
+        assertEquals(LzChip("Conflict copy", ChipTone.ERROR), lzChips(DiagramStatus.ANALYZED, SyncStatus.CONFLICT, null).last())
     }
 }

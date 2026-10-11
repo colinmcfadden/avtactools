@@ -1,5 +1,6 @@
 package app.ezpztac.workspace
 
+import app.ezpztac.model.GraphicRef
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -9,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -18,6 +20,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -49,13 +52,13 @@ internal fun activeLz(
     val madeUp = LzNames.isMadeUp(name)
     return ActiveDiagramUi(
         uuid = "lz-1", name = name, status = status, grid = GRID, canAnalyze = true, analysis = AnalysisUi.Idle, summary = null, sync = sync, conflictOf = null,
-        madeUpName = madeUp, chips = lzChips(status, sync, null, madeUp), slopeShown = slopeShown.takeIf { status == DiagramStatus.ANALYZED },
+        madeUpName = madeUp, chips = lzChips(status, sync, null), slopeShown = slopeShown.takeIf { status == DiagramStatus.ANALYZED },
         saveContents = listOf("Boundary, target $GRID and slope analysis", "3 helicopters, 2 sectors, doghouses and flight data"),
     )
 }
 
 internal fun lzRow(uuid: String, name: String, grid: String, status: DiagramStatus = DiagramStatus.ANALYZED, sync: SyncStatus = SyncStatus.SYNCED, conflictOf: String? = null) =
-    DiagramRow(uuid, name, status, grid, sync, conflictOf, isActive = false, chips = lzChips(status, sync, conflictOf, LzNames.isMadeUp(name)))
+    DiagramRow(uuid, name, status, grid, sync, conflictOf, isActive = false, chips = lzChips(status, sync, conflictOf))
 
 /** The panel as the design draws it: one open and named or not, two also open, and the Library's recent ones. */
 internal fun homeState(current: ActiveDiagramUi? = activeLz()) = DiagramsUiState(
@@ -105,6 +108,32 @@ class LzPanelScreenTest {
     fun `one already named says it is saved, and cannot be saved again`() {
         show { LzHomeContent(homeState(activeLz(name = "LZ HAWK (BETA)")), actions, GRID) }
         compose.onNodeWithText("Saved").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `one with a name of its own but not analysed is not shown as saved`() {
+        show { LzHomeContent(homeState(activeLz(name = "LZ HAWK", status = DiagramStatus.TARGETED)), actions, GRID) }
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithText("Saved").assertDoesNotExist()
+        compose.onAllNodesWithText("Analyze to save")[0].assertIsDisplayed()
+    }
+
+    @Test
+    fun `renaming says at the field why a made-up name will not do, and an unchanged name changes nothing`() {
+        show { LzHomeContent(homeState(activeLz(name = "LZ HAWK (BETA)")), actions, GRID) }
+        compose.onNodeWithContentDescription("Rename LZ HAWK (BETA)").performClick()
+        compose.onNodeWithText("Save name").performClick()                                         // unchanged: the field closes
+        compose.onNodeWithText("Save name").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Rename LZ HAWK (BETA)").performClick()
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNode(hasSetTextAction()).performTextInput("LZ/PZ 4")
+        compose.onNodeWithText("Save name").performClick()
+        compose.onNodeWithText(LzNames.MADE_UP_REFUSED).assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNode(hasSetTextAction()).performTextInput("LZ RAVEN")
+        compose.onNodeWithText(LzNames.MADE_UP_REFUSED).assertDoesNotExist()                     // typing clears it
+        compose.onNodeWithText("Save name").performClick()
+        assertEquals(listOf("rename lz-1 LZ RAVEN"), log)
     }
 
     @Test
@@ -200,7 +229,7 @@ class LzPanelScreenTest {
     @Test
     fun `the slope map switch turns the heat map off and on`() {
         plan()
-        compose.onNode(isToggleable()).performScrollTo().performClick()
+        compose.onNode(isToggleable() and hasText("Slope map")).performScrollTo().assertIsOn().performClick()   // one target, said with its name
         assertEquals(listOf("slope"), log)
     }
 
@@ -223,6 +252,20 @@ class LzPanelScreenTest {
     }
 
     @Test
+    fun `a held graphic's controls are brought into view, however far down the plan they are`() {
+        val rows = (1..12).map { GraphicRowUi(GraphicRef("sectorsOfFire", "sec-$it"), GraphicKind.SECTOR_OF_FIRE, "Sector $it", GRID, null, warning = false, selected = it == 12) }
+        val held = InspectorUi(GraphicRef("sectorsOfFire", "sec-12"), GraphicKind.SECTOR_OF_FIRE, "The held sector", GRID, null, rotation = null, reachFt = null, direction = null)
+        show {
+            LzPlanContent(
+                activeLz(), GraphicsUiState(canEdit = true, rows = rows, inspector = held), BoundaryUiState(canStart = true, clears = true), null,
+                actions, GraphicsActions(), GRID,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("The held sector").assertIsDisplayed()
+    }
+
+    @Test
     fun `the tool whose mode is on is marked`() {
         plan(placing = PlacementUi(PlaceTool.PZ_MARKER, 2, null))
         compose.onNodeWithContentDescription("Place PZ markers").performScrollTo().assertIsSelected()
@@ -230,6 +273,20 @@ class LzPanelScreenTest {
     }
 
     // -- Naming ----------------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `the made-up name the sheet offers cannot be what it is saved as`() {
+        var saved: String? = null
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { SaveLzContent(activeLz(), emptyList(), onSave = { saved = it }, onCancel = {}) } }
+        compose.onNodeWithText("You can rename it any time.").assertIsDisplayed()                 // offered to type over, not an error
+        compose.onNode(hasText("Save") and hasText("Saves to your Library").not()).performClick()
+        compose.onNodeWithText(LzNames.MADE_UP_REFUSED).assertIsDisplayed()
+        assertEquals(null, saved)
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNode(hasSetTextAction()).performTextInput("LZ HAWK")
+        compose.onNode(hasText("Save") and hasText("Saves to your Library").not()).performClick()
+        assertEquals("LZ HAWK", saved)
+    }
 
     @Test
     fun `naming offers the made-up name to type over, and says what is kept`() {

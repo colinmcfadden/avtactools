@@ -1,5 +1,10 @@
 package app.ezpztac.workspace
 
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.CancellationException
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -149,7 +154,21 @@ fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: Gra
             )
         }
         state.rows.forEach { row -> GraphicRow(row, actions.select) }
-        state.inspector?.let { Inspector(it, actions) }
+        // The held graphic's controls are brought into view once it is held (from the list, or the map's held bar), however far down the panel they are.
+        val inspectorView = remember { BringIntoViewRequester() }
+        val held = state.inspector?.ref
+        LaunchedEffect(held) {
+            if (held == null) return@LaunchedEffect
+            withFrameNanos { }                                                                  // laid out first
+            try {
+                inspectorView.bringIntoView()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // A panel that is not showing has nothing to scroll: the controls are where they are when it opens.
+            }
+        }
+        state.inspector?.let { Box(Modifier.bringIntoViewRequester(inspectorView)) { Inspector(it, actions) } }
     }
 }
 

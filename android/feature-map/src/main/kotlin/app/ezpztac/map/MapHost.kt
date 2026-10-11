@@ -55,14 +55,14 @@ class MapHost {
     /** Whether a padding has been set: the first is applied at once, later ones glide. */
     private var padded = false
 
-    /** A flight under way ([flyTo]): a change of padding while it lasts is folded into it rather than cutting it short. */
+    /** A flight under way ([flyTo], [faceNorth]): a change of padding while it lasts is folded into it rather than cutting it short. */
     private var flight: Flight? = null
 
     private data class Padding(val top: Int, val bottom: Int) {
         fun array() = doubleArrayOf(0.0, top.toDouble(), 0.0, bottom.toDouble())
     }
 
-    private class Flight(val target: LatLng, val zoom: Double?, val endsAt: Long)
+    private class Flight(val target: LatLng, val zoom: Double?, val bearing: Double?, val endsAt: Long)
 
     /**
      * Reserves [topPx] at the top of the map and [bottomPx] at its bottom (the search bar, the sheet): MapLibre then reports the middle of the
@@ -77,7 +77,7 @@ class MapHost {
         padded = true
         val going = flight
         when {
-            going != null -> fly(map, going.target, going.zoom, (going.endsAt - SystemClock.uptimeMillis()).coerceAtLeast(MIN_FLIGHT_MS))
+            going != null -> fly(map, going.target, going.zoom, (going.endsAt - SystemClock.uptimeMillis()).coerceAtLeast(MIN_FLIGHT_MS), going.bearing)
             first -> map.moveCamera(CameraUpdateFactory.paddingTo(next.array()))
             else -> map.easeCamera(CameraUpdateFactory.paddingTo(next.array()), PanelSheetDefaults.SettleMillis)
         }
@@ -115,11 +115,12 @@ class MapHost {
     /** Moves the camera with an animation, to [at] and, if given, [zoom]. */
     fun flyTo(at: LatLon, zoom: Double? = null) = whenReady { map -> fly(map, LatLng(at.lat, at.lon), zoom, FLIGHT_MS) }
 
-    private fun fly(map: MapLibreMap, target: LatLng, zoom: Double?, durationMs: Long) {
-        val going = Flight(target, zoom, SystemClock.uptimeMillis() + durationMs)
+    private fun fly(map: MapLibreMap, target: LatLng, zoom: Double?, durationMs: Long, bearing: Double? = null) {
+        val going = Flight(target, zoom, bearing, SystemClock.uptimeMillis() + durationMs)
         flight = going
         val position = CameraPosition.Builder().target(target).padding(padding.array())
         if (zoom != null) position.zoom(zoom)
+        if (bearing != null) position.bearing(bearing)
         map.animateCamera(
             CameraUpdateFactory.newCameraPosition(position.build()), durationMs.toInt(),
             object : MapLibreMap.CancelableCallback {
@@ -136,10 +137,14 @@ class MapHost {
         map.moveCamera(CameraUpdateFactory.newCameraPosition(position.padding(padding.array()).build()))
     }
 
-    /** Turns the map back to north. */
+    /**
+     * Turns the map back to north, as a flight, so the sheet settling meanwhile (a new padding) carries the turn on rather than stopping it part way. A flight
+     * already under way keeps going where it was going, turned north as well.
+     */
     fun faceNorth() = whenReady { map ->
-        val position = map.cameraPosition
-        map.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(position).bearing(0.0).padding(padding.array()).build()), 300)
+        val going = flight
+        val target = going?.target ?: map.cameraPosition.target ?: return@whenReady
+        fly(map, target, going?.zoom, FACE_NORTH_MS, bearing = 0.0)
     }
 
     /** Runs [install] each time a style finishes loading (and now, if one has): overlays have to be added again for every style. */
@@ -254,8 +259,9 @@ fun EzpzMap(
 @Immutable
 data class MapPadding(val top: Dp = 0.dp, val bottom: Dp = 0.dp)
 
-/** How long a fly-to takes, and the least a flight folded into a new padding is given to finish. */
+/** How long a fly-to takes, how long the map takes to turn back to north, and the least a flight folded into a new padding is given to finish. */
 private const val FLIGHT_MS = 600L
+private const val FACE_NORTH_MS = 300L
 private const val MIN_FLIGHT_MS = 150L
 
 private var libraryReady = false

@@ -39,6 +39,9 @@ import androidx.compose.ui.unit.dp
 /** The colour role a state chip is drawn in (docs/native-design: Analyzed and Synced green, waiting amber, a conflict red, a hint blue). */
 enum class StatusTone { Success, Warning, Error, Info, Neutral }
 
+/** How strongly a state chip is tinted with its tone behind its words, which are in the tone itself (`TokenContrastTest` holds the pair to AA). */
+internal const val CHIP_TINT = 0.15f
+
 @Composable
 private fun toneColor(tone: StatusTone): Color = when (tone) {
     StatusTone.Success -> EzpzTheme.status.success
@@ -59,7 +62,7 @@ fun StateChip(text: String, tone: StatusTone, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.height(28.dp),
         shape = RoundedCornerShape(Tokens.Radius.sm.dp),
-        color = if (neutral) Color.Transparent else color.copy(alpha = 0.15f),
+        color = if (neutral) Color.Transparent else color.copy(alpha = CHIP_TINT),
         contentColor = color,
         border = BorderStroke(1.dp, if (neutral) MaterialTheme.colorScheme.outline else color.copy(alpha = 0.35f)),
     ) {

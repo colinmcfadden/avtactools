@@ -1,6 +1,6 @@
 # Android screens: the plan they are built from
 
-Status (2026-10-11): **S1, S2 and S3 built** (on `feat/android-screens`), to be tried on a device and reviewed together; S4 next. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
+Status (2026-10-11): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; to be tried on a device; S4 next. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
 reviewed independently, fixed, and committed only with the full build green. **Where this plan disagrees with the code, the code wins**
 (AGENTS.md §16), and AGENTS.md §17 says what each module holds.
@@ -109,17 +109,22 @@ toast says the name it got. The working set is `OpenDiagrams` (`core-data`), kep
   would leave a record for every grid looked up. The owner may overturn this.
 - **A made-up name is `LZ/PZ n`**, the first number no LZ/PZ has (`LzNames`). *Save* shows while an LZ/PZ still has one; a name the Library
   already has becomes the first free `NAME 2`, `NAME 3` (the web's *Keep both*, without asking: *Replace* comes with the Library, S7).
-  Naming is a step of the LZ/PZ's own undo, as a rename is.
+  Naming is a step of the LZ/PZ's own undo, as a rename is. A made-up name is not a name: the sheet and a rename refuse one in words at the field
+  (the web takes `LZ/PZ 1` as a Library name; here "named" is read from the name). Nothing is saved before it is analysed, named or not: one
+  renamed first says *Analyze to save* until its analysis.
 - **The working set is record ids only**, at most 20 (the oldest go first), never a mission pack's item, and it is not cleared at sign-out:
   like `LastDiagram`, an id names no place, and another account's are never found. Whatever opens an LZ/PZ puts it in the set (the panel, a
-  launch putting the last one back, a mission brought in). *Close* takes it out and opens the one opened before it that is still here;
-  *Delete* does the same once the record is gone.
+  launch putting the last one back, a mission brought in), at the end. *Close* takes it out and opens the one at the end that is still here (one
+  reopened keeps its place, so that is not always the one opened before it); *Delete* does the same once the record is gone. What comes back at
+  launch is the last one on the map only if it is still open, so the last one closed stays closed.
 - **The tools are modes** (`core-data`: `GraphicPlacement`, `PlaceTool`; `feature-workspace`: `PlacementToolbar`). Helo, PZ, Sector, L-GA and
   R-GA each turn the map's taps into placing their graphic, wherever a tap falls (on another graphic too), with *Add here* for the crosshair,
-  *Done* to keep what was placed and *Cancel all* to take it back. A mode is one undo step (its edits coalesce under one key); *Cancel all*
-  drops that step while it is still the last, and otherwise removes only what the mode placed, so an edit made in between stays. A mode is a
+  *Done* to keep what was placed and *Cancel all* to take it back. What a mode places in a row is one undo step (its edits coalesce under one
+  key; an edit in between starts another); *Cancel all* takes back everything it placed as if it had never been placed (`DocumentSession.retract`:
+  its steps leave the history, its graphics leave every other version, so neither undo nor redo brings one back), and what was done in between
+  stays. A mode is a
   `DrawingMode` (`PLACEMENT`), so it never runs beside a boundary or a route being drawn; another tool finishes the first and keeps what it
-  placed; opening or closing an LZ/PZ ends it. While one is on, the sheet lowers, the held object's bar hides and a long press picks nothing
+  placed (and takes the sheet down again); opening or closing an LZ/PZ ends it. While one is on, the sheet lowers, the held object's bar hides and a long press picks nothing
   up. *Unit* opens the unit builder (it adds at the crosshair), and *Draw LZ* is today's boundary drawing, asking first when it would clear
   an analysis.
 - **Not offered, because Android does not have them yet:** *3D*, *Export LZ card* and *Set capture area*, *Sketch a route* (from the plan),
@@ -128,6 +133,16 @@ toast says the name it got. The working set is `OpenDiagrams` (`core-data`), kep
   that an untargeted drag never clears, so a change of space while it settled left the sheet "animating" for good, and a draggable that thinks
   it is animating takes every press: nothing in the sheet could be tapped. `PanelSheet` animates to its target whenever the anchors change
   mid-settle. And the camera's padding follows the height the sheet is settling at, not a finger holding it (`PanelSheetState.heading`).
+**Reviewed with S1 and S2** (one independent review, 2026-10-11: eleven problems proved by its probe tests, five more reasoned; each fix has a test,
+the main ones broken to see their test fail, except where only a device can show it: the turn to north, and the held bar's way to the plan in
+`MapHome`): threats drawn with no `FLAG_SECURE` for an account whose `threats` feature was off (the guard lived in the Threats panel, which is then
+not offered; it is the map frame's now, and such an account has no threats on the map and cannot take a `.ths` in, as on the web); *Cancel all*
+keeping a placement when an edit came between two, and leaving an undone one to redo; *More options* on a held graphic not reaching its inspector
+(it opens the plan, which brings the inspector into view); the sheet offering the made-up name as one to save under; an LZ/PZ closed last coming back
+at launch; a rename naming one not analysed; night's tinted chips and notices at 4.3:1 (night's text and status colours raised 7%, and
+`TokenContrastTest` now holds the tinted pairs); the slope switch and the sheet's handle with no name for a screen reader; a plan page that outlived an
+LZ/PZ closed from outside; a new tool not taking the sheet down again; a close reopening the record it had just made anew; a turn to north stopped by
+the sheet settling; and lowered cutting off a header in large text (it grows with the header now).
 Tests: the pages, what they show and what their buttons ask for (`LzPanelScreenTest`); the working set, made-up names, naming and its toast,
 close and delete opening the one before, *Recent in Library*, the pages and the slope switch (`DiagramsViewModelTest`); the modes: one undo
 step, *Cancel all* with and without an edit between, the go-arounds' sides, refusals, one tool finishing another (`GraphicsViewModelTest`); the
