@@ -54,6 +54,18 @@ class MapFrame internal constructor(
     val sheet: @Composable () -> Unit,
 )
 
+/**
+ * The top of the panel showing: its [title] and [subtitle] ([subtitleMono] for a grid), and, on a page inside the panel (an LZ/PZ's plan), [back] with
+ * what it goes back to in [backDescription].
+ */
+data class PanelHead(
+    val title: String,
+    val subtitle: String? = null,
+    val subtitleMono: Boolean = false,
+    val back: (() -> Unit)? = null,
+    val backDescription: String = "Back",
+)
+
 /** The bar of panels is Material's navigation bar, 80 dp above the system's own buttons. */
 private val BAR_HEIGHT = 80.dp
 
@@ -74,7 +86,7 @@ fun PhoneFrame(
     snackbars: SnackbarHostState,
     panel: @Composable (Panel) -> Unit,
     modifier: Modifier = Modifier,
-    subtitle: String? = null,
+    head: PanelHead = PanelHead(current.label),
     headerActions: @Composable RowScope.() -> Unit = {},
     /** How tall whatever floats above the readout is now, in pixels: the toasts go above it. */
     floatingPx: () -> Int = { 0 },
@@ -101,7 +113,7 @@ fun PhoneFrame(
                         raiseLabel = "Raise the ${current.label} panel",
                         lowerLabel = "Lower the ${current.label} panel",
                         header = {
-                            PanelHeader(current.label, subtitle = subtitle) {
+                            PanelHeader(head.title, subtitle = head.subtitle, subtitleMono = head.subtitleMono, onBack = head.back, backDescription = head.backDescription) {
                                 headerActions()
                                 val full = sheet.settled == SheetDetent.Full
                                 PanelAction(

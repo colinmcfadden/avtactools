@@ -11,6 +11,7 @@ import app.ezpztac.data.BoundaryDraft
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.GraphicPlacement
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
 import app.ezpztac.data.MapFocus
@@ -92,6 +93,7 @@ class HomeViewModel @Inject constructor(
     private val slopeVisibility: SlopeVisibility,
     private val boundaryCorners: BoundaryCorners,
     private val threatMasks: ThreatMasks,
+    private val placement: GraphicPlacement,
     mapFocus: MapFocus,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
@@ -184,9 +186,13 @@ class HomeViewModel @Inject constructor(
         else -> null
     }
 
-    /** Whether a boundary or a route is being drawn: the sheet goes down to its peek so the map is there to tap. */
-    val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft) { boundary, route -> boundary != null || route != null }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /**
+     * Whether the map's taps are taken: a boundary or a route being drawn, or a planning tool's mode placing its graphic. The sheet goes down to its header
+     * so the map is there to tap, and nothing on the map is held meanwhile.
+     */
+    val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft, placement.placing) { boundary, route, placing ->
+        boundary != null || route != null || placing != null
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
         // The master list of airframes is the admin's and changes now and then: asked for when the map comes up, and kept for when there is no signal.
@@ -234,6 +240,10 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             routeSession.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { lastSet.remember(it.id) }    // kept when the session closes (sign-out), as the diagram is
         }
+        // An LZ/PZ closed (and none opened in its place) takes a tool's mode with it.
+        viewModelScope.launch {
+            session.active.collect { diagram -> if (diagram == null) placement.end() }
+        }
         // What was held on a set of routes, and a route half drawn, belonged to the set before: another set, or none, starts clean.
         viewModelScope.launch {
             routeSession.active.distinctUntilChangedBy { it?.id }.collect { set ->
@@ -247,6 +257,7 @@ class HomeViewModel @Inject constructor(
                 selection.clear()                                                          // what was held belonged to the diagram before
                 boundaryCorners.clear()
                 drawing.cancel()                                                           // and so did a boundary half drawn
+                if (placement.placing.value?.diagramId != diagram.id) placement.end()     // and a tool's mode (what it placed stays)
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))
             }
         }
@@ -266,6 +277,11 @@ class HomeViewModel @Inject constructor(
         }
         if (sketching.draft.value != null) {
             sketching.addPoint(at)
+            return
+        }
+        // A planning tool's mode puts its graphic where the map is tapped, wherever that is: nothing is held until Done or Cancel.
+        if (placement.placing.value != null) {
+            placement.placeAt(at)
             return
         }
         val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx, unitFootprints)
@@ -316,7 +332,7 @@ class HomeViewModel @Inject constructor(
      * taps are corners then.
      */
     fun dragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
-        if (drawing.draft.value != null || sketching.draft.value != null) return false
+        if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null) return false
         val target = DragHitTest.pick(scene.value.graphics, threatScene.value, routes.value, view, at, touchRadiusPx, unitFootprints) ?: return false
         return mapDrag.start(target, at)
     }

@@ -1,6 +1,6 @@
 # Android screens: the plan they are built from
 
-Status (2026-10-10): **S1 built** (on `feat/android-screens`); **S2 built**, to be tried on a device and reviewed with S1; S3 next. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
+Status (2026-10-11): **S1, S2 and S3 built** (on `feat/android-screens`), to be tried on a device and reviewed together; S4 next. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
 reviewed independently, fixed, and committed only with the full build green. **Where this plan disagrees with the code, the code wins**
 (AGENTS.md §16), and AGENTS.md §17 says what each module holds.
@@ -95,9 +95,46 @@ the header's heights, the readout's edge and the camera's padding at each height
 **Not verifiable here:** the real map under the frame (the camera's padding gliding, a fly-to folded into it), the status bar's height
 on a phone (the pictures have none), dragging the sheet by its content, and night mode's dimmed imagery.
 
-**S3 — LZ/PZ.** The session (the working set above), the panel (`Home`: the active LZ/PZ's card, *Also open*, the chips, Save as naming
-with `SaveLz`), the plan page (`LzPlan`: aircraft, analysis and its switches, the tool grid, export, *Sketch a route*), the tools as modes
-with Done and Cancel. Reuses `DiagramsViewModel`, `GraphicsViewModel`, `AircraftViewModel`, `BoundaryViewModel` and `ConflictPanel`.
+**S3 — LZ/PZ. Built.** The panel's pages (`feature-workspace`: `LzPanel.kt`, `LzPage`), over `DiagramsViewModel`, `GraphicsViewModel`,
+`AircraftViewModel`, `BoundaryViewModel` and `ConflictPanel`. **Home**: the open LZ/PZ's card (name, grid, the state chips, *Save* or a
+disabled *Saved*, *Plan*, rename, and a menu with Close and Delete), *Also open*, *New LZ/PZ at the crosshair* (the row names the grid it
+will take), *Recent in Library* with *Browse all*. **Plan**: the chips, Save and the menu, the mission aircraft as one row with *Manage*,
+the analysis (Analyze, Re-analyze or Stop, the slope map's switch, the summary tiles and the weather), the tool grid, the unit builder, and
+the planning graphics with the inspector. **Every LZ/PZ** (the Library's stand-in until S7) and **the aircraft** (today's section). The
+header follows the page ("3 open · this session"; on the plan the LZ/PZ's name and grid, with Back, as system Back does). Naming is
+`SaveLzSheet` (a modal bottom sheet: the made-up name selected to type over, what is and is not saved, *Saves to your Library*), and a
+toast says the name it got. The working set is `OpenDiagrams` (`core-data`), kept by `OpenDiagramPreferences`. **Amended while building:**
+- **The search bar stays "go to this grid", and an LZ/PZ is started from the panel** (*New LZ/PZ at the crosshair*), not by typing its
+  grid in the search bar as on the web. Under autosave every LZ/PZ started is a Library record at once, so a search bar that started one
+  would leave a record for every grid looked up. The owner may overturn this.
+- **A made-up name is `LZ/PZ n`**, the first number no LZ/PZ has (`LzNames`). *Save* shows while an LZ/PZ still has one; a name the Library
+  already has becomes the first free `NAME 2`, `NAME 3` (the web's *Keep both*, without asking: *Replace* comes with the Library, S7).
+  Naming is a step of the LZ/PZ's own undo, as a rename is.
+- **The working set is record ids only**, at most 20 (the oldest go first), never a mission pack's item, and it is not cleared at sign-out:
+  like `LastDiagram`, an id names no place, and another account's are never found. Whatever opens an LZ/PZ puts it in the set (the panel, a
+  launch putting the last one back, a mission brought in). *Close* takes it out and opens the one opened before it that is still here;
+  *Delete* does the same once the record is gone.
+- **The tools are modes** (`core-data`: `GraphicPlacement`, `PlaceTool`; `feature-workspace`: `PlacementToolbar`). Helo, PZ, Sector, L-GA and
+  R-GA each turn the map's taps into placing their graphic, wherever a tap falls (on another graphic too), with *Add here* for the crosshair,
+  *Done* to keep what was placed and *Cancel all* to take it back. A mode is one undo step (its edits coalesce under one key); *Cancel all*
+  drops that step while it is still the last, and otherwise removes only what the mode placed, so an edit made in between stays. A mode is a
+  `DrawingMode` (`PLACEMENT`), so it never runs beside a boundary or a route being drawn; another tool finishes the first and keeps what it
+  placed; opening or closing an LZ/PZ ends it. While one is on, the sheet lowers, the held object's bar hides and a long press picks nothing
+  up. *Unit* opens the unit builder (it adds at the crosshair), and *Draw LZ* is today's boundary drawing, asking first when it would clear
+  an analysis.
+- **Not offered, because Android does not have them yet:** *3D*, *Export LZ card* and *Set capture area*, *Sketch a route* (from the plan),
+  and the *LZ box* switch. The toast's *Open Library* waits for S7.
+- **The sheet could stop taking taps** (found probing S2): new anchors set while the sheet is moving leave foundation's anchored drag a target
+  that an untargeted drag never clears, so a change of space while it settled left the sheet "animating" for good, and a draggable that thinks
+  it is animating takes every press: nothing in the sheet could be tapped. `PanelSheet` animates to its target whenever the anchors change
+  mid-settle. And the camera's padding follows the height the sheet is settling at, not a finger holding it (`PanelSheetState.heading`).
+Tests: the pages, what they show and what their buttons ask for (`LzPanelScreenTest`); the working set, made-up names, naming and its toast,
+close and delete opening the one before, *Recent in Library*, the pages and the slope switch (`DiagramsViewModelTest`); the modes: one undo
+step, *Cancel all* with and without an edit between, the go-arounds' sides, refusals, one tool finishing another (`GraphicsViewModelTest`); the
+map's taps and long presses while a mode is on, and a mode ending when the LZ/PZ changes (`HomeViewModelTest`); `LzNamesTest`,
+`OpenDiagramPreferencesTest`, `PanelSheetTest`; and the pages' pictures in dark and night (`LzPanelScreenshotTest`, beside AP-Saved,
+AP-LzPlan and AP-SaveLz). **Not verifiable here:** placing by tapping the real map, the sheet lowering as a mode starts, and the toast over
+the real map.
 
 **S4 — Routes.** The panel (`Routes`: sets in the session, Save as naming with `SaveRoutes`, *Export .msnx* with "Include threats as a
 .ths", each route's hand-off, hide and plan), and the plan page (`RoutePlan`: today's `RoutePlanScreen` in the design's cards).

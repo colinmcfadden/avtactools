@@ -2,6 +2,7 @@ package app.ezpztac.android
 
 import android.content.ClipData
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.android.export.ShareExport
 import app.ezpztac.android.frame.AccountButton
 import app.ezpztac.android.frame.Panel
+import app.ezpztac.android.frame.PanelHead
 import app.ezpztac.android.frame.PhoneFrame
 import app.ezpztac.android.frame.panelsFor
 import app.ezpztac.android.frame.pick
@@ -69,11 +71,12 @@ import app.ezpztac.map.rememberMapHost
 import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.network.ApiUser
 import app.ezpztac.symbols.LocalSymbolRenderer
-import app.ezpztac.workspace.AircraftHost
-import app.ezpztac.workspace.BoundaryHost
 import app.ezpztac.workspace.BoundaryToolbarHost
-import app.ezpztac.workspace.DiagramsHost
-import app.ezpztac.workspace.GraphicsHost
+import app.ezpztac.workspace.DiagramsUiState
+import app.ezpztac.workspace.DiagramsViewModel
+import app.ezpztac.workspace.LzPage
+import app.ezpztac.workspace.LzPanelHost
+import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.HeldObjectBarHost
 import app.ezpztac.workspace.IncomingHost
 import app.ezpztac.workspace.PointsHost
@@ -135,6 +138,9 @@ fun MapHome(
     val scope = rememberCoroutineScope()
     val snackbars = remember { androidx.compose.material3.SnackbarHostState() }
     val importFiles = rememberFileImport()
+    // The LZ/PZ panel's state: which of its pages is showing (for the header and Back), and its toasts.
+    val diagrams: DiagramsViewModel = hiltViewModel()
+    val lz by diagrams.state.collectAsStateWithLifecycle()
     // A phone starts with the sheet lowered, so the map is usable (the web's sheet does the same).
     val sheet = rememberPanelSheetState(SheetDetent.Lowered)
     var chosen by rememberSaveable { mutableStateOf(Panel.Lz) }
@@ -160,6 +166,10 @@ fun MapHome(
     IncomingHost()
     // An invitation link: said above the sheet, in the frame's own toasts.
     InviteNotices(invite, inviteAttempt, snackbars, onRetry = onRetryInvite, onDismiss = onDismissInvite)
+    // What the LZ/PZ panel says once it has happened (an LZ/PZ named), in the same toasts.
+    LaunchedEffect(diagrams) { diagrams.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // A page inside the LZ/PZ panel (an LZ/PZ's plan, every LZ/PZ, the aircraft): Back goes back up it, as its arrow does.
+    BackHandler(enabled = current == Panel.Lz && lz.page != LzPage.HOME) { diagrams.showPage(lzBack(lz)) }
 
     // Units' symbols are drawn the same way on the map and in the sheet's builder: one renderer, and its cache, for both.
     CompositionLocalProvider(LocalSymbolRenderer provides home.symbols) {
@@ -175,10 +185,11 @@ fun MapHome(
             },
             sheet = sheet,
             snackbars = snackbars,
-            subtitle = when (current) {
-                Panel.Threats -> if (counts.threats == 0) "This device only" else "${counts.threats} · this device only"
-                Panel.Imports -> when (counts.imports) { 0 -> null; 1 -> "1 set of local points"; else -> "${counts.imports} sets of local points" }
-                Panel.Lz, Panel.Routes -> null
+            head = when (current) {
+                Panel.Lz -> lzHead(lz) { diagrams.showPage(it) }
+                Panel.Threats -> PanelHead(current.label, if (counts.threats == 0) "This device only" else "${counts.threats} · this device only")
+                Panel.Imports -> PanelHead(current.label, when (counts.imports) { 0 -> null; 1 -> "1 set of local points"; else -> "${counts.imports} sets of local points" })
+                Panel.Routes -> PanelHead(current.label)
             },
             floatingPx = { floating },
             panel = { panel ->
@@ -189,19 +200,11 @@ fun MapHome(
                     if (maintenance != null) Banner(maintenance, BannerKind.Warning)
                     if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
                     when (panel) {
-                        Panel.Lz -> {
-                            // A new diagram starts at the middle of the map: the grid under the crosshair, or its degrees where there is no grid.
-                            DiagramsHost(
-                                suggestedTarget = state.readout?.let { it.mgrs ?: it.latLon },
-                                // The boundary and the planning graphics sit in the open diagram's card: the graphics are put at, and brought to, the crosshair.
-                                openDiagramExtras = {
-                                    BoundaryHost(crosshair = state.center)
-                                    GraphicsHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs)
-                                },
-                            )
-                            // An administrator can switch own aircraft off for an account; the server would refuse what it made.
-                            AircraftHost(canMake = user.hasFeature("aircraft_profiles"))
-                        }
+                        // A new LZ/PZ starts at the crosshair, and the tools add there. An administrator can switch own aircraft off for an account (the
+                        // server would refuse what it made).
+                        Panel.Lz -> LzPanelHost(
+                            crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), viewModel = diagrams,
+                        )
                         // A mission goes to AMPS with the threats it was planned against: the .ths named for it travels beside it when there are any.
                         Panel.Routes -> RoutesHost(
                             onExport = { mission -> threatsModel.shareWithThreats(mission) { files -> ShareExport.share(context, files) } },
@@ -245,6 +248,7 @@ fun MapHome(
                     Box(Modifier.onSizeChanged { floating = it.height }) {
                         BoundaryToolbarHost(crosshair = state.center)
                         RouteToolbarHost(crosshair = state.center)
+                        PlacementToolbarHost(crosshair = state.center)
                         // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
                         if (!drawing) {
                             HeldObjectBarHost(
@@ -296,3 +300,20 @@ private fun NightDim() {
 
 /** How much the night palette darkens the map: enough that satellite imagery does not light a cockpit, not so much that it cannot be read. */
 private const val NIGHT_DIM = 0.45f
+
+/** The LZ/PZ panel's header for the page it is on: its open LZ/PZs; an LZ/PZ's plan, with its grid; every LZ/PZ; the aircraft. [go] moves between them. */
+private fun lzHead(lz: DiagramsUiState, go: (LzPage) -> Unit): PanelHead = when (lz.page) {
+    LzPage.HOME -> PanelHead("LZ/PZ", if (lz.openCount == 0) "Nothing open" else "${lz.openCount} open · this session")
+    LzPage.PLAN -> PanelHead(
+        lz.current?.name ?: "LZ/PZ", lz.current?.grid ?: "No target yet", subtitleMono = lz.current?.grid != null,
+        back = { go(LzPage.HOME) }, backDescription = if (lz.openCount == 1) "Back to the open LZ/PZ" else "Back to the open LZ/PZs, ${lz.openCount} open",
+    )
+    LzPage.LIBRARY -> PanelHead(
+        "All LZ/PZs", if (lz.rows.size == 1) "1 in your Library" else "${lz.rows.size} in your Library", back = { go(LzPage.HOME) },
+        backDescription = "Back to the open LZ/PZs",
+    )
+    LzPage.AIRCRAFT -> PanelHead("Aircraft", "The mission aircraft and your own", back = { go(lzBack(lz)) }, backDescription = "Back")
+}
+
+/** Where Back goes from the LZ/PZ panel's page: the aircraft back to the plan they were opened from, the rest to the open LZ/PZs. */
+private fun lzBack(lz: DiagramsUiState): LzPage = if (lz.page == LzPage.AIRCRAFT && lz.current != null) LzPage.PLAN else LzPage.HOME

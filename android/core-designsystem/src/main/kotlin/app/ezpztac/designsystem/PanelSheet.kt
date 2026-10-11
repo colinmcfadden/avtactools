@@ -12,6 +12,8 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.gestures.snapTo
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +53,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -146,6 +150,15 @@ object PanelSheetDefaults {
 class PanelSheetState(initial: SheetDetent) {
     internal val draggable = AnchoredDraggableState(initial)
 
+    /** What dragging the sheet itself says (a finger down on it, and lifted): told to the anchored drag, read by [heading]. */
+    internal val interactions = MutableInteractionSource()
+
+    /** A finger is on the sheet, moving it. */
+    internal var draggedByFinger by mutableStateOf(false)
+
+    /** A list inside the sheet is moving it (Material's nested scrolling), finger still down. */
+    internal var draggedByContent by mutableStateOf(false)
+
     /** The detent it rests at, or last rested at while it moves. */
     val settled: SheetDetent get() = draggable.settledValue
 
@@ -156,7 +169,7 @@ class PanelSheetState(initial: SheetDetent) {
      * The detent it rests at or is settling at (let go, or sent somewhere by a tap): not one a finger is only dragging it across. What follows the
      * sheet's height (the map's middle) follows this, so it moves as the sheet settles and not back and forth under a drag.
      */
-    val heading: SheetDetent get() = if (draggable.isAnimationRunning) draggable.targetValue else draggable.settledValue
+    val heading: SheetDetent get() = if (draggedByFinger || draggedByContent) draggable.settledValue else draggable.targetValue
 
     /** Its top edge now, in pixels from the top of its space; NaN until it has been laid out. */
     val offsetPx: Float get() = draggable.offset
@@ -228,6 +241,22 @@ fun PanelSheet(
     val flickPx = with(LocalDensity.current) { PanelSheetDefaults.Flick.toPx() }
     val scroll = remember(state, flickPx) { SheetScrollConnection(state, flickPx) { scope.launch { state.animateTo(it) } } }
     val fling = AnchoredDraggableDefaults.flingBehavior(state.draggable, positionalThreshold = { it / 2 }, animationSpec = PanelSheetDefaults.Motion)
+    // Whether a finger is on the sheet: while it is, what follows the sheet's height waits; once it lifts, it follows where the sheet settles.
+    LaunchedEffect(state) {
+        state.interactions.interactions.collect { interaction ->
+            when (interaction) {
+                is DragInteraction.Start -> state.draggedByFinger = true
+                is DragInteraction.Stop, is DragInteraction.Cancel -> state.draggedByFinger = false
+            }
+        }
+    }
+    // A change of space while the sheet moves (a turn of the phone, split screen) leaves foundation's drag holding the detent the new anchors were given as
+    // a target it never lets go of (only a drag told its target clears one), and then it takes every touch on the sheet as the start of a drag, so nothing in
+    // it can be tapped. Settling at that detent, a drag that is told its target, clears it; the finger's drag, if one is down, gives way to it.
+    val anchors = state.anchors
+    LaunchedEffect(anchors) {
+        if (anchors != null && state.draggable.isAnimationRunning) state.animateTo(state.target)
+    }
     Surface(
         modifier = modifier
             // Fills the space it is given and lays out only the part that shows, from its edge down.
@@ -241,7 +270,7 @@ fun PanelSheet(
                 layout(constraints.maxWidth, height) { sheet.placeRelative(0, top) }
             }
             .nestedScroll(scroll)
-            .anchoredDraggable(state.draggable, Orientation.Vertical, flingBehavior = fling),
+            .anchoredDraggable(state.draggable, Orientation.Vertical, interactionSource = state.interactions, flingBehavior = fling),
         shape = RoundedCornerShape(topStart = Tokens.Radius.sheet.dp, topEnd = Tokens.Radius.sheet.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -276,20 +305,37 @@ fun PanelSheet(
 }
 
 /**
- * The top of a panel: its [title] (a heading for a screen reader), an optional [subtitle] under it, and [actions] at the end (48 dp each, as
- * [PanelAction] draws them).
+ * The top of a panel: its [title] (a heading for a screen reader), an optional [subtitle] under it ([subtitleMono] for a grid), and [actions] at the end
+ * (48 dp each, as [PanelAction] draws them). A page inside the panel has [onBack], an arrow at the start named [backDescription].
  */
 @Composable
-fun PanelHeader(title: String, modifier: Modifier = Modifier, subtitle: String? = null, actions: @Composable RowScope.() -> Unit = {}) {
+fun PanelHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    subtitleMono: Boolean = false,
+    onBack: (() -> Unit)? = null,
+    backDescription: String = "Back",
+    actions: @Composable RowScope.() -> Unit = {},
+) {
     Row(
-        modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.sm.dp),
+        modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = if (onBack != null) Tokens.Spacing.xs.dp else Tokens.Spacing.lg.dp, end = Tokens.Spacing.sm.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
     ) {
+        if (onBack != null) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(EzpzIcons.arrowBack), contentDescription = backDescription)
+            }
+        }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
             if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    subtitle,
+                    style = if (subtitleMono) MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace) else MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
         }
         actions()
@@ -315,12 +361,19 @@ private class SheetScrollConnection(
 ) : NestedScrollConnection {
     // Not before the sheet has been laid out: until it has anchors it has no edge to move.
     override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset =
-        if (available.y < 0 && source == NestedScrollSource.UserInput && !state.offsetPx.isNaN()) Offset(0f, state.draggable.dispatchRawDelta(available.y)) else Offset.Zero
+        if (available.y < 0 && source == NestedScrollSource.UserInput && !state.offsetPx.isNaN()) moved(state.draggable.dispatchRawDelta(available.y)) else Offset.Zero
 
     override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
-        if (source == NestedScrollSource.UserInput && !state.offsetPx.isNaN()) Offset(0f, state.draggable.dispatchRawDelta(available.y)) else Offset.Zero
+        if (source == NestedScrollSource.UserInput && !state.offsetPx.isNaN()) moved(state.draggable.dispatchRawDelta(available.y)) else Offset.Zero
+
+    /** The content moved the sheet by [delta]: a finger is still on it until the fling that follows its lifting. */
+    private fun moved(delta: Float): Offset {
+        if (delta != 0f) state.draggedByContent = true
+        return Offset(0f, delta)
+    }
 
     override suspend fun onPreFling(available: Velocity): Velocity {
+        state.draggedByContent = false                                               // the finger has lifted: the fling, if any, is where it settles
         val anchors = state.anchors ?: return Velocity.Zero
         val offset = state.offsetPx
         // Flung up while not yet at full height: the sheet takes the fling (and all of it, so the content does not scroll under it as it rises).

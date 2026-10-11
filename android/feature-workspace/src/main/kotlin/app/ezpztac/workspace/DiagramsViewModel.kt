@@ -9,6 +9,8 @@ import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.DiagramSummary
+import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.WeatherState
 import app.ezpztac.model.JsNumber
@@ -33,7 +35,10 @@ import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -52,7 +57,39 @@ data class DiagramRow(
     val sync: SyncStatus,
     val conflictOf: String?,
     val isActive: Boolean,
+    /** How far along it is and whether the server has it, as the design's chips say it ([lzChips]). */
+    val chips: List<LzChip> = emptyList(),
 )
+
+/** The pages of the LZ/PZ panel: the open LZ/PZs, the open one's plan and tools, every LZ/PZ (until the Library page, S7), and the aircraft. */
+enum class LzPage { HOME, PLAN, LIBRARY, AIRCRAFT }
+
+/** The colour role a state chip is drawn in. Colour is never all it says: the words do too. */
+enum class ChipTone { SUCCESS, WARNING, ERROR, INFO, NEUTRAL }
+
+data class LzChip(val text: String, val tone: ChipTone)
+
+/** An LZ/PZ in the Library that is not open, offered under "Recent in Library", with when it last changed (`Aug 25 · 17:34`). */
+data class RecentLz(val uuid: String, val name: String, val updated: String?)
+
+/**
+ * The chips of an LZ/PZ (the web's `lzStateChips`, with the sync state where the web says whether it is saved: every LZ/PZ here is saved as it is
+ * changed, docs/ANDROID_SCREENS_PLAN.md): how far along it is, then whether the server has it, or that it must be analysed before it can be named.
+ */
+internal fun lzChips(status: DiagramStatus, sync: SyncStatus?, conflictOf: String?, madeUp: Boolean): List<LzChip> {
+    val progress = when (status) {
+        DiagramStatus.ANALYZED -> LzChip("Analyzed", ChipTone.SUCCESS)
+        DiagramStatus.TARGETED -> LzChip("Target set", ChipTone.WARNING)
+        DiagramStatus.DRAFT -> LzChip("No target", ChipTone.NEUTRAL)
+    }
+    val saved = when {
+        conflictOf != null || sync == SyncStatus.CONFLICT -> LzChip("Conflict copy", ChipTone.ERROR)
+        madeUp && status != DiagramStatus.ANALYZED -> LzChip("Analyze to save", ChipTone.INFO)
+        sync == SyncStatus.SYNCED -> LzChip("Synced", ChipTone.SUCCESS)
+        else -> LzChip("Waiting to sync", ChipTone.WARNING)                        // null too: made a moment ago, the list not caught up yet
+    }
+    return listOf(progress, saved)
+}
 
 /** Where the analysis of the open diagram has got to, for the card that offers it. */
 sealed interface AnalysisUi {
@@ -157,11 +194,30 @@ data class ActiveDiagramUi(
     val conflictOf: String?,
     /** The mission aircraft and the airframes to choose from. */
     val aircraft: AircraftUi = AircraftUi.UH60L,
-)
+    /** Still called by its made-up name (`LZ/PZ 3`): *Save* names it. */
+    val madeUpName: Boolean = false,
+    val chips: List<LzChip> = emptyList(),
+    /** Whether the slope heat map is drawn; null while there is no slope measured to draw. */
+    val slopeShown: Boolean? = null,
+    /** What naming it keeps, in the save dialog's words: the boundary, target and slope; its graphics. */
+    val saveContents: List<String> = emptyList(),
+) {
+    /** *Save* names an LZ/PZ that still has its made-up name, once it is analysed (the web's "Analyze to save"). */
+    val canSave: Boolean get() = madeUpName && status == DiagramStatus.ANALYZED && conflictOf == null
+}
 
 data class DiagramsUiState(
     val current: ActiveDiagramUi? = null,
     val rows: List<DiagramRow> = emptyList(),
+    /** The other open LZ/PZs, in the order they were opened ("Also open"). */
+    val open: List<DiagramRow> = emptyList(),
+    /** How many are open, the one on the map included. */
+    val openCount: Int = 0,
+    /** Up to three LZ/PZs not open, most recently changed first. */
+    val recent: List<RecentLz> = emptyList(),
+    val page: LzPage = LzPage.HOME,
+    /** The names of the LZ/PZs other than the open one, so naming it can say when a name is taken. */
+    val otherNames: List<String> = emptyList(),
     /** The form for a new diagram is open. */
     val creating: Boolean = false,
     val error: String? = null,
@@ -180,22 +236,123 @@ class DiagramsViewModel @Inject constructor(
     private val analysis: AnalysisService,
     private val aircraft: AircraftProfiles,
     private val weather: WeatherService,
+    private val openSet: OpenDiagrams,
+    private val slopeVisibility: SlopeVisibility,
 ) : ViewModel() {
     private val local = MutableStateFlow(DiagramsUiState())
-    private val analyses = combine(analysis.status, analysis.slopes) { status, slopes -> status to slopes }
+    private val page = MutableStateFlow(LzPage.HOME)
+    private val analyses = combine(analysis.status, analysis.slopes, slopeVisibility.shown) { status, slopes, shown -> Triple(status, slopes, shown) }
     private val airframes = combine(aircraft.entries, aircraft.active) { entries, active -> entries to active }
+    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
-    private val inputs = combine(repository.observe(), session.active, local) { summaries, active, local -> Triple(summaries, active, local) }
+    /** What the panel tells the person in a toast once it has happened: Saved "LZ HAWK" to your Library. */
+    val notices: SharedFlow<String> = _notices.asSharedFlow()
+
+    private val inputs = combine(repository.observe(), session.active, local, openSet.ids, page) { summaries, active, local, open, page ->
+        Inputs(summaries, active, local, open, page)
+    }
+
+    private data class Inputs(val summaries: List<DiagramSummary>, val active: Diagram?, val local: DiagramsUiState, val open: List<String>, val page: LzPage)
 
     val state: StateFlow<DiagramsUiState> =
-        combine(inputs, analyses, airframes, weather.states) { (summaries, active, local), (status, slopes), (entries, chosen), weatherStates ->
+        combine(inputs, analyses, airframes, weather.states) { inputs, (status, slopes, slopeShown), (entries, chosen), weatherStates ->
+            val (summaries, active, local, open, page) = inputs
+            val byId = summaries.associateBy { it.uuid }
+            val rows = summaries.map { it.toRow(isActive = it.uuid == active?.id) }
+            val openRows = open.filter { it != active?.id }.mapNotNull { id -> byId[id]?.toRow(isActive = false) }
             local.copy(
                 current = active?.let {
-                    currentOf(it, status, slopes, summaries.firstOrNull { row -> row.uuid == it.id }, aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState())
+                    currentOf(it, status, slopes, slopeShown, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState())
                 },
-                rows = summaries.map { it.toRow(isActive = it.uuid == active?.id) },
+                rows = rows,
+                open = openRows,
+                openCount = openRows.size + (if (active != null) 1 else 0),
+                recent = summaries.asSequence()
+                    .filter { it.uuid !in open && it.uuid != active?.id && it.conflictOf == null }
+                    .sortedByDescending { it.updatedAt.orEmpty() }
+                    .take(RECENT)
+                    .map { RecentLz(it.uuid, it.name, LzNames.updated(it.updatedAt)) }
+                    .toList(),
+                page = if (page == LzPage.PLAN && active == null) LzPage.HOME else page,
+                otherNames = summaries.filter { it.uuid != active?.id }.map { it.name },
             )
         }.stateIn(viewModelScope, SharingStarted.Eagerly, DiagramsUiState())
+
+    init {
+        // What is on the map is open: however it was opened (here, a launch putting back the last one, a mission brought in), it joins the set.
+        viewModelScope.launch {
+            session.active.collect { diagram -> diagram?.id?.let(openSet::add) }
+        }
+    }
+
+    // -- The panel's pages -------------------------------------------------------------------------------------------------
+
+    /** Goes to [to]: the plan only while an LZ/PZ is open. */
+    fun showPage(to: LzPage) {
+        if (to == LzPage.PLAN && session.active.value == null) return
+        page.value = to
+    }
+
+    /** Draws or hides the slope heat map (the plan's switch; the map's button does the same). */
+    fun toggleSlope() = slopeVisibility.toggle()
+
+    // -- Opening, making, closing ------------------------------------------------------------------------------------------
+
+    /**
+     * A new LZ/PZ with its target at [at] (the crosshair), called by the next made-up name until it is saved with one of the person's own, and opened.
+     * The search bar takes the map to a grid; this starts the LZ/PZ there.
+     */
+    fun newAt(at: LatLon?) {
+        if (at == null) return fail("Move the map to where the LZ/PZ should be first.")
+        val grid = MgrsConverter.toMgrs(at.lat, at.lon)?.format() ?: ""
+        val name = LzNames.next(state.value.rows.map { it.name })
+        run("The LZ/PZ could not be made.") {
+            val made = repository.create(DiagramTarget(at.lat, at.lon, grid), name)
+            openSet.add(made.id)
+            session.open(made.id)
+            page.value = LzPage.HOME
+        }
+    }
+
+    /**
+     * Takes [uuid] out of the open LZ/PZs. It is not deleted: the Library still has it. If it was the one on the map, the one opened before it (the last
+     * still open) takes its place, or none.
+     */
+    fun close(uuid: String) = run("The LZ/PZ could not be closed.") {
+        openSet.remove(uuid)
+        if (session.active.value?.id == uuid) {
+            session.close()
+            page.value = LzPage.HOME
+            openNext()
+        }
+    }
+
+    /** Opens the last LZ/PZ still in the set that is still here; an id whose LZ/PZ has gone is let go on the way. */
+    private suspend fun openNext() {
+        for (id in openSet.ids.value.reversed()) {
+            if (session.open(id)) return
+            openSet.remove(id)
+        }
+    }
+
+    // -- Naming ------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Names the open LZ/PZ [name] (the design's *Save*: everything is already saved and synced as it changes, so what saving adds is the name the
+     * Library finds it by). A name another LZ/PZ already has is kept apart as `NAME 2` (the web's *Keep both*), and the toast says the name it got.
+     */
+    fun saveAs(name: String) {
+        val title = name.trim()
+        if (title.isEmpty()) return fail("Give the LZ/PZ a name.")
+        val open = session.active.value ?: return
+        val chosen = LzNames.free(title, state.value.otherNames)
+        run("The LZ/PZ could not be saved.") {
+            if (session.active.value?.id != open.id) return@run
+            session.edit("Name") { it.copy(name = chosen) }
+            session.flush()
+            _notices.tryEmit("Saved \u201c$chosen\u201d to your Library")
+        }
+    }
 
     /** Fetches the weather at the open diagram's target again, now. */
     fun refreshWeather() {
@@ -248,9 +405,10 @@ class DiagramsViewModel @Inject constructor(
     }
 
     fun open(uuid: String) {
+        if (page.value == LzPage.LIBRARY) page.value = LzPage.HOME
         if (state.value.rows.firstOrNull { it.uuid == uuid }?.isActive == true) return
         run("The diagram could not be opened.") {
-            if (!session.open(uuid)) local.update { it.copy(error = "That diagram is no longer here.") }
+            if (session.open(uuid)) openSet.add(uuid) else local.update { it.copy(error = "That diagram is no longer here.") }
         }
     }
 
@@ -269,8 +427,14 @@ class DiagramsViewModel @Inject constructor(
     }
 
     fun delete(uuid: String) = run("The diagram could not be deleted.") {
-        if (session.active.value?.id == uuid) session.close()
+        val wasOpen = session.active.value?.id == uuid
+        if (wasOpen) session.close()
         repository.delete(uuid)
+        openSet.remove(uuid)
+        if (wasOpen) {
+            page.value = LzPage.HOME
+            openNext()
+        }
     }
 
     /** Settles a conflict the sync kept beside a diagram. */
@@ -291,8 +455,8 @@ class DiagramsViewModel @Inject constructor(
     fun dismissAnalysisError() = analysis.dismiss()
 
     private fun currentOf(
-        diagram: Diagram, status: AnalysisStatus, slopes: Map<String, SlopeState>, listed: DiagramSummary?, airframes: AircraftUi, chosen: AircraftProfile,
-        weatherState: WeatherState,
+        diagram: Diagram, status: AnalysisStatus, slopes: Map<String, SlopeState>, slopeShown: Boolean, listed: DiagramSummary?, airframes: AircraftUi,
+        chosen: AircraftProfile, weatherState: WeatherState,
     ): ActiveDiagramUi = ActiveDiagramUi(
         uuid = diagram.id,
         name = diagram.name,
@@ -309,7 +473,28 @@ class DiagramsViewModel @Inject constructor(
         aircraft = airframes,
         sync = listed?.sync,
         conflictOf = listed?.conflictOf,
+        madeUpName = LzNames.isMadeUp(diagram.name),
+        chips = lzChips(diagram.status, listed?.sync, listed?.conflictOf, LzNames.isMadeUp(diagram.name)),
+        // The switch is there while the open LZ/PZ has a slope measured for the boundary it has now, as the map's button is.
+        slopeShown = slopeShown.takeIf { (slopes[diagram.id] as? SlopeState.Ready)?.let { it.boundaryKey == analysis.boundaryKey(diagram) } == true },
+        saveContents = saveContentsOf(diagram),
     )
+
+    /** What naming the LZ/PZ keeps, as the save dialog lists it: its boundary, target and slope; then its graphics, counted. */
+    private fun saveContentsOf(diagram: Diagram): List<String> {
+        fun count(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
+        val grid = diagram.target?.mgrs?.takeIf { it.isNotBlank() }
+        val g = diagram.graphics
+        val placed = listOfNotNull(
+            g.helicopters.size.takeIf { it > 0 }?.let { count(it, "helicopter", "helicopters") },
+            g.pzMarkers.size.takeIf { it > 0 }?.let { count(it, "PZ marker", "PZ markers") },
+            g.sectorsOfFire.size.takeIf { it > 0 }?.let { count(it, "sector", "sectors") },
+            g.goArounds.size.takeIf { it > 0 }?.let { count(it, "go-around", "go-arounds") },
+            g.units.size.takeIf { it > 0 }?.let { count(it, "unit", "units") },
+        )
+        val graphics = (placed + "doghouses and flight data").joinToString(", ").replaceFirstChar { it.uppercase() }
+        return listOf(if (grid != null) "Boundary, target $grid and slope analysis" else "Boundary, target and slope analysis", graphics)
+    }
 
     /** The tiles for an analysed diagram, for the mission aircraft ([aircraft]): how many of them fit is what the capacity tile says. */
     private fun summaryOf(diagram: Diagram, slope: SlopeState?, aircraft: AircraftProfile): SummaryUi? {
@@ -370,5 +555,11 @@ class DiagramsViewModel @Inject constructor(
 
     private fun DiagramSummary.toRow(isActive: Boolean) = DiagramRow(
         uuid = uuid, name = name, status = status, grid = target?.mgrs?.takeIf { it.isNotBlank() }, sync = sync, conflictOf = conflictOf, isActive = isActive,
+        chips = lzChips(status, sync, conflictOf, LzNames.isMadeUp(name)),
     )
+
+    private companion object {
+        /** How many LZ/PZs "Recent in Library" offers. */
+        const val RECENT = 3
+    }
 }

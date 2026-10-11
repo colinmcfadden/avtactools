@@ -155,7 +155,7 @@ private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions
 }
 
 @Composable
-private fun AnalysisControls(current: ActiveDiagramUi, actions: DiagramsActions) {
+internal fun AnalysisControls(current: ActiveDiagramUi, actions: DiagramsActions) {
     when (val analysis = current.analysis) {
         is AnalysisUi.Running -> {
             PrimaryButton(
@@ -181,7 +181,7 @@ private fun AnalysisControls(current: ActiveDiagramUi, actions: DiagramsActions)
 }
 
 @Composable
-private fun SummaryTiles(summary: SummaryUi) {
+internal fun SummaryTiles(summary: SummaryUi) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             Tile("Capacity · ${summary.aircraft}", summary.capacity.toString(), Modifier.weight(1f), emphasis = true)
@@ -314,7 +314,7 @@ private fun ManageControls(uuid: String, name: String, actions: DiagramsActions)
 }
 
 @Composable
-private fun DiagramListItem(row: DiagramRow, actions: DiagramsActions) {
+internal fun DiagramListItem(row: DiagramRow, actions: DiagramsActions) {
     val border = if (row.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.md.dp),

@@ -52,7 +52,7 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.model.UnitDraft
 
 /** A draft in what survives the screen being turned: its five parts as text. */
-private val UnitDraftSaver = listSaver<UnitDraft, String>(
+internal val UnitDraftSaver = listSaver<UnitDraft, String>(
     save = { listOf(it.affiliation, it.functionId, it.echelon, it.uniqueDesignation, it.higherFormation) },
     restore = { UnitDraft(it[0], it[1], it[2], it[3], it[4]) },
 )
@@ -105,8 +105,12 @@ fun GraphicsHost(crosshair: LatLon?, crosshairGrid: String?, modifier: Modifier 
     )
 }
 
+/**
+ * The list of the open diagram's graphics, the inspector for the one held, undo and redo, and the separation alerts. [placeButtons] adds the buttons that put
+ * one at the crosshair and the unit builder; the LZ/PZ plan has its own tools for those, as modes (`LzPlanContent`), and leaves them out.
+ */
 @Composable
-fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: GraphicsActions, modifier: Modifier = Modifier) {
+fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: GraphicsActions, modifier: Modifier = Modifier, placeButtons: Boolean = true) {
     var addingUnit by rememberSaveable { mutableStateOf(false) }
     var newUnit by rememberSaveable(stateSaver = UnitDraftSaver) { mutableStateOf(UnitDraft()) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
@@ -129,8 +133,8 @@ fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: Gra
         state.alerts.forEach { Banner(it, BannerKind.Warning) }
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
 
-        PlaceButtons(crosshairGrid, actions.place, onUnit = { addingUnit = !addingUnit })
-        if (addingUnit) {
+        if (placeButtons) PlaceButtons(crosshairGrid, actions.place, onUnit = { addingUnit = !addingUnit })
+        if (placeButtons && addingUnit) {
             Surface(shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
                     Text("New unit", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
@@ -139,7 +143,10 @@ fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: Gra
             }
         }
         if (state.rows.isEmpty()) {
-            Text("Nothing placed yet. Move the map, then tap what to put at the crosshair.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (placeButtons) "Nothing placed yet. Move the map, then tap what to put at the crosshair." else "Nothing placed yet. Pick a tool, then tap the map or add at the crosshair.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         state.rows.forEach { row -> GraphicRow(row, actions.select) }
         state.inspector?.let { Inspector(it, actions) }

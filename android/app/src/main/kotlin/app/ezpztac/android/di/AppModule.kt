@@ -9,6 +9,8 @@ import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.DisplayPreferences
 import app.ezpztac.android.DisplaySettings
+import app.ezpztac.android.OpenDiagramPreferences
+import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.MinimumVersionPreferences
 import app.ezpztac.android.packs.ApiPackInvites
@@ -242,6 +244,9 @@ interface AppBindings {
 
     @Binds
     fun displaySettings(impl: DisplayPreferences): DisplaySettings
+
+    @Binds
+    fun openDiagrams(impl: OpenDiagramPreferences): OpenDiagramStore
 
     @Binds
     fun conflictResolver(impl: SyncEngine): ConflictResolver

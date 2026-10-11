@@ -4,13 +4,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * What the map's taps are for while the person is drawing. A boundary and a route are both drawn by tapping the map, so only one may be drawn at a time:
- * the taps would go to one of them, and the toolbars of both would sit on the same strip of the map. Whoever starts drawing [begin]s, and says
- * [end] when it finishes or is abandoned.
+ * What the map's taps are for while the person is drawing. A boundary and a route are both drawn by tapping the map, and a planning tool places a
+ * graphic where the map is tapped, so only one may have the map at a time: the taps would go to one of them, and the toolbars of all would sit on the
+ * same strip of the map. Whoever starts [begin]s, and says [end] when it finishes or is abandoned.
  */
 @Singleton
 class DrawingMode @Inject constructor() {
-    enum class Kind(val noun: String) { BOUNDARY("boundary"), ROUTE("route") }
+    enum class Kind(val noun: String) { BOUNDARY("boundary"), ROUTE("route"), PLACEMENT("placement") }
 
     private var held: Kind? = null
 

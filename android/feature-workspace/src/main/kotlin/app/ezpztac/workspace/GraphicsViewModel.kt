@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.GraphicPlacement
 import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.PlaceTool
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.geo.PlaceResult
 import app.ezpztac.geo.PlaceSearch
@@ -84,6 +86,9 @@ data class InspectorUi(
     val unit: UnitDraft? = null,
 )
 
+/** A planning tool's mode under way, for its toolbar over the map: which tool, how many it has placed, and what went wrong if anything did. */
+data class PlacementUi(val tool: PlaceTool, val placed: Int, val error: String?)
+
 data class GraphicsUiState(
     /** Graphics are placed only once the diagram is analysed: until then it has no landing zone for them to sit in. */
     val canEdit: Boolean = false,
@@ -106,12 +111,9 @@ class GraphicsViewModel @Inject constructor(
     private val session: DiagramSession,
     private val selection: GraphicSelection,
     private val aircraft: AircraftProfiles,
+    private val placement: GraphicPlacement,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
-
-    /** The airframes an aircraft on the map can be, and the mission aircraft a new one is placed as (the chosen one; the UH-60L until one is). */
-    private val profiles: List<AircraftProfile> get() = aircraft.profiles.value
-    private val active: AircraftProfile get() = aircraft.active.value
 
     private val depths = combine(session.undoDepth, session.redoDepth, error) { undo, redo, error -> Triple(undo, redo, error) }
     private val airframes = combine(aircraft.profiles, aircraft.active) { list, chosen -> list to chosen }
@@ -122,23 +124,38 @@ class GraphicsViewModel @Inject constructor(
 
     // -- Placing -----------------------------------------------------------------------------------------------------------
 
+    /** The planning tool's mode under way, if one is: its toolbar over the map reads this. */
+    val placing: StateFlow<PlacementUi?> = combine(placement.placing, placement.error) { placing, error ->
+        placing?.let { PlacementUi(it.tool, it.placed.size, error) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Turns [tool]'s mode on: map taps (and *Add at the crosshair*) place its graphic until *Done* or *Cancel*. Null when it is on; else why not. */
+    fun beginPlacing(tool: PlaceTool): String? = placement.begin(tool)
+
+    /** Places the mode's graphic at [at] (the crosshair). */
+    fun placeAt(at: LatLon?) {
+        placement.placeAt(at)
+    }
+
+    fun donePlacing() = placement.finish()
+
+    fun cancelPlacing() = placement.cancel()
+
+    fun dismissPlacementError() = placement.dismissError()
+
     /** Puts a new [kind] of graphic at [at] (the crosshair) and selects it. An aircraft is nudged clear of those already down. */
     fun place(kind: GraphicKind, at: LatLon?, direction: String? = null) {
         val diagram = session.active.value ?: return
         if (!diagram.canEditGraphics || !kind.placeable) return
         if (at == null) return fail("Move the map to where it should go first.")
-        val existing = existingKeys(diagram, kind.collection)
-        val made: JsonObject? = when (kind) {
-            GraphicKind.HELICOPTER -> {
-                val aircraft = diagram.graphics.helicopters.mapNotNull(PlanningGraphics.Aircraft::of)
-                PlanningGraphics.placeHelicopter(at, aircraft, active, { AircraftLookup.profileForAsset(it.profileRef, profiles, active) }, JsonPrimitive(newNumericId(existing)))
-            }
-            GraphicKind.PZ_MARKER -> PlanningGraphics.createPzMarker(at.lat, at.lon, newTextId("pz", existing))
-            GraphicKind.SECTOR_OF_FIRE -> PlanningGraphics.createSectorOfFire(at.lat, at.lon, newTextId("sec", existing))
-            GraphicKind.GO_AROUND -> PlanningGraphics.createGoAround(at.lat, at.lon, direction ?: "left", newTextId("ga", existing))
-            GraphicKind.DOGHOUSE, GraphicKind.UNIT -> null
+        val tool = when (kind) {
+            GraphicKind.HELICOPTER -> PlaceTool.HELICOPTER
+            GraphicKind.PZ_MARKER -> PlaceTool.PZ_MARKER
+            GraphicKind.SECTOR_OF_FIRE -> PlaceTool.SECTOR_OF_FIRE
+            GraphicKind.GO_AROUND -> if (direction == "right") PlaceTool.GO_AROUND_RIGHT else PlaceTool.GO_AROUND_LEFT
+            GraphicKind.DOGHOUSE, GraphicKind.UNIT -> return
         }
-        if (made == null) return fail("That is not a position.")
+        val made = placement.make(tool, diagram, at) ?: return fail("That is not a position.")
         error.value = null
         session.edit("Place ${kind.label.lowercase()}") { DiagramOps.upsertGraphic(it, kind.collection, made) }
         selection.select(GraphicRef(kind.collection, DiagramOps.idText(made["id"])))
@@ -152,7 +169,7 @@ class GraphicsViewModel @Inject constructor(
         val diagram = session.active.value ?: return
         if (!diagram.canEditGraphics) return
         if (at == null) return fail("Move the map to where it should go first.")
-        val id = newTextId("unit", existingKeys(diagram, "units"))
+        val id = GraphicPlacement.newTextId("unit", GraphicPlacement.existingIds(diagram, "units"))
         error.value = null
         session.edit("Place unit") { DiagramOps.upsertGraphic(it, "units", UnitMarkers.create(draft.config, at, 0.0, id)) }
         selection.select(GraphicRef("units", id))
@@ -160,29 +177,6 @@ class GraphicsViewModel @Inject constructor(
 
     /** Applies what the unit builder holds to the held unit: its symbol and labels, nothing else. */
     fun updateUnit(draft: UnitDraft) = edit("Unit") { c, _ -> if (c == "units") draft.patch else null }
-
-    /** The web makes a helicopter's id from the clock; the same here, nudged past any that is taken. */
-    private fun newNumericId(taken: Set<String>): Long {
-        var id = System.currentTimeMillis()
-        while (id.toString() in taken) id += 1
-        return id
-    }
-
-    private fun newTextId(prefix: String, taken: Set<String>): String {
-        var id = System.currentTimeMillis()
-        while ("$prefix-$id" in taken) id += 1
-        return "$prefix-$id"
-    }
-
-    private fun existingKeys(diagram: Diagram, collection: String): Set<String> = when (collection) {
-        "helicopters" -> diagram.graphics.helicopters
-        "pzMarkers" -> diagram.graphics.pzMarkers
-        "sectorsOfFire" -> diagram.graphics.sectorsOfFire
-        "goArounds" -> diagram.graphics.goArounds
-        "doghouses" -> diagram.graphics.doghouses
-        "units" -> diagram.graphics.units
-        else -> emptyList()
-    }.mapNotNull { (it as? JsonObject)?.get("id") }.map { DiagramOps.idText(it) }.toSet()
 
     // -- Choosing ----------------------------------------------------------------------------------------------------------
 

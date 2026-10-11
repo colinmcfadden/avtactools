@@ -193,6 +193,18 @@ open class DocumentSession<D : Any>(
         redo.clear(); redo.addAll(redone)
     }
 
+    /**
+     * Takes back the last edit, leaving nothing to redo, if it was made under [coalesce]: what a tool mode that is cancelled does with the one step its edits
+     * made. False, changing nothing, when another edit has been made since (or there is none).
+     */
+    fun dropLast(coalesce: Any): Boolean {
+        val last = undo.lastOrNull() ?: return false
+        if (last.key != coalesce) return false
+        undo.removeLast()
+        apply(last.before)
+        return true
+    }
+
     /** Undoes the last edit. Returns its label, or null if there was nothing to undo. */
     fun undo(): String? {
         val step = undo.removeLastOrNull() ?: return null

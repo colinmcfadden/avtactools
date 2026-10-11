@@ -60,7 +60,7 @@ class FrameScreenshotTest {
                 PhoneFrame(
                     panels = Panel.entries, current = panel, counts = PanelCounts(threats = 1, imports = 3), onPick = {},
                     sheet = sheet, snackbars = remember { SnackbarHostState() },
-                    subtitle = if (panel == Panel.Threats) "1 · this device only" else null,
+                    head = PanelHead(panel.label, subtitle = if (panel == Panel.Threats) "1 · this device only" else null),
                     panel = { StandInPanel(it) },
                 ) { frame ->
                     MapScreen(

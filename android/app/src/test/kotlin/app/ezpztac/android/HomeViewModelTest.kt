@@ -17,6 +17,8 @@ import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.DrawingMode
+import app.ezpztac.data.GraphicPlacement
+import app.ezpztac.data.PlaceTool
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteHeld
@@ -220,9 +222,11 @@ class HomeViewModelTest {
         val weather = WeatherService(weatherApi, KeptWeather(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)))
         val mapFocus = MapFocus()
         val corners = BoundaryCorners(session)
+        val placement = GraphicPlacement(session, aircraft, mode)
         val model = HomeViewModel(
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, lastSet, localPoints, pointSelection,
-            threats, threatSelection, weather, MapDrag(session, routeSession, threats), SlopeVisibility(), corners, masks, mapFocus, symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
+            threats, threatSelection, weather, MapDrag(session, routeSession, threats), SlopeVisibility(), corners, masks, placement, mapFocus,
+            symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
@@ -1421,5 +1425,45 @@ class HomeViewModelTest {
         r.model.toggleSlope(); advanceUntilIdle()
         assertTrue(r.model.scene.value.slope != null)
         assertEquals(1, r.server.slopeCalls.size)                                              // turning it off and on measured nothing
+    }
+
+    // -- A planning tool's mode has the map's taps (S3) ------------------------------------------------------------------------
+
+    @Test
+    fun `while a tool's mode is on a tap places its graphic, even on another graphic, and holds nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertNull(r.placement.begin(PlaceTool.HELICOPTER))
+        advanceUntilIdle()
+        assertTrue(r.model.isDrawing.value)                                                     // the sheet goes down and the held bar hides
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)             // right on the PZ marker
+        advanceUntilIdle()
+        assertEquals(null, r.selection.selected.value)
+        assertEquals(1, r.session.active.value!!.graphics.helicopters.size)
+        assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))   // a long press picks nothing up either
+        r.placement.finish()
+        advanceUntilIdle()
+        assertFalse(r.model.isDrawing.value)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)             // and once it is over, a tap holds again:
+        assertEquals("helicopters", r.selection.selected.value?.collection)                      // the helicopter just put on top of the marker
+    }
+
+    @Test
+    fun `a tool's mode ends when another LZ-PZ opens, and when the open one closes`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.placement.begin(PlaceTool.PZ_MARKER)
+        r.session.open(r.analysed())                                                             // another one
+        advanceUntilIdle()
+        assertNull(r.placement.placing.value)
+        r.placement.begin(PlaceTool.PZ_MARKER)
+        r.session.close()
+        advanceUntilIdle()
+        assertNull(r.placement.placing.value)
     }
 }

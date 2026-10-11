@@ -3,6 +3,9 @@ package app.ezpztac.workspace
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.InMemoryAircraftChoice
+import app.ezpztac.data.InMemoryOpenDiagramStore
+import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
@@ -38,7 +41,9 @@ import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -128,10 +133,13 @@ class DiagramsViewModelTest {
         val weatherApi = Weather()
         var clock = 1_000_000L
         val weather = WeatherService(weatherApi, MemoryWeatherCache(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler))) { clock }
+        val openStore = InMemoryOpenDiagramStore()
+        val open = OpenDiagrams(openStore)
+        val slopeVisibility = SlopeVisibility()
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            analysis, aircraft, weather,
+            analysis, aircraft, weather, open, slopeVisibility,
         )
         val rows get() = model.state.value.rows
     }
@@ -796,5 +804,194 @@ class DiagramsViewModelTest {
         advanceUntilIdle()
         assertNull(r.model.state.value.current!!.weather)               // the new diagram is not analysed
         assertEquals(1, r.weatherApi.calls.size)
+    }
+
+    // -- The LZ/PZ panel: the open LZ/PZs, naming, closing (S3) ---------------------------------------------------------------
+
+    private val here = LatLon(34.783817, -84.08219)
+
+    @Test
+    fun `a new LZ-PZ at the crosshair has the next made-up name, opens, and is kept open`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!
+        assertEquals("LZ/PZ 1", first.name)
+        assertTrue(first.madeUpName)
+        assertEquals(grid, first.grid)
+        assertEquals(listOf(first.uuid), r.open.ids.value)
+        assertEquals(listOf(first.uuid), r.openStore.kept)                                       // kept on the device for the next launch
+        r.model.newAt(LatLon(34.79, -84.08))
+        advanceUntilIdle()
+        val state = r.model.state.value
+        assertEquals("LZ/PZ 2", state.current!!.name)
+        assertEquals(listOf("LZ/PZ 1"), state.open.map { it.name })                               // the first is "also open"
+        assertEquals(2, state.openCount)
+    }
+
+    @Test
+    fun `with no crosshair yet nothing is made, and it says why`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(null)
+        advanceUntilIdle()
+        assertTrue(r.rows.isEmpty())
+        assertEquals("Move the map to where the LZ/PZ should be first.", r.model.state.value.error)
+    }
+
+    @Test
+    fun `whatever opens an LZ-PZ puts it among the open ones`() = runTest(dispatcher) {
+        val r = rig()
+        val made = r.repository.create(DiagramTarget(34.783817, -84.08219, grid), "LZ HAWK")
+        r.session.open(made.id)                                                                   // as a launch putting back the last one does
+        advanceUntilIdle()
+        assertEquals(listOf(made.id), r.open.ids.value)
+    }
+
+    @Test
+    fun `closing the one on the map opens the one before it, and the Library keeps both`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(LatLon(34.79, -84.08))
+        advanceUntilIdle()
+        val second = r.model.state.value.current!!.uuid
+        r.model.close(second)
+        advanceUntilIdle()
+        assertEquals(first, r.session.active.value?.id)
+        assertEquals(listOf(first), r.open.ids.value)
+        assertEquals(setOf(first, second), r.rows.map { it.uuid }.toSet())                      // closing is not deleting
+        r.model.close(first)
+        advanceUntilIdle()
+        assertNull(r.session.active.value)
+        assertEquals(0, r.model.state.value.openCount)
+    }
+
+    @Test
+    fun `closing one that is only also open leaves the one on the map`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(LatLon(34.79, -84.08))
+        advanceUntilIdle()
+        val second = r.model.state.value.current!!.uuid
+        r.model.close(first)
+        advanceUntilIdle()
+        assertEquals(second, r.session.active.value?.id)
+        assertEquals(listOf(second), r.open.ids.value)
+    }
+
+    @Test
+    fun `deleting the one on the map opens the one before it`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(LatLon(34.79, -84.08))
+        advanceUntilIdle()
+        val second = r.model.state.value.current!!.uuid
+        r.model.delete(second)
+        advanceUntilIdle()
+        assertEquals(first, r.session.active.value?.id)
+        assertEquals(listOf(first), r.rows.map { it.uuid })
+        assertEquals(listOf(first), r.open.ids.value)
+    }
+
+    @Test
+    fun `recent in Library is the three most recently changed that are not open`() = runTest(dispatcher) {
+        val r = rig()
+        val names = listOf("ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO")
+        for (name in names) {
+            r.repository.create(DiagramTarget(34.783817, -84.08219, grid), name)
+            Thread.sleep(3)                                                                       // the documents' times are the clock's, to the millisecond
+        }
+        advanceUntilIdle()
+        assertEquals(listOf("ECHO", "DELTA", "CHARLIE"), r.model.state.value.recent.map { it.name })
+        r.model.open(r.rows.first { it.name == "ECHO" }.uuid)
+        advanceUntilIdle()
+        assertEquals(listOf("DELTA", "CHARLIE", "BRAVO"), r.model.state.value.recent.map { it.name })   // what is open is not offered again
+        assertTrue(r.model.state.value.recent.all { it.updated != null })
+    }
+
+    @Test
+    fun `an LZ-PZ can be named only once it is analysed, and naming it says so in a toast`() = runTest(dispatcher) {
+        val r = rig()
+        val notices = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { notices += it } }
+        r.model.newAt(here)
+        advanceUntilIdle()
+        assertFalse(r.model.state.value.current!!.canSave)
+        assertEquals(LzChip("Analyze to save", ChipTone.INFO), r.model.state.value.current!!.chips.last())
+        r.model.analyze()
+        advanceUntilIdle()
+        val analysed = r.model.state.value.current!!
+        assertTrue(analysed.canSave)
+        assertEquals(listOf("Boundary, target $grid and slope analysis", "Doghouses and flight data"), analysed.saveContents)
+        r.model.saveAs("  LZ HAWK  ")
+        advanceUntilIdle()
+        val named = r.model.state.value.current!!
+        assertEquals("LZ HAWK", named.name)
+        assertFalse(named.madeUpName)
+        assertFalse(named.canSave)
+        assertEquals("LZ HAWK", r.rows.single().name)                                             // written to the record, to be synced
+        assertEquals(listOf("Saved \u201cLZ HAWK\u201d to your Library"), notices)
+    }
+
+    @Test
+    fun `a name another LZ-PZ has is kept apart, and a blank one is refused`() = runTest(dispatcher) {
+        val r = rig()
+        r.repository.create(DiagramTarget(34.79, -84.08, "16S GD 66993 53949"), "LZ HAWK")
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        r.model.saveAs("   ")
+        advanceUntilIdle()
+        assertEquals("Give the LZ/PZ a name.", r.model.state.value.error)
+        r.model.saveAs("lz hawk")
+        advanceUntilIdle()
+        assertEquals("lz hawk 2", r.model.state.value.current!!.name)
+    }
+
+    @Test
+    fun `the plan is a page only while an LZ-PZ is open`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.showPage(LzPage.PLAN)
+        assertEquals(LzPage.HOME, r.model.state.value.page)
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.showPage(LzPage.PLAN)
+        advanceUntilIdle()
+        assertEquals(LzPage.PLAN, r.model.state.value.page)
+        r.model.close(r.model.state.value.current!!.uuid)
+        advanceUntilIdle()
+        assertEquals(LzPage.HOME, r.model.state.value.page)
+    }
+
+    @Test
+    fun `opening one from every LZ-PZ goes back to the open ones`() = runTest(dispatcher) {
+        val r = rig()
+        val made = r.repository.create(DiagramTarget(34.783817, -84.08219, grid), "LZ HAWK")
+        advanceUntilIdle()
+        r.model.showPage(LzPage.LIBRARY)
+        r.model.open(made.id)
+        advanceUntilIdle()
+        assertEquals(LzPage.HOME, r.model.state.value.page)
+        assertEquals(made.id, r.session.active.value?.id)
+    }
+
+    @Test
+    fun `the slope map switch is there once a slope is measured, and turns the heat map off and on`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.current!!.slopeShown)
+        r.model.analyze()
+        advanceUntilIdle()
+        assertEquals(true, r.model.state.value.current!!.slopeShown)
+        r.model.toggleSlope()
+        advanceUntilIdle()
+        assertEquals(false, r.model.state.value.current!!.slopeShown)
     }
 }
