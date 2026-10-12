@@ -118,6 +118,9 @@ private val TYPE_CHOICES = listOf("Turn point" to "turn", "IP" to "ip", "Target"
  */
 private val WIDE = 340.dp
 
+/** The least room the plan's total keeps beside the elevations button before the button goes under it: "12.4 nm · 1:02:30 · 1,240 lb" whole. */
+private val TOTAL_MIN = 200.dp
+
 /** Past this font scale a point card's header has no room for the clock beside the name: the clock goes under it. */
 private const val LARGE_TEXT = 1.3f
 
@@ -135,6 +138,8 @@ fun RoutePlanPage(
     threatCount: Int,
     modifier: Modifier = Modifier,
     snackbars: SnackbarHostState? = null,
+    /** A tablet's: the pane beside the map (320 dp), put away with a close button, rather than a page over it. */
+    inPane: Boolean = false,
 ) {
     val detail = state.detail ?: return
     val open = state.open ?: return
@@ -146,7 +151,10 @@ fun RoutePlanPage(
     Surface(modifier.fillMaxSize().semantics { paneTitle = "Plan of ${detail.name}" }, color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-                PlanTopBar(detail, row, open.isMission, state.exporting, open.canUndo, open.canRedo, actions, withThreats, onRename = { renaming = detail.name }, onDelete = { confirmDelete = true })
+                PlanTopBar(
+                    detail, row, open.isMission, state.exporting, open.canUndo, open.canRedo, actions, withThreats, onRename = { renaming = detail.name },
+                    onDelete = { confirmDelete = true }, inPane = inPane,
+                )
                 SetStrip(open, actions.save)
                 // What the bar's menu and the buttons below ask (a rename, a delete, a refusal) is said here, under the bars, where it is in sight however far down the page is scrolled.
                 val notices = state.error != null || state.exportWarning != null || renaming != null || confirmDelete
@@ -212,12 +220,18 @@ private fun PlanTopBar(
     withThreats: Boolean,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    inPane: Boolean = false,
 ) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = Tokens.Spacing.xs.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp),
     ) {
-        IconButton(onClick = actions.closePlan, modifier = Modifier.size(48.dp)) { Icon(painterResource(EzpzIcons.arrowBack), contentDescription = "Back to Routes") }
+        // A page over the map goes back to it; a tablet's pane beside the map is put away.
+        if (inPane) {
+            IconButton(onClick = actions.closePlan, modifier = Modifier.size(48.dp)) { Icon(painterResource(EzpzIcons.close), contentDescription = "Close the ${detail.name} plan") }
+        } else {
+            IconButton(onClick = actions.closePlan, modifier = Modifier.size(48.dp)) { Icon(painterResource(EzpzIcons.arrowBack), contentDescription = "Back to Routes") }
+        }
         Column(Modifier.weight(1f).padding(start = Tokens.Spacing.xs.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                 row?.let { Box(Modifier.size(12.dp).background(routeColor(it.color), CircleShape)) }
@@ -568,13 +582,13 @@ private fun ClosedPointCard(point: PlanPointUi, color: Color, onOpen: () -> Unit
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                     Text(
                         if (point.first) valuesLine(point) else point.facts, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     )
                     if (point.first) Text("START", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(point.elapsed, style = MaterialTheme.typography.titleMedium)
                 }
                 if (!point.first) {
-                    Text(valuesLine(point), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(valuesLine(point), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             Icon(painterResource(EzpzIcons.expandMore), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -861,19 +875,25 @@ private fun TotalCard(detail: RouteDetailUi, fetching: PlanningKind?, actions: R
         shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.xs.dp, end = Tokens.Spacing.lg.dp).fillMaxWidth().heightIn(min = 56.dp),
     ) {
-        Row(Modifier.padding(start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.xs.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
+        // The total keeps its words: where it and the button do not fit side by side (the tablet's 320 dp pane), the button goes under it, as the tablet design draws.
+        SideBySide(
+            minFlexible = TOTAL_MIN, gap = Tokens.Spacing.sm.dp, flexibleFirst = true,
+            modifier = Modifier.padding(start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.xs.dp, top = Tokens.Spacing.xs.dp, bottom = Tokens.Spacing.xs.dp),
+            fixed = {
+                PillButton(
+                    when {
+                        fetching == PlanningKind.ELEVATIONS -> "Fetching…"
+                        detail.hasElevations -> "Refresh elevations"
+                        else -> "Fetch elevations"
+                    },
+                    onClick = actions.fetchElevations, icon = EzpzIcons.terrain, style = PillStyle.Tonal, enabled = fetching == null,
+                )
+            },
+        ) {
+            Column(Modifier.semantics(mergeDescendants = true) {}) {
                 Text("Total", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(detail.totals ?: "--", style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                Text(detail.totals ?: "--", style = MaterialTheme.typography.titleMedium)
             }
-            PillButton(
-                when {
-                    fetching == PlanningKind.ELEVATIONS -> "Fetching…"
-                    detail.hasElevations -> "Refresh elevations"
-                    else -> "Fetch elevations"
-                },
-                onClick = actions.fetchElevations, icon = EzpzIcons.terrain, style = PillStyle.Tonal, enabled = fetching == null,
-            )
         }
     }
 }

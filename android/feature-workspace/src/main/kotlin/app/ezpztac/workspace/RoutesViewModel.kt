@@ -226,6 +226,8 @@ data class RoutesUiState(
     val page: RoutesPage = RoutesPage.HOME,
     /** The held route's plan is showing, as a page of its own over the map ([detail] is what it shows). */
     val planOpen: Boolean = false,
+    /** How many times a plan has been asked for: a tablet brings its pane forward each time, though it is open already. */
+    val planAsked: Int = 0,
     /** The names of the sets other than the open one, so naming it can say when a name is taken. */
     val otherNames: List<String> = emptyList(),
     val drawing: RouteDrawingUi? = null,
@@ -268,6 +270,7 @@ class RoutesViewModel @Inject constructor(
         val exporting: Boolean = false, val exportWarning: String? = null, val page: RoutesPage = RoutesPage.HOME, val includeThreats: Boolean = true,
         /** The route whose plan page is open, while it is. */
         val planFor: String? = null,
+        val planAsked: Int = 0,
     )
 
     /** Where a mission is built: building one takes a moment of work on the whole template, so it is not done on the main thread. A test sets its own. */
@@ -308,6 +311,7 @@ class RoutesViewModel @Inject constructor(
             page = local.page,
             // The page is the held route's: a route undone out of existence, or put down, takes its page with it.
             planOpen = local.planFor != null && detail?.routeId == local.planFor,
+            planAsked = local.planAsked,
             otherNames = summaries.filter { it.uuid != set?.id }.map { it.name },
             drawing = draft?.takeIf { it.setId == set?.id }?.let { RouteDrawingUi(it.points.size, it.canFinish) },
             detail = detail,
@@ -420,7 +424,7 @@ class RoutesViewModel @Inject constructor(
     fun openPlan(routeId: String) {
         if (session.active.value?.route(routeId) == null) return
         if (selection.held.value?.routeId != routeId) selection.select(routeId)                  // before the page: holding another route closes it
-        local.update { it.copy(planFor = routeId, error = null) }
+        local.update { it.copy(planFor = routeId, error = null, planAsked = it.planAsked + 1) }
     }
 
     /** Opens the plan of the route held on the map (the held bar's options for one of its points). */

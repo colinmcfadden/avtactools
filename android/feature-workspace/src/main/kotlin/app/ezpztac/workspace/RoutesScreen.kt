@@ -157,12 +157,14 @@ fun RoutePlanHost(
     threatCount: Int,
     modifier: Modifier = Modifier,
     snackbars: SnackbarHostState? = null,
+    /** A tablet's: in the pane beside the map, put away with a close button ([RoutePlanPage]). */
+    inPane: Boolean = false,
     viewModel: RoutesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var naming by rememberSaveable { mutableStateOf(false) }
     if (!state.planOpen) return
-    RoutePlanPage(state, actionsOf(viewModel, crosshair, save = { naming = true }), crosshairGrid, threatCount, modifier, snackbars)
+    RoutePlanPage(state, actionsOf(viewModel, crosshair, save = { naming = true }), crosshairGrid, threatCount, modifier, snackbars, inPane = inPane)
     if (naming) {
         val open = state.open
         if (open == null || !open.canSave) {

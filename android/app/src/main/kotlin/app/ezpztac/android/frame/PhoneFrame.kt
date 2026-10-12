@@ -48,15 +48,14 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * What the frame tells the map screen it draws: the camera's [padding] (the crosshair marks the middle of what it leaves), where the readout
- * pill and the floating tools stand ([controlsBottom]: the sheet's edge, never higher than half, so a sheet raised further slides over them),
- * and the [sheet] to draw over the map's controls.
+ * What the frame tells the map screen it draws: the camera's [padding] (the crosshair marks the middle of what it leaves), and where the readout
+ * pill and the floating tools stand ([controlsBottom]: the sheet's edge, never higher than half, so a sheet raised further slides over them; the
+ * foot of the map on a tablet).
  */
 @Stable
 class MapFrame internal constructor(
     val padding: MapPadding,
     val controlsBottom: () -> Float?,
-    val sheet: @Composable () -> Unit,
 )
 
 /**
@@ -113,39 +112,37 @@ fun PhoneFrame(
             val anchors = sheet.anchors
             val resting = sheet.heading.let { if (it == SheetDetent.Full) SheetDetent.Half else it }
             val bottom: Dp = anchors?.let { with(density) { it.heightOf(resting).toDp() } } ?: PanelSheetDefaults.LoweredHeight
-            val frame = MapFrame(
-                padding = MapPadding(top = top + MapChrome.SEARCH_BOTTOM, bottom = bottom),
-                controlsBottom = { edgeOf(sheet) },
-                sheet = {
-                    PanelSheet(
-                        state = sheet,
-                        topLimit = top + MapChrome.SHEET_TOP_LIMIT,
-                        raiseLabel = "Raise the ${current.label} panel",
-                        lowerLabel = "Lower the ${current.label} panel",
-                        header = {
-                            PanelHeader(head.title, subtitle = head.subtitle, subtitleMono = head.subtitleMono, onBack = head.back, backDescription = head.backDescription) {
-                                headerActions()
-                                val full = sheet.settled == SheetDetent.Full
-                                PanelAction(
-                                    if (full) EzpzIcons.expandMore else EzpzIcons.expandLess,
-                                    if (full) "Lower the ${current.label} panel" else "Open the ${current.label} panel full height",
-                                    onClick = { scope.launch { sheet.animateTo(sheet.fullOrHalf()) } },
-                                )
-                            }
-                        },
-                        footer = footer?.let { foot -> { Box(Modifier.onSizeChanged { footerPx = it.height }) { foot() } } },
-                    ) {
-                        Box(Modifier.fillMaxSize().imePadding()) {
-                            panels.forEach { each ->
-                                key(each) {
-                                    Box(Modifier.fillMaxSize().then(if (each == current) Modifier else Modifier.hidden())) { panel(each) }
-                                }
-                            }
-                        }
+            val frame = MapFrame(padding = MapPadding(top = top + MapChrome.SEARCH_BOTTOM, bottom = bottom), controlsBottom = { edgeOf(sheet) })
+            // The map first, then the sheet over it: drawn here, not by the map screen, so the panels are never inside the map's content. The map and the panels are
+            // each moved between the phone's and the tablet's frames whole (MapHome), and one moved inside another breaks Compose. The sheet stops below the search
+            // bar and the chips at its full height, so what is drawn is the same.
+            mapScreen(frame)
+            PanelSheet(
+                state = sheet,
+                topLimit = top + MapChrome.SHEET_TOP_LIMIT,
+                raiseLabel = "Raise the ${current.label} panel",
+                lowerLabel = "Lower the ${current.label} panel",
+                header = {
+                    PanelHeader(head.title, subtitle = head.subtitle, subtitleMono = head.subtitleMono, onBack = head.back, backDescription = head.backDescription) {
+                        headerActions()
+                        val full = sheet.settled == SheetDetent.Full
+                        PanelAction(
+                            if (full) EzpzIcons.expandMore else EzpzIcons.expandLess,
+                            if (full) "Lower the ${current.label} panel" else "Open the ${current.label} panel full height",
+                            onClick = { scope.launch { sheet.animateTo(sheet.fullOrHalf()) } },
+                        )
                     }
                 },
-            )
-            mapScreen(frame)
+                footer = footer?.let { foot -> { Box(Modifier.onSizeChanged { footerPx = it.height }) { foot() } } },
+            ) {
+                Box(Modifier.fillMaxSize().imePadding()) {
+                    panels.forEach { each ->
+                        key(each) {
+                            Box(Modifier.fillMaxSize().then(if (each == current) Modifier else Modifier.hidden())) { panel(each) }
+                        }
+                    }
+                }
+            }
             ToastHost(snackbars, Modifier.fillMaxSize().padding(horizontal = Tokens.Spacing.lg.dp).aboveTheControls(sheet, floatingPx) { footerPx })
         }
         PanelBar(panels, current, counts, onPick)
@@ -166,7 +163,7 @@ internal fun edgeOf(sheet: PanelSheetState): Float? {
  * Kept in composition (its scroll, its pickers, what it listens for, a dialog it opens) but neither measured nor placed, and out of the
  * semantics: not drawn, not touched, not read by a screen reader.
  */
-private fun Modifier.hidden(): Modifier = clearAndSetSemantics {}.layout { _, _ -> layout(0, 0) {} }
+internal fun Modifier.hidden(): Modifier = clearAndSetSemantics {}.layout { _, _ -> layout(0, 0) {} }
 
 /**
  * Places the toasts above the readout pill and whatever floats above it while the sheet is at half or lower, and at the foot of the space when

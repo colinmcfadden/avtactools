@@ -82,7 +82,7 @@ internal fun spokenCount(panel: Panel, counts: PanelCounts): String? = when (pan
 }
 
 @Composable
-private fun PanelBadge(panel: Panel, counts: PanelCounts) {
+internal fun PanelBadge(panel: Panel, counts: PanelCounts) {
     when (panel) {
         Panel.Threats -> if (counts.threats > 0) Badge { Text(shown(counts.threats)) }
         Panel.Imports -> if (counts.imports > 0) {

@@ -224,6 +224,8 @@ data class DiagramsUiState(
     val creating: Boolean = false,
     val error: String? = null,
     val busy: Boolean = false,
+    /** How many times the plan has been asked for: a tablet brings its pane forward each time, though the page is the plan already. */
+    val planAsked: Int = 0,
 )
 
 /**
@@ -295,6 +297,7 @@ class DiagramsViewModel @Inject constructor(
     /** Goes to [to]: the plan only while an LZ/PZ is open. */
     fun showPage(to: LzPage) {
         if (to == LzPage.PLAN && session.active.value == null) return
+        if (to == LzPage.PLAN) local.update { it.copy(planAsked = it.planAsked + 1) }
         page.value = to
     }
 

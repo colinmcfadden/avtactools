@@ -1,12 +1,5 @@
 package app.ezpztac.android
 
-import app.ezpztac.workspace.offersLibrary
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SnackbarDuration
-import app.ezpztac.workspace.MapPointAction
-import kotlin.math.roundToInt
-import androidx.compose.ui.unit.IntOffset
 import android.content.ClipData
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -14,18 +7,26 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,19 +43,27 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.android.export.ShareExport
 import app.ezpztac.android.frame.AccountButton
+import app.ezpztac.android.frame.MapFrame
 import app.ezpztac.android.frame.Panel
 import app.ezpztac.android.frame.PanelHead
 import app.ezpztac.android.frame.PhoneFrame
+import app.ezpztac.android.frame.SupportingPane
+import app.ezpztac.android.frame.TabletFrame
+import app.ezpztac.android.frame.TabletRail
 import app.ezpztac.android.frame.panelsFor
 import app.ezpztac.android.frame.pick
+import app.ezpztac.android.frame.rememberTabletFrameState
 import app.ezpztac.android.frame.shownPanel
+import app.ezpztac.android.frame.usesTabletFrame
 import app.ezpztac.android.packs.InviteNotices
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
@@ -79,24 +88,28 @@ import app.ezpztac.map.ThreatLabelsLayer
 import app.ezpztac.map.ThreatLayer
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.missionpacks.InviteState
+import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiUser
 import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsUiState
 import app.ezpztac.workspace.DiagramsViewModel
-import app.ezpztac.workspace.LzPage
-import app.ezpztac.workspace.LzPanelHost
-import app.ezpztac.workspace.PlacementToolbarHost
+import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.HeldObjectBarHost
 import app.ezpztac.workspace.ImportReviewHost
 import app.ezpztac.workspace.ImportSheet
+import app.ezpztac.workspace.ImportSheetContent
 import app.ezpztac.workspace.ImportsHost
+import app.ezpztac.workspace.IncomingViewModel
 import app.ezpztac.workspace.LibraryActions
 import app.ezpztac.workspace.LibraryHost
 import app.ezpztac.workspace.LibraryTab
-import app.ezpztac.workspace.IncomingViewModel
+import app.ezpztac.workspace.LzPage
+import app.ezpztac.workspace.LzPane
+import app.ezpztac.workspace.LzPanelHost
+import app.ezpztac.workspace.MapPointAction
+import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.PointsViewModel
-import app.ezpztac.workspace.importsLine
 import app.ezpztac.workspace.RoutePlanHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesFooterHost
@@ -104,10 +117,12 @@ import app.ezpztac.workspace.RoutesHost
 import app.ezpztac.workspace.RoutesPage
 import app.ezpztac.workspace.RoutesUiState
 import app.ezpztac.workspace.RoutesViewModel
-import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.ThreatsHost
 import app.ezpztac.workspace.ThreatsViewModel
+import app.ezpztac.workspace.importsLine
+import app.ezpztac.workspace.offersLibrary
 import app.ezpztac.workspace.rememberFileImport
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
@@ -123,7 +138,8 @@ private val HELD_BAR_MAX_WIDTH = 460.dp
 /**
  * The signed-in app: the map at the root with the redesign's frame over it (docs/native-design, the phone's screens; docs/ANDROID_SCREENS_PLAN.md,
  * S2): the search bar with the account button, the chips, the map's buttons, the crosshair and its readout, the panel in a sheet that rests lowered,
- * at half or at full height, and the bar of panels. Each panel holds today's sections until its own screen is built (S3 to S6).
+ * at half or at full height, and the bar of panels. Each panel holds today's sections until its own screen is built (S3 to S6). A window 840 dp wide or more has
+ * the tablet's frame instead (S9, [TabletFrame]): the rail, the panel in a pane beside the map, and the open LZ/PZ's plan or a route's in a pane on its right.
  */
 @Composable
 fun MapHome(
@@ -179,6 +195,11 @@ fun MapHome(
     val routes by routesModel.state.collectAsStateWithLifecycle()
     // A phone starts with the sheet lowered, so the map is usable (the web's sheet does the same).
     val sheet = rememberPanelSheetState(SheetDetent.Lowered)
+    // A window at least 840 dp wide and 480 dp tall (a tablet across, a foldable open) has the tablet's frame; a phone, on its side too, the phone's.
+    val window = LocalWindowInfo.current.containerSize
+    val tablet = with(density) { usesTabletFrame(window.width.toDp(), window.height.toDp()) }
+    // The tablet's panes: whether the list is collapsed, which pane was opened last. What the person does elsewhere brings the list forward, as the phone raises its sheet.
+    val tabletState = rememberTabletFrameState()
     var chosen by rememberSaveable { mutableStateOf(Panel.Lz) }
     val panels = remember(user.features) { panelsFor(user) }
     val current = shownPanel(chosen, panels)
@@ -190,6 +211,16 @@ fun MapHome(
     // the menu closes (menuOpen false), so it does not empty as it fades.
     var menu by remember { mutableStateOf<OpenMapMenu?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    val account: @Composable () -> Unit = {
+        AccountButton(
+            name = user.name, email = user.email, version = stringResource(R.string.home_version, version, build),
+            night = night, onNight = display::setNight, onSignOut = onSignOut, notice = stringResource(R.string.classification_notice),
+        )
+    }
+    // A tablet opens the open LZ/PZ's plan beside the map when one is opened (the design's supporting pane); its close button puts it away until another is opened.
+    LaunchedEffect(lz.current?.uuid) { if (tablet && lz.current != null && lz.page == LzPage.HOME) diagrams.showPage(LzPage.PLAN) }
+    // The aircraft page is in the list: on a tablet it brings the list forward (from the plan pane's Manage, the list may be collapsed or waiting).
+    LaunchedEffect(lz.page) { if (tablet && lz.page == LzPage.AIRCRAFT) tabletState.showList() }
     // A toast from a panel; the Saved one offers its Library tab (the design's Saved: Open Library), if the account has it when the toast is shown: the collectors
     // below outlive a change of features, so they read the tabs as they are now.
     val libraryTabs by rememberUpdatedState(libraryTabsFor(panels))
@@ -210,13 +241,13 @@ fun MapHome(
     }
     LaunchedEffect(host) { snapshotFlow { host.camera }.filterNotNull().collect(viewModel::onCamera) }
     // A boundary or a route is drawn, or a tool places, by tapping the map: the sheet goes down to its header, so the map is there, each time one starts.
-    LaunchedEffect(drawingWhat) { if (drawingWhat != null) sheet.animateTo(SheetDetent.Lowered) }
+    LaunchedEffect(drawingWhat) { if (drawingWhat != null && !tablet) sheet.animateTo(SheetDetent.Lowered) }
     LaunchedEffect(threatsOn) { home.allowThreats(threatsOn) }
     LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
     LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
     // A file another app opened with this one (Files, a mail, the share sheet), or chosen with Import, is put to the person here: nothing is imported until they say so.
-    ImportReviewHost(threatsAllowed = threatsOn, viewModel = incoming)
-    if (importMenu) ImportSheet(threatsAllowed = threatsOn, onChoose = importFiles, onDismiss = { importMenu = false })
+    ImportReviewHost(threatsAllowed = threatsOn, large = tablet, viewModel = incoming)
+    if (importMenu) ImportSheet(threatsAllowed = threatsOn, onChoose = importFiles, onDismiss = { importMenu = false })            // the phone's, and a panel's own Import
     LaunchedEffect(incoming) { incoming.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     LaunchedEffect(importsModel) { importsModel.notices.collect { toast(it, LibraryTab.POINTS) } }
     // An invitation link: said above the sheet, in the frame's own toasts.
@@ -226,17 +257,17 @@ fun MapHome(
     LaunchedEffect(routesModel) { routesModel.notices.collect { toast(it, LibraryTab.ROUTES) } }
     LaunchedEffect(threatsModel) { threatsModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // A page inside the LZ/PZ panel (an LZ/PZ's plan, every LZ/PZ, the aircraft): Back goes back up it, as its arrow does.
-    BackHandler(enabled = current == Panel.Lz && lz.page != LzPage.HOME) { diagrams.showPage(lzBack(lz)) }
+    BackHandler(enabled = current == Panel.Lz && (if (tablet) lz.page == LzPage.AIRCRAFT else lz.page != LzPage.HOME)) { diagrams.showPage(lzBack(lz)) }
     BackHandler(enabled = current == Panel.Routes && routes.page != RoutesPage.HOME) { routesModel.showPage(RoutesPage.HOME) }
     // The route's plan is a page over the frame: Back goes back to the map and its panel, as its arrow does (declared after the panel's, so it is asked first).
-    BackHandler(enabled = routes.planOpen) { routesModel.closePlan() }
+    BackHandler(enabled = routes.planOpen && !tablet) { routesModel.closePlan() }
     // The Library's own Back is its page's (it is composed after these, so it is asked first while it is open).
     // What the LZ/PZ and Routes panels say of an action the Library handed them (a name refused, a write that failed, one asked while another ran) would be a banner
     // under the Library, out of sight: while it is open it is said in its toasts instead.
     val libraryOpen = libraryTab != null
     // The Library opens over the frame, and a route's plan page is a page over the frame too: a Saved toast's Open Library pressed on the plan page would leave the
     // plan under the Library, and come back over the panel the Library's Open then chose. Opening the Library closes it.
-    LaunchedEffect(libraryOpen) { if (libraryOpen) routesModel.closePlan() }
+    LaunchedEffect(libraryOpen) { if (libraryOpen && !tablet) routesModel.closePlan() }
     LaunchedEffect(libraryOpen, lz.error) {
         val said = lz.error
         if (libraryOpen && said != null) {
@@ -265,70 +296,41 @@ fun MapHome(
     // Units' symbols are drawn the same way on the map and in the sheet's builder: one renderer, and its cache, for both.
     CompositionLocalProvider(LocalSymbolRenderer provides home.symbols) {
         Box(Modifier.fillMaxSize()) {
-            PhoneFrame(
-                panels = panels,
-                current = current,
-                counts = counts,
-                onPick = { picked ->
-                    val (panel, detent) = pick(current, sheet.settled, picked)
-                    focus.clearFocus()                                                   // a field in the panel left behind keeps no keyboard up
-                    chosen = panel
-                    scope.launch { sheet.animateTo(detent) }
-                },
-                sheet = sheet,
-                snackbars = snackbars,
-                head = when (current) {
-                    Panel.Lz -> lzHead(lz) { diagrams.showPage(it) }
-                    Panel.Threats -> PanelHead(current.label, if (counts.threats == 0) "This device only" else "${counts.threats} on the map · this device only")
-                    Panel.Imports -> PanelHead(current.label, importsLine(imports.itemCount))
-                    Panel.Routes -> routesHead(routes)
-                },
-                // The Imports panel's Import, beside its title (the design's): the same menu as the frame's chip.
-                headerActions = {
-                    if (current == Panel.Imports) PillButton("Import", onClick = { importMenu = true }, icon = EzpzIcons.fileOpen)
-                },
-                floatingPx = { floating },
-                // The Routes panel's foot: Sketch a route and Import .msnx, pinned under the sets open now.
-                footer = if (current == Panel.Routes && routes.page == RoutesPage.HOME) {
-                    { RoutesFooterHost(onImport = importFiles, crosshair = state.center, viewModel = routesModel) }
-                } else {
-                    null
-                },
-                // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
-                modifier = if (routes.planOpen || libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
-                panel = { panel ->
-                    Column(
-                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.xs.dp),
-                        verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
-                    ) {
-                        if (maintenance != null) Banner(maintenance, BannerKind.Warning)
-                        if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
-                        when (panel) {
-                            // A new LZ/PZ starts at the crosshair, and the tools add there. An administrator can switch own aircraft off for an account (the
-                            // server would refuse what it made).
-                            Panel.Lz -> LzPanelHost(
-                                crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
-                                onBrowseLibrary = { libraryTab = LibraryTab.LZ }, viewModel = diagrams,
-                            )
-                            Panel.Routes -> RoutesHost(
-                                crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
-                            )
-                            Panel.Threats -> ThreatsHost(
-                                onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
-                                viewModel = threatsModel,
-                            )
-                            // A mission opens in Routes and a threat file's threats are in Threats: each panel, shown at the height the sheet is.
-                            Panel.Imports -> ImportsHost(
-                                threatsAllowed = threatsOn,
-                                onOpenMission = if (Panel.Routes in panels) { uuid -> routesModel.openSet(uuid); chosen = Panel.Routes } else null,
-                                onOpenThreats = { chosen = Panel.Threats },
-                                viewModel = importsModel,
-                            )
-                        }
-                        Spacer(Modifier.height(Tokens.Spacing.lg.dp))
+            // The panel showing, in the phone's sheet or the tablet's pane: today's sections and the notices above them.
+            val panelContent: @Composable (Panel) -> Unit = { panel ->
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.xs.dp),
+                    verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+                ) {
+                    if (maintenance != null) Banner(maintenance, BannerKind.Warning)
+                    if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
+                    when (panel) {
+                        // A new LZ/PZ starts at the crosshair, and the tools add there. An administrator can switch own aircraft off for an account (the
+                        // server would refuse what it made).
+                        Panel.Lz -> LzPanelHost(
+                            crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
+                            onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
+                        )
+                        Panel.Routes -> RoutesHost(
+                            crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
+                        )
+                        Panel.Threats -> ThreatsHost(
+                            onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
+                            viewModel = threatsModel,
+                        )
+                        // A mission opens in Routes and a threat file's threats are in Threats: each panel, shown at the height the sheet is.
+                        Panel.Imports -> ImportsHost(
+                            threatsAllowed = threatsOn,
+                            onOpenMission = if (Panel.Routes in panels) { uuid -> routesModel.openSet(uuid); chosen = Panel.Routes } else null,
+                            onOpenThreats = { chosen = Panel.Threats },
+                            viewModel = importsModel,
+                        )
                     }
-                },
-            ) { frame ->
+                    Spacer(Modifier.height(Tokens.Spacing.lg.dp))
+                }
+            }
+            // The map and its controls, inside whichever frame.
+            val mapContent: @Composable (MapFrame) -> Unit = { frame ->
                 MapScreen(
                     state = state, camera = host.camera, gps = state.gps,
                     onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
@@ -338,23 +340,21 @@ fun MapHome(
                     onCopyReadout = copyGrid,
                     padding = frame.padding,
                     controlsBottom = frame.controlsBottom,
-                    account = {
-                        AccountButton(
-                            name = user.name, email = user.email, version = stringResource(R.string.home_version, version, build),
-                            night = night, onNight = display::setNight, onSignOut = onSignOut, notice = stringResource(R.string.classification_notice),
-                        )
-                    },
+                    // On a tablet the account, the workspace, Import and the Library are the rail's.
+                    account = { if (!tablet) account() },
                     chips = {
-                        // The workspace is the person's own until mission packs have their switcher (P1); then the chip opens it.
-                        MapChip(EzpzIcons.person, "Personal", description = "Workspace: Personal")
-                        MapChip(EzpzIcons.fileOpen, "Import", description = "Import a mission, local points or threats", onClick = { importMenu = true })
-                        // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
-                        MapChip(EzpzIcons.collectionsBookmark, "Library", description = "Library: everything you have saved", onClick = {
-                            focus.clearFocus()
-                            libraryTab = libraryTabFor(current)
-                        })
+                        if (!tablet) {
+                            // The workspace is the person's own until mission packs have their switcher (P1); then the chip opens it.
+                            MapChip(EzpzIcons.person, "Personal", description = "Workspace: Personal")
+                            MapChip(EzpzIcons.fileOpen, "Import", description = "Import a mission, local points or threats", onClick = { importMenu = true })
+                            // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
+                            MapChip(EzpzIcons.collectionsBookmark, "Library", description = "Library: everything you have saved", onClick = {
+                                focus.clearFocus()
+                                libraryTab = libraryTabFor(current)
+                            })
+                        }
                     },
-                    sheet = frame.sheet,
+                    buttonsAtFoot = tablet,
                     // Over the readout, above the sheet: only there while a boundary or a route is being drawn (never both), or something on the map is held.
                     overlay = {
                         // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).
@@ -377,7 +377,7 @@ fun MapHome(
                                                 chosen = it
                                                 if (it == Panel.Lz) diagrams.showPage(LzPage.PLAN)     // a graphic's controls are on its LZ/PZ's plan
                                             }
-                                            scope.launch { sheet.animateTo(SheetDetent.Full) }
+                                            if (tablet) tabletState.showList() else scope.launch { sheet.animateTo(SheetDetent.Full) }
                                         }
                                     },
                                     onDone = home::releaseHeld,
@@ -433,8 +433,99 @@ fun MapHome(
                     )
                 }
             }
+            val latestMap by rememberUpdatedState(mapContent)
+            val latestPanel by rememberUpdatedState(panelContent)
+            val movableMap = remember { movableContentOf { frame: MapFrame -> latestMap(frame) } }
+            val movablePanels = remember { Panel.entries.associateWith { p -> movableContentOf { latestPanel(p) } } }
+            val routePlan: @Composable (Boolean) -> Unit = { inPane ->
+                RoutePlanHost(
+                    crosshair = state.center, crosshairGrid = state.readout?.mgrs, threatCount = counts.threats, snackbars = if (inPane) null else snackbars,
+                    inPane = inPane, viewModel = routesModel,
+                )
+            }
+            val latestRoutePlan by rememberUpdatedState(routePlan)
+            val movableRoutePlan = remember { movableContentOf { inPane: Boolean -> latestRoutePlan(inPane) } }
+            val head = when (current) {
+                Panel.Lz -> lzHead(if (tablet) lz.copy(page = LzPane.LIST.shows(lz.page) ?: LzPage.HOME) else lz) { diagrams.showPage(it) }
+                Panel.Threats -> PanelHead(current.label, if (counts.threats == 0) "This device only" else "${counts.threats} on the map · this device only")
+                Panel.Imports -> PanelHead(current.label, importsLine(imports.itemCount))
+                Panel.Routes -> routesHead(routes)
+            }
+            // The Imports panel's Import, beside its title (the design's): the same menu as the frame's chip.
+            val headerActions: @Composable RowScope.() -> Unit = {
+                if (current == Panel.Imports) PillButton("Import", onClick = { importMenu = true }, icon = EzpzIcons.fileOpen)
+            }
+            // The Routes panel's foot: Sketch a route and Import .msnx, pinned under the sets open now.
+            val footer: (@Composable () -> Unit)? = if (current == Panel.Routes && routes.page == RoutesPage.HOME) {
+                { RoutesFooterHost(onImport = importFiles, crosshair = state.center, viewModel = routesModel) }
+            } else {
+                null
+            }
+            if (tablet) {
+                TabletFrame(
+                    panels = panels,
+                    current = current,
+                    counts = counts,
+                    onPick = { picked ->
+                        focus.clearFocus()                                                   // a field in the panel left behind keeps no keyboard up
+                        chosen = picked
+                    },
+                    snackbars = snackbars,
+                    rail = TabletRail(
+                        importMenu = { dismiss ->
+                            DropdownMenu(
+                                expanded = true, onDismissRequest = dismiss, shape = MaterialTheme.shapes.large,
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(IMPORT_MENU_WIDTH),
+                            ) {
+                                ImportSheetContent(threatsOn, onChoose = { dismiss(); importFiles() })
+                            }
+                        },
+                        onLibrary = {
+                            focus.clearFocus()
+                            libraryTab = libraryTabFor(current)
+                        },
+                        account = account,
+                    ),
+                    state = tabletState,
+                    head = head,
+                    headerActions = headerActions,
+                    floatingPx = { floating },
+                    footer = footer,
+                    supporting = supportingPanes(
+                        routes, lz, crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), diagrams = diagrams,
+                        routesModel = routesModel, routePlan = movableRoutePlan,
+                    ),
+                    // The Library's own toasts are drawn over it, as a dialog: the frame's under its scrim would be a second copy.
+                    toasts = libraryTab == null,
+                    modifier = if (libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
+                    panel = { p -> movablePanels.getValue(p)() },
+                    mapScreen = movableMap,
+                )
+            } else {
+                PhoneFrame(
+                    panels = panels,
+                    current = current,
+                    counts = counts,
+                    onPick = { picked ->
+                        val (panel, detent) = pick(current, sheet.settled, picked)
+                        focus.clearFocus()                                                   // a field in the panel left behind keeps no keyboard up
+                        chosen = panel
+                        scope.launch { sheet.animateTo(detent) }
+                    },
+                    sheet = sheet,
+                    snackbars = snackbars,
+                    head = head,
+                    headerActions = headerActions,
+                    floatingPx = { floating },
+                    footer = footer,
+                    // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
+                    modifier = if (routes.planOpen || libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
+                    panel = { p -> movablePanels.getValue(p)() },
+                    mapScreen = movableMap,
+                )
+            }
             // The held route's plan (the design's RoutePlan): a page of its own over the frame, with the frame's toasts.
-            RoutePlanHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs, threatCount = counts.threats, snackbars = snackbars, viewModel = routesModel)
+            if (!tablet) movableRoutePlan(false)
             // The Library (the design's): opening an item from it shuts it and shows the panel the item is in, as the web's does; renaming, deleting and settling a
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(
@@ -444,14 +535,17 @@ fun MapHome(
                     close = { libraryTab = null },
                     open = { row ->
                         val panel = when (row.tab) {
-                            LibraryTab.LZ -> Panel.Lz.also { diagrams.open(row.uuid); diagrams.showPage(LzPage.HOME) }
+                            LibraryTab.LZ -> Panel.Lz.also {
+                                diagrams.open(row.uuid)
+                                if (!tablet) diagrams.showPage(LzPage.HOME)                     // a tablet's list is under the plan pane already
+                            }
                             LibraryTab.ROUTES -> Panel.Routes.also { routesModel.openSet(row.uuid) }
                             LibraryTab.POINTS -> Panel.Imports.also { importsModel.show(row.uuid) }
                         }
                         libraryTab = null
                         if (panel in panels) {
                             chosen = panel
-                            if (sheet.settled == SheetDetent.Lowered) scope.launch { sheet.animateTo(SheetDetent.Half) }
+                            if (tablet) tabletState.showList() else if (sheet.settled == SheetDetent.Lowered) scope.launch { sheet.animateTo(SheetDetent.Half) }
                         }
                     },
                     rename = { row, name, replacing ->
@@ -477,6 +571,7 @@ fun MapHome(
                     },
                 ),
                 snackbars = snackbars,
+                large = tablet,
             )
         }
     }
@@ -496,6 +591,43 @@ internal suspend fun SnackbarHostState.panelToast(text: String, tab: LibraryTab,
 
 /** The map's menu as it was opened: where (its grid, and the press in the map's pixels), and what *Add route point here* would do then. */
 private data class OpenMapMenu(val place: MapMenuPlace, val at: IntOffset, val routePoint: MapPointAction)
+
+/**
+ * The tablet's supporting panes, the last the one that stands: the open LZ/PZ's plan, aircraft, analysis and tools while its plan has not been put away (`LzPage.PLAN`:
+ * on a tablet the plan page is this pane), beside whichever panel shows, as the design keeps it; and the held route's plan while it is open ([routePlan], its own bar
+ * heads it). Both stay composed while there, so what was being done in one is there when it comes back.
+ */
+private fun supportingPanes(
+    routes: RoutesUiState, lz: DiagramsUiState, crosshair: LatLon?, crosshairGrid: String?, canMakeAircraft: Boolean, diagrams: DiagramsViewModel,
+    routesModel: RoutesViewModel, routePlan: @Composable (Boolean) -> Unit,
+): List<SupportingPane> {
+    val open = lz.current
+    val lzPane = if (lz.page == LzPage.PLAN && open != null) {
+        SupportingPane(
+            key = "lz:${open.uuid}", title = open.name, subtitle = "Aircraft, analysis and tools", closeLabel = "Close the ${open.name} pane",
+            onClose = { diagrams.showPage(LzPage.HOME) }, request = lz.planAsked,
+        ) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.xs.dp),
+                verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+            ) {
+                LzPanelHost(crosshair = crosshair, crosshairGrid = crosshairGrid, canMakeAircraft = canMakeAircraft, pane = LzPane.PLAN, viewModel = diagrams)
+                Spacer(Modifier.height(Tokens.Spacing.lg.dp))
+            }
+        }
+    } else {
+        null
+    }
+    val routePane = if (routes.planOpen) {
+        SupportingPane(key = "route:${routes.detail?.routeId}", title = null, onClose = routesModel::closePlan, request = routes.planAsked) { routePlan(true) }
+    } else {
+        null
+    }
+    return listOfNotNull(lzPane, routePane)
+}
+
+/** The tablet's Import menu, at the rail's tile (the design's). */
+private val IMPORT_MENU_WIDTH = 360.dp
 
 /** The night palette's darkened map: black over the imagery, the drawn layers and their labels. Nothing in it takes a touch. */
 @Composable

@@ -125,6 +125,8 @@ fun LzPanelHost(
     crosshairGrid: String?,
     canMakeAircraft: Boolean,
     modifier: Modifier = Modifier,
+    /** Which part of the panel this draws: all of it (the phone), or the tablet's list and its supporting pane apart ([LzPane]). */
+    pane: LzPane = LzPane.WHOLE,
     /** Opens the Library on its LZ/PZ tab. */
     onBrowseLibrary: () -> Unit = {},
     viewModel: DiagramsViewModel = hiltViewModel(),
@@ -154,12 +156,13 @@ fun LzPanelHost(
         setDoghouseAirspeed = graphics::setDoghouseAirspeed, delete = graphics::delete, undo = graphics::undo, redo = graphics::redo,
         dismissError = graphics::dismissError,
     )
-    when (state.page) {
+    when (pane.shows(state.page)) {
         LzPage.HOME -> LzHomeContent(state, actions, crosshairGrid, modifier)
         LzPage.PLAN -> state.current?.let {
             LzPlanContent(it, graphicsState, boundaryState, placing, actions, graphicsActions, crosshairGrid, modifier, nowMillis = now)
         }
         LzPage.AIRCRAFT -> AircraftHost(canMake = canMakeAircraft, modifier = modifier)
+        null -> Unit
     }
     if (naming) {
         val current = state.current
@@ -171,6 +174,21 @@ fun LzPanelHost(
                 onSave = { name, replacing -> viewModel.saveAs(name, replacing); naming = false }, onDismiss = { naming = false },
             )
         }
+    }
+}
+
+/**
+ * The part of the LZ/PZ panel a host draws. On a phone it is all of it, a page at a time ([WHOLE]). A tablet shows the open LZ/PZ's plan beside the map (the
+ * design's supporting pane, [PLAN]) while its list ([LIST]) stays: the plan page is then the pane, and the list shows the open LZ/PZs under it.
+ */
+enum class LzPane {
+    WHOLE, LIST, PLAN;
+
+    /** The page drawn when [page] is the panel's: null for none. */
+    fun shows(page: LzPage): LzPage? = when (this) {
+        WHOLE -> page
+        LIST -> if (page == LzPage.PLAN) LzPage.HOME else page
+        PLAN -> LzPage.PLAN.takeIf { page == LzPage.PLAN }
     }
 }
 

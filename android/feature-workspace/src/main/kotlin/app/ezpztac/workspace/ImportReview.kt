@@ -91,6 +91,8 @@ class ImportReviewActions(
 fun ImportReviewHost(
     /** Whether the account has threats: a threat file is offered only then, and otherwise said to be turned off. */
     threatsAllowed: Boolean,
+    /** A tablet's: a large dialog (the design's, up to [LARGE_DIALOG_WIDTH]) rather than the whole screen. */
+    large: Boolean = false,
     viewModel: IncomingViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(viewModel, threatsAllowed) { viewModel.allowThreats(threatsAllowed) }
@@ -101,7 +103,11 @@ fun ImportReviewHost(
         onDismissRequest = { if (!state.busy) actions.cancel() },                               // files being brought in are seen through
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
     ) {
-        ImportReviewContent(state, actions)
+        if (large) {
+            LargeDialog(onDismiss = null, scrim = false) { ImportReviewContent(state, actions) }   // the dialog's window dims what is behind
+        } else {
+            ImportReviewContent(state, actions)
+        }
     }
 }
 

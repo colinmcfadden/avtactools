@@ -87,6 +87,9 @@ object MapChrome {
 
     /** The gap between the readout pill and the sheet's edge, and between the pill and a tool floating above it. */
     val PILL_GAP: Dp = 12.dp
+
+    /** A tablet's map buttons stand this far above the map's foot (the design's AT screens). */
+    val FOOT_GAP: Dp = 24.dp
 }
 
 /**
@@ -123,6 +126,8 @@ fun MapScreen(
     chips: @Composable RowScope.() -> Unit = {},
     sheet: @Composable () -> Unit = {},
     overlay: @Composable () -> Unit = {},
+    /** A tablet's (the design's AT screens): the map's buttons at its foot, at the end, where no chips stand under the search bar and no sheet rises. */
+    buttonsAtFoot: Boolean = false,
     map: @Composable () -> Unit,
 ) {
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
@@ -134,11 +139,13 @@ fun MapScreen(
         val crossBottom by animateDpAsState(padding.bottom, tween(PanelSheetDefaults.SettleMillis), label = "crosshair bottom")
         Box(Modifier.fillMaxSize().padding(top = crossTop, bottom = crossBottom), contentAlignment = Alignment.Center) { Crosshair() }
 
-        Column(
-            Modifier.align(Alignment.TopEnd).windowInsetsPadding(top)
-                .padding(top = MapChrome.SHEET_TOP_LIMIT - MapChrome.CHIPS_GAP + MapChrome.BUTTONS_GAP, end = Tokens.Spacing.lg.dp),
-            verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
-        ) {
+        val buttons = if (buttonsAtFoot) {
+            Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.End))
+                .padding(bottom = MapChrome.FOOT_GAP, end = Tokens.Spacing.lg.dp)
+        } else {
+            Modifier.align(Alignment.TopEnd).windowInsetsPadding(top).padding(top = MapChrome.SHEET_TOP_LIMIT - MapChrome.CHIPS_GAP + MapChrome.BUTTONS_GAP, end = Tokens.Spacing.lg.dp)
+        }
+        Column(buttons, verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
             LayersButton(state, onSelectStyle)
             GpsButton(gps, onToggleGps, onGpsPermissionResult, onLocateMe)
             slope?.let {

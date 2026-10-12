@@ -1,8 +1,11 @@
 package app.ezpztac.workspace
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -13,11 +16,12 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.LatLon
@@ -26,6 +30,7 @@ import app.ezpztac.planning.PlanDraft
 import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.SyncStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -97,6 +102,29 @@ class RoutePlanPageTest {
     }
 
     private fun count(text: String, substring: Boolean = false) = compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().size
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-xhdpi")
+    fun `in a tablet's 320 dp pane the total and every point's values keep their words, and the pane is closed rather than gone back from`() {
+        val r = Recorder()
+        val long = detail(*log4).copy(totals = "12.4 nm · 1:02:30 · 1,240 lb")
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                androidx.compose.foundation.layout.Box(Modifier.width(320.dp).fillMaxHeight()) {
+                    RoutePlanPage(RoutesUiState(open = open(), detail = long, planOpen = true), r.actions, null, 0, inPane = true)
+                }
+            }
+        }
+        for (words in listOf("12.4 nm · 1:02:30 · 1,240 lb")) {
+            val layout = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            compose.onNodeWithText(words, useUnmergedTree = true).fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+            val l = layout.single()
+            assertFalse("\"$words\" is cut", l.didOverflowHeight || l.isLineEllipsized(l.lineCount - 1))
+        }
+        compose.onNodeWithContentDescription("Back to Routes").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Close the ROUTE 1 plan").performClick()
+        assertEquals(listOf("back"), r.log)
+    }
 
     // -- The bars ------------------------------------------------------------------------------------------------------------------
 

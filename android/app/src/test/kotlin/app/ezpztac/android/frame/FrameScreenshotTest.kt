@@ -67,7 +67,7 @@ class FrameScreenshotTest {
                         state = MapUiState(styles, styles.first(), Readout.of(LatLon(34.783817, -84.08219))),
                         camera = CameraState(LatLon(34.78, -84.08), 16.0), gps = GpsState.Off,
                         onSearch = {}, onClearSearchError = {}, onSelectStyle = {}, onToggleGps = {}, onGpsPermissionResult = {}, onLocateMe = {}, onFaceNorth = {},
-                        padding = frame.padding, controlsBottom = frame.controlsBottom, sheet = frame.sheet,
+                        padding = frame.padding, controlsBottom = frame.controlsBottom,
                         account = {
                             AccountButton("Colin McFadden", "pilot@example.com", "Version 1.9.0 (1)", night = mode == ThemeMode.Night, onNight = {}, onSignOut = {}, notice = "")
                         },

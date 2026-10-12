@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; S9 next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; P1 next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -271,10 +271,27 @@ Tests: `LongPressTouchesTest`, `MapMenuTest` (the placement rule, the real popup
 `LibraryViewModelTest`, `PointsViewModelTest`.
 **Not verifiable here:** the long press and quick zoom on a real screen, the haptic, the popup over the real map, TalkBack.
 
-**S9 — The tablet.** The `NavigationRail` (workspace button, Import, the destinations with badges, Library and account at the bottom)
-beside material3-adaptive's scaffolds: the chosen panel in the list pane (344 dp), the map, and the supporting pane (320 dp: the open
-LZ/PZ's plan, or a route's nav log). Library and import review as large dialogs. The medium width (600–840 dp) was not drawn: it takes the
-phone's frame.
+**S9 — The tablet. Built.** The rail (workspace button, Import, the destinations with badges, Library and account at the bottom) beside the chosen
+panel in the list pane (344 dp), the map, and the supporting panes (320 dp: the open LZ/PZ's plan, or a route's). Library and import review as large dialogs.
+The medium width (600–840 dp) was not drawn: it takes the phone's frame. **Amended while building:**
+- **No material3-adaptive.** The panes are fixed widths beside a map that never hides: a row of them, with `TabletFrameState` deciding which stand, is all the
+  scaffolds would have given, and every rule of it is tried in a test. Nothing added to the build.
+- **The tablet's frame needs 480 dp of height too** (Material's medium height): a phone on its side is 840 dp wide and keeps the phone's frame.
+- **The route's plan in the pane is the phone's page** (its point cards, with a close button); the design's nav-log table is not built. The LZ/PZ's plan pane stays beside
+  whichever panel shows, as the design keeps it beside Imports.
+- **Import on the rail is a menu at its tile** (the design's); a panel's own Import still opens the phone's sheet. **The Save sheets stay bottom sheets** on a tablet (the
+  design's are dialogs).
+- **The map, the panels and the route's plan move between the frames** when the window crosses the line (movable content), and the phone's sheet is drawn by its frame.
+**Reviewed** (one independent review, 2026-10-12: 34 reported, 30 survived an adversarial check, about 20 distinct; each fix has a test where one can hold it, and each
+tested one was broken to see it fail): crossing 840 dp rebuilt the map and crashed on a duplicate MapLibre source, flew the map back to the launch's camera, asked for the
+location permission again and lost what was typed in the panels; a phone on its side got the tablet's frame, whose rail lost the Library and the account; a pane waiting
+behind the list could not be brought back, a rail pick of LZ/PZ showed its plan instead of the list, Back put away a pane nobody could see, and collapsing hid the result of
+the held bar's options, the Library's *Open* and *Manage*; the LZ/PZ's plan pane was thrown away whenever another panel or a route's plan showed; the Import tile was two
+screen-reader stops, the Library a fifth tab, the large dialog's scrim an unnamed full-screen node (and the Library's focus walked into the frame behind it); the route's plan
+cut its total and the wind at 320 dp and kept the phone's back arrow; opening the Library closed the route's plan pane; the map's buttons and the panes' headers were not where
+the design draws them; and headers cut large text. Tests: `TabletFrameTest` (the pane rule, the frame rule, the state's rules, the rail, Back, a short window, the frames moving
+their content), `TabletPartsTest`, `RoutePlanPageTest`, `MapScreenTest`.
+**Not verifiable here:** the real map in its pane, a foldable's hinge, a keyboard cover, TalkBack on a tablet, and a device crossing 840 dp.
 
 **P1 — The workspace switcher.** The workspace chip opens `Switcher`: pending invitations (Accept, Decline), the Library ("Personal"),
 the packs with their state, *New pack*, the teams line. Switching parks the Library's open session and restores it on the way back

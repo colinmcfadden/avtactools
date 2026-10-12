@@ -20,6 +20,7 @@ import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.LatLon
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,6 +45,7 @@ class MapScreenTest {
     private fun show(
         state: MapUiState, gps: GpsState = GpsState.Off, camera: CameraState? = CameraState(LatLon(34.78, -84.08), 16.0, 30.0), mode: ThemeMode = ThemeMode.Dark,
         padding: MapPadding = MapPadding(),
+        buttonsAtFoot: Boolean = false,
     ) {
         compose.setContent {
             EzpzTheme(mode) {
@@ -51,7 +53,7 @@ class MapScreenTest {
                     state = state, camera = camera, gps = gps,
                     onSearch = { log += "search $it" }, onClearSearchError = { log += "clearError" }, onSelectStyle = { log += "style $it" },
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
-                    onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding,
+                    onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding, buttonsAtFoot = buttonsAtFoot,
                     map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40))) },          // stands in for the GPU-drawn map
                 )
             }
@@ -67,6 +69,24 @@ class MapScreenTest {
         val middle = cross.positionInRoot.y + cross.size.height / 2f
         val expected = with(compose.density) { 100.dp.toPx() + (screen - 100.dp.toPx() - 300.dp.toPx()) / 2f }
         assertEquals(expected, middle, 1f)
+    }
+
+    @Test
+    fun `a tablet's map buttons stand at its foot, where no chips or sheet are`() {
+        show(state(), buttonsAtFoot = true)
+        compose.waitForIdle()
+        val screen = compose.onRoot().fetchSemanticsNode().size.height
+        val layers = compose.onNodeWithContentDescription("Base map", substring = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("the buttons are not at the foot: ${layers.bottom} of $screen", layers.bottom > screen * 0.75f)
+    }
+
+    @Test
+    fun `a phone's map buttons stand under the chips`() {
+        show(state())
+        compose.waitForIdle()
+        val screen = compose.onRoot().fetchSemanticsNode().size.height
+        val layers = compose.onNodeWithContentDescription("Base map", substring = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("the phone's buttons left the top: ${layers.top}", layers.top < screen * 0.3f)
     }
 
     @Test

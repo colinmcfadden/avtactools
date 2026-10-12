@@ -72,10 +72,7 @@ class PhoneFrameTest {
                     footer = footer,
                 ) { frame ->
                     onFrame(frame)
-                    Box(Modifier.fillMaxSize()) {
-                        Box(Modifier.fillMaxSize().background(Color(0xFF55703F)).clickable { log += "map" })
-                        frame.sheet()
-                    }
+                    Box(Modifier.fillMaxSize().background(Color(0xFF55703F)).clickable { log += "map" })
                 }
             }
         }

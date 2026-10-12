@@ -3,13 +3,16 @@ package app.ezpztac.workspace
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,10 +58,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -74,6 +81,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.designsystem.EzpzIcons
@@ -110,6 +118,8 @@ fun LibraryHost(
     /** The tabs this account has (those of the panels it is offered). */
     tabs: List<LibraryTab> = LibraryTab.entries,
     snackbars: SnackbarHostState? = null,
+    /** A tablet's: a large dialog over the frame ([LargeDialog]), not a page that covers it. */
+    large: Boolean = false,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -130,15 +140,56 @@ fun LibraryHost(
     val focus = LocalFocusManager.current
     LaunchedEffect(Unit) { focus.clearFocus() }                                             // a field left focused under it keeps no keyboard up
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
-    LibraryPage(
-        state.copy(tabs = tabs),
-        LibraryActions(
-            close = actions.close, showTab = viewModel::showTab, search = viewModel::search, sortBy = viewModel::sortBy, open = actions.open,
-            rename = actions.rename, duplicate = viewModel::duplicate, delete = actions.delete, resolve = actions.resolve,
-        ),
-        modifier, snackbars, renaming = renaming, onRenaming = { renaming = it },
-    )
+    val page: @Composable (Modifier) -> Unit = { pageModifier ->
+        LibraryPage(
+            state.copy(tabs = tabs),
+            LibraryActions(
+                close = actions.close, showTab = viewModel::showTab, search = viewModel::search, sortBy = viewModel::sortBy, open = actions.open,
+                rename = actions.rename, duplicate = viewModel::duplicate, delete = actions.delete, resolve = actions.resolve,
+            ),
+            pageModifier, snackbars, renaming = renaming, onRenaming = { renaming = it },
+        )
+    }
+    // A tablet's is a dialog of its own window, so the keyboard's focus and a screen reader stay in it, as the import review's do; the window dims the frame.
+    if (large) {
+        Dialog(onDismissRequest = actions.close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            LargeDialog(onDismiss = actions.close, modifier = modifier, scrim = false) { page(Modifier) }
+        }
+    } else {
+        page(modifier)
+    }
 }
+
+/**
+ * A tablet's large dialog (the design's, up to 880 dp wide): [content] centred, edged with a hairline so it stands out from the dark panes behind. A touch beside it is
+ * [onDismiss] (none: nothing), over a [scrim] or, inside a platform dialog's window that dims what is behind, over nothing. The touch beside it is no node of its own
+ * for a screen reader or the keyboard: the content's own close button and Back are those. The window's insets are spent here, so a page inside does not pad itself for
+ * a status bar it is clear of.
+ */
+@Composable
+fun LargeDialog(onDismiss: (() -> Unit)?, modifier: Modifier = Modifier, scrim: Boolean = true, content: @Composable () -> Unit) {
+    Box(modifier.fillMaxSize()) {
+        // Behind the dialog, not around it: a clickable merges what it holds into one node, and a page's pane title cannot be merged (it throws).
+        val back = if (scrim) Modifier.background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f)) else Modifier
+        Box(Modifier.fillMaxSize().then(back).then(if (onDismiss != null) Modifier.pointerInput(onDismiss) { detectTapGestures { onDismiss() } } else Modifier))
+        Box(
+            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).consumeWindowInsets(WindowInsets.safeDrawing).padding(Tokens.Spacing.xl.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            // A touch on the dialog is the dialog's, never the scrim's behind it, whatever the content is drawn on.
+            Box(
+                Modifier.widthIn(max = LARGE_DIALOG_WIDTH).fillMaxWidth().clip(MaterialTheme.shapes.extraLarge)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.extraLarge).pointerInput(Unit) {}.testTag(LARGE_DIALOG_TAG),
+            ) { content() }
+        }
+    }
+}
+
+/** The dialog itself, inside [LargeDialog]'s window-filling box (for tests). */
+const val LARGE_DIALOG_TAG = "largeDialog"
+
+/** How wide a tablet's large dialog is at most (the design's Library and import review). */
+val LARGE_DIALOG_WIDTH = 880.dp
 
 private val LibraryTab.icon: Int
     get() = when (this) {
