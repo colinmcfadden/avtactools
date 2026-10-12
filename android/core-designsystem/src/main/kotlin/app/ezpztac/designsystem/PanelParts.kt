@@ -80,7 +80,7 @@ fun StateChip(text: String, tone: StatusTone, modifier: Modifier = Modifier, ico
                 StatusTone.Info -> Icon(painterResource(EzpzIcons.info), contentDescription = null, modifier = Modifier.size(16.dp))
                 StatusTone.Neutral -> Unit
             }
-            Text(text, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Text(text, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

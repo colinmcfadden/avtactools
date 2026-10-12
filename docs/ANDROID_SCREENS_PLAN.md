@@ -1,7 +1,8 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; to be tried on a device; S5 next. **Threats may now be saved and shared** (the owner, 2026-10-12): a step of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
+findings fixed; **S5 built and reviewed**, its findings fixed; to be tried on a device; S6 next. **Threats may now be saved and shared** (the owner, 2026-10-12): a step
+of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
 reviewed independently, fixed, and committed only with the full build green. **Where this plan disagrees with the code, the code wins**
 (AGENTS.md §16), and AGENTS.md §17 says what each module holds.
@@ -84,7 +85,7 @@ dimmed under it), the version and the notice, Sign out. **Amended while building
   toasts go above them, or to the foot of the screen at full height. `CameraState` carries the camera's padding, which the labels'
   projection reads, so they stay on their points while it glides.
 - **Every panel stays composed and only the chosen one is laid out**, so each keeps its scroll, its file pickers, its export listener
-  (a mission built while another panel shows still reaches the share sheet) and the threat panel's `FLAG_SECURE`.
+  (a mission built while another panel shows still reaches the share sheet) and the threat panel's `FLAG_SECURE` (which went in S5).
 - **The workspace chip is a label** ("Personal") until P1 gives it the switcher, and **the Library chip waits for S7** (today each
   panel lists everything). **Import** opens the system picker for up to five files at a time, each put to the person in the one dialog
   files from other apps use (`rememberFileImport`), so a file means the same however it arrives.
@@ -184,10 +185,27 @@ unconfined), `RoutesScreenTest`, `RoutePlanPageTest`, `RoutePlanNarrowTest` (360
 still open comes back), `OpenRouteSetPreferencesTest`, `PhoneFrameTest` (toasts above the foot), and the pictures (`RoutesScreenshotTest`, beside AP-Routes,
 AP-RoutePlan and AP-SaveRoutes). **Not verifiable here:** the keyboard on a device, TalkBack, the date picker, the share sheet, and the toasts over the real map.
 
-**S5 — Threats.** The panel (`Threats`: the device-only notice, *Add threat* and *Import .ths*, the list with hide, edit and remove, the
-export, *Remove all*), over today's `ThreatsViewModel`; the form as a full-screen dialog. **And the owner's decisions of 2026-10-12** that need no
-server: the window is no longer kept out of screenshots (`ThreatWindowGuard` goes) and the device's picture no longer expires after 48 hours (it is
-still cleared at sign-out until *T* saves it with the account).
+**S5 — Threats. Built.** The panel (`feature-workspace`: `ThreatsScreen.kt` over `ThreatsViewModel`; `Threats`): where threats are kept, said first;
+*Add threat* at the crosshair (the row names its grid) and *Import .ths*; the threats on the map, a row each (the MIL-STD symbol in the design's tinted
+circle, the name, `Detect 25 nm · Engage 15 nm`, the terrain mask as a chip, then hide, edit and remove); *.ths for AMPS* with what leaves the device; and
+*Remove all threats*. Removing one or all is asked about in the design's dialog (`Confirm`, D). The form is a full-screen dialog (`ThreatFormDialog`):
+what the threat is, where it is (folded behind *Move*, moved in the form until Save), each radar, its terrain mask, and removing it; Close and Back ask
+before discarding. The held bar's options for a threat open it. **And the owner's decisions of 2026-10-12** that need no server: the window is no longer
+kept out of screenshots (`ThreatWindowGuard` went) and the picture no longer expires after 48 hours (it is still wiped at sign-out until *T* saves it with
+the account). **Amended while building:**
+- **The held threat's card went**: its details and its controls are the form's, which the held bar opens; the terrain mask is asked for there.
+- **The design's notice says what is true now**: kept on the device, wiped at sign-out, not saved to the account or shared (no 48 hours).
+- **Not offered, because Android does not have it yet:** *Send KMZ to ATAK*; the design's *long-press the map and choose Add threat here* waits for S8.
+- **The mask chip has its own line under the name and reach**, with the row's width to itself: beside the three buttons it lost its words on a 360 dp
+  phone with large text.
+**Reviewed** (one independent review, 2026-10-12: 20 reported, 15 survived an adversarial check, about 8 distinct; each fix has a test, each broken to see
+its test fail): the held bar's options opening a hidden threat's form, or the wrong panel, because they went by another order than the bar's; a hidden threat
+held from its row or its form; a form left open over a sign-out coming back over the next account's map; the form's outcome said in a panel out of sight; a
+radar set to rings only called *Mask failed*; the mask chips cut on a narrow phone; and stale words about the 48 hours and the screenshot guard in the
+code and the docs. Tests: `ThreatsViewModelTest` (the form's position, the held bar's way in, removing from the form, the mask in rows and the form, the
+review's cases), `ThreatsScreenTest`, `ThreatsNarrowTest` (360 dp, large text), `ThreatStoreTest` (no expiry), `AppViewModelTest` (a picture kept however
+long it was left), `HomeViewModelTest` (the held bar's options in its own order), and the pictures (`ThreatsScreenshotTest`, beside AP-Threats).
+**Not verifiable here:** the full-screen dialog over the real map, the keyboard in it on a device, and TalkBack.
 
 **T — Threats saved and shared** (the owner, 2026-10-12). Threats are saved like local points and route sets, as a Library item of their own that
 can be opened and moved as wanted, and shared in mission packs, where every member can edit them. The web is the reference, so it goes web and server

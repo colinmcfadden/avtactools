@@ -19,7 +19,7 @@ android/
 ├─ core-sync/       the sync engine: outbox, pull by cursor, conflicts kept side by side
 ├─ core-missionpacks/ mission packs (not map packs): what one operation does to a pack's items, the operations an edit becomes, and the session an open pack is held in, held to ../contracts/fixtures/packs; the client that keeps one pack in step, offline included, and the engine that runs every pack open or closing
 ├─ core-testing/    reads ../contracts/fixtures (test support, not shipped)
-├─ core-data/       Room/sync repositories plus the encrypted short-lived threat picture and native .ths transfer
+├─ core-data/       Room/sync repositories plus the encrypted on-device threat picture (wiped at sign-out) and native .ths transfer
 ├─ core-designsystem/ theme (dark, light, night), type, tokens generated from ../contracts/tokens
 ├─ core-symbols/    MIL-STD-2525C symbols as bitmaps: pre-rendered presets, milsymbol in the system JS sandbox, AndroidSVG
 ├─ feature-map/     the 2D map: MapLibre, diagrams, routes, local points, threat symbols and range rings

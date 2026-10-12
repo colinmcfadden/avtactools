@@ -5,7 +5,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -25,6 +29,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+/** The Threats panel and the form for one threat as a person meets them (docs/native-design: Threats, Confirm). */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
 class ThreatsScreenTest {
@@ -38,9 +43,10 @@ class ThreatsScreenTest {
         val actions = ThreatsActions(
             importFile = { log += "import" }, export = { log += "export" }, beginAdd = { log += "add" }, beginEdit = { log += "edit:$it" },
             updateDraft = { drafts += it; log += "updateDraft" }, saveEdit = { log += "save" }, cancelEdit = { log += "cancel" },
-            select = { log += "select:$it" }, deselect = { log += "deselect" }, toggleVisible = { log += "visible:$it" },
-            moveToCrosshair = { log += "crosshair:$it" }, nudge = { id, n, e -> log += "nudge:$id:$n:$e" }, moveToText = { id, text -> log += "text:$id:$text"; moveProblem },
-            remove = { log += "remove:$it" }, showMask = { log += "showMask:$it" }, hideMask = { log += "hideMask:$it" }, removeAll = { log += "removeAll" }, dismissError = { log += "dismissError" }, dismissNote = { log += "dismissNote" },
+            select = { log += "select:$it" }, toggleVisible = { log += "visible:$it" }, remove = { log += "remove:$it" }, removeEditing = { log += "removeEditing" },
+            formNudge = { n, e -> log += "nudge:${n.toLong()}:${e.toLong()}" }, formToCrosshair = { log += "crosshair" },
+            formToText = { text -> log += "text:$text"; moveProblem }, showMask = { log += "showMask:$it" }, hideMask = { log += "hideMask:$it" },
+            removeAll = { log += "removeAll" }, dismissError = { log += "dismissError" }, dismissNote = { log += "dismissNote" },
         )
     }
 
@@ -54,31 +60,35 @@ class ThreatsScreenTest {
         return r
     }
 
+    private fun form(editing: ThreatEditUi, crosshairGrid: String? = "16S GD 66993 52949", configure: Recorder.() -> Unit = {}): Recorder {
+        val r = Recorder().apply(configure)
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { ThreatFormContent(editing, r.actions, crosshairGrid) } }
+        return r
+    }
+
     private fun count(text: String, substring: Boolean = false) = compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().size
 
-    private val sa8 = ThreatRowUi("t1", "SA-8", "SHGPEWRR------", "SAM Launcher", "16S GC 12345 67890", "Detection 25 nm · Engagement 15 nm", visible = true, held = false)
-    private val zsu = ThreatRowUi("t2", "ZSU-23", "SHAPMFF-------", "Custom symbol", "16S GD 67993 52949", "Engagement 2.5 nm", visible = false, held = false)
+    private val sa8 = ThreatRowUi("t1", "SA-8", "SHGPEWRR------", "SAM Launcher", "16S GC 12345 67890", "Detect 25 nm · Engage 15 nm", visible = true, held = false, mask = ThreatMaskUi.Status.SHOWING)
+    private val zsu = ThreatRowUi("t2", "ZSU-23", "SHAPMFF-------", "Custom symbol", "16S GD 67993 52949", "Engage 2.5 nm", visible = false, held = true)
 
-    private fun held() = HeldThreatUi(
-        id = "t1", name = "SA-8", symbol = "SAM Launcher", grid = "16S GD 66993 52949", latLon = "34.78382, -84.08219", source = "HUMINT", information = "Seen at 0300",
-        radars = listOf("Detection · 25 nm · antenna 20 ft AGL · rings on", "Engagement · 15 nm · antenna 20 ft MSL · rings off"),
-    )
-
-    // -- The list ------------------------------------------------------------------------------------------------------------
+    // -- The panel -------------------------------------------------------------------------------------------------------------
 
     @Test
-    fun `an empty picture explains how to add or import and that it stays local`() {
+    fun `the panel says first where threats are kept, and an empty picture how to begin`() {
         show(ThreatsUiState())
-        compose.onNodeWithText("No threats in the picture. Move the map centre to a position and add one, or import an AMPS .ths file.").assertIsDisplayed()
-        compose.onNodeWithText("Threats are never synced or saved to the server. The sealed device copy is wiped at sign-out and 48 hours after its last change.").performScrollTo().assertIsDisplayed()
-        assertEquals(0, count("Share .ths"))
+        compose.onNodeWithText("Threats stay on this device only", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("cleared when you sign out", substring = true).assertIsDisplayed()
+        assertEquals(0, count("48 hours", substring = true))                                     // the owner's decision of 2026-10-12: no expiry
+        compose.onNodeWithText("No threats on the map. Add one at the crosshair, or import an AMPS .ths file.").assertIsDisplayed()
+        assertEquals(0, count(".ths for AMPS"))
         assertEquals(0, count("Remove all threats"))
     }
 
     @Test
-    fun `Add and Import start their actions`() {
+    fun `Add puts a threat at the crosshair, which it names, and Import reads a file`() {
         val r = show(ThreatsUiState())
-        compose.onNodeWithText("Add").performClick()
+        compose.onNodeWithText("Add threat puts one at the crosshair, 16S GD 66993 52949.").assertIsDisplayed()
+        compose.onNodeWithText("Add threat").performClick()
         compose.onNodeWithText("Import .ths").performClick()
         assertEquals(listOf("add", "import"), r.log)
     }
@@ -86,193 +96,148 @@ class ThreatsScreenTest {
     @Test
     fun `a file being read says so, and cannot be started again`() {
         show(ThreatsUiState(importing = true))
-        compose.onNodeWithText("Reading…").assertIsDisplayed()
-        assertEquals(0, count("Import .ths"))
+        compose.onNodeWithText("Reading…").assertIsNotEnabled()
     }
 
     @Test
-    fun `each threat is a card with its name, symbol, reach and grid, and a hidden one says so`() {
+    fun `each threat is a row with its reach and terrain mask, and a hidden one says so`() {
         show(ThreatsUiState(threats = listOf(sa8, zsu)))
-        compose.onNodeWithText("SA-8").assertIsDisplayed()
-        compose.onNodeWithText("SAM Launcher").assertIsDisplayed()
-        compose.onNodeWithText("Detection 25 nm · Engagement 15 nm").assertIsDisplayed()
-        compose.onNodeWithText("16S GC 12345 67890").assertIsDisplayed()
-        compose.onNodeWithText("Custom symbol · hidden").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Threat ZSU-23, hidden").assertIsDisplayed()
-        assertEquals(0, count("No threats in the picture", substring = true))
+        compose.onNodeWithText("On the map · 2").assertIsDisplayed()
+        compose.onNodeWithText("Detect 25 nm · Engage 15 nm").assertIsDisplayed()
+        compose.onNodeWithText("Terrain mask on").assertIsDisplayed()
+        compose.onNodeWithText("Engage 2.5 nm · hidden").assertIsDisplayed()
+        compose.onNodeWithText("Rings only").assertIsDisplayed()
     }
 
     @Test
-    fun `touching a card holds it, the switch hides it, and Share builds the file`() {
+    fun `a row holds its threat with a tap, and hides, edits and removes it with its buttons, removing only once asked`() {
+        val r = show(ThreatsUiState(threats = listOf(sa8, zsu)))
+        compose.onNodeWithText("SA-8").performClick()
+        compose.onNodeWithContentDescription("Hide SA-8").performClick()
+        compose.onNodeWithContentDescription("Show ZSU-23").performClick()
+        compose.onNodeWithContentDescription("Edit SA-8").performClick()
+        compose.onNodeWithContentDescription("Remove SA-8").performClick()
+        compose.onNodeWithText("Remove SA-8?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(listOf("select:t1", "visible:t1", "visible:t2", "edit:t1"), r.log)
+        compose.onNodeWithContentDescription("Remove SA-8").performClick()
+        compose.onNodeWithText("Remove").performClick()
+        assertEquals("remove:t1", r.log.last())
+    }
+
+    @Test
+    fun `the held row is marked`() {
+        show(ThreatsUiState(threats = listOf(sa8, zsu)))
+        compose.onNodeWithText("ZSU-23").assertIsSelected()
+    }
+
+    @Test
+    fun `the threats go to AMPS as a ths, and the note says what leaves the device`() {
         val r = show(ThreatsUiState(threats = listOf(sa8)))
-        compose.onNodeWithContentDescription("Threat SA-8").performClick()
-        compose.onNodeWithContentDescription("Hide SA-8 on the map").performClick()
-        compose.onNodeWithText("Share .ths").performScrollTo().performClick()
-        assertEquals(listOf("select:t1", "visible:t1", "export"), r.log)
+        compose.onNodeWithText("The .ths file is built on this device", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(".ths for AMPS").performScrollTo().performClick()
+        assertEquals(listOf("export"), r.log)
     }
 
     @Test
-    fun `an error and a note are shown and can be dismissed`() {
-        val r = show(ThreatsUiState(error = "That .ths file contains no threats.", note = "Imported 3 threats."))
-        compose.onNodeWithText("That .ths file contains no threats.").assertIsDisplayed()
-        compose.onNodeWithText("Imported 3 threats.").assertIsDisplayed()
-        compose.onAllNodesWithText("Dismiss")[0].performClick()
-        compose.onAllNodesWithText("Dismiss")[1].performClick()
-        assertEquals(listOf("dismissError", "dismissNote"), r.log)
+    fun `while the file is built the button says so`() {
+        show(ThreatsUiState(threats = listOf(sa8), exporting = true))
+        compose.onNodeWithText("Building .ths…").performScrollTo().assertIsNotEnabled()
     }
 
     @Test
-    fun `removing all asks first, Keep them is the prominent answer, and the removal happens only when chosen`() {
+    fun `removing all asks first, in the design's words, and happens only when chosen`() {
         val r = show(ThreatsUiState(threats = listOf(sa8, zsu)))
         compose.onNodeWithText("Remove all threats").performScrollTo().performClick()
-        compose.onNodeWithText("Remove all 2 threats from this device? There is no undo.").assertIsDisplayed()
-        assertTrue(r.log.isEmpty())
-        compose.onNodeWithText("Keep them").performClick()
-        assertTrue(r.log.isEmpty())
+        compose.onNodeWithText("Remove all threats?").assertIsDisplayed()
+        compose.onNodeWithText("2 threats come off the map", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(emptyList<String>(), r.log)
         compose.onNodeWithText("Remove all threats").performScrollTo().performClick()
         compose.onNodeWithText("Remove all").performClick()
         assertEquals(listOf("removeAll"), r.log)
     }
 
-    // -- The held threat --------------------------------------------------------------------------------------------------
-
     @Test
-    fun `the held threat is told in full`() {
-        show(ThreatsUiState(threats = listOf(sa8.copy(held = true)), held = held()))
-        compose.onNodeWithText("Held").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Threat position 16S GD 66993 52949").assertIsDisplayed()
-        compose.onNodeWithText("34.78382, -84.08219").assertIsDisplayed()
-        compose.onNodeWithText("Detection · 25 nm · antenna 20 ft AGL · rings on").assertIsDisplayed()
-        compose.onNodeWithText("Engagement · 15 nm · antenna 20 ft MSL · rings off").assertIsDisplayed()
-        compose.onNodeWithText("Source: HUMINT").assertIsDisplayed()
-        compose.onNodeWithText("Seen at 0300").assertIsDisplayed()
+    fun `an error and a note are shown and can be dismissed`() {
+        val r = show(ThreatsUiState(error = "That file could not be read.", note = "Imported 2 threats."))
+        compose.onNodeWithText("That file could not be read.").assertIsDisplayed()
+        compose.onNodeWithText("Imported 2 threats.").assertIsDisplayed()
+        compose.onAllNodesWithText("Dismiss")[0].performClick()
+        compose.onAllNodesWithText("Dismiss")[1].performClick()
+        assertEquals(listOf("dismissError", "dismissNote"), r.log)
     }
 
-    @Test
-    fun `Edit and Done act on the held threat`() {
-        val r = show(ThreatsUiState(threats = listOf(sa8.copy(held = true)), held = held()))
-        compose.onNodeWithText("Edit").performClick()
-        compose.onNodeWithText("Done").performClick()
-        assertEquals(listOf("edit:t1", "deselect"), r.log)
-    }
+    // -- The form ----------------------------------------------------------------------------------------------------------------
+
+    private val at = LatLon(34.75, -84.05)
+
+    private fun editing(id: String? = "t1", mask: ThreatMaskUi? = if (id != null) ThreatMaskUi() else null, error: String? = null) =
+        ThreatEditUi(id, at, ThreatDraft.forNew(0).copy(name = "SA-8"), error = error, grid = "16S GD 66993 52949", mask = mask)
 
     @Test
-    fun `Move shows the pad, which moves it by the step chosen, or to the crosshair, or to a typed grid`() {
-        val r = show(ThreatsUiState(threats = listOf(sa8.copy(held = true)), held = held()))
-        assertEquals(0, count("Move to a grid"))
-        compose.onNodeWithText("Move").performClick()
-        compose.onNodeWithContentDescription("Move north 50 feet").performScrollTo().performClick()
-        compose.onNodeWithText("200 ft").performClick()
-        compose.onNodeWithContentDescription("Move west 200 feet").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Put this threat at the crosshair").performScrollTo().performClick()
-        compose.onNodeWithText("Move to a grid").performScrollTo().performTextInput("16S GD 1 1")
-        compose.onNodeWithText("Go").performClick()
-        assertEquals(listOf("nudge:t1:50.0:0.0", "nudge:t1:0.0:-200.0", "crosshair:t1", "text:t1:16S GD 1 1"), r.log)
-    }
-
-    @Test
-    fun `a typed grid that is not understood is said at the field`() {
-        show(ThreatsUiState(threats = listOf(sa8.copy(held = true)), held = held())) { moveProblem = "That is not a place." }
-        compose.onNodeWithText("Move").performClick()
-        compose.onNodeWithText("Move to a grid").performScrollTo().performTextInput("zzz")
-        compose.onNodeWithText("Go").performClick()
-        compose.onNodeWithText("That is not a place.").assertIsDisplayed()
-    }
-
-    @Test
-    fun `Remove asks first, Keep it is the prominent answer, and the removal happens only when chosen`() {
-        val r = show(ThreatsUiState(threats = listOf(sa8.copy(held = true)), held = held()))
-        compose.onNodeWithText("Remove").performClick()
-        compose.onNodeWithText("Remove SA-8 from this threat picture? There is no undo.").assertIsDisplayed()
-        assertTrue(r.log.isEmpty())
-        compose.onNodeWithText("Keep it").performClick()
-        assertTrue(r.log.isEmpty())
-        compose.onNodeWithText("Remove").performClick()
-        compose.onNodeWithText("Remove threat").performClick()
-        assertEquals(listOf("remove:t1"), r.log)
-    }
-
-    // -- The form -----------------------------------------------------------------------------------------------------------
-
-    private fun form(draft: ThreatDraft = ThreatDraft.forNew(0), id: String? = null, error: String? = null) =
-        ThreatsUiState(editing = ThreatEditUi(id, LatLon(34.75, -84.05), draft, error))
-
-    @Test
-    fun `the form offers both radars and sends save and cancel actions`() {
-        val r = show(form())
-        compose.onNodeWithText("Detection radar").assertIsDisplayed()
-        compose.onNodeWithText("Engagement radar").performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText("Add threat")[1].performScrollTo().performClick()
-        compose.onNodeWithText("Cancel").performScrollTo().performClick()
+    fun `the form names itself, says where the threat is, and saves or closes`() {
+        val r = form(editing(id = null))
+        compose.onNodeWithText("Add threat").assertIsDisplayed()
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "Add threat")).assertExists()
+        compose.onNodeWithContentDescription("Threat position 16S GD 66993 52949").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Add").performClick()
+        compose.onNodeWithContentDescription("Close without saving").performClick()
         assertEquals(listOf("save", "cancel"), r.log)
     }
 
     @Test
-    fun `a refusal is shown in the form beside Save, where the person is looking`() {
-        show(form(error = "Detection range is not a number."))
-        compose.onNodeWithText("Detection range is not a number.").performScrollTo().assertIsDisplayed()
+    fun `the threat is moved in the form by the pad, to the crosshair whose grid it says, or to a grid typed`() {
+        val r = form(editing()) { moveProblem = "That is not a grid or a coordinate." }
+        assertEquals(0, count("Put at the crosshair"))                                           // folded away until asked for
+        compose.onNodeWithContentDescription("Show controls to move this threat").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Move north 50 feet").performScrollTo().performClick()
+        compose.onNodeWithText("Crosshair: 16S GD 66993 52949").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Put this threat at the crosshair, 16S GD 66993 52949").performScrollTo().performClick()
+        compose.onNodeWithText("Move to a grid").performScrollTo().performTextInput("nowhere")
+        compose.onNodeWithText("Go").performScrollTo().performClick()
+        assertEquals(listOf("nudge:50:0", "crosshair", "text:nowhere"), r.log)
+        compose.onNodeWithText("That is not a grid or a coordinate.").assertIsDisplayed()
     }
 
     @Test
-    fun `a threat being changed says so and saves as changes`() {
-        show(form(ThreatDraft(name = "SA-8"), id = "t1"))
-        compose.onNodeWithText("Edit threat").assertIsDisplayed()
-        compose.onNodeWithText("Save threat").performScrollTo().assertIsDisplayed()
+    fun `what is wrong with the form is said under its bar`() {
+        form(editing(error = "A threat needs a name."))
+        compose.onNodeWithText("A threat needs a name.").assertIsDisplayed()
     }
 
     @Test
-    fun `typing in the form hands the whole draft back changed, nothing else disturbed`() {
-        val r = show(form())
-        // The content is stateless (what is typed goes to the caller, which is not here to put it back), so the text lands in front of what was there.
-        compose.onNodeWithText("Name").performTextInput("SA-6 ")
-        assertEquals("SA-6 Threat 1", r.drafts.last().name)
-        assertEquals(ThreatDraft.forNew(0).radars, r.drafts.last().radars)
-    }
-
-    // -- The terrain mask ----------------------------------------------------------------------------------------------------
-
-    private fun withMask(status: ThreatMaskUi.Status, message: String? = null) =
-        ThreatsUiState(threats = listOf(sa8.copy(held = true)), held = held().copy(mask = ThreatMaskUi(status, message)))
-
-    @Test
-    fun `before the mask is asked for, the card offers it and says exactly what is sent`() {
-        val r = show(withMask(ThreatMaskUi.Status.OFF))
-        assertTrue(count("Terrain mask") >= 1)
-        assertEquals(1, count("sends this threat's position and radar settings to the server once", substring = true))
-        assertEquals(1, count("The server keeps nothing.", substring = true))
-        compose.onNodeWithText("Show terrain mask").performClick()
+    fun `a threat on the map has its terrain mask in the form, and a new one does not`() {
+        val r = form(editing(mask = ThreatMaskUi()))
+        compose.onNodeWithText("Show terrain mask").performScrollTo().performClick()
+        compose.onNodeWithText("save first to include what you changed here", substring = true).performScrollTo().assertIsDisplayed()
         assertEquals(listOf("showMask:t1"), r.log)
     }
 
     @Test
-    fun `a mask being worked out shows it, and the button is not offered again`() {
-        show(withMask(ThreatMaskUi.Status.WORKING))
-        assertTrue(count("Working out the mask", substring = true) >= 1)
-        assertEquals(0, count("Show terrain mask"))
+    fun `a new threat has no mask and nothing to remove`() {
+        form(editing(id = null))
+        assertEquals(0, count("Terrain mask"))
+        assertEquals(0, count("Remove this threat"))
     }
 
     @Test
-    fun `a mask on the map can be hidden or updated`() {
-        val r = show(withMask(ThreatMaskUi.Status.SHOWING))
-        assertEquals(1, count("Shown on the map", substring = true))
-        compose.onNodeWithText("Hide mask").performClick()
-        compose.onNodeWithText("Update").performClick()
-        assertEquals(listOf("hideMask:t1", "showMask:t1"), r.log)
+    fun `removing from the form asks first`() {
+        val r = form(editing())
+        compose.onNodeWithText("Remove this threat").performScrollTo().performClick()
+        compose.onNodeWithText("Remove SA-8?").assertIsDisplayed()
+        compose.onNodeWithText("Remove").performClick()
+        assertEquals(listOf("removeEditing"), r.log)
     }
 
     @Test
-    fun `a mask that is out of date says why and offers to update it`() {
-        val r = show(withMask(ThreatMaskUi.Status.OUT_OF_DATE, "This threat was moved or its radars changed after this mask was made, so it is not shown."))
-        assertEquals(1, count("was moved or its radars changed", substring = true))
-        compose.onNodeWithText("Update mask").performClick()
-        assertEquals(listOf("showMask:t1"), r.log)
-    }
-
-    @Test
-    fun `a failure is in words and can be tried again`() {
-        val r = show(withMask(ThreatMaskUi.Status.FAILED, "There is no terrain data for this area."))
-        assertEquals(1, count("There is no terrain data for this area."))
-        compose.onNodeWithText("Try the terrain mask again").performClick()
-        assertEquals(listOf("showMask:t1"), r.log)
+    fun `the fields change the draft, the symbol from the common ones or typed`() {
+        val r = form(editing())
+        compose.onNodeWithText("Name").performScrollTo().performTextInput("X")
+        assertTrue(r.drafts.toString(), r.drafts.any { "X" in it.name })                           // the stand-in never updates the field, so where the cursor lands is its own
+        compose.onNodeWithContentDescription("Choose a common threat symbol").performScrollTo().performClick()
+        val preset = app.ezpztac.model.SymbolPresets.threats.last()
+        compose.onNodeWithText(preset.label).performClick()
+        assertEquals(preset.sidc, r.drafts.last().milstdId)
     }
 }

@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -46,13 +47,15 @@ data class ThreatRowUi(
     /** The preset's name (`SAM Launcher`), or `Custom symbol` for a code that is not one. */
     val symbol: String,
     val grid: String,
-    /** `Detection 25 nm · Engagement 15 nm`. */
+    /** `Detect 25 nm · Engage 15 nm`, as the design's row says it. */
     val ranges: String,
     val visible: Boolean,
     val held: Boolean,
+    /** Where its terrain mask is: the row's chip says it (*Terrain mask on*, *Rings only*). */
+    val mask: ThreatMaskUi.Status = ThreatMaskUi.Status.OFF,
 )
 
-/** Where a threat's terrain mask is, for the held threat's card. */
+/** Where a threat's terrain mask is, for its row's chip and its form. */
 data class ThreatMaskUi(val status: Status = Status.OFF, val message: String? = null) {
     enum class Status {
         /** Not asked for. */
@@ -89,9 +92,26 @@ data class HeldThreatUi(
     val mask: ThreatMaskUi = ThreatMaskUi(),
 )
 
-/** The form for a threat being made ([id] null) or changed. [error] is what is wrong with it, in words for the form itself (the sheet's banner can be scrolled out of sight). */
-data class ThreatEditUi(val id: String?, val at: LatLon, val draft: ThreatDraft, val error: String? = null) {
+/**
+ * The form for a threat being made ([id] null) or changed: its fields ([draft]) and where it is ([at]), both applied only by Save, so Cancel leaves the threat
+ * as it was. [error] is what is wrong with it, in words for the form itself. [mask] is the terrain mask of a threat that is already on the map.
+ */
+data class ThreatEditUi(
+    val id: String?,
+    val at: LatLon,
+    val draft: ThreatDraft,
+    val error: String? = null,
+    /** What the form started from, to tell whether leaving it loses anything. */
+    val startedAt: LatLon = at,
+    val startedDraft: ThreatDraft = draft,
+    /** Where [at] is, as the grid crews read it. */
+    val grid: String = "",
+    val mask: ThreatMaskUi? = null,
+) {
     val isNew: Boolean get() = id == null
+
+    /** Something was typed or moved since the form opened (for a new threat, it always has something to lose once anything is typed). */
+    val changed: Boolean get() = at != startedAt || draft != startedDraft
 }
 
 data class ThreatsUiState(
@@ -104,7 +124,10 @@ data class ThreatsUiState(
     val note: String? = null,
 )
 
-/** The Threats part of the sheet. The store is local-only; importing and exporting are explicit file operations, never sync. */
+/**
+ * The Threats panel (docs/native-design: Threats) and its form. The picture is the device's own until threats are saved and shared (`AGENTS.md` §2, step *T*):
+ * importing and exporting are explicit file operations, never sync.
+ */
 @HiltViewModel
 class ThreatsViewModel @Inject constructor(
     private val store: ThreatStore,
@@ -125,10 +148,32 @@ class ThreatsViewModel @Inject constructor(
     private val _exports = MutableSharedFlow<ExportFile>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val exports: SharedFlow<ExportFile> = _exports.asSharedFlow()
 
+    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    /**
+     * What the form tells the person once it has closed (*Threat added.*, *Threat updated.*), in the frame's toasts: the form can be opened from the held bar over
+     * another panel, where the Threats panel's own banner would wait out of sight.
+     */
+    val notices: SharedFlow<String> = _notices.asSharedFlow()
+
+    init {
+        // A wipe (a sign-out, Remove all) lets go of what was being done to the picture: a form left open must not come back over the next account's map, with its
+        // threat's name and notes in it, nor a held threat be kept.
+        viewModelScope.launch {
+            store.wipes.drop(1).collect {
+                local.value = Local()
+                selection.clear()
+            }
+        }
+    }
+
     val state: StateFlow<ThreatsUiState> = combine(store.entries, selection.held, local, masks.states) { entries, held, local, maskStates ->
         ThreatsUiState(
-            threats = entries.map { it.toRow(held) }, held = entries.firstOrNull { it.id == held && it.visible }?.let { heldOf(it, maskStates[it.id]) },
-            editing = local.editing, importing = local.importing, exporting = local.exporting, error = local.error, note = local.note,
+            threats = entries.map { it.toRow(held, maskStates[it.id]) }, held = entries.firstOrNull { it.id == held && it.visible }?.let { heldOf(it, maskStates[it.id]) },
+            editing = local.editing?.let { e ->
+                e.copy(grid = gridOf(e.at), mask = e.id?.let { id -> entries.firstOrNull { it.id == id } }?.let { maskOf(it, maskStates[it.id]) })
+            },
+            importing = local.importing, exporting = local.exporting, error = local.error, note = local.note,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatsUiState())
 
@@ -139,8 +184,40 @@ class ThreatsViewModel @Inject constructor(
 
     fun beginEdit(id: String) {
         val entry = store.entries.value.firstOrNull { it.id == id } ?: return
-        selection.select(id)
+        if (entry.visible) selection.select(id)                                                   // a hidden threat is never held: the map does not draw it
         local.update { it.copy(editing = ThreatEditUi(id, LatLon(entry.threat.lat, entry.threat.lon), ThreatDraft.of(entry.threat)), error = null, note = null) }
+    }
+
+    /** Opens the form for the threat held on the map (the held bar's options), if it is still there and drawn. */
+    fun editHeld() {
+        val id = selection.held.value ?: return
+        if (store.entries.value.any { it.id == id && it.visible }) beginEdit(id)
+    }
+
+    // -- Where the threat in the form is: applied by Save with the rest of it --------------------------------------------------------
+
+    /** Moves the threat in the form [northFt] feet north and [eastFt] east (negative: south, west). */
+    fun formNudge(northFt: Double, eastFt: Double) = formMove { at -> GraphicEdits.offset(at, northFt / Units.METERS_TO_FEET, eastFt / Units.METERS_TO_FEET) }
+
+    /** Puts the threat in the form at the crosshair, [at]. */
+    fun formToCrosshair(at: LatLon?) {
+        if (at == null) return local.update { it.copy(editing = it.editing?.copy(error = "Move the map to where the threat should be first.")) }
+        formMove { at }
+    }
+
+    /** Puts the threat in the form at a grid or coordinate typed. Null when it is moved, else the words for the field. */
+    fun formToText(text: String): String? = when (val place = PlaceSearch.resolve(text)) {
+        is PlaceResult.Found -> { formMove { place.at }; null }
+        is PlaceResult.NotUnderstood -> place.message
+    }
+
+    private fun formMove(to: (LatLon) -> LatLon) = local.update { current -> current.copy(editing = current.editing?.let { it.copy(at = to(it.at), error = null) }) }
+
+    /** Removes the threat the form is for, and closes the form (asked about first, by the screen). */
+    fun removeEditing() {
+        val id = local.value.editing?.id ?: return
+        remove(id)
+        cancelEdit()
     }
 
     fun updateDraft(draft: ThreatDraft) = local.update { current -> current.copy(editing = current.editing?.copy(draft = draft, error = null), error = null) }
@@ -156,16 +233,23 @@ class ThreatsViewModel @Inject constructor(
                 if (id == null) {
                     selection.select(store.add(checked.threat))
                 } else if (store.replace(id, checked.threat)) {
-                    selection.select(id)
+                    if (store.entries.value.firstOrNull { it.id == id }?.visible == true) selection.select(id)
                 } else {                                                                                                          // deleted (or wiped) while the form was open
-                    return local.update { it.copy(editing = null, error = "That threat is no longer here.") }
+                    local.update { it.copy(editing = null) }
+                    _notices.tryEmit("That threat is no longer here.")
+                    return
                 }
-                local.update { it.copy(editing = null, error = null, note = if (id == null) "Threat added." else "Threat updated.") }
+                local.update { it.copy(editing = null, error = null) }
+                _notices.tryEmit(if (id == null) "Threat added." else "Threat updated.")
             }
         }
     }
 
-    fun select(id: String) = selection.toggle(id)
+    /** Holds a threat on the map, or puts down the one held. A hidden threat is not held: the map does not draw it, and the held bar would not show it. */
+    fun select(id: String) {
+        if (store.entries.value.firstOrNull { it.id == id }?.visible != true) return
+        selection.toggle(id)
+    }
 
     fun deselect() = selection.clear()
 
@@ -284,9 +368,9 @@ class ThreatsViewModel @Inject constructor(
 
     private fun fail(message: String) = local.update { it.copy(error = message) }
 
-    private fun ThreatEntry.toRow(heldId: String?) = ThreatRowUi(
+    private fun ThreatEntry.toRow(heldId: String?, mask: MaskState?) = ThreatRowUi(
         id = id, name = threat.name, sidc = threat.milstdId, symbol = symbolName(threat.milstdId), grid = gridOf(threat), ranges = reachOf(threat.radars),
-        visible = visible, held = id == heldId,
+        visible = visible, held = id == heldId, mask = maskOf(this, mask).status,
     )
 
     private fun heldOf(entry: ThreatEntry, mask: MaskState?): HeldThreatUi {
@@ -300,7 +384,8 @@ class ThreatsViewModel @Inject constructor(
     private fun maskOf(entry: ThreatEntry, state: MaskState?): ThreatMaskUi = when (state) {
         null -> ThreatMaskUi()
         MaskState.Working -> ThreatMaskUi(ThreatMaskUi.Status.WORKING)
-        is MaskState.Failed -> ThreatMaskUi(ThreatMaskUi.Status.FAILED, state.message)
+        // Radars set to rings only are not a failure: nothing was asked of the server. The row says *Rings only*, as the web's does; the form says why.
+        is MaskState.Failed -> if (state.message == ThreatMasks.NOTHING_TO_SHOW) ThreatMaskUi(ThreatMaskUi.Status.OFF, state.message) else ThreatMaskUi(ThreatMaskUi.Status.FAILED, state.message)
         is MaskState.Ready -> when {
             !state.mask.isFor(entry.threat) -> ThreatMaskUi(ThreatMaskUi.Status.OUT_OF_DATE, "This threat was moved or its radars changed after this mask was made, so it is not shown.")
             state.mask.images.isEmpty() -> ThreatMaskUi(ThreatMaskUi.Status.NOTHING_VISIBLE, "Over the terrain, none of this threat's radars can see anything at the altitudes set.")
@@ -319,11 +404,15 @@ class ThreatsViewModel @Inject constructor(
     /** Takes a threat's mask off the map. */
     fun hideMask(id: String) = masks.hide(id)
 
-    private fun gridOf(t: Threat) = MgrsConverter.toMgrs(t.lat, t.lon)?.format() ?: "%.5f, %.5f".format(java.util.Locale.ROOT, t.lat, t.lon)
+    private fun gridOf(t: Threat) = gridOf(LatLon(t.lat, t.lon))
+
+    private fun gridOf(at: LatLon) = MgrsConverter.toMgrs(at.lat, at.lon)?.format() ?: "%.5f, %.5f".format(java.util.Locale.ROOT, at.lat, at.lon)
 
     private fun symbolName(sidc: String) = SymbolPresets.threats.firstOrNull { it.sidc == sidc }?.label ?: "Custom symbol"
 
-    private fun reachOf(radars: List<Radar>): String = radars.joinToString(" · ") { "${radarName(it)} ${plain(it.rangeNmi)} nm" }.ifEmpty { "No radar" }
+    /** `Detect 25 nm · Engage 15 nm`: the design's row, the web's `radarText`. */
+    private fun reachOf(radars: List<Radar>): String =
+        radars.joinToString(" · ") { "${if (it.type == Radars.ENGAGEMENT) "Engage" else "Detect"} ${plain(it.rangeNmi)} nm" }.ifEmpty { "No radar" }
 
     private fun radarLine(r: Radar): String =
         "${radarName(r)} · ${plain(r.rangeNmi)} nm · antenna ${plain(r.antennaHeightFt)} ft ${if (r.aglNotMsl) "AGL" else "MSL"} · rings ${if (r.showRangeRings) "on" else "off"}"

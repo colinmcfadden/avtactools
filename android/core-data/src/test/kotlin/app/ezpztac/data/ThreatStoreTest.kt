@@ -18,8 +18,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The threat picture: memory first, one short-lived sealed file behind it. What matters here is what is *not* allowed to happen: a wiped picture
- * coming back from a write that was already queued, a picture outliving its 48 hours, and a failing file taking threats away from a session.
+ * The threat picture: memory first, one sealed file behind it, kept until sign-out (no expiry since the owner's decision of 2026-10-12). What matters
+ * here is what is *not* allowed to happen: a wiped picture coming back from a write that was already queued, and a failing file taking threats away from a session.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ThreatStoreTest {
@@ -166,51 +166,18 @@ class ThreatStoreTest {
     private fun picture(savedAt: Long) = ThreatPicture(savedAt, listOf(ThreatEntry("threat-1-0", threat("KEPT"))))
 
     @Test
-    fun `a picture from the last launch is there at once, if it is under 48 hours old`() = runTest {
-        val vault = MemoryVault(picture(now - ThreatStore.RETAIN_MS))                         // exactly 48 hours: still kept
+    fun `a picture from the last launch is there at once, however old it is`() = runTest {
+        // The owner's decision of 2026-10-12: threats no longer expire (they are to be saved and shared). A month-old picture is still the crew's.
+        val vault = MemoryVault(picture(now - 30L * 24 * 3_600_000L))
         val store = store(vault)
         assertEquals(listOf("KEPT"), store.entries.value.map { it.threat.name })
         assertEquals(0, vault.wipes)
     }
 
     @Test
-    fun `a picture more than 48 hours old is wiped at launch, from memory and from the file`() = runTest {
-        val vault = MemoryVault(picture(now - ThreatStore.RETAIN_MS - 1))
-        val store = store(vault)
-        assertEquals(emptyList<ThreatEntry>(), store.entries.value)
-        assertNull(vault.kept)
-    }
-
-    @Test
     fun `a picture saved in the future, because the clock was set back, is kept rather than guessed at`() = runTest {
-        val store = store(MemoryVault(picture(now + 10 * ThreatStore.RETAIN_MS)))
+        val store = store(MemoryVault(picture(now + 10L * 24 * 3_600_000L)))
         assertEquals(1, store.entries.value.size)
-    }
-
-    @Test
-    fun `the 48 hours run from the last change, so a picture being worked in stays`() = runTest {
-        val vault = MemoryVault()
-        val store = store(vault)
-        store.add(threat("A"))
-        now += 40 * 3_600_000L
-        store.add(threat("B"))                                                                // a change at hour 40
-        now += 40 * 3_600_000L                                                                // hour 80: more than 48 since the first, 40 since the last
-        assertFalse(store.expireIfOld())
-        assertEquals(2, store.entries.value.size)
-        now += 8 * 3_600_000L + 1                                                             // 48 hours and a millisecond since the last
-        assertTrue(store.expireIfOld())
-        assertEquals(emptyList<ThreatEntry>(), store.entries.value)
-        advanceUntilIdle()
-        assertNull(vault.kept)
-    }
-
-    @Test
-    fun `expiring an empty store is not an expiry and touches nothing`() = runTest {
-        val vault = MemoryVault()
-        val store = store(vault)
-        now += 100 * 3_600_000L
-        assertFalse(store.expireIfOld())
-        assertEquals(0, vault.wipes)
     }
 
     // -- Wiping --------------------------------------------------------------------------------------------------------------

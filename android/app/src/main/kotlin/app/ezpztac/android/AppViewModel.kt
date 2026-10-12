@@ -167,12 +167,8 @@ class AppViewModel @Inject constructor(
         invitation.dismiss()
     }
 
-    /**
-     * The app has come to the front. Nothing runs while it is not, so a threat picture that went 48 hours unchanged is forgotten now, and
-     * an open pack is followed again, with whatever could not get through tried now.
-     */
+    /** The app has come to the front: an open pack is followed again, with whatever could not get through tried now, and the server's config is looked at. */
     fun appStarted() {
-        threats.expireIfOld()
         lookAtConfig()                                                    // the server may have raised its minimum, or begun maintenance, meanwhile
         packs.foreground(true)
         packs.wake()

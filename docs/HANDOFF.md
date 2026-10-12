@@ -6,8 +6,9 @@ Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh 
 that moves the "where things stand" or "next" sections.
 
 Last refreshed: 2026-10-12 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
-panel reviewed together, S4 the Routes panel and the route's plan reviewed on its own, every review's fixes in; S5 next; the owner's device try still
-to come. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of `docs/ANDROID_SCREENS_PLAN.md`).
+panel reviewed together, S4 the Routes panel and the route's plan, and S5 the Threats panel and its form, each reviewed on its own, every review's fixes
+in; S6 next; the owner's device try still to come. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
+`docs/ANDROID_SCREENS_PLAN.md`; the screenshot guard and the 48-hour wipe went in S5).
 
 ---
 
@@ -21,7 +22,9 @@ to come. The owner decided threats may be saved and shared: AGENTS.md §2, and s
   and the planning tools as modes over the map with *Add here*, *Done* and *Cancel all*; S4 the Routes panel: the route sets open now (a working set kept on the device),
   the set on the map as the design's card with *Save* as naming, *Export .msnx* with the threats when asked, each route's share, hide and plan, *Sketch a route* and *Import .msnx*
   pinned at its foot, and the route's plan as a page over the frame (the whole route's date, temperature and fuel flow; a card for each named point, applied as it is typed).
-  Threats and Imports still hold today's sections (S5, S6). **To try on a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet
+  S5 the Threats panel (the design's: the threats with their reach and mask, *.ths for AMPS*, *Remove all* asked about first) and each threat's form as a
+  full-screen dialog, also opened from the held bar; the window is no longer kept out of screenshots and the picture no longer expires (it is wiped at sign-out).
+  Imports still holds today's section (S6). **To try on a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet
   moves, dragging the sheet by its content, the status bar's icons, night mode's dimmed map, placing graphics by tapping the map while a tool's mode is on, and on the route's
   plan the keyboard, TalkBack and the date picker; none of that can be seen here. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
   `claude/jolly-wozniak-i7rlrq`, `feat/mission-packs`, the web menu redesign `feat/menu-redesign` and `fix/menu-redesign-ui`), then
@@ -59,8 +62,8 @@ to come. The owner decided threats may be saved and shared: AGENTS.md §2, and s
   all worked, the upgrade of an existing database to version 2 kept its data, and the move reached the mission file on the server (one point of 91 changed, every other part byte for byte).
   It also found a bug no JVM test could: Android's XML parser throws on `setXIncludeAware(false)`, so **every mission import had been refused on a device**. Fixed (AGENTS.md §14).
 - **Everything else is still compiled and unit-tested on a JVM only.** The map layers (MapLibre),
-  the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output,
-  `FLAG_SECURE` and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
+  the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output
+  and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
   "not verifiable here" in AGENTS.md). The first device run is the first real test of all of them.
 - **Last full verification** (`./gradlew test testDebugUnitTest lintDebug assembleDebug`, §3): green for every engine commit,
   A1–A15 (A11 on the owner's other PC), and for the merge of A11 and A12, on the owner's workstation (the live-server tests ran, none skipped). CI was green on `develop` at `ed6ec02` (Android on
@@ -72,8 +75,8 @@ to come. The owner decided threats may be saved and shared: AGENTS.md §2, and s
 
 ## 2. Next work, in order
 
-1. **The screens**, S1–S4 done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, S3's and S4's *Reviewed*); to try on a device; S5, Threats, next (with the owner's
-   2026-10-12 decisions that need no server: no screenshot guard, no 48-hour expiry), then S6–S9, and *T* (threats saved and shared: web and server first) beside S7, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
+1. **The screens**, S1–S5 done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*); to try on a device; S6, Import, next, then S7–S9, and *T*
+   (threats saved and shared: web and server first) beside S7, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
    AGENTS.md §17, *Mission packs on Android*). **The plan is `docs/ANDROID_SCREENS_PLAN.md`** (the owner's decisions, the steps S1–S9 and
    P1–P4, how each is checked), on `feat/android-screens`. First the redesigned shell (2), then the pack screens in it (3); both are drawn in
    `docs/native-design/`. **How the engine was built**, worth keeping for the screens: one commit per step, implemented, reviewed
@@ -138,6 +141,9 @@ python contracts/scripts/mgrs_fixtures.py check     # fixtures vs PyGeodesy
   other builds ran, and passed on rerun.
 - The SDK is not in the image: `android/local.properties` (gitignored) holds `sdk.dir`; the network policy must allow
   `dl.google.com` and `jitpack.io`; Maven Central sometimes throttles with 429 — re-run (Gradle caches what it fetched).
+- **A live-server test can fail a full build on the owner's Windows workstation with `No buffer space available (maximum connections
+  reached?)`**: with every module's tests running at once, Windows runs out of sockets for the live servers. Seen twice on 2026-10-12, in
+  `core-sync`'s `LiveSyncScenarios`; it passes when that module's tests run alone (`./gradlew :core-sync:test`). Re-run the module, not the build.
 - Warnings and lint are errors. Never commit a build that was not compiled.
 - After a mutation run, rebuild clean (`:module:clean :module:test --no-build-cache`): the build cache can keep a mutated class.
 
@@ -214,7 +220,7 @@ done: the five web session fixes, the `taken` field, and the role re-read under 
 - `assetlinks.json` on `ezpztac.app` (needs the applicationId and the signing key) so emailed links open the app.
 - Real `.LPS`, `.ths` and AMPS `.msnx` samples beyond the fixtures, for the readers and writers.
 - Vercel *Ignored Build Step* so app-only PRs skip a web preview.
-- Whether the 48-hour threat retention should run from the last change (as built) or the first.
+- Step *T* (threats saved and shared): whether a saved set is the whole picture or a named group, whether several can be open at once, and what the viewshed, KMZ and QR stores keep once threats are records.
 - **For the redesigned screens** (`docs/native-design/README.md`, "Decisions to settle"): the save model (recommended: keep autosave, so the
   chips mean "not in the Library yet" rather than "unsaved"; the app is offline-first and the system can end it at any time); the new
   neutral palette in `contracts/tokens/tokens.json` (nothing on the web reads that file) and what becomes of the red night palette, which

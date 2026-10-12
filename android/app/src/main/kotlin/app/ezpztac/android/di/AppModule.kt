@@ -161,8 +161,8 @@ object AppModule {
         WeatherService(api, cache, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default))
 
     /**
-     * The threat picture, sealed by its own Keystore key and kept where backups do not reach. Threats are sensitive and never persisted in the
-     * usual sense (`AGENTS.md` §2): this is the one short-lived file the owner approved, wiped at sign-out and 48 hours after the last change.
+     * The threat picture, sealed by its own Keystore key and kept where backups do not reach, and wiped at sign-out: where threats live on the device
+     * until they are saved and shared like other plans (`AGENTS.md` §2, step *T*).
      */
     @Provides
     @Singleton

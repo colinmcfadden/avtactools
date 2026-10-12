@@ -323,7 +323,7 @@ The planner keeps its existing terrain source on purpose. Route elevations offli
 
 **Threats on the device**
 
-Threats are never synced or persisted server-side. In the app they live in memory. iOS and Android can end a backgrounded app at any time, which would lose a crew's threat picture mid-planning. So they are also held in one encrypted file that is excluded from device backups, wiped on sign-out and 48 hours after the last change. An explicit online viewshed, KMZ or QR action may send the needed threat coordinates to the existing backend transiently; the backend must not retain them. Otherwise they leave the device only by an explicit export. The owner approved this.
+**Changed by the owner on 2026-10-12** (AGENTS.md §2): threats may be saved and shared like other plans (a Library item of their own, and in mission packs), with no screenshot guard and no expiry; that is step *T* of `docs/ANDROID_SCREENS_PLAN.md`, not built yet. Until it is, threats are not synced or persisted server-side. In the app they live in memory. iOS and Android can end a backgrounded app at any time, which would lose a crew's threat picture mid-planning. So they are also held in one encrypted file that is excluded from device backups and wiped on sign-out (the 48-hour wipe this plan first had was dropped in S5). An explicit online viewshed, KMZ or QR action may send the needed threat coordinates to the existing backend transiently; the backend must not retain them. Otherwise they leave the device only by an explicit export. The owner approved this.
 
 **Signing in while offline**
 
@@ -620,7 +620,7 @@ The apps hold the same posture as the web: unclassified only, no CUI, threats ne
 - **Tokens.** Held in the Keychain and Keystore and never logged. Refresh tokens rotate on use. Sign-out wipes tokens, the threat file and caches.
 - **Lost device.** App-private storage under OS encryption, an optional biometric lock, and remote revoke from the device-sessions list.
 - **Location privacy.** GPS position never leaves the device. There is no third-party SDK with telemetry, and MapLibre has none. Online Mapbox tiles reveal the area being viewed to Mapbox, as the web does today; offline packs avoid it. Pack requests follow the LiDAR rules: coordinates in POST bodies, opaque keys, nothing logged, 7-day expiry.
-- **Threats.** Memory, plus the approved encrypted file: never backed up, wiped on sign-out and 48 hours after the last change. Never synced or persisted server-side; explicit online viewshed/KMZ/QR requests are processed transiently. Android sets `FLAG_SECURE` on threat screens so they stay out of the app switcher and screenshots; iOS has no equivalent, so the app blurs its snapshot when backgrounded.
+- **Threats.** Memory, plus the approved encrypted file: never backed up, wiped on sign-out. Not yet synced or persisted server-side (the owner's decision of 2026-10-12 lets them be, as step *T*); explicit online viewshed/KMZ/QR requests are processed transiently. The owner dropped the screenshot guard (Android's `FLAG_SECURE`, and iOS's blurred snapshot) and the 48-hour wipe the same day.
 - **Supply chain.** Gradle dependency verification metadata and a committed `Package.resolved`. Renovate opens update PRs, and every release gets a CycloneDX SBOM.
 
 **Store obligations**
@@ -765,7 +765,7 @@ The pack service starts at week 14 so it is ready before offline work begins on 
 | P0 Foundations | Module skeletons and CI on both platforms; design tokens; `contracts/` with OpenAPI and the first fixtures (MGRS, coordinates, route plan, capacity); `/api/config`; client header | Fixtures pass in Jest, pytest, JUnit and Swift Testing; MapLibre shows Mapbox satellite on both platforms |
 | P1 Core planning | Auth with Google, email, the .mil gate and refresh tokens (Sign in with Apple joins in the iOS phase); map, MGRS, GPS; LZ workspace; online analysis; every planning graphic; symbols; aircraft profiles; LZ sync; two-week 3D spike | Internal beta: an LZ planned on an Android tablet opens unchanged on the web, and the reverse |
 | P2 Routes and threats | Route sketch and plan; `.msnx`; local points; ForeFlight and ATAK hand-off; weather; threats with server viewshed, KMZ and `.ths`; route and point-set sync | External beta: real AMPS missions round-trip; threats export to AMPS and ATAK (ForeFlight follows in the iOS phase) |
-| P3 Offline and exports | Pack service and pack screen; on-device slope, elevations and viewshed; native `.ths`, KMZ, `.xlsx` and PDF; offline sign-in; 48-hour threat retention; push notifications | 1.0: a whole mission planned in airplane mode on the floor devices, within the performance budgets |
+| P3 Offline and exports | Pack service and pack screen; on-device slope, elevations and viewshed; native `.ths`, KMZ, `.xlsx` and PDF; offline sign-in; push notifications | 1.0: a whole mission planned in airplane mode on the floor devices, within the performance budgets |
 | P4 3D and extras | Native 3D renderer; LiDAR in packs; on-device LZ detection; Live Activity and widgets; Apple Pencil; ATAK plugin research | 3D matches the web view on the same LZs in owner review |
 
 **Team shape**

@@ -51,7 +51,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
     val invite by viewModel.inviteState.collectAsStateWithLifecycle()
     val inviteAttempt by viewModel.inviteAttempt.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    // Nothing runs while the app is out of sight, so what has expired meanwhile (a threat picture left for 48 hours) is dealt with as it comes back.
+    // Nothing runs while the app is out of sight, so what changed meanwhile (the server's config, a pack's edits) is looked at as it comes back.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.appStarted() }
     // The system may end the process once the app is out of sight, so what has been changed is written now rather than after the usual pause.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.appStopped() }

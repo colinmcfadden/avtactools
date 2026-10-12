@@ -9,6 +9,7 @@ import app.ezpztac.data.MapDrag
 import app.ezpztac.data.InMemoryOpenDiagramStore
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.android.frame.Panel
 import app.ezpztac.data.InMemoryOpenRouteSetStore
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.PointSelection
@@ -1547,5 +1548,32 @@ class HomeViewModelTest {
         r.session.close()
         advanceUntilIdle()
         assertNull(r.placement.placing.value)
+    }
+
+    // -- The held bar's options go by what the bar shows (the review of S5) ---------------------------------------------------------
+
+    @Test
+    fun `the held bar's options are for what it shows, a drawn threat before a route point or a corner`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threats.add(app.ezpztac.model.Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = app.ezpztac.model.Radars.defaultPair()))
+        r.routeSelection.select("r1", "p2")
+        r.threatSelection.select(id)
+        assertEquals(Panel.Threats, r.model.heldPanel())                                       // the bar shows the threat
+        r.threats.setVisible(id, false)
+        assertEquals(Panel.Routes, r.model.heldPanel())                                        // a hidden threat is not shown, so the route point is
+        r.threats.remove(id)
+        assertEquals(Panel.Routes, r.model.heldPanel())                                        // nor is one that is gone
+    }
+
+    @Test
+    fun `a corner held beside a drawn threat gives the threat's options, as the bar shows the threat`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threats.add(app.ezpztac.model.Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = app.ezpztac.model.Radars.defaultPair()))
+        r.corners.select(app.ezpztac.model.BoundaryCornerRef(false, 0))
+        assertEquals(Panel.Lz, r.model.heldPanel())
+        r.threatSelection.select(id)
+        assertEquals(Panel.Threats, r.model.heldPanel())
     }
 }

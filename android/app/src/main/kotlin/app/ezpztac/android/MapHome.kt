@@ -91,7 +91,6 @@ import app.ezpztac.workspace.RoutesUiState
 import app.ezpztac.workspace.RoutesViewModel
 import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.ThreatsHost
-import app.ezpztac.workspace.ThreatWindowGuard
 import app.ezpztac.workspace.ThreatsViewModel
 import app.ezpztac.workspace.rememberFileImport
 import kotlinx.coroutines.flow.filterNotNull
@@ -176,8 +175,6 @@ fun MapHome(
     // A boundary or a route is drawn, or a tool places, by tapping the map: the sheet goes down to its header, so the map is there, each time one starts.
     LaunchedEffect(drawingWhat) { if (drawingWhat != null) sheet.animateTo(SheetDetent.Lowered) }
     LaunchedEffect(threatsOn) { home.allowThreats(threatsOn) }
-    // While there are threats on the map, the window is kept out of screenshots, screen recording and the app switcher, whichever panel shows.
-    if (threatsOn) ThreatWindowGuard(threatsModel)
     LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
     LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
     // A file another app opened with this one (Files, a mail, the share sheet, or Import) is put to the person here: nothing is imported until they accept.
@@ -187,6 +184,7 @@ fun MapHome(
     // What the LZ/PZ panel says once it has happened (an LZ/PZ named), in the same toasts.
     LaunchedEffect(diagrams) { diagrams.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     LaunchedEffect(routesModel) { routesModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    LaunchedEffect(threatsModel) { threatsModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // A page inside the LZ/PZ panel (an LZ/PZ's plan, every LZ/PZ, the aircraft): Back goes back up it, as its arrow does.
     BackHandler(enabled = current == Panel.Lz && lz.page != LzPage.HOME) { diagrams.showPage(lzBack(lz)) }
     BackHandler(enabled = current == Panel.Routes && routes.page != RoutesPage.HOME) { routesModel.showPage(RoutesPage.HOME) }
@@ -220,7 +218,7 @@ fun MapHome(
                 snackbars = snackbars,
                 head = when (current) {
                     Panel.Lz -> lzHead(lz) { diagrams.showPage(it) }
-                    Panel.Threats -> PanelHead(current.label, if (counts.threats == 0) "This device only" else "${counts.threats} · this device only")
+                    Panel.Threats -> PanelHead(current.label, if (counts.threats == 0) "This device only" else "${counts.threats} on the map · this device only")
                     Panel.Imports -> PanelHead(current.label, when (counts.imports) { 0 -> null; 1 -> "1 set of local points"; else -> "${counts.imports} sets of local points" })
                     Panel.Routes -> routesHead(routes) { routesModel.showPage(it) }
                 },
@@ -294,6 +292,8 @@ fun MapHome(
                                         if (panel == Panel.Routes) {
                                             // A point of a route: its plan, a page of its own, opened at that point; only for an account offered routes, as on the web.
                                             if (Panel.Routes in panels) routesModel.openHeldPlan()
+                                        } else if (panel == Panel.Threats) {
+                                            threatsModel.editHeld()                                   // a threat: its form, over everything
                                         } else {
                                             panel?.let {
                                                 chosen = it

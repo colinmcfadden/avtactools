@@ -495,18 +495,16 @@ class AppViewModelTest {
     }
 
     @Test
-    fun `the app coming to the front forgets a threat picture that has not been changed in 48 hours, and keeps a newer one`() = runTest(dispatcher) {
+    fun `the app coming to the front keeps a threat picture however long it was left`() = runTest(dispatcher) {
+        // The owner's decision of 2026-10-12: no 48-hour expiry. Sign-out still clears it (below) until threats are saved with the account.
         val r = rig(owner = 1)
         r.threats.add(Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = Radars.defaultPair()))
         advanceUntilIdle()
-        r.clock.now += ThreatStore.RETAIN_MS
-        r.model.appStarted()
-        assertEquals(1, r.threats.entries.value.size)                                         // exactly 48 hours: still kept
-        r.clock.now += 1
+        r.clock.now += 30L * 24 * 3_600_000L
         r.model.appStarted()
         advanceUntilIdle()
-        assertTrue(r.threats.entries.value.isEmpty())
-        assertNull(r.threatVault.kept)
+        assertEquals(1, r.threats.entries.value.size)
+        assertNotNull(r.threatVault.kept)
     }
 
     @Test

@@ -167,8 +167,8 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Whether the signed-in account has threats (its `threats` feature, which the screen knows from the user: [allowThreats]). Until it says so they are not
-     * drawn, held or counted. An account an administrator has turned threats off for may still have a picture kept on this device from before (up to 48
-     * hours), and with no Threats panel to show it in, it is not put on the map either: the web, whose threats are never kept, never has one to draw.
+     * drawn, held or counted. An account an administrator has turned threats off for may still have a picture kept on this device from before (until
+     * sign-out), and with no Threats panel to show it in, it is not put on the map either: the web, whose threats are never kept, never has one to draw.
      */
     private val threatsAllowed = MutableStateFlow(false)
 
@@ -198,11 +198,14 @@ class HomeViewModel @Inject constructor(
     /**
      * The panel whose card has the rest of what can be done to the thing held on the map (the held bar's options): the LZ/PZ's for a planning
      * graphic or a corner of its boundary, the threat's, the route's for one of its points, the local points' for one of theirs. Null when nothing is held.
+     * **In the bar's own order** (`heldObjectOf`: a graphic, a threat that is drawn, a point of a route, a corner), so the options are for what the bar shows: a
+     * threat that is hidden or gone is not what is held.
      */
     fun heldPanel(): Panel? = when {
-        selection.selected.value != null || boundaryCorners.held.value != null -> Panel.Lz
-        threatSelection.held.value != null -> Panel.Threats
+        selection.selected.value != null -> Panel.Lz
+        threatSelection.held.value?.let { id -> threats.entries.value.any { it.id == id && it.visible } } == true -> Panel.Threats
         routeSelection.held.value?.pointId != null -> Panel.Routes
+        boundaryCorners.held.value != null -> Panel.Lz
         pointSelection.held.value != null -> Panel.Imports
         else -> null
     }

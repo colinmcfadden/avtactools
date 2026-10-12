@@ -79,7 +79,7 @@ private val BAR_HEIGHT = 80.dp
  * or at full height, the bar of panels along the bottom, and the toasts. [mapScreen] draws the map and its controls as [MapFrame] says.
  *
  * Every panel stays composed and only [current] is laid out: each keeps its scroll, its file pickers and what it listens for (an export being
- * built goes to the share sheet whichever panel shows; the threat panel keeps the window out of screenshots while threats are on the map).
+ * built goes to the share sheet whichever panel shows; a threat's form opened from the held bar over another panel).
  */
 @Composable
 fun PhoneFrame(
@@ -163,7 +163,7 @@ internal fun edgeOf(sheet: PanelSheetState): Float? {
 }
 
 /**
- * Kept in composition (its scroll, its pickers, what it listens for, its window guard) but neither measured nor placed, and out of the
+ * Kept in composition (its scroll, its pickers, what it listens for, a dialog it opens) but neither measured nor placed, and out of the
  * semantics: not drawn, not touched, not read by a screen reader.
  */
 private fun Modifier.hidden(): Modifier = clearAndSetSemantics {}.layout { _, _ -> layout(0, 0) {} }
