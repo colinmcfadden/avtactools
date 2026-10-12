@@ -745,7 +745,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **A scroll inside Material's `DropdownMenu` throws.** The menu lays its content out in a column it scrolls itself, measured with no height, so a `verticalScroll` inside
   it fails on its first measure ("measured with an infinity maximum height"): the tablet's workspace switcher crashed as it opened while the phone's sheet worked. Let the
   host scroll shared content, and try it inside the menu (`SwitcherTest`).
-- **Android lint refuses a byte order mark inside a source file** (`ByteOrderMark`, an error): a character literal meant as U+FEFF must be written `'﻿'`,
+- **Android lint refuses a byte order mark inside a source file** (`ByteOrderMark`, an error): a character literal meant as U+FEFF must be written `'\uFEFF'`,
   never the character itself, which some editors put in place of the escape. Only the Android modules are linted, so the pure ones hold such characters
   without complaint; leave those as they are.
 - **A pack's state changes many times a second.** The engine publishes a new `PackState` for every presence frame (people pointing, up to ten a second each), so a collector of
