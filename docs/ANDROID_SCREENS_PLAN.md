@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; S8 next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; S9 next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -254,9 +254,22 @@ a too-long name that could not be shortened; and a tab's count and a grid cut at
 `RoutesScreenTest`, `LibraryTabsTest`.
 **Not verifiable here:** the rename dialog's window with the keyboard on a device, and TalkBack.
 
-**S8 — The map's long press and the toasts.** A long press on nothing opens the design's menu at the press, headed by the grid under the
-finger (`MapMenu`: New LZ/PZ here, Add threat here, Add route point here, Copy grid); a long press on something still picks it up. The
-*Saved* toast (`Saved`) and the others through `ToastHost`.
+**S8 — The map's long press and the toasts. Built.** A long press on nothing opens the design's menu at the press, headed by the grid under the
+finger (`MapMenu`: New LZ/PZ here, Add threat here, Add route point here, Copy grid, each for an account offered its panel); a long press on something still
+picks it up. The *Saved* toast (`Saved`) offers *Open Library*; the others go through `ToastHost` as before. **Amended while building:**
+- **The menu is a popup of its own**, above and to the right of the press with the design's ring at it, not Material's `DropdownMenu`, which opens under the
+  fingertip (README.md's table says "DropdownMenu at the press point"; the drawn screen puts it beside).
+- ***Add route point here*** adds a turn point to the end of the route being worked on (held, or the set's only one), and with no route starts one there; it is
+  greyed out, with the reason, in an imported mission and with several routes and none held. The design does not say which route it means.
+- **No menu while a boundary, a route or a tool takes the map's taps**, as a press picks nothing up then.
+**Reviewed** (one independent review, 2026-10-12: 19 reported, 10 survived an adversarial check, 8 distinct; each fix has a test, each broken to see it fail): a slow
+quick zoom (double tap, then drag) opened the menu part way through and cut the zoom off (the platform detector keeps a double tap's long press however far
+the finger moves); the menu opened under the finger with nothing marking the place; a right-to-left language put it at the wrong side of the screen; the grid
+split over two lines at large text; *Open Library* pressed on a route's plan page left the plan over the panel the Library then chose; the tabs it was offered
+for were read once and went stale when the account's features changed; a press just past the date line opened nothing; and no test drew the real menu.
+Tests: `LongPressTouchesTest`, `MapMenuTest` (the placement rule, the real popup at 1.0, 1.3 and 2.0, the toast), `HomeViewModelTest`, `RoutesViewModelTest`,
+`LibraryViewModelTest`, `PointsViewModelTest`.
+**Not verifiable here:** the long press and quick zoom on a real screen, the haptic, the popup over the real map, TalkBack.
 
 **S9 — The tablet.** The `NavigationRail` (workspace button, Import, the destinations with badges, Library and account at the bottom)
 beside material3-adaptive's scaffolds: the chosen panel in the list pane (344 dp), the map, and the supporting pane (320 dp: the open

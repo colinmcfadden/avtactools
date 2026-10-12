@@ -1,5 +1,7 @@
 package app.ezpztac.android
 
+import org.junit.Assert.assertNotNull
+import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BoundaryCorners
@@ -1406,6 +1408,35 @@ class HomeViewModelTest {
         advanceUntilIdle()
         assertFalse(r.model.dragStarted(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0))
         assertNull(r.selection.selected.value)
+    }
+
+    @Test
+    fun `a long press on nothing opens the map menu headed by the grid there, but not while taps are corners, points or placements`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val at = LatLon(34.7838, -84.0822)
+        assertEquals(MapMenuPlace(at, MgrsConverter.toMgrs(at.lat, at.lon)!!.format()), r.model.pressed(at))
+        assertEquals("90.00000, 10.00000", r.model.pressed(LatLon(90.0, 10.0))!!.grid)           // no MGRS at the pole: degrees, as the web's menu
+        assertNull(r.model.pressed(LatLon(Double.NaN, 10.0)))
+        // Past the date line the map gives a longitude beyond 180: the same place, brought back.
+        val wrapped = r.model.pressed(LatLon(-17.8, 180.4))!!
+        assertEquals(-179.6, wrapped.at.lon, 1e-9)
+        assertEquals(MgrsConverter.toMgrs(-17.8, -179.6)!!.format(), wrapped.grid)
+        assertEquals(179.6, r.model.pressed(LatLon(-17.8, -180.4))!!.at.lon, 1e-9)
+
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertNull(r.placement.begin(PlaceTool.HELICOPTER))
+        assertNull(r.model.pressed(at))                                                          // a press places
+        r.placement.finish()
+        r.drawing.start()                                                                       // (after the tool: starting a boundary takes the analysis back)
+        assertNull(r.model.pressed(at))                                                          // a press is a corner
+        r.drawing.cancel()
+        r.openRoute()
+        r.sketching.start()
+        assertNull(r.model.pressed(at))                                                          // a press is a point of the route
+        r.sketching.cancel()
+        assertNotNull(r.model.pressed(at))
     }
 
     @Test

@@ -617,7 +617,7 @@ class RoutesViewModel @Inject constructor(
             replacing?.let { deleteNow(it) }
             session.edit("Name") { it.copy(name = chosen) }
             session.flush()
-            _notices.tryEmit(if (replacing != null) "Saved \u201c$chosen\u201d to your Library, in place of the one there before" else "Saved \u201c$chosen\u201d to your Library")
+            _notices.tryEmit(savedToLibrary(chosen, replaced = replacing != null))
         }
     }
 
@@ -892,14 +892,21 @@ class RoutesViewModel @Inject constructor(
      * are its file's) into a new one, called by the next made-up name until it is saved. Refused in words, before any set is made, when something else has the
      * map's taps.
      */
-    fun startSketch() {
+    fun startSketch(first: LatLon? = null) {
         val open = session.active.value
-        if (open != null && open.mission == null) return fail(sketching.start())
+        if (open != null && open.mission == null) {
+            val refused = sketching.start()
+            if (refused == null && first != null) sketching.addPoint(first)
+            return fail(refused)
+        }
         sketching.refusal()?.let { return fail(it) }
         run("The routes could not be made.") {
             val made = make(RouteSetNames.next(state.value.sets.map { it.name }))
             when (val refused = sketching.start()) {
-                null -> madeForSketch = made to open?.id
+                null -> {
+                    madeForSketch = made to open?.id
+                    first?.let(sketching::addPoint)
+                }
                 else -> {
                     fail(refused)                                                           // something took the map's taps meanwhile: the set goes again
                     abandon(made, open?.id)
@@ -929,6 +936,42 @@ class RoutesViewModel @Inject constructor(
             } catch (_: Exception) {
                 local.update { it.copy(error = "The empty set could not be taken away.") }
             }
+        }
+    }
+
+    // -- The map's long press: *Add route point here* ----------------------------------------------------------------------------------
+
+    /** What the map menu's *Add route point here* would do now. */
+    fun pointAction(): MapPointAction {
+        val open = session.active.value ?: return MapPointAction.StartRoute
+        if (open.mission != null) return MapPointAction.Mission
+        val route = selection.held.value?.routeId?.let(open::route) ?: open.routes.singleOrNull()
+        return when {
+            route != null -> MapPointAction.AddTo(route.name)
+            open.routes.isEmpty() -> MapPointAction.StartRoute
+            else -> MapPointAction.ChooseRoute
+        }
+    }
+
+    /**
+     * The map menu's *Add route point here*, at [at]: a turn point at the end of the route being worked on (the one held, else the set's only route), held so it can be
+     * named or moved, as a local point is added; with no route to add to, a new route is started there (*Sketch a route* with its first point down). Not in an
+     * imported mission, whose routes are its file's, nor with routes to choose between and none held.
+     */
+    fun addPointAt(at: LatLon) {
+        when (val action = pointAction()) {
+            is MapPointAction.AddTo -> {
+                val open = session.active.value ?: return
+                val route = selection.held.value?.routeId?.let(open::route) ?: open.routes.singleOrNull() ?: return
+                val id = newPointId()
+                fail(null)
+                session.edit("Add point") { set -> set.mapRoute(route.id) { SketchOps.appendAmps(it, at.lat, at.lon, name = ".CP", ptType = "turn", newPointId = { id }) } }
+                selection.select(route.id, id)
+                _notices.tryEmit("Added a point to the end of ${action.routeName}.")
+            }
+            MapPointAction.StartRoute -> startSketch(first = at)
+            MapPointAction.ChooseRoute -> fail(CHOOSE_A_ROUTE)
+            MapPointAction.Mission -> fail(MISSION_ROUTES_ARE_THE_FILES)
         }
     }
 
@@ -969,6 +1012,7 @@ class RoutesViewModel @Inject constructor(
     private companion object {
         const val MISSION_ROUTES_ARE_THE_FILES = "An AMPS mission's routes are part of its file: they can't be drawn, renamed or removed here. Make a new set to draw a route."
         const val MISSION_POINT_TYPES_ARE_THE_FILES = "What kind of point this is is fixed in the mission's file."
+        const val CHOOSE_A_ROUTE = "Tap the route to add the point to first: this set has more than one."
     }
 
     private fun run(fallback: String, block: suspend () -> Unit) {
@@ -998,4 +1042,19 @@ class RoutesViewModel @Inject constructor(
 }
 
 /** What an action asked for while the last one is still under way is told: it is not done, and can be asked for again. */
+/** What the map menu's *Add route point here* does now ([RoutesViewModel.pointAction]). */
+sealed interface MapPointAction {
+    /** A turn point at the end of [routeName]. */
+    data class AddTo(val routeName: String) : MapPointAction
+
+    /** No route to add to: a new one is started there. */
+    data object StartRoute : MapPointAction
+
+    /** Routes to choose between, and none held: refused. */
+    data object ChooseRoute : MapPointAction
+
+    /** An imported mission is open: its routes are its file's. */
+    data object Mission : MapPointAction
+}
+
 internal const val STILL_WORKING = "Still finishing the last change. Try again in a moment."

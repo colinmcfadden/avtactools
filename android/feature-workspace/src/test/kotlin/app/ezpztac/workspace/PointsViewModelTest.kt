@@ -203,7 +203,7 @@ class PointsViewModelTest {
         assertEquals(colour, row.color)
         assertTrue(r.session.sets.value.isEmpty())
         assertEquals(listOf("TAXI"), r.store.transaction { records(RecordKind.POINT_SET) }.map { it.name })
-        assertEquals(listOf("Saved TAXI to your Library."), r.said)
+        assertEquals(listOf("Saved “TAXI” to your Library"), r.said)
     }
 
     @Test
@@ -219,7 +219,7 @@ class PointsViewModelTest {
         assertFalse(row.inSession)
         assertEquals(RouteColors.PALETTE[5], row.color)                                       // not the first free colour a new set would take
         assertFalse(row.visible)                                                              // and still off the map, as the person left it
-        assertEquals(listOf("Saved TAXI to your Library."), r.said)
+        assertEquals(listOf("Saved “TAXI” to your Library"), r.said)
     }
 
     @Test

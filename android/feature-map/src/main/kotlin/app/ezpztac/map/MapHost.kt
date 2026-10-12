@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -189,6 +190,8 @@ fun EzpzMap(
     onDrop: (LatLon) -> Unit = {},
     /** The touch was taken from the drag: what was picked up goes back. */
     onDragCancelled: () -> Unit = {},
+    /** A long press that picked nothing up, at this place and these pixels of the map: true when it was taken (a menu opened), so the map does not pan with the finger. */
+    onPress: (LatLon, Offset) -> Boolean = { _, _ -> false },
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -198,6 +201,7 @@ fun EzpzMap(
     val drag by rememberUpdatedState(onDrag)
     val drop by rememberUpdatedState(onDrop)
     val cancelled by rememberUpdatedState(onDragCancelled)
+    val press by rememberUpdatedState(onPress)
 
     DisposableEffect(owner, view) {
         view.onCreate(Bundle())
@@ -214,12 +218,13 @@ fun EzpzMap(
         // Join in at the owner's current state: the observer only hears what happens next.
         if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) view.onStart()
         if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onResume()
-        view.listener = object : DragMapView.Listener {
+        view.listener = object : LongPressTouches.Listener {
             private fun at(x: Float, y: Float) = host.screenToLatLon(x, y)
             override fun onPickUp(x: Float, y: Float) = at(x, y)?.let(pickUp) ?: false
             override fun onDrag(x: Float, y: Float) { at(x, y)?.let(drag) }
             override fun onDrop(x: Float, y: Float) { at(x, y)?.let(drop) ?: cancelled() }
             override fun onDragCancelled() = cancelled()
+            override fun onPress(x: Float, y: Float) = at(x, y)?.let { press(it, Offset(x, y)) } ?: false
         }
         view.getMapAsync { map ->
             map.uiSettings.apply {

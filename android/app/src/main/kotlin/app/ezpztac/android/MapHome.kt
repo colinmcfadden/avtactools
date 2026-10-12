@@ -1,5 +1,12 @@
 package app.ezpztac.android
 
+import app.ezpztac.workspace.offersLibrary
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SnackbarDuration
+import app.ezpztac.workspace.MapPointAction
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
 import android.content.ClipData
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -179,6 +186,19 @@ fun MapHome(
     val threatsOn = Panel.Threats in panels
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
     var floating by remember { mutableIntStateOf(0) }
+    // The map's menu (the design's MapMenu), open where a long press on nothing was; what Add route point here would do is taken then. It is kept while
+    // the menu closes (menuOpen false), so it does not empty as it fades.
+    var menu by remember { mutableStateOf<OpenMapMenu?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+    // A toast from a panel; the Saved one offers its Library tab (the design's Saved: Open Library), if the account has it when the toast is shown: the collectors
+    // below outlive a change of features, so they read the tabs as they are now.
+    val libraryTabs by rememberUpdatedState(libraryTabsFor(panels))
+    suspend fun toast(text: String, tab: LibraryTab) = snackbars.panelToast(text, tab, libraryTabs) { libraryTab = it }
+    val copyGrid: (String) -> Unit = { text ->
+        scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Grid", text))) }
+        // Android 13 and later say so themselves; before that the app does.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) scope.launch { snackbars.showSnackbar("Copied $text") }
+    }
 
     LaunchedEffect(host) {
         viewModel.commands.collect { command ->
@@ -198,12 +218,12 @@ fun MapHome(
     ImportReviewHost(threatsAllowed = threatsOn, viewModel = incoming)
     if (importMenu) ImportSheet(threatsAllowed = threatsOn, onChoose = importFiles, onDismiss = { importMenu = false })
     LaunchedEffect(incoming) { incoming.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
-    LaunchedEffect(importsModel) { importsModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    LaunchedEffect(importsModel) { importsModel.notices.collect { toast(it, LibraryTab.POINTS) } }
     // An invitation link: said above the sheet, in the frame's own toasts.
     InviteNotices(invite, inviteAttempt, snackbars, onRetry = onRetryInvite, onDismiss = onDismissInvite)
     // What the LZ/PZ panel says once it has happened (an LZ/PZ named), in the same toasts.
-    LaunchedEffect(diagrams) { diagrams.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
-    LaunchedEffect(routesModel) { routesModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    LaunchedEffect(diagrams) { diagrams.notices.collect { toast(it, LibraryTab.LZ) } }
+    LaunchedEffect(routesModel) { routesModel.notices.collect { toast(it, LibraryTab.ROUTES) } }
     LaunchedEffect(threatsModel) { threatsModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // A page inside the LZ/PZ panel (an LZ/PZ's plan, every LZ/PZ, the aircraft): Back goes back up it, as its arrow does.
     BackHandler(enabled = current == Panel.Lz && lz.page != LzPage.HOME) { diagrams.showPage(lzBack(lz)) }
@@ -214,6 +234,9 @@ fun MapHome(
     // What the LZ/PZ and Routes panels say of an action the Library handed them (a name refused, a write that failed, one asked while another ran) would be a banner
     // under the Library, out of sight: while it is open it is said in its toasts instead.
     val libraryOpen = libraryTab != null
+    // The Library opens over the frame, and a route's plan page is a page over the frame too: a Saved toast's Open Library pressed on the plan page would leave the
+    // plan under the Library, and come back over the panel the Library's Open then chose. Opening the Library closes it.
+    LaunchedEffect(libraryOpen) { if (libraryOpen) routesModel.closePlan() }
     LaunchedEffect(libraryOpen, lz.error) {
         val said = lz.error
         if (libraryOpen && said != null) {
@@ -312,11 +335,7 @@ fun MapHome(
                     onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                     onFaceNorth = viewModel::faceNorth,
                     slope = slopeToggle, onToggleSlope = home::toggleSlope,
-                    onCopyReadout = { text ->
-                        scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Grid", text))) }
-                        // Android 13 and later say so themselves; before that the app does.
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) scope.launch { snackbars.showSnackbar("Copied $text") }
-                    },
+                    onCopyReadout = copyGrid,
                     padding = frame.padding,
                     controlsBottom = frame.controlsBottom,
                     account = {
@@ -381,6 +400,15 @@ fun MapHome(
                             host.camera?.let { camera -> home.dragStarted(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) } ?: false
                         },
                         onDrag = home::dragMoved, onDrop = home::dragEnded, onDragCancelled = home::dragCancelled,
+                        // A long press on nothing that can be picked up opens the map's menu there (not while taps are corners, points or placements).
+                        onPress = { at, px ->
+                            val place = home.pressed(at)
+                            if (place != null) {
+                                menu = OpenMapMenu(place, IntOffset(px.x.roundToInt(), px.y.roundToInt()), routesModel.pointAction())
+                                menuOpen = true
+                            }
+                            place != null
+                        },
                     )
                     DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
                     PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's
@@ -392,6 +420,17 @@ fun MapHome(
                     ThreatLabelsLayer(host, threatScene)
                     // At night the imagery is dimmed with the rest of the screen (docs/NATIVE_APPS_PLAN.md, "Night mode"); a tap goes through to the map.
                     if (night) NightDim()
+                    // Anchored at the press, in the map's own pixels (this box is the map's).
+                    val open = menu
+                    MapMenu(
+                        expanded = menuOpen, place = open?.place, at = open?.at ?: IntOffset.Zero, onDismiss = { menuOpen = false },
+                        choices = if (open == null) MapMenuChoices() else MapMenuChoices(
+                            newLz = if (Panel.Lz in panels) ({ diagrams.newAt(open.place.at); chosen = Panel.Lz }) else null,
+                            addThreat = if (threatsOn) ({ threatsModel.beginAdd(open.place.at) }) else null,
+                            routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); chosen = Panel.Routes } else null,
+                            copyGrid = { copyGrid(open.place.grid) },
+                        ),
+                    )
                 }
             }
             // The held route's plan (the design's RoutePlan): a page of its own over the frame, with the frame's toasts.
@@ -442,6 +481,21 @@ fun MapHome(
         }
     }
 }
+
+/**
+ * A panel's toast. The Saved one ("Saved “NAME” to your Library", the design's Saved) offers *Open Library*, which opens the Library at [tab], when the account has
+ * that tab ([tabs]); every other toast is said as it is.
+ */
+internal suspend fun SnackbarHostState.panelToast(text: String, tab: LibraryTab, tabs: List<LibraryTab>, openLibrary: (LibraryTab) -> Unit) {
+    if (!offersLibrary(text) || tab !in tabs) {
+        showSnackbar(text, withDismissAction = true)
+        return
+    }
+    if (showSnackbar(text, actionLabel = "Open Library", withDismissAction = true, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) openLibrary(tab)
+}
+
+/** The map's menu as it was opened: where (its grid, and the press in the map's pixels), and what *Add route point here* would do then. */
+private data class OpenMapMenu(val place: MapMenuPlace, val at: IntOffset, val routePoint: MapPointAction)
 
 /** The night palette's darkened map: black over the imagery, the drawn layers and their labels. Nothing in it takes a touch. */
 @Composable

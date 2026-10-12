@@ -190,6 +190,15 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun `the saved toast's words offer the Library, and no other toast's do`() {
+        assertEquals("Saved “LZ HAWK” to your Library", savedToLibrary("LZ HAWK"))
+        assertTrue(offersLibrary(savedToLibrary("LZ HAWK")))
+        assertTrue(offersLibrary(savedToLibrary("LZ HAWK", replaced = true)))
+        assertFalse(offersLibrary("Saved TAXI with 3 points."))                                   // an import's
+        assertFalse(offersLibrary("Made “LZ HAWK 2”, a copy of “LZ HAWK”"))
+    }
+
+    @Test
     fun `a time is read with or without its offset, without as UTC, and nothing else`() {
         assertEquals("2026-10-12T09:00:00Z", LzNames.instantOf("2026-10-12T09:00:00Z").toString())
         assertEquals("2026-10-12T09:00:00.123456Z", LzNames.instantOf("2026-10-12T09:00:00.123456").toString())

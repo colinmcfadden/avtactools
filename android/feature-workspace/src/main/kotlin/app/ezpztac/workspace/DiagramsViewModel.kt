@@ -366,7 +366,7 @@ class DiagramsViewModel @Inject constructor(
             replacing?.let { deleteNow(it) }
             session.edit("Name") { it.copy(name = chosen) }
             session.flush()
-            _notices.tryEmit(if (replacing != null) "Saved \u201c$chosen\u201d to your Library, in place of the one there before" else "Saved \u201c$chosen\u201d to your Library")
+            _notices.tryEmit(savedToLibrary(chosen, replaced = replacing != null))
         }
     }
 

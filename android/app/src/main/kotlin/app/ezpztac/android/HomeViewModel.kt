@@ -47,6 +47,7 @@ import app.ezpztac.map.SlopeToggleUi
 import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.model.DragTarget
 import app.ezpztac.model.GraphicRef
+import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.symbols.SymbolRenderer
@@ -373,6 +374,18 @@ class HomeViewModel @Inject constructor(
         return mapDrag.start(target, at)
     }
 
+    /**
+     * A long press at [at] that picked nothing up: the design's map menu opens there, headed by the grid under the finger ([MapMenuPlace]). Null while taps are a boundary's
+     * corners, a route's points or a planning tool's placements, as a press picks nothing up then either. The map repeats the world on either side of the date line and
+     * gives a press there a longitude past ±180, which is brought back into range: it is the same place.
+     */
+    fun pressed(at: LatLon): MapMenuPlace? {
+        if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null) return null
+        if (at.lat !in -90.0..90.0 || !at.lon.isFinite()) return null                            // NaN is in no range
+        val lon = if (at.lon in -180.0..180.0) at.lon else ((at.lon + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+        return MapMenuPlace(LatLon(at.lat, lon), MgrsConverter.toMgrs(at.lat, lon)?.format() ?: "%.5f, %.5f".format(java.util.Locale.ROOT, at.lat, lon))
+    }
+
     /** Puts down whatever is held on the map (the bar's Done): a graphic, a threat, a point of a route, a local point. A route being worked on stays the route. */
     fun releaseHeld() {
         boundaryCorners.clear()
@@ -394,6 +407,9 @@ class HomeViewModel @Inject constructor(
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */
     fun baseMapChosen(id: String) = session.setQuietly { it.copy(view = it.view.copy(mapStyle = id)) }
 }
+
+/** Where a long press opened the map menu, and its grid (degrees where MGRS has none, at the poles), as the web's menu heads itself. */
+data class MapMenuPlace(val at: LatLon, val grid: String)
 
 private fun TerrainAnalysis.toSlopeImage(): SlopeImage? {
     val southWest = bounds.getOrNull(0) ?: return null

@@ -213,7 +213,7 @@ class PointsViewModel @Inject constructor(
                 // set would be in neither list, so settling the views ([LocalPoints]) would drop its colour and whether it is shown.
                 withTimeoutOrNull(LISTED_WITHIN_MS) { repository.observeSets().first { stored -> stored.any { it.set.id == uuid } } }
                 sessionPoints.remove(uuid)
-                _notices.tryEmit("Saved ${saved.name} to your Library.")
+                _notices.tryEmit(savedToLibrary(saved.name))
             }
         }
     }

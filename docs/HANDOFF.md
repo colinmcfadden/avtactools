@@ -7,7 +7,8 @@ that moves the "where things stand" or "next" sections.
 
 Last refreshed: 2026-10-12 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
-panel) and S7 the Library (with record times, database version 4), each reviewed on its own, every review's fixes in; S8 next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
+panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
+every review's fixes in; S9, the tablet, next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
 `docs/ANDROID_SCREENS_PLAN.md`; the screenshot guard and the 48-hour wipe went in S5).
 
 ---
@@ -28,7 +29,8 @@ panel) and S7 the Library (with record times, database version 4), each reviewed
   session, threats to the device, a mission to the Library; *Remove*, *Cancel*, *Import N files*), and the Imports panel (the sets of points, the missions with *Open in Routes*,
   the threat files with *Open in Threats*, the held point's card). S7 the Library: a page over the frame from the Library chip, *Browse all* and the conflict
   *Review*, with tabs, search, sort, *Open*, Rename, Duplicate (a mission with its file) and Delete; *Keep both* / *Replace* for a name taken, there and in the Save sheets;
-  every record now notes when it last changed (database version 4). **To try on a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet
+  every record now notes when it last changed (database version 4). S8: a long press on nothing opens the map's menu above and to the right of the press (New LZ/PZ
+  here, Add threat here, Add route point here, Copy grid), and a slow one-finger quick zoom no longer counts as a long press. **To try on a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet
   moves, dragging the sheet by its content, the status bar's icons, night mode's dimmed map, placing graphics by tapping the map while a tool's mode is on, and on the route's
   plan the keyboard, TalkBack and the date picker; none of that can be seen here. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
   `claude/jolly-wozniak-i7rlrq`, `feat/mission-packs`, the web menu redesign `feat/menu-redesign` and `fix/menu-redesign-ui`), then
@@ -79,8 +81,8 @@ panel) and S7 the Library (with record times, database version 4), each reviewed
 
 ## 2. Next work, in order
 
-1. **The screens**, S1–S7 done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*); S8, the map's long press and the toasts, next, then S9 and
-   P1–P4 (the owner tries the app on a device once they are done), and *T*
+1. **The screens**, S1–S8 done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*); S9, the tablet, next, then P1–P4 (the owner tries the
+   app on a device once they are done), and *T*
    (threats saved and shared: web and server first) beside S7, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
    AGENTS.md §17, *Mission packs on Android*). **The plan is `docs/ANDROID_SCREENS_PLAN.md`** (the owner's decisions, the steps S1–S9 and
    P1–P4, how each is checked), on `feat/android-screens`. First the redesigned shell (2), then the pack screens in it (3); both are drawn in

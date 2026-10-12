@@ -1483,6 +1483,78 @@ class RoutesViewModelTest {
         assertEquals("0 routes · 0 points", r.state.open!!.summary)
     }
 
+    // -- The map menu's Add route point here -------------------------------------------------------------------------------
+
+    @Test
+    fun `add route point here with nothing open starts a route there, in a new set, with that point down`() = runTest(dispatcher) {
+        val r = rig()
+        assertEquals(MapPointAction.StartRoute, r.model.pointAction())
+        r.model.addPointAt(a); settle()
+        assertEquals("SKETCHED ROUTES", r.state.open!!.name)
+        assertEquals(listOf(a), r.sketching.draft.value!!.points.map { LatLon(it.lat, it.lon) })
+        r.model.addAtCrosshair(b)
+        r.model.finishDrawing(); settle()
+        assertEquals(listOf(a, b), r.session.active.value!!.routes.single().points.map { LatLon(it.lat, it.lon) })
+    }
+
+    @Test
+    fun `add route point here in an empty set of sketched routes starts a route in it`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        assertEquals(MapPointAction.StartRoute, r.model.pointAction())
+        r.model.addPointAt(a); settle()
+        assertEquals("ONE", r.state.open!!.name)
+        assertEquals(1, r.state.sets.size)
+        assertEquals(1, r.sketching.draft.value!!.points.size)
+    }
+
+    @Test
+    fun `add route point here puts a named turn point at the end of the only route, or the one held, and holds it, as one step`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        r.model.startDrawing(); r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        r.selection.clear()
+        val only = r.session.active.value!!.routes.single()
+        assertEquals(MapPointAction.AddTo(only.name), r.model.pointAction())
+        val depth = r.session.undoDepth.value
+        r.model.newPointId = { "end-1" }
+        val far = LatLon(34.80, -84.00)
+        r.model.addPointAt(far); settle()
+        val last = r.session.active.value!!.routes.single().points.last()
+        assertEquals("end-1", last.id)
+        assertEquals(far, LatLon(last.lat, last.lon))
+        assertEquals(app.ezpztac.model.RoutePoint.KIND_AMPS, last.kind)
+        assertEquals("turn", last.ptType)
+        assertEquals(".CP", last.name)
+        assertEquals(app.ezpztac.data.RouteHeld(only.id, "end-1"), r.selection.held.value)
+        assertEquals(depth + 1, r.session.undoDepth.value)
+        assertEquals("Added a point to the end of ${only.name}.", r.notices.last())
+
+        // Two routes: the one held takes it; none held, the person is asked to choose.
+        r.model.startDrawing(); r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        val second = r.session.active.value!!.routes.last()
+        r.selection.select(second.id)
+        assertEquals(MapPointAction.AddTo(second.name), r.model.pointAction())
+        r.selection.clear()
+        assertEquals(MapPointAction.ChooseRoute, r.model.pointAction())
+        val before = r.session.active.value
+        r.model.addPointAt(far); settle()
+        assertEquals(before, r.session.active.value)
+        assertNotNull(r.state.error)
+    }
+
+    @Test
+    fun `add route point here is refused in an imported mission, whose routes are its file's`() = runTest(dispatcher) {
+        val r = rig()
+        openWithMission(r)
+        assertEquals(MapPointAction.Mission, r.model.pointAction())
+        val before = r.session.active.value
+        r.model.addPointAt(a); settle()
+        assertEquals(before, r.session.active.value)
+        assertNull(r.sketching.draft.value)
+        assertNotNull(r.state.error)
+    }
+
     // -- Sketching from the panel ---------------------------------------------------------------------------------------
 
     @Test

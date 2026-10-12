@@ -33,6 +33,16 @@ enum class LibraryTab(val label: String, val one: String, val many: String, val 
     POINTS("Local points", "saved point set", "saved point sets", "Search point sets by name"),
 }
 
+/**
+ * The Saved toast's words (the design's Saved): Saved “NAME” to your Library, said when an item is first named into it ([replaced]: in place of one that had the name).
+ * The frame offers *Open Library* beside them ([offersLibrary]).
+ */
+fun savedToLibrary(name: String, replaced: Boolean = false): String =
+    "Saved \u201c$name\u201d to your Library" + if (replaced) ", in place of the one there before" else ""
+
+/** Whether a panel's toast is the Saved one, which offers *Open Library*. */
+fun offersLibrary(notice: String): Boolean = notice.startsWith("Saved \u201c") && "\u201d to your Library" in notice
+
 /** How the Library is ordered, as the web's. */
 enum class LibrarySort(val label: String) { UPDATED("Recently updated"), NAME("Name A to Z") }
 
