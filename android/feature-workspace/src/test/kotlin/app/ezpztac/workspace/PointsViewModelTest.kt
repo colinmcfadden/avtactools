@@ -12,6 +12,15 @@ import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.ImportOutcome
+import app.ezpztac.data.SessionPointSets
+import app.ezpztac.data.ThreatFileImport
+import app.ezpztac.data.ThreatFileLog
+import app.ezpztac.data.ThreatPicture
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
+import app.ezpztac.data.MapFocus
+import app.ezpztac.data.MissionImporter
+import app.ezpztac.formats.MsnxReader
 import app.ezpztac.model.RoutePlan
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.SketchRoute
@@ -20,6 +29,7 @@ import app.ezpztac.sync.ConflictResolver
 import app.ezpztac.sync.Device
 import app.ezpztac.sync.FakeServer
 import app.ezpztac.sync.InMemorySyncStore
+import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.RecordingScheduler
 import app.ezpztac.sync.SyncEngine
@@ -27,8 +37,12 @@ import app.ezpztac.sync.SyncStatus
 import app.ezpztac.testing.Fixtures
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -42,7 +56,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/** The local points tab as the screens see it: importing, how each set is shown, and what the held point can do for the route being worked on. */
+/**
+ * The Imports panel as the screens see it: the sets of local points (saved, or held for this session) and how each is shown, the missions kept with their files,
+ * the threat files brought in, and what the held point can do for the route being worked on.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PointsViewModelTest {
     private val dispatcher = StandardTestDispatcher()
@@ -59,30 +76,54 @@ class PointsViewModelTest {
         override fun save(views: Map<String, PointSetView>) {}
     }
 
-    private class Rig(scope: TestScope) {
+    private class NoVault : ThreatVault {
+        override fun load(): ThreatPicture? = null
+        override fun save(picture: ThreatPicture) {}
+        override fun wipe() {}
+    }
+
+    /** A feed that hears of every change a moment late, as Room's does: it re-reads after its invalidation tracker runs, once the transaction is over. */
+    private class LateFeed(private val inner: RecordFeed, private val lateMs: Long) : RecordFeed {
+        override fun observe(kind: RecordKind) = inner.observe(kind).onEach { delay(lateMs) }
+    }
+
+    private class Rig(scope: TestScope, lateMs: Long = 0) {
         val resolutions = mutableListOf<Triple<RecordKind, String, SyncEngine.Resolution>>()
         val server = FakeServer()
         val device = Device("A", server)
         val store = device.store as InMemorySyncStore
-        val sets = PointSetRepository(device.repository, store, RecordingScheduler())
+        val sets = PointSetRepository(device.repository, if (lateMs > 0) LateFeed(store, lateMs) else store, RecordingScheduler())
         val views = PointSetViews(Memory())
-        val local = LocalPoints(sets, views)
+        val session = SessionPointSets()
+        val local = LocalPoints(sets, views, session)
         val selection = PointSelection()
-        val routeRepository = RouteRepository(device.repository, store, RecordingScheduler())
+        val routeRepository = RouteRepository(device.repository, store, RecordingScheduler(), StandardTestDispatcher(scope.testScheduler))
         val routeSession = RouteSession(routeRepository, scope.backgroundScope)
         val routeSelection = RouteSelection()
-        val model = PointsViewModel(sets, local, views, selection, routeSession, routeSelection, ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) })
-            .also { it.worker = StandardTestDispatcher(scope.testScheduler) }
+        val threats = ThreatStore(NoVault(), scope.backgroundScope, StandardTestDispatcher(scope.testScheduler)) { 1_000L }
+        val threatFiles = ThreatFileLog(threats)
+        val model = PointsViewModel(
+            sets, local, views, selection, routeSession, routeSelection, ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
+            session, routeRepository, threatFiles,
+        )
+        val said = mutableListOf<String>()
         val state get() = model.state.value
+
+        init {
+            scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.notices.collect { said += it } }
+        }
     }
 
-    private fun TestScope.rig() = Rig(this).also { advanceUntilIdle() }
+    private fun TestScope.rig(lateMs: Long = 0) = Rig(this, lateMs).also { advanceUntilIdle() }
 
     private fun TestScope.settle() = advanceUntilIdle()
 
     private val lps = Fixtures.bytes("sqlite/local-points.lps")
 
     private suspend fun Rig.imported(name: String = "NORTH GA.LPS") = (sets.import(lps, name) as ImportOutcome.Imported).set
+
+    /** A set read from the file and held for this session, as the import review's *This session* holds one. */
+    private fun Rig.heldForSession(name: String = "TAXI.LPS") = (sets.read(lps, name) as ImportOutcome.Imported).set.also { session.add(it) }
 
     private fun route(id: String, vararg names: String) = SketchRoute(
         id = id, name = id.uppercase(), color = "#FF453A",
@@ -95,77 +136,133 @@ class PointsViewModelTest {
         routeSession.open(made.id)
     }
 
-    // -- Importing ------------------------------------------------------------------------------------------------------
+    // -- What is listed ----------------------------------------------------------------------------------------------------
 
     @Test
     fun `with nothing saved there is nothing to show`() = runTest(dispatcher) {
         val r = rig()
         assertEquals(PointsUiState(), r.state)
+        assertEquals(0, r.state.itemCount)
     }
 
     @Test
-    fun `importing a file makes a set in the first colour, shown, and says what it did`() = runTest(dispatcher) {
+    fun `saved sets come first in their colours, then the session's, each marked where it is kept`() = runTest(dispatcher) {
         val r = rig()
-        r.model.importFile(lps, "NORTH GA.LPS")
-        settle()                                                                              // (the work is done off the main thread; the busy flag is the screen's test)
-        assertFalse(r.state.importing)
-        assertEquals("Imported NORTH GA: 9 points.", r.state.note)
-        assertNull(r.state.error)
+        r.imported("ONE.lps")
+        r.heldForSession("TAXI.lps")
+        r.imported("TWO.lps"); settle()
+        assertEquals(listOf("ONE", "TWO", "TAXI"), r.state.sets.map { it.name })
+        assertEquals(listOf(false, false, true), r.state.sets.map { it.inSession })
+        assertEquals(RouteColors.PALETTE.take(3), r.state.sets.map { it.color })
+        assertEquals(3, r.state.itemCount)
+    }
+
+    @Test
+    fun `a set says how many points it holds, with a comma, and that it is hidden`() {
+        val row = PointSetRowUi("a", "A", 1234, "#FF453A", visible = true, sync = SyncStatus.SYNCED, conflictOf = null)
+        assertEquals("1,234 points", row.meta)
+        assertEquals("1 point · hidden", row.copy(pointCount = 1, visible = false).meta)
+    }
+
+    @Test
+    fun `missions kept with their files are listed by file name, sets drawn here are not`() = runTest(dispatcher) {
+        val r = rig()
+        val bytes = Fixtures.bytes("msnx/template.msnx")
+        MissionImporter(r.routeRepository, r.routeSession, MapFocus()).import(bytes, MsnxReader.read(bytes), "GOAT_SUCKER.msnx")
+        r.routeRepository.create("SKETCHED ROUTES"); settle()
+        val mission = r.state.missions.single()
+        assertEquals("GOAT_SUCKER.msnx", mission.fileName)
+        assertEquals("GOAT_SUCKER", mission.name)
+        assertEquals("1 route", mission.meta)
+        assertEquals(1, r.state.itemCount)
+    }
+
+    @Test
+    fun `threat files are listed only for an account with threats, and go with the picture`() = runTest(dispatcher) {
+        val r = rig()
+        r.threatFiles.record("SA-6 site.ths", 7); settle()
+        assertTrue(r.state.threatFiles.isEmpty())                                             // no Threats panel to open them in
+        r.model.allowThreats(true); settle()
+        assertEquals(listOf(ThreatFileImport("SA-6 site.ths", 7)), r.state.threatFiles)
+        assertEquals(1, r.state.itemCount)
+        r.threats.wipe(); settle()                                                            // a sign-out, or Remove all: those threats are gone
+        assertTrue(r.state.threatFiles.isEmpty())
+    }
+
+    // -- This session's sets ----------------------------------------------------------------------------------------
+
+    @Test
+    fun `a session's set is saved to the Library under its own id and colour, and is no longer the session's`() = runTest(dispatcher) {
+        val r = rig()
+        val set = r.heldForSession("TAXI.lps"); settle()
+        val colour = r.state.sets.single().color
+        r.model.saveToLibrary(set.id); settle()
         val row = r.state.sets.single()
-        assertEquals("NORTH GA", row.name)
-        assertEquals(9, row.pointCount)
-        assertEquals(RouteColors.PALETTE[0], row.color)
-        assertTrue(row.visible)
-        assertEquals(SyncStatus.PENDING, row.sync)
+        assertEquals(set.id, row.uuid)
+        assertFalse(row.inSession)
+        assertEquals(colour, row.color)
+        assertTrue(r.session.sets.value.isEmpty())
+        assertEquals(listOf("TAXI"), r.store.transaction { records(RecordKind.POINT_SET) }.map { it.name })
+        assertEquals(listOf("Saved TAXI to your Library."), r.said)
     }
 
     @Test
-    fun `a file that is not local points is refused in words and no set is made`() = runTest(dispatcher) {
+    fun `a session's set saved to the Library keeps its colour and stays hidden, though the Library lists it a moment late`() = runTest(dispatcher) {
+        val r = rig(lateMs = 200)
+        r.imported("ONE.lps")
+        r.imported("TWO.lps")
+        val set = r.heldForSession("TAXI.lps"); settle()
+        r.model.recolor(set.id, RouteColors.PALETTE[5])
+        r.model.toggleVisible(set.id); settle()
+        r.model.saveToLibrary(set.id); settle()
+        val row = r.state.sets.single { it.uuid == set.id }
+        assertFalse(row.inSession)
+        assertEquals(RouteColors.PALETTE[5], row.color)                                       // not the first free colour a new set would take
+        assertFalse(row.visible)                                                              // and still off the map, as the person left it
+        assertEquals(listOf("Saved TAXI to your Library."), r.said)
+    }
+
+    @Test
+    fun `a session's set is let go, not deleted, and its held point is put down`() = runTest(dispatcher) {
         val r = rig()
-        r.model.importFile("not a database".toByteArray(), "junk.lps")
-        settle()
-        assertEquals("This doesn't look like an .LPS local points file.", r.state.error)
-        assertNull(r.state.note)
-        assertFalse(r.state.importing)
+        val set = r.heldForSession("TAXI.lps"); settle()
+        r.selection.select(set.id, set.points.first().id); settle()
+        r.model.removeFromSession(set.id); settle()
         assertTrue(r.state.sets.isEmpty())
+        assertNull(r.selection.held.value)
+        assertTrue(r.store.transaction { records(RecordKind.POINT_SET) }.isEmpty())
+        assertEquals(listOf("Removed TAXI from this session."), r.said)
     }
 
     @Test
-    fun `a failure reading the file from the picker is shown, and clears what was shown before`() = runTest(dispatcher) {
+    fun `a session's set is renamed where it is held, and nothing is saved`() = runTest(dispatcher) {
         val r = rig()
-        r.model.importFile(lps, "A.lps"); settle()
-        assertNotNull(r.state.note)
-        r.model.importFailed("That file could not be read."); settle()
-        assertEquals("That file could not be read.", r.state.error)
-        assertNull(r.state.note)
+        val set = r.heldForSession("TAXI.lps"); settle()
+        assertNull(r.model.rename(set.id, "  NIGHT TAXI  ")); settle()
+        assertEquals("NIGHT TAXI", r.state.sets.single().name)
+        assertTrue(r.state.sets.single().inSession)
+        assertTrue(r.store.transaction { records(RecordKind.POINT_SET) }.isEmpty())
+        assertEquals("A set needs a name.", r.model.rename(set.id, " "))
     }
 
     @Test
-    fun `starting another import clears the old message, and a message can be dismissed`() = runTest(dispatcher) {
+    fun `saving or letting go of a set that is not the session's does nothing`() = runTest(dispatcher) {
         val r = rig()
-        r.model.importFile("junk".toByteArray(), "junk.lps"); settle()
-        assertNotNull(r.state.error)
-        r.model.dismissError(); settle()
-        assertNull(r.state.error)
-        r.model.importFile(lps, "A.lps"); settle()
-        assertNotNull(r.state.note)
-        r.model.dismissNote(); settle()
-        assertNull(r.state.note)
-
-        r.model.importFile(lps, "B.lps"); settle()
-        assertNotNull(r.state.note)
-        r.model.importFile("junk".toByteArray(), "junk.lps"); settle()
-        assertNull(r.state.note)                                                              // what the last one said is gone once the next one has been
-        assertNotNull(r.state.error)
+        val set = r.imported(); settle()
+        r.model.saveToLibrary(set.id); r.model.removeFromSession(set.id); settle()
+        assertEquals(1, r.state.sets.size)
+        assertEquals(1, r.store.transaction { records(RecordKind.POINT_SET) }.size)
+        assertTrue(r.said.isEmpty())
     }
 
     @Test
-    fun `a set with one point says one point, and the next set takes the next colour`() = runTest(dispatcher) {
+    fun `a point of a session's set can be held and used like any`() = runTest(dispatcher) {
         val r = rig()
-        r.model.importFile(lps, "ONE.lps"); settle()
-        r.model.importFile(lps, "TWO.lps"); settle()
-        assertEquals(listOf("ONE", "TWO"), r.state.sets.map { it.name })
-        assertEquals(RouteColors.PALETTE.take(2), r.state.sets.map { it.color })
+        val set = r.heldForSession("TAXI.lps")
+        r.openRoutes(route("r1", ".SP", ".TGT")); settle()
+        r.model.select(set.id, set.points.first().id); settle()
+        assertEquals("TAXI", r.state.held!!.setName)
+        assertEquals("R1", r.state.held!!.addTo)
     }
 
     // -- A set ----------------------------------------------------------------------------------------------------
@@ -319,7 +416,7 @@ class PointsViewModelTest {
         assertEquals(3, route.points.size)
         assertEquals(RouteHeld("r1", "added-1"), r.routeSelection.held.value)
         assertEquals(depth + 1, r.routeSession.undoDepth.value)
-        assertEquals("Added ${point.name} to R1.", r.state.note)
+        assertEquals(listOf("Added ${point.name} to R1."), r.said)
 
         r.routeSession.undo(); settle()
         assertEquals(2, r.routeSession.active.value!!.route("r1")!!.points.size)
@@ -346,7 +443,7 @@ class PointsViewModelTest {
         assertEquals(listOf(".SP", ".RP"), listOf(route.points[0].name, route.points[2].name))          // the others are as they were
         assertEquals(3, route.points.size)
         assertEquals(depth + 1, r.routeSession.undoDepth.value)
-        assertNotNull(r.state.note)
+        assertEquals(listOf("Moved the route point onto ${point.name} (NORTH GA)."), r.said)
     }
 
     @Test

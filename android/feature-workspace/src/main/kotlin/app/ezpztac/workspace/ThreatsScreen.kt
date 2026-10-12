@@ -129,12 +129,13 @@ class ThreatsActions(
 )
 
 /**
- * The Threats panel (docs/native-design: Threats) and the form for one threat, a full-screen dialog over everything. Files come in through Android's picker
- * and leave only through the system share sheet ([onExport]).
+ * The Threats panel (docs/native-design: Threats) and the form for one threat, a full-screen dialog over everything. Files come in through the import review
+ * ([onImport] opens the picker for it), as every file does, and leave only through the system share sheet ([onExport]).
  */
 @Composable
 fun ThreatsHost(
     onExport: (ExportFile) -> Unit,
+    onImport: () -> Unit,
     crosshair: LatLon?,
     modifier: Modifier = Modifier,
     crosshairGrid: String? = null,
@@ -142,23 +143,9 @@ fun ThreatsHost(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val share by rememberUpdatedState(onExport)
-    val context = LocalContext.current
-    val resolver = context.contentResolver
-    val scope = rememberCoroutineScope()
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            when (val picked = withContext(Dispatchers.IO) { PickedFile.read(resolver, uri) }) {
-                is PickedFile.Result.Read -> viewModel.importFile(picked.bytes)
-                is PickedFile.Result.Failed -> viewModel.importFailed(
-                    if (picked.message == PickedFile.TOO_BIG) "That file is too large to be a threat picture." else picked.message,
-                )
-            }
-        }
-    }
     LaunchedEffect(viewModel) { viewModel.exports.collect { share(it) } }
     val actions = ThreatsActions(
-        importFile = { picker.launch(arrayOf("*/*")) }, export = viewModel::export, beginAdd = { viewModel.beginAdd(crosshair) },
+        importFile = onImport, export = viewModel::export, beginAdd = { viewModel.beginAdd(crosshair) },
         beginEdit = viewModel::beginEdit, updateDraft = viewModel::updateDraft, saveEdit = viewModel::saveEdit, cancelEdit = viewModel::cancelEdit,
         select = viewModel::select, toggleVisible = viewModel::toggleVisible, remove = viewModel::remove, removeEditing = viewModel::removeEditing,
         formNudge = viewModel::formNudge, formToCrosshair = { viewModel.formToCrosshair(crosshair) }, formToText = viewModel::formToText,
@@ -183,10 +170,7 @@ fun ThreatsContent(state: ThreatsUiState, actions: ThreatsActions, modifier: Mod
         KeptNotice()
         Row(Modifier.padding(top = Tokens.Spacing.xs.dp), horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             PillButton("Add threat", onClick = actions.beginAdd, icon = EzpzIcons.addLocationAlt, modifier = Modifier.weight(1f))
-            PillButton(
-                if (state.importing) "Reading…" else "Import .ths", onClick = actions.importFile, icon = EzpzIcons.fileOpen, style = PillStyle.Tonal,
-                enabled = !state.importing, modifier = Modifier.weight(1f),
-            )
+            PillButton("Import .ths", onClick = actions.importFile, icon = EzpzIcons.fileOpen, style = PillStyle.Tonal, modifier = Modifier.weight(1f))
         }
         Text(
             if (crosshairGrid != null) "Add threat puts one at the crosshair, $crosshairGrid." else "Add threat puts one at the crosshair.",
@@ -271,7 +255,7 @@ private fun KeptNotice() {
 
 /** A choice that cannot be taken back, asked about first (the design's Confirm). Cancel and the choice are both plain: neither is made the easy one. */
 @Composable
-private fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
+internal fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text(title) },

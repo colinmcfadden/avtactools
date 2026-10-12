@@ -52,6 +52,7 @@ import app.ezpztac.android.packs.InviteNotices
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
+import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
@@ -80,8 +81,12 @@ import app.ezpztac.workspace.LzPage
 import app.ezpztac.workspace.LzPanelHost
 import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.HeldObjectBarHost
-import app.ezpztac.workspace.IncomingHost
-import app.ezpztac.workspace.PointsHost
+import app.ezpztac.workspace.ImportReviewHost
+import app.ezpztac.workspace.ImportSheet
+import app.ezpztac.workspace.ImportsHost
+import app.ezpztac.workspace.IncomingViewModel
+import app.ezpztac.workspace.PointsViewModel
+import app.ezpztac.workspace.importsLine
 import app.ezpztac.workspace.RoutePlanHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesFooterHost
@@ -133,7 +138,7 @@ fun MapHome(
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
     val threatScene by home.threatScene.collectAsStateWithLifecycle()
-    val counts by home.counts.collectAsStateWithLifecycle()
+    val threatCounts by home.counts.collectAsStateWithLifecycle()
     val night by display.night.collectAsStateWithLifecycle()
     val threatsModel: ThreatsViewModel = hiltViewModel()                  // the threats panel and the mission export share one
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
@@ -146,7 +151,14 @@ fun MapHome(
     val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val snackbars = remember { androidx.compose.material3.SnackbarHostState() }
-    val importFiles = rememberFileImport()
+    // Every file comes in through one review, however it arrives: chosen here (the Import menu, the panels' own Import), or opened with the app elsewhere.
+    val incoming: IncomingViewModel = hiltViewModel()
+    val importFiles = rememberFileImport(incoming)
+    var importMenu by rememberSaveable { mutableStateOf(false) }
+    // The Imports panel's state: its count is the tab's badge and its header's line.
+    val importsModel: PointsViewModel = hiltViewModel()
+    val imports by importsModel.state.collectAsStateWithLifecycle()
+    val counts = threatCounts.copy(imports = imports.itemCount)
     // The LZ/PZ panel's state: which of its pages is showing (for the header and Back), and its toasts.
     val diagrams: DiagramsViewModel = hiltViewModel()
     val lz by diagrams.state.collectAsStateWithLifecycle()
@@ -177,8 +189,11 @@ fun MapHome(
     LaunchedEffect(threatsOn) { home.allowThreats(threatsOn) }
     LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
     LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
-    // A file another app opened with this one (Files, a mail, the share sheet, or Import) is put to the person here: nothing is imported until they accept.
-    IncomingHost(threatsAllowed = threatsOn)
+    // A file another app opened with this one (Files, a mail, the share sheet), or chosen with Import, is put to the person here: nothing is imported until they say so.
+    ImportReviewHost(threatsAllowed = threatsOn, viewModel = incoming)
+    if (importMenu) ImportSheet(threatsAllowed = threatsOn, onChoose = importFiles, onDismiss = { importMenu = false })
+    LaunchedEffect(incoming) { incoming.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    LaunchedEffect(importsModel) { importsModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // An invitation link: said above the sheet, in the frame's own toasts.
     InviteNotices(invite, inviteAttempt, snackbars, onRetry = onRetryInvite, onDismiss = onDismissInvite)
     // What the LZ/PZ panel says once it has happened (an LZ/PZ named), in the same toasts.
@@ -219,8 +234,12 @@ fun MapHome(
                 head = when (current) {
                     Panel.Lz -> lzHead(lz) { diagrams.showPage(it) }
                     Panel.Threats -> PanelHead(current.label, if (counts.threats == 0) "This device only" else "${counts.threats} on the map · this device only")
-                    Panel.Imports -> PanelHead(current.label, when (counts.imports) { 0 -> null; 1 -> "1 set of local points"; else -> "${counts.imports} sets of local points" })
+                    Panel.Imports -> PanelHead(current.label, importsLine(imports.itemCount))
                     Panel.Routes -> routesHead(routes) { routesModel.showPage(it) }
+                },
+                // The Imports panel's Import, beside its title (the design's): the same menu as the frame's chip.
+                headerActions = {
+                    if (current == Panel.Imports) PillButton("Import", onClick = { importMenu = true }, icon = EzpzIcons.fileOpen)
                 },
                 floatingPx = { floating },
                 // The Routes panel's foot: Sketch a route and Import .msnx, pinned under the sets open now.
@@ -245,8 +264,17 @@ fun MapHome(
                                 crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), viewModel = diagrams,
                             )
                             Panel.Routes -> RoutesHost(crosshair = state.center, threatCount = counts.threats, viewModel = routesModel)
-                            Panel.Threats -> ThreatsHost(onExport = { ShareExport.share(context, it) }, crosshair = state.center, crosshairGrid = state.readout?.mgrs, viewModel = threatsModel)
-                            Panel.Imports -> PointsHost()
+                            Panel.Threats -> ThreatsHost(
+                                onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
+                                viewModel = threatsModel,
+                            )
+                            // A mission opens in Routes and a threat file's threats are in Threats: each panel, shown at the height the sheet is.
+                            Panel.Imports -> ImportsHost(
+                                threatsAllowed = threatsOn,
+                                onOpenMission = if (Panel.Routes in panels) { uuid -> routesModel.openSet(uuid); chosen = Panel.Routes } else null,
+                                onOpenThreats = { chosen = Panel.Threats },
+                                viewModel = importsModel,
+                            )
                         }
                         Spacer(Modifier.height(Tokens.Spacing.lg.dp))
                     }
@@ -274,7 +302,7 @@ fun MapHome(
                     chips = {
                         // The workspace is the person's own until mission packs have their switcher (P1); then the chip opens it.
                         MapChip(EzpzIcons.person, "Personal", description = "Workspace: Personal")
-                        MapChip(EzpzIcons.fileOpen, "Import", description = "Import a mission, local points or threats", onClick = importFiles)
+                        MapChip(EzpzIcons.fileOpen, "Import", description = "Import a mission, local points or threats", onClick = { importMenu = true })
                     },
                     sheet = frame.sheet,
                     // Over the readout, above the sheet: only there while a boundary or a route is being drawn (never both), or something on the map is held.

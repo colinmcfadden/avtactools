@@ -113,7 +113,7 @@ Web numbers are the 20 screens of the web redesign (`docs/MENU_REDESIGN.md` §11
 
 - The map, crosshair and readout exist in `feature-map` (`MapScreen`, `EzpzMap`, `MapProjection`; the readout pill and crosshair centring are already there). The overlays for LZ graphics, routes, points and threats exist.
 - Today's shell (`app`, `MapHome`) is a bottom sheet with Diagrams, Aircraft, Routes, Local points and Threats sections. The redesign replaces that with the LZ/PZ, Routes, Threats, Imports (and Pack) navigation, the workspace chip, an Import entry and a Library screen.
-- Existing pieces to reuse: `DiagramsViewModel` (open list, rename, delete, conflicts), `GraphicsViewModel` (tools, inspector), `AircraftViewModel` (aircraft picker), `RoutesViewModel` and `RoutePlanScreen.kt` (route sets, nav log), `ThreatsViewModel` (threats, `.ths` import and export), `PointsViewModel` and `IncomingHost` (imports), `ConflictPanel`.
+- Existing pieces to reuse: `DiagramsViewModel` (open list, rename, delete, conflicts), `GraphicsViewModel` (tools, inspector), `AircraftViewModel` (aircraft picker), `RoutesViewModel` and `RoutePlanScreen.kt` (route sets, nav log), `ThreatsViewModel` (threats, `.ths` import and export), `PointsViewModel` and `IncomingViewModel` (imports: S6 built the Imports panel and the import review on them), `ConflictPanel`.
 - New: the Library screen over the synced records, the import review across file kinds, the Imports panel, the save dialog (see "Save model" above), and everything for Mission Packs.
 - `core-designsystem` takes its colours from `contracts/tokens/tokens.json`; see "Palette" above.
 - iOS is not started.

@@ -67,22 +67,36 @@ class PointSetRepository @Inject constructor(
     }
 
     /**
-     * Reads [bytes], the `.LPS` file called [fileName], and saves what it holds as a new set named for the file. A file that is not local points is
-     * refused with words for the person, and nothing is saved.
+     * Reads [bytes], the `.LPS` file called [fileName], and saves what it holds as a new set named [name] (blank: named for the file). A file that is not
+     * local points is refused with words for the person, and nothing is saved.
      */
-    suspend fun import(bytes: ByteArray, fileName: String): ImportOutcome {
+    suspend fun import(bytes: ByteArray, fileName: String, name: String = ""): ImportOutcome = when (val read = read(bytes, fileName, name)) {
+        is ImportOutcome.Imported -> ImportOutcome.Imported(save(read.set))
+        is ImportOutcome.Refused -> read
+    }
+
+    /**
+     * Reads [bytes], the `.LPS` file called [fileName], into a set named [name] (blank: named for the file), **without saving it**: what the import review's
+     * *This session* holds. [ImportOutcome.Imported] here means read. A file that is not local points is refused with words for the person.
+     */
+    fun read(bytes: ByteArray, fileName: String, name: String = ""): ImportOutcome {
         val parsed = try {
             LpsReader.read(bytes, fileName)
         } catch (e: FormatException) {
             return ImportOutcome.Refused(e.message ?: "This doesn't look like an .LPS local points file.")
         }
         // The server refuses a set with no name; a file called ".lps" has none.
-        val named = parsed.copy(name = parsed.name.trim().ifEmpty { DEFAULT_NAME })
+        val named = parsed.copy(name = name.trim().ifEmpty { parsed.name.trim() }.ifEmpty { DEFAULT_NAME })
         val uuid = java.util.UUID.randomUUID().toString()
-        val set = PointSets.fromLps(uuid, named) { index -> "lps-$index-${randomSuffix()}" }
-        sync.create(RecordKind.POINT_SET, set.name, PointSets.serialize(set), uuid = uuid)
+        return ImportOutcome.Imported(PointSets.fromLps(uuid, named) { index -> "lps-$index-${randomSuffix()}" })
+    }
+
+    /** Saves [set] (read, or held for a session) as a set of the Library, synced like any, under its own id, and says what was saved. */
+    suspend fun save(set: PointSet): PointSet {
+        val named = set.copy(name = set.name.trim().ifEmpty { DEFAULT_NAME })
+        sync.create(RecordKind.POINT_SET, named.name, PointSets.serialize(named), uuid = named.id)
         scheduler.requestSync()
-        return ImportOutcome.Imported(set)
+        return named
     }
 
     /** The set, or null if there is none (deleted, or never here). */

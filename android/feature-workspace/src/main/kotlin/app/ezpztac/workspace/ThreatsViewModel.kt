@@ -118,7 +118,6 @@ data class ThreatsUiState(
     val threats: List<ThreatRowUi> = emptyList(),
     val held: HeldThreatUi? = null,
     val editing: ThreatEditUi? = null,
-    val importing: Boolean = false,
     val exporting: Boolean = false,
     val error: String? = null,
     val note: String? = null,
@@ -137,7 +136,6 @@ class ThreatsViewModel @Inject constructor(
 ) : ViewModel() {
     private data class Local(
         val editing: ThreatEditUi? = null,
-        val importing: Boolean = false,
         val exporting: Boolean = false,
         val error: String? = null,
         val note: String? = null,
@@ -173,7 +171,7 @@ class ThreatsViewModel @Inject constructor(
             editing = local.editing?.let { e ->
                 e.copy(grid = gridOf(e.at), mask = e.id?.let { id -> entries.firstOrNull { it.id == id } }?.let { maskOf(it, maskStates[it.id]) })
             },
-            importing = local.importing, exporting = local.exporting, error = local.error, note = local.note,
+            exporting = local.exporting, error = local.error, note = local.note,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatsUiState())
 
@@ -292,32 +290,6 @@ class ThreatsViewModel @Inject constructor(
             if (local.value.editing?.id == id) cancelEdit()
         }
     }
-
-    fun importFile(bytes: ByteArray) {
-        local.update { it.copy(importing = true, error = null, note = null) }
-        viewModelScope.launch {
-            val result = try {
-                withContext(worker) { transfer.import(bytes) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                ThreatTransfer.Imported.Refused("That file could not be read.")
-            }
-            when (result) {
-                is ThreatTransfer.Imported.Refused -> local.update { it.copy(importing = false, error = result.message) }
-                is ThreatTransfer.Imported.Threats -> {
-                    if (result.threats.isEmpty()) local.update { it.copy(importing = false, error = "That .ths file contains no threats.") }
-                    else {
-                        val ids = store.addAll(result.threats)
-                        selection.select(ids.last())
-                        local.update { it.copy(importing = false, note = "Imported ${count(result.threats.size)}.") }
-                    }
-                }
-            }
-        }
-    }
-
-    fun importFailed(message: String) = local.update { it.copy(importing = false, error = message, note = null) }
 
     fun export(baseName: String? = null) {
         local.update { it.copy(exporting = true, error = null) }

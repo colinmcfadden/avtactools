@@ -27,6 +27,9 @@ import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.IncomingFiles
+import app.ezpztac.data.SessionPointSets
+import app.ezpztac.model.PointSet
+import app.ezpztac.model.SetPoint
 import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSession
@@ -234,7 +237,7 @@ class AppViewModelTest {
         val backend: FakeBackend, val accounts: FakeAccounts, val scheduler: FakeScheduler, val model: AppViewModel, val tokens: FakeTokens = FakeTokens(),
         val repository: DiagramRepository, val session: DiagramSession, val routes: RouteRepository, val routeSession: RouteSession,
         val weather: WeatherService, val weatherCache: KeptWeather, val threats: ThreatStore, val threatVault: KeptThreats, val clock: MutableClock, val incoming: IncomingFiles,
-        val packs: RecordingPacks, val store: Flaky, val invites: FakeInvites, val minimum: KeptMinimum,
+        val packs: RecordingPacks, val store: Flaky, val invites: FakeInvites, val minimum: KeptMinimum, val sessionPoints: SessionPointSets,
         /** The shell's saved state, as the activity keeps it through a turn of the phone and the process being ended. */
         val saved: SavedStateHandle,
         private val makeShell: (SavedStateHandle) -> AppViewModel,
@@ -269,18 +272,19 @@ class AppViewModelTest {
         val threats = ThreatStore(threatVault, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), StandardTestDispatcher(testScheduler)) { clock.now }
         var cleared = 0
         val incoming = IncomingFiles()
+        val sessionPoints = SessionPointSets()
         val packs = RecordingPacks().apply(setUpPacks)
         val invites = FakeInvites()
         val kept = KeptMinimum(minimum)
         val shell = { saved: SavedStateHandle ->
-            AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, tokens, packs, invites, kept, saved, version)
+            AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, sessionPoints, tokens, packs, invites, kept, saved, version)
         }
         val saved = SavedStateHandle()
         val model = shell(saved)
         advanceUntilIdle()
         return Rig(
             backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock,
-            incoming, packs, store, invites, kept, saved, shell,
+            incoming, packs, store, invites, kept, sessionPoints, saved, shell,
         ) { cleared }
     }
 
@@ -492,6 +496,17 @@ class AppViewModelTest {
         r.model.signOut()
         advanceUntilIdle()
         assertTrue(r.incoming.files.value.isEmpty())
+    }
+
+    @Test
+    fun `signing out lets go of the points brought in for this session only, and being signed in keeps them`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.sessionPoints.add(PointSet(id = "s1", name = "KGVL TAXI POINTS", points = listOf(SetPoint(id = "p1", name = "A", description = "", group = "", icon = "", elevationFt = null, lat = 34.0, lon = -84.0))))
+        advanceUntilIdle()
+        assertEquals(1, r.sessionPoints.sets.value.size)                                        // the session is theirs while they are signed in
+        r.model.signOut()
+        advanceUntilIdle()
+        assertTrue(r.sessionPoints.sets.value.isEmpty())                                         // the next person to sign in does not see them
     }
 
     @Test

@@ -189,10 +189,8 @@ class HomeViewModel @Inject constructor(
         ThreatScene.of(entries, held, pictures)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatScene.EMPTY)
 
-    /** What the panel bar's tabs carry: the threats in the picture on this device, and the sets of local points brought in. */
-    val counts: StateFlow<PanelCounts> = combine(threats.entries, localPoints.sets, threatsAllowed) { entries, sets, allowed ->
-        PanelCounts(threats = if (allowed) entries.size else 0, imports = sets.size)
-    }
+    /** What the Threats tab carries: the threats in the picture on this device. The Imports tab's count is its panel's own ([PanelCounts.imports]). */
+    val counts: StateFlow<PanelCounts> = combine(threats.entries, threatsAllowed) { entries, allowed -> PanelCounts(threats = if (allowed) entries.size else 0) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, PanelCounts())
 
     /**

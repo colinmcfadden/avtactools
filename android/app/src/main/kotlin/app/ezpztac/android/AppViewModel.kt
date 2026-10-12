@@ -17,6 +17,7 @@ import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.IncomingFiles
+import app.ezpztac.data.SessionPointSets
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.WeatherService
@@ -62,6 +63,7 @@ class AppViewModel @Inject constructor(
     private val threats: ThreatStore,
     private val exports: ExportCleaner,
     private val incoming: IncomingFiles,
+    private val sessionPoints: SessionPointSets,
     private val mapTokens: MapTokenSink,
     private val packs: PackRuntime,
     invites: PackInvites,
@@ -210,6 +212,10 @@ class AppViewModel @Inject constructor(
         if (auth !is AuthState.SignedIn) {
             if (auth is AuthState.SignedOut) {
                 invitation.forget()                                              // what became of a link names a pack: it does not stay for the next person
+                // First, before anything here waits: a file another app handed over and nobody has answered (held in memory), and the points brought in for this
+                // session only. An import still under way asks for these before it lands ([IncomingFiles.generation]), so none of it reaches the next person.
+                incoming.clear()
+                sessionPoints.clear()
                 sync.cancelAll()
                 closeOpenDocuments()
                 // Only once the open documents are written: the last change to a pack's item reaches the pack's queue first. What waits
@@ -219,7 +225,6 @@ class AppViewModel @Inject constructor(
                 weather.clear()                                                  // where this account's landing zones are does not stay for the next person
                 threats.wipe()                                                   // nor does the threat picture: it is the most sensitive thing on the device
                 exports.clear()                                                  // nor a .ths or mission that was shared: they are in the clear in the cache
-                incoming.clear()                                                 // nor a file another app handed over and nobody has answered: it is held in memory
             }
             return
         }

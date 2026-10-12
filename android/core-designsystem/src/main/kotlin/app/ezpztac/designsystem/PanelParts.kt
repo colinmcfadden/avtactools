@@ -61,7 +61,7 @@ fun StateChip(text: String, tone: StatusTone, modifier: Modifier = Modifier, ico
     val color = toneColor(tone)
     val neutral = tone == StatusTone.Neutral
     Surface(
-        modifier = modifier.height(28.dp),
+        modifier = modifier.heightIn(min = 28.dp),                                        // grows with the person's text, never cuts it
         shape = RoundedCornerShape(Tokens.Radius.sm.dp),
         color = if (neutral) Color.Transparent else color.copy(alpha = CHIP_TINT),
         contentColor = color,
@@ -158,7 +158,7 @@ fun PillButton(
             Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(20.dp))
             Box(Modifier.size(Tokens.Spacing.sm.dp))
         }
-        Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium), maxLines = 1)
+        Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
     val sized = modifier.heightIn(min = 48.dp)
     when (style) {

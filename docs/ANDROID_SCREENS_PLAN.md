@@ -1,7 +1,8 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; to be tried on a device; S6 next. **Threats may now be saved and shared** (the owner, 2026-10-12): a step
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; S7 next. The owner tries the app on a device once
+the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
 reviewed independently, fixed, and committed only with the full build green. **Where this plan disagrees with the code, the code wins**
@@ -216,10 +217,23 @@ Library's tab (S7). To decide when it is planned: whether a saved set is the who
 picture); whether several can be open at once, as route sets are; and what the viewshed, KMZ and QR stores keep once threats are records. AGENTS.md §2
 records the decision.
 
-**S6 — Import.** The Import menu (`Import`, a modal bottom sheet: `.msnx`, `.LPS`, `.ths`), the import review (`ImportReview`: each
-file, where it goes, the choices locked where a kind has only one place), and the Imports panel (`Imports`: what was brought in, grouped
-by kind, with visibility and *Open in Routes* / *Open in Threats*). One way in for a file however it arrives, as on the web; today's
-`IncomingHost` dialog becomes the review.
+**S6 — Import. Built.** The Import menu (`ImportSheet.kt`, a modal bottom sheet from the frame's Import chip and the Imports panel's header: a mission, local points, threats for an
+account with them; each opens the system picker), the import review (`ImportReview.kt` over `IncomingViewModel`: every file waiting, from the picker or another app, with what it is,
+how much is in it and where it goes, the choice locked where a kind has one place; *Remove* on each, *Cancel* and *Import N files*), and the Imports panel (`ImportsPanel.kt` over
+`PointsViewModel`: the sets of points with *Library* or *This session*, hide, and *More*; the missions kept with their files and *Open in Routes*; the threat files and *Open in
+Threats*; the held point's card). The Threats panel's *Import .ths* and Routes' *Import .msnx* open the picker straight into the review. **Amended while building:**
+- **Where each goes:** local points to the Library or *This session* (held in memory for the session, never saved; `SessionPointSets`); threats to this device only (until *T*); a mission to
+  the Library with its file (*This session* would need a session route set, which does not exist). No overlays (owner decision 2), no pack destination (the P-steps).
+- **Every file can be taken out of the review**, not only one that cannot be brought in, so a person can bring in two of three.
+- **The panel lists every mission in the Library** (the Library page, S7, will too): an imported mission is its file, kept in the Library, and that is what the design's row says.
+- **The design's notes on threats say what is true now** (kept on this device until sign-out, not saved or shared yet), not the 48 hours.
+**Reviewed** (one independent review, 2026-10-12: 14 reported, 9 survived an adversarial check, 7 distinct; each fix has a test, each broken to see it fail): *Save to Library* losing a
+set's colour and hidden state because the Library lists a save a moment late; a session's set read, or a mission brought in, across a sign-out reaching the next person; the review's name
+coming back from saved state for another file after the process was ended; a cancelled review opening again for files of the same pick still being read; place tags and the
+segmented choice cut at the largest text; outcome toasts timing out under the review; and a rename left focused under *Open in Routes* / *Open in Threats*. Tests: `IncomingViewModelTest`,
+`PointsViewModelTest`, `SessionImportsTest`, `ImportReviewTest`, `ImportsPanelTest`, `ImportsNarrowTest` (360 dp at 1.3 and 2.0), `AppViewModelTest`, and the pictures
+(`ImportsScreenshotTest`, beside AP-Import, AP-ImportReview and AP-Imports).
+**Not verifiable here:** the picker and a slow provider, the sheet over the real map, the keyboard in the review, TalkBack.
 
 **S7 — The Library.** A full page (`Library`: LZ/PZ, Routes and Local points tabs with counts, search by name or grid, sort, *Open* into
 the session, and Rename, Duplicate, Delete; *Add to Mission Pack…* waits for P4), and the confirmations (`Confirm`: close with unsaved

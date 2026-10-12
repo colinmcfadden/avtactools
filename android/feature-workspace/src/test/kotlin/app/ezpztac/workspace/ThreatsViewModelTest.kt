@@ -150,17 +150,6 @@ class ThreatsViewModelTest {
     }
 
     @Test
-    fun `importing an AMPS file adds its threats and holds the last one`() = runTest(dispatcher) {
-        val r = rig()
-        r.model.importFile(Fixtures.bytes("sqlite/threats.ths")); advanceUntilIdle()
-        assertFalse(r.state.importing)
-        assertTrue(r.state.threats.isNotEmpty())
-        assertEquals("Imported ${r.state.threats.size} threats.", r.state.note)
-        assertEquals(r.state.threats.last().id, r.selection.held.value)
-        assertNull(r.state.error)
-    }
-
-    @Test
     fun `sharing builds one ths event and an empty picture is refused`() = runTest(dispatcher) {
         val r = rig()
         r.model.export(); advanceUntilIdle()

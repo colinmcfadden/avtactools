@@ -24,13 +24,17 @@ class MissionImporter @Inject constructor(
     private val session: RouteSession,
     private val focus: MapFocus,
 ) {
-    /** [bytes] is the file and [mission] what was read out of it (so it is read once). */
-    suspend fun import(bytes: ByteArray, mission: Mission, fileName: String): MissionImportOutcome {
+    /**
+     * [bytes] is the file and [mission] what was read out of it (so it is read once). [stillWanted] is asked before the mission is opened and the map taken to it:
+     * a sign-out while it was being kept leaves it kept, for that account, and opens nothing on the next person's map.
+     */
+    suspend fun import(bytes: ByteArray, mission: Mission, fileName: String, stillWanted: () -> Boolean = { true }): MissionImportOutcome {
         if (mission.routes.none { it.points.isNotEmpty() }) return MissionImportOutcome.Refused("This mission has no routes with points to bring in.")
         val uuid = java.util.UUID.randomUUID().toString()
         var n = 0
         val made = MissionRoutes.toMissionSketchRoutes(mission, emptyList()) { "mission-${uuid.take(8)}-${n++}" }
         val set = routes.createMission(RouteSet(id = uuid, name = nameOf(fileName), routes = made), fileName, bytes)
+        if (!stillWanted()) return MissionImportOutcome.Imported(set, opened = false)
         val opened = session.open(set.id)
         MissionRoutes.extentOf(made)?.let(focus::show)
         return MissionImportOutcome.Imported(set, opened)

@@ -94,12 +94,6 @@ class ThreatsScreenTest {
     }
 
     @Test
-    fun `a file being read says so, and cannot be started again`() {
-        show(ThreatsUiState(importing = true))
-        compose.onNodeWithText("Reading…").assertIsNotEnabled()
-    }
-
-    @Test
     fun `each threat is a row with its reach and terrain mask, and a hidden one says so`() {
         show(ThreatsUiState(threats = listOf(sa8, zsu)))
         compose.onNodeWithText("On the map · 2").assertIsDisplayed()

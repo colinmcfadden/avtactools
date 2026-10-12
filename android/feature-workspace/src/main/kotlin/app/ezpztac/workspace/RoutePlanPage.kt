@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -743,7 +746,7 @@ private fun TypeMenu(title: String, ptType: String?, onChoose: (String) -> Unit)
  * the words at the design's width: a 48 dp pill, the chosen part tinted with a tick. A screen reader hears a group of choices, each by its words ([words]).
  */
 @Composable
-private fun Segmented(
+internal fun Segmented(
     choices: List<Pair<String, String>>,
     selected: String,
     description: String,
@@ -753,19 +756,20 @@ private fun Segmented(
 ) {
     val outline = MaterialTheme.colorScheme.outline
     Row(
-        modifier.heightIn(min = 48.dp).border(1.dp, outline, RoundedCornerShape(50)).padding(1.dp)
+        // As tall as its tallest part, so each part's tint fills it: at the largest text a label takes two lines rather than being cut.
+        modifier.height(IntrinsicSize.Min).heightIn(min = 48.dp).border(1.dp, outline, RoundedCornerShape(24.dp)).padding(1.dp)
             .semantics { contentDescription = description }.selectableGroup(),
     ) {
         choices.forEachIndexed { i, (label, value) ->
             if (i > 0) VerticalDivider(Modifier.fillMaxHeight(), color = outline)
             val chosen = value == selected
             val shape = when (i) {
-                0 -> RoundedCornerShape(topStartPercent = 50, bottomStartPercent = 50)
-                choices.lastIndex -> RoundedCornerShape(topEndPercent = 50, bottomEndPercent = 50)
+                0 -> RoundedCornerShape(topStart = 23.dp, bottomStart = 23.dp)
+                choices.lastIndex -> RoundedCornerShape(topEnd = 23.dp, bottomEnd = 23.dp)
                 else -> RoundedCornerShape(0)
             }
             Row(
-                Modifier.weight(1f).heightIn(min = 46.dp)
+                Modifier.weight(1f).fillMaxHeight().heightIn(min = 46.dp)
                     .background(if (chosen) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, shape)
                     .selectable(selected = chosen, role = Role.RadioButton) { if (!chosen) onSelect(value) }
                     .semantics { words[value]?.let { contentDescription = "$label, $it" } }
@@ -774,9 +778,9 @@ private fun Segmented(
             ) {
                 if (chosen) Icon(painterResource(EzpzIcons.check), contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
                 Text(
-                    label, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                    label, style = MaterialTheme.typography.labelLarge, maxLines = 2, textAlign = TextAlign.Center,
                     color = if (chosen) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = if (chosen) 2.dp else 0.dp),
+                    modifier = Modifier.padding(start = if (chosen) 2.dp else 0.dp, top = 2.dp, bottom = 2.dp),
                 )
             }
         }

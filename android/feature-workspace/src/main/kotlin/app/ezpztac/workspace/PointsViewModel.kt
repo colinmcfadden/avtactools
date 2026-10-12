@@ -2,15 +2,18 @@ package app.ezpztac.workspace
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.ezpztac.data.ImportOutcome
 import app.ezpztac.data.LoadedPointSet
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetViews
 import app.ezpztac.data.RouteHeld
+import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
+import app.ezpztac.data.SessionPointSets
+import app.ezpztac.data.ThreatFileImport
+import app.ezpztac.data.ThreatFileLog
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.RouteSet
@@ -22,20 +25,22 @@ import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import javax.inject.Inject
 
-/** One saved set of local points in the list: how it is shown on this device and where it stands with the server. */
+/** One set of local points in the list: how it is shown on this device and where it is kept (the Library, or this session only). */
 data class PointSetRowUi(
     val uuid: String,
     val name: String,
@@ -47,7 +52,18 @@ data class PointSetRowUi(
     val sync: SyncStatus,
     /** The set this is the user's kept version of, when another device changed it too. */
     val conflictOf: String?,
-)
+    /** Held for this session only: not saved, gone at sign-out (*Save to Library* keeps it). */
+    val inSession: Boolean = false,
+) {
+    /** `1,234 points`, and `hidden` when it is not on the map. */
+    val meta: String get() = (if (pointCount == 1) "1 point" else "${withCommas(pointCount.toLong())} points") + if (visible) "" else " · hidden"
+}
+
+/** An AMPS mission kept in the Library with its file (the Imports panel's *Mission files*): opened in the Routes panel. */
+data class MissionFileUi(val uuid: String, val name: String, val fileName: String, val routeCount: Int, val conflictOf: String?) {
+    /** `2 routes`. */
+    val meta: String get() = countOf(routeCount, "route")
+}
 
 /** The local point being held (tapped on the map): what is known of it, and what can be done with it for the route being worked on. */
 data class HeldPointUi(
@@ -77,17 +93,21 @@ data class HeldPointUi(
 data class PointsUiState(
     val sets: List<PointSetRowUi> = emptyList(),
     val held: HeldPointUi? = null,
-    /** A file is being read. */
-    val importing: Boolean = false,
-    val error: String? = null,
-    /** What the last import or use of a point did, until dismissed. */
-    val note: String? = null,
-)
+    /** The missions kept in the Library. */
+    val missions: List<MissionFileUi> = emptyList(),
+    /** The threat files brought into the picture since it was last cleared; none when the account has no threats. */
+    val threatFiles: List<ThreatFileImport> = emptyList(),
+) {
+    /** How many things the panel lists: its badge and its header say it. */
+    val itemCount: Int get() = sets.size + missions.size + threatFiles.size
+}
 
 /**
- * The local points tab: the saved sets, importing an AMPS `.LPS`, showing and hiding each on the map, the colour it is drawn in, and the point being
- * held and what can be done with it for the route being worked on. The sets and how they are shown are [LocalPoints]'; the held point is
- * [PointSelection]'s, which the map draws too, so this screen does not know about the map.
+ * The Imports panel (docs/native-design: Imports): the sets of local points, saved or held for this session ([SessionPointSets]), showing and hiding each on the
+ * map, the colour it is drawn in, naming, saving a session's set to the Library, deleting; the missions kept with their files; the threat files brought in; and
+ * the point being held and what can be done with it for the route being worked on. Files come in through the import review ([IncomingViewModel]), not here.
+ * The sets and how they are shown are [LocalPoints]'; the held point is [PointSelection]'s, which the map draws too, so this screen does not know about the map.
+ * What an action came to is said in the frame's toasts ([notices]).
  */
 @HiltViewModel
 class PointsViewModel @Inject constructor(
@@ -98,54 +118,41 @@ class PointsViewModel @Inject constructor(
     private val routes: RouteSession,
     private val routeSelection: RouteSelection,
     private val conflicts: ConflictResolver,
+    private val sessionPoints: SessionPointSets,
+    routeSets: RouteRepository,
+    threatFiles: ThreatFileLog,
 ) : ViewModel() {
-    private data class Local(val importing: Boolean = false, val error: String? = null, val note: String? = null)
-
-    /** Where a file is read into a set: a big one is thousands of points, so it is not done on the main thread. A test sets its own. */
-    internal var worker: CoroutineDispatcher = Dispatchers.Default
-
     /** Where a new route point's id comes from. A test sets its own. */
     internal var newPointId: () -> String = { UUID.randomUUID().toString() }
 
-    private val local = MutableStateFlow(Local())
+    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 16)
 
-    val state: StateFlow<PointsUiState> = combine(localPoints.sets, selection.held, routes.active, routeSelection.held, local) { sets, held, open, heldRoute, local ->
+    /** What an action came to, in words, for the frame's toasts. */
+    val notices: SharedFlow<String> = _notices.asSharedFlow()
+
+    /** Whether the account has threats ([allowThreats]): its threat files are listed only then, as its Threats panel is offered only then. */
+    private val threatsAllowed = MutableStateFlow(false)
+
+    /** Says whether the signed-in account has threats. */
+    fun allowThreats(allowed: Boolean) {
+        threatsAllowed.value = allowed
+    }
+
+    private val missions = routeSets.observe().map { list ->
+        list.filter { it.isMission }.map { MissionFileUi(it.uuid, it.name, it.fileName ?: "${it.name}.msnx", it.routeCount, it.conflictOf) }
+    }
+
+    private val files = combine(threatFiles.files, threatsAllowed) { files, allowed -> if (allowed) files else emptyList() }
+
+    private val held = combine(selection.held, routes.active, routeSelection.held) { held, open, heldRoute -> Triple(held, open, heldRoute) }
+
+    val state: StateFlow<PointsUiState> = combine(localPoints.sets, held, missions, files) { sets, (held, open, heldRoute), missions, files ->
         PointsUiState(
             sets = sets.map { it.toRow() },
             held = held?.let { h -> heldOf(sets.firstOrNull { it.set.id == h.setId }, h.pointId, open, heldRoute) },
-            importing = local.importing, error = local.error, note = local.note,
+            missions = missions, threatFiles = files,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PointsUiState())
-
-    // -- Importing -----------------------------------------------------------------------------------------------
-
-    /** Reads [bytes], the `.LPS` file called [fileName], into a new set. A file that is not local points is refused in words, and nothing is saved. */
-    fun importFile(bytes: ByteArray, fileName: String) {
-        local.update { it.copy(importing = true, error = null, note = null) }
-        viewModelScope.launch {
-            val outcome = try {
-                withContext(worker) { repository.import(bytes, fileName) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // A failure in the database or the reader is the app's to word: nothing from inside it is shown to a person.
-                ImportOutcome.Refused("That file could not be read.")
-            }
-            local.update {
-                when (outcome) {
-                    is ImportOutcome.Imported -> it.copy(importing = false, note = "Imported ${outcome.set.name}: ${pointsIn(outcome.set.points.size)}.")
-                    is ImportOutcome.Refused -> it.copy(importing = false, error = outcome.message)
-                }
-            }
-        }
-    }
-
-    /** The file could not be got from the picker (it vanished, was too big, was not readable): [message] says why, in words. */
-    fun importFailed(message: String) = local.update { it.copy(importing = false, error = message, note = null) }
-
-    fun dismissError() = local.update { it.copy(error = null) }
-
-    fun dismissNote() = local.update { it.copy(note = null) }
 
     // -- The sets ---------------------------------------------------------------------------------------------------
 
@@ -156,16 +163,53 @@ class PointsViewModel @Inject constructor(
         if (color in RouteColors.PALETTE) views.recolor(uuid, color)
     }
 
-    /** Renames a set. Null when it is done, else the words for the field (the server refuses a set with no name). */
+    /** Renames a set, saved or held for this session. Null when it is done, else the words for the field (the server refuses a set with no name). */
     fun rename(uuid: String, name: String): String? {
         if (name.isBlank()) return "A set needs a name."
-        viewModelScope.launch { repository.rename(uuid, name) }
+        if (sessionPoints.holds(uuid)) {
+            sessionPoints.rename(uuid, name)
+            return null
+        }
+        viewModelScope.launch { quietly("The set could not be renamed.") { repository.rename(uuid, name) } }
         return null
     }
 
+    /** Deletes a saved set (asked about first, on the screen). */
     fun delete(uuid: String) {
         if (selection.held.value?.setId == uuid) selection.clear()
-        viewModelScope.launch { repository.delete(uuid) }
+        viewModelScope.launch { quietly("The set could not be deleted.") { repository.delete(uuid) } }
+    }
+
+    /** Lets go of a set held for this session: nothing was saved, so nothing is deleted. */
+    fun removeFromSession(uuid: String) {
+        if (selection.held.value?.setId == uuid) selection.clear()
+        sessionPoints.remove(uuid)?.let { _notices.tryEmit("Removed ${it.name} from this session.") }
+    }
+
+    /** Saves a set held for this session to the Library, under its own id (so its colour and a held point stay), and it syncs with the account from then on. */
+    fun saveToLibrary(uuid: String) {
+        val set = sessionPoints.sets.value.firstOrNull { it.id == uuid } ?: return
+        viewModelScope.launch {
+            quietly("The set could not be saved.") {
+                val saved = repository.save(set)
+                // Let go of the session's copy only once the Library lists the set: Room lists a new record a moment after the save returns, and in between the
+                // set would be in neither list, so settling the views ([LocalPoints]) would drop its colour and whether it is shown.
+                withTimeoutOrNull(LISTED_WITHIN_MS) { repository.observeSets().first { stored -> stored.any { it.set.id == uuid } } }
+                sessionPoints.remove(uuid)
+                _notices.tryEmit("Saved ${saved.name} to your Library.")
+            }
+        }
+    }
+
+    /** Runs [block], saying [failed] in a toast when it fails: a failure in the database is the app's to word, and never ends the app. */
+    private suspend fun quietly(failed: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            _notices.tryEmit(failed)
+        }
     }
 
     fun resolve(copyUuid: String, how: SyncEngine.Resolution) {
@@ -192,7 +236,7 @@ class PointsViewModel @Inject constructor(
                 SketchOps.rename(it, pointId, point.rawName.uppercase(), snapTo = point.at.lat to point.at.lon, chartElevationFt = point.elevationFt)
             }
         }
-        local.update { it.copy(error = null, note = "Moved the route point onto ${point.title} (${point.setName}).") }
+        _notices.tryEmit("Moved the route point onto ${point.title} (${point.setName}).")
     }
 
     /** Adds the held local point to the end of the route being worked on, as a turn point carrying its name and charted elevation, and holds it. */
@@ -207,7 +251,7 @@ class PointsViewModel @Inject constructor(
             }
         }
         routeSelection.select(route.id, id)
-        local.update { it.copy(error = null, note = "Added ${point.title} to ${route.name}.") }
+        _notices.tryEmit("Added ${point.title} to ${route.name}.")
     }
 
     // -- What the screen is told ----------------------------------------------------------------------------------------
@@ -229,7 +273,10 @@ class PointsViewModel @Inject constructor(
         )
     }
 
-    private fun LoadedPointSet.toRow() = PointSetRowUi(set.id, set.name, set.pointCount, color, visible, sync, conflictOf)
+    private fun LoadedPointSet.toRow() = PointSetRowUi(set.id, set.name, set.pointCount, color, visible, sync, conflictOf, inSession)
 
-    private fun pointsIn(n: Int) = if (n == 1) "1 point" else "$n points"
+    private companion object {
+        /** How long a set saved from the session is waited for in the Library's list before the session lets go of it anyway. */
+        const val LISTED_WITHIN_MS = 10_000L
+    }
 }

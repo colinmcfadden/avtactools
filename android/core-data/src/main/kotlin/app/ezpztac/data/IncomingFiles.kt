@@ -31,6 +31,7 @@ public sealed interface IncomingFile {
 public class IncomingFiles @Inject constructor() {
     private val lock = Any()
     private var nextId = 1L
+    private var cleared = 0
     private val _files = MutableStateFlow<List<IncomingFile>>(emptyList())
 
     /** In the order they arrived. The first is the one a screen offers. */
@@ -59,8 +60,17 @@ public class IncomingFiles @Inject constructor() {
     }
 
     public fun clear() {
-        synchronized(lock) { _files.value = emptyList() }
+        synchronized(lock) {
+            _files.value = emptyList()
+            cleared++
+        }
     }
+
+    /**
+     * How many times the files have been let go of at a sign-out ([clear]). Work begun on a file before a clear (bringing it in takes a while) asks this before
+     * it lands, so nothing of one person's files reaches whoever signs in next.
+     */
+    public val generation: Int get() = synchronized(lock) { cleared }
 
     public companion object {
         public const val MAX_PENDING: Int = 8

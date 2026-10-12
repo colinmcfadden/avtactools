@@ -39,6 +39,8 @@ data class RouteSetSummary(
     val isMission: Boolean = false,
     /** How many points its routes hold, every one, shaping points included; null for a mission, whose file is not read to draw a list. */
     val pointCount: Int? = null,
+    /** A mission's file name as it was imported (`GOAT_SUCKER.msnx`); null for a set drawn here. */
+    val fileName: String? = null,
 )
 
 /**
@@ -212,6 +214,6 @@ class RouteRepository(
     /** A mission's count comes from the summary kept beside its file: the file is not read to draw a list. */
     private fun summarizeMission(record: LocalRecord): RouteSetSummary = RouteSetSummary(
         uuid = record.uuid, name = record.name, routeCount = (record.data["routes"] as? JsonArray)?.size ?: 0, sync = record.status, conflictOf = record.conflictOf,
-        isMission = true,
+        isMission = true, fileName = record.file?.name,
     )
 }
