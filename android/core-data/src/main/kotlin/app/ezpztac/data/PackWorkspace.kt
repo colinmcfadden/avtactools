@@ -255,6 +255,6 @@ class PackWorkspace @Inject constructor(
         const val MAX_NAME = 100
 
         // JavaScript's trim, as the web's rename dialog trims: Unicode's spaces and the byte order mark go, the information separators stay.
-        private fun trimJs(text: String): String = text.trim { (it.isWhitespace() && it !in '\u001C'..'\u001F') || it == '﻿' }
+        private fun trimJs(text: String): String = text.trim { (it.isWhitespace() && it !in '\u001C'..'\u001F') || it == '\uFEFF' }
     }
 }
