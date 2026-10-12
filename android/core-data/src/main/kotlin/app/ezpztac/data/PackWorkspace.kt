@@ -6,6 +6,7 @@ import app.ezpztac.missionpacks.PackLz
 import app.ezpztac.missionpacks.PackNotice
 import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.missionpacks.PackSentences
+import app.ezpztac.missionpacks.PackState
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramJson
@@ -23,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.merge
@@ -47,12 +49,15 @@ class PackWorkspace @Inject constructor(
     private val lzItems: PackItemStore<Diagram>,
     private val routeItems: PackItemStore<RouteSet>,
     private val keeper: PackKeeper,
-) {
+) : OpenPack {
     // The thread that edits, where the editors' sessions are changed and their pack items' baselines kept.
     private val main = lzItems.main
     private val scope = CoroutineScope(SupervisorJob() + main)
     private val started = AtomicBoolean(false)
     private val editors = MutableSharedFlow<PackNotice>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** The open pack as the engine holds it, for the panels that show its items. */
+    override val state: StateFlow<PackState?> = engine.open
 
     /** What happened to the packs, and to the items open in the editors, that the person should hear about. Never the server's words. */
     val notices: Flow<PackNotice> = merge(engine.notices, editors)
@@ -109,7 +114,7 @@ class PackWorkspace @Inject constructor(
      * Opens item [itemUuid] of the open pack in its editor: an LZ/PZ in the diagram session, a route set in the route session. False when the
      * open pack has no such item, or it is a point set (shown on the map, edited by nobody, as on the web).
      */
-    suspend fun openItem(itemUuid: String): Boolean = withContext(main) {
+    override suspend fun openItem(itemUuid: String): Boolean = withContext(main) {
         val state = engine.open.value ?: return@withContext false
         val item = state.item(itemUuid) ?: return@withContext false
         val localId = PackRef.localId(state.uuid, itemUuid)
@@ -125,7 +130,7 @@ class PackWorkspace @Inject constructor(
      * blank. Its local id; null when no pack is open or the target is not a position, or when the pack would not take it (and the person is told
      * why, [PackNotice.Refused]).
      */
-    suspend fun createLz(target: DiagramTarget, name: String? = null): String? = withContext(main) {
+    override suspend fun createLz(target: DiagramTarget, name: String?): String? = withContext(main) {
         val state = engine.open.value ?: return@withContext null
         val uuid = PackSentences.packItemId("lz", UUID.randomUUID().toString())
         val localId = PackRef.localId(state.uuid, uuid)
@@ -141,7 +146,7 @@ class PackWorkspace @Inject constructor(
      * A new, empty route set in the open pack, opened in the route session (usePackRoutes' `createItem`): called [name], or "ROUTES n" when that is
      * blank. Its local id; null when no pack is open, or when the pack would not take it (and the person is told why).
      */
-    suspend fun createRouteSet(name: String? = null): String? = withContext(main) {
+    override suspend fun createRouteSet(name: String?): String? = withContext(main) {
         val state = engine.open.value ?: return@withContext null
         val uuid = PackSentences.packItemId("route", UUID.randomUUID().toString())
         val localId = PackRef.localId(state.uuid, uuid)
@@ -157,7 +162,7 @@ class PackWorkspace @Inject constructor(
      * Closes item [itemUuid] of the open pack in its editor, if it is open there; it stays in the pack (the web's "Close here"). Its last change
      * goes to the pack first ([DocumentSession.closeIfOpen]), and a save that fails is thrown once it is closed.
      */
-    suspend fun closeItem(itemUuid: String) {
+    override suspend fun closeItem(itemUuid: String) {
         withContext(main) {
             val pack = engine.open.value?.uuid ?: return@withContext
             val localId = PackRef.localId(pack, itemUuid)
@@ -194,7 +199,7 @@ class PackWorkspace @Inject constructor(
      * reaches the pack before it goes and nothing of it is kept as the person's own, then deleted with the history's sentence. Null once it is
      * on its way; else why not, as [renameItem] says it.
      */
-    suspend fun removeItem(itemUuid: String): String? = withContext(main) {
+    override suspend fun removeItem(itemUuid: String): String? = withContext(main) {
         val state = engine.open.value ?: return@withContext MISSING
         val item = state.item(itemUuid) ?: return@withContext MISSING
         // What the pack would refuse is refused before anything is closed: closing first would set the item aside, and, paused, keep its last change

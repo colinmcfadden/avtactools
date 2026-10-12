@@ -100,7 +100,9 @@ internal class PackEditorRig(
     val library = Device("A", FakeServer())
     val scheduler = RecordingScheduler()
     val diagramRepository = DiagramRepository(library.repository, library.store as InMemorySyncStore, scheduler)
-    val routeRepository = RouteRepository(library.repository, library.store as InMemorySyncStore, scheduler)
+    // A mission's file work on the test's own dispatcher, never Dispatchers.Default: on a real thread it raced the virtual clock, and a test that opened a
+    // mission now and then never settled (RoutePackEditorTest's open mission, "More than 50 batches").
+    val routeRepository = RouteRepository(library.repository, library.store as InMemorySyncStore, scheduler, dispatcher)
     val diagrams = DiagramSession(diagramRepository, scope, packs = lzItems)
     val routes = RouteSession(routeRepository, scope, packs = routeItems)
     val workspace = PackWorkspace(engine, diagrams, routes, lzItems, routeItems, keeper)

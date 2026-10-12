@@ -7,8 +7,11 @@ import javax.inject.Inject
 
 /** What bringing a mission's routes in came to. */
 sealed interface MissionImportOutcome {
-    /** [set] was made from the mission's routes; [opened] is whether it is now the open set (another set that could not be saved first keeps its place). */
-    data class Imported(val set: RouteSet, val opened: Boolean) : MissionImportOutcome
+    /**
+     * [set] was made from the mission's routes; [opened] is whether it is now the open set (another set that could not be saved first keeps its place). [inPack]:
+     * a Mission Pack was open, so it was kept in the Library and not opened (the person's own are set aside in a pack).
+     */
+    data class Imported(val set: RouteSet, val opened: Boolean, val inPack: Boolean = false) : MissionImportOutcome
 
     /** Nothing was made; [message] is in words for the person. */
     data class Refused(val message: String) : MissionImportOutcome
@@ -23,6 +26,8 @@ class MissionImporter @Inject constructor(
     private val routes: RouteRepository,
     private val session: RouteSession,
     private val focus: MapFocus,
+    /** The open Mission Pack: while one is open the mission is kept in the Library and not opened, since the person's own are set aside there. */
+    private val pack: OpenPack = OpenPack.None,
 ) {
     /**
      * [bytes] is the file and [mission] what was read out of it (so it is read once). [stillWanted] is asked before the mission is opened and the map taken to it:
@@ -35,6 +40,7 @@ class MissionImporter @Inject constructor(
         val made = MissionRoutes.toMissionSketchRoutes(mission, emptyList()) { "mission-${uuid.take(8)}-${n++}" }
         val set = routes.createMission(RouteSet(id = uuid, name = nameOf(fileName), routes = made), fileName, bytes)
         if (!stillWanted()) return MissionImportOutcome.Imported(set, opened = false)
+        if (pack.state.value != null) return MissionImportOutcome.Imported(set, opened = false, inPack = true)
         val opened = session.open(set.id)
         MissionRoutes.extentOf(made)?.let(focus::show)
         return MissionImportOutcome.Imported(set, opened)

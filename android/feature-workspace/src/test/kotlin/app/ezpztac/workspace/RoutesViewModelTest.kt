@@ -1,45 +1,40 @@
 package app.ezpztac.workspace
 
-import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.ActiveAircraftChoice
-import app.ezpztac.data.MasterProfileStore
+import app.ezpztac.data.AircraftProfiles
+import app.ezpztac.data.DrawingMode
+import app.ezpztac.data.HandoffFormat
+import app.ezpztac.data.InMemoryOpenRouteSetStore
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.MasterProfileStore
 import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetView
 import app.ezpztac.data.PointSetViewStore
 import app.ezpztac.data.PointSetViews
-import app.ezpztac.data.PlanningApi
-import app.ezpztac.data.HandoffFormat
-import app.ezpztac.data.DrawingMode
-import app.ezpztac.data.InMemoryOpenRouteSetStore
-import app.ezpztac.data.OpenRouteSets
 import app.ezpztac.data.RouteExport
 import app.ezpztac.data.RouteHandoffExport
-import app.ezpztac.testing.Fixtures
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.launch
 import app.ezpztac.data.RouteHeld
 import app.ezpztac.data.RoutePlanning
-import app.ezpztac.network.NetworkException
-import app.ezpztac.network.PointWindDto
-import app.ezpztac.network.WindQuestion
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.first
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.model.AircraftProfile
-import app.ezpztac.model.LatLon
-import app.ezpztac.model.SetPoint
-import app.ezpztac.model.PointSets
-import app.ezpztac.model.PointSet
-import app.ezpztac.model.RoutePoint
-import app.ezpztac.planning.GraphicEdits
-import app.ezpztac.model.AltitudeSetting
 import app.ezpztac.model.Airspeed
+import app.ezpztac.model.AltitudeSetting
+import app.ezpztac.model.LatLon
+import app.ezpztac.model.PointSet
+import app.ezpztac.model.PointSets
+import app.ezpztac.model.RoutePoint
+import app.ezpztac.model.SetPoint
 import app.ezpztac.model.Wind
+import app.ezpztac.network.NetworkException
+import app.ezpztac.network.PointWindDto
+import app.ezpztac.network.WindQuestion
+import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.planning.PlanDraft
 import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.ConflictResolver
@@ -50,12 +45,17 @@ import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.RecordingScheduler
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
+import app.ezpztac.testing.Fixtures
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -101,12 +101,12 @@ class RoutesViewModelTest {
         override suspend fun routeWinds(points: List<WindQuestion>) = windsAnswer(points)
     }
 
-    private class Rig(scope: TestScope, resolver: ConflictResolver?) {
+    private class Rig(scope: TestScope, resolver: ConflictResolver?, val pack: FakeOpenPack = FakeOpenPack()) {
         val resolutions = mutableListOf<Triple<RecordKind, String, SyncEngine.Resolution>>()
         val server = FakeServer()
         val device = Device("A", server)
         val repository = RouteRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler(), StandardTestDispatcher(scope.testScheduler))
-        val session = RouteSession(repository, scope.backgroundScope)
+        val session = RouteSession(repository, scope.backgroundScope, pack.routeStore)
         val selection = RouteSelection()
         val profiles = AircraftProfiles(
             device.store as InMemorySyncStore, Store(), { emptyList() }, Choice(),
@@ -126,11 +126,13 @@ class RoutesViewModelTest {
         var template: () -> ByteArray = { Fixtures.repoBytes("frontend/public/msnx_template.msnx") }
         val model = RoutesViewModel(
             repository, session, selection, sketching, resolver ?: ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            RoutePlanning(api, session), RouteExport { template() }, RouteHandoffExport(), LocalPoints(pointSets, pointViews), openSets,
+            RoutePlanning(api, session), RouteExport { template() }, RouteHandoffExport(), LocalPoints(pointSets, pointViews), openSets, pack,
         ).also { it.worker = StandardTestDispatcher(scope.testScheduler) }
         val shared = mutableListOf<ExportFile>()
         val notices = mutableListOf<String>()
         init {
+            pack.opener = { session.open(it) }
+            pack.closer = { session.closeIfOpen(it) }
             scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.exports.collect { shared += it } }
             scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.notices.collect { notices += it } }
         }
@@ -138,6 +140,190 @@ class RoutesViewModelTest {
     }
 
     private fun TestScope.rig(resolver: ConflictResolver? = null) = Rig(this, resolver).also { advanceUntilIdle() }
+
+    // -- In a Mission Pack (P2b) ------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `in a pack the panel is the pack's route sets, and the person's own are set aside`() = runTest {
+        val r = rig()
+        val own = r.repository.create("NIGHT INFIL")
+        r.model.openSet(own.id)
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(
+            listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 2), FakeOpenPack.routes("rt-2", "OP DK EGRESS", routes = 1)),
+            people = listOf(FakeOpenPack.here(2, "Sam Bell", "rt-2")),
+        )
+        advanceUntilIdle()
+        val s = r.model.state.value
+        assertEquals("OP DK · 2 route sets · live", s.pack!!.head)
+        assertEquals(listOf("OP DK INGRESS" to "2 routes · 6 points", "OP DK EGRESS" to "1 route · 3 points"), s.pack.rows.map { it.name to it.summary })
+        assertEquals("Sam B. has it open", s.pack.rows[1].presence)
+        assertTrue("Synced is what most rows would say: left unsaid", s.pack.rows[0].chips.isEmpty())
+        assertTrue(s.alsoOpen.isEmpty())
+    }
+
+    @Test
+    fun `in an empty pack a sketch makes the pack a set, taken out of it again if the sketch ends with no route`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet"), r.pack.log)
+        assertEquals("pack:p:rt-new", r.session.active.value?.id)
+        assertNotNull(r.state.drawing)
+        assertTrue("nothing made in the Library", r.model.state.value.sets.isEmpty())
+        r.model.cancelDrawing()
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet", "remove rt-new"), r.pack.log)
+    }
+
+    @Test
+    fun `a set a sketch made in a pack stays once it has a route, and one someone renamed stays too`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        r.model.addAtCrosshair(LatLon(34.0, -84.0))
+        r.model.addAtCrosshair(LatLon(34.01, -84.01))
+        r.model.finishDrawing("RED 1")
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet"), r.pack.log)
+        // A second empty pack, a sketch, and the set renamed meanwhile (by whoever): it is not taken away.
+        val s = rig()
+        s.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        s.model.startSketch()
+        advanceUntilIdle()
+        s.session.edit("Rename set") { it.copy(name = "OP DK INGRESS") }
+        s.model.cancelDrawing()
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet"), s.pack.log)
+    }
+
+    @Test
+    fun `in a pack with sets a sketch with none open is drawn into the set last on the map, else the first, and makes none`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1), FakeOpenPack.routes("rt-2", "OP DK EGRESS", routes = 1)))
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals(listOf("open rt-1"), r.pack.log)
+        assertEquals("pack:p:rt-1", r.session.active.value?.id)
+        assertNotNull(r.state.drawing)
+        r.model.cancelDrawing()
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-2")
+        advanceUntilIdle()
+        r.model.close("pack:p:rt-2")
+        advanceUntilIdle()
+        r.pack.log.clear()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals("the one last on the map", listOf("open rt-2"), r.pack.log)
+    }
+
+    @Test
+    fun `a set made for a sketch in a pack that something else took the map's taps from meanwhile is taken out again`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        r.pack.whileMaking = { r.mode.begin(app.ezpztac.data.DrawingMode.Kind.BOUNDARY) }
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals("Finish or cancel the boundary first.", r.state.error)
+        assertEquals(listOf("createRouteSet", "remove rt-new"), r.pack.log)
+    }
+
+    @Test
+    fun `a set the pack would not make is said once, by the pack, never as the panel's banner too`() = runTest {
+        val r = rig()
+        r.pack.madeSet = null
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        r.model.createSet("")
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet", "createRouteSet"), r.pack.log)
+        assertNull(r.state.error)
+        assertNull(r.state.drawing)
+    }
+
+    @Test
+    fun `in a pack the person's own sets are not opened, and closing one of theirs opens nothing else of theirs`() = runTest {
+        val r = rig()
+        val a = r.repository.create("NIGHT INFIL")
+        val b = r.repository.create("DAY EXFIL")
+        r.model.openSet(a.id)
+        advanceUntilIdle()
+        r.model.openSet(b.id)
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.close(b.id)
+        advanceUntilIdle()
+        assertNull("NIGHT INFIL is not brought into the pack", r.session.active.value)
+        r.model.openSet(a.id)
+        advanceUntilIdle()
+        assertEquals(RoutesViewModel.OWN_SETS_IN_PACK, r.state.error)
+        assertNull(r.session.active.value)
+    }
+
+    @Test
+    fun `an open pack set is the pack's on its card, never named into the Library, takes any name, and stays the pack's when unlisted`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), people = listOf(FakeOpenPack.here(2, "Sam Bell", "rt-1")))
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        val open = checkNotNull(r.state.open)
+        assertEquals(InPackUi("OP DK", "Saved to OP DK as you work. 4 members can see it.", "Sam B. is also here", false), open.inPack)
+        assertFalse(open.canSave)
+        assertEquals(listOf("Synced"), open.chips.map { it.text })
+        assertEquals(1, r.state.pack!!.count)
+        assertTrue(r.state.pack!!.rows.isEmpty())
+        r.model.saveAs("NIGHT INFIL")
+        advanceUntilIdle()
+        assertEquals(RoutesViewModel.SET_SAVED_TO_PACK, r.state.error)
+        r.model.renameSet("pack:p:rt-1", "SKETCHED ROUTES")
+        advanceUntilIdle()
+        assertEquals("SKETCHED ROUTES", r.session.active.value?.name)
+        assertTrue("nothing named into the Library", r.state.sets.isEmpty())
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        assertNotNull(r.state.open?.inPack)
+        assertFalse(r.state.open!!.canSave)
+    }
+
+    @Test
+    fun `a pack opening says so in place of its route sets`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = null, status = app.ezpztac.missionpacks.PackStatus.LOADING)
+        advanceUntilIdle()
+        assertEquals("Opening…", r.state.pack!!.head)
+        assertEquals("Opening the pack…", r.state.pack!!.opening)
+    }
+
+    @Test
+    fun `a pack's set is opened and closed in the pack, and is removed from the Pack panel, never deleted here`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)))
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        r.model.close("pack:p:rt-1")
+        advanceUntilIdle()
+        assertEquals(listOf("open rt-1", "close rt-1"), r.pack.log)
+        r.model.deleteSet("pack:p:rt-1")
+        advanceUntilIdle()
+        assertEquals("This set is the pack's: Remove from pack, in the Pack panel, takes it out for everyone.", r.model.state.value.error)
+        r.pack.opens = false
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        assertEquals("That set is no longer in the pack.", r.model.state.value.error)
+    }
 
     private fun TestScope.settle() = advanceUntilIdle()
 

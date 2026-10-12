@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; P2b next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; **P2b built and reviewed**, its findings fixed; P2c next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -340,6 +340,31 @@ had gone kept filtering, and only the first page jumped to the newest; the renam
 the rail's Pack tab had the workspace's glyph and no name; the frame tests drew a Pack tab where no pack was open. Tests: `PackPanelViewModelTest`, `PackPanelScreenTest`, `PackWorkspaceTest`,
 `PanelsTest`, `PhoneFrameTest`, `TabletFrameTest`.
 **Not verifiable here:** the sheet over the real map, TalkBack, and presence at its real rate on a device.
+
+**P2b — The LZ/PZ and Routes panels in a pack. Built.** While a pack is open the two panels are the pack's (the design's `PackLive`): its LZ/PZs and route sets under "In OP DK · n",
+each with how far along it is beside its grid, what holds of it in the pack (*Read-only*, *Original changed*, *From Library*, *Waiting to send*) and who else has it open; the open one's
+card and plan with no *Save*, where it is saved and who else is here; *Close here* (it stays in the pack) and no *Delete* (*Remove from pack* is the Pack panel's); a new LZ/PZ, and a
+sketch, go into the pack. The panels read the open pack through `OpenPack` (core-data, the app's `PackWorkspace`), as a `PackGlance` that a pointer moving does not change.
+**Amended while building and by the review:**
+- **The Imports panel is not changed** (a pack's point sets wait, *Deferred* 4). A mission brought in while a pack is open is kept in the Library and not opened, and the Routes
+  foot offers no *Import .msnx* in a pack, as on the web.
+- **The person's own are not opened in a pack** (the Library's *Open*, *Open in Routes*: "switch to Personal"), until P4 adds a copy to the pack.
+- **A sketch in a pack draws into the pack's set last on the map, else its first** (the web's `packRouteSetFor`). Only a pack with no set gets one, made as the sketch starts (the web
+  makes it when the route is finished; here a route is drawn into an open set) and taken out again if the sketch ends with no route, while it is still empty and still has the name it
+  was made with. The history keeps that it was added and taken out.
+- **"Also here" is the web's**: "Sam B. and 2 more are also here". A pack's item takes any name from its card, its own "LZ/PZ n" included (no Library naming rule there).
+- **A pack's rows leave *Synced* unsaid** (what most would say), as the web's do; the open one's card says it.
+**Reviewed** (one independent review, 2026-10-12: 22 reported, all 22 survived an adversarial check, about 16 distinct; each fix has a test where one can hold it, and each tested one was
+broken to see it fail): a sketch made an empty set in the pack at once and kept it whatever became of the sketch, and made another for every sketch with none open; the plan page and the
+tablet's pane offered *Save* and "Saves to your Library" for a pack's LZ/PZ; closing or deleting one of the person's own left in a pack brought the next of theirs into it; a pack opening
+or out of reach showed as empty and "live", inviting the person to add to it, and a paused one said "live"; "In OP DK · n" counted whatever card was on the map and sat under it; the pack's
+rows said only *Synced*, never whether an LZ/PZ was analysed; an open pack item missing from the state for a moment became a Library record with *Save*; the Library's conflicts, *Every
+route set* and *Import .msnx* stayed in the panels in a pack; the diagram cache kept every LZ/PZ ever seen; "also here" named everyone; renaming a pack's LZ/PZ refused "LZ/PZ n" in the
+Library's words; the view models were never tried with a pack's item open; a row's grid was cut mid-digit at large text and the Routes rows' names clipped; every presence frame rebuilt
+both panels; a set the pack refused was said twice. Tests: `PackFactsTest`, `DiagramsViewModelTest`, `RoutesViewModelTest`, `PanelsInPackTest` (with screenshots at 360 dp, 1.3 and 2.0),
+`MissionImporterTest`, `IncomingViewModelTest`, `LzPanelScreenTest`. The full build also caught `RoutePackEditorTest` failing now and then, since A12: its rig gave
+`RouteRepository` no dispatcher, so a mission's file work ran on a real thread under the test's virtual clock; it runs on the test's dispatcher now.
+**Not verifiable here:** the panels over the real map in a pack, TalkBack, and presence at its real rate on a device.
 
 **P3 — People.** *New pack* (`NewPack`), *Members* (`Members`: roles, invite by name or email, pending invites with resend and revoke,
 share with a team), and the teams page.

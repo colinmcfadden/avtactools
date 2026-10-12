@@ -1,6 +1,5 @@
 package app.ezpztac.workspace
 
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -45,24 +45,26 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.PlaceTool
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
@@ -77,7 +79,6 @@ import app.ezpztac.designsystem.StateChip
 import app.ezpztac.designsystem.StatusTone
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
-import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.UnitDraft
@@ -202,7 +203,8 @@ enum class LzPane {
 fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid: String?, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
-        val conflicts = state.rows.count { it.conflictOf != null }
+        // A conflict is the Library's: in a pack it would read as if one of the pack's LZ/PZs had one.
+        val conflicts = if (state.pack == null) state.rows.count { it.conflictOf != null } else 0
         if (conflicts > 0) {
             Banner(
                 if (conflicts == 1) "1 LZ/PZ needs a choice: another device changed it too." else "$conflicts LZ/PZs need a choice: another device changed them too.",
@@ -210,7 +212,37 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
             )
         }
         val current = state.current
+        val pack = state.pack
+        // In a pack: the pack's LZ/PZs, in place of the person's own (set aside until the pack is left), under a label that counts them all, the open one
+        // first when it is the pack's.
+        val packLabel: @Composable () -> Unit = { pack?.let { SectionLabel("In ${it.name} · ${it.count}") } }
+        if (pack != null && pack.opening == null && current?.inPack != null) packLabel()
         if (current != null) ActiveLzCard(current, actions)
+        if (pack != null) {
+            when {
+                pack.opening != null -> Text(pack.opening, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                pack.rows.isNotEmpty() -> {
+                    if (current?.inPack == null) packLabel()
+                    pack.rows.forEach { row ->
+                        ListRow(
+                            EzpzIcons.flightLand, row.name, emphasis = true, onClick = { actions.open(row.uuid) }, onClickLabel = "Open",
+                            supporting = {
+                                Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+                                    // How far along it is beside its grid (the web's CompactCard); what holds of it in the pack, under them, when it is not just synced.
+                                    RowState(row.grid, row.chips.firstOrNull())
+                                    if (row.chips.size > 1) Chips(row.chips.drop(1))
+                                    row.presence?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                }
+                            },
+                        )
+                    }
+                }
+                current?.inPack == null -> Text(
+                    "Nothing in ${pack.name} yet. Tap New LZ/PZ at the crosshair, or long-press the map, and the new LZ/PZ goes into the pack.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (state.open.isNotEmpty()) {
             SectionLabel("Also open", Modifier.padding(top = Tokens.Spacing.sm.dp))
             state.open.forEach { row ->
@@ -230,7 +262,7 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
                 )
             },
         )
-        if (state.rows.isNotEmpty()) {
+        if (state.rows.isNotEmpty() && state.pack == null) {
             SectionLabel("Recent in Library", Modifier.padding(top = Tokens.Spacing.sm.dp)) {
                 TextButton(onClick = actions.browse) { Text("Browse all") }
             }
@@ -247,28 +279,71 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
             }
         }
         Text(
-            if (current == null && state.open.isEmpty()) "No LZ/PZ open. Move the map to a landing zone, or type its grid in the search bar, then tap New LZ/PZ."
-            else "Move the map, or type a grid in the search bar, then tap New LZ/PZ to open another.",
+            when {
+                state.pack != null -> "New LZ/PZs you start while ${state.pack.name} is open are added to it."
+                current == null && state.open.isEmpty() -> "No LZ/PZ open. Move the map to a landing zone, or type its grid in the search bar, then tap New LZ/PZ."
+                else -> "Move the map, or type a grid in the search bar, then tap New LZ/PZ to open another."
+            },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Tokens.Spacing.sm.dp),
         )
     }
 }
 
-/** A row's second line: its grid, then what its state chip says, in the chip's colour. */
+/**
+ * A row's second line: its grid, then what its state chip says, in the chip's colour. Where both do not fit (a narrow phone, large text) the state goes
+ * under the grid whole, with no separator to start its line; and a grid too wide for the row breaks only between its halves (`16S GC` / `31204 58811`),
+ * never inside one and never cut off.
+ */
 @Composable
 private fun RowState(grid: String?, chip: LzChip?) {
-    val color = chip?.tone?.let { toneColor(it) }
-    Text(
-        buildAnnotatedString {
-            withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(grid ?: "No target") }
-            if (chip != null) {
-                append(" · ")
-                withStyle(SpanStyle(color = color ?: Color.Unspecified)) { append(chip.text) }
+    val gridText: @Composable () -> Unit = {
+        // What a screen reader (and a test) reads is the grid as it is written; only how it may break is changed.
+        Box(Modifier.clearAndSetSemantics { text = AnnotatedString(grid ?: "No target") }) {
+            Text(
+                grid?.let(::gridBreakingBetweenHalves) ?: "No target",
+                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = if (grid != null) FontFamily.Monospace else FontFamily.Default),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    if (chip == null) return gridText()
+    DotJoined(gridText) { Text(chip.text, style = MaterialTheme.typography.bodyMedium, color = toneColor(chip.tone)) }
+}
+
+/** [grid] (`16S GC 31204 58811`) with its zone and square, and its easting and northing, each held together, so a line can break only between the two halves. */
+internal fun gridBreakingBetweenHalves(grid: String): String {
+    val parts = grid.trim().split(Regex("\\s+"))
+    return if (parts.size == 4) "${parts[0]}\u00A0${parts[1]} ${parts[2]}\u00A0${parts[3]}" else grid
+}
+
+/**
+ * [first], then " · " and [second] on its line when both fit; else [second] under [first], whole, with no separator to start its line (a narrow phone, large
+ * text). The separator is not read out.
+ */
+@Composable
+internal fun DotJoined(first: @Composable () -> Unit, second: @Composable () -> Unit) {
+    val dot: @Composable () -> Unit = {
+        Text(" · ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.clearAndSetSemantics {})
+    }
+    Layout(contents = listOf(first, dot, second)) { (a, d, b), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val one = a.first().measure(loose)
+        val sep = d.first().measure(loose)
+        val two = b.first().measure(loose)
+        if (one.width + sep.width + two.width <= constraints.maxWidth) {
+            layout(one.width + sep.width + two.width, maxOf(one.height, sep.height, two.height)) {
+                one.place(0, 0)
+                sep.place(one.width, 0)
+                two.place(one.width + sep.width, 0)
             }
-        },
-        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-    )
+        } else {
+            layout(maxOf(one.width, two.width), one.height + two.height) {
+                one.place(0, 0)
+                two.place(0, one.height)
+            }
+        }
+    }
 }
 
 @Composable
@@ -313,16 +388,22 @@ private fun ActiveLzCard(current: ActiveDiagramUi, actions: LzPanelActions) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Chips(current.chips, Modifier.padding(top = 10.dp))
+            current.inPack?.alsoHere?.let { AlsoHere(it, Modifier.padding(top = Tokens.Spacing.sm.dp)) }
             Row(
                 Modifier.padding(top = Tokens.Spacing.md.dp, end = Tokens.Spacing.sm.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
             ) {
-                SaveButton(current, actions.save)
+                // A pack's LZ/PZ is saved to the pack as it changes: no Save of its own (the design's PackLive).
+                if (current.inPack == null) SaveButton(current, actions.save)
                 PillButton("Plan", onClick = { actions.showPage(LzPage.PLAN) }, icon = EzpzIcons.tune, style = PillStyle.Tonal)
-                SavesToLibrary(Modifier.weight(1f))
+                if (current.inPack == null) SavesToLibrary(Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
             }
+            current.inPack?.let { SavedToPack(it.savedLine, Modifier.padding(top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp)) }
             renaming?.let { name ->
-                RenameField(name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null })
+                RenameField(
+                    name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null },
+                    inPack = current.inPack != null,
+                )
             }
             if (confirmDelete) DeleteConfirm(current.name, onDelete = { confirmDelete = false; actions.delete(current.uuid) }, onKeep = { confirmDelete = false })
             if (current.conflictOf != null) {
@@ -345,6 +426,21 @@ private fun SaveButton(current: ActiveDiagramUi, save: () -> Unit) {
     } else {
         PillButton("Saved", onClick = {}, icon = EzpzIcons.done, enabled = false)
     }
+}
+
+/** "Saved to OP DK as you work. 4 members can see it." (the design's PackLive): a pack's item has no *Save*, and this says why. */
+@Composable
+internal fun SavedToPack(line: String, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(16.dp))
+        Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** "Sam B. is also here": who else has the open item of a pack open now. */
+@Composable
+internal fun AlsoHere(text: String, modifier: Modifier = Modifier) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, modifier = modifier)
 }
 
 @Composable
@@ -382,27 +478,34 @@ private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRena
             DropdownMenuItem(
                 text = {
                     Column {
-                        Text("Close")
-                        Text("Takes it out of the open LZ/PZs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (current.inPack != null) "Close here" else "Close")
+                        Text(
+                            if (current.inPack != null) "It stays in the pack" else "Takes it out of the open LZ/PZs",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 },
                 onClick = { open = false; actions.close(current.uuid) },
                 leadingIcon = { Icon(painterResource(EzpzIcons.close), contentDescription = null) },
             )
-            DropdownMenuItem(text = { Text("Delete") }, onClick = { open = false; onDelete() }, leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null) })
+            // A pack's LZ/PZ is removed for everyone from the Pack panel, never deleted from here.
+            if (current.inPack == null) {
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { open = false; onDelete() }, leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null) })
+            }
         }
     }
 }
 
 @Composable
-private fun RenameField(name: String, was: String, onChange: (String) -> Unit, onDone: (String) -> Unit, onCancel: () -> Unit) {
+private fun RenameField(name: String, was: String, onChange: (String) -> Unit, onDone: (String) -> Unit, onCancel: () -> Unit, inPack: Boolean = false) {
     // What is wrong with the name is said at the field, once Save is pressed: the panel's banner can be scrolled out of sight while typing.
     var refused by rememberSaveable { mutableStateOf<String?>(null) }
     val done: () -> Unit = {
         val title = name.trim()
         refused = when {
             title.isEmpty() -> "Give it a name."
-            title != was.trim() && LzNames.isMadeUp(title) -> LzNames.MADE_UP_REFUSED
+            // A pack's own names are "LZ/PZ n", and nothing of a pack's is named to be saved: any name will do there.
+            !inPack && title != was.trim() && LzNames.isMadeUp(title) -> LzNames.MADE_UP_REFUSED
             else -> null
         }
         when {
@@ -459,12 +562,19 @@ fun LzPlanContent(
     var confirmDraw by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Chips(current.chips)
+        current.inPack?.alsoHere?.let { AlsoHere(it) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            SaveButton(current, actions.save)
+            // A pack's LZ/PZ is saved to the pack as it changes: no Save of its own, and where it is saved said in its place (the design's PackLive pane).
+            if (current.inPack == null) SaveButton(current, actions.save)
             LzMoreMenu(current, actions, onRename = { renaming = current.name }, onDelete = { confirmDelete = true }, outlined = true)
-            SavesToLibrary(Modifier.weight(1f))
+            current.inPack?.let { SavedToPack(it.savedLine, Modifier.weight(1f)) } ?: SavesToLibrary(Modifier.weight(1f))
         }
-        renaming?.let { name -> RenameField(name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null }) }
+        renaming?.let { name ->
+            RenameField(
+                name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null },
+                inPack = current.inPack != null,
+            )
+        }
         if (confirmDelete) DeleteConfirm(current.name, onDelete = { confirmDelete = false; actions.delete(current.uuid) }, onKeep = { confirmDelete = false })
         if (current.conflictOf != null) ConflictPanel("LZ/PZ") { actions.resolve(current.uuid, it) }
 
@@ -617,6 +727,7 @@ private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
                         Text(
                             when {
                                 !current.canAnalyze -> "Set a target to analyze this LZ/PZ."
+                                analyzed && current.inPack != null -> "Analyzed. Planning graphics are unlocked."      // a pack's has no Save to unlock
                                 analyzed -> "Analyzed. Planning graphics and save are unlocked."
                                 else -> "Not analyzed yet. Analyzing finds the landing area and measures its slope; it needs a connection."
                             },

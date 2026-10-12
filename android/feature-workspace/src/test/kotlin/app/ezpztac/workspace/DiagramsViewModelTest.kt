@@ -2,19 +2,22 @@ package app.ezpztac.workspace
 
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
-import app.ezpztac.data.InMemoryAircraftChoice
-import app.ezpztac.data.InMemoryOpenDiagramStore
-import app.ezpztac.data.OpenDiagrams
-import app.ezpztac.data.SlopeVisibility
-import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.InMemoryAircraftChoice
+import app.ezpztac.data.InMemoryMasterProfileStore
+import app.ezpztac.data.InMemoryOpenDiagramStore
+import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.data.WeatherApi
 import app.ezpztac.data.WeatherCache
 import app.ezpztac.data.WeatherService
+import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.AircraftProfile
+import app.ezpztac.model.DiagramStatus
+import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.WeatherSnapshot
 import app.ezpztac.network.ApiException
@@ -26,11 +29,6 @@ import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.network.Uh60Limits
 import app.ezpztac.network.WeatherReportDto
 import app.ezpztac.planning.LzSummary
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import app.ezpztac.model.DiagramStatus
-import app.ezpztac.model.DiagramTarget
 import app.ezpztac.sync.ConflictResolver
 import app.ezpztac.sync.Device
 import app.ezpztac.sync.FakeServer
@@ -39,12 +37,15 @@ import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.RecordingScheduler
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -53,6 +54,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -116,12 +118,13 @@ class DiagramsViewModelTest {
     private class Rig(
         scope: TestScope, label: String = "A", val server: FakeServer = FakeServer(), realEngine: Boolean = false, resolver: ConflictResolver? = null,
         masterList: List<AircraftProfile> = emptyList(),
+        val pack: FakeOpenPack = FakeOpenPack(),
     ) {
         val terrain = Terrain()
         val device = Device(label, server)
         val scheduler = RecordingScheduler()
         val repository = DiagramRepository(device.repository, device.store as InMemorySyncStore, scheduler)
-        val session = DiagramSession(repository, scope.backgroundScope)
+        val session = DiagramSession(repository, scope.backgroundScope, pack.lzStore)
         val resolutions = mutableListOf<Triple<RecordKind, String, SyncEngine.Resolution>>()
         // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and an analysis is work a test waits for.
         val analysis = AnalysisService(
@@ -139,9 +142,14 @@ class DiagramsViewModelTest {
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            analysis, aircraft, weather, open, slopeVisibility,
+            analysis, aircraft, weather, open, slopeVisibility, pack,
         )
         val rows get() = model.state.value.rows
+
+        init {
+            pack.opener = { session.open(it) }
+            pack.closer = { session.closeIfOpen(it) }
+        }
     }
 
     private fun TestScope.rig(resolver: ConflictResolver? = null) = Rig(this, resolver = resolver).also { advanceUntilIdle() }
@@ -809,6 +817,220 @@ class DiagramsViewModelTest {
     // -- The LZ/PZ panel: the open LZ/PZs, naming, closing (S3) ---------------------------------------------------------------
 
     private val here = LatLon(34.783817, -84.08219)
+
+    // -- In a Mission Pack (P2b) ------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `in a pack the panel is the pack's LZ-PZs, each with what it says, and the person's own are set aside`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)                                                                      // the person's own, open before the pack
+        advanceUntilIdle()
+        val hawk = FakeOpenPack.lz("lz-1", "LZ HAWK", DiagramTarget(34.78, -84.08, grid))
+        val crow = FakeOpenPack.lz("lz-2", "LZ CROW", DiagramTarget(34.79, -84.09, grid), source = buildJsonObject { put("original", "changed") })
+        r.pack.state.value = FakeOpenPack.open(listOf(hawk, crow), people = listOf(FakeOpenPack.here(2, "Sam Bell", "lz-1")))
+        advanceUntilIdle()
+        val s = r.model.state.value
+        assertEquals("OP DK · 2 items · live", s.pack!!.head)
+        assertEquals(listOf("LZ HAWK", "LZ CROW"), s.pack.rows.map { it.name })
+        assertEquals(listOf("pack:p:lz-1", "pack:p:lz-2"), s.pack.rows.map { it.uuid })
+        assertEquals(listOf("Target set"), s.pack.rows[0].chips.map { it.text })                 // "Synced" is what most rows would say: left unsaid
+        assertEquals(listOf("Target set", "Original changed"), s.pack.rows[1].chips.map { it.text })
+        assertEquals("Sam B. has it open", s.pack.rows[0].presence)
+        assertTrue("the person's own are set aside", s.open.isEmpty() && s.recent.isEmpty())
+        r.pack.state.value = null                                                                 // back to the Library
+        advanceUntilIdle()
+        assertNull(r.model.state.value.pack)
+    }
+
+    @Test
+    fun `in a pack a new LZ-PZ goes into the pack, not the Library`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        assertEquals(listOf("createLz $grid"), r.pack.log)
+        assertTrue(r.rows.isEmpty())
+        assertNull(r.model.state.value.error)
+    }
+
+    @Test
+    fun `a pack's LZ-PZ is opened and closed in the pack, and is removed from the Pack panel, never deleted here`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.lz("lz-1", "LZ HAWK", DiagramTarget(34.78, -84.08, grid))))
+        advanceUntilIdle()
+        r.model.open("pack:p:lz-1")
+        advanceUntilIdle()
+        r.model.close("pack:p:lz-1")
+        advanceUntilIdle()
+        assertEquals(listOf("open lz-1", "close lz-1"), r.pack.log)
+        r.model.delete("pack:p:lz-1")
+        advanceUntilIdle()
+        assertEquals(DiagramsViewModel.REMOVE_IN_PACK_PANEL, r.model.state.value.error)
+        r.pack.opens = false
+        r.model.open("pack:p:lz-1")
+        advanceUntilIdle()
+        assertEquals("That LZ/PZ is no longer in the pack.", r.model.state.value.error)
+        r.model.open("pack:q:lz-1")                                                               // another pack's: not this pack's to open
+        advanceUntilIdle()
+        assertEquals(listOf("open lz-1", "close lz-1", "open lz-1"), r.pack.log)
+    }
+
+    @Test
+    fun `an open pack LZ-PZ is the pack's on its card, with no Save, and is not listed again under it`() = runTest(dispatcher) {
+        val r = rig()
+        val hawk = FakeOpenPack.lz("lz-1", "LZ HAWK", DiagramTarget(34.78, -84.08, grid))
+        val crow = FakeOpenPack.lz("lz-2", "LZ CROW", DiagramTarget(34.79, -84.09, grid))
+        r.pack.state.value = FakeOpenPack.open(
+            listOf(hawk, crow),
+            people = listOf(FakeOpenPack.here(2, "Sam Bell", "lz-1"), FakeOpenPack.here(3, "Jess Reed", "lz-1"), FakeOpenPack.here(1, "Colin McFadden", "lz-1")),
+        )
+        advanceUntilIdle()
+        r.model.open("pack:p:lz-1")
+        advanceUntilIdle()
+        val s = r.model.state.value
+        val current = checkNotNull(s.current)
+        assertEquals("pack:p:lz-1", current.uuid)
+        assertEquals(listOf("Target set", "Synced"), current.chips.map { it.text })
+        assertFalse(current.canSave)
+        assertFalse(current.madeUpName)
+        assertNull(current.sync)
+        assertEquals(InPackUi("OP DK", "Saved to OP DK as you work. 4 members can see it.", "Sam B. and 1 more are also here", false), current.inPack)
+        assertEquals(listOf("pack:p:lz-2"), s.pack!!.rows.map { it.uuid })
+        assertEquals(2, s.pack.count)
+        assertTrue("a pack's is never one of the person's open LZ/PZs", r.open.ids.value.isEmpty())
+    }
+
+    @Test
+    fun `an open pack LZ-PZ the pack's state does not list for a moment is still the pack's, never saved to the Library`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.lz("lz-1", "LZ/PZ 1", DiagramTarget(34.78, -84.08, grid))))
+        advanceUntilIdle()
+        r.model.open("pack:p:lz-1")
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(emptyList())                                        // a client replaced after a pause, reading the device's copy
+        advanceUntilIdle()
+        val current = checkNotNull(r.model.state.value.current)
+        assertEquals(InPackUi("OP DK", "Saved to OP DK as you work. 4 members can see it.", null, false), current.inPack)
+        assertFalse(current.canSave)
+        assertFalse("a made-up name is the pack's, not one to save under", current.madeUpName)
+        assertEquals(listOf("Target set"), current.chips.map { it.text })
+        r.pack.state.value = null                                                                 // the pack closing round it
+        advanceUntilIdle()
+        assertEquals("the pack", r.model.state.value.current?.inPack?.pack)
+        r.model.saveAs("LZ HAWK")
+        advanceUntilIdle()
+        assertEquals(DiagramsViewModel.SAVED_TO_PACK, r.model.state.value.error)
+        assertTrue("nothing named into the Library", r.rows.isEmpty())
+        assertEquals("LZ/PZ 1", r.session.active.value?.name)
+    }
+
+    @Test
+    fun `closing or deleting one of the person's own while a pack is open opens nothing else of theirs in its place`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.newAt(LatLon(34.79, -84.09))
+        advanceUntilIdle()
+        val (first, second) = r.open.ids.value
+        assertEquals(second, r.session.active.value?.id)
+        r.pack.state.value = FakeOpenPack.open(emptyList())                                        // the second left on the map in the pack (a park that failed)
+        advanceUntilIdle()
+        r.model.close(second)
+        advanceUntilIdle()
+        assertNull("the first is not brought into the pack", r.session.active.value)
+        assertEquals("the first stays open, for when the pack is left", listOf(first), r.open.ids.value)
+        r.pack.state.value = null
+        advanceUntilIdle()
+        r.model.open(first)
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.newAt(LatLon(34.80, -84.10))                                                     // in a pack: the pack's, not another of the person's
+        advanceUntilIdle()
+        r.model.delete(first)
+        advanceUntilIdle()
+        assertNull(r.session.active.value)
+    }
+
+    @Test
+    fun `while a pack is open the person's own LZ-PZs are not opened, and a pack's takes any name, its own LZ-PZ n included`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val own = checkNotNull(r.session.active.value).id
+        r.model.close(own)
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.lz("lz-1", "LZ HAWK", DiagramTarget(34.78, -84.08, grid))))
+        advanceUntilIdle()
+        r.model.open(own)
+        advanceUntilIdle()
+        assertEquals(DiagramsViewModel.OWN_IN_PACK, r.model.state.value.error)
+        assertNull(r.session.active.value)
+        r.model.open("pack:p:lz-1")
+        advanceUntilIdle()
+        r.model.rename("pack:p:lz-1", "LZ/PZ 4")
+        advanceUntilIdle()
+        assertNull(r.model.state.value.error)
+        assertEquals("LZ/PZ 4", r.session.active.value?.name)
+    }
+
+    @Test
+    fun `a pack opening or out of reach says so in place of its LZ-PZs, and a paused one is never called live`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = null, status = PackStatus.LOADING)
+        advanceUntilIdle()
+        r.model.state.value.pack!!.let {
+            assertEquals("Opening…", it.head)
+            assertEquals("Opening the pack…", it.opening)
+            assertEquals(0, it.count)
+        }
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = null, status = PackStatus.ERROR)
+        advanceUntilIdle()
+        r.model.state.value.pack!!.let {
+            assertEquals("Cannot reach the pack", it.head)
+            assertEquals(DiagramsViewModel.PACK_UNREACHABLE, it.opening)
+        }
+        r.pack.state.value = FakeOpenPack.open(emptyList(), status = PackStatus.PAUSED)
+        advanceUntilIdle()
+        assertEquals("OP DK · 0 items · paused", r.model.state.value.pack!!.head)
+        assertNull(r.model.state.value.pack!!.opening)
+    }
+
+    @Test
+    fun `a pack's LZ-PZ is read once while its data is the same, not for a pointer moving, and let go once it leaves`() = runTest(dispatcher) {
+        val r = rig()
+        val hawk = FakeOpenPack.lz("lz-1", "LZ HAWK", DiagramTarget(34.78, -84.08, grid))
+        val crow = FakeOpenPack.lz("lz-2", "LZ CROW", DiagramTarget(34.79, -84.09, grid))
+        r.pack.state.value = FakeOpenPack.open(listOf(hawk, crow))
+        advanceUntilIdle()
+        assertEquals(2, r.model.packReads)
+        r.pack.state.value = FakeOpenPack.open(listOf(hawk, crow.copy(name = "LZ RAVEN")), people = listOf(FakeOpenPack.here(2, "Sam Bell", "lz-1", at = 34.1)))
+        advanceUntilIdle()
+        assertEquals("a rename and someone opening it are no reason to read either again", 2, r.model.packReads)
+        assertEquals(listOf("LZ HAWK", "LZ RAVEN"), r.model.state.value.pack!!.rows.map { it.name })
+        repeat(5) { i ->
+            r.pack.state.value = FakeOpenPack.open(listOf(hawk, crow.copy(name = "LZ RAVEN")), people = listOf(FakeOpenPack.here(2, "Sam Bell", "lz-1", at = 34.2 + i)))
+            advanceUntilIdle()
+        }
+        assertEquals(2, r.model.packReads)
+        r.pack.state.value = FakeOpenPack.open(listOf(crow))                                       // HAWK removed: let go
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(listOf(hawk, crow))
+        advanceUntilIdle()
+        assertEquals("HAWK came back, and is read again: nothing kept it meanwhile", 3, r.model.packReads)
+    }
+
+    @Test
+    fun `a pack's LZ-PZ says what holds first, read-only, the original changed, from the Library, waiting, synced`() {
+        fun chip(readOnly: Boolean = false, original: String? = null, fromLibrary: Boolean = false, waiting: Boolean = false) =
+            packLzChips(DiagramStatus.ANALYZED, readOnly, original, fromLibrary, waiting).map { it.text }
+        assertEquals(listOf("Analyzed", "Read-only"), chip(readOnly = true, original = "changed", fromLibrary = true, waiting = true))
+        assertEquals(listOf("Analyzed", "Original changed"), chip(original = "changed", fromLibrary = true, waiting = true))
+        assertEquals(listOf("Analyzed", "From Library"), chip(fromLibrary = true, waiting = true))
+        assertEquals(listOf("Analyzed", "Waiting to send"), chip(waiting = true))
+        assertEquals(listOf("Analyzed", "Synced"), chip())
+    }
 
     @Test
     fun `a new LZ-PZ at the crosshair has the next made-up name, opens, and is kept open`() = runTest(dispatcher) {

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -68,15 +69,45 @@ import app.ezpztac.designsystem.Tokens
 fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier, threatCount: Int = 0) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         state.error?.takeIf { state.drawing == null }?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
-        val conflicts = state.sets.count { it.conflictOf != null }
+        // A conflict is the Library's: in a pack it would read as if one of the pack's sets had one.
+        val conflicts = if (state.pack == null) state.sets.count { it.conflictOf != null } else 0
         if (conflicts > 0) {
             Banner(
                 if (conflicts == 1) "1 route set needs a choice: another device changed it too." else "$conflicts route sets need a choice: another device changed them too.",
                 BannerKind.Warning, actionLabel = "Review", onAction = actions.browse,
             )
         }
+        // In a pack: the pack's route sets, in place of the person's own (set aside until the pack is left), under a label that counts them all, the open one
+        // first when it is the pack's.
+        val pack = state.pack
+        val packLabel: @Composable () -> Unit = { pack?.let { SectionLabel("In ${it.name} · ${it.count}") } }
+        if (pack != null && pack.opening == null && state.open?.inPack != null) packLabel()
         state.open?.let { ActiveSetCard(it, state.drawing, state.exporting, state.includeThreats, threatCount, actions) }
         state.exportWarning?.let { Banner(it, BannerKind.Warning, actionLabel = "Dismiss", onAction = actions.dismissExportWarning) }
+        if (pack != null) {
+            when {
+                pack.opening != null -> Text(pack.opening, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                pack.rows.isNotEmpty() -> {
+                    if (state.open?.inPack == null) packLabel()
+                    pack.rows.forEach { row ->
+                        ListRow(
+                            EzpzIcons.route, row.name, emphasis = true, onClick = { actions.openSet(row.uuid) }, onClickLabel = "Open",
+                            supporting = {
+                                Column {
+                                    SetLine(row)
+                                    // Every name, however many: it wraps rather than being cut.
+                                    row.presence?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                }
+                            },
+                        )
+                    }
+                }
+                state.open?.inPack == null -> Text(
+                    "No routes in ${pack.name} yet. Sketch a route, and it goes into the pack.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp),
+                )
+            }
+        }
         if (state.alsoOpen.isNotEmpty()) {
             SectionLabel("Also open", Modifier.padding(top = Tokens.Spacing.sm.dp))
             state.alsoOpen.forEach { row ->
@@ -86,14 +117,15 @@ fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Mo
                 )
             }
         }
-        if (state.sets.isNotEmpty()) {
+        // The way to the Library's sets: not in a pack, whose sets are the panel's (the web shows nothing of the Library there).
+        if (state.sets.isNotEmpty() && pack == null) {
             ListRow(
                 EzpzIcons.collectionsBookmark, "Every route set", onClick = actions.browse, onClickLabel = "Open the Library",
                 supporting = { Muted(if (state.sets.size == 1) "1 in your Library" else "${state.sets.size} in your Library") },
                 modifier = Modifier.padding(top = Tokens.Spacing.xs.dp),
             ) { Icon(painterResource(EzpzIcons.chevronRight), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
-        if (state.open == null && state.alsoOpen.isEmpty()) {
+        if (state.open == null && state.alsoOpen.isEmpty() && state.pack == null) {
             Text(
                 "No routes open. Sketch a route on the map, or import an AMPS mission file.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp),
@@ -102,20 +134,18 @@ fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Mo
     }
 }
 
-/** A set's second line in a list: how far it has reached the server, in its chip's colour, then what it holds. */
+/**
+ * A set's second line in a list: how far it has reached the server (in a pack, what holds of it there, when anything does), in its chip's colour, then what it
+ * holds; the two one under the other where both do not fit (a narrow phone, large text), neither cut.
+ */
 @Composable
 private fun SetLine(row: RouteSetRow) {
     val chip = row.chips.lastOrNull()
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (chip != null) {
-            Text(chip.text, style = MaterialTheme.typography.bodyMedium, color = toneColor(chip.tone), maxLines = 1)
-            Muted(" · ")
-        }
-        Text(
-            (if (row.isMission) "AMPS mission · " else "") + row.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1, overflow = TextOverflow.Ellipsis,
-        )
+    val summary: @Composable () -> Unit = {
+        Text((if (row.isMission) "AMPS mission · " else "") + row.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    if (chip == null) return summary()
+    DotJoined({ Text(chip.text, style = MaterialTheme.typography.bodyMedium, color = toneColor(chip.tone)) }, summary)
 }
 
 @Composable
@@ -136,24 +166,36 @@ private fun ActiveSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, exporting: 
                 SmallIconButton(EzpzIcons.edit, "Rename ${open.name}") { renaming = open.name }
                 SetMoreMenu(open, actions, onDelete = { confirmDelete = true })
             }
-            Row(Modifier.padding(top = Tokens.Spacing.xs.dp, end = Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+            // What it holds goes under its chips where both do not fit (large text), rather than being cut.
+            FlowRow(
+                Modifier.padding(top = Tokens.Spacing.xs.dp, end = Tokens.Spacing.sm.dp), itemVerticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp),
+            ) {
                 Chips(open.chips)
-                Text(open.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(open.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(
                 Modifier.padding(top = 10.dp, end = Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
             ) {
-                SaveSetButton(open, actions.save)
+                // A pack's set is saved to the pack as it changes: no Save of its own (the design's PackLive).
+                if (open.inPack == null) SaveSetButton(open, actions.save)
                 PillButton(
                     if (exporting) "Building…" else "Export .msnx", onClick = { actions.exportSet(includeThreats && threatCount > 0) }, icon = EzpzIcons.uploadFile,
                     style = PillStyle.Outlined, enabled = !exporting && open.routes.isNotEmpty(),
                 )
-                SavesToLibrary(Modifier.weight(1f))
+                if (open.inPack == null) SavesToLibrary(Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
+            }
+            open.inPack?.let { pack ->
+                pack.alsoHere?.let { AlsoHere(it, Modifier.padding(top = Tokens.Spacing.sm.dp)) }
+                SavedToPack(pack.savedLine, Modifier.padding(top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp))
             }
             if (threatCount > 0) ThreatsBox(threatCount, includeThreats, actions.includeThreats)
             renaming?.let { name ->
-                SetRenameField(name, open.name, onChange = { renaming = it }, onDone = { actions.renameSet(open.uuid, it); renaming = null }, onCancel = { renaming = null })
+                SetRenameField(
+                    name, open.name, onChange = { renaming = it }, onDone = { actions.renameSet(open.uuid, it); renaming = null }, onCancel = { renaming = null },
+                    inPack = open.inPack != null,
+                )
             }
             if (confirmDelete) SetDeleteConfirm(open.name, onDelete = { confirmDelete = false; actions.deleteSet(open.uuid) }, onKeep = { confirmDelete = false })
             if (open.conflictOf != null) {
@@ -219,27 +261,36 @@ private fun SetMoreMenu(open: OpenSetUi, actions: RoutesActions, onDelete: () ->
             DropdownMenuItem(
                 text = {
                     Column {
-                        Text("Close")
-                        Text("Takes these routes out of this session", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if (open.inPack != null) "Close here" else "Close")
+                        Text(
+                            if (open.inPack != null) "It stays in the pack" else "Takes these routes out of this session",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 },
                 onClick = { expanded = false; actions.close(open.uuid) },
                 leadingIcon = { Icon(painterResource(EzpzIcons.close), contentDescription = null) },
             )
-            DropdownMenuItem(text = { Text("Delete") }, onClick = { expanded = false; onDelete() }, leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null) })
+            // A pack's set is removed for everyone from the Pack panel, never deleted from here.
+            if (open.inPack == null) {
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { expanded = false; onDelete() }, leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null) })
+            }
         }
     }
 }
 
-/** Renaming a set: in capitals, as the web names them. A made-up name is not a name, and what is wrong is said at the field once *Save name* is pressed. */
+/**
+ * Renaming a set: in capitals, as the web names them. A made-up name is not a name (but in a pack, where nothing is named to be saved, any name will do), and what
+ * is wrong is said at the field once *Save name* is pressed.
+ */
 @Composable
-internal fun SetRenameField(name: String, was: String, onChange: (String) -> Unit, onDone: (String) -> Unit, onCancel: () -> Unit) {
+internal fun SetRenameField(name: String, was: String, onChange: (String) -> Unit, onDone: (String) -> Unit, onCancel: () -> Unit, inPack: Boolean = false) {
     var refused by rememberSaveable { mutableStateOf<String?>(null) }
     val done: () -> Unit = {
         val title = RouteSetNames.clean(name)
         refused = when {
             title.isEmpty() -> "Give it a name."
-            title != RouteSetNames.clean(was) && RouteSetNames.isMadeUp(title) -> RouteSetNames.MADE_UP_REFUSED
+            !inPack && title != RouteSetNames.clean(was) && RouteSetNames.isMadeUp(title) -> RouteSetNames.MADE_UP_REFUSED
             else -> null
         }
         when {
@@ -410,7 +461,8 @@ internal fun RouteMoreMenu(
 
 /**
  * The panel's foot (the design's): *Sketch a route* and *Import .msnx*; while a route is being drawn, *Cancel* and *Finish* (the web's), which the toolbar over
- * the map also has. Pinned under the panel at half and full height.
+ * the map also has. Pinned under the panel at half and full height. In a pack only *Sketch a route*, as on the web: a mission brought in goes to the Library,
+ * not into the pack.
  */
 @Composable
 fun RoutesFooter(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier) {
@@ -429,7 +481,9 @@ fun RoutesFooter(state: RoutesUiState, actions: RoutesActions, modifier: Modifie
                 )
             } else {
                 PillButton("Sketch a route", onClick = actions.startSketch, icon = EzpzIcons.draw, style = PillStyle.Tonal, modifier = Modifier.weight(1f))
-                PillButton("Import .msnx", onClick = actions.importMission, icon = EzpzIcons.fileOpen, style = PillStyle.Outlined, modifier = Modifier.weight(1f))
+                if (state.pack == null) {
+                    PillButton("Import .msnx", onClick = actions.importMission, icon = EzpzIcons.fileOpen, style = PillStyle.Outlined, modifier = Modifier.weight(1f))
+                }
             }
         }
     }

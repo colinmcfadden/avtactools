@@ -1,6 +1,5 @@
 package app.ezpztac.workspace
 
-import app.ezpztac.model.GraphicRef
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -10,9 +9,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
@@ -21,6 +20,7 @@ import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -32,6 +32,7 @@ import app.ezpztac.data.PlaceTool
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.DiagramStatus
+import app.ezpztac.model.GraphicRef
 import app.ezpztac.sync.SyncStatus
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -98,7 +99,7 @@ class LzPanelScreenTest {
         show { LzHomeContent(homeState(), actions, GRID) }
         compose.onNodeWithText("LZ/PZ 1").assertIsDisplayed()
         compose.onNodeWithText("Analyzed").assertIsDisplayed()
-        compose.onNodeWithText("Synced").assertIsDisplayed()
+        compose.onAllNodesWithText("Synced").onFirst().assertIsDisplayed()                       // the card's chip (the rows say it too)
         compose.onNodeWithText("Save").assertIsEnabled().performClick()
         compose.onNodeWithText("Plan").performClick()
         assertEquals(listOf("save", "page PLAN"), log)
@@ -140,7 +141,7 @@ class LzPanelScreenTest {
     fun `one not analysed yet cannot be named, and its chip says why`() {
         show { LzHomeContent(homeState(activeLz(status = DiagramStatus.TARGETED)), actions, GRID) }
         compose.onNodeWithText("Save").assertIsNotEnabled()
-        compose.onNodeWithText("Analyze to save").assertIsDisplayed()
+        compose.onAllNodesWithText("Analyze to save").onFirst().assertIsDisplayed()
     }
 
     @Test

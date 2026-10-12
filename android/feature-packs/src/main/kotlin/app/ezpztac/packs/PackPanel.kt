@@ -1,5 +1,6 @@
 package app.ezpztac.packs
 
+import app.ezpztac.data.PackFacts
 import app.ezpztac.missionpacks.KeptOutcome
 import app.ezpztac.missionpacks.PackItemView
 import app.ezpztac.missionpacks.PackNotice
@@ -199,12 +200,7 @@ object PackPanelWords {
     fun subtitle(role: String?): String = "Mission Pack · you are ${ROLE_WORDS[role] ?: "a member"}"
 
     /** "Sam Bell" is "Sam B."; one word stays whole; nothing is "Someone" (Avatar.jsx's `shortName`). */
-    fun shortName(name: String?): String {
-        val words = name.orEmpty().trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-        if (words.size < 2) return words.firstOrNull() ?: "Someone"
-        val last = words.last()
-        return "${words.first()} ${String(Character.toChars(last.codePointAt(0)))}."
-    }
+    fun shortName(name: String?): String = PackFacts.shortName(name)
 
     /** A server time: with its offset, or without as UTC (the API writes naive UTC times); null for none or one that cannot be read. */
     fun instant(iso: String?): Instant? {
@@ -221,11 +217,7 @@ object PackPanelWords {
     private val OFFSET = Regex("(?:[zZ]|[+-]\\d\\d:?\\d\\d)$")
 
     /** "Sam B. has it open", "Sam B. and Jess R. have it open". */
-    fun hasItOpen(names: List<String>): String = when (names.size) {
-        0 -> ""
-        1 -> "${names[0]} has it open"
-        else -> names.dropLast(1).joinToString(", ") + " and ${names.last()} have it open"
-    }
+    fun hasItOpen(names: List<String>): String = PackFacts.hasItOpen(names)
 
     /** "13:42", the clock in [zone]; 24-hour, as crews read it. */
     fun clockTime(at: Instant, zone: ZoneId): String {

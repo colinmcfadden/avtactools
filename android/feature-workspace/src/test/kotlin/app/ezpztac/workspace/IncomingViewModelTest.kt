@@ -381,6 +381,7 @@ class IncomingViewModelTest {
         val r = rig()
         assertEquals("Brought in 1 route from a.msnx as A.", r.model.missionResult(1, "a.msnx", "A", opened = true))
         assertEquals("Brought in 1,200 routes from a.msnx as A. It is in your list of route sets and missions.", r.model.missionResult(1200, "a.msnx", "A", opened = false))
+        assertEquals("Brought in 1 route from a.msnx as A. It is in your Library: switch to Personal to open it.", r.model.missionResult(1, "a.msnx", "A", opened = false, inPack = true))
     }
 
     /** A worker that does nothing until [run] is called: a file being read for a while. */

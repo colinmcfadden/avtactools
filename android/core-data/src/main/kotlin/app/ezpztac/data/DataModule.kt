@@ -30,6 +30,10 @@ import kotlinx.coroutines.SupervisorJob
 @Module
 @InstallIn(SingletonComponent::class)
 internal object DataModule {
+    /** The open Mission Pack, as the LZ/PZ and Routes panels see it: the editors' join to it. */
+    @Provides
+    fun openPack(workspace: PackWorkspace): OpenPack = workspace
+
     @Provides
     @Singleton
     fun database(@ApplicationContext context: Context): EzpzDatabase = EzpzDatabase.open(context)

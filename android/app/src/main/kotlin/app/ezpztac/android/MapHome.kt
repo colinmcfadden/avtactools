@@ -740,7 +740,7 @@ private const val NIGHT_DIM = 0.45f
 
 /** The LZ/PZ panel's header for the page it is on: its open LZ/PZs; an LZ/PZ's plan, with its grid; the aircraft. [go] moves between them. */
 private fun lzHead(lz: DiagramsUiState, go: (LzPage) -> Unit): PanelHead = when (lz.page) {
-    LzPage.HOME -> PanelHead("LZ/PZ", if (lz.openCount == 0) "Nothing open" else "${lz.openCount} open · this session")
+    LzPage.HOME -> PanelHead("LZ/PZ", lz.pack?.head ?: if (lz.openCount == 0) "Nothing open" else "${lz.openCount} open · this session")
     LzPage.PLAN -> PanelHead(
         lz.current?.name ?: "LZ/PZ", lz.current?.grid ?: "No target yet", subtitleMono = lz.current?.grid != null,
         back = { go(LzPage.HOME) }, backDescription = if (lz.openCount == 1) "Back to the open LZ/PZ" else "Back to the open LZ/PZs, ${lz.openCount} open",
@@ -750,7 +750,7 @@ private fun lzHead(lz: DiagramsUiState, go: (LzPage) -> Unit): PanelHead = when 
 
 /** The Routes panel's header: the sets open now. */
 private fun routesHead(routes: RoutesUiState): PanelHead = when (routes.page) {
-    RoutesPage.HOME -> PanelHead("Routes", when (routes.openCount) { 0 -> "Nothing open"; 1 -> "1 route set in this session"; else -> "${routes.openCount} route sets in this session" })
+    RoutesPage.HOME -> PanelHead("Routes", routes.pack?.head ?: when (routes.openCount) { 0 -> "Nothing open"; 1 -> "1 route set in this session"; else -> "${routes.openCount} route sets in this session" })
 }
 
 /** The Library tab a panel's items are on, which the Library chip opens at: the panel's own, the LZ/PZs otherwise. */

@@ -275,7 +275,7 @@ class IncomingViewModel @Inject constructor(
                 } else {
                     val stillWanted = { incoming.generation == generation }
                     when (val outcome = withContext(worker) { missions.import(file.bytes, seen.mission, file.name, stillWanted) }) {
-                        is MissionImportOutcome.Imported -> missionResult(outcome.set.routes.size, file.name, outcome.set.name, outcome.opened)
+                        is MissionImportOutcome.Imported -> missionResult(outcome.set.routes.size, file.name, outcome.set.name, outcome.opened, outcome.inPack)
                         is MissionImportOutcome.Refused -> outcome.message
                     }
                 }
@@ -308,9 +308,16 @@ class IncomingViewModel @Inject constructor(
         incoming.refuse(name, reason)
     }
 
-    /** What the person is told once a mission is in. A mission that could not be opened (another one open could not be saved first) is where to find it. */
-    internal fun missionResult(routes: Int, fileName: String, setName: String, opened: Boolean): String =
-        "Brought in ${count(routes, "route")} from $fileName as $setName." + if (opened) "" else " It is in your list of route sets and missions."
+    /**
+     * What the person is told once a mission is in. A mission that could not be opened (another one open could not be saved first) is where to find it; one brought
+     * in while a Mission Pack is open ([inPack]) is in the Library, for when the pack is left.
+     */
+    internal fun missionResult(routes: Int, fileName: String, setName: String, opened: Boolean, inPack: Boolean = false): String =
+        "Brought in ${count(routes, "route")} from $fileName as $setName." + when {
+            inPack -> " It is in your Library: switch to Personal to open it."
+            opened -> ""
+            else -> " It is in your list of route sets and missions."
+        }
 
     private fun count(n: Int, one: String) = if (n == 1) "1 $one" else "${withCommas(n.toLong())} ${one}s"
 

@@ -2,6 +2,7 @@ package app.ezpztac.packs
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.PackFacts
 import app.ezpztac.missionpacks.PackItemView
 import app.ezpztac.missionpacks.PackNotice
 import app.ezpztac.missionpacks.PackSession
@@ -30,10 +31,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 
@@ -479,16 +478,8 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
 
         private fun nameOf(session: PackSession): String = text(session.pack["name"]) ?: "Mission Pack"
 
-        // Who can see the pack (usePackWorkspace.jsx's packAudience): its members, and with a team, the team's too, never fewer than its members.
-        private fun audience(session: PackSession): Int {
-            val own = session.members.size
-            val shared = when (val team = session.pack["team"]) {
-                null, JsonNull -> false
-                is JsonPrimitive -> team.booleanOrNull ?: (team.content.isNotEmpty() && team.content != "0")
-                else -> true                                                                       // the team, as the server writes it
-            }
-            return if (shared) maxOf(own, number(session.pack["audience_count"]) ?: 0) else own
-        }
+        // Who can see the pack (usePackWorkspace.jsx's packAudience): one rule for every panel.
+        private fun audience(session: PackSession): Int = PackFacts.audience(session)
 
         private fun members(session: PackSession): List<Pair<Int, String>> = session.members.mapNotNull { member ->
             val obj = member as? JsonObject ?: return@mapNotNull null
@@ -501,6 +492,5 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
 
         private fun text(value: JsonElement?): String? = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
 
-        private fun number(value: JsonElement?): Int? = (value as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull
     }
 }

@@ -2,33 +2,38 @@ package app.ezpztac.workspace
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.ezpztac.data.LocalPoints
-import app.ezpztac.data.OpenRouteSets
-import app.ezpztac.designsystem.EzpzIcons
-import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.ExportResult
-import app.ezpztac.geo.MgrsConverter
-import app.ezpztac.geo.PlaceResult
-import app.ezpztac.geo.PlaceSearch
-import app.ezpztac.model.Units
-import app.ezpztac.planning.GraphicEdits
-import app.ezpztac.data.PlanningOutcome
 import app.ezpztac.data.HandoffFormat
+import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.OpenPack
+import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.PackFacts
+import app.ezpztac.data.PackGlance
+import app.ezpztac.data.PlanningOutcome
 import app.ezpztac.data.RouteExport
 import app.ezpztac.data.RouteHandoffExport
-import app.ezpztac.data.RoutePlanning
 import app.ezpztac.data.RouteHeld
+import app.ezpztac.data.RoutePlanning
+import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSetSummary
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SketchFinish
+import app.ezpztac.designsystem.EzpzIcons
+import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.geo.PlaceResult
+import app.ezpztac.geo.PlaceSearch
+import app.ezpztac.missionpacks.PackRef
+import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.LocalPointMatch
 import app.ezpztac.model.LocalPointNames
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.RouteSet
 import app.ezpztac.model.SketchRoute
+import app.ezpztac.model.Units
+import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.planning.PlanDraft
 import app.ezpztac.planning.PlanPatch
 import app.ezpztac.planning.PointDraft
@@ -40,25 +45,27 @@ import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.LocalDate
+import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.withContext
-import java.time.LocalDate
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 
 /** One saved set in a list: the Library's, or the session's "also open". */
 data class RouteSetRow(
@@ -76,6 +83,8 @@ data class RouteSetRow(
     val pointCount: Int? = null,
     /** Whether the server has it, as the design's chips say it ([routeSetChips]). */
     val chips: List<LzChip> = emptyList(),
+    /** A Mission Pack's set that someone else has open: "Jess R. has it open". */
+    val presence: String? = null,
 ) {
     /** `2 routes · 91 points`, or `2 routes` where the points are not known. */
     val summary: String get() = listOfNotNull(countOf(routeCount, "route"), pointCount?.let { countOf(it, "point") }).joinToString(" · ")
@@ -99,6 +108,24 @@ internal fun routeSetChips(sync: SyncStatus?, conflictOf: String?, isMission: Bo
         else -> LzChip("Waiting to sync", ChipTone.WARNING)                                // null too: made a moment ago, the list not caught up yet
     },
 )
+
+/** The chips of a Mission Pack's set of routes: the first that holds of read-only, its Library original changed, copied from the Library, and whether the pack has this person's last change. */
+internal fun packRouteChips(readOnly: Boolean, original: String?, fromLibrary: Boolean, waiting: Boolean): List<LzChip> = listOf(
+    when {
+        readOnly -> LzChip("Read-only", ChipTone.NEUTRAL, EzpzIcons.lock)
+        original == "changed" -> LzChip("Original changed", ChipTone.WARNING, EzpzIcons.update)
+        fromLibrary -> LzChip("From Library", ChipTone.NEUTRAL, EzpzIcons.collectionsBookmark)
+        waiting -> LzChip("Waiting to send", ChipTone.WARNING)
+        else -> SYNCED_IN_PACK
+    },
+)
+
+/**
+ * A Mission Pack is open (P2b): its route sets are the panel's, in place of the person's own, which are set aside. [head] is the panel's subtitle
+ * ("OP DK · 2 route sets"); [rows] the pack's sets other than the one open, in the order they were added; [count] all of them, the open one too.
+ * [opening] is what the panel says in their place while the device does not hold the pack yet.
+ */
+data class PackRoutesListUi(val name: String, val head: String, val rows: List<RouteSetRow>, val count: Int = rows.size, val opening: String? = null)
 
 /** `1 route`, `4 points`. */
 internal fun countOf(n: Int, one: String): String = if (n == 1) "1 $one" else "$n ${one}s"
@@ -138,6 +165,8 @@ data class OpenSetUi(
     val chips: List<LzChip> = emptyList(),
     /** What naming it keeps, in the save sheet's words: its routes counted, and their plans. */
     val saveContents: List<String> = emptyList(),
+    /** A Mission Pack's set: saved to the pack as it changes, with no *Save* of its own. Null for the person's own. */
+    val inPack: InPackUi? = null,
 ) {
     /** Every point of its routes, shaping points included. */
     val pointCount: Int get() = routes.sumOf { it.pointCount }
@@ -145,8 +174,8 @@ data class OpenSetUi(
     /** `1 route · 4 points`. */
     val summary: String get() = "${countOf(routes.size, "route")} · ${countOf(pointCount, "point")}"
 
-    /** *Save* names a set of sketched routes that still has its made-up name, once it has a route to save. */
-    val canSave: Boolean get() = madeUpName && !isMission && routes.isNotEmpty() && conflictOf == null
+    /** *Save* names a set of sketched routes that still has its made-up name, once it has a route to save; a pack's are named in the pack. */
+    val canSave: Boolean get() = inPack == null && madeUpName && !isMission && routes.isNotEmpty() && conflictOf == null
 }
 
 /** A route being drawn. */
@@ -244,6 +273,8 @@ data class RoutesUiState(
     /** An AMPS export takes the threat picture beside it as a `.ths` (the set card's box; on until the person says otherwise). */
     val includeThreats: Boolean = true,
     val error: String? = null,
+    /** The open Mission Pack's route sets, while one is open; null in the Library. */
+    val pack: PackRoutesListUi? = null,
 )
 
 /**
@@ -264,6 +295,8 @@ class RoutesViewModel @Inject constructor(
     private val handoff: RouteHandoffExport,
     localPoints: LocalPoints,
     private val openSets: OpenRouteSets,
+    /** The open Mission Pack: while one is open its route sets are the panel's, and a new one goes into it. */
+    private val pack: OpenPack = OpenPack.None,
 ) : ViewModel() {
     private data class Local(
         val error: String? = null, val fetching: PlanningKind? = null, val note: PlanningNote? = null, val noteFor: String? = null,
@@ -294,19 +327,28 @@ class RoutesViewModel @Inject constructor(
      */
     private var madeForSketch: Pair<String, String?>? = null
 
+    /** The pack's set made to sketch a route in and the name the pack gave it, until that sketch ends: taken out of the pack again if it ends with no route. */
+    private var madeInPack: Pair<String, String>? = null
+
+    /** The pack's set last on the map: a sketch begun with none open is drawn into it (the web's `packRouteSetFor`, the last chosen), else the pack's first. */
+    private var lastPackSet: String? = null
+
     /** One thing the panel asks for at a time, as the LZ/PZ panel does: a second tap while a set is being made or opened is not a second set. */
     private var busy = false
 
-    private val listed = combine(repository.observe(), openSets.ids) { summaries, open -> summaries to open }
+    // What the panel reads of the open pack: a presence frame that only moves someone's pointer is not passed on (PackGlance).
+    private val listed = combine(repository.observe(), openSets.ids, pack.glance) { summaries, open, glance -> Triple(summaries, open, glance) }
 
-    val state: StateFlow<RoutesUiState> = combine(listed, session.active, selection.held, sketching.draft, local) { (summaries, inSession), set, held, draft, local ->
+    val state: StateFlow<RoutesUiState> = combine(listed, session.active, selection.held, sketching.draft, local) { (summaries, inSession, glance), set, held, draft, local ->
         val byId = summaries.associateBy { it.uuid }
-        val also = inSession.filter { it != set?.id }.mapNotNull { id -> byId[id]?.toRow(isOpen = false) }
+        // In a pack the person's own sets are set aside: what is open is the pack's.
+        val also = if (glance != null) emptyList() else inSession.filter { it != set?.id }.mapNotNull { id -> byId[id]?.toRow(isOpen = false) }
         val detail = set?.let { detailOf(it, held) }
         RoutesUiState(
             sets = summaries.map { it.toRow(isOpen = it.uuid == set?.id) },
-            open = set?.let { openOf(it, held?.routeId, byId[it.id]) },
+            open = set?.let { openOf(it, held?.routeId, byId[it.id]) }?.let { open -> inPack(open, glance) },
             alsoOpen = also,
+            pack = glance?.let { packListOf(it, set?.id) },
             openCount = also.size + (if (set != null) 1 else 0),
             page = local.page,
             // The page is the held route's: a route undone out of existence, or put down, takes its page with it.
@@ -334,6 +376,7 @@ class RoutesViewModel @Inject constructor(
             var shown: String? = null
             session.active.collect { set ->
                 if (set != null) openSets.add(set.id)
+                if (set != null && PackRef.parse(set.id) != null) lastPackSet = set.id
                 if (set?.id != shown) local.update { it.copy(planFor = null) }                  // another set, or none: the page was the last one's
                 shown = set?.id
             }
@@ -345,6 +388,11 @@ class RoutesViewModel @Inject constructor(
         // A sketch that ends without a route takes the set made for it away again (cancelled, or dropped as another set opened).
         viewModelScope.launch {
             sketching.draft.map { it?.setId }.distinctUntilChanged().collect { drawingOn ->
+                madeInPack?.let { (made, name) ->
+                    if (drawingOn == made) return@collect
+                    madeInPack = null
+                    abandonInPack(made, name)
+                }
                 val (made, before) = madeForSketch ?: return@collect
                 if (drawingOn == made) return@collect
                 madeForSketch = null
@@ -352,6 +400,55 @@ class RoutesViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * The open pack's route sets for the panel: the ones not open, each with what holds of it in the pack (never *Synced*, which most would say) and who else has
+     * it open, and the panel's head. Before the device holds the pack, what the Pack panel says in their place.
+     */
+    private fun packListOf(glance: PackGlance, openId: String?): PackRoutesListUi {
+        if (!glance.loaded) {
+            val unreachable = glance.status == PackStatus.ERROR
+            return PackRoutesListUi(
+                glance.name, if (unreachable) "Cannot reach the pack" else "Opening…", emptyList(), count = 0,
+                opening = if (unreachable) DiagramsViewModel.PACK_UNREACHABLE else "Opening the pack…",
+            )
+        }
+        val items = glance.items.filter { it.kind == "route" }
+        val rows = items.filter { PackRef.localId(glance.uuid, it.uuid) != openId }.map { item ->
+            val routes = ((item.data as? JsonObject)?.get("routes") as? JsonArray).orEmpty()
+            val points = routes.sumOf { ((it as? JsonObject)?.get("points") as? JsonArray)?.size ?: 0 }
+            RouteSetRow(
+                uuid = PackRef.localId(glance.uuid, item.uuid), name = item.name, routeCount = routes.size, sync = SyncStatus.SYNCED, conflictOf = null, isOpen = false,
+                pointCount = points,
+                chips = packRouteChips(glance.readOnly, PackFacts.original(item), PackFacts.fromLibrary(item), glance.waiting(item)) - SYNCED_IN_PACK,
+                presence = glance.withItOpen(item.uuid).takeIf { it.isNotEmpty() }?.let(PackFacts::hasItOpen),
+            )
+        }
+        val count = if (items.size == 1) "1 route set" else "${items.size} route sets"
+        return PackRoutesListUi(glance.name, "${glance.name} · $count · ${glance.standing}", rows, count = items.size)
+    }
+
+    /**
+     * The open set as a pack's item: its chips, where it is saved, who else is in it; no *Save* of its own. Told by its id, so one the pack's state does not list for
+     * a moment is still the pack's, never a Library record.
+     */
+    private fun inPack(open: OpenSetUi, glance: PackGlance?): OpenSetUi {
+        val ref = PackRef.parse(open.uuid) ?: return open
+        val ours = glance?.takeIf { it.uuid == ref.pack }
+        val item = ours?.itemOf(open.uuid)
+        val readOnly = ours?.readOnly == true
+        return open.copy(
+            chips = if (ours != null && item != null) packRouteChips(readOnly, PackFacts.original(item), PackFacts.fromLibrary(item), ours.waiting(item)) else emptyList(),
+            madeUpName = false, sync = null, conflictOf = null,
+            inPack = InPackUi(
+                ours?.name ?: "the pack", ours?.savedLine ?: "Saved to the pack as you work.",
+                item?.let { ours.withItOpen(it.uuid) }?.let(PackFacts::alsoHere), readOnly,
+            ),
+        )
+    }
+
+    // [uuid]'s item in the open pack, when it is one.
+    private fun packItem(uuid: String): String? = PackRef.parse(uuid)?.takeIf { it.pack == pack.state.value?.uuid }?.item
 
     private fun RouteSetSummary.toRow(isOpen: Boolean) = RouteSetRow(
         uuid, name, routeCount, sync, conflictOf, isOpen, isMission, pointCount = pointCount, chips = routeSetChips(sync, conflictOf, isMission),
@@ -533,7 +630,7 @@ class RoutesViewModel @Inject constructor(
         }
     }
 
-    /** Makes an empty set and opens it. A blank [name] is the next made-up one (`SKETCHED ROUTES`), upper-cased as the web names routes. */
+    /** Makes an empty set and opens it. A blank [name] is the next made-up one (`SKETCHED ROUTES`), upper-cased as the web names routes. In a pack, the pack's next. */
     fun createSet(name: String) {
         val title = RouteSetNames.clean(name).ifEmpty { RouteSetNames.next(state.value.sets.map { it.name }) }
         run("The set could not be made.") { make(title) }
@@ -541,9 +638,15 @@ class RoutesViewModel @Inject constructor(
 
     /**
      * A new set called [title], on the map and in the session. A set that is made but cannot be opened (the set on the map before it would not save) is taken away
-     * again rather than left empty in the Library, and the failure is the caller's.
+     * again rather than left empty in the Library, and the failure is the caller's. In a pack, null when the pack would not take it: the pack has said why.
      */
-    private suspend fun make(title: String): String {
+    private suspend fun make(title: String): String? {
+        // While a pack is open a new set goes into it, named as the pack names it ("ROUTES n"); the pack says why if it would not take it.
+        if (pack.state.value != null) {
+            val made = pack.createRouteSet(null) ?: return null
+            local.update { it.copy(page = RoutesPage.HOME) }
+            return made
+        }
         val made = repository.create(title)
         val opened = try {
             session.open(made.id)
@@ -565,6 +668,13 @@ class RoutesViewModel @Inject constructor(
     /** Opens [uuid] on the map (it joins the session if it was not in it). */
     fun openSet(uuid: String) {
         if (session.active.value?.id == uuid) return
+        packItem(uuid)?.let { item ->
+            return run("The set could not be opened.") {
+                if (!pack.openItem(item)) local.update { it.copy(error = "That set is no longer in the pack.") }
+            }
+        }
+        // The person's own are set aside in a pack, and come back when it is left: one opened here would be edited beside the pack's, as if it were one of them.
+        if (pack.state.value != null && PackRef.parse(uuid) == null) return fail(OWN_SETS_IN_PACK)
         run("The set could not be opened.") {
             if (session.open(uuid)) openSets.add(uuid) else local.update { it.copy(error = "That set is no longer here.") }
         }
@@ -580,6 +690,11 @@ class RoutesViewModel @Inject constructor(
      * last still open) takes its place, or none.
      */
     fun close(uuid: String) = run("The set could not be closed.") {
+        // A pack's set is closed here and stays in the pack; nothing of the person's own comes back in its place.
+        packItem(uuid)?.let { item ->
+            pack.closeItem(item)
+            return@run
+        }
         openSets.remove(uuid)
         if (session.active.value?.id == uuid) {
             closeKeepingNothingNew()
@@ -587,8 +702,12 @@ class RoutesViewModel @Inject constructor(
         }
     }
 
-    /** Opens the last set still in the session that is still here; an id whose set has gone is let go on the way. */
+    /**
+     * Opens the last set still in the session that is still here; an id whose set has gone is let go on the way. Not while a pack is open: the person's own are set
+     * aside there, and come back when it is left.
+     */
     private suspend fun openNext() {
+        if (pack.state.value != null) return
         for (id in openSets.ids.value.reversed()) {
             val opened = try {
                 session.open(id)
@@ -612,6 +731,7 @@ class RoutesViewModel @Inject constructor(
         val title = RouteSetNames.clean(name)
         if (title.isEmpty()) return fail("Give the routes a name.")
         val open = session.active.value ?: return
+        if (PackRef.parse(open.id) != null) return fail(SET_SAVED_TO_PACK)                  // a pack's is saved to the pack, never named into the Library
         if (replacing == open.id) return
         // With *Replace* ([replacing], the set that has the name) that set is deleted and this one takes its name; otherwise both are kept.
         val chosen = if (replacing != null) title else RouteSetNames.free(title, state.value.otherNames)
@@ -631,7 +751,8 @@ class RoutesViewModel @Inject constructor(
         if (title.isEmpty()) return fail("A set needs a name.")
         // A mission is named for its file and never offers Save, so no name of its own is "made up".
         val mission = state.value.sets.firstOrNull { it.uuid == uuid }?.isMission == true
-        if (!mission && RouteSetNames.isMadeUp(title)) return fail(RouteSetNames.MADE_UP_REFUSED)
+        // Nor is anything of a pack's named to be saved: any name will do there, as on the web.
+        if (!mission && PackRef.parse(uuid) == null && RouteSetNames.isMadeUp(title)) return fail(RouteSetNames.MADE_UP_REFUSED)
         if (replacing == uuid) return
         run("The set could not be renamed.") {
             replacing?.let { deleteNow(it) }
@@ -645,7 +766,11 @@ class RoutesViewModel @Inject constructor(
         }
     }
 
-    fun deleteSet(uuid: String) = run("The set could not be deleted.") { deleteNow(uuid) }
+    fun deleteSet(uuid: String) {
+        // A pack's set goes for everyone, which is the Pack panel's to ask about (Remove from pack), never a Library delete.
+        if (PackRef.parse(uuid) != null) return fail(REMOVE_SET_IN_PACK_PANEL)
+        run("The set could not be deleted.") { deleteNow(uuid) }
+    }
 
     /** Deletes [uuid], closing it first if it is the one on the map and opening the one before it. */
     private suspend fun deleteNow(uuid: String) {
@@ -894,7 +1019,7 @@ class RoutesViewModel @Inject constructor(
     /**
      * The panel's *Sketch a route*: drawn into the set on the map when it is a set of sketched routes; otherwise (none open, or an imported mission, whose routes
      * are its file's) into a new one, called by the next made-up name until it is saved. Refused in words, before any set is made, when something else has the
-     * map's taps.
+     * map's taps. In a pack with none of its sets open, into one of the pack's ([sketchInPack]).
      */
     fun startSketch(first: LatLon? = null) {
         val open = session.active.value
@@ -904,8 +1029,9 @@ class RoutesViewModel @Inject constructor(
             return fail(refused)
         }
         sketching.refusal()?.let { return fail(it) }
+        if (pack.state.value != null) return sketchInPack(first)
         run("The routes could not be made.") {
-            val made = make(RouteSetNames.next(state.value.sets.map { it.name }))
+            val made = make(RouteSetNames.next(state.value.sets.map { it.name })) ?: return@run
             when (val refused = sketching.start()) {
                 null -> {
                     madeForSketch = made to open?.id
@@ -915,6 +1041,52 @@ class RoutesViewModel @Inject constructor(
                     fail(refused)                                                           // something took the map's taps meanwhile: the set goes again
                     abandon(made, open?.id)
                 }
+            }
+        }
+    }
+
+    /**
+     * *Sketch a route* in a pack with none of its sets open: drawn into the pack's set last on the map, else its first (the web's `packRouteSetFor`), opened for it.
+     * Only a pack with no set at all gets a new one, and that one is taken out of the pack again if the sketch ends with no route ([abandonInPack]). The web makes
+     * the set only once a route is finished; here a route is drawn into an open set, so it is made first and, unused, taken back.
+     */
+    private fun sketchInPack(first: LatLon?) = run("The routes could not be made.") {
+        val state = pack.state.value ?: return@run
+        val sets = state.items.filter { it.kind == "route" }
+        val target = sets.firstOrNull { PackRef.localId(state.uuid, it.uuid) == lastPackSet } ?: sets.firstOrNull()
+        val made = if (target != null) {
+            if (!pack.openItem(target.uuid)) return@run fail("That set is no longer in the pack.")
+            null
+        } else {
+            make("") ?: return@run                                                           // the pack has said why it would not take one
+        }
+        when (val refused = sketching.start()) {
+            null -> {
+                if (made != null) session.active.value?.takeIf { it.id == made }?.let { madeInPack = made to it.name }
+                first?.let(sketching::addPoint)
+            }
+            else -> {
+                fail(refused)                                                               // something took the map's taps meanwhile
+                if (made != null) session.active.value?.takeIf { it.id == made }?.let { abandonInPack(made, it.name) }
+            }
+        }
+    }
+
+    /**
+     * Takes [made], a pack's set made to sketch a route in, out of the pack again if it is still on the map, still empty and still called [name] (someone may have
+     * renamed it, or it may have a route: then it stays). The history keeps that it was added and taken out.
+     */
+    private fun abandonInPack(made: String, name: String) {
+        viewModelScope.launch {
+            try {
+                val set = session.active.value?.takeIf { it.id == made } ?: return@launch
+                if (set.routes.isNotEmpty() || set.unreadable.isNotEmpty() || set.name != name) return@launch
+                val item = packItem(made) ?: return@launch
+                pack.removeItem(item)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                local.update { it.copy(error = "The empty set could not be taken out of the pack.") }
             }
         }
     }
@@ -995,6 +1167,7 @@ class RoutesViewModel @Inject constructor(
         when (val result = sketching.finish(name)) {
             is SketchFinish.Done -> {
                 madeForSketch = null                                                       // it has a route: it is a set like any other
+                madeInPack = null
                 local.update { it.copy(error = null) }
                 selection.select(result.routeId)
             }
@@ -1013,10 +1186,16 @@ class RoutesViewModel @Inject constructor(
     /** The open set is an imported mission: its routes and the kind of each point are the file's. */
     private fun isMission() = session.active.value?.mission != null
 
-    private companion object {
+    internal companion object {
         const val MISSION_ROUTES_ARE_THE_FILES = "An AMPS mission's routes are part of its file: they can't be drawn, renamed or removed here. Make a new set to draw a route."
         const val MISSION_POINT_TYPES_ARE_THE_FILES = "What kind of point this is is fixed in the mission's file."
         const val CHOOSE_A_ROUTE = "Tap the route to add the point to first: this set has more than one."
+        const val REMOVE_SET_IN_PACK_PANEL = "This set is the pack's: Remove from pack, in the Pack panel, takes it out for everyone."
+
+        /** A Library set asked for while a pack is open (the Library page's Open, an import's *Open in Routes*), until one can be added to the pack. */
+        const val OWN_SETS_IN_PACK = "Your own route sets open in Personal: switch to it from the workspace chip to open this one."
+
+        const val SET_SAVED_TO_PACK = "This set is saved to the pack as you work."
     }
 
     private fun run(fallback: String, block: suspend () -> Unit) {

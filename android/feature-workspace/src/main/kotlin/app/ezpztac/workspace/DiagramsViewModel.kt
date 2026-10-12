@@ -10,42 +10,50 @@ import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.DiagramSummary
 import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.OpenPack
+import app.ezpztac.data.PackFacts
+import app.ezpztac.data.PackGlance
+import app.ezpztac.data.SlopeState
 import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.WeatherState
-import app.ezpztac.model.JsNumber
-import app.ezpztac.model.LatLon
-import app.ezpztac.model.Notams
+import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.geo.PlaceResult
 import app.ezpztac.geo.PlaceSearch
+import app.ezpztac.missionpacks.LzPackKind
+import app.ezpztac.missionpacks.PackRef
+import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramGeometry
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
+import app.ezpztac.model.JsNumber
+import app.ezpztac.model.LatLon
+import app.ezpztac.model.Notams
 import app.ezpztac.planning.AircraftGeometry
 import app.ezpztac.planning.LzSummary
 import app.ezpztac.planning.RouteCalc
-import app.ezpztac.data.SlopeState
-import kotlinx.serialization.json.JsonPrimitive
 import app.ezpztac.sync.ConflictResolver
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 /** One line of the list. Everything the row shows, worked out, so the screen only draws. */
 data class DiagramRow(
@@ -59,6 +67,8 @@ data class DiagramRow(
     val isActive: Boolean,
     /** How far along it is and whether the server has it, as the design's chips say it ([lzChips]). */
     val chips: List<LzChip> = emptyList(),
+    /** A Mission Pack's item that someone else has open: "Jess R. has it open". */
+    val presence: String? = null,
 )
 
 /** The pages of the LZ/PZ panel: the open LZ/PZs, the open one's plan and tools, and the aircraft. Every LZ/PZ saved is the Library's (S7). */
@@ -92,6 +102,35 @@ internal fun lzChips(status: DiagramStatus, sync: SyncStatus?, conflictOf: Strin
     }
     return listOf(progress, saved)
 }
+
+/**
+ * The chips of a Mission Pack's LZ/PZ (the web's `lzStateChips` in a pack): how far along it is, then the first that holds of read-only, its Library
+ * original changed, copied from the Library, and whether the pack has this person's last change (*Waiting to send*, *Synced*: [SYNCED_IN_PACK]).
+ */
+internal fun packLzChips(status: DiagramStatus, readOnly: Boolean, original: String?, fromLibrary: Boolean, waiting: Boolean): List<LzChip> {
+    val progress = lzChips(status, SyncStatus.SYNCED, null).first()
+    val state = when {
+        readOnly -> LzChip("Read-only", ChipTone.NEUTRAL, EzpzIcons.lock)
+        original == "changed" -> LzChip("Original changed", ChipTone.WARNING, EzpzIcons.update)
+        fromLibrary -> LzChip("From Library", ChipTone.NEUTRAL, EzpzIcons.collectionsBookmark)
+        waiting -> LzChip("Waiting to send", ChipTone.WARNING)
+        else -> SYNCED_IN_PACK
+    }
+    return listOf(progress, state)
+}
+
+/** A pack's item the pack has every change of: said on the open one's card, and left unsaid in a list of the pack's, where it is what most rows would say (the web's). */
+internal val SYNCED_IN_PACK = LzChip("Synced", ChipTone.SUCCESS)
+
+/** The open LZ/PZ or set of routes is a Mission Pack's item: where it is saved ([savedLine]), who else is in it ([alsoHere]), and whether the pack takes changes. */
+data class InPackUi(val pack: String, val savedLine: String, val alsoHere: String?, val readOnly: Boolean)
+
+/**
+ * A Mission Pack is open (P2b): its LZ/PZs are the panel's, in place of the person's own, which are set aside. [head] is the panel's subtitle
+ * ("OP DK · 3 items · live"); [rows] the pack's LZ/PZs other than the one open, in the order they were added; [count] all of them, the open one too.
+ * [opening] is what the panel says in their place while the device does not hold the pack yet (opening it for the first time, or it cannot be reached).
+ */
+data class PackLzListUi(val name: String, val head: String, val rows: List<DiagramRow>, val count: Int = rows.size, val opening: String? = null)
 
 /** Where the analysis of the open diagram has got to, for the card that offers it. */
 sealed interface AnalysisUi {
@@ -203,9 +242,11 @@ data class ActiveDiagramUi(
     val slopeShown: Boolean? = null,
     /** What naming it keeps, in the save dialog's words: the boundary, target and slope; its graphics. */
     val saveContents: List<String> = emptyList(),
+    /** A Mission Pack's item: saved to the pack as it changes, with no *Save* of its own. Null for the person's own. */
+    val inPack: InPackUi? = null,
 ) {
-    /** *Save* names an LZ/PZ that still has its made-up name, once it is analysed (the web's "Analyze to save"). */
-    val canSave: Boolean get() = madeUpName && status == DiagramStatus.ANALYZED && conflictOf == null
+    /** *Save* names an LZ/PZ that still has its made-up name, once it is analysed (the web's "Analyze to save"); a pack's are named in the pack. */
+    val canSave: Boolean get() = inPack == null && madeUpName && status == DiagramStatus.ANALYZED && conflictOf == null
 }
 
 data class DiagramsUiState(
@@ -226,6 +267,8 @@ data class DiagramsUiState(
     val busy: Boolean = false,
     /** How many times the plan has been asked for: a tablet brings its pane forward each time, though the page is the plan already. */
     val planAsked: Int = 0,
+    /** The open Mission Pack's LZ/PZs, while one is open; null in the Library. */
+    val pack: PackLzListUi? = null,
 )
 
 /**
@@ -242,6 +285,8 @@ class DiagramsViewModel @Inject constructor(
     private val weather: WeatherService,
     private val openSet: OpenDiagrams,
     private val slopeVisibility: SlopeVisibility,
+    /** The open Mission Pack: while one is open its LZ/PZs are the panel's, and a new one goes into it. */
+    private val pack: OpenPack = OpenPack.None,
 ) : ViewModel() {
     private val local = MutableStateFlow(DiagramsUiState())
     private val page = MutableStateFlow(LzPage.HOME)
@@ -252,26 +297,58 @@ class DiagramsViewModel @Inject constructor(
     /** What the panel tells the person in a toast once it has happened: Saved "LZ HAWK" to your Library. */
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
+    // What the panel reads of the open pack: a presence frame that only moves someone's pointer is not passed on (PackGlance).
     private val inputs = combine(repository.observe(), session.active, local, openSet.ids, page) { summaries, active, local, open, page ->
         Inputs(summaries, active, local, open, page)
+    }.combine(pack.glance) { inputs, glance -> inputs.copy(pack = glance) }
+
+    private data class Inputs(val summaries: List<DiagramSummary>, val active: Diagram?, val local: DiagramsUiState, val open: List<String>, val page: LzPage, val pack: PackGlance? = null)
+
+    // The open pack's LZ/PZs as diagrams, by local id, each read once for as long as its data is the same (an item no change touched keeps its instance). Made
+    // again from the pack's items each time, so an item removed, or another pack's, is let go.
+    private var packDiagrams: Map<String, Pair<JsonElement, Diagram>> = emptyMap()
+
+    /** How many times a pack's LZ/PZ has been read as a diagram: a test's way of seeing that one no change touched is not read again. */
+    internal var packReads = 0
+        private set
+
+    private fun diagramsOf(glance: PackGlance?): Map<String, Diagram> {
+        val before = packDiagrams
+        val now = if (glance == null) {
+            emptyMap()
+        } else {
+            glance.items.filter { it.kind == "lz" }.associate { item ->
+                val localId = PackRef.localId(glance.uuid, item.uuid)
+                localId to (before[localId]?.takeIf { it.first === item.data } ?: (item.data to lzKind.fromItem(localId, item, null).also { packReads++ }))
+            }
+        }
+        packDiagrams = now
+        return now.mapValues { it.value.second }
     }
 
-    private data class Inputs(val summaries: List<DiagramSummary>, val active: Diagram?, val local: DiagramsUiState, val open: List<String>, val page: LzPage)
+    private val lzKind = LzPackKind()
 
     val state: StateFlow<DiagramsUiState> =
         combine(inputs, analyses, airframes, weather.states) { inputs, (status, slopes, slopeShown), (entries, chosen), weatherStates ->
             val (summaries, active, local, open, page) = inputs
+            val glance = inputs.pack
             val byId = summaries.associateBy { it.uuid }
             val rows = summaries.map { it.toRow(isActive = it.uuid == active?.id) }
-            val openRows = open.filter { it != active?.id }.mapNotNull { id -> byId[id]?.toRow(isActive = false) }
+            // In a pack the person's own LZ/PZs are set aside: what is open is the pack's.
+            val openRows = if (glance != null) emptyList() else open.filter { it != active?.id }.mapNotNull { id -> byId[id]?.toRow(isActive = false) }
+            val diagrams = diagramsOf(glance)
+            val packList = glance?.let { packListOf(it, active, diagrams) }
             local.copy(
                 current = active?.let {
-                    currentOf(it, status, slopes, slopeShown, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState())
+                    inPack(
+                        currentOf(it, status, slopes, slopeShown, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState()), glance,
+                    )
                 },
                 rows = rows,
                 open = openRows,
                 openCount = openRows.size + (if (active != null) 1 else 0),
-                recent = summaries.asSequence()
+                pack = packList,
+                recent = if (glance != null) emptyList() else summaries.asSequence()
                     .filter { it.uuid !in open && it.uuid != active?.id && it.conflictOf == null }
                     .sortedByDescending { it.updatedAt.orEmpty() }
                     .take(RECENT)
@@ -308,11 +385,18 @@ class DiagramsViewModel @Inject constructor(
 
     /**
      * A new LZ/PZ with its target at [at] (the crosshair), called by the next made-up name until it is saved with one of the person's own, and opened.
-     * The search bar takes the map to a grid; this starts the LZ/PZ there.
+     * The search bar takes the map to a grid; this starts the LZ/PZ there. While a Mission Pack is open it goes into the pack ("New LZ/PZs you start
+     * while OP DK is open are added to it"), named as the pack names it, and the pack says why if it would not take it.
      */
     fun newAt(at: LatLon?) {
         if (at == null) return fail("Move the map to where the LZ/PZ should be first.")
         val grid = MgrsConverter.toMgrs(at.lat, at.lon)?.format() ?: ""
+        if (pack.state.value != null) {
+            return run("The LZ/PZ could not be made.") {
+                pack.createLz(DiagramTarget(at.lat, at.lon, grid))
+                page.value = LzPage.HOME
+            }
+        }
         val name = LzNames.next(state.value.rows.map { it.name })
         run("The LZ/PZ could not be made.") {
             val made = repository.create(DiagramTarget(at.lat, at.lon, grid), name)
@@ -327,6 +411,12 @@ class DiagramsViewModel @Inject constructor(
      * still open) takes its place, or none.
      */
     fun close(uuid: String) = run("The LZ/PZ could not be closed.") {
+        // A pack's LZ/PZ is closed here and stays in the pack; nothing of the person's own comes back in its place.
+        packItem(uuid)?.let { item ->
+            pack.closeItem(item)
+            page.value = LzPage.HOME
+            return@run
+        }
         openSet.remove(uuid)
         if (session.active.value?.id == uuid) {
             val before = openSet.ids.value.toSet()
@@ -342,8 +432,12 @@ class DiagramsViewModel @Inject constructor(
         }
     }
 
-    /** Opens the last LZ/PZ still in the set that is still here; an id whose LZ/PZ has gone is let go on the way. */
+    /**
+     * Opens the last LZ/PZ still in the set that is still here; an id whose LZ/PZ has gone is let go on the way. Not while a pack is open: the person's own are
+     * set aside there, and come back when it is left (one of theirs on the map in a pack, closed, is not followed by the next).
+     */
     private suspend fun openNext() {
+        if (pack.state.value != null) return
         for (id in openSet.ids.value.reversed()) {
             if (session.open(id)) return
             openSet.remove(id)
@@ -361,6 +455,7 @@ class DiagramsViewModel @Inject constructor(
         val title = name.trim()
         if (title.isEmpty()) return fail("Give the LZ/PZ a name.")
         val open = session.active.value ?: return
+        if (PackRef.parse(open.id) != null) return fail(SAVED_TO_PACK)                       // a pack's is saved to the pack, never named into the Library
         if (replacing == open.id) return
         val chosen = if (replacing != null) title else LzNames.free(title, state.value.otherNames)
         if (LzNames.isMadeUp(chosen)) return fail(LzNames.MADE_UP_REFUSED)
@@ -424,7 +519,15 @@ class DiagramsViewModel @Inject constructor(
     }
 
     fun open(uuid: String) {
+        if (session.active.value?.id == uuid) return
+        packItem(uuid)?.let { item ->
+            return run("The LZ/PZ could not be opened.") {
+                if (!pack.openItem(item)) local.update { it.copy(error = "That LZ/PZ is no longer in the pack.") }
+            }
+        }
         if (state.value.rows.firstOrNull { it.uuid == uuid }?.isActive == true) return
+        // The person's own are set aside in a pack, and come back when it is left: one opened here would be edited beside the pack's, as if it were one of them.
+        if (pack.state.value != null && PackRef.parse(uuid) == null) return fail(OWN_IN_PACK)
         run("The diagram could not be opened.") {
             if (session.open(uuid)) openSet.add(uuid) else local.update { it.copy(error = "That diagram is no longer here.") }
         }
@@ -434,7 +537,8 @@ class DiagramsViewModel @Inject constructor(
     fun rename(uuid: String, name: String, replacing: String? = null) {
         val title = name.trim()
         if (title.isEmpty()) return fail("A diagram needs a name.")
-        if (LzNames.isMadeUp(title)) return fail(LzNames.MADE_UP_REFUSED)
+        // A pack's own names are "LZ/PZ n", and nothing of a pack's is named to be saved: any name will do there, as on the web.
+        if (PackRef.parse(uuid) == null && LzNames.isMadeUp(title)) return fail(LzNames.MADE_UP_REFUSED)
         if (replacing == uuid) return
         run("The diagram could not be renamed.") {
             replacing?.let { deleteNow(it) }
@@ -448,7 +552,64 @@ class DiagramsViewModel @Inject constructor(
         }
     }
 
-    fun delete(uuid: String) = run("The diagram could not be deleted.") { deleteNow(uuid) }
+    fun delete(uuid: String) {
+        // A pack's LZ/PZ goes for everyone, which is the Pack panel's to ask about (Remove from pack), never a Library delete.
+        if (PackRef.parse(uuid) != null) return fail(REMOVE_IN_PACK_PANEL)
+        run("The diagram could not be deleted.") { deleteNow(uuid) }
+    }
+
+    // [uuid]'s item in the open pack, when it is one.
+    private fun packItem(uuid: String): String? = PackRef.parse(uuid)?.takeIf { it.pack == pack.state.value?.uuid }?.item
+
+    /**
+     * The open pack's LZ/PZs for the panel: the ones not open, each with how far along it is, what holds of it in the pack (never *Synced*, which most would say)
+     * and who else has it open, and the panel's head. Before the device holds the pack, what the Pack panel says in their place.
+     */
+    private fun packListOf(glance: PackGlance, active: Diagram?, diagrams: Map<String, Diagram>): PackLzListUi {
+        if (!glance.loaded) {
+            val unreachable = glance.status == PackStatus.ERROR
+            return PackLzListUi(
+                glance.name, if (unreachable) "Cannot reach the pack" else "Opening…", emptyList(), count = 0,
+                opening = if (unreachable) PACK_UNREACHABLE else "Opening the pack…",
+            )
+        }
+        val items = glance.items.filter { it.kind == "lz" }
+        val rows = items.filter { PackRef.localId(glance.uuid, it.uuid) != active?.id }.mapNotNull { item ->
+            val localId = PackRef.localId(glance.uuid, item.uuid)
+            val diagram = diagrams[localId] ?: return@mapNotNull null
+            DiagramRow(
+                uuid = localId, name = item.name, status = diagram.status, grid = diagram.target?.mgrs?.takeIf { it.isNotBlank() },
+                sync = SyncStatus.SYNCED, conflictOf = null, isActive = false,
+                chips = packLzChips(diagram.status, glance.readOnly, PackFacts.original(item), PackFacts.fromLibrary(item), glance.waiting(item)) - SYNCED_IN_PACK,
+                presence = glance.withItOpen(item.uuid).takeIf { it.isNotEmpty() }?.let(PackFacts::hasItOpen),
+            )
+        }
+        val count = if (items.size == 1) "1 item" else "${items.size} items"
+        return PackLzListUi(glance.name, "${glance.name} · $count · ${glance.standing}", rows, count = items.size)
+    }
+
+    /**
+     * The open LZ/PZ as a pack's item: its chips, where it is saved, who else is in it; no *Save* of its own. Told by its id, so one the pack's state does not list
+     * for a moment (its client reading the device's copy after a pause, or removed before the editor has closed it) is still the pack's, never a Library record.
+     */
+    private fun inPack(ui: ActiveDiagramUi, glance: PackGlance?): ActiveDiagramUi {
+        val ref = PackRef.parse(ui.uuid) ?: return ui
+        val ours = glance?.takeIf { it.uuid == ref.pack }
+        val item = ours?.itemOf(ui.uuid)
+        val readOnly = ours?.readOnly == true
+        val chips = if (ours != null && item != null) {
+            packLzChips(ui.status, readOnly, PackFacts.original(item), PackFacts.fromLibrary(item), ours.waiting(item))
+        } else {
+            listOf(lzChips(ui.status, SyncStatus.SYNCED, null).first())
+        }
+        return ui.copy(
+            chips = chips, madeUpName = false, sync = null, conflictOf = null,
+            inPack = InPackUi(
+                ours?.name ?: "the pack", ours?.savedLine ?: "Saved to the pack as you work.",
+                item?.let { ours.withItOpen(it.uuid) }?.let(PackFacts::alsoHere), readOnly,
+            ),
+        )
+    }
 
     /** Deletes [uuid], closing it first if it is the one on the map (so it cannot be saved back) and opening the one before it. */
     private suspend fun deleteNow(uuid: String) {
@@ -584,8 +745,18 @@ class DiagramsViewModel @Inject constructor(
         chips = lzChips(status, sync, conflictOf),
     )
 
-    private companion object {
+    internal companion object {
         /** How many LZ/PZs "Recent in Library" offers. */
         const val RECENT = 3
+
+        const val REMOVE_IN_PACK_PANEL = "This LZ/PZ is the pack's: Remove from pack, in the Pack panel, takes it out for everyone."
+
+        /** A Library LZ/PZ asked for while a pack is open (the Library page's Open, until it can add one to the pack). */
+        const val OWN_IN_PACK = "Your own LZ/PZs open in Personal: switch to it from the workspace chip to open this one."
+
+        const val SAVED_TO_PACK = "This LZ/PZ is saved to the pack as you work."
+
+        /** Said in place of the pack's items while it cannot be reached and the device has no copy of it. */
+        const val PACK_UNREACHABLE = "The pack cannot be reached, and this device has no copy of it yet. It is tried again by itself."
     }
 }
