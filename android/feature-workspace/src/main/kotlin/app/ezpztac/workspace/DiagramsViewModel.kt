@@ -67,7 +67,8 @@ enum class LzPage { HOME, PLAN, LIBRARY, AIRCRAFT }
 /** The colour role a state chip is drawn in. Colour is never all it says: the words do too. */
 enum class ChipTone { SUCCESS, WARNING, ERROR, INFO, NEUTRAL }
 
-data class LzChip(val text: String, val tone: ChipTone)
+/** A state chip: its words, its colour role, and an [icon] where the tone's own mark is not the one to draw (a download for *Imported*). */
+data class LzChip(val text: String, val tone: ChipTone, val icon: Int? = null)
 
 /** An LZ/PZ in the Library that is not open, offered under "Recent in Library", with when it last changed (`Aug 25 · 17:34`). */
 data class RecentLz(val uuid: String, val name: String, val updated: String?)

@@ -161,7 +161,7 @@ class RouteRepositoryTest {
             assertEquals(emptyList<RouteSetSummary>(), awaitItem())
             val made = repository.create("MISSION 1", listOf(route("a"), route("b")))
             val first = awaitItem().single()
-            assertEquals(RouteSetSummary(made.id, "MISSION 1", 2, SyncStatus.PENDING, null), first)
+            assertEquals(RouteSetSummary(made.id, "MISSION 1", 2, SyncStatus.PENDING, null, pointCount = 4), first)
             repository.rename(made.id, "NIGHT")
             assertEquals("NIGHT", awaitItem().single().name)
             repository.delete(made.id)

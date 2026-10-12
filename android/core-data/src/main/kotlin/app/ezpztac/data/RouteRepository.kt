@@ -37,6 +37,8 @@ data class RouteSetSummary(
     val conflictOf: String?,
     /** An imported AMPS mission (its file is what is saved), not a set drawn here. */
     val isMission: Boolean = false,
+    /** How many points its routes hold, every one, shaping points included; null for a mission, whose file is not read to draw a list. */
+    val pointCount: Int? = null,
 )
 
 /**
@@ -203,6 +205,7 @@ class RouteRepository(
         val set = toSet(record)
         return RouteSetSummary(
             uuid = record.uuid, name = record.name, routeCount = set.routes.size + set.unreadable.size, sync = record.status, conflictOf = record.conflictOf,
+            pointCount = set.routes.sumOf { it.points.size },
         )
     }
 

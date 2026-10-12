@@ -5,8 +5,9 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-11 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
-panel committed locally and reviewed together, the review's fixes in; waiting for the owner's device try).
+Last refreshed: 2026-10-12 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
+panel reviewed together, S4 the Routes panel and the route's plan reviewed on its own, every review's fixes in; S5 next; the owner's device try still
+to come. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of `docs/ANDROID_SCREENS_PLAN.md`).
 
 ---
 
@@ -17,9 +18,12 @@ panel committed locally and reviewed together, the review's fixes in; waiting fo
   phone's frame: the search bar with the account menu (night mode there), the Personal and Import chips, the map's buttons, the crosshair at the middle of the map that shows
   with its readout pill (tap to copy), the panel in a sheet with three heights, and the bar of panels with their counts (`1e058d2`); S3 the LZ/PZ panel: the open LZ/PZs
   (a working set kept on the device), *New LZ/PZ at the crosshair*, *Save* as naming with its sheet, the plan page (aircraft, analysis and slope switch, tools, graphics),
-  and the planning tools as modes over the map with *Add here*, *Done* and *Cancel all*. Routes, Threats and Imports still hold today's sections (S4–S6). **To try on
-  a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet moves, dragging the sheet by its content, the status bar's icons,
-  night mode's dimmed map, and placing graphics by tapping the map while a tool's mode is on; none of that can be seen here. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
+  and the planning tools as modes over the map with *Add here*, *Done* and *Cancel all*; S4 the Routes panel: the route sets open now (a working set kept on the device),
+  the set on the map as the design's card with *Save* as naming, *Export .msnx* with the threats when asked, each route's share, hide and plan, *Sketch a route* and *Import .msnx*
+  pinned at its foot, and the route's plan as a page over the frame (the whole route's date, temperature and fuel flow; a card for each named point, applied as it is typed).
+  Threats and Imports still hold today's sections (S5, S6). **To try on a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet
+  moves, dragging the sheet by its content, the status bar's icons, night mode's dimmed map, placing graphics by tapping the map while a tool's mode is on, and on the route's
+  plan the keyboard, TalkBack and the date picker; none of that can be seen here. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
   `claude/jolly-wozniak-i7rlrq`, `feat/mission-packs`, the web menu redesign `feat/menu-redesign` and `fix/menu-redesign-ui`), then
   took the fixes that made CI green on it: the tests run on JDK 21 (`ed6ec02`), no machine's JDK in the shared Gradle settings
   (`7be70fe`), a lint error (`9d4d128`) and the terrain catalog's boot-time bug (`75f9450`). The backend restructure
@@ -68,7 +72,8 @@ panel committed locally and reviewed together, the review's fixes in; waiting fo
 
 ## 2. Next work, in order
 
-1. **The screens**, S1–S3 done and reviewed together, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, S3's *Reviewed*); to try on a device, then S4, Routes, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
+1. **The screens**, S1–S4 done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, S3's and S4's *Reviewed*); to try on a device; S5, Threats, next (with the owner's
+   2026-10-12 decisions that need no server: no screenshot guard, no 48-hour expiry), then S6–S9, and *T* (threats saved and shared: web and server first) beside S7, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
    AGENTS.md §17, *Mission packs on Android*). **The plan is `docs/ANDROID_SCREENS_PLAN.md`** (the owner's decisions, the steps S1–S9 and
    P1–P4, how each is checked), on `feat/android-screens`. First the redesigned shell (2), then the pack screens in it (3); both are drawn in
    `docs/native-design/`. **How the engine was built**, worth keeping for the screens: one commit per step, implemented, reviewed

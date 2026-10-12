@@ -10,7 +10,9 @@ import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.DisplayPreferences
 import app.ezpztac.android.DisplaySettings
 import app.ezpztac.android.OpenDiagramPreferences
+import app.ezpztac.android.OpenRouteSetPreferences
 import app.ezpztac.data.OpenDiagramStore
+import app.ezpztac.data.OpenRouteSetStore
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.MinimumVersionPreferences
 import app.ezpztac.android.packs.ApiPackInvites
@@ -247,6 +249,9 @@ interface AppBindings {
 
     @Binds
     fun openDiagrams(impl: OpenDiagramPreferences): OpenDiagramStore
+
+    @Binds
+    fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore
 
     @Binds
     fun conflictResolver(impl: SyncEngine): ConflictResolver

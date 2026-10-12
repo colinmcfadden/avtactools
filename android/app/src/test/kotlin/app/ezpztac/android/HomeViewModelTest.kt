@@ -8,6 +8,8 @@ import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
 import app.ezpztac.data.InMemoryOpenDiagramStore
 import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.InMemoryOpenRouteSetStore
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.PointSetRepository
@@ -213,6 +215,7 @@ class HomeViewModelTest {
         val last = FakeLastDiagram()
         val openSet = OpenDiagrams(InMemoryOpenDiagramStore())
         val lastSet = FakeLastRouteSet()
+        val openRouteSets = OpenRouteSets(InMemoryOpenRouteSetStore())
         val pointSets = PointSetRepository(sync, store, scheduler)
         val pointViews = PointSetViews(MemoryViews())
         val localPoints = LocalPoints(pointSets, pointViews)
@@ -227,12 +230,18 @@ class HomeViewModelTest {
         val corners = BoundaryCorners(session)
         val placement = GraphicPlacement(session, aircraft, mode)
         val model = HomeViewModel(
-            session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, openSet, lastSet, localPoints, pointSelection,
+            session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, openSet, lastSet, openRouteSets, localPoints, pointSelection,
             threats, threatSelection, weather, MapDrag(session, routeSession, threats), SlopeVisibility(), corners, masks, placement, mapFocus,
             symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
+
+        /** [id] was the set of routes on the map when the app was last left: remembered, and among the open ones (the Routes panel puts what opens there). */
+        fun leftSetOpen(id: String) {
+            lastSet.stored = id
+            openRouteSets.add(id)
+        }
 
         /** [id] was the diagram on the map when the app was last left: remembered, and among the open ones (the LZ/PZ panel puts what opens there). */
         fun leftOpen(id: String) {
@@ -351,7 +360,7 @@ class HomeViewModelTest {
     fun `the set of routes that was open is open again at launch`() = runTest(dispatcher) {
         val r = Rig(this)
         val made = r.routes.create("MISSION 1")
-        r.lastSet.stored = made.id
+        r.leftSetOpen(made.id)
         advanceUntilIdle()
         assertEquals(made.id, r.routeSession.active.value?.id)
     }
@@ -360,10 +369,19 @@ class HomeViewModelTest {
     fun `it does not need the map to be listening, and it leaves the diagram alone`() = runTest(dispatcher) {
         val r = Rig(this, listening = false)
         val made = r.routes.create("MISSION 1")
-        r.lastSet.stored = made.id
+        r.leftSetOpen(made.id)
         advanceUntilIdle()
         assertEquals(made.id, r.routeSession.active.value?.id)
         assertEquals(null, r.session.active.value)
+    }
+
+    @Test
+    fun `the last set closed stays closed, as only a set still open comes back`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.routes.create("MISSION 1")
+        r.lastSet.stored = made.id                                                          // remembered, but no longer among the open ones
+        advanceUntilIdle()
+        assertEquals(null, r.routeSession.active.value)
     }
 
     @Test
@@ -379,9 +397,9 @@ class HomeViewModelTest {
         val r = Rig(this)
         val made = r.routes.create("MISSION 1")
         r.routes.delete(made.id)
-        r.lastSet.stored = made.id
+        r.leftSetOpen(made.id)
         val never = Rig(this)
-        never.lastSet.stored = "never-existed"                                              // an id this account never had, as after another signs in
+        never.leftSetOpen("never-existed")                                              // an id this account never had, as after another signs in
         advanceUntilIdle()
         assertEquals(null, r.routeSession.active.value)
         assertEquals(null, never.routeSession.active.value)
@@ -391,7 +409,7 @@ class HomeViewModelTest {
     fun `a set that will not open leaves the app running, and can be opened afterwards`() = runTest(dispatcher) {
         val r = Rig(this)
         val made = r.routes.create("MISSION 1")
-        r.lastSet.stored = made.id
+        r.leftSetOpen(made.id)
         r.store.failing = true
         advanceUntilIdle()                                                                  // an uncaught failure here would fail the test
         assertEquals(null, r.routeSession.active.value)
@@ -406,7 +424,7 @@ class HomeViewModelTest {
         val r = Rig(this)
         val old = r.routes.create("OLD")
         val chosen = r.routes.create("CHOSEN")
-        r.lastSet.stored = old.id
+        r.leftSetOpen(old.id)
         r.routeSession.open(chosen.id)
         advanceUntilIdle()
         assertEquals(chosen.id, r.routeSession.active.value?.id)

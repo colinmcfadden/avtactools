@@ -1,6 +1,7 @@
 # Android screens: the plan they are built from
 
-Status (2026-10-11): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; to be tried on a device; S4 next. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
+Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
+findings fixed; to be tried on a device; S5 next. **Threats may now be saved and shared** (the owner, 2026-10-12): a step of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
 reviewed independently, fixed, and committed only with the full build green. **Where this plan disagrees with the code, the code wins**
 (AGENTS.md §16), and AGENTS.md §17 says what each module holds.
@@ -151,11 +152,51 @@ map's taps and long presses while a mode is on, and a mode ending when the LZ/PZ
 AP-LzPlan and AP-SaveLz). **Not verifiable here:** placing by tapping the real map, the sheet lowering as a mode starts, and the toast over
 the real map.
 
-**S4 — Routes.** The panel (`Routes`: sets in the session, Save as naming with `SaveRoutes`, *Export .msnx* with "Include threats as a
-.ths", each route's hand-off, hide and plan), and the plan page (`RoutePlan`: today's `RoutePlanScreen` in the design's cards).
+**S4 — Routes. Built.** The panel (`feature-workspace`: `RoutesPanel.kt` over `RoutesViewModel`; `Routes`): the set on the map as the design's
+card (its name with rename and a menu of undo, redo, close and delete; its chips, *Imported* for a mission and the sync state; *Save* or a disabled
+*Saved*; *Export .msnx* with *Include threats (n) as a .ths file*; its routes, each with share as GPX or FPL, hide, more and the way into its plan),
+the other sets in the session *Also open*, *Every route set* (the Library's stand-in until S7, with conflicts settled there), and the foot pinned
+under the panel: *Sketch a route* and *Import .msnx*, or *Cancel* and *Finish* while a route is drawn. Naming is `SaveRoutesSheet` (the design's
+SaveRoutes). The route's plan (`RoutePlanPage.kt`, the design's RoutePlan): the bar (Back, the route with its totals, share, a menu of undo, redo,
+rename, an AMPS file of it alone and delete), the set's strip with *Save*, *Whole route* (date with a calendar, temperature, fuel flow, *Fetch
+winds*), a card for each named point (shut: what it is, its clock, its leg, what is flown to it; open: its name, its clock, the altitude, speed and
+wind flown to it with their references, its kind, moving it), and the total with *Fetch elevations*. The working set is `OpenRouteSets`
+(`core-data`), kept by `OpenRouteSetPreferences`. **Amended while building:**
+- **The route's plan is a page over the frame, not a Navigation destination**, as the design's pushed page looks: a destination would dispose the map
+  and the panels kept composed (their pickers, what they listen for). It closes with Back and belongs to the held route.
+- **What is typed in the plan is applied as it is typed** (the design has no Apply button, and the web applies on change), one visit to a field one
+  step to undo, a refusal at the field; only what differs from what the field showed is applied (`PlanDraft.check(before)`, new).
+- **The route-wide airspeed, altitude and wind are not edited as such**, as on the web's redesign: each point carries what is flown to it.
+- **The made-up name is `SKETCHED ROUTES`** (the web's), numbered when taken; *Sketch a route* makes a set with it unless a set of sketched routes is on
+  the map, and a sketch that ends without a route takes it away again while it is still empty and unnamed. There is no *New set* form any more.
+- **The speed reference has three parts (GS, IAS, TAS)** where the design draws two: the planner has true airspeed.
+- **Not drawn as the design:** the other sets are *Also open* rows rather than full cards (one set is on the map at a time; its card has the
+  export), and the plan's menus hold undo and redo (the design has no place for them).
+**Reviewed** (one independent review, 2026-10-12: 33 reported, 25 survived an adversarial check, about 15 distinct; each fix has a test, each broken to see
+its test fail): the plan page coming back by itself when its route was held after an undo; separate visits to a field merging into one undo step (and a
+date's two choices); deleting a set whose record went elsewhere opening the copy its save made; a double tap on *Sketch a route* making two sets; a
+cancelled sketch deleting a set the person had named, leaving an abandoned one behind, or putting back the wrong set; exports from the plan page lost when
+the panel is not offered; the keyboard covering the field typed in; focus left on the hidden frame; the page not announced to a screen reader;
+toasts over the foot's buttons; labels, the date and the crosshair's grid cut off on a 360 dp phone or with large text; the fields' descriptions hiding
+their values from TalkBack; Done on an unchanged name moving the point onto a local point; and a rename, delete or refusal from the bar shown out of sight.
+Tests: `RoutesViewModelTest` (the session, sketching, naming, the plan page, the review's cases), `RoutesSessionOrderTest` (a record gone while open, Main
+unconfined), `RoutesScreenTest`, `RoutePlanPageTest`, `RoutePlanNarrowTest` (360 dp), `RouteSetNamesTest`, `PlanDraftTest`, `HomeViewModelTest` (only a set
+still open comes back), `OpenRouteSetPreferencesTest`, `PhoneFrameTest` (toasts above the foot), and the pictures (`RoutesScreenshotTest`, beside AP-Routes,
+AP-RoutePlan and AP-SaveRoutes). **Not verifiable here:** the keyboard on a device, TalkBack, the date picker, the share sheet, and the toasts over the real map.
 
 **S5 — Threats.** The panel (`Threats`: the device-only notice, *Add threat* and *Import .ths*, the list with hide, edit and remove, the
-export, *Remove all*), over today's `ThreatsViewModel`; the form as a full-screen dialog.
+export, *Remove all*), over today's `ThreatsViewModel`; the form as a full-screen dialog. **And the owner's decisions of 2026-10-12** that need no
+server: the window is no longer kept out of screenshots (`ThreatWindowGuard` goes) and the device's picture no longer expires after 48 hours (it is
+still cleared at sign-out until *T* saves it with the account).
+
+**T — Threats saved and shared** (the owner, 2026-10-12). Threats are saved like local points and route sets, as a Library item of their own that
+can be opened and moved as wanted, and shared in mission packs, where every member can edit them. The web is the reference, so it goes web and server
+first: a saved threat set (`/api/threatsets`, a sync kind, `contracts/openapi.yaml` and fixtures), a pack item kind (`pack_ops.py`, `packOps.js`,
+`contracts/fixtures/packs`), the web's Threats panel saving to and opening from the Library and its pack rows; then Android: `ThreatStore` onto the
+sync engine (the sealed device file becomes the open picture's working copy), `RecordKind.THREATS`, the pack item kind in `core-missionpacks`, and the
+Library's tab (S7). To decide when it is planned: whether a saved set is the whole picture or a named group of threats (the web's `.ths` is a whole
+picture); whether several can be open at once, as route sets are; and what the viewshed, KMZ and QR stores keep once threats are records. AGENTS.md §2
+records the decision.
 
 **S6 — Import.** The Import menu (`Import`, a modal bottom sheet: `.msnx`, `.LPS`, `.ths`), the import review (`ImportReview`: each
 file, where it goes, the choices locked where a kind has only one place), and the Imports panel (`Imports`: what was brought in, grouped

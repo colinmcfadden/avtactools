@@ -18,11 +18,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
@@ -90,10 +95,15 @@ fun PhoneFrame(
     headerActions: @Composable RowScope.() -> Unit = {},
     /** How tall whatever floats above the readout is now, in pixels: the toasts go above it. */
     floatingPx: () -> Int = { 0 },
+    /** What is pinned under the panel showing (the Routes panel's *Sketch a route*), or null for nothing. */
+    footer: (@Composable () -> Unit)? = null,
     mapScreen: @Composable (MapFrame) -> Unit,
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
+    // How tall the pinned footer is (none: 0), in pixels: at full height the toasts go above it, not over its buttons.
+    var footerPx by remember { mutableIntStateOf(0) }
+    if (footer == null) footerPx = 0
     val top = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val bar = BAR_HEIGHT + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -123,6 +133,7 @@ fun PhoneFrame(
                                 )
                             }
                         },
+                        footer = footer?.let { foot -> { Box(Modifier.onSizeChanged { footerPx = it.height }) { foot() } } },
                     ) {
                         Box(Modifier.fillMaxSize().imePadding()) {
                             panels.forEach { each ->
@@ -135,7 +146,7 @@ fun PhoneFrame(
                 },
             )
             mapScreen(frame)
-            ToastHost(snackbars, Modifier.fillMaxSize().padding(horizontal = Tokens.Spacing.lg.dp).aboveTheControls(sheet, floatingPx))
+            ToastHost(snackbars, Modifier.fillMaxSize().padding(horizontal = Tokens.Spacing.lg.dp).aboveTheControls(sheet, floatingPx) { footerPx })
         }
         PanelBar(panels, current, counts, onPick)
     }
@@ -159,15 +170,15 @@ private fun Modifier.hidden(): Modifier = clearAndSetSemantics {}.layout { _, _ 
 
 /**
  * Places the toasts above the readout pill and whatever floats above it while the sheet is at half or lower, and at the foot of the space when
- * the sheet is at full height (the map is covered then). Read when placing, so they ride on the sheet as it moves.
+ * the sheet is at full height (the map is covered then), above the panel's pinned footer ([footerPx]) if it has one. Read when placing, so they ride on the sheet as it moves.
  */
-private fun Modifier.aboveTheControls(sheet: PanelSheetState, floatingPx: () -> Int): Modifier = layout { measurable, constraints ->
+private fun Modifier.aboveTheControls(sheet: PanelSheetState, floatingPx: () -> Int, footerPx: () -> Int): Modifier = layout { measurable, constraints ->
     val toast = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
     layout(constraints.maxWidth, constraints.maxHeight) {
         val gap = MapChrome.PILL_GAP.toPx()
         val edge = edgeOf(sheet)
         val bottom = if (edge == null || sheet.heading == SheetDetent.Full) {
-            constraints.maxHeight - gap
+            constraints.maxHeight - gap - footerPx()
         } else {
             val floating = floatingPx()
             edge - gap - PILL_HEIGHT.toPx() - gap - (if (floating > 0) floating + gap else 0f)

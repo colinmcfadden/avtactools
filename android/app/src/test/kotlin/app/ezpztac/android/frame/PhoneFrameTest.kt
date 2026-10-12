@@ -6,6 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import kotlinx.coroutines.launch
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -54,6 +57,8 @@ class PhoneFrameTest {
         counts: PanelCounts = PanelCounts(threats = 2, imports = 3),
         panels: List<Panel> = Panel.entries,
         onFrame: (MapFrame) -> Unit = {},
+        footer: (@androidx.compose.runtime.Composable () -> Unit)? = null,
+        snackbars: SnackbarHostState? = null,
     ) {
         sheet = PanelSheetState(detent)
         compose.setContent {
@@ -62,8 +67,9 @@ class PhoneFrameTest {
                 PhoneFrame(
                     panels = panels, current = shownPanel(chosen, panels), counts = counts,
                     onPick = { log += "pick ${it.label}"; chosen = it },
-                    sheet = sheet, snackbars = remember { SnackbarHostState() },
+                    sheet = sheet, snackbars = snackbars ?: remember { SnackbarHostState() },
                     panel = { Text("Inside ${it.label}") },
+                    footer = footer,
                 ) { frame ->
                     onFrame(frame)
                     Box(Modifier.fillMaxSize()) {
@@ -171,4 +177,16 @@ class PhoneFrameTest {
         show(Panel.Routes, SheetDetent.Lowered)
         compose.onNodeWithContentDescription("Open the Routes panel full height").assertIsDisplayed()
     }
+
+    @Test
+    fun `at full height a toast stands above the panel's footer, not on its buttons`() {
+        val toasts = SnackbarHostState()
+        show(Panel.Routes, detent = SheetDetent.Full, snackbars = toasts, footer = { Box(Modifier.fillMaxWidth().height(64.dp)) { Text("Sketch a route") } })
+        compose.runOnIdle { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch { toasts.showSnackbar("Saved") } }
+        compose.waitForIdle()
+        val toast = compose.onNodeWithText("Saved").fetchSemanticsNode().boundsInRoot
+        val foot = compose.onNodeWithText("Sketch a route").fetchSemanticsNode().boundsInRoot
+        assertTrue("toast ${toast.bottom} over the footer's top ${foot.top}", toast.bottom <= foot.top)
+    }
+
 }

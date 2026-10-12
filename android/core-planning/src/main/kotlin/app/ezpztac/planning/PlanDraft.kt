@@ -49,6 +49,36 @@ public data class PlanDraft(
         Checked.Refused(refusal.message.orEmpty())
     }
 
+    /**
+     * Checks only what differs from [before] (what the form showed), as [PointDraft.check] does: the airspeed and its reference together, the altitude and its
+     * reference together, the wind's direction and speed together, and the temperature, the fuel flow and the date each alone. A field typed as it was is left
+     * out of the patch, so a plan the web saved with no wind does not gain one because the temperature was changed, and an imported mission whose date was set
+     * does not have its altitudes written back into its file.
+     */
+    public fun check(before: PlanDraft): Checked = try {
+        val airspeed = if (airspeedValue == before.airspeedValue && airspeedType == before.airspeedType) null else {
+            if (airspeedType !in AIRSPEED_TYPES) throw Refusal("Airspeed reference must be ground, indicated or true.")
+            Airspeed(number("Airspeed", airspeedValue, 0.0, 400.0), airspeedType)
+        }
+        val altitude = if (altitudeValue == before.altitudeValue && altitudeRef == before.altitudeRef) null else {
+            if (altitudeRef !in ALTITUDE_REFS) throw Refusal("Altitude reference must be AGL or MSL.")
+            AltitudeSetting(number("Altitude", altitudeValue, -2000.0, 30000.0), altitudeRef)
+        }
+        val wind = if (windDir == before.windDir && windSpeed == before.windSpeed) null else {
+            Wind(number("Wind direction", windDir, 0.0, 360.0), number("Wind speed", windSpeed, 0.0, 200.0))
+        }
+        val temp = if (tempC == before.tempC) null else number("Temperature", tempC, -100.0, 100.0)
+        val fuel = if (fuelFlowLbHr == before.fuelFlowLbHr) null else number("Fuel flow", fuelFlowLbHr, 0.0, 20000.0)
+        val day = date.trim()
+        val newDate = if (day == before.date.trim()) null else {
+            if (day.isNotEmpty() && !isDate(day)) throw Refusal("The date must be written year-month-day, like 2026-10-03.")
+            day
+        }
+        Checked.Valid(PlanPatch(airspeed = airspeed, altitude = altitude, wind = wind, tempC = temp, fuelFlowLbHr = fuel, date = newDate))
+    } catch (refusal: Refusal) {
+        Checked.Refused(refusal.message.orEmpty())
+    }
+
     internal class Refusal(message: String) : Exception(message)
 
     public companion object {

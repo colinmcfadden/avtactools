@@ -15,6 +15,7 @@ import app.ezpztac.data.GraphicPlacement
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
 import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.OpenRouteSets
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.MaskState
 import app.ezpztac.data.PointSelection
@@ -87,6 +88,7 @@ class HomeViewModel @Inject constructor(
     private val last: LastDiagram,
     private val openSet: OpenDiagrams,
     private val lastSet: LastRouteSet,
+    private val openRouteSets: OpenRouteSets,
     private val localPoints: LocalPoints,
     private val pointSelection: PointSelection,
     private val threats: ThreatStore,
@@ -260,7 +262,8 @@ class HomeViewModel @Inject constructor(
         // The set of routes the person had open comes back too. Nothing waits on the map here: a set takes the map nowhere, so there is no event to lose.
         viewModelScope.launch {
             if (routeSession.active.value != null) return@launch                          // something was opened in the meantime: it stays
-            val id = lastSet.id() ?: return@launch
+            // Only if it is still open, as for the LZ/PZ: the last set closed stays closed.
+            val id = lastSet.id()?.takeIf { it in openRouteSets.ids.value } ?: return@launch
             try {
                 routeSession.open(id)                                                     // false when it is gone (deleted, or another account's)
             } catch (e: CancellationException) {

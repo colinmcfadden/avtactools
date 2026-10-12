@@ -128,4 +128,4 @@ fun BoundaryToolbar(state: BoundaryUiState, actions: BoundaryActions, modifier: 
     }
 }
 
-private fun pointsText(count: Int) = if (count == 1) "1 point" else "$count points"
+internal fun pointsText(count: Int) = countOf(count, "point")

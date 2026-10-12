@@ -17,11 +17,14 @@ class DrawingMode @Inject constructor() {
     /** Null when [kind] may draw (it holds the mode now, and holding it again is fine); else why not, in words. */
     @Synchronized
     fun begin(kind: Kind): String? {
-        val other = held
-        if (other != null && other != kind) return "Finish or cancel the ${other.noun} first."
+        refusal(kind)?.let { return it }
         held = kind
         return null
     }
+
+    /** Why [kind] could not begin now, in words, or null when it could: [begin]'s answer, without taking the mode. */
+    @Synchronized
+    fun refusal(kind: Kind): String? = held?.takeIf { it != kind }?.let { "Finish or cancel the ${it.noun} first." }
 
     /** [kind] has stopped drawing. Ending what is not held changes nothing. */
     @Synchronized

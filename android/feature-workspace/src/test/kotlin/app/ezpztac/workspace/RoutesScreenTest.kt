@@ -1,36 +1,40 @@
 package app.ezpztac.workspace
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
-import app.ezpztac.model.LatLon
-import app.ezpztac.model.LocalPointMatch
-import app.ezpztac.planning.PlanDraft
-import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** The routes tab as a person meets it: the sets, the routes of the open one, and the toolbar over the map while drawing. */
+/** The Routes panel as a person meets it (docs/native-design: Routes, SaveRoutes): the sets open now, their routes, every set, the foot, and the toolbar while drawing. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
 class RoutesScreenTest {
@@ -40,257 +44,352 @@ class RoutesScreenTest {
     private class Recorder {
         val log = mutableListOf<String>()
         val actions = RoutesActions(
-            startCreating = { log += "startCreating" }, cancelCreating = { log += "cancelCreating" }, createSet = { log += "create:$it" },
-            openSet = { log += "open:$it" }, closeSet = { log += "close" }, renameSet = { id, name -> log += "renameSet:$id:$name" },
-            deleteSet = { log += "deleteSet:$it" }, resolve = { id, how -> log += "resolve:$id:$how" }, dismissError = { log += "dismiss" },
-            selectRoute = { log += "select:$it" }, toggleVisible = { log += "toggle:$it" }, renameRoute = { id, name -> log += "renameRoute:$id:$name" },
-            deleteRoute = { log += "deleteRoute:$it" }, undo = { log += "undo" }, redo = { log += "redo" }, startDrawing = { log += "draw" },
-            addAtCrosshair = { log += "add" }, undoPoint = { log += "undoPoint" }, finishDrawing = { log += "finish" }, cancelDrawing = { log += "cancelDrawing" },
-            applyPlan = { route, draft -> applied += route to draft; log += "applyPlan:$route"; problem },
-            applyPoint = { route, point, typed, before, first -> points += Applied(route, point, typed, before, first); log += "applyPoint:$route:$point"; problem },
-            selectPoint = { log += "selectPoint:$it" }, renamePoint = { r, p, n -> log += "renamePoint:$r:$p:$n" },
-            setPointType = { r, p, t -> log += "type:$r:$p:$t" }, makeShaping = { r, p -> log += "shaping:$r:$p" }, makeNamed = { r, p -> log += "named:$r:$p" },
-            nudgePoint = { r, p, n, e -> log += "nudge:$r:$p:${n.toLong()}:${e.toLong()}" }, pointToCrosshair = { r, p -> log += "crosshair:$r:$p" },
-            pointToText = { r, p, t -> log += "pointTo:$r:$p:$t"; textProblem }, addShapingPoint = { log += "addShaping:$it" },
-            fetchWinds = { log += "winds" }, fetchElevations = { log += "elevations" }, dismissNote = { log += "dismissNote" },
-            exportSet = { log += "exportSet" }, exportRoute = { log += "exportRoute:$it" }, shareRoute = { id, format -> log += "share:$id:${format.extension}" }, dismissExportWarning = { log += "dismissExportWarning" },
-            importMission = { log += "importMission" },
-            localPointNamed = { typed -> if (typed.startsWith("BLUE")) LocalPointMatch(typed.uppercase(), LatLon(34.9, -84.9), elevation) else null },
+            importMission = { log += "import" }, showPage = { log += "page:$it" }, openSet = { log += "open:$it" }, close = { log += "close:$it" },
+            renameSet = { id, name -> log += "renameSet:$id:$name" }, deleteSet = { log += "deleteSet:$it" }, save = { log += "save" },
+            resolve = { id, how -> log += "resolve:$id:$how" }, dismissError = { log += "dismiss" }, openPlan = { log += "plan:$it" },
+            toggleVisible = { log += "toggle:$it" }, renameRoute = { id, name -> log += "renameRoute:$id:$name" }, deleteRoute = { log += "deleteRoute:$it" },
+            undo = { log += "undo" }, redo = { log += "redo" }, startSketch = { log += "sketch" }, addAtCrosshair = { log += "add" }, undoPoint = { log += "undoPoint" },
+            finishDrawing = { log += "finish" }, cancelDrawing = { log += "cancelDrawing" }, exportSet = { log += "exportSet:$it" },
+            exportRoute = { id, threats -> log += "exportRoute:$id:$threats" }, shareRoute = { id, format -> log += "share:$id:${format.extension}" },
+            dismissExportWarning = { log += "dismissWarning" }, includeThreats = { log += "threats:$it" },
         )
-        var elevation: Double? = 1730.0
-        var problem: String? = null
-        var textProblem: String? = null
-        val applied = mutableListOf<Pair<String, PlanDraft>>()
-        class Applied(val route: String, val point: String, val typed: PointDraft, val before: PointDraft, val first: Boolean)
-        val points = mutableListOf<Applied>()
     }
 
-    private fun content(state: RoutesUiState, crosshairGrid: String? = null, configure: Recorder.() -> Unit = {}): Recorder {
-        val r = Recorder().apply(configure)
-        compose.setContent {
-            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(state, r.actions, crosshairGrid = crosshairGrid) } }
-        }
+    private fun home(state: RoutesUiState, threats: Int = 0): Recorder {
+        val r = Recorder()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { RoutesHomeContent(state, r.actions, threatCount = threats) } } }
         return r
     }
+
+    private fun library(state: RoutesUiState): Recorder {
+        val r = Recorder()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { RoutesLibraryContent(state, r.actions) } } }
+        return r
+    }
+
+    private fun count(text: String, substring: Boolean = false) = compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().size
+
+    private val one = RouteRowUi("r1", "ROUTE 1", "#E5533D", visible = true, pointCount = 4, routePointCount = 4, summary = "4.2 nm · 2:30 · 40 lb", selected = false)
+    private val hidden = RouteRowUi("r2", "EGRESS", "#0A84FF", visible = false, pointCount = 3, routePointCount = 1, summary = null, selected = false)
+
+    private fun open(
+        vararg routes: RouteRowUi, name: String = "SKETCHED ROUTES", madeUp: Boolean = true, sync: SyncStatus? = SyncStatus.PENDING, mission: Boolean = false,
+        conflictOf: String? = null, canUndo: Boolean = false, canRedo: Boolean = false,
+    ) = OpenSetUi(
+        "s1", name, routes.toList(), canUndo, canRedo, sync, conflictOf, isMission = mission, madeUpName = madeUp, chips = routeSetChips(sync, conflictOf, mission),
+        saveContents = listOf("1 route, 4 points, 4.2 nm", "Speeds, altitudes, winds, fuel flow and the start time"),
+    )
+
+    private fun row(uuid: String, name: String, open: Boolean = false, mission: Boolean = false, sync: SyncStatus = SyncStatus.SYNCED, conflictOf: String? = null) =
+        RouteSetRow(uuid, name, 2, sync, conflictOf, open, mission, pointCount = if (mission) null else 9, chips = routeSetChips(sync, conflictOf, mission))
+
+    // -- The set on the map ---------------------------------------------------------------------------------------------
+
+    @Test
+    fun `the set on the map is a card with its state, what it holds, and its routes`() {
+        home(RoutesUiState(open = open(one), sets = listOf(row("s1", "SKETCHED ROUTES", open = true))))
+        compose.onNodeWithText("SKETCHED ROUTES").assertIsDisplayed()
+        compose.onNodeWithText("Waiting to sync").assertIsDisplayed()
+        compose.onNodeWithText("1 route · 4 points").assertIsDisplayed()
+        compose.onNodeWithText("Saves to your Library").assertIsDisplayed()
+        compose.onNodeWithText("ROUTE 1").assertIsDisplayed()
+        compose.onNodeWithText("4.2 nm · 2:30 · 40 lb").assertIsDisplayed()
+    }
+
+    @Test
+    fun `Save names a set of sketched routes with a route, and is off with none`() {
+        val r = home(RoutesUiState(open = open(one)))
+        compose.onNodeWithText("Save").assertIsEnabled().performClick()
+        assertEquals(listOf("save"), r.log)
+    }
+
+    @Test
+    fun `Save is off for a set with nothing in it yet, and a named set or a mission is Saved`() {
+        home(RoutesUiState(open = open()))
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithText("No routes in this set yet. Sketch a route to start one.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a named set says it is saved`() {
+        home(RoutesUiState(open = open(one, name = "NIGHT INFIL", madeUp = false, sync = SyncStatus.SYNCED)))
+        compose.onNodeWithText("Saved").assertIsNotEnabled()
+        compose.onNodeWithText("Synced").assertIsDisplayed()
+    }
+
+    @Test
+    fun `an imported mission says so, is saved, and its routes are not renamed or removed here`() {
+        home(RoutesUiState(open = open(one, name = "GOAT SUCKER", madeUp = false, mission = true, sync = SyncStatus.SYNCED)))
+        compose.onNodeWithText("Imported").assertIsDisplayed()
+        compose.onNodeWithText("Saved").assertIsNotEnabled()
+        compose.onNodeWithText("An AMPS mission", substring = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("More actions for ROUTE 1").performClick()
+        assertEquals(0, count("Rename"))
+        assertEquals(0, count("Delete"))
+        compose.onNodeWithText("Export this route as .msnx").assertIsDisplayed()
+    }
+
+    @Test
+    fun `Export takes the threats only when there are some and the box is ticked`() {
+        val r = home(RoutesUiState(open = open(one), includeThreats = true), threats = 2)
+        compose.onNodeWithText("Include threats (2) as a .ths file").assertIsDisplayed()
+        compose.onNodeWithText("Built on this device; never saved to your account").assertIsDisplayed()
+        compose.onNodeWithText("Export .msnx").performClick()
+        assertEquals(listOf("exportSet:true"), r.log)
+    }
+
+    @Test
+    fun `the threats' box says what it is set to and changes it`() {
+        val r = home(RoutesUiState(open = open(one), includeThreats = true), threats = 1)
+        compose.onNode(hasText("Include threats (1) as a .ths file", substring = true) and isToggleable()).assertIsOn().performClick()
+        assertEquals(listOf("threats:false"), r.log)
+    }
+
+    @Test
+    fun `with the box cleared, or no threats at all, the mission goes alone`() {
+        val r = home(RoutesUiState(open = open(one), includeThreats = false), threats = 3)
+        compose.onNode(hasText("Include threats (3) as a .ths file", substring = true) and isToggleable()).assertIsOff()
+        compose.onNodeWithText("Export .msnx").performClick()
+        assertEquals(listOf("exportSet:false"), r.log)
+    }
+
+    @Test
+    fun `with no threats the box is not offered`() {
+        val r = home(RoutesUiState(open = open(one), includeThreats = true), threats = 0)
+        assertEquals(0, count("Include threats", substring = true))
+        compose.onNodeWithText("Export .msnx").performClick()
+        assertEquals(listOf("exportSet:false"), r.log)
+    }
+
+    @Test
+    fun `while a mission is being built the button says so and takes no taps`() {
+        home(RoutesUiState(open = open(one), exporting = true))
+        compose.onNodeWithText("Building…").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `an empty set has nothing to export`() {
+        home(RoutesUiState(open = open()))
+        compose.onNodeWithText("Export .msnx").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a warning about the file just made is shown until it is dismissed`() {
+        val r = home(RoutesUiState(open = open(one), exportWarning = "AMPS will open it as a UH-60L."))
+        compose.onNodeWithText("AMPS will open it as a UH-60L.").assertIsDisplayed()
+        compose.onNodeWithText("Dismiss").performClick()
+        assertEquals(listOf("dismissWarning"), r.log)
+    }
+
+    @Test
+    fun `an error is shown and can be dismissed`() {
+        val r = home(RoutesUiState(open = open(one), error = "The set could not be opened."))
+        compose.onNodeWithText("The set could not be opened.").assertIsDisplayed()
+        compose.onNodeWithText("Dismiss").performClick()
+        assertEquals(listOf("dismiss"), r.log)
+    }
+
+    // -- Its routes -------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `a route's row opens its plan, and its buttons share, hide and do the rest`() {
+        val r = home(RoutesUiState(open = open(one, hidden)))
+        compose.onNodeWithText("ROUTE 1").performClick()
+        compose.onNodeWithContentDescription("Hide ROUTE 1").performClick()
+        compose.onNodeWithContentDescription("Show EGRESS").performClick()               // a hidden route offers to show it
+        compose.onNodeWithContentDescription("Share ROUTE 1 as GPX or FPL").performClick()
+        compose.onNodeWithText("GPX").performClick()
+        compose.onNodeWithContentDescription("Share ROUTE 1 as GPX or FPL").performClick()
+        compose.onNodeWithText("Garmin FPL").performClick()
+        assertEquals(listOf("plan:r1", "toggle:r1", "toggle:r2", "share:r1:gpx", "share:r1:fpl"), r.log)
+    }
+
+    @Test
+    fun `a route with no legs yet says how many points it has`() {
+        home(RoutesUiState(open = open(hidden)))
+        compose.onNodeWithText("3 points").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a route is renamed from its menu, in capitals`() {
+        val r = home(RoutesUiState(open = open(one)))
+        compose.onNodeWithContentDescription("More actions for ROUTE 1").performClick()
+        compose.onNodeWithText("Rename").performClick()
+        compose.onNodeWithText("Route name").performTextClearance()
+        compose.onNodeWithText("Route name").performTextInput("ingress")
+        compose.onNodeWithText("Save name").performClick()
+        assertEquals(listOf("renameRoute:r1:ingress"), r.log)                                   // the model puts it in capitals
+    }
+
+    @Test
+    fun `a route is exported on its own with the threats as the box says`() {
+        val r = home(RoutesUiState(open = open(one), includeThreats = true), threats = 1)
+        compose.onNodeWithContentDescription("More actions for ROUTE 1").performClick()
+        compose.onNodeWithText("Export this route as .msnx").performClick()
+        assertEquals(listOf("exportRoute:r1:true"), r.log)
+    }
+
+    @Test
+    fun `deleting a route is asked about first, and keeping it is the prominent answer`() {
+        val r = home(RoutesUiState(open = open(one)))
+        compose.onNodeWithContentDescription("More actions for ROUTE 1").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.onNodeWithText("Delete \"ROUTE 1\"? You can undo this until the set is closed.").assertIsDisplayed()
+        compose.onNodeWithText("Keep it").performClick()
+        assertEquals(emptyList<String>(), r.log)
+        compose.onNodeWithContentDescription("More actions for ROUTE 1").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        assertEquals(listOf("deleteRoute:r1"), r.log)
+    }
+
+    // -- The set's own menu and name --------------------------------------------------------------------------------------
+
+    @Test
+    fun `the set's menu has undo and redo when there is something to take back, close and delete`() {
+        val r = home(RoutesUiState(open = open(one, canUndo = true, canRedo = false)))
+        compose.onNodeWithContentDescription("More actions for SKETCHED ROUTES").performClick()
+        compose.onNodeWithText("Redo").assertIsNotEnabled()
+        compose.onNodeWithText("Undo").performClick()
+        compose.onNodeWithContentDescription("More actions for SKETCHED ROUTES").performClick()
+        compose.onNodeWithText("Takes these routes out of this session").assertIsDisplayed()
+        compose.onNodeWithText("Close").performClick()
+        assertEquals(listOf("undo", "close:s1"), r.log)
+    }
+
+    @Test
+    fun `deleting the set is asked about first`() {
+        val r = home(RoutesUiState(open = open(one, name = "NIGHT INFIL", madeUp = false)))
+        compose.onNodeWithContentDescription("More actions for NIGHT INFIL").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.onNodeWithText("Delete \"NIGHT INFIL\" and its routes? It is removed from this device and from your account.").assertIsDisplayed()
+        compose.onNodeWithText("Delete").performClick()
+        assertEquals(listOf("deleteSet:s1"), r.log)
+    }
+
+    @Test
+    fun `the set is renamed with its pencil, and a made-up name is refused at the field`() {
+        val r = home(RoutesUiState(open = open(one, name = "NIGHT INFIL", madeUp = false)))
+        compose.onNodeWithContentDescription("Rename NIGHT INFIL").performClick()
+        compose.onNodeWithText("Name").performTextClearance()
+        compose.onNodeWithText("Name").performTextInput("sketched routes 3")
+        compose.onNodeWithText("Save name").performClick()
+        compose.onNodeWithText(RouteSetNames.MADE_UP_REFUSED).assertIsDisplayed()
+        compose.onNodeWithText("Name").performTextClearance()
+        compose.onNodeWithText("Name").performTextInput("night exfil")
+        compose.onNodeWithText("Save name").performClick()
+        assertEquals(listOf("renameSet:s1:NIGHT EXFIL"), r.log)
+    }
+
+    @Test
+    fun `a conflict copy on the map offers the three choices`() {
+        val r = home(RoutesUiState(open = open(one, conflictOf = "s0", sync = SyncStatus.CONFLICT)))
+        compose.onNodeWithText("Conflict copy").assertIsDisplayed()
+        compose.onNodeWithText("Keep both").performScrollTo().performClick()
+        assertEquals(listOf("resolve:s1:${SyncEngine.Resolution.KEEP_BOTH}"), r.log)
+    }
+
+    // -- Also open, every set ---------------------------------------------------------------------------------------------
+
+    @Test
+    fun `the other sets in the session are also open, and a tap opens one on the map`() {
+        val r = home(RoutesUiState(open = open(one), alsoOpen = listOf(row("s2", "GOAT SUCKER", mission = true)), sets = listOf(row("s1", "SKETCHED ROUTES", open = true), row("s2", "GOAT SUCKER", mission = true))))
+        compose.onNodeWithText("Also open").assertIsDisplayed()
+        compose.onNodeWithText("AMPS mission · 2 routes", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("GOAT SUCKER").performClick()
+        compose.onNodeWithText("Every route set").performScrollTo().performClick()
+        assertEquals(listOf("open:s2", "page:${RoutesPage.LIBRARY}"), r.log)
+        compose.onNodeWithText("2 in your Library").assertIsDisplayed()
+    }
+
+    @Test
+    fun `with nothing open it says how to begin`() {
+        home(RoutesUiState())
+        compose.onNodeWithText("No routes open. Sketch a route on the map, or import an AMPS mission file.").assertIsDisplayed()
+        assertEquals(0, count("Every route set"))
+    }
+
+    @Test
+    fun `a conflict waiting for a choice is said at the top, and Review shows every set`() {
+        val r = home(RoutesUiState(sets = listOf(row("s1", "ONE"), row("s9", "ONE (from this device)", conflictOf = "s1", sync = SyncStatus.CONFLICT))))
+        compose.onNodeWithText("1 route set needs a choice: another device changed it too.").assertIsDisplayed()
+        compose.onNodeWithText("Review").performClick()
+        assertEquals(listOf("page:${RoutesPage.LIBRARY}"), r.log)
+    }
+
+    @Test
+    fun `every set is listed with its state, and can be opened or renamed`() {
+        val r = library(RoutesUiState(sets = listOf(row("s1", "ONE", open = true), row("s2", "TWO", sync = SyncStatus.PENDING))))
+        compose.onNodeWithText("On the map").assertIsDisplayed()
+        compose.onNodeWithText("Waiting to sync").assertIsDisplayed()
+        assertEquals(2, count("2 routes · 9 points"))
+        compose.onAllNodesWithText("Open")[0].assertIsNotEnabled()                                 // it is open already
+        compose.onAllNodesWithText("Open")[1].performClick()
+        compose.onNodeWithContentDescription("Rename TWO").performClick()
+        compose.onNodeWithText("Name").performTextClearance()
+        compose.onNodeWithText("Name").performTextInput("second")
+        compose.onNodeWithText("Save name").performClick()
+        assertEquals(listOf("open:s2", "renameSet:s2:SECOND"), r.log)
+    }
+
+    @Test
+    fun `a set is deleted from the list once the person says so`() {
+        val r = library(RoutesUiState(sets = listOf(row("s2", "TWO"))))
+        compose.onNodeWithContentDescription("Delete TWO").performClick()
+        compose.onNodeWithText("Delete \"TWO\" and its routes? It is removed from this device and from your account.").assertIsDisplayed()
+        compose.onNodeWithText("Delete").performClick()
+        assertEquals(listOf("deleteSet:s2"), r.log)
+    }
+
+    @Test
+    fun `a conflict copy in the list offers its choices`() {
+        val r = library(RoutesUiState(sets = listOf(row("s9", "ONE (from this device)", conflictOf = "s1", sync = SyncStatus.CONFLICT))))
+        compose.onNodeWithText("Keep theirs (discard mine)").performScrollTo().performClick()
+        assertEquals(listOf("resolve:s9:${SyncEngine.Resolution.KEEP_THEIRS}"), r.log)
+    }
+
+    @Test
+    fun `with no sets the Library says how to begin`() {
+        library(RoutesUiState())
+        compose.onNodeWithText("No route sets yet. Sketch a route, or import an AMPS mission file.").assertIsDisplayed()
+    }
+
+    // -- The foot --------------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `the foot sketches a route and imports a mission`() {
+        val r = Recorder()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { RoutesFooter(RoutesUiState(), r.actions) } }
+        compose.onNodeWithText("Sketch a route").performClick()
+        compose.onNodeWithText("Import .msnx").performClick()
+        assertEquals(listOf("sketch", "import"), r.log)
+    }
+
+    @Test
+    fun `while a route is drawn the foot cancels it, and finishes it once it has two points`() {
+        val r = Recorder()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { RoutesFooter(RoutesUiState(drawing = RouteDrawingUi(1, false)), r.actions) } }
+        compose.onNodeWithText("Add two points").assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(listOf("cancelDrawing"), r.log)
+        assertEquals(0, count("Sketch a route"))
+    }
+
+    @Test
+    fun `a route with two points is finished from the foot`() {
+        val r = Recorder()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { RoutesFooter(RoutesUiState(drawing = RouteDrawingUi(2, true)), r.actions) } }
+        compose.onNodeWithText("Finish route").assertIsEnabled().performClick()
+        assertEquals(listOf("finish"), r.log)
+    }
+
+    // -- Over the map ------------------------------------------------------------------------------------------------------------
 
     private fun toolbar(drawing: RouteDrawingUi, error: String? = null): Recorder {
         val r = Recorder()
         compose.setContent { EzpzTheme(ThemeMode.Dark) { Box { RouteToolbar(drawing, error, r.actions) } } }
         return r
     }
-
-    private fun count(text: String, substring: Boolean = false) = compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().size
-
-    private val one = RouteRowUi("r1", "ROUTE 1", "#FF453A", visible = true, pointCount = 5, routePointCount = 4, summary = "12.3 nm · 8:15", selected = false)
-    private val two = RouteRowUi("r2", "INGRESS", "#0A84FF", visible = false, pointCount = 2, routePointCount = 2, summary = null, selected = true)
-    private val three = RouteRowUi("r3", "EGRESS", "#32D74B", visible = true, pointCount = 7, routePointCount = 3, summary = null, selected = false)
-
-    private fun open(vararg routes: RouteRowUi, name: String = "MISSION 1", conflictOf: String? = null, canUndo: Boolean = false, canRedo: Boolean = false) =
-        OpenSetUi("s1", name, routes.toList(), canUndo, canRedo, SyncStatus.SYNCED, conflictOf)
-
-    private val setRow = RouteSetRow("s2", "NIGHT RUN", 3, SyncStatus.SYNCED, null, isOpen = false)
-
-    // -- Empty -----------------------------------------------------------------------------------------------
-
-    @Test
-    fun `Import mission asks for a mission file, with sets or without`() {
-        val r = content(RoutesUiState())
-        compose.onNodeWithText("Import mission").performClick()
-        assertEquals(listOf("importMission"), r.log)
-    }
-
-    @Test
-    fun `Import mission is offered beside New set while sets are listed, and not while a new one is being named`() {
-        content(RoutesUiState(sets = listOf(setRow)))
-        assertEquals(1, count("Import mission"))
-        assertEquals(1, count("New set"))
-    }
-
-    @Test
-    fun `neither is offered while a new set is being named`() {
-        content(RoutesUiState(creating = true))
-        assertEquals(0, count("Import mission"))
-        assertEquals(0, count("New set"))
-    }
-
-
-    @Test
-    fun `with nothing saved it says how to begin, and New set starts the form`() {
-        val r = content(RoutesUiState())
-        compose.onNodeWithText("Routes").assertIsDisplayed()
-        compose.onNodeWithText("No routes yet", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("New set").performClick()
-        assertEquals(listOf("startCreating"), r.log)
-    }
-
-    @Test
-    fun `the form creates a set with the name typed, and can be cancelled`() {
-        val r = content(RoutesUiState(creating = true))
-        assertEquals(0, count("New set"))                                                          // the button is gone while the form is open
-        assertEquals(0, count("No routes yet", substring = true))
-        compose.onNodeWithText("Name (optional)").performTextInput("night")
-        compose.onNodeWithText("Create set").performClick()
-        compose.onNodeWithText("Cancel").performClick()
-        assertEquals(listOf("create:night", "cancelCreating"), r.log)
-    }
-
-    @Test
-    fun `an error is shown and can be dismissed`() {
-        val r = content(RoutesUiState(error = "The set could not be opened."))
-        compose.onNodeWithText("The set could not be opened.").assertIsDisplayed()
-        compose.onNodeWithText("Dismiss").performClick()
-        assertEquals(listOf("dismiss"), r.log)
-    }
-
-    // -- The open set ----------------------------------------------------------------------------------------
-
-    @Test
-    fun `the open set is a card with its routes, each with what it is`() {
-        content(RoutesUiState(sets = listOf(RouteSetRow("s1", "MISSION 1", 2, SyncStatus.SYNCED, null, true)), open = open(one, two)))
-        compose.onNodeWithText("MISSION 1").assertIsDisplayed()
-        compose.onNodeWithText("Open").assertIsDisplayed()
-        compose.onNodeWithText("ROUTE 1").assertIsDisplayed()
-        compose.onNodeWithText("5 points · 4 route points").assertIsDisplayed()
-        compose.onNodeWithText("12.3 nm · 8:15").assertIsDisplayed()
-        compose.onNodeWithText("2 points · 2 route points").assertIsDisplayed()
-        assertEquals(0, count("7 points", substring = true))
-        assertEquals(0, count("Other sets"))
-    }
-
-    @Test
-    fun `a route with no summary yet shows only what it is made of`() {
-        content(RoutesUiState(open = open(three)))
-        compose.onNodeWithText("7 points · 3 route points").assertIsDisplayed()
-        assertEquals(0, count(" nm", substring = true))
-    }
-
-    @Test
-    fun `a set that is open is not told that there are no routes, even before the list has it`() {
-        content(RoutesUiState(sets = emptyList(), open = open(one)))
-        assertEquals(0, count("No routes yet", substring = true))
-    }
-
-    @Test
-    fun `a route of one named point says so in the singular`() {
-        content(RoutesUiState(open = open(one.copy(pointCount = 1, routePointCount = 1, summary = null))))
-        compose.onNodeWithText("1 point · 1 route point").assertIsDisplayed()
-    }
-
-    @Test
-    fun `an open set with no routes says so and offers to draw`() {
-        val r = content(RoutesUiState(open = open()))
-        compose.onNodeWithText("This set has no routes yet.").assertIsDisplayed()
-        compose.onNodeWithText("Draw a route").performClick()
-        assertEquals(listOf("draw"), r.log)
-    }
-
-    @Test
-    fun `while drawing the card says so instead of offering to draw again`() {
-        content(RoutesUiState(open = open(one), drawing = RouteDrawingUi(3, true)))
-        assertEquals(0, count("Draw a route"))
-        compose.onNodeWithText("Drawing a route: 3 points", substring = true).assertIsDisplayed()
-        assertEquals(0, count("This set has no routes yet."))
-    }
-
-    @Test
-    fun `tapping a route holds it, and Hide and Show change its visibility`() {
-        val r = content(RoutesUiState(open = open(one, two)))
-        compose.onNodeWithText("ROUTE 1").performClick()
-        compose.onNodeWithText("Hide").performClick()
-        compose.onNodeWithText("Show").performClick()
-        assertEquals(listOf("select:r1", "toggle:r1", "toggle:r2"), r.log)
-    }
-
-    @Test
-    fun `only the held route offers rename and delete, and a delete is asked about first`() {
-        val r = content(RoutesUiState(open = open(one, two)))
-        assertEquals(1, count("Rename"))
-        compose.onNodeWithText("Delete").performClick()
-        assertEquals(emptyList<String>(), r.log)
-        compose.onNodeWithText("Delete \"INGRESS\"?", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Keep it").performClick()
-        assertEquals(emptyList<String>(), r.log)
-        compose.onNodeWithText("Delete").performClick()
-        compose.onNodeWithText("Delete \"INGRESS\"?", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Delete", substring = false).performClick()
-        assertEquals(listOf("deleteRoute:r2"), r.log)
-    }
-
-    @Test
-    fun `renaming a route takes the typed name`() {
-        val r = content(RoutesUiState(open = open(one, two)))
-        compose.onNodeWithText("Rename").performClick()
-        compose.onNodeWithText("Route name").performTextInput("X")
-        compose.onNodeWithText("Save name").performClick()
-        assertEquals(listOf("renameRoute:r2:XINGRESS"), r.log)                                      // the field starts with the route's own name, and typing goes in at the front
-    }
-
-    @Test
-    fun `undo and redo are there when there is something to undo or redo`() {
-        content(RoutesUiState(open = open(one)))
-        compose.onNodeWithText("Undo").assertIsNotEnabled()
-        compose.onNodeWithText("Redo").assertIsNotEnabled()
-    }
-
-    @Test
-    fun `undo and redo call through when enabled`() {
-        val r = content(RoutesUiState(open = open(one, canUndo = true, canRedo = true)))
-        compose.onNodeWithText("Undo").assertIsEnabled().performClick()
-        compose.onNodeWithText("Redo").assertIsEnabled().performClick()
-        assertEquals(listOf("undo", "redo"), r.log)
-    }
-
-    @Test
-    fun `the open set can be closed, and its rename and delete are asked about`() {
-        val r = content(RoutesUiState(open = open(one)))
-        compose.onNodeWithText("Close").performClick()
-        compose.onNodeWithText("Delete set").performClick()
-        compose.onNodeWithText("Delete \"MISSION 1\" and its routes?", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Delete set").performClick()
-        assertEquals(listOf("close", "deleteSet:s1"), r.log)
-    }
-
-    @Test
-    fun `a conflict copy that is open offers the three choices`() {
-        val r = content(RoutesUiState(open = open(one, conflictOf = "s0")))
-        compose.onNodeWithText("This is your version", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Keep both").performClick()
-        assertEquals(listOf("resolve:s1:${SyncEngine.Resolution.KEEP_BOTH}"), r.log)
-    }
-
-    // -- The others ------------------------------------------------------------------------------------------
-
-    @Test
-    fun `the other sets are listed, and tapping one opens it`() {
-        val r = content(RoutesUiState(sets = listOf(RouteSetRow("s1", "MISSION 1", 2, SyncStatus.SYNCED, null, true), setRow), open = open(one)))
-        compose.onNodeWithText("Other sets").assertIsDisplayed()
-        compose.onNodeWithText("NIGHT RUN").performClick()
-        assertEquals(listOf("open:s2"), r.log)
-        compose.onNodeWithText("3 routes").assertIsDisplayed()
-    }
-
-    @Test
-    fun `with no set open every set is in the list`() {
-        content(RoutesUiState(sets = listOf(setRow.copy(routeCount = 1))))
-        assertEquals(0, count("Other sets"))
-        compose.onNodeWithText("1 route").assertIsDisplayed()
-    }
-
-    @Test
-    fun `a conflict copy in the list offers its choices, and a set waiting to sync says so`() {
-        val r = content(RoutesUiState(sets = listOf(setRow.copy(sync = SyncStatus.CONFLICT, conflictOf = "s9"))))
-        compose.onNodeWithText("Conflict copy").assertIsDisplayed()
-        compose.onNodeWithText("Keep theirs (discard mine)").performClick()
-        assertEquals(listOf("resolve:s2:${SyncEngine.Resolution.KEEP_THEIRS}"), r.log)
-    }
-
-    @Test
-    fun `a set waiting to sync says so`() {
-        content(RoutesUiState(sets = listOf(setRow.copy(sync = SyncStatus.PENDING))))
-        compose.onNodeWithText("Waiting to sync").assertIsDisplayed()
-    }
-
-    // -- Over the map ------------------------------------------------------------------------------------------
 
     @Test
     fun `the toolbar says how many points, and what each button does`() {
@@ -322,394 +421,61 @@ class RoutesScreenTest {
     }
 
     @Test
-    fun `the toolbar takes no room when nothing is being drawn`() {
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box { RouteToolbarWhileDrawing(RoutesUiState(), Recorder().actions) } } }
+    fun `the toolbar takes no room when nothing is being drawn, and is there while a route is`() {
+        var state by mutableStateOf(RoutesUiState())
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box { RouteToolbarWhileDrawing(state, Recorder().actions) } } }
         assertEquals(0, count("Finish"))
-    }
-
-    @Test
-    fun `the toolbar is there while a route is being drawn`() {
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box { RouteToolbarWhileDrawing(RoutesUiState(drawing = RouteDrawingUi(2, true)), Recorder().actions) } } }
+        state = RoutesUiState(drawing = RouteDrawingUi(2, true))
         compose.onNodeWithText("Finish").assertIsDisplayed()
     }
 
-    // -- The held route's plan ---------------------------------------------------------------------------------
-
-    private fun values() = PointDraft("50", "agl", "100", "ground", "0", "0")
-
-    private fun point(id: String, name: String, type: String?, first: Boolean = false, held: Boolean = false, hasClock: Boolean = false, clock: String = "--:--:--", facts: String = "3.1 nm · 045°T · 98 kt · 1320' MSL", grid: String = "16S GD 66993 52949") =
-        PlanPointUi(id, name, type, first, values(), clock, hasClock, if (first) "START" else facts, if (first) "0:00" else "1:52", held, grid)
-
-    private fun detail(vararg points: PlanPointUi, shaping: Int = 0, heldShaping: ShapingPointUi? = null, warnings: List<String> = emptyList(), totals: String? = "Total 12.3 nm · 8:15 · 640 lb") =
-        RouteDetailUi("r1", "ROUTE 1", "UH-60L Black Hawk", PlanDraft(date = "2026-10-03"), points.toList(), shaping, heldShaping, totals, warnings, hasElevations = false)
-
-    private fun withDetail(detail: RouteDetailUi, crosshairGrid: String? = null, configure: Recorder.() -> Unit = {}): Recorder =
-        content(RoutesUiState(open = open(one), detail = detail), crosshairGrid, configure)
-
-    private val log = arrayOf(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip"), point("p3", ".TGT", "target", hasClock = true, clock = "12:30:00"))
-
     @Test
-    fun `the held route shows its plan, its aircraft and its totals`() {
-        withDetail(detail(*log))
-        compose.onNodeWithText("Plan").assertIsDisplayed()
-        compose.onNodeWithText("UH-60L Black Hawk").assertIsDisplayed()
-        compose.onNodeWithText("Total 12.3 nm · 8:15 · 640 lb").performScrollTo().assertIsDisplayed()
+    fun `while drawing, the panel says so and its error is the toolbar's`() {
+        home(RoutesUiState(open = open(one), drawing = RouteDrawingUi(1, false), error = "That point could not be added."))
+        compose.onNodeWithText("Drawing a route: 1 point", substring = true).assertIsDisplayed()
+        assertEquals(0, count("That point could not be added."))                                   // said once, over the map, where the buttons are
+    }
+
+    // -- Naming ------------------------------------------------------------------------------------------------------------------
+
+    private fun naming(open: OpenSetUi, others: List<String> = emptyList()): MutableList<String> {
+        val saved = mutableListOf<String>()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { SaveRoutesContent(open, others, onSave = { saved += it }, onCancel = { saved += "cancel" }) } }
+        return saved
     }
 
     @Test
-    fun `with no route held there is no plan`() {
-        content(RoutesUiState(open = open(one)))
-        assertEquals(0, count("Apply plan"))
-        assertEquals(0, count("Nav log"))
+    fun `a set of one route is offered under the route's name, with what is saved`() {
+        val saved = naming(open(one))
+        compose.onNodeWithText("Save routes").assertIsDisplayed()
+        compose.onNodeWithText("Saves the sketched routes with their plans.").assertIsDisplayed()
+        compose.onNodeWithText("ROUTE 1").assertIsDisplayed()
+        compose.onNodeWithText("You can rename it any time.").assertIsDisplayed()
+        compose.onNodeWithText("1 route, 4 points, 4.2 nm").assertIsDisplayed()
+        compose.onNodeWithText("Threats are never saved. Export them as a .ths if you need them next to the mission.").assertIsDisplayed()
+        compose.onNodeWithText("Saves to your Library").assertIsDisplayed()
+        compose.onNodeWithText("Save").performClick()
+        assertEquals(listOf("ROUTE 1"), saved)
     }
 
     @Test
-    fun `the plan form starts as the plan, and Apply is there only once something has changed`() {
-        val r = withDetail(detail(*log))
-        compose.onNodeWithText("Apply plan").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithText("Date (YYYY-MM-DD)").performScrollTo()
-        compose.onNodeWithText("2026-10-03").assertIsDisplayed()
-        compose.onNodeWithText("Wind (kt)").performScrollTo().performTextInput("5")
-        compose.onNodeWithText("Apply plan").performScrollTo().assertIsEnabled().performClick()
-        assertEquals(listOf("applyPlan:r1"), r.log)
-        assertEquals("50", r.applied.single().second.windSpeed)                                     // "0" with the 5 typed at the front
+    fun `a name another set has says what this one will be saved as`() {
+        naming(open(one), others = listOf("ROUTE 1"))
+        compose.onNodeWithText("A set called ROUTE 1 is already in your Library: this one is saved as ROUTE 1 2.").assertIsDisplayed()
     }
 
     @Test
-    fun `a plan the form refuses shows the words beside the fields, and typing again clears them`() {
-        val r = Recorder().also { it.problem = "Wind speed is not a number." }
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), detail = detail(*log)), r.actions) } } }
-        compose.onNodeWithText("Wind (kt)").performScrollTo().performTextInput("x")
-        compose.onNodeWithText("Apply plan").performScrollTo().performClick()
-        compose.onNodeWithText("Wind speed is not a number.").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Wind (kt)").performScrollTo().performTextInput("1")
-        assertEquals(0, count("Wind speed is not a number."))
-    }
-
-    @Test
-    fun `the nav log has a row for each named point with its leg, its time and the time since the start`() {
-        withDetail(detail(*log))
-        compose.onNodeWithText("Nav log").performScrollTo().assertIsDisplayed()
-        assertEquals(2, count("▲ .TGT"))                                                              // the first point and the last
-        assertEquals(1, count("■ .SP"))
-        compose.onNodeWithText("START").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("12:30:00 TOT").performScrollTo().assertIsDisplayed()                  // the TOT says so in words
-        assertEquals(2, count("3.1 nm · 045°T · 98 kt · 1320' MSL"))
-        assertEquals(1, count("0:00"))
-        assertEquals(2, count("1:52"))
-    }
-
-    @Test
-    fun `an unnamed point is called what it is`() {
-        withDetail(detail(point("p1", "", "turn", first = true), point("p2", "", "turn")))
-        compose.onNodeWithText("● .SP").performScrollTo().assertIsDisplayed()                         // the first point is the start
-        compose.onNodeWithText("● (unnamed)").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun `tapping a row holds the point`() {
-        val r = withDetail(detail(*log))
-        compose.onNodeWithText("● .SP", useUnmergedTree = true).assertDoesNotExist()
-        compose.onNodeWithText("■ .SP").performScrollTo().performClick()
-        assertEquals(listOf("selectPoint:p2"), r.log)
-    }
-
-    @Test
-    fun `only the held point has its form, and the first point has no speed or wind`() {
-        withDetail(detail(point("p1", ".TGT", "target", first = true, held = true), point("p2", ".SP", "ip"), point("p3", ".TGT", "target")))
-        compose.onNodeWithText("Start altitude (ft)").performScrollTo().assertIsDisplayed()
-        assertEquals(0, count("Speed to"))
-        assertEquals(0, count("Altitude to (ft)"))
-        assertEquals(1, count("Time to be here (HH:MM:SS)"))
-    }
-
-    @Test
-    fun `a later point has the legs speed and wind as well`() {
-        withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true)))
-        compose.onNodeWithText("Altitude to (ft)").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Speed to").performScrollTo().assertIsDisplayed()
-        compose.onAllNodesWithText("Wind from (°T)")[1].performScrollTo().assertIsDisplayed()          // the plan has one, and so has the point
-    }
-
-    @Test
-    fun `applying a point passes what was typed, what was shown and whether it is the first`() {
-        val r = withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true)))
-        compose.onNodeWithText("Apply point").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithText("Time to be here (HH:MM:SS)").performScrollTo().performTextInput("12:30")
-        compose.onNodeWithText("Apply point").performScrollTo().assertIsEnabled().performClick()
-        assertEquals(listOf("applyPoint:r1:p2"), r.log)
-        val applied = r.points.single()
-        assertEquals("12:30", applied.typed.clock)
-        assertEquals("", applied.before.clock)
-        assertEquals(false, applied.first)
-    }
-
-    @Test
-    fun `a point the form refuses shows the words in its row`() {
-        val r = Recorder().also { it.problem = "The time must be written hours:minutes, like 09:15 or 09:15:30." }
-        compose.setContent {
-            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), detail = detail(point("p1", ".TGT", "target", first = true, held = true), point("p2", ".SP", "ip"))), r.actions) } }
-        }
-        compose.onNodeWithText("Time to be here (HH:MM:SS)").performScrollTo().performTextInput("noon")
-        compose.onNodeWithText("Apply point").performScrollTo().performClick()
-        compose.onNodeWithText("The time must be written hours:minutes, like 09:15 or 09:15:30.").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun `the held point can be renamed, and can be made a different type or only a shaping point`() {
-        val r = withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true)))
-        compose.onNodeWithText("Name").performScrollTo().performTextInput("X")
-        compose.onNodeWithText("Save name").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Type: IP").performScrollTo().performClick()
-        compose.onNodeWithText("Target").performClick()
-        compose.onNodeWithText("Make it only shape the line").performScrollTo().performClick()
-        assertEquals(listOf("renamePoint:r1:p2:X.SP", "type:r1:p2:target", "shaping:r1:p2"), r.log)
-    }
-
-    @Test
-    fun `a name that is a local point's is said to move the point, with its elevation, before it is saved`() {
-        withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true)))
-        compose.onNodeWithText("Shown in AMPS", substring = true).performScrollTo().assertIsDisplayed()          // the usual hint while nothing matches
-        compose.onNodeWithText("Name").performScrollTo().performTextInput("BLUE")                                // typed in front of the name: BLUE.SP
-        compose.onNodeWithText("Matches a local point: saving puts this point on it, at 1,730 ft.").performScrollTo().assertIsDisplayed()
-        assertEquals(0, count("Shown in AMPS", substring = true))
-    }
-
-    @Test
-    fun `a local point with no elevation is matched without saying one, and a name already saved is not announced`() {
-        withDetail(detail(point("p1", ".TGT", "target", first = true), point("p2", "BLUE 1", "ip", held = true))) { elevation = null }
-        compose.onNodeWithText("Shown in AMPS", substring = true).performScrollTo().assertIsDisplayed()          // BLUE 1 is the name it has: nothing is about to change
-        compose.onNodeWithText("Name").performScrollTo().performTextInput("BLUE")
-        compose.onNodeWithText("Matches a local point: saving puts this point on it.").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun `a held point that only shapes the line is offered as a route point`() {
-        val r = withDetail(detail(*log, shaping = 1, heldShaping = ShapingPointUi("s1", held = true)))
-        compose.onNodeWithText("Shaping point").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Make it a route point").performScrollTo().performClick()
-        assertEquals(listOf("named:r1:s1"), r.log)
-        compose.onNodeWithText("1 shaping point bends the line between named points.").performScrollTo().assertIsDisplayed()
-    }
-
-    // -- Where a point is, and moving it -------------------------------------------------------------------------
-
-    private val held2 = arrayOf(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true, grid = "16S GD 12345 67890"))
-
-    @Test
-    fun `a point that is not held has no position controls, and a held one offers them`() {
-        withDetail(detail(*log))
-        assertEquals(0, count("Move this point"))
-        assertEquals(0, count("Position"))
-    }
-
-    @Test
-    fun `the held point's position controls are folded away until asked for, and can be put away again`() {
-        withDetail(detail(*held2))
-        compose.onNodeWithText("Move this point").performScrollTo().assertIsDisplayed()
-        assertEquals(0, count("Position"))
-        compose.onNodeWithText("Move this point").performScrollTo().performClick()
-        compose.onNodeWithText("Position").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Point position 16S GD 12345 67890").performScrollTo().assertIsDisplayed()
-        assertEquals(0, count("Move this point"))
-        compose.onNodeWithText("Hide position controls").performScrollTo().performClick()
-        assertEquals(0, count("Position"))
-        compose.onNodeWithText("Move this point").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun `the arrows nudge the held point by the chosen step, 50 feet to begin with`() {
-        val r = withDetail(detail(*held2))
-        compose.onNodeWithText("Move this point").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Move north 50 feet").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Move west 50 feet").performScrollTo().performClick()
-        compose.onNodeWithText("200 ft").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Move east 200 feet").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Move south 200 feet").performScrollTo().performClick()
-        compose.onNodeWithText("10 ft").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Move north 10 feet").performScrollTo().performClick()
-        assertEquals(listOf("nudge:r1:p2:50:0", "nudge:r1:p2:0:-50", "nudge:r1:p2:0:200", "nudge:r1:p2:-200:0", "nudge:r1:p2:10:0"), r.log)
-    }
-
-    @Test
-    fun `the held point can be put at the crosshair, which says where that is when it knows`() {
-        val r = withDetail(detail(*held2), crosshairGrid = "16S GD 11111 22222")
-        compose.onNodeWithText("Move this point").performScrollTo().performClick()
-        compose.onNodeWithText("Put at the crosshair · 16S GD 11111 22222").performScrollTo().performClick()
-        assertEquals(listOf("crosshair:r1:p2"), r.log)
-    }
-
-    @Test
-    fun `with no crosshair grid the button still says what it does`() {
-        withDetail(detail(*held2))
-        compose.onNodeWithText("Move this point").performScrollTo().performClick()
-        compose.onNodeWithText("Put at the crosshair").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun `a grid typed for the held point is sent, and what is wrong with it is said at the field`() {
-        val r = withDetail(detail(*held2)) { textProblem = "I could not read that as a grid." }
-        compose.onNodeWithText("Move this point").performScrollTo().performClick()
-        compose.onNodeWithText("Move to a grid").performScrollTo().performTextInput("nonsense")
-        compose.onNodeWithText("Go").performScrollTo().performClick()
-        assertEquals(listOf("pointTo:r1:p2:nonsense"), r.log)
-        compose.onNodeWithText("I could not read that as a grid.").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun `a held point that only shapes the line shows its position controls without being asked`() {
-        val r = withDetail(detail(*log, shaping = 1, heldShaping = ShapingPointUi("s1", held = true, grid = "16S GD 55555 44444")))
-        compose.onNodeWithContentDescription("Point position 16S GD 55555 44444").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Move east 50 feet").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Put this point at the crosshair").performScrollTo().performClick()
-        assertEquals(listOf("nudge:r1:s1:0:50", "crosshair:r1:s1"), r.log)
-    }
-
-    @Test
-    fun `a shaping point can be added at the crosshair, whichever point is held`() {
-        val r = withDetail(detail(*log), crosshairGrid = "16S GD 11111 22222")
-        compose.onNodeWithText("Add a shaping point at the crosshair · 16S GD 11111 22222").performScrollTo().performClick()
-        assertEquals(listOf("addShaping:r1"), r.log)
-    }
-
-    @Test
-    fun `several shaping points are counted`() {
-        withDetail(detail(*log, shaping = 3))
-        compose.onNodeWithText("3 shaping points bend the line between named points.").performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun `what the planner says is wrong is shown, and with no totals nothing is totalled`() {
-        withDetail(detail(warnings = listOf("Route needs at least two route points."), totals = null))
-        compose.onNodeWithText("Route needs at least two route points.").performScrollTo().assertIsDisplayed()
-        assertEquals(0, count("Total ", substring = true))
-        assertEquals(0, count("Nav log"))
-    }
-
-    // -- Winds and elevations -------------------------------------------------------------------------------------
-
-    private fun fetching(kind: PlanningKind? = null, note: PlanningNote? = null, hasElevations: Boolean = false): Recorder {
-        val r = Recorder()
-        compose.setContent {
-            EzpzTheme(ThemeMode.Dark) {
-                Box(Modifier.verticalScroll(rememberScrollState())) {
-                    RoutesContent(RoutesUiState(open = open(one), detail = detail(*log).copy(hasElevations = hasElevations), fetching = kind, note = note), r.actions)
-                }
-            }
-        }
-        return r
-    }
-
-    @Test
-    fun `winds and elevations can be fetched, and the elevation button says whether they are already there`() {
-        val r = fetching()
-        compose.onNodeWithText("Fetch winds").performScrollTo().performClick()
-        compose.onNodeWithText("Fetch elevations").performScrollTo().performClick()
-        assertEquals(listOf("winds", "elevations"), r.log)
-        assertEquals(0, count("Refresh elevations"))
-    }
-
-    @Test
-    fun `with elevations already fetched the button offers to refresh them`() {
-        fetching(hasElevations = true)
-        compose.onNodeWithText("Refresh elevations").performScrollTo().assertIsDisplayed()
-        assertEquals(0, count("Fetch elevations"))
-    }
-
-    @Test
-    fun `while winds are being fetched the button says so and the other cannot be pressed`() {
-        val r = fetching(PlanningKind.WINDS)
-        compose.onNodeWithText("Fetching winds…").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Fetch elevations").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithText("Fetching winds…").performClick()
-        assertEquals(emptyList<String>(), r.log)
-    }
-
-    @Test
-    fun `while elevations are being fetched the other button cannot be pressed`() {
-        fetching(PlanningKind.ELEVATIONS)
-        compose.onNodeWithText("Fetching…").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Fetch winds").performScrollTo().assertIsNotEnabled()
-    }
-
-    @Test
-    fun `what a fetch found is shown, and can be dismissed`() {
-        val r = fetching(note = PlanningNote("3 points · 2 METAR, 1 TAF", failed = false))
-        compose.onNodeWithText("3 points · 2 METAR, 1 TAF").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Dismiss").performScrollTo().performClick()
-        assertEquals(listOf("dismissNote"), r.log)
-    }
-
-    @Test
-    fun `a fetch that failed is shown as an error`() {
-        fetching(note = PlanningNote("There is no connection to the server, so the winds could not be fetched.", failed = true))
-        compose.onNodeWithText("There is no connection to the server, so the winds could not be fetched.").performScrollTo().assertIsDisplayed()
-    }
-
-    // -- Export for AMPS -----------------------------------------------------------------------------------------
-
-    @Test
-    fun `a set with routes can be exported, and one with none cannot`() {
-        val r = content(RoutesUiState(open = open(one, two)))
-        compose.onNodeWithText("Export for AMPS").performScrollTo().assertIsEnabled().performClick()
-        assertEquals(listOf("exportSet"), r.log)
-    }
-
-    @Test
-    fun `an empty set has nothing to export`() {
-        content(RoutesUiState(open = open()))
-        assertEquals(0, count("Export for AMPS"))
-    }
-
-    @Test
-    fun `while a mission is being built the buttons say so and take no taps`() {
-        val r = Recorder()
-        compose.setContent {
-            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), detail = detail(*log), exporting = true), r.actions) } }
-        }
-        assertEquals(2, count("Building the mission…"))                                          // the set's button and the route's
-        compose.onAllNodesWithText("Building the mission…")[0].performScrollTo().performClick()
-        assertEquals(emptyList<String>(), r.log)
-    }
-
-    @Test
-    fun `the held route can be exported on its own`() {
-        val r = withDetail(detail(*log))
-        compose.onNodeWithText("Export this route for AMPS").performScrollTo().performClick()
-        assertEquals(listOf("exportRoute:r1"), r.log)
-    }
-
-    @Test
-    fun `the held route can be shared with another app as a GPX or a Garmin flight plan`() {
-        val r = withDetail(detail(*log))
-        compose.onNodeWithText("Share with another app").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("GPX").performScrollTo().performClick()
-        compose.onNodeWithText("Garmin FPL").performScrollTo().performClick()
-        assertEquals(listOf("share:r1:gpx", "share:r1:fpl"), r.log)
-        assertTrue(count("GPX opens in ATAK, Garmin Pilot and most map apps.", substring = true) == 1)
-    }
-
-    @Test
-    fun `while a file is being built the share buttons are off`() {
-        val r = Recorder()
-        compose.setContent {
-            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), detail = detail(*log), exporting = true), r.actions) } }
-        }
-        compose.onNodeWithText("GPX").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithText("Garmin FPL").performScrollTo().assertIsNotEnabled()
-        assertEquals(emptyList<String>(), r.log)
-    }
-
-    @Test
-    fun `a warning about the file is shown until it is dismissed`() {
-        val r = Recorder()
-        compose.setContent {
-            EzpzTheme(ThemeMode.Dark) {
-                Box(Modifier.verticalScroll(rememberScrollState())) { RoutesContent(RoutesUiState(open = open(one), exportWarning = "This mission will open in AMPS as a UH-60L, not a CH-47F Chinook."), r.actions) }
-            }
-        }
-        compose.onNodeWithText("This mission will open in AMPS as a UH-60L, not a CH-47F Chinook.").assertIsDisplayed()
-        compose.onNodeWithText("Dismiss").performClick()
-        assertEquals(listOf("dismissExportWarning"), r.log)
+    fun `a set of several routes is offered under its made-up name, which is refused once Save is pressed`() {
+        val saved = naming(open(one, hidden))
+        compose.onNodeWithText("SKETCHED ROUTES").assertIsDisplayed()
+        compose.onNodeWithText("Save").performClick()
+        compose.onNodeWithText(RouteSetNames.MADE_UP_REFUSED).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Clear the name").performClick()
+        compose.onNodeWithText("Give it a name.").assertIsDisplayed()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.onNodeWithText("Name").performTextInput("night infil")
+        compose.onNodeWithText("Save").performClick()
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(listOf("NIGHT INFIL", "cancel"), saved)
     }
 }

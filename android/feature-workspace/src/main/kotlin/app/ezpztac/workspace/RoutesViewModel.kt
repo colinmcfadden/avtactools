@@ -3,6 +3,8 @@ package app.ezpztac.workspace
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.ExportResult
 import app.ezpztac.geo.MgrsConverter
@@ -28,6 +30,7 @@ import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.RouteSet
 import app.ezpztac.model.SketchRoute
 import app.ezpztac.planning.PlanDraft
+import app.ezpztac.planning.PlanPatch
 import app.ezpztac.planning.PointDraft
 import app.ezpztac.planning.PointSpec
 import app.ezpztac.planning.RouteCalc
@@ -50,13 +53,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** One saved set in the list. */
+/** One saved set in a list: the Library's, or the session's "also open". */
 data class RouteSetRow(
     val uuid: String,
     val name: String,
@@ -64,10 +68,37 @@ data class RouteSetRow(
     val sync: SyncStatus,
     /** The set this is the user's kept version of, when another device changed it too. */
     val conflictOf: String?,
+    /** The set on the map (the open one, [RoutesUiState.open]). */
     val isOpen: Boolean,
     /** An imported AMPS mission, kept with its file, not a set drawn here. */
     val isMission: Boolean = false,
+    /** Every point of its routes; null for a mission, whose file is not read to draw a list. */
+    val pointCount: Int? = null,
+    /** Whether the server has it, as the design's chips say it ([routeSetChips]). */
+    val chips: List<LzChip> = emptyList(),
+) {
+    /** `2 routes · 91 points`, or `2 routes` where the points are not known. */
+    val summary: String get() = listOfNotNull(countOf(routeCount, "route"), pointCount?.let { countOf(it, "point") }).joinToString(" · ")
+}
+
+/** The pages of the Routes panel: the route sets open now, and every set in the Library (until the Library page, S7). A route's plan is a page of its own, over the frame. */
+enum class RoutesPage { HOME, LIBRARY }
+
+/**
+ * The chips of a set of routes (the web's state chip, with the sync state where the web says whether it is saved: every set here is saved as it changes,
+ * docs/ANDROID_SCREENS_PLAN.md): *Imported* for a mission brought in from a file, then whether the server has it.
+ */
+internal fun routeSetChips(sync: SyncStatus?, conflictOf: String?, isMission: Boolean): List<LzChip> = listOfNotNull(
+    LzChip("Imported", ChipTone.INFO, EzpzIcons.download).takeIf { isMission },
+    when {
+        conflictOf != null || sync == SyncStatus.CONFLICT -> LzChip("Conflict copy", ChipTone.ERROR)
+        sync == SyncStatus.SYNCED -> LzChip("Synced", ChipTone.SUCCESS)
+        else -> LzChip("Waiting to sync", ChipTone.WARNING)                                // null too: made a moment ago, the list not caught up yet
+    },
 )
+
+/** `1 route`, `4 points`. */
+internal fun countOf(n: Int, one: String): String = if (n == 1) "1 $one" else "$n ${one}s"
 
 /** One route of the open set. */
 data class RouteRowUi(
@@ -80,10 +111,13 @@ data class RouteRowUi(
     val pointCount: Int,
     /** The named points legs run between. */
     val routePointCount: Int,
-    /** `12.3 nm · 8:15`, once the route has two named points to run between. */
+    /** `12.3 nm · 8:15 · 640 lb` (the fuel when it can be said), once the route has two named points to run between. */
     val summary: String?,
     val selected: Boolean,
-)
+) {
+    /** What its row says under its name: the totals, or how many points it has until it has a leg. */
+    val meta: String get() = summary ?: countOf(pointCount, "point")
+}
 
 /** The open set, with what can be done to it from here. */
 data class OpenSetUi(
@@ -96,7 +130,21 @@ data class OpenSetUi(
     val conflictOf: String?,
     /** An imported AMPS mission: its routes are part of its file, so they cannot be drawn, renamed or removed here, and what is changed is written back into the file. */
     val isMission: Boolean = false,
-)
+    /** Still called by its made-up name (`SKETCHED ROUTES`): *Save* names it. */
+    val madeUpName: Boolean = false,
+    val chips: List<LzChip> = emptyList(),
+    /** What naming it keeps, in the save sheet's words: its routes counted, and their plans. */
+    val saveContents: List<String> = emptyList(),
+) {
+    /** Every point of its routes, shaping points included. */
+    val pointCount: Int get() = routes.sumOf { it.pointCount }
+
+    /** `1 route · 4 points`. */
+    val summary: String get() = "${countOf(routes.size, "route")} · ${countOf(pointCount, "point")}"
+
+    /** *Save* names a set of sketched routes that still has its made-up name, once it has a route to save. */
+    val canSave: Boolean get() = madeUpName && !isMission && routes.isNotEmpty() && conflictOf == null
+}
 
 /** A route being drawn. */
 data class RouteDrawingUi(val points: Int, val canFinish: Boolean)
@@ -139,7 +187,7 @@ data class RouteDetailUi(
     val shapingPoints: Int,
     /** The held point, when it is one that only shapes the line. */
     val heldShaping: ShapingPointUi?,
-    /** `Total 12.3 nm · 8:15 · 640 lb`, once there are two named points. */
+    /** `12.3 nm · 8:15 · 640 lb` (the fuel `--` when it cannot be said), once there are two named points. */
     val totals: String?,
     /** What the planner says is wrong with the route, in its words. */
     val warnings: List<String>,
@@ -147,20 +195,36 @@ data class RouteDetailUi(
     val hasElevations: Boolean,
     /** The route is part of an imported mission: a point's type is fixed by the file, and a point put on the line is a named one that splits a leg. */
     val isMission: Boolean = false,
+    /** `#RRGGBB`: the route's colour, for its points' symbols. */
+    val color: String = "",
 )
 
-/** A mission built for AMPS, ready to be handed to another app: the screen that has a context shares it. */
-class ExportFile(val fileName: String, val bytes: ByteArray)
+/**
+ * A mission built for AMPS, or a route for another app, ready to be handed over: the screen that has a context shares it. [withThreats]: the person asked for
+ * the threat picture to go beside it as a `.ths` (an AMPS mission only; a GPX or a flight plan never takes one).
+ */
+class ExportFile(val fileName: String, val bytes: ByteArray, val withThreats: Boolean = false)
 
 /** What a route can ask the server for. */
 enum class PlanningKind { WINDS, ELEVATIONS }
 
-/** What fetching came to, for a line under the buttons: what was found, or why not. */
-data class PlanningNote(val text: String, val failed: Boolean)
+/** What fetching [kind] came to, for a line under its button: what was found, or why not. */
+data class PlanningNote(val text: String, val failed: Boolean, val kind: PlanningKind = PlanningKind.WINDS)
 
 data class RoutesUiState(
+    /** Every set in the Library, the open one included. */
     val sets: List<RouteSetRow> = emptyList(),
+    /** The set on the map. */
     val open: OpenSetUi? = null,
+    /** The other sets in this session, in the order they were opened ("also open"). */
+    val alsoOpen: List<RouteSetRow> = emptyList(),
+    /** How many sets are open, the one on the map included. */
+    val openCount: Int = 0,
+    val page: RoutesPage = RoutesPage.HOME,
+    /** The held route's plan is showing, as a page of its own over the map ([detail] is what it shows). */
+    val planOpen: Boolean = false,
+    /** The names of the sets other than the open one, so naming it can say when a name is taken. */
+    val otherNames: List<String> = emptyList(),
     val drawing: RouteDrawingUi? = null,
     /** The route being worked on, when the open set has one held. */
     val detail: RouteDetailUi? = null,
@@ -172,15 +236,16 @@ data class RoutesUiState(
     val exporting: Boolean = false,
     /** Something to know about the file just made before it is sent (it will open as another airframe than the one planned), until dismissed. */
     val exportWarning: String? = null,
-    /** The form for a new set is open. */
-    val creating: Boolean = false,
+    /** An AMPS export takes the threat picture beside it as a `.ths` (the set card's box; on until the person says otherwise). */
+    val includeThreats: Boolean = true,
     val error: String? = null,
 )
 
 /**
- * The routes tab: the saved sets and the routes of the open one. The open set is the [RouteSession]'s, the route held is [RouteSelection]'s and a route
- * being drawn is [RouteSketching]'s; this is what a screen shows of them and how it asks for changes. Every change to the open set is one step of its
- * own undo. Opening a set is what makes the map show it (the app watches the session), so this screen does not know about the map.
+ * The Routes panel (docs/native-design: Routes, RoutePlan, SaveRoutes): the route sets open now ([OpenRouteSets]), the routes of the one on the map, and every
+ * set in the Library. The open set is the [RouteSession]'s, the route held is [RouteSelection]'s and a route being drawn is [RouteSketching]'s; this is what a
+ * screen shows of them and how it asks for changes. Every change to the open set is one step of its own undo. Opening a set is what makes the map show it (the
+ * app watches the session), so this screen does not know about the map.
  */
 @HiltViewModel
 class RoutesViewModel @Inject constructor(
@@ -193,10 +258,13 @@ class RoutesViewModel @Inject constructor(
     private val export: RouteExport,
     private val handoff: RouteHandoffExport,
     localPoints: LocalPoints,
+    private val openSets: OpenRouteSets,
 ) : ViewModel() {
     private data class Local(
-        val creating: Boolean = false, val error: String? = null, val fetching: PlanningKind? = null, val note: PlanningNote? = null, val noteFor: String? = null,
-        val exporting: Boolean = false, val exportWarning: String? = null,
+        val error: String? = null, val fetching: PlanningKind? = null, val note: PlanningNote? = null, val noteFor: String? = null,
+        val exporting: Boolean = false, val exportWarning: String? = null, val page: RoutesPage = RoutesPage.HOME, val includeThreats: Boolean = true,
+        /** The route whose plan page is open, while it is. */
+        val planFor: String? = null,
     )
 
     /** Where a mission is built: building one takes a moment of work on the whole template, so it is not done on the main thread. A test sets its own. */
@@ -209,31 +277,93 @@ class RoutesViewModel @Inject constructor(
 
     private val local = MutableStateFlow(Local())
     private val depths = combine(session.undoDepth, session.redoDepth) { undo, redo -> undo to redo }
+    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
-    val state: StateFlow<RoutesUiState> = combine(repository.observe(), session.active, selection.held, sketching.draft, local) { summaries, set, held, draft, local ->
+    /** What the panel tells the person in a toast once it has happened: Saved "NIGHT INFIL" to your Library. */
+    val notices: SharedFlow<String> = _notices.asSharedFlow()
+
+    /**
+     * The set made to sketch a route in, and the set that was on the map before it (or null), until that sketch ends. A sketch that ends without a route (cancelled,
+     * or dropped because another set was opened) takes the set away again if it is still empty and still called by its made-up name, and puts the set before it back.
+     */
+    private var madeForSketch: Pair<String, String?>? = null
+
+    /** One thing the panel asks for at a time, as the LZ/PZ panel does: a second tap while a set is being made or opened is not a second set. */
+    private var busy = false
+
+    private val listed = combine(repository.observe(), openSets.ids) { summaries, open -> summaries to open }
+
+    val state: StateFlow<RoutesUiState> = combine(listed, session.active, selection.held, sketching.draft, local) { (summaries, inSession), set, held, draft, local ->
+        val byId = summaries.associateBy { it.uuid }
+        val also = inSession.filter { it != set?.id }.mapNotNull { id -> byId[id]?.toRow(isOpen = false) }
+        val detail = set?.let { detailOf(it, held) }
         RoutesUiState(
             sets = summaries.map { it.toRow(isOpen = it.uuid == set?.id) },
-            open = set?.let { openOf(it, held?.routeId, summaries.firstOrNull { s -> s.uuid == it.id }) },
+            open = set?.let { openOf(it, held?.routeId, byId[it.id]) },
+            alsoOpen = also,
+            openCount = also.size + (if (set != null) 1 else 0),
+            page = local.page,
+            // The page is the held route's: a route undone out of existence, or put down, takes its page with it.
+            planOpen = local.planFor != null && detail?.routeId == local.planFor,
+            otherNames = summaries.filter { it.uuid != set?.id }.map { it.name },
             drawing = draft?.takeIf { it.setId == set?.id }?.let { RouteDrawingUi(it.points.size, it.canFinish) },
-            detail = set?.let { detailOf(it, held) },
+            detail = detail,
             fetching = local.fetching.takeIf { local.noteFor == held?.routeId },
             // A line about one route's winds is not shown under another route.
             note = local.note.takeIf { local.noteFor == held?.routeId },
             exporting = local.exporting,
             exportWarning = local.exportWarning,
-            creating = local.creating,
+            includeThreats = local.includeThreats,
             error = local.error,
         )
     }.combine(depths) { state, (undo, redo) ->
         state.copy(open = state.open?.copy(canUndo = undo > 0, canRedo = redo > 0))
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RoutesUiState())
 
-    private fun RouteSetSummary.toRow(isOpen: Boolean) = RouteSetRow(uuid, name, routeCount, sync, conflictOf, isOpen, isMission)
+    init {
+        // What is on the map is open: however it was opened (here, a launch putting back the last one, a mission brought in), it joins the session. A set closed
+        // from outside (a sign-out, a mission pack) takes the plan page with it.
+        viewModelScope.launch {
+            var shown: String? = null
+            session.active.collect { set ->
+                if (set != null) openSets.add(set.id)
+                if (set?.id != shown) local.update { it.copy(planFor = null) }                  // another set, or none: the page was the last one's
+                shown = set?.id
+            }
+        }
+        // The plan page is the held route's: when the route held changes (undone out of existence, put down, another held), the page is not opened again by holding it later.
+        viewModelScope.launch {
+            selection.held.collect { held -> if (held?.routeId != local.value.planFor) local.update { it.copy(planFor = null) } }
+        }
+        // A sketch that ends without a route takes the set made for it away again (cancelled, or dropped as another set opened).
+        viewModelScope.launch {
+            sketching.draft.map { it?.setId }.distinctUntilChanged().collect { drawingOn ->
+                val (made, before) = madeForSketch ?: return@collect
+                if (drawingOn == made) return@collect
+                madeForSketch = null
+                abandon(made, before)
+            }
+        }
+    }
+
+    private fun RouteSetSummary.toRow(isOpen: Boolean) = RouteSetRow(
+        uuid, name, routeCount, sync, conflictOf, isOpen, isMission, pointCount = pointCount, chips = routeSetChips(sync, conflictOf, isMission),
+    )
 
     private fun openOf(set: RouteSet, heldRouteId: String?, listed: RouteSetSummary?) = OpenSetUi(
         uuid = set.id, name = set.name, routes = set.routes.map { rowOf(it, selected = it.id == heldRouteId) },
         canUndo = false, canRedo = false, sync = listed?.sync, conflictOf = listed?.conflictOf, isMission = set.mission != null,
+        madeUpName = set.mission == null && RouteSetNames.isMadeUp(set.name), chips = routeSetChips(listed?.sync, listed?.conflictOf, set.mission != null),
+        saveContents = saveContentsOf(set),
     )
+
+    /** What naming a set keeps, as the save sheet lists it (the web's `contentsFor`): its routes and points counted, with their distance; then their plans. */
+    private fun saveContentsOf(set: RouteSet): List<String> {
+        val points = set.routes.sumOf { it.points.size }
+        val nm = set.routes.sumOf { RouteCalc.computeRoutePlan(it.points, it.plan, it.elevations).totals?.distNm ?: 0.0 }
+        val counted = "${countOf(set.routes.size, "route")}, ${countOf(points, "point")}" + (if (nm > 0) ", ${oneDecimal(nm)} nm" else "")
+        return listOf(counted, "Speeds, altitudes, winds, fuel flow and the start time")
+    }
 
     private fun detailOf(set: RouteSet, held: RouteHeld?): RouteDetailUi? {
         val route = held?.routeId?.let(set::route) ?: return null
@@ -248,12 +378,12 @@ class RoutesViewModel @Inject constructor(
         }
         val shaping = route.points.filter { it.kind == RoutePoint.KIND_SHAPING }
         val totals = result.totals?.let { t ->
-            "Total ${oneDecimal(t.distNm)} nm · ${RouteCalc.formatDuration(t.timeSec)} · ${t.fuelLb?.let { "${RouteCalc.jsRound(it).toLong()} lb" } ?: "-- lb"}"
+            "${oneDecimal(t.distNm)} nm · ${RouteCalc.formatDuration(t.timeSec)} · ${t.fuelLb?.let { "${RouteCalc.jsRound(it).toLong()} lb" } ?: "-- lb"}"
         }
         return RouteDetailUi(
             routeId = route.id, name = route.name, aircraft = route.plan.aircraft, plan = PlanDraft.of(route.plan), points = rows,
             shapingPoints = shaping.size, heldShaping = shaping.firstOrNull { it.id != null && it.id == held.pointId }?.let { ShapingPointUi(it.id.orEmpty(), held = true, grid = gridOf(it.lat, it.lon)) },
-            totals = totals, warnings = result.warnings, hasElevations = route.elevations.isNotEmpty(), isMission = set.mission != null,
+            totals = totals, warnings = result.warnings, hasElevations = route.elevations.isNotEmpty(), isMission = set.mission != null, color = route.color,
         )
     }
 
@@ -275,11 +405,30 @@ class RoutesViewModel @Inject constructor(
         summary = summaryOf(route), selected = selected,
     )
 
+    // -- The panel's pages ----------------------------------------------------------------------------------------
+
+    /** Goes to [to]: the sets open now, or every set in the Library. */
+    fun showPage(to: RoutesPage) = local.update { it.copy(page = to) }
+
+    /**
+     * Opens the plan of [routeId], a route of the open set, as a page of its own: the route is held (the map draws it heavier), and a point already held on it
+     * stays held, so its card is the one open.
+     */
+    fun openPlan(routeId: String) {
+        if (session.active.value?.route(routeId) == null) return
+        if (selection.held.value?.routeId != routeId) selection.select(routeId)                  // before the page: holding another route closes it
+        local.update { it.copy(planFor = routeId, error = null) }
+    }
+
+    /** Opens the plan of the route held on the map (the held bar's options for one of its points). */
+    fun openHeldPlan() {
+        selection.held.value?.routeId?.let(::openPlan)
+    }
+
+    /** Back from the plan page to the panel. What is held stays held, so the map shows what was being worked on. */
+    fun closePlan() = local.update { it.copy(planFor = null) }
+
     // -- Sets ----------------------------------------------------------------------------------------------------
-
-    fun startCreating() = local.update { it.copy(creating = true, error = null) }
-
-    fun cancelCreating() = local.update { it.copy(creating = false, error = null) }
 
     fun dismissError() = local.update { it.copy(error = null) }
 
@@ -287,15 +436,18 @@ class RoutesViewModel @Inject constructor(
 
     fun dismissExportWarning() = local.update { it.copy(exportWarning = null) }
 
+    /** Whether an AMPS export takes the threats with it (the box on the set's card). */
+    fun includeThreats(on: Boolean) = local.update { it.copy(includeThreats = on) }
+
     // -- Export for AMPS ---------------------------------------------------------------------------------------------
 
     /**
      * Builds the AMPS mission of every route in the open set. For an imported mission that is **its own file**, with the changes saved so far written into it (the name gets
      * `_edited`, as the web names it): the file is the mission, so nothing is rebuilt from a template.
      */
-    fun exportSet() = if (session.active.value?.mission != null) exportMissionFile() else exportRoutes(routeId = null)
+    fun exportSet(withThreats: Boolean = false) = if (session.active.value?.mission != null) exportMissionFile(withThreats) else exportRoutes(routeId = null, withThreats)
 
-    private fun exportMissionFile() {
+    private fun exportMissionFile(withThreats: Boolean) {
         val link = session.active.value?.mission ?: return
         if (local.value.exporting) return
         local.update { it.copy(exporting = true, error = null, exportWarning = null) }
@@ -313,14 +465,14 @@ class RoutesViewModel @Inject constructor(
                 return@launch
             }
             local.update { it.copy(exporting = false) }
-            _exports.emit(ExportFile(link.fileName.replace(Regex("""\.msnx$""", RegexOption.IGNORE_CASE), "") + "_edited.msnx", bytes))
+            _exports.emit(ExportFile(link.fileName.replace(Regex("""\.msnx$""", RegexOption.IGNORE_CASE), "") + "_edited.msnx", bytes, withThreats))
         }
     }
 
     /** Builds the AMPS mission of one route of the open set. */
-    fun exportRoute(routeId: String) = exportRoutes(routeId)
+    fun exportRoute(routeId: String, withThreats: Boolean = false) = exportRoutes(routeId, withThreats)
 
-    private fun exportRoutes(routeId: String?) {
+    private fun exportRoutes(routeId: String?, withThreats: Boolean) {
         val set = session.active.value ?: return
         if (local.value.exporting) return
         val routes = export.routesOf(set, routeId)
@@ -336,7 +488,7 @@ class RoutesViewModel @Inject constructor(
             when (result) {
                 is ExportResult.Ready -> {
                     local.update { it.copy(exporting = false, exportWarning = result.warning) }
-                    _exports.emit(ExportFile(result.fileName, result.bytes))
+                    _exports.emit(ExportFile(result.fileName, result.bytes, withThreats))
                 }
                 is ExportResult.Refused -> local.update { it.copy(exporting = false, error = result.message) }
             }
@@ -374,29 +526,100 @@ class RoutesViewModel @Inject constructor(
         }
     }
 
-    /** Makes an empty set and opens it. A blank [name] is `MISSION n`, n counting the sets there are, upper-cased as the web names routes. */
+    /** Makes an empty set and opens it. A blank [name] is the next made-up one (`SKETCHED ROUTES`), upper-cased as the web names routes. */
     fun createSet(name: String) {
-        val title = name.trim().uppercase().ifEmpty { "MISSION ${state.value.sets.size + 1}" }
-        run("The set could not be made.") {
-            val made = repository.create(title)
-            session.open(made.id)
-            local.update { it.copy(creating = false) }
-        }
+        val title = RouteSetNames.clean(name).ifEmpty { RouteSetNames.next(state.value.sets.map { it.name }) }
+        run("The set could not be made.") { make(title) }
     }
 
+    /**
+     * A new set called [title], on the map and in the session. A set that is made but cannot be opened (the set on the map before it would not save) is taken away
+     * again rather than left empty in the Library, and the failure is the caller's.
+     */
+    private suspend fun make(title: String): String {
+        val made = repository.create(title)
+        val opened = try {
+            session.open(made.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            repository.delete(made.id)
+            throw e
+        }
+        if (!opened) {
+            repository.delete(made.id)
+            error("The new set could not be opened.")
+        }
+        openSets.add(made.id)
+        local.update { it.copy(page = RoutesPage.HOME) }
+        return made.id
+    }
+
+    /** Opens [uuid] on the map (it joins the session if it was not in it). */
     fun openSet(uuid: String) {
+        if (local.value.page == RoutesPage.LIBRARY) local.update { it.copy(page = RoutesPage.HOME) }
         if (session.active.value?.id == uuid) return
         run("The set could not be opened.") {
-            if (!session.open(uuid)) local.update { it.copy(error = "That set is no longer here.") }
+            if (session.open(uuid)) openSets.add(uuid) else local.update { it.copy(error = "That set is no longer here.") }
         }
     }
 
-    /** Puts the open set away (it is saved first). */
-    fun closeSet() = run("The set could not be closed.") { session.close() }
+    /** Takes the set on the map out of the session ([close]). */
+    fun closeSet() {
+        session.active.value?.id?.let(::close)
+    }
+
+    /**
+     * Takes [uuid] out of the sets open now. It is not deleted: the Library still has it. If it was the one on the map, it is saved and the one opened before it (the
+     * last still open) takes its place, or none.
+     */
+    fun close(uuid: String) = run("The set could not be closed.") {
+        openSets.remove(uuid)
+        if (session.active.value?.id == uuid) {
+            closeKeepingNothingNew()
+            openNext()
+        }
+    }
+
+    /** Opens the last set still in the session that is still here; an id whose set has gone is let go on the way. */
+    private suspend fun openNext() {
+        for (id in openSets.ids.value.reversed()) {
+            val opened = try {
+                session.open(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false                                                                // a mission whose file will not read is not a reason to stop looking
+            }
+            if (opened) return
+            openSets.remove(id)
+        }
+    }
+
+    // -- Naming ------------------------------------------------------------------------------------------------------
+
+    /**
+     * Names the open set [name] (the design's *Save*: everything is already saved and synced as it changes, so what saving adds is the name the Library finds it
+     * by). A name another set already has is kept apart as `NAME 2` (the web's *Keep both*), and the toast says the name it got.
+     */
+    fun saveAs(name: String) {
+        val title = RouteSetNames.clean(name)
+        if (title.isEmpty()) return fail("Give the routes a name.")
+        val open = session.active.value ?: return
+        val chosen = RouteSetNames.free(title, state.value.otherNames)
+        if (RouteSetNames.isMadeUp(chosen)) return fail(RouteSetNames.MADE_UP_REFUSED)
+        run("The routes could not be saved.") {
+            if (session.active.value?.id != open.id) return@run
+            session.edit("Name") { it.copy(name = chosen) }
+            session.flush()
+            _notices.tryEmit("Saved \u201c$chosen\u201d to your Library")
+        }
+    }
 
     fun renameSet(uuid: String, name: String) {
-        val title = name.trim().uppercase()
+        val title = RouteSetNames.clean(name)
         if (title.isEmpty()) return fail("A set needs a name.")
+        if (RouteSetNames.isMadeUp(title)) return fail(RouteSetNames.MADE_UP_REFUSED)
         run("The set could not be renamed.") {
             // The open set is the one with unsaved edits in memory, so it is renamed there and saved with them.
             if (session.active.value?.id == uuid) {
@@ -409,8 +632,24 @@ class RoutesViewModel @Inject constructor(
     }
 
     fun deleteSet(uuid: String) = run("The set could not be deleted.") {
-        if (session.active.value?.id == uuid) session.close()
+        val wasOpen = session.active.value?.id == uuid
+        if (wasOpen) closeKeepingNothingNew()
         repository.delete(uuid)
+        openSets.remove(uuid)
+        if (wasOpen) openNext()
+    }
+
+    /**
+     * Closes the set on the map. One whose record went while it was open (deleted elsewhere) is kept under a new id by the save that closing makes: that id joins the
+     * session as it is made, and is taken out again, so it is not opened as the one before (it stays in the Library).
+     */
+    private suspend fun closeKeepingNothingNew() {
+        val before = openSets.ids.value.toSet()
+        try {
+            session.close()
+        } finally {
+            openSets.ids.value.filterNot { it in before }.forEach(openSets::remove)
+        }
     }
 
     /** Settles a conflict the sync kept beside a set: the same three choices a diagram has. */
@@ -458,13 +697,13 @@ class RoutesViewModel @Inject constructor(
         viewModelScope.launch {
             val note = try {
                 when (val outcome = ask(set.id, routeId)) {
-                    is PlanningOutcome.Done -> PlanningNote(outcome.message, failed = false)
-                    is PlanningOutcome.Failed -> PlanningNote(outcome.message, failed = true)
+                    is PlanningOutcome.Done -> PlanningNote(outcome.message, failed = false, kind)
+                    is PlanningOutcome.Failed -> PlanningNote(outcome.message, failed = true, kind)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                PlanningNote("That could not be fetched.", failed = true)
+                PlanningNote("That could not be fetched.", failed = true, kind)
             }
             local.update { it.copy(fetching = null, note = note) }
         }
@@ -473,31 +712,32 @@ class RoutesViewModel @Inject constructor(
     // -- The held route's plan and points ------------------------------------------------------------------------
 
     /**
-     * Applies the route-wide plan form to [routeId]. Null when it is applied (one undo step); else why not, in words for the form itself: the screen
-     * shows it beside the fields, because a banner at the top of the sheet can be scrolled out of sight while typing.
+     * Applies what was typed in the route-wide plan ([typed]) to [routeId]: only what differs from [before], what the form showed. Null when it is applied (or
+     * nothing was changed); else why not, in words for the field itself, because a banner at the top of the page can be scrolled out of sight while typing.
+     * Changes made under one [coalesce] key one after another (a field typed into) are one step to undo.
      */
-    fun applyPlan(routeId: String, draft: PlanDraft): String? {
+    fun applyPlan(routeId: String, typed: PlanDraft, before: PlanDraft, coalesce: Any? = null): String? {
         if (session.active.value?.route(routeId) == null) return "That route is no longer here."
-        return when (val checked = draft.check()) {
+        return when (val checked = typed.check(before)) {
             is PlanDraft.Checked.Refused -> checked.message
             is PlanDraft.Checked.Valid -> {
-                session.edit("Change plan") { set -> set.mapRoute(routeId) { SketchOps.withPlan(it, checked.patch) } }
+                if (checked.patch != PlanPatch()) session.edit("Change plan", coalesce) { set -> set.mapRoute(routeId) { SketchOps.withPlan(it, checked.patch) } }
                 null
             }
         }
     }
 
     /**
-     * Applies what was typed for one point (altitude, speed and wind to it, and its clock) to [routeId]: only what was changed from [before], in one undo step.
-     * Null when it is applied (or nothing was changed); else why not, in words for the row.
+     * Applies what was typed for one point (altitude, speed and wind to it, and its clock) to [routeId]: only what was changed from [before], in one undo step
+     * (one for everything typed under one [coalesce] key in a row). Null when it is applied (or nothing was changed); else why not, in words for the field.
      */
-    fun applyPoint(routeId: String, pointId: String, typed: PointDraft, before: PointDraft, first: Boolean): String? {
+    fun applyPoint(routeId: String, pointId: String, typed: PointDraft, before: PointDraft, first: Boolean, coalesce: Any? = null): String? {
         if (session.active.value?.route(routeId) == null) return "That route is no longer here."
         return when (val checked = typed.check(before, first)) {
             is PointDraft.Checked.Refused -> checked.message
             is PointDraft.Checked.Valid -> {
                 if (!checked.isEmpty) {
-                    session.edit("Change point") { set ->
+                    session.edit("Change point", coalesce) { set ->
                         set.mapRoute(routeId) { route ->
                             var next = route
                             val patch = checked.patch
@@ -634,6 +874,51 @@ class RoutesViewModel @Inject constructor(
 
     fun startDrawing() = fail(if (isMission()) MISSION_ROUTES_ARE_THE_FILES else sketching.start())
 
+    /**
+     * The panel's *Sketch a route*: drawn into the set on the map when it is a set of sketched routes; otherwise (none open, or an imported mission, whose routes
+     * are its file's) into a new one, called by the next made-up name until it is saved. Refused in words, before any set is made, when something else has the
+     * map's taps.
+     */
+    fun startSketch() {
+        val open = session.active.value
+        if (open != null && open.mission == null) return fail(sketching.start())
+        sketching.refusal()?.let { return fail(it) }
+        run("The routes could not be made.") {
+            val made = make(RouteSetNames.next(state.value.sets.map { it.name }))
+            when (val refused = sketching.start()) {
+                null -> madeForSketch = made to open?.id
+                else -> {
+                    fail(refused)                                                           // something took the map's taps meanwhile: the set goes again
+                    abandon(made, open?.id)
+                }
+            }
+        }
+    }
+
+    /**
+     * Takes away [made], a set made to sketch a route in, if it is still empty and still called by its made-up name (the person may have named it meanwhile, or it may
+     * have a route: then it stays). If it was on the map, [before] (the set that was there before it) comes back, or the last set still open.
+     */
+    private fun abandon(made: String, before: String?) {
+        viewModelScope.launch {
+            try {
+                val onMap = session.active.value?.takeIf { it.id == made }
+                val set = onMap ?: repository.open(made) ?: return@launch
+                if (set.routes.isNotEmpty() || set.unreadable.isNotEmpty() || !RouteSetNames.isMadeUp(set.name)) return@launch
+                if (onMap != null) closeKeepingNothingNew()
+                repository.delete(made)
+                openSets.remove(made)
+                if (onMap != null && session.active.value == null) {
+                    if (before == null || !session.open(before)) openNext()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                local.update { it.copy(error = "The empty set could not be taken away.") }
+            }
+        }
+    }
+
     /** Puts a point down at the crosshair, [at]. */
     fun addAtCrosshair(at: LatLon?) {
         if (at == null) return fail("Move the map to where the point should go first.")
@@ -649,6 +934,7 @@ class RoutesViewModel @Inject constructor(
     fun finishDrawing(name: String = "") {
         when (val result = sketching.finish(name)) {
             is SketchFinish.Done -> {
+                madeForSketch = null                                                       // it has a route: it is a set like any other
                 local.update { it.copy(error = null) }
                 selection.select(result.routeId)
             }
@@ -656,6 +942,7 @@ class RoutesViewModel @Inject constructor(
         }
     }
 
+    /** Stops drawing and forgets the points. A set made for this sketch that still has no route goes again, and the set before it comes back ([abandon]). */
     fun cancelDrawing() {
         local.update { it.copy(error = null) }
         sketching.cancel()
@@ -672,6 +959,8 @@ class RoutesViewModel @Inject constructor(
     }
 
     private fun run(fallback: String, block: suspend () -> Unit) {
+        if (busy) return
+        busy = true
         local.update { it.copy(error = null) }
         viewModelScope.launch {
             try {
@@ -680,12 +969,16 @@ class RoutesViewModel @Inject constructor(
                 throw e
             } catch (_: Exception) {
                 local.update { it.copy(error = fallback) }
+            } finally {
+                busy = false
             }
         }
     }
 
+    /** The web's line for a route: distance and time, and the fuel when it can be said. */
     private fun summaryOf(route: SketchRoute): String? {
         val totals = RouteCalc.computeRoutePlan(route.points, route.plan, route.elevations).totals ?: return null
-        return "${oneDecimal(totals.distNm)} nm · ${RouteCalc.formatDuration(totals.timeSec)}"
+        val fuel = totals.fuelLb?.let { " · ${RouteCalc.jsRound(it).toLong()} lb" }.orEmpty()
+        return "${oneDecimal(totals.distNm)} nm · ${RouteCalc.formatDuration(totals.timeSec)}$fuel"
     }
 }

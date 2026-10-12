@@ -53,10 +53,11 @@ private fun toneColor(tone: StatusTone): Color = when (tone) {
 
 /**
  * A state chip (the design's: 28 dp, its tone's colour tinted behind words in that colour, a little stronger at the edge). A tick for done, a dot for
- * waiting, the error mark for a conflict, the info mark for a hint; a neutral one is an outline only. The words always say it: colour never does alone.
+ * waiting, the error mark for a conflict, the info mark for a hint, or [icon] in place of any of them; a neutral one is an outline only. The words always say it:
+ * colour never does alone.
  */
 @Composable
-fun StateChip(text: String, tone: StatusTone, modifier: Modifier = Modifier) {
+fun StateChip(text: String, tone: StatusTone, modifier: Modifier = Modifier, icon: Int? = null) {
     val color = toneColor(tone)
     val neutral = tone == StatusTone.Neutral
     Surface(
@@ -71,7 +72,8 @@ fun StateChip(text: String, tone: StatusTone, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            when (tone) {
+            if (icon != null) Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(16.dp))
+            else when (tone) {
                 StatusTone.Success -> Icon(painterResource(EzpzIcons.checkCircleFill), contentDescription = null, modifier = Modifier.size(16.dp))
                 StatusTone.Warning -> Box(Modifier.padding(horizontal = 2.dp).size(8.dp).background(color, CircleShape))
                 StatusTone.Error -> Icon(painterResource(EzpzIcons.errorFill), contentDescription = null, modifier = Modifier.size(16.dp))
@@ -164,7 +166,9 @@ fun PillButton(
         PillStyle.Tonal -> FilledTonalButton(onClick = onClick, modifier = sized, enabled = enabled, shape = RoundedCornerShape(50), contentPadding = padding, content = content)
         PillStyle.Outlined -> OutlinedButton(
             onClick = onClick, modifier = sized, enabled = enabled, shape = RoundedCornerShape(50), contentPadding = padding,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = EzpzTheme.status.accent), content = content,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = EzpzTheme.status.accent),
+            // The design's 1 dp outline (`#8a94a1`); Material's own is the fainter outline variant.
+            border = BorderStroke(1.dp, if (enabled) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)), content = content,
         )
     }
 }

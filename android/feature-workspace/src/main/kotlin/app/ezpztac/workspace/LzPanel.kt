@@ -253,7 +253,7 @@ private fun RowState(grid: String?, chip: LzChip?) {
 }
 
 @Composable
-private fun toneColor(tone: ChipTone): Color = when (tone) {
+internal fun toneColor(tone: ChipTone): Color = when (tone) {
     ChipTone.SUCCESS -> EzpzTheme.status.success
     ChipTone.WARNING -> EzpzTheme.status.warning
     ChipTone.ERROR -> MaterialTheme.colorScheme.error
@@ -270,8 +270,8 @@ internal fun ChipTone.status(): StatusTone = when (this) {
 }
 
 @Composable
-private fun Chips(chips: List<LzChip>, modifier: Modifier = Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) { chips.forEach { StateChip(it.text, it.tone.status()) } }
+internal fun Chips(chips: List<LzChip>, modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) { chips.forEach { StateChip(it.text, it.tone.status(), icon = it.icon) } }
 }
 
 /**
@@ -329,7 +329,7 @@ private fun SaveButton(current: ActiveDiagramUi, save: () -> Unit) {
 }
 
 @Composable
-private fun SavesToLibrary(modifier: Modifier = Modifier) {
+internal fun SavesToLibrary(modifier: Modifier = Modifier) {
     Text(
         "Saves to your Library", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.End, modifier = modifier,
@@ -337,7 +337,7 @@ private fun SavesToLibrary(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SmallIconButton(icon: Int, description: String, onClick: () -> Unit) {
+internal fun SmallIconButton(icon: Int, description: String, onClick: () -> Unit) {
     IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
         Icon(painterResource(icon), contentDescription = description, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
     }
@@ -404,7 +404,7 @@ private fun RenameField(name: String, was: String, onChange: (String) -> Unit, o
 }
 
 @Composable
-private fun DeleteConfirm(name: String, onDelete: () -> Unit, onKeep: () -> Unit) {
+internal fun DeleteConfirm(name: String, onDelete: () -> Unit, onKeep: () -> Unit) {
     Column(Modifier.padding(top = Tokens.Spacing.md.dp, end = Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
         Banner("Delete \"$name\"? It is removed from this device and from your account.", BannerKind.Warning)
         // Keeping it is the prominent answer: a delete cannot be taken back.
