@@ -2,93 +2,97 @@ package app.ezpztac.android.di
 
 import android.content.Context
 import android.os.Build
+import app.ezpztac.android.AircraftChoicePreferences
 import app.ezpztac.android.ApiClientBackend
 import app.ezpztac.android.AuthBackend
 import app.ezpztac.android.BuildConfig
-import app.ezpztac.android.MapPreferences
-import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.DisplayPreferences
 import app.ezpztac.android.DisplaySettings
-import app.ezpztac.android.OpenDiagramPreferences
-import app.ezpztac.android.OpenRouteSetPreferences
-import app.ezpztac.data.OpenDiagramStore
-import app.ezpztac.data.OpenRouteSetStore
+import app.ezpztac.android.LastDiagram
+import app.ezpztac.android.LastDiagramPreferences
+import app.ezpztac.android.LastRouteSet
+import app.ezpztac.android.LastRouteSetPreferences
+import app.ezpztac.android.MapPreferences
+import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.MinimumVersionPreferences
+import app.ezpztac.android.OpenDiagramPreferences
+import app.ezpztac.android.OpenRouteSetPreferences
+import app.ezpztac.android.PointSetViewPreferences
+import app.ezpztac.android.WeatherFileCache
+import app.ezpztac.android.export.AssetMissionTemplate
+import app.ezpztac.android.export.AssetThsTemplate
+import app.ezpztac.android.export.ExportCleaner
+import app.ezpztac.android.export.ShareExport
 import app.ezpztac.android.packs.ApiPackInvites
 import app.ezpztac.android.packs.EnginePackRuntime
+import app.ezpztac.android.packs.LastPackPreferences
 import app.ezpztac.android.packs.PackInvites
 import app.ezpztac.android.packs.PackRuntime
+import app.ezpztac.android.packs.SessionParking
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
-import app.ezpztac.sync.SyncRepository
-import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.android.sync.WorkManagerSyncScheduler
+import app.ezpztac.data.AircraftProfiles
+import app.ezpztac.data.ApiClientMasterProfileSource
+import app.ezpztac.data.ApiClientPlanningApi
+import app.ezpztac.data.ApiClientTerrainApi
+import app.ezpztac.data.ApiClientThreatMaskApi
+import app.ezpztac.data.ApiClientWeatherApi
+import app.ezpztac.data.EncryptedThreatVault
+import app.ezpztac.data.FileMasterProfileStore
+import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.OpenDiagramStore
+import app.ezpztac.data.OpenRouteSetStore
+import app.ezpztac.data.PlanningApi
+import app.ezpztac.data.PointSetViewStore
+import app.ezpztac.data.TerrainApi
+import app.ezpztac.data.ThreatMaskApi
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
+import app.ezpztac.data.ThsTemplate
+import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.WeatherCache
+import app.ezpztac.data.WeatherService
 import app.ezpztac.data.session.EncryptedSessionStore
 import app.ezpztac.data.session.KeystoreSecretBox
 import app.ezpztac.map.CameraMemory
 import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
-import app.ezpztac.android.export.AssetMissionTemplate
-import app.ezpztac.android.export.AssetThsTemplate
-import app.ezpztac.android.export.ExportCleaner
-import app.ezpztac.android.export.ShareExport
-import app.ezpztac.data.ApiClientPlanningApi
-import app.ezpztac.data.ApiClientThreatMaskApi
-import app.ezpztac.data.ApiClientWeatherApi
-import app.ezpztac.data.WeatherApi
-import app.ezpztac.data.WeatherCache
-import app.ezpztac.data.WeatherService
-import app.ezpztac.data.EncryptedThreatVault
-import app.ezpztac.data.ThreatStore
-import app.ezpztac.data.ThreatVault
-import app.ezpztac.android.WeatherFileCache
-import app.ezpztac.data.MissionTemplate
-import app.ezpztac.data.ThsTemplate
-import app.ezpztac.data.ApiClientTerrainApi
-import app.ezpztac.data.PlanningApi
-import app.ezpztac.data.ThreatMaskApi
-import app.ezpztac.data.TerrainApi
 import app.ezpztac.missionpacks.ApiPackApi
 import app.ezpztac.missionpacks.PackApi
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ClientInfo
 import app.ezpztac.network.SessionStore
-import app.ezpztac.sync.ApiSyncApi
-import app.ezpztac.sync.ConflictResolver
-import app.ezpztac.sync.SyncApi
-import app.ezpztac.sync.SyncEngine
-import app.ezpztac.sync.SyncStore
-import dagger.Binds
-import dagger.Module
-import app.ezpztac.data.AircraftProfiles
-import app.ezpztac.data.ApiClientMasterProfileSource
-import app.ezpztac.data.FileMasterProfileStore
-import app.ezpztac.android.AircraftChoicePreferences
-import app.ezpztac.android.LastDiagram
-import app.ezpztac.android.LastDiagramPreferences
-import app.ezpztac.android.LastRouteSet
-import app.ezpztac.android.LastRouteSetPreferences
-import app.ezpztac.android.PointSetViewPreferences
-import app.ezpztac.data.PointSetViewStore
-import app.ezpztac.sync.RecordFeed
+import app.ezpztac.packs.LastPack
+import app.ezpztac.packs.Parking
 import app.ezpztac.symbols.DefaultSymbolRenderer
 import app.ezpztac.symbols.JavaScriptSymbolSource
 import app.ezpztac.symbols.PresetSymbols
 import app.ezpztac.symbols.SymbolRenderer
+import app.ezpztac.sync.ApiSyncApi
+import app.ezpztac.sync.ConflictResolver
+import app.ezpztac.sync.RecordFeed
+import app.ezpztac.sync.SyncApi
+import app.ezpztac.sync.SyncEngine
+import app.ezpztac.sync.SyncRepository
+import app.ezpztac.sync.SyncScheduler
+import app.ezpztac.sync.SyncStore
+import dagger.Binds
+import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import okhttp3.OkHttpClient
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -237,6 +241,12 @@ interface AppBindings {
 
     @Binds
     fun packRuntime(impl: EnginePackRuntime): PackRuntime
+
+    @Binds
+    fun lastPack(impl: LastPackPreferences): LastPack
+
+    @Binds
+    fun parking(impl: SessionParking): Parking
 
     @Binds
     fun packInvites(impl: ApiPackInvites): PackInvites

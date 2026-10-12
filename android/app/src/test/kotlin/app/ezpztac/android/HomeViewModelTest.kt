@@ -1,58 +1,76 @@
 package app.ezpztac.android
 
-import org.junit.Assert.assertNotNull
-import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.android.frame.Panel
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDrawing
+import app.ezpztac.data.DiagramRepository
+import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.DrawingMode
+import app.ezpztac.data.GraphicPlacement
+import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.InMemoryAircraftChoice
+import app.ezpztac.data.InMemoryMasterProfileStore
+import app.ezpztac.data.InMemoryOpenDiagramStore
+import app.ezpztac.data.InMemoryOpenRouteSetStore
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
-import app.ezpztac.data.InMemoryOpenDiagramStore
+import app.ezpztac.data.MapFocus
+import app.ezpztac.data.MaskState
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
-import app.ezpztac.android.frame.Panel
-import app.ezpztac.data.InMemoryOpenRouteSetStore
-import app.ezpztac.data.MapFocus
+import app.ezpztac.data.PlaceTool
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetView
 import app.ezpztac.data.PointSetViewStore
 import app.ezpztac.data.PointSetViews
-import app.ezpztac.data.InMemoryAircraftChoice
-import app.ezpztac.data.InMemoryMasterProfileStore
-import app.ezpztac.data.DiagramRepository
-import app.ezpztac.data.DiagramSession
-import app.ezpztac.data.DrawingMode
-import app.ezpztac.data.GraphicPlacement
-import app.ezpztac.data.PlaceTool
-import app.ezpztac.data.GraphicSelection
-import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteHeld
+import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
+import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.TerrainApi
-import app.ezpztac.network.FieldAnalysis
+import app.ezpztac.data.ThreatMaskApi
+import app.ezpztac.data.ThreatMasks
+import app.ezpztac.data.ThreatPicture
+import app.ezpztac.data.ThreatSelection
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
+import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.WeatherCache
+import app.ezpztac.data.WeatherService
+import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.map.CameraState
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.SlopeImage
 import app.ezpztac.map.SlopeToggleUi
-import app.ezpztac.network.NetworkException
-import app.ezpztac.network.SlopeStats
-import app.ezpztac.network.SlopeThresholds
-import app.ezpztac.network.Uh60Limits
-import app.ezpztac.network.TerrainAnalysis
+import app.ezpztac.missionpacks.PackState
+import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.AircraftProfile
-import app.ezpztac.planning.RouteColors
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.Radar
 import app.ezpztac.model.Radars
 import app.ezpztac.model.Threat
+import app.ezpztac.model.WeatherSnapshot
+import app.ezpztac.network.FieldAnalysis
+import app.ezpztac.network.NetworkException
+import app.ezpztac.network.SlopeStats
+import app.ezpztac.network.SlopeThresholds
+import app.ezpztac.network.TerrainAnalysis
+import app.ezpztac.network.ThreatMaskDto
+import app.ezpztac.network.ThreatMaskRadarDto
+import app.ezpztac.network.Uh60Limits
+import app.ezpztac.network.WeatherReportDto
+import app.ezpztac.packs.PackDoor
+import app.ezpztac.planning.RouteColors
 import app.ezpztac.symbols.SymbolOutcome
 import app.ezpztac.symbols.SymbolRenderer
 import app.ezpztac.sync.InMemorySyncStore
@@ -62,10 +80,12 @@ import app.ezpztac.sync.SequentialIds
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.SyncStore
 import app.ezpztac.sync.SyncTransaction
-import kotlinx.coroutines.Dispatchers
+import app.ezpztac.testing.Fixtures
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -77,26 +97,10 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import app.ezpztac.testing.Fixtures
-import app.ezpztac.data.WeatherApi
-import app.ezpztac.data.WeatherCache
-import app.ezpztac.data.WeatherService
-import app.ezpztac.data.SlopeVisibility
-import app.ezpztac.data.ThreatPicture
-import app.ezpztac.data.MaskState
-import app.ezpztac.model.Radar
-import app.ezpztac.network.ThreatMaskRadarDto
-import app.ezpztac.network.ThreatMaskDto
-import app.ezpztac.data.ThreatMasks
-import app.ezpztac.data.ThreatMaskApi
-import app.ezpztac.data.ThreatSelection
-import app.ezpztac.data.ThreatStore
-import app.ezpztac.data.ThreatVault
-import app.ezpztac.model.WeatherSnapshot
-import app.ezpztac.network.WeatherReportDto
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -196,7 +200,15 @@ class HomeViewModelTest {
         }
     }
 
-    private class Rig(scope: TestScope, val server: SlopeServer = SlopeServer(), listening: Boolean = true) {
+    /** The workspace, as a test sets it: no pack open unless one says so. */
+    private class NoPacks : PackDoor {
+        override val user = MutableStateFlow<Int?>(null)
+        override val open = MutableStateFlow<PackState?>(null)
+        override suspend fun openPack(uuid: String) = Unit
+        override suspend fun closePack() = Unit
+    }
+
+        private class Rig(scope: TestScope, val server: SlopeServer = SlopeServer(), listening: Boolean = true) {
         val store = Flaky()
         val sync = SyncRepository(store, SequentialIds("t"))
         val scheduler = RecordingScheduler()
@@ -232,9 +244,10 @@ class HomeViewModelTest {
         val mapFocus = MapFocus()
         val corners = BoundaryCorners(session)
         val placement = GraphicPlacement(session, aircraft, mode)
+        val packs = NoPacks()
         val model = HomeViewModel(
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, openSet, lastSet, openRouteSets, localPoints, pointSelection,
-            threats, threatSelection, weather, MapDrag(session, routeSession, threats), SlopeVisibility(), corners, masks, placement, mapFocus,
+            threats, threatSelection, weather, MapDrag(session, routeSession, threats), SlopeVisibility(), corners, masks, placement, packs, mapFocus,
             symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
@@ -355,6 +368,20 @@ class HomeViewModelTest {
         r.session.open(chosen.id)
         advanceUntilIdle()
         assertEquals(chosen.id, r.session.active.value?.id)
+    }
+
+    @Test
+    fun `a pack opened first keeps the person's own LZ_PZ and routes set aside at launch`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        val set = r.routes.create("MISSION 1")
+        r.leftOpen(made.id)
+        r.leftSetOpen(set.id)
+        r.packs.open.value = PackState("p-dk", PackStatus.LOADING, null, emptyList(), emptyList(), null)    // the workspace opened the pack remembered
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)
+        assertEquals(null, r.routeSession.active.value)
+        assertEquals(emptyList<OpenedDiagram>(), r.seen)                                     // and the map was not taken there
     }
 
     // -- Coming back to the set of routes that was open ------------------------------------------------------------------

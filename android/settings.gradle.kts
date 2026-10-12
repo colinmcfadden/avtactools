@@ -64,6 +64,7 @@ include(":core-symbols")
 include(":feature-auth")
 include(":feature-map")
 include(":feature-workspace")
+include(":feature-packs")                                     // the mission-pack screens (P1-P4)
 
 // Test support: reads ../contracts/fixtures. Not part of the shipped app.
 include(":core-testing")

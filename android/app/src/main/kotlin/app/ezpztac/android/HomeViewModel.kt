@@ -1,33 +1,34 @@
 package app.ezpztac.android
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import app.ezpztac.android.frame.Panel
 import app.ezpztac.android.frame.PanelCounts
-import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDraft
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
-import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.GraphicPlacement
+import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
-import app.ezpztac.data.OpenDiagrams
-import app.ezpztac.data.OpenRouteSets
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.MaskState
+import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.OpenRouteSets
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SlopeState
 import app.ezpztac.data.SlopeVisibility
-import app.ezpztac.data.WeatherService
 import app.ezpztac.data.ThreatMasks
 import app.ezpztac.data.ThreatSelection
 import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.WeatherService
+import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.map.CornerHitTest
 import app.ezpztac.map.DragHitTest
 import app.ezpztac.map.DrawnPointSet
@@ -38,20 +39,22 @@ import app.ezpztac.map.PointHitTest
 import app.ezpztac.map.PointScene
 import app.ezpztac.map.RouteHitTest
 import app.ezpztac.map.RouteScene
-import app.ezpztac.map.UnitFootprints
+import app.ezpztac.map.SlopeImage
+import app.ezpztac.map.SlopeToggleUi
 import app.ezpztac.map.ThreatHitTest
 import app.ezpztac.map.ThreatMaskPicture
 import app.ezpztac.map.ThreatScene
-import app.ezpztac.map.SlopeImage
-import app.ezpztac.map.SlopeToggleUi
+import app.ezpztac.map.UnitFootprints
+import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.model.DragTarget
 import app.ezpztac.model.GraphicRef
-import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
+import app.ezpztac.packs.PackDoor
 import app.ezpztac.symbols.SymbolRenderer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -59,15 +62,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 /** A diagram that was just opened: where the map goes, and the base map it was saved with. */
 data class OpenedDiagram(val id: String, val at: LatLon?, val baseMap: String?)
@@ -100,6 +102,8 @@ class HomeViewModel @Inject constructor(
     private val boundaryCorners: BoundaryCorners,
     private val threatMasks: ThreatMasks,
     private val placement: GraphicPlacement,
+    /** The workspace: the person's own documents do not come back at launch into a Mission Pack. */
+    private val packs: PackDoor,
     mapFocus: MapFocus,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
@@ -251,6 +255,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _opened.subscriptionCount.first { it > 0 }
             if (session.active.value != null) return@launch                              // something was opened in the meantime: it stays
+            if (packs.open.value != null) return@launch                                  // a pack opened first: the person's own stays set aside
             // Only if it is still open: one the person closed (the last open one, so nothing took its place) stays closed.
             val id = last.id()?.takeIf { it in openSet.ids.value } ?: return@launch
             try {
@@ -264,6 +269,7 @@ class HomeViewModel @Inject constructor(
         // The set of routes the person had open comes back too. Nothing waits on the map here: a set takes the map nowhere, so there is no event to lose.
         viewModelScope.launch {
             if (routeSession.active.value != null) return@launch                          // something was opened in the meantime: it stays
+            if (packs.open.value != null) return@launch                                   // a pack opened first, as for the LZ/PZ
             // Only if it is still open, as for the LZ/PZ: the last set closed stays closed.
             val id = lastSet.id()?.takeIf { it in openRouteSets.ids.value } ?: return@launch
             try {
@@ -275,7 +281,8 @@ class HomeViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            routeSession.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { lastSet.remember(it.id) }    // kept when the session closes (sign-out), as the diagram is
+            // Kept when the session closes (sign-out), as the diagram is; a pack's set is the pack's, never the one the person's own work comes back to.
+            routeSession.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { if (PackRef.parse(it.id) == null) lastSet.remember(it.id) }
         }
         // An LZ/PZ closed (and none opened in its place) takes a tool's mode with it.
         viewModelScope.launch {
@@ -290,7 +297,8 @@ class HomeViewModel @Inject constructor(
         }
         viewModelScope.launch {
             session.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { diagram ->
-                last.remember(diagram.id)                                                // not forgotten when the session closes (sign-out): the same account is back
+                // Not forgotten when the session closes (sign-out): the same account is back. A pack's LZ/PZ is never the one the person's own work comes back to.
+                if (PackRef.parse(diagram.id) == null) last.remember(diagram.id)
                 selection.clear()                                                          // what was held belonged to the diagram before
                 boundaryCorners.clear()
                 drawing.cancel()                                                           // and so did a boundary half drawn

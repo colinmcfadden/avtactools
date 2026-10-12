@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; P1 next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; P2 next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -293,10 +293,29 @@ the design draws them; and headers cut large text. Tests: `TabletFrameTest` (the
 their content), `TabletPartsTest`, `RoutePlanPageTest`, `MapScreenTest`.
 **Not verifiable here:** the real map in its pane, a foldable's hinge, a keyboard cover, TalkBack on a tablet, and a device crossing 840 dp.
 
-**P1 — The workspace switcher.** The workspace chip opens `Switcher`: pending invitations (Accept, Decline), the Library ("Personal"),
-the packs with their state, *New pack*, the teams line. Switching parks the Library's open session and restores it on the way back
-(*Deferred* 3), remembers the open pack (`LastPack`), and turns the frame violet with the pack's name, who is here now and *Live*.
-Opening the pack an invitation joined (*Deferred* 9) lands here.
+**P1 — The workspace switcher. Built.** The workspace chip opens `Switcher`: pending invitations (Accept, Decline), the Library ("Personal"),
+the packs with their state, the teams line. Switching parks the Library's open session and restores it on the way back
+(*Deferred* 3), remembers the open pack (`LastPack`), and turns the chip violet with the pack's name, who is here now and *Live*.
+Opening the pack an invitation joined (*Deferred* 9) lands here. **Amended while building:**
+- **A new module, `feature-packs`**, for the pack screens (P1–P4), over seams the app fills (`PackDoor`, `PacksApi`, `Parking`, `LastPack`, `LibraryTally`), so the
+  switcher's rules are tried without the engine or a server.
+- ***New pack* comes with P3's page**; the switcher has no button for it until then.
+- **On a tablet the switcher is a menu at the rail's workspace tile**, the same content as the phone's sheet. The *Live* line sits under the chips (on a tablet, under the
+  search bar).
+- **Switches are queued, the latest winning** over one waiting, rather than refused while one runs: an invitation link's join, a pack that went and the person's own choice
+  can all ask at once.
+**Reviewed** (one independent review, 2026-10-12: 26 reported, 23 survived an adversarial check, about 18 distinct; each fix has a test where one can hold it, and each tested
+one was broken to see it fail): the switcher showed the previous account's packs, invitations and teams to the next one, and an old load could undo a newer one (an accepted
+invitation came back); while a pack was open it could mark the Library current and say *No packs yet*; the remembered pack waited for the lists, so every launch into a pack
+showed the person's own LZ/PZ, flew to it and closed it (or, the other way round, left it open inside the pack), and leaving a gone pack waited for them too; parking closed the
+person's LZ/PZ even when its last change could not be written, losing it; a switch asked for while another ran (an invitation link's join) was dropped without a word, and a
+link's join opened the pack again whenever the screen was composed again; on a tablet the switcher crashed as it opened (a scroll inside the menu's own); at 360 dp the chips
+pushed the Library off the screen and the status line ran under the map's buttons; an invitation's answer that failed was said in a toast under the phone's sheet; dates were
+UTC's and never named the year; initials could cut an emoji in half and differed from the account button's; the bold could land on an inviter named as the pack; the switcher
+opened by itself when packs or the phone's frame came back; and the rail told a screen reader *Change workspace* on a tile that could not. Tests: `WorkspaceViewModelTest`,
+`SwitcherTest` (the words, the content, inside a menu, screenshots), `WorkspacesTest` (parking with real sessions, the remembered pack), `WorkspaceChipsTest` (360 dp at 1.3 and
+2.0), `HomeViewModelTest`, `TabletFrameTest`.
+**Not verifiable here:** the sheet and the menu on a device, TalkBack, and the faces' colours in sunlight.
 
 **P2 — Working in a pack.** The Pack panel (`PackItems`, `PackHistory`: the description, members and *Invite*, Items and History with
 "new since you looked", *Add from Library*, *Finish pack*), the panels' pack rows (`PackLive`: *Synced*, who is editing, "From Library ·

@@ -1,6 +1,7 @@
 package app.ezpztac.android.frame
 
 import app.ezpztac.designsystem.SheetDetent
+import app.ezpztac.designsystem.initialsOf
 import app.ezpztac.network.ApiUser
 import org.junit.Assert.assertEquals
 import org.junit.Test

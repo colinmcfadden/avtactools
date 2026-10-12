@@ -56,6 +56,7 @@ import app.ezpztac.android.frame.MapFrame
 import app.ezpztac.android.frame.Panel
 import app.ezpztac.android.frame.PanelHead
 import app.ezpztac.android.frame.PhoneFrame
+import app.ezpztac.android.frame.RailWorkspace
 import app.ezpztac.android.frame.SupportingPane
 import app.ezpztac.android.frame.TabletFrame
 import app.ezpztac.android.frame.TabletRail
@@ -72,6 +73,8 @@ import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
+import app.ezpztac.map.ChipAction
+import app.ezpztac.map.ChipsThatFit
 import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
@@ -90,6 +93,13 @@ import app.ezpztac.map.rememberMapHost
 import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiUser
+import app.ezpztac.packs.PackChip
+import app.ezpztac.packs.PackStatusLine
+import app.ezpztac.packs.PackWords
+import app.ezpztac.packs.SwitcherContent
+import app.ezpztac.packs.SwitcherSheet
+import app.ezpztac.packs.WorkspaceViewModel
+import app.ezpztac.packs.actionsOf
 import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsUiState
@@ -207,6 +217,21 @@ fun MapHome(
     val threatsOn = Panel.Threats in panels
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
     var floating by remember { mutableIntStateOf(0) }
+    // The workspace (the Library, or a Mission Pack) and its switcher: a sheet on a phone, a popup at the rail's tile on a tablet.
+    val workspace: WorkspaceViewModel = hiltViewModel()
+    val openPack by workspace.open.collectAsStateWithLifecycle()
+    val packsHere by workspace.available.collectAsStateWithLifecycle()
+    var switcherOpen by rememberSaveable { mutableStateOf(false) }
+    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false })
+    // The sheet goes with what holds it (packs stopping, the frame turning into a tablet's): when they come back it is not open by itself.
+    LaunchedEffect(tablet, packsHere) { if (tablet || !packsHere) switcherOpen = false }
+    LaunchedEffect(workspace) { workspace.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // An invitation link that let the person in to a pack opens it, as the web's does: when the answer arrives, not from its toast, which may be put away;
+    // once for each invitation, however often this is composed again before the toast goes.
+    LaunchedEffect(invite) {
+        val joined = (invite as? InviteState.Joined)?.answer ?: return@LaunchedEffect
+        joined.pack?.uuid?.let { workspace.openJoined(joined.invite.id, it) }
+    }
     // The map's menu (the design's MapMenu), open where a long press on nothing was; what Add route point here would do is taken then. It is kept while
     // the menu closes (menuOpen false), so it does not empty as it fades.
     var menu by remember { mutableStateOf<OpenMapMenu?>(null) }
@@ -342,16 +367,32 @@ fun MapHome(
                     controlsBottom = frame.controlsBottom,
                     // On a tablet the account, the workspace, Import and the Library are the rail's.
                     account = { if (!tablet) account() },
+                    // Not under a sheet at full height, which would leave a sliver of it showing above its edge.
+                    belowChips = { if (tablet || sheet.heading != SheetDetent.Full) openPack?.let { PackStatusLine(it) } },
                     chips = {
                         if (!tablet) {
-                            // The workspace is the person's own until mission packs have their switcher (P1); then the chip opens it.
-                            MapChip(EzpzIcons.person, "Personal", description = "Workspace: Personal")
-                            MapChip(EzpzIcons.fileOpen, "Import", description = "Import a mission, local points or threats", onClick = { importMenu = true })
-                            // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
-                            MapChip(EzpzIcons.collectionsBookmark, "Library", description = "Library: everything you have saved", onClick = {
-                                focus.clearFocus()
-                                libraryTab = libraryTabFor(current)
-                            })
+                            // The workspace: the person's own, or the open pack's in its colour; it opens the switcher while packs run here.
+                            // Import and the Library give up their words before the workspace's is cut (a narrow phone, large text, a long name).
+                            ChipsThatFit(
+                                lead = {
+                                    val pack = openPack
+                                    if (pack != null) {
+                                        PackChip(pack, onClick = { switcherOpen = true })
+                                    } else if (packsHere) {
+                                        MapChip(EzpzIcons.person, "Personal", description = PackWords.chipDescription(null), trailingIcon = EzpzIcons.arrowDropDown, onClick = { switcherOpen = true })
+                                    } else {
+                                        MapChip(EzpzIcons.person, "Personal", description = "Workspace: Personal")
+                                    }
+                                },
+                                chips = listOf(
+                                    ChipAction(EzpzIcons.fileOpen, "Import", "Import a mission, local points or threats") { importMenu = true },
+                                    // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
+                                    ChipAction(EzpzIcons.collectionsBookmark, "Library", "Library: everything you have saved") {
+                                        focus.clearFocus()
+                                        libraryTab = libraryTabFor(current)
+                                    },
+                                ),
+                            )
                         }
                     },
                     buttonsAtFoot = tablet,
@@ -485,6 +526,24 @@ fun MapHome(
                             libraryTab = libraryTabFor(current)
                         },
                         account = account,
+                        workspace = openPack.let { pack ->
+                            RailWorkspace(
+                                // Only a tile that opens the switcher says it changes the workspace.
+                                label = pack?.name ?: "Personal", description = if (packsHere) PackWords.chipDescription(pack) else "Workspace: Personal", pack = pack != null,
+                                menu = if (packsHere) {
+                                    { dismiss ->
+                                        val switcher by workspace.switcher.collectAsStateWithLifecycle()
+                                        LaunchedEffect(Unit) { workspace.switcherOpened() }
+                                        DropdownMenu(
+                                            expanded = true, onDismissRequest = dismiss, shape = MaterialTheme.shapes.large,
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(SWITCHER_WIDTH),
+                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss)) }
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        },
                     ),
                     state = tabletState,
                     head = head,
@@ -625,6 +684,9 @@ private fun supportingPanes(
     }
     return listOfNotNull(lzPane, routePane)
 }
+
+/** The tablet's workspace switcher, a popup at the rail's tile (the design's). */
+private val SWITCHER_WIDTH = 400.dp
 
 /** The tablet's Import menu, at the rail's tile (the design's). */
 private val IMPORT_MENU_WIDTH = 360.dp

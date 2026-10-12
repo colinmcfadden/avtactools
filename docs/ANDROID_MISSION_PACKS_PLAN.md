@@ -1214,12 +1214,12 @@ Each belongs on the web too, if it should be shared.
 
 1. Every pack screen, built in the redesigned shell (HANDOFF §2 items 2 and 3): the workspace switcher, New pack, the Pack panel (Items and History), Members, Teams, Add to pack, the finished banner, presence flags, the Opening and Cannot-reach labels, and the refused and lost toasts, including porting REFUSED_WORDS and LOST_WORDS from usePackWorkspace.jsx.
 2. The keep or discard offer for edits a pack dropped while it was open. The engine already holds them durably, emits Dropped, and keeps them by default when the pack closes.
-3. The Library-or-pack workspace: parking the Library's open documents, a LastPack preference, and what HomeViewModel does with LastDiagram or LastRouteSet when they name a pack: id.
+3. The Library-or-pack workspace: parking the Library's open documents, a LastPack preference, and what HomeViewModel does with LastDiagram or LastRouteSet when they name a pack: id. **Done in P1** (docs/ANDROID_SCREENS_PLAN.md: `SessionParking`, `LastPackPreferences`; HomeViewModel remembers no pack id and yields to an open pack at launch).
 4. Pack point sets on the map: PointSetViews keyed by local id, with settle including pack sets so their colours are not pruned; importing an .LPS straight into a pack; and the screen wrappers for rename and delete (the PackActions op builders already exist).
 5. Copy-in from the Library: syncing a pending record first, then copyIntoPack with PackSource.ClientUuid and refresh. Also the Update from original dialog, Save to Library from a pack, and an offline copy-in fallback (an owner decision).
 6. A port of usePackSeen (the seen marker and changedSince), History paging, and an offline History cache (a pack_event table in a v4 AutoMigration if wanted).
 7. The presence pointer (`at`, the map position) and the named flags on the map.
 8. Read-only gating of map interactions (drag, turn, delete) and of the sheet's tools. The engine already puts back any change it refuses.
-9. Opening the pack after an invitation is accepted. inviteState carries the answer for the shell; open it when `Joined` arrives, not from the toast, since a toast that is closed, or whose time runs out (in the back too), puts the answer away.
+9. Opening the pack after an invitation is accepted. inviteState carries the answer for the shell; open it when `Joined` arrives, not from the toast, since a toast that is closed, or whose time runs out (in the back too), puts the answer away. **Done in P1** (`WorkspaceViewModel.openJoined`, once per invitation).
 10. Adaptive polling, reconnect jitter and an item-size pre-check, once measured on a device or the owner decides.
 11. Web follow-ups for the owner, to go through the fixtures first: never reload while an op is sent or acked; keep pending edits on a 403 or 404 during catch-up; keep unknown LZ keys in normalizeLzDiagram; how routes without ids are handled.

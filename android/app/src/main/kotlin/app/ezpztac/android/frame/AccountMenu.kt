@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.Tokens
+import app.ezpztac.designsystem.initialsOf
 
 /**
  * The account button at the end of the search bar (the person's initials) and its menu: who is signed in, night mode, the app's version and
@@ -93,17 +94,3 @@ fun AccountButton(
     }
 }
 
-/**
- * The letters on the account button: the first of the first and last words of [name] ("Colin McFadden" is CM, "Cher" is C), or the first of
- * [email] when there is no name. Letters and digits only, in capitals; "?" when neither has one.
- */
-fun initialsOf(name: String, email: String): String {
-    fun first(word: String) = word.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()
-    val words = name.split(' ', '\t', '\n').map { it.trim() }.filter { word -> word.any { it.isLetterOrDigit() } }
-    val fromName = when (words.size) {
-        0 -> ""
-        1 -> listOfNotNull(first(words[0])).joinToString("")
-        else -> listOfNotNull(first(words.first()), first(words.last())).joinToString("")
-    }
-    return fromName.ifEmpty { first(email)?.toString() ?: "?" }
-}

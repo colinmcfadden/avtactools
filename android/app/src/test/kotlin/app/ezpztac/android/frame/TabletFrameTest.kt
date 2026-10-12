@@ -179,6 +179,34 @@ class TabletFrameTest {
     }
 
     @Test
+    fun `the switcher at the workspace tile goes with packs, and does not come back by itself`() {
+        var packs by mutableStateOf(true)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                TabletFrame(
+                    Panel.entries, Panel.Lz, PanelCounts(), {}, remember { SnackbarHostState() },
+                    TabletRail(
+                        {}, {}, {},
+                        workspace = RailWorkspace(
+                            label = "OP DK", description = "Workspace: Mission Pack OP DK. Change workspace", pack = true,
+                            menu = if (packs) ({ _ -> Text("The switcher") }) else null,
+                        ),
+                    ),
+                    panel = {},
+                ) { Box(Modifier.fillMaxSize()) }
+            }
+        }
+        compose.onNodeWithContentDescription("Workspace: Mission Pack OP DK. Change workspace").performClick()
+        compose.onNodeWithText("The switcher").assertIsDisplayed()
+        packs = false                                                                              // Mission Packs turned off with it open
+        compose.waitForIdle()
+        compose.onNodeWithText("The switcher").assertDoesNotExist()
+        packs = true
+        compose.waitForIdle()
+        compose.onNodeWithText("The switcher").assertDoesNotExist()
+    }
+
+    @Test
     fun `the panel's pane collapses to give the map the room, and a panel picked brings it back`() {
         frame()
         compose.onNodeWithContentDescription("Collapse the LZ/PZ panel").performClick()

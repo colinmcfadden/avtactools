@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -47,7 +48,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -55,6 +58,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -87,6 +92,9 @@ object MapChrome {
 
     /** The gap between the readout pill and the sheet's edge, and between the pill and a tool floating above it. */
     val PILL_GAP: Dp = 12.dp
+
+    /** The map's buttons: this square, at the end. */
+    val BUTTON: Dp = 48.dp
 
     /** A tablet's map buttons stand this far above the map's foot (the design's AT screens). */
     val FOOT_GAP: Dp = 24.dp
@@ -128,6 +136,8 @@ fun MapScreen(
     overlay: @Composable () -> Unit = {},
     /** A tablet's (the design's AT screens): the map's buttons at its foot, at the end, where no chips stand under the search bar and no sheet rises. */
     buttonsAtFoot: Boolean = false,
+    /** Under the chips: how an open Mission Pack stands (the design's "Live · all changes synced"). */
+    belowChips: @Composable () -> Unit = {},
     map: @Composable () -> Unit,
 ) {
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
@@ -180,6 +190,8 @@ fun MapScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 content = chips,
             )
+            // Short of the map's buttons, which stand at the end below the chips on a phone.
+            Box(Modifier.padding(top = Tokens.Spacing.sm.dp, end = if (buttonsAtFoot) 0.dp else MapChrome.BUTTON + Tokens.Spacing.sm.dp)) { belowChips() }
         }
     }
 }
@@ -202,17 +214,19 @@ private fun Modifier.standingOn(edge: () -> Float?, gap: Dp): Modifier = layout 
  */
 @Composable
 fun MapChip(icon: Int, label: String, modifier: Modifier = Modifier, description: String? = null, trailingIcon: Int? = null, onClick: (() -> Unit)? = null) {
-    val described = modifier.height(MapChrome.CHIPS_HEIGHT).then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier)
+    // With no words it is its icon alone (where there is no room for them): [description] names it.
+    val described = modifier.height(MapChrome.CHIPS_HEIGHT).then(if (label.isEmpty()) Modifier.widthIn(min = 40.dp) else Modifier)
+        .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier)
     val shape = RoundedCornerShape(Tokens.Radius.sm.dp)
     val color = MaterialTheme.colorScheme.surfaceContainerLow
     val content: @Composable () -> Unit = {
         Row(
-            Modifier.padding(start = Tokens.Spacing.sm.dp, end = if (trailingIcon != null) Tokens.Spacing.sm.dp else Tokens.Spacing.md.dp),
+            Modifier.padding(start = CHIP_START, end = if (trailingIcon != null || label.isEmpty()) Tokens.Spacing.sm.dp else CHIP_END),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(CHIP_GAP),
         ) {
-            Icon(painterResource(icon), contentDescription = null, tint = EzpzTheme.status.accent, modifier = Modifier.size(18.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge)
+            Icon(painterResource(icon), contentDescription = null, tint = EzpzTheme.status.accent, modifier = Modifier.size(CHIP_ICON))
+            if (label.isNotEmpty()) Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
             trailingIcon?.let { Icon(painterResource(it), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) }
         }
     }
@@ -223,6 +237,57 @@ fun MapChip(icon: Int, label: String, modifier: Modifier = Modifier, description
     } else {
         Surface(modifier = described, shape = shape, color = color, contentColor = MaterialTheme.colorScheme.onSurface, shadowElevation = 2.dp) {
             Box(contentAlignment = Alignment.Center) { content() }
+        }
+    }
+}
+
+private val CHIP_START = Tokens.Spacing.sm.dp
+private val CHIP_ICON = 18.dp
+private val CHIP_GAP = 6.dp
+private val CHIP_END = Tokens.Spacing.md.dp
+
+/** What a chip with words and no trailing icon takes besides its words ([ChipsThatFit] measures with it). */
+private val CHIP_FRAME = CHIP_START + CHIP_ICON + CHIP_GAP + CHIP_END
+
+/** One of [ChipsThatFit]'s chips: a [MapChip] that does [onClick], named by [description] whether or not its [label] shows. */
+class ChipAction(val icon: Int, val label: String, val description: String, val onClick: () -> Unit)
+
+/**
+ * The chips under the search bar, on one line: [lead] (the workspace) first, then [chips] with their words when that leaves [lead] the room it would take,
+ * else as their icons alone, and [lead] is given what is left (a pack's chip cuts its name). The words are measured as text, so only the chips shown are
+ * ever composed (a copy measured off screen would still be in what a screen reader and a test see).
+ */
+@Composable
+fun ChipsThatFit(lead: @Composable () -> Unit, chips: List<ChipAction>, modifier: Modifier = Modifier, gap: Dp = Tokens.Spacing.sm.dp) {
+    val measurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.labelLarge
+    val density = LocalDensity.current
+    // What the chips take with their words: each label in a chip's frame (MapChip's padding, icon and the gap before the words), and the gaps between.
+    val words = remember(chips.map { it.label }, style, density) {
+        with(density) {
+            chips.sumOf { CHIP_FRAME.roundToPx() + measurer.measure(it.label, style, maxLines = 1, softWrap = false, density = density).size.width } +
+                gap.roundToPx() * (chips.size - 1).coerceAtLeast(0)
+        }
+    }
+    SubcomposeLayout(modifier) { constraints ->
+        val gapPx = gap.roundToPx()
+        val height = if (constraints.hasBoundedHeight) constraints.maxHeight else Constraints.Infinity
+        val leads = subcompose("lead", lead)
+        val wanted = leads.maxOfOrNull { it.maxIntrinsicWidth(if (height == Constraints.Infinity) 0 else height) } ?: 0
+        val compact = wanted + gapPx + words > constraints.maxWidth
+        // Keyed by the choice: the other form is not kept composed.
+        val rest = subcompose(compact) {
+            Row(horizontalArrangement = Arrangement.spacedBy(gap), verticalAlignment = Alignment.CenterVertically) {
+                chips.forEach { MapChip(it.icon, if (compact) "" else it.label, description = it.description, onClick = it.onClick) }
+            }
+        }.first().measure(Constraints(maxHeight = height))
+        val room = (constraints.maxWidth - rest.width - gapPx).coerceAtLeast(0)
+        val placed = leads.map { it.measure(Constraints(maxWidth = room, maxHeight = height)) }
+        val leadWidth = placed.maxOfOrNull { it.width } ?: 0
+        val tall = maxOf(rest.height, placed.maxOfOrNull { it.height } ?: 0)
+        layout((leadWidth + gapPx + rest.width).coerceAtMost(constraints.maxWidth), tall) {
+            placed.forEach { it.placeRelative(0, (tall - it.height) / 2) }
+            rest.placeRelative(leadWidth + gapPx, (tall - rest.height) / 2)
         }
     }
 }

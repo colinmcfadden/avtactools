@@ -63,6 +63,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.EzpzIcons
@@ -84,6 +86,17 @@ class TabletRail(
     val importMenu: @Composable (onDismiss: () -> Unit) -> Unit,
     val onLibrary: () -> Unit,
     val account: @Composable () -> Unit,
+    /** The workspace tile: the Library's, or the open pack's in its colour, with the switcher at it when packs run here. */
+    val workspace: RailWorkspace = RailWorkspace(),
+)
+
+/** What the rail's workspace tile says, and the switcher it opens ([menu], drawn while open with what closes it; none: a label, not a button). */
+@Stable
+class RailWorkspace(
+    val label: String = "Personal",
+    val description: String = "Workspace: Personal",
+    val pack: Boolean = false,
+    val menu: (@Composable (onDismiss: () -> Unit) -> Unit)? = null,
 )
 
 /**
@@ -296,8 +309,19 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // The person's own workspace until mission packs have their switcher (P1): a label, not yet a button.
-                    RailTile(EzpzIcons.personFill, "Personal", "Workspace: Personal", tonal = false, onClick = null)
+                    // The workspace: the person's own, or the open pack's in its colour; the switcher at it while packs run here.
+                    val workspace = rail.workspace
+                    var switching by remember { mutableStateOf(false) }
+                    // The switcher goes with packs: when they come back it is not open by itself.
+                    val switchable = workspace.menu != null
+                    LaunchedEffect(switchable) { if (!switchable) switching = false }
+                    Box {
+                        RailTile(
+                            if (workspace.pack) EzpzIcons.groupsFill else EzpzIcons.personFill, workspace.label, workspace.description, tonal = false,
+                            onClick = workspace.menu?.let { { switching = true } }, pack = workspace.pack,
+                        )
+                        if (switching) workspace.menu?.invoke { switching = false }
+                    }
                     Spacer(Modifier.height(Tokens.Spacing.lg.dp))
                     var importing by remember { mutableStateOf(false) }
                     Box {
@@ -339,9 +363,17 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
  * no [onClick] it is a label, not a button.
  */
 @Composable
-private fun RailTile(icon: Int, label: String, description: String, tonal: Boolean, onClick: (() -> Unit)?) {
-    val color = if (tonal) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
-    val tint = if (tonal) MaterialTheme.colorScheme.onSecondaryContainer else EzpzTheme.status.accent
+private fun RailTile(icon: Int, label: String, description: String, tonal: Boolean, onClick: (() -> Unit)?, pack: Boolean = false) {
+    val color = when {
+        pack -> MaterialTheme.colorScheme.tertiaryContainer
+        tonal -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val tint = when {
+        pack -> MaterialTheme.colorScheme.onTertiaryContainer
+        tonal -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> EzpzTheme.status.accent
+    }
     val border = if (tonal) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     val click = if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier
     Column(
@@ -351,7 +383,7 @@ private fun RailTile(icon: Int, label: String, description: String, tonal: Boole
         Surface(shape = MaterialTheme.shapes.large, color = color, border = border, shadowElevation = if (tonal) 1.dp else 0.dp) {
             Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) { Icon(painterResource(icon), contentDescription = null, tint = tint) }
         }
-        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
