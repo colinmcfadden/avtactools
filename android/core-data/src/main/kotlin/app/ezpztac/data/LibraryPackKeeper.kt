@@ -25,7 +25,11 @@ import java.util.UUID
  * Each is kept in a transaction of its own; the engine never calls this inside a pack transaction, so the two stores' transactions never
  * nest. A version can be as large as a pack item (5 MB, or more for edits refused as too large); the library reads it in parts.
  */
-internal class LibraryPackKeeper(private val store: SyncStore) : PackKeeper {
+internal class LibraryPackKeeper(
+    private val store: SyncStore,
+    /** When a kept version is noted as made ([LocalRecord.updatedAt]), as SyncRepository.create notes every record made here. */
+    private val clock: () -> String = { java.time.Instant.now().toString() },
+) : PackKeeper {
     override suspend fun keep(pack: String, versions: List<KeptVersion>): List<KeptOutcome> = versions.map { keepOne(it) }
 
     private suspend fun keepOne(version: KeptVersion): KeptOutcome {
@@ -37,7 +41,7 @@ internal class LibraryPackKeeper(private val store: SyncStore) : PackKeeper {
             val kept = record(kind, uuid)
             if (kept == null) {
                 // SyncRepository.create's record, under the uuid the key names.
-                put(LocalRecord(kind, uuid, serverId = null, baseRevision = null, name = version.name, data = document, dirty = true, localVersion = 1))
+                put(LocalRecord(kind, uuid, serverId = null, baseRevision = null, name = version.name, data = document, dirty = true, localVersion = 1, updatedAt = clock()))
                 enqueue(OutboxEntry(0, kind, uuid, Operation.CREATE))
             }
             KeptOutcome.Saved(version.key, version.kind, uuid, kept?.name ?: version.name)

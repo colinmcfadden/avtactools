@@ -292,19 +292,19 @@ public class SyncEngine(
                 Operation.DELETE -> {
                     // Deleted here, edited there: the edit wins, since a deletion is not worth more than somebody's work.
                     dequeue(entry.seq)
-                    put(current.copy(serverId = theirs.serverId, baseRevision = theirs.revision, name = theirs.name, data = theirs.data, file = theirFile ?: current.file, deleted = false, dirty = false))
+                    put(current.copy(serverId = theirs.serverId, baseRevision = theirs.revision, name = theirs.name, data = theirs.data, file = theirFile ?: current.file, deleted = false, dirty = false, updatedAt = theirs.updatedAt ?: current.updatedAt))
                     report = report.copy(restored = listOf(current.uuid))
                 }
                 else -> {
                     val copy = LocalRecord(
                         kind = current.kind, uuid = ids.newUuid(), serverId = null, baseRevision = null,
-                        name = "${current.name} (from $deviceLabel, ${clock()})", data = current.data,
-                        dirty = true, localVersion = 1, conflictOf = current.uuid, file = current.file,
+                        name = copyName(current.name), data = current.data,
+                        dirty = true, localVersion = 1, conflictOf = current.uuid, file = current.file, updatedAt = current.updatedAt,
                     )
                     put(copy)
                     enqueue(OutboxEntry(0, copy.kind, copy.uuid, Operation.CREATE))
                     // The record itself takes the server's copy: that is what everyone else has.
-                    put(current.copy(serverId = theirs.serverId, baseRevision = theirs.revision, name = theirs.name, data = theirs.data, file = theirFile ?: current.file, dirty = false))
+                    put(current.copy(serverId = theirs.serverId, baseRevision = theirs.revision, name = theirs.name, data = theirs.data, file = theirFile ?: current.file, dirty = false, updatedAt = theirs.updatedAt ?: current.updatedAt))
                     dequeue(entry.seq)
                     report = report.copy(conflicts = listOf(Conflict(current.kind, current.uuid, copy.uuid)))
                 }
@@ -357,6 +357,15 @@ public class SyncEngine(
     }
 
     private fun clock(): String = DateTimeFormatter.ofPattern("HH:mm").withZone(zone).format(now())
+
+    /**
+     * "NAME (from this device, 14:32)", kept within the [MAX_NAME] characters the server stores: a longer name is refused with a 500, and a send that meets a 5xx
+     * holds up everything queued behind it. The name is cut, never the part that says what the copy is; by characters, so no character is split.
+     */
+    internal fun copyName(name: String): String {
+        val suffix = " (from $deviceLabel, ${clock()})"
+        return cutToCharacters(name, (MAX_NAME - suffix.length).coerceAtLeast(0)).trimEnd() + suffix
+    }
 
     // -- Pull ----------------------------------------------------------------------------
 
@@ -472,11 +481,18 @@ public class SyncEngine(
         val ref = file?.let { bytes -> FileHash.of(bytes).also { id -> putBlob(id, bytes) }.let { id -> FileRef(id, change.fileName ?: DEFAULT_MISSION_FILE) } }
         val holdable = kind != RecordKind.MISSION || ref != null
         when {
-            local == null -> if (holdable) put(LocalRecord(kind, change.clientUuid, change.id, change.revision, change.name, data, file = ref))
+            local == null -> if (holdable) put(LocalRecord(kind, change.clientUuid, change.id, change.revision, change.name, data, file = ref, updatedAt = change.updatedAt))
             // Changes here that the server has not seen: never overwritten by a pull. The push will find out (409) and keep both.
             local.dirty || local.deleted -> Unit
             (local.baseRevision ?: -1) < change.revision ->
-                if (holdable) put(local.copy(serverId = change.id, baseRevision = change.revision, name = change.name, data = data, file = ref ?: local.file))
+                if (holdable) {
+                    put(
+                        local.copy(
+                            serverId = change.id, baseRevision = change.revision, name = change.name, data = data, file = ref ?: local.file,
+                            updatedAt = change.updatedAt ?: local.updatedAt,
+                        ),
+                    )
+                }
         }
         return SyncReport()
     }
@@ -507,7 +523,11 @@ public class SyncEngine(
                     val original = record(kind, originalUuid)
                     if (original == null) put(copy.copy(conflictOf = null)) else {
                         // The copy's name carries "(from this device, 14:32)": mine means the original's own name with my content.
-                        val edited = original.copy(data = copy.data, file = copy.file ?: original.file, dirty = true, localVersion = original.localVersion + 1)
+                        // Mine is this device's work, so the time is when it was done here (the copy's), not the other device's that came with theirs.
+                        val edited = original.copy(
+                            data = copy.data, file = copy.file ?: original.file, dirty = true, localVersion = original.localVersion + 1,
+                            updatedAt = copy.updatedAt ?: now().toString(),
+                        )
                         put(edited)
                         if (original.serverId != null && entryFor(kind, originalUuid, Operation.UPDATE) == null) {
                             enqueue(OutboxEntry(0, kind, originalUuid, Operation.UPDATE))
@@ -521,3 +541,10 @@ public class SyncEngine(
         }
     }
 }
+
+/** The most characters a saved record's name may have: the server's `name` columns are `String(100)`. */
+public const val MAX_NAME: Int = 100
+
+/** [text] cut to at most [max] characters (code points), so a character made of two UTF-16 units is never split. */
+public fun cutToCharacters(text: String, max: Int): String =
+    if (text.codePointCount(0, text.length) <= max) text else text.substring(0, text.offsetByCodePoints(0, max))

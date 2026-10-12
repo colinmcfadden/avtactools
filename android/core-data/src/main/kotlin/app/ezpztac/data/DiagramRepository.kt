@@ -104,6 +104,18 @@ class DiagramRepository @Inject constructor(
         scheduler.requestSync()
     }
 
+    /**
+     * A copy of [uuid] named [name], under an identity of its own: everything in it, its analysis and graphics too, as the web's *Duplicate* copies a record.
+     * Its id, or null when there is nothing to copy (it was deleted).
+     */
+    suspend fun duplicate(uuid: String, name: String): String? {
+        val diagram = open(uuid) ?: return null
+        val copy = java.util.UUID.randomUUID().toString()
+        sync.create(RecordKind.LZ, name, serialize(diagram.copy(id = copy, savedId = JsonNull, name = name, updatedAt = env.now())), uuid = copy)
+        scheduler.requestSync()
+        return copy
+    }
+
     private fun toDiagram(record: LocalRecord): Diagram = DiagramNormalizer.normalize(
         record.data,
         DiagramNormalizer.Options(
@@ -119,9 +131,16 @@ class DiagramRepository @Inject constructor(
         val diagram = toDiagram(record)
         return DiagramSummary(
             uuid = record.uuid, name = record.name, status = diagram.status, target = diagram.target, sync = record.status,
-            conflictOf = record.conflictOf, updatedAt = diagram.updatedAt,
+            conflictOf = record.conflictOf, updatedAt = record.updatedAt ?: documentTime(record.data),
         )
     }
 
     private fun serialize(diagram: Diagram): JsonObject = DiagramJson.encode(DiagramNormalizer.serialize(diagram))
+
+    /**
+     * When the document itself says it last changed (for a record kept before the database noted it), read from the JSON and not from the normalised
+     * diagram, which gives a document with no time of its own the current one: a time made up.
+     */
+    private fun documentTime(data: JsonObject): String? = listOf("updatedAt", "updated_at")
+        .firstNotNullOfOrNull { (data[it] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { p -> p.isString }?.content?.takeIf { t -> t.isNotBlank() } }
 }

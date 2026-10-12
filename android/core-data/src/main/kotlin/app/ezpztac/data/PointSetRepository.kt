@@ -27,10 +27,18 @@ data class PointSetRow(
     val sync: SyncStatus,
     /** The record this is a conflict copy of, if it is one. */
     val conflictOf: String?,
+    /** When it last changed, an ISO instant, or null when that was never noted. */
+    val updatedAt: String? = null,
 )
 
 /** A saved set with how it stands: synced or not, or the copy kept beside a conflict. */
-data class StoredPointSet(val set: PointSet, val sync: SyncStatus, val conflictOf: String?)
+data class StoredPointSet(
+    val set: PointSet,
+    val sync: SyncStatus,
+    val conflictOf: String?,
+    /** When it last changed, an ISO instant, or null when that was never noted ([app.ezpztac.sync.LocalRecord.updatedAt]). */
+    val updatedAt: String? = null,
+)
 
 /** What came of importing a file. */
 sealed interface ImportOutcome {
@@ -56,12 +64,12 @@ class PointSetRepository @Inject constructor(
 ) {
     /** The sets, as a list that updates itself (an import, a sync that brings one in, a delete). */
     fun observe(): Flow<List<PointSetRow>> = observeSets().map { stored ->
-        stored.map { PointSetRow(it.set.id, it.set.name, it.set.pointCount, it.sync, it.conflictOf) }
+        stored.map { PointSetRow(it.set.id, it.set.name, it.set.pointCount, it.sync, it.conflictOf, it.updatedAt) }
     }
 
     /** The sets with their points, as they change. A record is parsed once for as long as its document does not change, not for every change to the list. */
     fun observeSets(): Flow<List<StoredPointSet>> = feed.observe(RecordKind.POINT_SET).map { records ->
-        val stored = records.map { StoredPointSet(toSet(it), it.status, it.conflictOf) }
+        val stored = records.map { StoredPointSet(toSet(it), it.status, it.conflictOf, it.updatedAt) }
         synchronized(parsed) { parsed.keys.retainAll(records.mapTo(HashSet()) { it.uuid }) }                   // what is gone is not kept
         stored
     }
@@ -114,6 +122,15 @@ class PointSetRepository @Inject constructor(
     suspend fun delete(uuid: String) {
         sync.delete(RecordKind.POINT_SET, uuid)
         scheduler.requestSync()
+    }
+
+    /** A copy of the set [uuid] named [name], under an identity of its own, with every point as it is. Its id, or null when it was deleted. */
+    suspend fun duplicate(uuid: String, name: String): String? {
+        val record = sync.record(RecordKind.POINT_SET, uuid) ?: return null
+        val copy = java.util.UUID.randomUUID().toString()
+        sync.create(RecordKind.POINT_SET, name.trim().ifEmpty { DEFAULT_NAME }, record.data, uuid = copy)
+        scheduler.requestSync()
+        return copy
     }
 
     private class Parsed(val data: JsonObject, val set: PointSet)

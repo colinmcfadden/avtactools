@@ -41,6 +41,8 @@ import app.ezpztac.sync.SyncEngine
 class RoutesActions(
     val importMission: () -> Unit = {},
     val showPage: (RoutesPage) -> Unit = {},
+    /** Opens the Library on its Routes tab (every set saved, and the conflicts to settle). */
+    val browse: () -> Unit = {},
     val openSet: (String) -> Unit = {},
     /** Takes a set out of the session (it stays in the Library). */
     val close: (String) -> Unit = {},
@@ -93,8 +95,8 @@ class RoutesActions(
     val localPointNamed: (typed: String) -> LocalPointMatch? = { null },
 )
 
-internal fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null, importMission: () -> Unit = {}, save: () -> Unit = {}) = RoutesActions(
-    importMission = importMission, showPage = viewModel::showPage, openSet = viewModel::openSet, close = viewModel::close, renameSet = viewModel::renameSet,
+internal fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null, importMission: () -> Unit = {}, save: () -> Unit = {}, browse: () -> Unit = {}) = RoutesActions(
+    importMission = importMission, showPage = viewModel::showPage, browse = browse, openSet = viewModel::openSet, close = viewModel::close, renameSet = viewModel::renameSet,
     deleteSet = viewModel::deleteSet, save = save, resolve = viewModel::resolve, dismissError = viewModel::dismissError, openPlan = viewModel::openPlan,
     closePlan = viewModel::closePlan, toggleVisible = viewModel::toggleVisible, renameRoute = viewModel::renameRoute, deleteRoute = viewModel::deleteRoute,
     undo = viewModel::undo, redo = viewModel::redo, startSketch = viewModel::startSketch, addAtCrosshair = { viewModel.addAtCrosshair(crosshair) },
@@ -117,21 +119,25 @@ fun RoutesHost(
     modifier: Modifier = Modifier,
     crosshair: LatLon? = null,
     threatCount: Int = 0,
+    /** Opens the Library on its Routes tab. */
+    onBrowseLibrary: () -> Unit = {},
     viewModel: RoutesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var naming by rememberSaveable { mutableStateOf(false) }
-    val actions = actionsOf(viewModel, crosshair, save = { naming = true })
+    val actions = actionsOf(viewModel, crosshair, save = { naming = true }, browse = onBrowseLibrary)
     when (state.page) {
         RoutesPage.HOME -> RoutesHomeContent(state, actions, modifier, threatCount)
-        RoutesPage.LIBRARY -> RoutesLibraryContent(state, actions, modifier)
     }
     if (naming) {
         val open = state.open
         if (open == null || !open.canSave) {
             naming = false
         } else {
-            SaveRoutesSheet(open, state.otherNames, onSave = { name -> viewModel.saveAs(name); naming = false }, onDismiss = { naming = false })
+            SaveRoutesSheet(
+                open, state.sets.filter { it.uuid != open.uuid }.map { it.uuid to it.name },
+                onSave = { name, replacing -> viewModel.saveAs(name, replacing); naming = false }, onDismiss = { naming = false },
+            )
         }
     }
 }
@@ -162,7 +168,10 @@ fun RoutePlanHost(
         if (open == null || !open.canSave) {
             naming = false
         } else {
-            SaveRoutesSheet(open, state.otherNames, onSave = { name -> viewModel.saveAs(name); naming = false }, onDismiss = { naming = false })
+            SaveRoutesSheet(
+                open, state.sets.filter { it.uuid != open.uuid }.map { it.uuid to it.name },
+                onSave = { name, replacing -> viewModel.saveAs(name, replacing); naming = false }, onDismiss = { naming = false },
+            )
         }
     }
 }

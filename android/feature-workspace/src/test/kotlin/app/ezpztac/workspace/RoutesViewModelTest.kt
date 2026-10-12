@@ -1447,13 +1447,11 @@ class RoutesViewModelTest {
     }
 
     @Test
-    fun `the Library page lists every set, and opening one from it goes back to the sets open now`() = runTest(dispatcher) {
+    fun `every set is listed, and one closed is put back on the map when it is opened again`() = runTest(dispatcher) {
         val r = rig()
         r.model.createSet("ONE"); settle()
         val one = r.state.open!!.uuid
         r.model.close(one); settle()
-        r.model.showPage(RoutesPage.LIBRARY); settle()
-        assertEquals(RoutesPage.LIBRARY, r.state.page)
         assertEquals(listOf("ONE"), r.state.sets.map { it.name })
         r.model.openSet(one); settle()
         assertEquals(RoutesPage.HOME, r.state.page)
@@ -1580,6 +1578,52 @@ class RoutesViewModelTest {
         r.model.saveAs("night infil"); settle()
         assertEquals("NIGHT INFIL 2", r.state.open!!.name)
         assertEquals("Saved “NIGHT INFIL 2” to your Library", r.notices.last())
+    }
+
+    @Test
+    fun `replacing the set that has the name deletes it, and this one takes the name`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("NIGHT INFIL"); settle()
+        val other = r.state.open!!.uuid
+        r.model.createSet(""); settle()
+        val mine = r.state.open!!.uuid
+        r.model.saveAs("night infil", replacing = other); settle()
+        assertEquals("NIGHT INFIL", r.state.open!!.name)
+        assertEquals(listOf(mine), r.state.sets.map { it.uuid })
+        assertFalse(other in r.state.alsoOpen.map { it.uuid })
+        assertEquals("Saved \u201cNIGHT INFIL\u201d to your Library, in place of the one there before", r.notices.last())
+    }
+
+    @Test
+    fun `a rename from the Library can replace the set that has the name, the one on the map included`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        val one = r.state.open!!.uuid
+        r.model.createSet("TWO"); settle()
+        val two = r.state.open!!.uuid                                                               // on the map
+        r.model.renameSet(one, "two", replacing = two); settle()
+        assertEquals(listOf(one to "TWO"), r.state.sets.map { it.uuid to it.name })
+        assertFalse(r.state.open?.uuid == two)                                                     // closed before it was deleted, so it cannot be saved back
+    }
+
+    @Test
+    fun `an action asked for while the last one runs is said not to be done, rather than dropped`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE")
+        r.model.createSet("TWO")                                                                    // before the first is made
+        settle()
+        assertEquals(STILL_WORKING, r.state.error)
+        assertEquals(listOf("ONE"), r.state.sets.map { it.name })
+    }
+
+    @Test
+    fun `a mission is named for its file, so no name of its own is refused as made up`() = runTest(dispatcher) {
+        val r = rig()
+        r.device.repository.create(RecordKind.MISSION, "GOAT", app.ezpztac.model.RouteSets.missionSummary(emptyList()), uuid = "m1", file = app.ezpztac.sync.FilePart("GOAT.msnx", byteArrayOf(1)))
+        settle()
+        r.model.renameSet("m1", "sketched routes"); settle()
+        assertNull(r.state.error)
+        assertEquals("SKETCHED ROUTES", r.state.sets.single { it.uuid == "m1" }.name)
     }
 
     @Test

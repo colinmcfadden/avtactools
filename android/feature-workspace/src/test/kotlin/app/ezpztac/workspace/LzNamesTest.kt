@@ -35,6 +35,17 @@ class LzNamesTest {
     }
 
     @Test
+    fun `a name kept apart fits the server's 100 characters, the name cut and never the number`() {
+        val long = "A".repeat(99)
+        assertEquals("A".repeat(98) + " 2", LzNames.free(long, listOf(long)))
+        assertEquals("A".repeat(100), LzNames.free("A".repeat(120), emptyList()))               // too long even untaken: cut
+        val emoji = "\uD83D\uDE81".repeat(100)                                                // 100 characters, 200 UTF-16 units
+        val kept = LzNames.free(emoji, listOf(emoji))
+        assertEquals(100, kept.codePointCount(0, kept.length))
+        assertTrue(kept.endsWith("\uD83D\uDE81 2"))                                            // no character split
+    }
+
+    @Test
     fun `when it last changed reads as the design writes it, and an unreadable time is nothing`() {
         assertEquals("Aug 25 · 17:34", LzNames.updated("2026-08-25T17:34:12.000Z", ZoneOffset.UTC))
         assertEquals("Jan 1 · 09:05", LzNames.updated("2027-01-01T14:05:00.000Z", ZoneOffset.ofHours(-5)))

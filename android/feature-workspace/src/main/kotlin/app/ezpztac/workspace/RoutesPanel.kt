@@ -72,7 +72,7 @@ fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Mo
         if (conflicts > 0) {
             Banner(
                 if (conflicts == 1) "1 route set needs a choice: another device changed it too." else "$conflicts route sets need a choice: another device changed them too.",
-                BannerKind.Warning, actionLabel = "Review", onAction = { actions.showPage(RoutesPage.LIBRARY) },
+                BannerKind.Warning, actionLabel = "Review", onAction = actions.browse,
             )
         }
         state.open?.let { ActiveSetCard(it, state.drawing, state.exporting, state.includeThreats, threatCount, actions) }
@@ -88,7 +88,7 @@ fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Mo
         }
         if (state.sets.isNotEmpty()) {
             ListRow(
-                EzpzIcons.collectionsBookmark, "Every route set", onClick = { actions.showPage(RoutesPage.LIBRARY) }, onClickLabel = "Browse",
+                EzpzIcons.collectionsBookmark, "Every route set", onClick = actions.browse, onClickLabel = "Open the Library",
                 supporting = { Muted(if (state.sets.size == 1) "1 in your Library" else "${state.sets.size} in your Library") },
                 modifier = Modifier.padding(top = Tokens.Spacing.xs.dp),
             ) { Icon(painterResource(EzpzIcons.chevronRight), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -401,55 +401,6 @@ internal fun RouteMoreMenu(
             )
             if (!fixed) {
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { expanded = false; onDelete() }, leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null) })
-            }
-        }
-    }
-}
-
-// -- Every set ---------------------------------------------------------------------------------------------------------------------
-
-/** Every set in the Library, to open, rename, delete, or settle a conflict: what the Library page will hold for all kinds (S7). */
-@Composable
-fun RoutesLibraryContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
-        state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
-        if (state.sets.isEmpty()) Muted("No route sets yet. Sketch a route, or import an AMPS mission file.")
-        state.sets.forEach { row -> LibrarySetCard(row, actions) }
-        Spacer(Modifier.height(1.dp))
-    }
-}
-
-@Composable
-private fun LibrarySetCard(row: RouteSetRow, actions: RoutesActions) {
-    var renaming by rememberSaveable(row.uuid) { mutableStateOf<String?>(null) }
-    var confirmDelete by rememberSaveable(row.uuid) { mutableStateOf(false) }
-    Surface(shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.md.dp)) {
-            Row(Modifier.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(row.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (row.isOpen) {
-                    Text("On the map", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = Tokens.Spacing.sm.dp))
-                }
-            }
-            Row(Modifier.padding(top = Tokens.Spacing.xs.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
-                Chips(row.chips)
-                Text(row.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (row.conflictOf != null) {
-                Column(Modifier.padding(top = Tokens.Spacing.md.dp, end = Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                    ConflictPanel(if (row.isMission) "mission" else "set of routes") { actions.resolve(row.uuid, it) }
-                }
-            }
-            renaming?.let { name ->
-                SetRenameField(name, row.name, onChange = { renaming = it }, onDone = { actions.renameSet(row.uuid, it); renaming = null }, onCancel = { renaming = null })
-            }
-            if (confirmDelete) SetDeleteConfirm(row.name, onDelete = { confirmDelete = false; actions.deleteSet(row.uuid) }, onKeep = { confirmDelete = false })
-            if (renaming == null && !confirmDelete) {
-                Row(Modifier.padding(top = Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                    PillButton("Open", onClick = { actions.openSet(row.uuid) }, icon = EzpzIcons.map, style = PillStyle.Tonal, enabled = !row.isOpen)
-                    TextButton(onClick = { renaming = row.name }, modifier = Modifier.semantics { contentDescription = "Rename ${row.name}" }) { Text("Rename") }
-                    TextButton(onClick = { confirmDelete = true }, modifier = Modifier.semantics { contentDescription = "Delete ${row.name}" }) { Text("Delete") }
-                }
             }
         }
     }

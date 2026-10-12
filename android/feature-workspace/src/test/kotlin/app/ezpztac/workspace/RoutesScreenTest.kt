@@ -44,7 +44,7 @@ class RoutesScreenTest {
     private class Recorder {
         val log = mutableListOf<String>()
         val actions = RoutesActions(
-            importMission = { log += "import" }, showPage = { log += "page:$it" }, openSet = { log += "open:$it" }, close = { log += "close:$it" },
+            importMission = { log += "import" }, showPage = { log += "page:$it" }, browse = { log += "browse" }, openSet = { log += "open:$it" }, close = { log += "close:$it" },
             renameSet = { id, name -> log += "renameSet:$id:$name" }, deleteSet = { log += "deleteSet:$it" }, save = { log += "save" },
             resolve = { id, how -> log += "resolve:$id:$how" }, dismissError = { log += "dismiss" }, openPlan = { log += "plan:$it" },
             toggleVisible = { log += "toggle:$it" }, renameRoute = { id, name -> log += "renameRoute:$id:$name" }, deleteRoute = { log += "deleteRoute:$it" },
@@ -58,12 +58,6 @@ class RoutesScreenTest {
     private fun home(state: RoutesUiState, threats: Int = 0): Recorder {
         val r = Recorder()
         compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { RoutesHomeContent(state, r.actions, threatCount = threats) } } }
-        return r
-    }
-
-    private fun library(state: RoutesUiState): Recorder {
-        val r = Recorder()
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { RoutesLibraryContent(state, r.actions) } } }
         return r
     }
 
@@ -298,7 +292,7 @@ class RoutesScreenTest {
         compose.onNodeWithText("AMPS mission · 2 routes", substring = true).assertIsDisplayed()
         compose.onNodeWithText("GOAT SUCKER").performClick()
         compose.onNodeWithText("Every route set").performScrollTo().performClick()
-        assertEquals(listOf("open:s2", "page:${RoutesPage.LIBRARY}"), r.log)
+        assertEquals(listOf("open:s2", "browse"), r.log)                                      // the Library, on its Routes tab
         compose.onNodeWithText("2 in your Library").assertIsDisplayed()
     }
 
@@ -314,47 +308,8 @@ class RoutesScreenTest {
         val r = home(RoutesUiState(sets = listOf(row("s1", "ONE"), row("s9", "ONE (from this device)", conflictOf = "s1", sync = SyncStatus.CONFLICT))))
         compose.onNodeWithText("1 route set needs a choice: another device changed it too.").assertIsDisplayed()
         compose.onNodeWithText("Review").performClick()
-        assertEquals(listOf("page:${RoutesPage.LIBRARY}"), r.log)
+        assertEquals(listOf("browse"), r.log)                                                  // the Library, where conflicts are settled
     }
-
-    @Test
-    fun `every set is listed with its state, and can be opened or renamed`() {
-        val r = library(RoutesUiState(sets = listOf(row("s1", "ONE", open = true), row("s2", "TWO", sync = SyncStatus.PENDING))))
-        compose.onNodeWithText("On the map").assertIsDisplayed()
-        compose.onNodeWithText("Waiting to sync").assertIsDisplayed()
-        assertEquals(2, count("2 routes · 9 points"))
-        compose.onAllNodesWithText("Open")[0].assertIsNotEnabled()                                 // it is open already
-        compose.onAllNodesWithText("Open")[1].performClick()
-        compose.onNodeWithContentDescription("Rename TWO").performClick()
-        compose.onNodeWithText("Name").performTextClearance()
-        compose.onNodeWithText("Name").performTextInput("second")
-        compose.onNodeWithText("Save name").performClick()
-        assertEquals(listOf("open:s2", "renameSet:s2:SECOND"), r.log)
-    }
-
-    @Test
-    fun `a set is deleted from the list once the person says so`() {
-        val r = library(RoutesUiState(sets = listOf(row("s2", "TWO"))))
-        compose.onNodeWithContentDescription("Delete TWO").performClick()
-        compose.onNodeWithText("Delete \"TWO\" and its routes? It is removed from this device and from your account.").assertIsDisplayed()
-        compose.onNodeWithText("Delete").performClick()
-        assertEquals(listOf("deleteSet:s2"), r.log)
-    }
-
-    @Test
-    fun `a conflict copy in the list offers its choices`() {
-        val r = library(RoutesUiState(sets = listOf(row("s9", "ONE (from this device)", conflictOf = "s1", sync = SyncStatus.CONFLICT))))
-        compose.onNodeWithText("Keep theirs (discard mine)").performScrollTo().performClick()
-        assertEquals(listOf("resolve:s9:${SyncEngine.Resolution.KEEP_THEIRS}"), r.log)
-    }
-
-    @Test
-    fun `with no sets the Library says how to begin`() {
-        library(RoutesUiState())
-        compose.onNodeWithText("No route sets yet. Sketch a route, or import an AMPS mission file.").assertIsDisplayed()
-    }
-
-    // -- The foot --------------------------------------------------------------------------------------------------------------
 
     @Test
     fun `the foot sketches a route and imports a mission`() {
@@ -440,7 +395,14 @@ class RoutesScreenTest {
 
     private fun naming(open: OpenSetUi, others: List<String> = emptyList()): MutableList<String> {
         val saved = mutableListOf<String>()
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { SaveRoutesContent(open, others, onSave = { saved += it }, onCancel = { saved += "cancel" }) } }
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                SaveRoutesContent(
+                    open, others.mapIndexed { i, name -> "o$i" to name },
+                    onSave = { name, replacing -> saved += if (replacing == null) name else "$name replacing $replacing" }, onCancel = { saved += "cancel" },
+                )
+            }
+        }
         return saved
     }
 
@@ -459,9 +421,14 @@ class RoutesScreenTest {
     }
 
     @Test
-    fun `a name another set has says what this one will be saved as`() {
-        naming(open(one), others = listOf("ROUTE 1"))
-        compose.onNodeWithText("A set called ROUTE 1 is already in your Library: this one is saved as ROUTE 1 2.").assertIsDisplayed()
+    fun `a name another set has offers keeping both, as the next free name, or replacing it`() {
+        val saved = naming(open(one), others = listOf("ROUTE 1"))
+        compose.onNodeWithText("Name is already used: you already have a set of routes with this name.").assertIsDisplayed()
+        compose.onNodeWithText("Save this one as \u201cROUTE 1 2\u201d.").assertIsDisplayed()
+        compose.onNodeWithText("Save as new").performClick()
+        compose.onNodeWithText("Replace the saved one").performClick()
+        compose.onNodeWithText("Replace").performClick()
+        assertEquals(listOf("ROUTE 1", "ROUTE 1 replacing o0"), saved)
     }
 
     @Test

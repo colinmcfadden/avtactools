@@ -81,7 +81,7 @@ class LzPanelScreenTest {
 
     private val actions = LzPanelActions(
         open = { log += "open $it" }, newHere = { log += "new" }, close = { log += "close $it" }, rename = { id, name -> log += "rename $id $name" },
-        delete = { log += "delete $it" }, save = { log += "save" }, showPage = { log += "page $it" }, analyze = { log += "analyze" },
+        delete = { log += "delete $it" }, save = { log += "save" }, showPage = { log += "page $it" }, browse = { log += "browse" }, analyze = { log += "analyze" },
         toggleSlope = { log += "slope" }, beginTool = { log += "tool $it" }, drawBoundary = { log += "draw" }, selectAircraft = { log += "aircraft $it" },
     )
 
@@ -149,7 +149,7 @@ class LzPanelScreenTest {
         compose.onNodeWithText("LZ HAWK (ROCK)").performClick()
         compose.onNodeWithContentDescription("Open LZ HAWK (SHOPE)").performScrollTo().performClick()
         compose.onNodeWithText("Browse all").performScrollTo().performClick()
-        assertEquals(listOf("open lz-2", "open lz-4", "page LIBRARY"), log)
+        assertEquals(listOf("open lz-2", "open lz-4", "browse"), log)       // the Library, on its LZ/PZ tab
     }
 
     @Test
@@ -185,7 +185,7 @@ class LzPanelScreenTest {
         show { LzHomeContent(state, actions, GRID) }
         compose.onNodeWithText("1 LZ/PZ needs a choice", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Review").performClick()
-        assertEquals(listOf("page LIBRARY"), log)
+        assertEquals(listOf("browse"), log)                                                  // the Library, where conflicts are settled
     }
 
     // -- Plan ------------------------------------------------------------------------------------------------------------------
@@ -277,7 +277,7 @@ class LzPanelScreenTest {
     @Test
     fun `the made-up name the sheet offers cannot be what it is saved as`() {
         var saved: String? = null
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { SaveLzContent(activeLz(), emptyList(), onSave = { saved = it }, onCancel = {}) } }
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { SaveLzContent(activeLz(), emptyList(), onSave = { name, _ -> saved = name }, onCancel = {}) } }
         compose.onNodeWithText("You can rename it any time.").assertIsDisplayed()                 // offered to type over, not an error
         compose.onNode(hasText("Save") and hasText("Saves to your Library").not()).performClick()
         compose.onNodeWithText(LzNames.MADE_UP_REFUSED).assertIsDisplayed()
@@ -290,17 +290,24 @@ class LzPanelScreenTest {
 
     @Test
     fun `naming offers the made-up name to type over, and says what is kept`() {
-        var saved: String? = null
+        var saved: Pair<String, String?>? = null
         // The sheet's content scrolls itself, as the modal sheet it lives in gives it a height.
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { SaveLzContent(activeLz(), listOf("LZ HAWK"), onSave = { saved = it }, onCancel = { log += "cancel" }) } }
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { SaveLzContent(activeLz(), listOf("lz-9" to "LZ HAWK"), onSave = { name, replacing -> saved = name to replacing }, onCancel = { log += "cancel" }) }
+        }
         compose.onNodeWithText("Boundary, target $GRID and slope analysis").assertIsDisplayed()
         compose.onNodeWithText("Threats and routes are not included", substring = true).assertIsDisplayed()
         compose.onNode(hasSetTextAction()).performTextClearance()
         compose.onNodeWithText("Give it a name.").assertIsDisplayed()
         compose.onNode(hasText("Save") and hasText("Saves to your Library").not()).assertIsNotEnabled()
         compose.onNode(hasSetTextAction()).performTextInput("LZ HAWK")
-        compose.onNodeWithText("An LZ/PZ called LZ HAWK is already in your Library: this one is saved as LZ HAWK 2.").assertIsDisplayed()
-        compose.onNode(hasText("Save") and hasText("Saves to your Library").not()).performClick()
-        assertEquals("LZ HAWK", saved)
+        // A name the Library has: keep both, this one as the next free name (the default), or replace the other (the design's Confirm A).
+        compose.onNodeWithText("Name is already used: you already have an LZ/PZ with this name.").assertIsDisplayed()
+        compose.onNodeWithText("Save this one as \u201cLZ HAWK 2\u201d.").assertIsDisplayed()
+        compose.onNodeWithText("Save as new").performClick()
+        assertEquals("LZ HAWK" to null, saved)                                                   // the view model gives it the free name
+        compose.onNodeWithText("Replace the saved one").performClick()
+        compose.onNodeWithText("Replace").performClick()
+        assertEquals("LZ HAWK" to "lz-9", saved)
     }
 }

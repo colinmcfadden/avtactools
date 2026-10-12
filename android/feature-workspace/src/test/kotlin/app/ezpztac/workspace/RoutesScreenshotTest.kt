@@ -71,9 +71,8 @@ class RoutesScreenshotTest {
     @Test fun mission() = shot("mission", scroll = false) { PanelWithFoot(RoutesUiState(open = open(one, egress, name = "GOAT SUCKER", madeUp = false, sync = SyncStatus.SYNCED, mission = true))) }
     @Test fun empty() = shot("empty", scroll = false) { PanelWithFoot(RoutesUiState(), threats = 0) }
     @Test fun drawing() = shot("drawing", scroll = false) { PanelWithFoot(RoutesUiState(open = open(one), drawing = RouteDrawingUi(1, false))) }
-    @Test fun library() = shot("library") { RoutesLibraryContent(RoutesUiState(sets = listOf(goat, RouteSetRow("s9", "SKETCHED ROUTES (from this device)", 1, SyncStatus.CONFLICT, "s1", false, pointCount = 4, chips = routeSetChips(SyncStatus.CONFLICT, "s1", false)))), RoutesActions()) }
-    @Test fun save() = shot("save", scroll = false) { SaveRoutesContent(open(one), listOf("NIGHT INFIL"), onSave = {}, onCancel = {}) }
-    @Test fun saveNight() = shot("save-night", ThemeMode.Night, scroll = false) { SaveRoutesContent(open(one), emptyList(), onSave = {}, onCancel = {}) }
+    @Test fun save() = shot("save", scroll = false) { SaveRoutesContent(open(one), listOf("s9" to "NIGHT INFIL"), onSave = { _, _ -> }, onCancel = {}) }
+    @Test fun saveNight() = shot("save-night", ThemeMode.Night, scroll = false) { SaveRoutesContent(open(one), emptyList(), onSave = { _, _ -> }, onCancel = {}) }
 
     private val values = PointDraft("50", "agl", "100", "ground", "0", "0")
 

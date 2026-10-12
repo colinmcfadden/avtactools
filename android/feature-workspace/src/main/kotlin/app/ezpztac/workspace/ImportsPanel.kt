@@ -428,6 +428,8 @@ internal fun SideBySide(
     gap: Dp,
     flexibleFirst: Boolean,
     modifier: Modifier = Modifier,
+    /** One under the other, the second at the end (a row's actions under its words, where the thumb reaches them), not the start. */
+    stackedEnd: Boolean = false,
     fixed: @Composable () -> Unit,
     flexible: @Composable () -> Unit,
 ) {
@@ -458,7 +460,7 @@ internal fun SideBySide(
             val height = maxOf((first?.height ?: 0) + gapPx + (second?.height ?: 0), constraints.minHeight)
             layout(constraints.maxWidth, height) {
                 first?.place(0, 0)
-                second?.place(0, (first?.height ?: 0) + gapPx)
+                second?.place(if (stackedEnd) constraints.maxWidth - second.width else 0, (first?.height ?: 0) + gapPx)
             }
         }
     }

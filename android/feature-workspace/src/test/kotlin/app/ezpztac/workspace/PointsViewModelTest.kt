@@ -246,6 +246,28 @@ class PointsViewModelTest {
     }
 
     @Test
+    fun `a rename from the Library can replace the saved set that has the name, putting down a point held in it`() = runTest(dispatcher) {
+        val r = rig()
+        val one = r.imported("ONE.lps")
+        val two = r.imported("TWO.lps"); settle()
+        r.selection.select(two.id, two.points.first().id)
+        assertNull(r.model.rename(one.id, "TWO", replacing = two.id)); settle()
+        assertEquals(listOf(one.id to "TWO"), r.state.sets.map { it.uuid to it.name })
+        assertNull(r.selection.held.value)
+    }
+
+    @Test
+    fun `opening a set from the Library shows it on the map, and one shown stays shown`() = runTest(dispatcher) {
+        val r = rig()
+        val set = r.imported(); settle()
+        r.model.show(set.id); settle()
+        assertTrue(r.state.sets.single().visible)
+        r.model.toggleVisible(set.id); settle()
+        r.model.show(set.id); settle()
+        assertTrue(r.state.sets.single().visible)
+    }
+
+    @Test
     fun `saving or letting go of a set that is not the session's does nothing`() = runTest(dispatcher) {
         val r = rig()
         val set = r.imported(); settle()

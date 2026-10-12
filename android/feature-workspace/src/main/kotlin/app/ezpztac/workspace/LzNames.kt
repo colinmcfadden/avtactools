@@ -1,5 +1,7 @@
 package app.ezpztac.workspace
 
+import app.ezpztac.sync.MAX_NAME
+import app.ezpztac.sync.cutToCharacters
 import java.time.Instant
 import java.time.ZoneId
 
@@ -34,10 +36,27 @@ object LzNames {
      */
     fun free(name: String, taken: Collection<String>): String {
         val used = taken.map { it.trim().lowercase() }.toSet()
-        if (name.lowercase() !in used) return name
+        // Within the server's 100 characters (a longer name is refused with a 500, which holds up every upload queued behind it): the name is cut, never the number.
+        val whole = cutToCharacters(name, MAX_NAME).trimEnd()
+        if (whole.lowercase() !in used) return whole
         var n = 2
-        while ("${name.lowercase()} $n" in used) n++
-        return "$name $n"
+        while (true) {
+            val suffix = " $n"
+            val candidate = cutToCharacters(name, MAX_NAME - suffix.length).trimEnd() + suffix
+            if (candidate.lowercase() !in used) return candidate
+            n++
+        }
+    }
+
+    /**
+     * An ISO time as an instant: with an offset as it says, and **without one as UTC**, which is what the server writes (Python's `isoformat()` of its
+     * `utcnow()`: `2026-10-12T09:00:00.123456`). The web's `new Date()` reads that as the browser's local time; here it is not. Null for anything else.
+     */
+    fun instantOf(iso: String?): Instant? {
+        val text = iso?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching { Instant.parse(text) }.getOrNull()
+            ?: runCatching { java.time.OffsetDateTime.parse(text).toInstant() }.getOrNull()
+            ?: runCatching { java.time.LocalDateTime.parse(text).toInstant(java.time.ZoneOffset.UTC) }.getOrNull()
     }
 
     private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -47,11 +66,7 @@ object LzNames {
      * can use another locale's digits and month names. Null for a time that cannot be read.
      */
     fun updated(iso: String?, zone: ZoneId = ZoneId.systemDefault()): String? {
-        val at = try {
-            Instant.parse(iso ?: return null).atZone(zone)
-        } catch (_: Exception) {
-            return null
-        }
+        val at = instantOf(iso)?.atZone(zone) ?: return null
         return "${MONTHS[at.monthValue - 1]} ${at.dayOfMonth} · ${at.hour.toString().padStart(2, '0')}:${at.minute.toString().padStart(2, '0')}"
     }
 }

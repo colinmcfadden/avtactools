@@ -97,6 +97,8 @@ class LzPanelActions(
     /** Opens the naming sheet for the open LZ/PZ. */
     val save: () -> Unit = {},
     val showPage: (LzPage) -> Unit = {},
+    /** Opens the Library on its LZ/PZ tab (every LZ/PZ saved, and the conflicts to settle). */
+    val browse: () -> Unit = {},
     val resolve: (String, SyncEngine.Resolution) -> Unit = { _, _ -> },
     val dismissError: () -> Unit = {},
     val analyze: () -> Unit = {},
@@ -123,6 +125,8 @@ fun LzPanelHost(
     crosshairGrid: String?,
     canMakeAircraft: Boolean,
     modifier: Modifier = Modifier,
+    /** Opens the Library on its LZ/PZ tab. */
+    onBrowseLibrary: () -> Unit = {},
     viewModel: DiagramsViewModel = hiltViewModel(),
     graphics: GraphicsViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
@@ -136,7 +140,7 @@ fun LzPanelHost(
     var naming by rememberSaveable { mutableStateOf(false) }
     val actions = LzPanelActions(
         open = viewModel::open, newHere = { viewModel.newAt(crosshair) }, close = viewModel::close, rename = viewModel::rename, delete = viewModel::delete,
-        save = { naming = true }, showPage = viewModel::showPage, resolve = viewModel::resolve, dismissError = viewModel::dismissError,
+        save = { naming = true }, showPage = viewModel::showPage, browse = onBrowseLibrary, resolve = viewModel::resolve, dismissError = viewModel::dismissError,
         analyze = viewModel::analyze, stopAnalysis = viewModel::stopAnalysis, dismissAnalysis = viewModel::dismissAnalysisError,
         selectAircraft = viewModel::selectAircraft, refreshWeather = viewModel::refreshWeather, toggleSlope = viewModel::toggleSlope,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
@@ -155,7 +159,6 @@ fun LzPanelHost(
         LzPage.PLAN -> state.current?.let {
             LzPlanContent(it, graphicsState, boundaryState, placing, actions, graphicsActions, crosshairGrid, modifier, nowMillis = now)
         }
-        LzPage.LIBRARY -> LzLibraryContent(state, diagramsActionsOf(actions), modifier)
         LzPage.AIRCRAFT -> AircraftHost(canMake = canMakeAircraft, modifier = modifier)
     }
     if (naming) {
@@ -163,15 +166,13 @@ fun LzPanelHost(
         if (current == null) {
             naming = false
         } else {
-            SaveLzSheet(current, state.otherNames, onSave = { name -> viewModel.saveAs(name); naming = false }, onDismiss = { naming = false })
+            SaveLzSheet(
+                current, state.rows.filter { it.uuid != current.uuid }.map { it.uuid to it.name },
+                onSave = { name, replacing -> viewModel.saveAs(name, replacing); naming = false }, onDismiss = { naming = false },
+            )
         }
     }
 }
-
-/** The list of every LZ/PZ reuses the Diagrams list's rows, which take the older set of actions. */
-private fun diagramsActionsOf(actions: LzPanelActions) = DiagramsActions(
-    open = actions.open, rename = actions.rename, delete = actions.delete, resolve = actions.resolve, dismissError = actions.dismissError,
-)
 
 // -- Home: the open LZ/PZs ---------------------------------------------------------------------------------------------------
 
@@ -187,7 +188,7 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
         if (conflicts > 0) {
             Banner(
                 if (conflicts == 1) "1 LZ/PZ needs a choice: another device changed it too." else "$conflicts LZ/PZs need a choice: another device changed them too.",
-                BannerKind.Warning, actionLabel = "Review", onAction = { actions.showPage(LzPage.LIBRARY) },
+                BannerKind.Warning, actionLabel = "Review", onAction = actions.browse,
             )
         }
         val current = state.current
@@ -213,7 +214,7 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
         )
         if (state.rows.isNotEmpty()) {
             SectionLabel("Recent in Library", Modifier.padding(top = Tokens.Spacing.sm.dp)) {
-                TextButton(onClick = { actions.showPage(LzPage.LIBRARY) }) { Text("Browse all") }
+                TextButton(onClick = actions.browse) { Text("Browse all") }
             }
             if (state.recent.isEmpty()) {
                 Text("Every LZ/PZ in your Library is open.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -738,19 +739,4 @@ private fun DrawScope.goAround(u: Float, color: Color, left: Boolean) {
     drawPath(arc, color, style = Stroke(3f * u, cap = StrokeCap.Round))
     drawLine(color, Offset(x(5f), 17f * u), Offset(x(3f), 13f * u), 2f * u, StrokeCap.Round)
     drawLine(color, Offset(x(5f), 17f * u), Offset(x(9f), 16f * u), 2f * u, StrokeCap.Round)
-}
-
-// -- Every LZ/PZ ----------------------------------------------------------------------------------------------------------------
-
-/** Every LZ/PZ in the Library, to open, rename, delete, or settle a conflict: what the Library page will hold for all kinds (S7). */
-@Composable
-fun LzLibraryContent(state: DiagramsUiState, actions: DiagramsActions, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
-        state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
-        if (state.rows.isEmpty()) {
-            Text("No LZ/PZs yet. Make one from the LZ/PZ panel.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        state.rows.forEach { row -> DiagramListItem(row, actions) }
-        Spacer(Modifier.width(1.dp))
-    }
 }

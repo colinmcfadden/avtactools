@@ -61,7 +61,7 @@ class LzPanelScreenshotTest {
         LzPlanContent(activeLz(status = DiagramStatus.TARGETED), GraphicsUiState(), BoundaryUiState(canStart = true), null, LzPanelActions(), GraphicsActions(), GRID)
     }
 
-    @Test fun save() = shot("save", scroll = false) { SaveLzContent(activeLz(), listOf("LZ HAWK"), onSave = {}, onCancel = {}) }
+    @Test fun save() = shot("save", scroll = false) { SaveLzContent(activeLz(), listOf("lz-9" to "LZ HAWK"), onSave = { _, _ -> }, onCancel = {}) }
 
     @Test
     fun placingToolbar() = shot("placing", scroll = false) {

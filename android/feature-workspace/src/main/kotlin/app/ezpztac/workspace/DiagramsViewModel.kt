@@ -61,8 +61,8 @@ data class DiagramRow(
     val chips: List<LzChip> = emptyList(),
 )
 
-/** The pages of the LZ/PZ panel: the open LZ/PZs, the open one's plan and tools, every LZ/PZ (until the Library page, S7), and the aircraft. */
-enum class LzPage { HOME, PLAN, LIBRARY, AIRCRAFT }
+/** The pages of the LZ/PZ panel: the open LZ/PZs, the open one's plan and tools, and the aircraft. Every LZ/PZ saved is the Library's (S7). */
+enum class LzPage { HOME, PLAN, AIRCRAFT }
 
 /** The colour role a state chip is drawn in. Colour is never all it says: the words do too. */
 enum class ChipTone { SUCCESS, WARNING, ERROR, INFO, NEUTRAL }
@@ -351,19 +351,22 @@ class DiagramsViewModel @Inject constructor(
 
     /**
      * Names the open LZ/PZ [name] (the design's *Save*: everything is already saved and synced as it changes, so what saving adds is the name the
-     * Library finds it by). A name another LZ/PZ already has is kept apart as `NAME 2` (the web's *Keep both*), and the toast says the name it got.
+     * Library finds it by). A name another LZ/PZ already has is kept apart as `NAME 2` (the web's *Keep both*), and the toast says the name it got;
+     * or, when the person chose *Replace* ([replacing], the LZ/PZ that has the name), that one is deleted and this one takes its name.
      */
-    fun saveAs(name: String) {
+    fun saveAs(name: String, replacing: String? = null) {
         val title = name.trim()
         if (title.isEmpty()) return fail("Give the LZ/PZ a name.")
         val open = session.active.value ?: return
-        val chosen = LzNames.free(title, state.value.otherNames)
+        if (replacing == open.id) return
+        val chosen = if (replacing != null) title else LzNames.free(title, state.value.otherNames)
         if (LzNames.isMadeUp(chosen)) return fail(LzNames.MADE_UP_REFUSED)
         run("The LZ/PZ could not be saved.") {
             if (session.active.value?.id != open.id) return@run
+            replacing?.let { deleteNow(it) }
             session.edit("Name") { it.copy(name = chosen) }
             session.flush()
-            _notices.tryEmit("Saved \u201c$chosen\u201d to your Library")
+            _notices.tryEmit(if (replacing != null) "Saved \u201c$chosen\u201d to your Library, in place of the one there before" else "Saved \u201c$chosen\u201d to your Library")
         }
     }
 
@@ -418,18 +421,20 @@ class DiagramsViewModel @Inject constructor(
     }
 
     fun open(uuid: String) {
-        if (page.value == LzPage.LIBRARY) page.value = LzPage.HOME
         if (state.value.rows.firstOrNull { it.uuid == uuid }?.isActive == true) return
         run("The diagram could not be opened.") {
             if (session.open(uuid)) openSet.add(uuid) else local.update { it.copy(error = "That diagram is no longer here.") }
         }
     }
 
-    fun rename(uuid: String, name: String) {
+    /** Renames [uuid] [name]; with [replacing], the LZ/PZ that has the name is deleted first (the Library's *Replace*). */
+    fun rename(uuid: String, name: String, replacing: String? = null) {
         val title = name.trim()
         if (title.isEmpty()) return fail("A diagram needs a name.")
         if (LzNames.isMadeUp(title)) return fail(LzNames.MADE_UP_REFUSED)
+        if (replacing == uuid) return
         run("The diagram could not be renamed.") {
+            replacing?.let { deleteNow(it) }
             // The open diagram is the one with unsaved edits in memory, so it is renamed there and saved with them.
             if (session.active.value?.id == uuid) {
                 session.edit("Rename") { it.copy(name = title) }
@@ -440,7 +445,10 @@ class DiagramsViewModel @Inject constructor(
         }
     }
 
-    fun delete(uuid: String) = run("The diagram could not be deleted.") {
+    fun delete(uuid: String) = run("The diagram could not be deleted.") { deleteNow(uuid) }
+
+    /** Deletes [uuid], closing it first if it is the one on the map (so it cannot be saved back) and opening the one before it. */
+    private suspend fun deleteNow(uuid: String) {
         val wasOpen = session.active.value?.id == uuid
         if (wasOpen) session.close()
         repository.delete(uuid)
@@ -552,7 +560,8 @@ class DiagramsViewModel @Inject constructor(
     private fun fail(message: String) = local.update { it.copy(error = message) }
 
     private fun run(fallback: String, block: suspend () -> Unit) {
-        if (local.value.busy) return
+        // Said, not dropped: a rename or a delete asked from the Library while an LZ/PZ is still opening would otherwise vanish without a word.
+        if (local.value.busy) return fail(STILL_WORKING)
         local.update { it.copy(busy = true, error = null) }
         viewModelScope.launch {
             try {

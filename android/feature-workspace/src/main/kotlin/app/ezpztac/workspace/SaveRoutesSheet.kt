@@ -51,10 +51,10 @@ private const val MAX_NAME = 100
 /** The design's SaveRoutes, as a modal bottom sheet: naming the open set of sketched routes ([SaveRoutesContent]). Dismissing it names nothing. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SaveRoutesSheet(open: OpenSetUi, otherNames: List<String>, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+fun SaveRoutesSheet(open: OpenSetUi, others: List<Pair<String, String>>, onSave: (name: String, replacing: String?) -> Unit, onDismiss: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        SaveRoutesContent(open, otherNames, onSave, onDismiss)
+        SaveRoutesContent(open, others, onSave, onDismiss)
     }
 }
 
@@ -70,16 +70,24 @@ internal fun offeredName(open: OpenSetUi): String = open.routes.singleOrNull()?.
  * get (`NAME 2`, the web's *Keep both*). Names are in capitals, as the web writes them.
  */
 @Composable
-fun SaveRoutesContent(open: OpenSetUi, otherNames: List<String>, onSave: (String) -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
+fun SaveRoutesContent(
+    open: OpenSetUi,
+    others: List<Pair<String, String>>,
+    onSave: (name: String, replacing: String?) -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val offered = offeredName(open)
     var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(offered, TextRange(0, offered.length))) }
+    var replace by rememberSaveable { mutableStateOf(false) }
     val name = RouteSetNames.clean(field.text)
-    val saveAs = if (name.isEmpty()) null else RouteSetNames.free(name, otherNames)
+    val clash = others.firstOrNull { it.second.trim().equals(name, ignoreCase = true) }
+    val saveAs = if (name.isEmpty()) null else if (clash != null && replace) name else RouteSetNames.free(name, others.map { it.second })
     // A made-up name is not a name (`RouteSetNames.MADE_UP_REFUSED`): said once Save is pressed, as the sheet may offer the made-up one to type over, not as an error.
     var tried by rememberSaveable { mutableStateOf(false) }
     val refused = saveAs != null && RouteSetNames.isMadeUp(saveAs)
     val save: () -> Unit = {
-        if (refused) tried = true else if (name.isNotEmpty()) onSave(name)
+        if (refused) tried = true else if (name.isNotEmpty()) onSave(name, clash?.first?.takeIf { replace })
     }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -93,7 +101,7 @@ fun SaveRoutesContent(open: OpenSetUi, otherNames: List<String>, onSave: (String
         }
         OutlinedTextField(
             value = field,
-            onValueChange = { if (it.text.length <= MAX_NAME) { field = it; tried = false } },
+            onValueChange = { if (it.text.length <= MAX_NAME || it.text.length < field.text.length) { field = it; tried = false } },       // shorter, always
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
             label = { Text("Name") },
             singleLine = true,
@@ -111,12 +119,13 @@ fun SaveRoutesContent(open: OpenSetUi, otherNames: List<String>, onSave: (String
                     when {
                         name.isEmpty() -> "Give it a name."
                         tried && refused -> RouteSetNames.MADE_UP_REFUSED
-                        saveAs != name -> "A set called $name is already in your Library: this one is saved as $saveAs."
+                        clash != null -> "Name is already used: you already have a set of routes with this name."
                         else -> "You can rename it any time."
                     },
                 )
             },
         )
+        if (clash != null && saveAs != null) NameTakenChoice(RouteSetNames.free(name, others.map { it.second }), replace, onReplace = { replace = it })
         Text("What is saved", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
@@ -131,7 +140,7 @@ fun SaveRoutesContent(open: OpenSetUi, otherNames: List<String>, onSave: (String
                 Text("Saves to your Library", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TextButton(onClick = onCancel) { Text("Cancel") }
-            PillButton("Save", onClick = save, icon = EzpzIcons.save, enabled = name.isNotEmpty())
+            PillButton(if (clash == null) "Save" else if (replace) "Replace" else "Save as new", onClick = save, icon = EzpzIcons.save, enabled = name.isNotEmpty())
         }
     }
 }

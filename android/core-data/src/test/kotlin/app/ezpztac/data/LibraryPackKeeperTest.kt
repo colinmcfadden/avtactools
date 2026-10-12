@@ -87,6 +87,13 @@ class LibraryPackKeeperTest {
     }
 
     @Test
+    fun `a version kept is noted as made when it was kept, as every record made here is`() = runBlocking<Unit> {
+        val timed = LibraryPackKeeper(store) { "2026-10-12T09:00:00Z" }
+        timed.keep("p-1", listOf(routes))
+        assertEquals("2026-10-12T09:00:00Z", store.transaction { record(RecordKind.ROUTE, LibraryPackKeeper.uuidFor(routes.key)) }!!.updatedAt)
+    }
+
+    @Test
     fun `keeping a version again makes no second record, and answers as the first time`() = runBlocking<Unit> {
         val first = keeper.keep("p-1", listOf(lz))
         // The app stopped between keeping and letting the edits go: asked again, under the same key, with whatever name it has now.

@@ -122,6 +122,7 @@ internal fun RecordEntity.toModel() = LocalRecord(
     localVersion = localVersion,
     conflictOf = conflictOf,
     file = fileId?.let { FileRef(it, fileName ?: "") },
+    updatedAt = updatedAt,
 )
 
 internal fun LocalRecord.toEntity() = RecordEntity(
@@ -137,6 +138,7 @@ internal fun LocalRecord.toEntity() = RecordEntity(
     conflictOf = conflictOf,
     fileId = file?.id,
     fileName = file?.name,
+    updatedAt = updatedAt,
 )
 
 internal fun OutboxEntity.toModel() = OutboxEntry(

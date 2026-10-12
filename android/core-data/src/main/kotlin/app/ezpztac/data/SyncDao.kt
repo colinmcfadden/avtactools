@@ -109,7 +109,7 @@ internal interface SyncDao {
 // A record's columns as a read gives them: the document empty when it is longer than `:inline`, with its length in `dataSize`.
 private const val RECORD_COLUMNS =
     "kind, uuid, serverId, baseRevision, name, CASE WHEN length(data) <= :inline THEN data ELSE '' END AS data, dirty, deleted, " +
-        "localVersion, conflictOf, fileId, fileName, length(data) AS dataSize"
+        "localVersion, conflictOf, fileId, fileName, updatedAt, length(data) AS dataSize"
 
 // An outbox entry's, the same for the send's document (null when there is none, or it is longer than `:inline`; its length in `sentDataSize`).
 private const val OUTBOX_COLUMNS =

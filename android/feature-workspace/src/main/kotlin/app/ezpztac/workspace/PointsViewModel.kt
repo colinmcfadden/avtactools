@@ -163,15 +163,32 @@ class PointsViewModel @Inject constructor(
         if (color in RouteColors.PALETTE) views.recolor(uuid, color)
     }
 
-    /** Renames a set, saved or held for this session. Null when it is done, else the words for the field (the server refuses a set with no name). */
-    fun rename(uuid: String, name: String): String? {
+    /**
+     * Renames a set, saved or held for this session; with [replacing], the saved set that has the name is deleted first (the Library's *Replace*). Null when it is
+     * done, else the words for the field (the server refuses a set with no name).
+     */
+    fun rename(uuid: String, name: String, replacing: String? = null): String? {
         if (name.isBlank()) return "A set needs a name."
+        if (replacing == uuid) return null
         if (sessionPoints.holds(uuid)) {
             sessionPoints.rename(uuid, name)
             return null
         }
-        viewModelScope.launch { quietly("The set could not be renamed.") { repository.rename(uuid, name) } }
+        viewModelScope.launch {
+            quietly("The set could not be renamed.") {
+                replacing?.let { other ->
+                    if (selection.held.value?.setId == other) selection.clear()
+                    repository.delete(other)
+                }
+                repository.rename(uuid, name)
+            }
+        }
         return null
+    }
+
+    /** Puts a saved set's points on the map (the Library's *Open*: the sets are all loaded, so opening one is showing it). */
+    fun show(uuid: String) {
+        if (state.value.sets.firstOrNull { it.uuid == uuid }?.visible == false) views.toggle(uuid)
     }
 
     /** Deletes a saved set (asked about first, on the screen). */

@@ -84,6 +84,9 @@ import app.ezpztac.workspace.HeldObjectBarHost
 import app.ezpztac.workspace.ImportReviewHost
 import app.ezpztac.workspace.ImportSheet
 import app.ezpztac.workspace.ImportsHost
+import app.ezpztac.workspace.LibraryActions
+import app.ezpztac.workspace.LibraryHost
+import app.ezpztac.workspace.LibraryTab
 import app.ezpztac.workspace.IncomingViewModel
 import app.ezpztac.workspace.PointsViewModel
 import app.ezpztac.workspace.importsLine
@@ -158,6 +161,8 @@ fun MapHome(
     // The Imports panel's state: its count is the tab's badge and its header's line.
     val importsModel: PointsViewModel = hiltViewModel()
     val imports by importsModel.state.collectAsStateWithLifecycle()
+    // The Library, a page over the frame while it is open, on the tab it was opened at (null: shut).
+    var libraryTab by rememberSaveable { mutableStateOf<LibraryTab?>(null) }
     val counts = threatCounts.copy(imports = imports.itemCount)
     // The LZ/PZ panel's state: which of its pages is showing (for the header and Back), and its toasts.
     val diagrams: DiagramsViewModel = hiltViewModel()
@@ -205,6 +210,24 @@ fun MapHome(
     BackHandler(enabled = current == Panel.Routes && routes.page != RoutesPage.HOME) { routesModel.showPage(RoutesPage.HOME) }
     // The route's plan is a page over the frame: Back goes back to the map and its panel, as its arrow does (declared after the panel's, so it is asked first).
     BackHandler(enabled = routes.planOpen) { routesModel.closePlan() }
+    // The Library's own Back is its page's (it is composed after these, so it is asked first while it is open).
+    // What the LZ/PZ and Routes panels say of an action the Library handed them (a name refused, a write that failed, one asked while another ran) would be a banner
+    // under the Library, out of sight: while it is open it is said in its toasts instead.
+    val libraryOpen = libraryTab != null
+    LaunchedEffect(libraryOpen, lz.error) {
+        val said = lz.error
+        if (libraryOpen && said != null) {
+            diagrams.dismissError()
+            snackbars.showSnackbar(said, withDismissAction = true)
+        }
+    }
+    LaunchedEffect(libraryOpen, routes.error) {
+        val said = routes.error
+        if (libraryOpen && said != null) {
+            routesModel.dismissError()
+            snackbars.showSnackbar(said, withDismissAction = true)
+        }
+    }
     // A mission goes to AMPS with the threats it was planned against when the person asks for them (the set card's box): the .ths named for it travels beside it.
     // A route handed to another app (a GPX, a flight plan) never takes them.
     val shareExport: (ExportFile) -> Unit = { file ->
@@ -235,7 +258,7 @@ fun MapHome(
                     Panel.Lz -> lzHead(lz) { diagrams.showPage(it) }
                     Panel.Threats -> PanelHead(current.label, if (counts.threats == 0) "This device only" else "${counts.threats} on the map · this device only")
                     Panel.Imports -> PanelHead(current.label, importsLine(imports.itemCount))
-                    Panel.Routes -> routesHead(routes) { routesModel.showPage(it) }
+                    Panel.Routes -> routesHead(routes)
                 },
                 // The Imports panel's Import, beside its title (the design's): the same menu as the frame's chip.
                 headerActions = {
@@ -249,7 +272,7 @@ fun MapHome(
                     null
                 },
                 // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
-                modifier = if (routes.planOpen) Modifier.clearAndSetSemantics {} else Modifier,
+                modifier = if (routes.planOpen || libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
                 panel = { panel ->
                     Column(
                         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.xs.dp),
@@ -261,9 +284,12 @@ fun MapHome(
                             // A new LZ/PZ starts at the crosshair, and the tools add there. An administrator can switch own aircraft off for an account (the
                             // server would refuse what it made).
                             Panel.Lz -> LzPanelHost(
-                                crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), viewModel = diagrams,
+                                crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
+                                onBrowseLibrary = { libraryTab = LibraryTab.LZ }, viewModel = diagrams,
                             )
-                            Panel.Routes -> RoutesHost(crosshair = state.center, threatCount = counts.threats, viewModel = routesModel)
+                            Panel.Routes -> RoutesHost(
+                                crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
+                            )
                             Panel.Threats -> ThreatsHost(
                                 onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
                                 viewModel = threatsModel,
@@ -303,6 +329,11 @@ fun MapHome(
                         // The workspace is the person's own until mission packs have their switcher (P1); then the chip opens it.
                         MapChip(EzpzIcons.person, "Personal", description = "Workspace: Personal")
                         MapChip(EzpzIcons.fileOpen, "Import", description = "Import a mission, local points or threats", onClick = { importMenu = true })
+                        // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
+                        MapChip(EzpzIcons.collectionsBookmark, "Library", description = "Library: everything you have saved", onClick = {
+                            focus.clearFocus()
+                            libraryTab = libraryTabFor(current)
+                        })
                     },
                     sheet = frame.sheet,
                     // Over the readout, above the sheet: only there while a boundary or a route is being drawn (never both), or something on the map is held.
@@ -365,6 +396,49 @@ fun MapHome(
             }
             // The held route's plan (the design's RoutePlan): a page of its own over the frame, with the frame's toasts.
             RoutePlanHost(crosshair = state.center, crosshairGrid = state.readout?.mgrs, threatCount = counts.threats, snackbars = snackbars, viewModel = routesModel)
+            // The Library (the design's): opening an item from it shuts it and shows the panel the item is in, as the web's does; renaming, deleting and settling a
+            // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
+            LibraryHost(
+                tab = libraryTab,
+                tabs = libraryTabsFor(panels),
+                actions = LibraryActions(
+                    close = { libraryTab = null },
+                    open = { row ->
+                        val panel = when (row.tab) {
+                            LibraryTab.LZ -> Panel.Lz.also { diagrams.open(row.uuid); diagrams.showPage(LzPage.HOME) }
+                            LibraryTab.ROUTES -> Panel.Routes.also { routesModel.openSet(row.uuid) }
+                            LibraryTab.POINTS -> Panel.Imports.also { importsModel.show(row.uuid) }
+                        }
+                        libraryTab = null
+                        if (panel in panels) {
+                            chosen = panel
+                            if (sheet.settled == SheetDetent.Lowered) scope.launch { sheet.animateTo(SheetDetent.Half) }
+                        }
+                    },
+                    rename = { row, name, replacing ->
+                        when (row.tab) {
+                            LibraryTab.LZ -> diagrams.rename(row.uuid, name, replacing)
+                            LibraryTab.ROUTES -> routesModel.renameSet(row.uuid, name, replacing)
+                            LibraryTab.POINTS -> importsModel.rename(row.uuid, name, replacing)
+                        }
+                    },
+                    delete = { row ->
+                        when (row.tab) {
+                            LibraryTab.LZ -> diagrams.delete(row.uuid)
+                            LibraryTab.ROUTES -> routesModel.deleteSet(row.uuid)
+                            LibraryTab.POINTS -> importsModel.delete(row.uuid)
+                        }
+                    },
+                    resolve = { row, how ->
+                        when (row.tab) {
+                            LibraryTab.LZ -> diagrams.resolve(row.uuid, how)
+                            LibraryTab.ROUTES -> routesModel.resolve(row.uuid, how)
+                            LibraryTab.POINTS -> importsModel.resolve(row.uuid, how)
+                        }
+                    },
+                ),
+                snackbars = snackbars,
+            )
         }
     }
 }
@@ -378,28 +452,34 @@ private fun NightDim() {
 /** How much the night palette darkens the map: enough that satellite imagery does not light a cockpit, not so much that it cannot be read. */
 private const val NIGHT_DIM = 0.45f
 
-/** The LZ/PZ panel's header for the page it is on: its open LZ/PZs; an LZ/PZ's plan, with its grid; every LZ/PZ; the aircraft. [go] moves between them. */
+/** The LZ/PZ panel's header for the page it is on: its open LZ/PZs; an LZ/PZ's plan, with its grid; the aircraft. [go] moves between them. */
 private fun lzHead(lz: DiagramsUiState, go: (LzPage) -> Unit): PanelHead = when (lz.page) {
     LzPage.HOME -> PanelHead("LZ/PZ", if (lz.openCount == 0) "Nothing open" else "${lz.openCount} open · this session")
     LzPage.PLAN -> PanelHead(
         lz.current?.name ?: "LZ/PZ", lz.current?.grid ?: "No target yet", subtitleMono = lz.current?.grid != null,
         back = { go(LzPage.HOME) }, backDescription = if (lz.openCount == 1) "Back to the open LZ/PZ" else "Back to the open LZ/PZs, ${lz.openCount} open",
     )
-    LzPage.LIBRARY -> PanelHead(
-        "All LZ/PZs", if (lz.rows.size == 1) "1 in your Library" else "${lz.rows.size} in your Library", back = { go(LzPage.HOME) },
-        backDescription = "Back to the open LZ/PZs",
-    )
     LzPage.AIRCRAFT -> PanelHead("Aircraft", "The mission aircraft and your own", back = { go(lzBack(lz)) }, backDescription = "Back")
 }
 
-/** The Routes panel's header for the page it is on: the sets open now, or every set, with Back. */
-private fun routesHead(routes: RoutesUiState, go: (RoutesPage) -> Unit): PanelHead = when (routes.page) {
+/** The Routes panel's header: the sets open now. */
+private fun routesHead(routes: RoutesUiState): PanelHead = when (routes.page) {
     RoutesPage.HOME -> PanelHead("Routes", when (routes.openCount) { 0 -> "Nothing open"; 1 -> "1 route set in this session"; else -> "${routes.openCount} route sets in this session" })
-    RoutesPage.LIBRARY -> PanelHead(
-        "All route sets", if (routes.sets.size == 1) "1 in your Library" else "${routes.sets.size} in your Library", back = { go(RoutesPage.HOME) },
-        backDescription = "Back to the route sets open now",
-    )
 }
+
+/** The Library tab a panel's items are on, which the Library chip opens at: the panel's own, the LZ/PZs otherwise. */
+internal fun libraryTabFor(panel: Panel): LibraryTab = when (panel) {
+    Panel.Routes -> LibraryTab.ROUTES
+    Panel.Imports -> LibraryTab.POINTS
+    else -> LibraryTab.LZ
+}
+
+/** The Library's tabs an account has: those of the panels it is offered (an administrator can turn routes off, as on the web). */
+internal fun libraryTabsFor(panels: List<Panel>): List<LibraryTab> = listOfNotNull(
+    LibraryTab.LZ.takeIf { Panel.Lz in panels },
+    LibraryTab.ROUTES.takeIf { Panel.Routes in panels },
+    LibraryTab.POINTS.takeIf { Panel.Imports in panels },
+)
 
 /** Where Back goes from the LZ/PZ panel's page: the aircraft back to the plan they were opened from, the rest to the open LZ/PZs. */
 private fun lzBack(lz: DiagramsUiState): LzPage = if (lz.page == LzPage.AIRCRAFT && lz.current != null) LzPage.PLAN else LzPage.HOME

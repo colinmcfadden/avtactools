@@ -81,8 +81,11 @@ data class RouteSetRow(
     val summary: String get() = listOfNotNull(countOf(routeCount, "route"), pointCount?.let { countOf(it, "point") }).joinToString(" · ")
 }
 
-/** The pages of the Routes panel: the route sets open now, and every set in the Library (until the Library page, S7). A route's plan is a page of its own, over the frame. */
-enum class RoutesPage { HOME, LIBRARY }
+/**
+ * The pages of the Routes panel: today only the route sets open now (every set saved is the Library's, a page of its own since S7, and a route's plan is a page
+ * of its own over the frame). Kept as a page so a panel page can join it as the panel grows.
+ */
+enum class RoutesPage { HOME }
 
 /**
  * The chips of a set of routes (the web's state chip, with the sync state where the web says whether it is saved: every set here is saved as it changes,
@@ -557,7 +560,6 @@ class RoutesViewModel @Inject constructor(
 
     /** Opens [uuid] on the map (it joins the session if it was not in it). */
     fun openSet(uuid: String) {
-        if (local.value.page == RoutesPage.LIBRARY) local.update { it.copy(page = RoutesPage.HOME) }
         if (session.active.value?.id == uuid) return
         run("The set could not be opened.") {
             if (session.open(uuid)) openSets.add(uuid) else local.update { it.copy(error = "That set is no longer here.") }
@@ -602,25 +604,33 @@ class RoutesViewModel @Inject constructor(
      * Names the open set [name] (the design's *Save*: everything is already saved and synced as it changes, so what saving adds is the name the Library finds it
      * by). A name another set already has is kept apart as `NAME 2` (the web's *Keep both*), and the toast says the name it got.
      */
-    fun saveAs(name: String) {
+    fun saveAs(name: String, replacing: String? = null) {
         val title = RouteSetNames.clean(name)
         if (title.isEmpty()) return fail("Give the routes a name.")
         val open = session.active.value ?: return
-        val chosen = RouteSetNames.free(title, state.value.otherNames)
+        if (replacing == open.id) return
+        // With *Replace* ([replacing], the set that has the name) that set is deleted and this one takes its name; otherwise both are kept.
+        val chosen = if (replacing != null) title else RouteSetNames.free(title, state.value.otherNames)
         if (RouteSetNames.isMadeUp(chosen)) return fail(RouteSetNames.MADE_UP_REFUSED)
         run("The routes could not be saved.") {
             if (session.active.value?.id != open.id) return@run
+            replacing?.let { deleteNow(it) }
             session.edit("Name") { it.copy(name = chosen) }
             session.flush()
-            _notices.tryEmit("Saved \u201c$chosen\u201d to your Library")
+            _notices.tryEmit(if (replacing != null) "Saved \u201c$chosen\u201d to your Library, in place of the one there before" else "Saved \u201c$chosen\u201d to your Library")
         }
     }
 
-    fun renameSet(uuid: String, name: String) {
+    /** Renames [uuid] [name]; with [replacing], the set that has the name is deleted first (the Library's *Replace*). */
+    fun renameSet(uuid: String, name: String, replacing: String? = null) {
         val title = RouteSetNames.clean(name)
         if (title.isEmpty()) return fail("A set needs a name.")
-        if (RouteSetNames.isMadeUp(title)) return fail(RouteSetNames.MADE_UP_REFUSED)
+        // A mission is named for its file and never offers Save, so no name of its own is "made up".
+        val mission = state.value.sets.firstOrNull { it.uuid == uuid }?.isMission == true
+        if (!mission && RouteSetNames.isMadeUp(title)) return fail(RouteSetNames.MADE_UP_REFUSED)
+        if (replacing == uuid) return
         run("The set could not be renamed.") {
+            replacing?.let { deleteNow(it) }
             // The open set is the one with unsaved edits in memory, so it is renamed there and saved with them.
             if (session.active.value?.id == uuid) {
                 session.edit("Rename set") { it.copy(name = title) }
@@ -631,7 +641,10 @@ class RoutesViewModel @Inject constructor(
         }
     }
 
-    fun deleteSet(uuid: String) = run("The set could not be deleted.") {
+    fun deleteSet(uuid: String) = run("The set could not be deleted.") { deleteNow(uuid) }
+
+    /** Deletes [uuid], closing it first if it is the one on the map and opening the one before it. */
+    private suspend fun deleteNow(uuid: String) {
         val wasOpen = session.active.value?.id == uuid
         if (wasOpen) closeKeepingNothingNew()
         repository.delete(uuid)
@@ -959,7 +972,8 @@ class RoutesViewModel @Inject constructor(
     }
 
     private fun run(fallback: String, block: suspend () -> Unit) {
-        if (busy) return
+        // Said, not dropped: a rename or a delete asked from the Library while a set is still opening would otherwise vanish without a word.
+        if (busy) return fail(STILL_WORKING)
         busy = true
         local.update { it.copy(error = null) }
         viewModelScope.launch {
@@ -982,3 +996,6 @@ class RoutesViewModel @Inject constructor(
         return "${oneDecimal(totals.distNm)} nm · ${RouteCalc.formatDuration(totals.timeSec)}$fuel"
     }
 }
+
+/** What an action asked for while the last one is still under way is told: it is not done, and can be asked for again. */
+internal const val STILL_WORKING = "Still finishing the last change. Try again in a moment."

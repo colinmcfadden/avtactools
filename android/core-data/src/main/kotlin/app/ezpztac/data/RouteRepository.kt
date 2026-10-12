@@ -41,6 +41,8 @@ data class RouteSetSummary(
     val pointCount: Int? = null,
     /** A mission's file name as it was imported (`GOAT_SUCKER.msnx`); null for a set drawn here. */
     val fileName: String? = null,
+    /** When it last changed, an ISO instant, or null when that was never noted ([app.ezpztac.sync.LocalRecord.updatedAt]). */
+    val updatedAt: String? = null,
 )
 
 /**
@@ -149,6 +151,24 @@ class RouteRepository(
         scheduler.requestSync()
     }
 
+    /**
+     * A copy of the set or mission [uuid] named [name], under an identity of its own: a set's routes whole, a mission with its file as it is stored now (the edits
+     * already saved in it), as the web's *Duplicate* copies a record. Its id, or null when there is nothing to copy (it was deleted, or a mission's file is not here).
+     */
+    suspend fun duplicate(uuid: String, name: String): String? {
+        val copy = java.util.UUID.randomUUID().toString()
+        val mission = sync.record(RecordKind.MISSION, uuid)
+        if (mission != null) {
+            val bytes = sync.file(RecordKind.MISSION, uuid) ?: return null
+            sync.create(RecordKind.MISSION, name, mission.data, uuid = copy, file = FilePart(mission.file?.name ?: "$name.msnx", bytes))
+        } else {
+            val record = sync.record(RecordKind.ROUTE, uuid) ?: return null
+            sync.create(RecordKind.ROUTE, name, record.data, uuid = copy)
+        }
+        scheduler.requestSync()
+        return copy
+    }
+
     /** The `.msnx` a mission is, as it is stored now (the edits already saved written into it), or null if the mission or its file is not here. */
     suspend fun missionFile(uuid: String): ByteArray? = sync.file(RecordKind.MISSION, uuid)
 
@@ -207,13 +227,13 @@ class RouteRepository(
         val set = toSet(record)
         return RouteSetSummary(
             uuid = record.uuid, name = record.name, routeCount = set.routes.size + set.unreadable.size, sync = record.status, conflictOf = record.conflictOf,
-            pointCount = set.routes.sumOf { it.points.size },
+            pointCount = set.routes.sumOf { it.points.size }, updatedAt = record.updatedAt,
         )
     }
 
     /** A mission's count comes from the summary kept beside its file: the file is not read to draw a list. */
     private fun summarizeMission(record: LocalRecord): RouteSetSummary = RouteSetSummary(
         uuid = record.uuid, name = record.name, routeCount = (record.data["routes"] as? JsonArray)?.size ?: 0, sync = record.status, conflictOf = record.conflictOf,
-        isMission = true, fileName = record.file?.name,
+        isMission = true, fileName = record.file?.name, updatedAt = record.updatedAt,
     )
 }

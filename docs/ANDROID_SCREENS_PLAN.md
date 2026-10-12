@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; S7 next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; S8 next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -235,9 +235,24 @@ segmented choice cut at the largest text; outcome toasts timing out under the re
 (`ImportsScreenshotTest`, beside AP-Import, AP-ImportReview and AP-Imports).
 **Not verifiable here:** the picker and a slow provider, the sheet over the real map, the keyboard in the review, TalkBack.
 
-**S7 — The Library.** A full page (`Library`: LZ/PZ, Routes and Local points tabs with counts, search by name or grid, sort, *Open* into
-the session, and Rename, Duplicate, Delete; *Add to Mission Pack…* waits for P4), and the confirmations (`Confirm`: close with unsaved
-changes does not arise under autosave; delete and remove-all keep their asks; name taken offers *Keep both*, the default, or *Replace*).
+**S7 — The Library. Built.** A page over the frame (`LibraryPage.kt` over `LibraryViewModel`; `Library`): the LZ/PZ, Routes and Local points tabs with counts,
+search by name (an LZ/PZ by its grid too), *Recently updated* or *Name A to Z*, each item with what it is, when it changed and whether it is open, *Open* into the session, and
+Rename, Duplicate, Delete; conflict copies with their three choices. From the Library chip, *Browse all* and the panels' conflict *Review* (the panels' every-item pages went).
+And the confirmations (`Confirm`): close with unsaved changes does not arise under autosave; delete and remove-all keep their asks; a name taken offers *Keep both*, the
+default, or *Replace*, in the Library's rename and the Save sheets (`NameTakenChoice`). **Amended while building:**
+- **When an item last changed is noted on the record** (database version 4), since only an LZ/PZ's document carried a time: the server's for what a pull brings, this device's for a
+  change made here; none is ever made up. The server's times have no offset and are read as UTC (the web reads them as local time: AGENTS.md §15).
+- ***Open* shuts the Library and shows the item's panel**, as the web's does (the design's prototype leaves it open).
+- ***Replace* deletes the other item and renames this one** (the web writes this version over the other's record).
+- **Not offered yet:** *Add to Mission Pack…* (P4) and *Working with a team? Open a Mission Pack* (P1).
+**Reviewed** (one independent review, 2026-10-12: 14 reported, 10 survived an adversarial check, about 8 distinct; each fix has a test, each broken to see it fail): an LZ/PZ with
+no time of its own shown as changed "now"; what a pack refused kept with no time, and *Keep mine* keeping the other device's; names over the server's 100 characters from *Keep both*,
+*Duplicate* and the engine's own conflict copies, which the server refuses with a 500 that holds up every upload behind it; the Library's rename, delete and conflict choices failing out of
+sight (said in a panel banner under the page, a mission's rename refused as made up, an action while the panel was busy dropped); an old search hiding the conflict *Review* opened for;
+a too-long name that could not be shortened; and a tab's count and a grid cut at 360 dp. Tests: `LibraryViewModelTest`, `LibraryPageTest`, `LibraryScreenshotTest` (360 dp at 1.3),
+`RecordTimeTest`, `RoomMigrationTest` (3 to 4), `LibraryPackKeeperTest`, `LzNamesTest`, `DiagramsViewModelTest`, `RoutesViewModelTest`, `PointsViewModelTest`, `LzPanelScreenTest`,
+`RoutesScreenTest`, `LibraryTabsTest`.
+**Not verifiable here:** the rename dialog's window with the keyboard on a device, and TalkBack.
 
 **S8 — The map's long press and the toasts.** A long press on nothing opens the design's menu at the press, headed by the grid under the
 finger (`MapMenu`: New LZ/PZ here, Add threat here, Add route point here, Copy grid); a long press on something still picks it up. The

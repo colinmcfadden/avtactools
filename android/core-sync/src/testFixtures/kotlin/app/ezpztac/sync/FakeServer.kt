@@ -73,15 +73,18 @@ public class FakeServer : SyncApi {
 
     private fun find(kind: RecordKind, id: Int) = records.firstOrNull { it.kind == kind && it.serverId == id }
 
+    /** When the server says a record last changed: a fixed time a second per change, so a test can tell which it is. */
+    fun updatedAt(seq: Int): String = java.time.Instant.parse("2026-10-02T15:00:00Z").plusSeconds(seq.toLong()).toString()
+
     private fun snapshot(r: Rec): JsonObject = when (r.kind) {
         RecordKind.LZ -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
-            "revision" to JsonPrimitive(r.revision), "lz_data" to r.data))
+            "revision" to JsonPrimitive(r.revision), "lz_data" to r.data, "updated_at" to JsonPrimitive(updatedAt(r.seq))))
         RecordKind.AIRCRAFT -> JsonObject(r.data + mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name),
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision)))
         RecordKind.ROUTE -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "kind" to JsonPrimitive("sketch"),
-            "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data))
+            "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data, "updated_at" to JsonPrimitive(updatedAt(r.seq))))
         RecordKind.POINT_SET -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
-            "revision" to JsonPrimitive(r.revision), "points" to (r.data["points"] ?: JsonArray(emptyList()))))
+            "revision" to JsonPrimitive(r.revision), "points" to (r.data["points"] ?: JsonArray(emptyList())), "updated_at" to JsonPrimitive(updatedAt(r.seq))))
         RecordKind.MISSION -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "kind" to JsonPrimitive("mission"),
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data,
             "has_file" to JsonPrimitive(r.file != null), "file_name" to JsonPrimitive(r.fileName)))
@@ -136,7 +139,7 @@ public class FakeServer : SyncApi {
                 kind = when (it.kind) { RecordKind.ROUTE -> "sketch"; RecordKind.MISSION -> "mission"; else -> null },
                 fileName = it.fileName, hasFile = it.file != null,
                 // The feed carries an LZ's diagram and a route's routes as they are, a profile as the whole record, and a point set's points as a bare list.
-                seq = it.seq, data = feedData(it),
+                seq = it.seq, data = feedData(it), updatedAt = updatedAt(it.seq),
             )
         }
         val after = (ours + foreign.filter { it.seq > since }).sortedBy { it.seq }

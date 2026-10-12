@@ -985,6 +985,50 @@ class DiagramsViewModelTest {
     }
 
     @Test
+    fun `replacing the LZ-PZ that has the name deletes it, takes it out of the open ones, and this one takes the name`() = runTest(dispatcher) {
+        val r = rig()
+        val notices = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { notices += it } }
+        val other = r.repository.create(DiagramTarget(34.79, -84.08, "16S GD 66993 53949"), "LZ HAWK")
+        r.open.add(other.id)
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        val mine = r.model.state.value.current!!.uuid
+        r.model.saveAs("LZ HAWK", replacing = other.id)
+        advanceUntilIdle()
+        assertEquals("LZ HAWK", r.model.state.value.current!!.name)                                 // its own name, not LZ HAWK 2
+        assertEquals(listOf(mine), r.rows.map { it.uuid })                                          // the other is gone
+        assertFalse(other.id in r.open.ids.value)
+        assertEquals("Saved \u201cLZ HAWK\u201d to your Library, in place of the one there before", notices.last())
+    }
+
+    @Test
+    fun `a rename from the Library can replace the LZ-PZ that has the name, and never itself`() = runTest(dispatcher) {
+        val r = rig()
+        val one = r.repository.create(DiagramTarget(34.79, -84.08, "16S GD 66993 53949"), "ONE")
+        val two = r.repository.create(DiagramTarget(34.79, -84.08, "16S GD 66993 53949"), "TWO")
+        advanceUntilIdle()
+        r.model.rename(one.id, "TWO", replacing = one.id)                                           // itself: nothing happens
+        advanceUntilIdle()
+        assertEquals(setOf("ONE", "TWO"), r.rows.map { it.name }.toSet())
+        r.model.rename(one.id, "TWO", replacing = two.id)
+        advanceUntilIdle()
+        assertEquals(listOf(one.id to "TWO"), r.rows.map { it.uuid to it.name })
+    }
+
+    @Test
+    fun `an action asked for while the last one runs is said not to be done, rather than dropped`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        r.model.newAt(here)                                                                         // before the first is made
+        advanceUntilIdle()
+        assertEquals(STILL_WORKING, r.model.state.value.error)
+        assertEquals(1, r.rows.size)
+    }
+
+    @Test
     fun `a made-up name is not a name, so saving or renaming to one is refused and nothing is said to be saved`() = runTest(dispatcher) {
         val r = rig()
         val notices = mutableListOf<String>()
@@ -1043,18 +1087,6 @@ class DiagramsViewModelTest {
         r.model.close(r.model.state.value.current!!.uuid)
         advanceUntilIdle()
         assertEquals(LzPage.HOME, r.model.state.value.page)
-    }
-
-    @Test
-    fun `opening one from every LZ-PZ goes back to the open ones`() = runTest(dispatcher) {
-        val r = rig()
-        val made = r.repository.create(DiagramTarget(34.783817, -84.08219, grid), "LZ HAWK")
-        advanceUntilIdle()
-        r.model.showPage(LzPage.LIBRARY)
-        r.model.open(made.id)
-        advanceUntilIdle()
-        assertEquals(LzPage.HOME, r.model.state.value.page)
-        assertEquals(made.id, r.session.active.value?.id)
     }
 
     @Test

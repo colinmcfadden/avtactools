@@ -49,28 +49,36 @@ private const val MAX_NAME = 100
 /** The design's SaveLz, as a modal bottom sheet: naming the open LZ/PZ ([SaveLzContent]). Dismissing it names nothing. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SaveLzSheet(current: ActiveDiagramUi, otherNames: List<String>, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+fun SaveLzSheet(current: ActiveDiagramUi, others: List<Pair<String, String>>, onSave: (name: String, replacing: String?) -> Unit, onDismiss: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        SaveLzContent(current, otherNames, onSave, onDismiss)
+        SaveLzContent(current, others, onSave, onDismiss)
     }
 }
 
 /**
  * Naming the open LZ/PZ (the design's SaveLz): the name, chosen and ready to type over; what is kept with it and what is not; and Save. Everything is
- * already on the device and synced, so what this adds is the name the Library finds it by. A name another LZ/PZ has is said before it is used, with
- * the name this one will get (`NAME 2`, the web's *Keep both*).
+ * already on the device and synced, so what this adds is the name the Library finds it by. A name another LZ/PZ has ([others], their ids and names) is
+ * said before it is used, with the choice the design gives (Confirm A): *Keep both*, this one as `NAME 2` (the default), or *Replace* the other.
  */
 @Composable
-fun SaveLzContent(current: ActiveDiagramUi, otherNames: List<String>, onSave: (String) -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
+fun SaveLzContent(
+    current: ActiveDiagramUi,
+    others: List<Pair<String, String>>,
+    onSave: (name: String, replacing: String?) -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(current.name, TextRange(0, current.name.length))) }
+    var replace by rememberSaveable { mutableStateOf(false) }
     val name = field.text.trim()
-    val saveAs = if (name.isEmpty()) null else LzNames.free(name, otherNames)
+    val clash = others.firstOrNull { it.second.trim().equals(name, ignoreCase = true) }
+    val saveAs = if (name.isEmpty()) null else if (clash != null && replace) name else LzNames.free(name, others.map { it.second })
     // A made-up name is not a name (`LzNames.MADE_UP_REFUSED`): said once Save is pressed, as the design offers the made-up one to type over, not as an error.
     var tried by rememberSaveable { mutableStateOf(false) }
     val refused = saveAs != null && LzNames.isMadeUp(saveAs)
     val save: () -> Unit = {
-        if (refused) tried = true else if (name.isNotEmpty()) onSave(name)
+        if (refused) tried = true else if (name.isNotEmpty()) onSave(name, clash?.first?.takeIf { replace })
     }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -84,7 +92,7 @@ fun SaveLzContent(current: ActiveDiagramUi, otherNames: List<String>, onSave: (S
         }
         OutlinedTextField(
             value = field,
-            onValueChange = { if (it.text.length <= MAX_NAME) { field = it; tried = false } },
+            onValueChange = { if (it.text.length <= MAX_NAME || it.text.length < field.text.length) { field = it; tried = false } },       // shorter, always
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
             label = { Text("Name") },
             singleLine = true,
@@ -102,12 +110,13 @@ fun SaveLzContent(current: ActiveDiagramUi, otherNames: List<String>, onSave: (S
                     when {
                         name.isEmpty() -> "Give it a name."
                         tried && refused -> LzNames.MADE_UP_REFUSED
-                        saveAs != name -> "An LZ/PZ called $name is already in your Library: this one is saved as $saveAs."
+                        clash != null -> "Name is already used: you already have an LZ/PZ with this name."
                         else -> "You can rename it any time."
                     },
                 )
             },
         )
+        if (clash != null && saveAs != null) NameTakenChoice(LzNames.free(name, others.map { it.second }), replace, onReplace = { replace = it })
         Text("What is saved", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
@@ -122,7 +131,7 @@ fun SaveLzContent(current: ActiveDiagramUi, otherNames: List<String>, onSave: (S
                 Text("Saves to your Library", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TextButton(onClick = onCancel) { Text("Cancel") }
-            PillButton("Save", onClick = save, icon = EzpzIcons.save, enabled = name.isNotEmpty())
+            PillButton(if (clash == null) "Save" else if (replace) "Replace" else "Save as new", onClick = save, icon = EzpzIcons.save, enabled = name.isNotEmpty())
         }
     }
 }

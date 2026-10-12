@@ -212,5 +212,36 @@ class RoomMigrationTest {
         assertEquals(setOf("pack", "pack_item", "pack_op_outbox", "pack_own"), tables(3).keys - tables(2).keys)
         tables(2).forEach { (table, entity) -> assertEquals(table, entity, tables(3).getValue(table)) }
         assertEquals(3, schema(3).getValue("version").jsonPrimitive.content.toInt())
+
+        // 4 adds when a record last changed, and nothing else: every other table of 3 is as it was.
+        assertEquals(setOf("updatedAt"), columns(4, "record") - columns(3, "record"))
+        assertEquals(emptySet<String>(), columns(3, "record") - columns(4, "record"))
+        assertEquals(tables(3).keys, tables(4).keys)
+        tables(3).filterKeys { it != "record" }.forEach { (table, entity) -> assertEquals(table, entity, tables(4).getValue(table)) }
+        assertEquals(4, schema(4).getValue("version").jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `an installed version 3 database opens with its records, which say no time until they next change`() = runBlocking<Unit> {
+        makeVersion(3) { db ->
+            db.execSQL(
+                "INSERT INTO record (kind, uuid, serverId, baseRevision, name, data, dirty, deleted, localVersion, conflictOf, fileId, fileName) " +
+                    "VALUES ('ROUTE', 'r-1', 4, 2, 'SKETCHED ROUTES', '{\"version\":1}', 0, 0, 2, NULL, NULL, NULL)",
+            )
+            db.execSQL("INSERT INTO sync_state (`key`, value) VALUES ('cursor', 12)")
+        }
+        val database = EzpzDatabase.open(context)
+        try {
+            val store = RoomSyncStore(database)
+            val record = store.transaction { record(RecordKind.ROUTE, "r-1") }!!
+            assertEquals("SKETCHED ROUTES", record.name)
+            assertEquals(4, record.serverId)
+            assertNull(record.updatedAt)                                                      // never made up: it sorts last until it changes
+            store.transaction { put(record.copy(updatedAt = "2026-10-12T10:00:00Z")) }
+            assertEquals("2026-10-12T10:00:00Z", store.transaction { record(RecordKind.ROUTE, "r-1") }!!.updatedAt)
+            assertNoPacks(database)
+        } finally {
+            database.close()
+        }
     }
 }
