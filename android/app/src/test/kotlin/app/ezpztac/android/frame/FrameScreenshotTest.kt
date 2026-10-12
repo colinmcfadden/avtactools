@@ -58,7 +58,7 @@ class FrameScreenshotTest {
         compose.setContent {
             EzpzTheme(mode) {
                 PhoneFrame(
-                    panels = Panel.entries, current = panel, counts = PanelCounts(threats = 1, imports = 3), onPick = {},
+                    panels = Panel.entries - Panel.Pack, current = panel, counts = PanelCounts(threats = 1, imports = 3), onPick = {},
                     sheet = sheet, snackbars = remember { SnackbarHostState() },
                     head = PanelHead(panel.label, subtitle = if (panel == Panel.Threats) "1 · this device only" else null),
                     panel = { StandInPanel(it) },

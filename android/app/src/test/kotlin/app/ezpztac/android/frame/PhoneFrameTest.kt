@@ -55,7 +55,7 @@ class PhoneFrameTest {
         initial: Panel = Panel.Lz,
         detent: SheetDetent = SheetDetent.Half,
         counts: PanelCounts = PanelCounts(threats = 2, imports = 3),
-        panels: List<Panel> = Panel.entries,
+        panels: List<Panel> = Panel.entries - Panel.Pack,
         onFrame: (MapFrame) -> Unit = {},
         footer: (@androidx.compose.runtime.Composable () -> Unit)? = null,
         snackbars: SnackbarHostState? = null,
@@ -84,6 +84,15 @@ class PhoneFrameTest {
         compose.onNodeWithText("Inside Routes").assertIsDisplayed()
         compose.onNodeWithText("Inside LZ/PZ").assertDoesNotExist()
         compose.onNodeWithText("Inside Threats").assertDoesNotExist()
+    }
+
+    @Test
+    fun `while a pack is open its tab comes first, with a dot that says what changed`() {
+        show(Panel.Lz, counts = PanelCounts(packNew = 2), panels = Panel.entries)
+        compose.onNodeWithContentDescription("Pack, changed since you looked").assertIsDisplayed()
+        val tabs = compose.onAllNodes(isSelectable()).fetchSemanticsNodes().map { it.boundsInRoot.left }
+        val pack = compose.onNodeWithContentDescription("Pack, changed since you looked").fetchSemanticsNode().boundsInRoot.left
+        assertEquals(tabs.minOrNull(), pack)
     }
 
     @Test

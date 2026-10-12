@@ -61,18 +61,21 @@ class SwitcherActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SwitcherSheet(viewModel: WorkspaceViewModel, onDismiss: () -> Unit) {
+fun SwitcherSheet(viewModel: WorkspaceViewModel, onDismiss: () -> Unit, onPick: (String?) -> Unit = {}) {
     val state by viewModel.switcher.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.switcherOpened() }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        SwitcherContent(state, actionsOf(viewModel, onDismiss), Modifier.verticalScroll(rememberScrollState()))
+        SwitcherContent(state, actionsOf(viewModel, onDismiss, onPick), Modifier.verticalScroll(rememberScrollState()))
     }
 }
 
-/** The switcher's actions over the view model: choosing a workspace closes it first, and so does an invitation that let the person in to a pack. */
-fun actionsOf(viewModel: WorkspaceViewModel, close: () -> Unit) = SwitcherActions(
-    pick = { uuid -> close(); viewModel.switchTo(uuid) },
+/**
+ * The switcher's actions over the view model: choosing a workspace closes it first (and tells [onPick], so the frame can show the pack's panel once
+ * it opens), and so does an invitation that let the person in to a pack.
+ */
+fun actionsOf(viewModel: WorkspaceViewModel, close: () -> Unit, onPick: (String?) -> Unit = {}) = SwitcherActions(
+    pick = { uuid -> close(); onPick(uuid); viewModel.switchTo(uuid) },
     answer = { id, accept -> viewModel.answer(id, accept, onJoined = close) },
     close = close,
 )

@@ -147,6 +147,10 @@ class TabletFrameState internal constructor(collapsed: Boolean = false, listLast
     var listLast by mutableStateOf(listLast)
         private set
 
+    /** Whether the panel's list stands now (not collapsed, nor waiting out of sight behind a supporting pane where both do not fit). */
+    var listShown by mutableStateOf(!collapsed)
+        internal set
+
     /** The panel's list is wanted (a panel picked, or something done that shows in it): it opens and stands. */
     fun showList() {
         collapsed = false
@@ -227,7 +231,10 @@ fun TabletFrame(
     BoxWithConstraints(modifier.fillMaxSize()) {
         val panes = state.panes(maxWidth, standing != null)
         // A field left focused in a list that goes out of sight (collapsed, or waiting behind a supporting pane) keeps no keyboard up and takes nothing typed.
-        LaunchedEffect(panes.list) { if (!panes.list) focus.clearFocus() }
+        LaunchedEffect(panes.list) {
+            state.listShown = panes.list
+            if (!panes.list) focus.clearFocus()
+        }
         // Back puts away the supporting pane that stands, as its close button does; one waiting out of sight is not taken away unseen.
         BackHandler(enabled = standing != null && panes.support) { standing?.onClose?.invoke() }
         Row(Modifier.fillMaxSize()) {
@@ -333,13 +340,21 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
                         panels.forEach { panel ->
                             val selected = panel == current
                             val spoken = spokenCount(panel, counts)
+                            // The Pack tab names its pack, and has a glyph of its own beside the workspace tile's (the design's AT screens).
+                            val pack = panel == Panel.Pack
+                            val name = if (pack && rail.workspace.pack) "${panel.label}, ${rail.workspace.label}" else panel.label
                             NavigationRailItem(
                                 selected = selected,
                                 onClick = { onPick(panel) },
-                                modifier = if (spoken != null) Modifier.semantics { contentDescription = "${panel.label}, $spoken" } else Modifier,
+                                modifier = if (spoken != null || name != panel.label) Modifier.semantics { contentDescription = listOfNotNull(name, spoken).joinToString(", ") } else Modifier,
                                 icon = {
                                     BadgedBox(badge = { PanelBadge(panel, counts) }) {
-                                        Icon(painterResource(if (selected) panel.selectedIcon else panel.icon), contentDescription = null)
+                                        val icon = when {
+                                            pack -> if (selected) EzpzIcons.inventory2Fill else EzpzIcons.inventory2
+                                            selected -> panel.selectedIcon
+                                            else -> panel.icon
+                                        }
+                                        Icon(painterResource(icon), contentDescription = null)
                                     }
                                 },
                                 label = { Text(panel.label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium) },

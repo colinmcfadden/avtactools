@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ezpztac.designsystem.EzpzIcons
@@ -59,30 +60,43 @@ fun PackChip(pack: OpenPackUi, onClick: () -> Unit, modifier: Modifier = Modifie
     }
 }
 
-/** Who has the pack open: [shown] faces, overlapping, then "+N" for the rest. Nothing when nobody is known to be here. */
+/**
+ * Who has the pack open, or who is in it: [shown] faces, side by side, then "+N" for the rest. Nothing when there is nobody. [size] is the faces'
+ * (20 dp in the chip); with [markHere], someone here now has a dot in the success colour on their face (the design's members row).
+ */
 @Composable
-fun Faces(people: List<PersonUi>, modifier: Modifier = Modifier, shown: Int = MAX_FACES) {
+fun Faces(people: List<PersonUi>, modifier: Modifier = Modifier, shown: Int = MAX_FACES, size: Dp = 20.dp, markHere: Boolean = false) {
     if (people.isEmpty()) return
     val ring = MaterialTheme.colorScheme.surfaceContainerLow
     // Side by side, each face's ring (drawn round it) cutting into the one before, as the design draws them: never into its letters.
     Row(modifier.padding(horizontal = 2.dp), horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-        people.take(shown).forEach { person ->
-            val (back, front) = faceColours(person)
-            Face(person.initials, back, front, ring)
+        people.take(shown).forEach { person -> PersonFace(person, size, ring, markHere) }
+        if (people.size > shown) Face("+${people.size - shown}", MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.onSurface, ring, size)
+    }
+}
+
+/** One person's face, in their colours: [size] across, ringed in [ring]; with [markHere], a dot when they are here now. */
+@Composable
+internal fun PersonFace(person: PersonUi, size: Dp, ring: Color = MaterialTheme.colorScheme.surfaceContainerLow, markHere: Boolean = false) {
+    val (back, front) = faceColours(person)
+    Box {
+        Face(person.initials, back, front, ring, size)
+        if (markHere && person.here) {
+            val dot = EzpzTheme.status.success
+            Box(Modifier.align(Alignment.BottomEnd).size(size * 0.3f).drawBehind { drawCircle(ring, radius = this.size.minDimension / 2 + 1.5.dp.toPx()) }.background(dot, CircleShape))
         }
-        if (people.size > shown) Face("+${people.size - shown}", MaterialTheme.colorScheme.surfaceContainerHighest, MaterialTheme.colorScheme.onSurface, ring)
     }
 }
 
 /**
- * A face: 20 dp, its initials, ringed outside in the chip's colour (drawn, so it takes no room). The letters keep their size at any text size: the
- * chip's description names everyone, and larger letters would not fit the face.
+ * A face: [size] across, its initials, ringed outside in [ring] (drawn, so it takes no room). The letters keep their size at any text size: what
+ * the face stands for is said in words beside it, and larger letters would not fit the face.
  */
 @Composable
-private fun Face(text: String, back: Color, front: Color, ring: Color) {
-    val letters = with(LocalDensity.current) { 10.dp.toSp() }
+private fun Face(text: String, back: Color, front: Color, ring: Color, size: Dp) {
+    val letters = with(LocalDensity.current) { (size * 0.5f).toSp() }
     Box(
-        Modifier.size(20.dp).drawBehind { drawCircle(ring, radius = size.minDimension / 2 + 2.dp.toPx()) }.background(back, CircleShape),
+        Modifier.size(size).drawBehind { drawCircle(ring, radius = this.size.minDimension / 2 + 2.dp.toPx()) }.background(back, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, color = front, fontSize = letters, lineHeight = letters, letterSpacing = (-0.2).sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
@@ -91,7 +105,7 @@ private fun Face(text: String, back: Color, front: Color, ring: Color) {
 
 /** A person's face colours, the same for them every time: this person in the primary container, the others among the theme's other containers. */
 @Composable
-private fun faceColours(person: PersonUi): Pair<Color, Color> {
+internal fun faceColours(person: PersonUi): Pair<Color, Color> {
     val c = MaterialTheme.colorScheme
     if (person.me) return c.primaryContainer to c.onPrimaryContainer
     val choices = listOf(c.tertiaryContainer to c.onTertiaryContainer, c.secondaryContainer to c.onSecondaryContainer, c.surfaceContainerHighest to c.onSurface)

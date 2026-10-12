@@ -83,7 +83,7 @@ interface LibraryTally {
 }
 
 /** Someone who has the open pack open now (the live service's presence), [me] when it is this person. */
-data class PersonUi(val id: Int?, val name: String, val initials: String, val me: Boolean)
+data class PersonUi(val id: Int?, val name: String, val initials: String, val me: Boolean, val here: Boolean = false)
 
 /** The open pack, as the frame shows it: its name, who has it open, and how it stands with the server. */
 data class OpenPackUi(

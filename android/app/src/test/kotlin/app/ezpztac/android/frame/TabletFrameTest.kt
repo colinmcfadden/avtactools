@@ -70,7 +70,7 @@ class TabletFrameTest {
         askAgain = { asked++ }
         EzpzTheme(mode) {
             TabletFrame(
-                panels = Panel.entries, current = current, counts = PanelCounts(threats = 1, imports = 3),
+                panels = Panel.entries - Panel.Pack, current = current, counts = PanelCounts(threats = 1, imports = 3),
                 onPick = { current = it; picked += it }, snackbars = remember { SnackbarHostState() },
                 rail = TabletRail(
                     importMenu = { dismiss -> Text("The import menu", Modifier.semantics { contentDescription = "Close the import menu" }.padding(8.dp)); said += "importMenu"; if (false) dismiss() },
@@ -176,6 +176,20 @@ class TabletFrameTest {
                 assertTrue("an unnamed button: ${node.config}", named)
             }
         }
+    }
+
+    @Test
+    fun `the rail's Pack tab names its pack`() {
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                TabletFrame(
+                    Panel.entries, Panel.Lz, PanelCounts(packNew = 1), {}, remember { SnackbarHostState() },
+                    TabletRail({}, {}, {}, workspace = RailWorkspace(label = "OP DK", description = "Workspace: Mission Pack OP DK. Change workspace", pack = true)),
+                    panel = {},
+                ) { Box(Modifier.fillMaxSize()) }
+            }
+        }
+        compose.onNodeWithContentDescription("Pack, OP DK, changed since you looked").assertIsDisplayed()
     }
 
     @Test
@@ -293,9 +307,9 @@ class TabletFrameTest {
             val snackbars = remember { SnackbarHostState() }
             EzpzTheme(ThemeMode.Dark) {
                 if (tablet) {
-                    TabletFrame(Panel.entries, Panel.Lz, PanelCounts(), {}, snackbars, TabletRail({}, {}, {}), panel = { if (it == Panel.Lz) panelBody() }, mapScreen = map)
+                    TabletFrame(Panel.entries - Panel.Pack, Panel.Lz, PanelCounts(), {}, snackbars, TabletRail({}, {}, {}), panel = { if (it == Panel.Lz) panelBody() }, mapScreen = map)
                 } else {
-                    PhoneFrame(Panel.entries, Panel.Lz, PanelCounts(), {}, sheet, snackbars, panel = { if (it == Panel.Lz) panelBody() }, mapScreen = map)
+                    PhoneFrame(Panel.entries - Panel.Pack, Panel.Lz, PanelCounts(), {}, sheet, snackbars, panel = { if (it == Panel.Lz) panelBody() }, mapScreen = map)
                 }
             }
         }

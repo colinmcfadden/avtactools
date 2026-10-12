@@ -60,6 +60,7 @@ import app.ezpztac.android.frame.RailWorkspace
 import app.ezpztac.android.frame.SupportingPane
 import app.ezpztac.android.frame.TabletFrame
 import app.ezpztac.android.frame.TabletRail
+import app.ezpztac.android.frame.lookingAtPack
 import app.ezpztac.android.frame.panelsFor
 import app.ezpztac.android.frame.pick
 import app.ezpztac.android.frame.rememberTabletFrameState
@@ -94,6 +95,8 @@ import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiUser
 import app.ezpztac.packs.PackChip
+import app.ezpztac.packs.PackPanelHost
+import app.ezpztac.packs.PackPanelViewModel
 import app.ezpztac.packs.PackStatusLine
 import app.ezpztac.packs.PackWords
 import app.ezpztac.packs.SwitcherContent
@@ -196,7 +199,10 @@ fun MapHome(
     val imports by importsModel.state.collectAsStateWithLifecycle()
     // The Library, a page over the frame while it is open, on the tab it was opened at (null: shut).
     var libraryTab by rememberSaveable { mutableStateOf<LibraryTab?>(null) }
-    val counts = threatCounts.copy(imports = imports.itemCount)
+    // The Pack panel, while a pack is open: its items and history, and what happens to the pack and its items open in the editors.
+    val packPanel: PackPanelViewModel = hiltViewModel()
+    val pack by packPanel.state.collectAsStateWithLifecycle()
+    val counts = threatCounts.copy(imports = imports.itemCount, packNew = pack.newCount)
     // The LZ/PZ panel's state: which of its pages is showing (for the header and Back), and its toasts.
     val diagrams: DiagramsViewModel = hiltViewModel()
     val lz by diagrams.state.collectAsStateWithLifecycle()
@@ -210,19 +216,46 @@ fun MapHome(
     val tablet = with(density) { usesTabletFrame(window.width.toDp(), window.height.toDp()) }
     // The tablet's panes: whether the list is collapsed, which pane was opened last. What the person does elsewhere brings the list forward, as the phone raises its sheet.
     val tabletState = rememberTabletFrameState()
+    // The workspace (the Library, or a Mission Pack) and its switcher: a sheet on a phone, a popup at the rail's tile on a tablet.
+    val workspace: WorkspaceViewModel = hiltViewModel()
+    val openPack by workspace.open.collectAsStateWithLifecycle()
+    val packsHere by workspace.available.collectAsStateWithLifecycle()
     var chosen by rememberSaveable { mutableStateOf(Panel.Lz) }
-    val panels = remember(user.features) { panelsFor(user) }
+    val panels = remember(user.features, openPack != null) { panelsFor(user, packOpen = openPack != null) }
     val current = shownPanel(chosen, panels)
     // Threats are drawn, held and taken in only while the account has them, which is while their panel is offered.
     val threatsOn = Panel.Threats in panels
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
     var floating by remember { mutableIntStateOf(0) }
-    // The workspace (the Library, or a Mission Pack) and its switcher: a sheet on a phone, a popup at the rail's tile on a tablet.
-    val workspace: WorkspaceViewModel = hiltViewModel()
-    val openPack by workspace.open.collectAsStateWithLifecycle()
-    val packsHere by workspace.available.collectAsStateWithLifecycle()
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
-    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false })
+    // A pack picked in the switcher shows its panel, raised, once it is open (at once if it is the one open); one opened otherwise (at launch, from an
+    // invitation link) shows its panel where it was. The bookkeeping is done before the sheet moves: a raise cut short by a finger leaves nothing stale.
+    var raiseFor by remember { mutableStateOf<String?>(null) }
+    val raisePack: () -> Unit = {
+        if (tablet) tabletState.showList() else scope.launch { if (sheet.settled == SheetDetent.Lowered) sheet.animateTo(SheetDetent.Half) }
+    }
+    val pickedPack: (String?) -> Unit = { uuid ->
+        if (uuid != null && uuid == openPack?.uuid) {
+            chosen = Panel.Pack
+            raisePack()
+        } else {
+            raiseFor = uuid
+        }
+    }
+    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack)
+    var packShownFor by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(openPack?.uuid) {
+        val uuid = openPack?.uuid
+        val news = uuid != null && uuid != packShownFor
+        val raise = news && raiseFor == uuid
+        packShownFor = uuid
+        raiseFor = null
+        if (news) chosen = Panel.Pack
+        if (raise) raisePack()
+    }
+    LaunchedEffect(packPanel) { packPanel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // An item opened from the Pack panel is shown in its own panel (an LZ/PZ in LZ/PZ, a route set in Routes), as the web's dock does.
+    LaunchedEffect(packPanel) { packPanel.opened.collect { kind -> chosen = if (kind == "route") Panel.Routes else Panel.Lz } }
     // The sheet goes with what holds it (packs stopping, the frame turning into a tablet's): when they come back it is not open by itself.
     LaunchedEffect(tablet, packsHere) { if (tablet || !packsHere) switcherOpen = false }
     LaunchedEffect(workspace) { workspace.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
@@ -330,6 +363,10 @@ fun MapHome(
                     if (maintenance != null) Banner(maintenance, BannerKind.Warning)
                     if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
                     when (panel) {
+                        // Looking at it: the panel showing, in sight (not lowered on a phone, not collapsed on a tablet).
+                        Panel.Pack -> PackPanelHost(
+                            packPanel, looking = lookingAtPack(current, tablet, tabletState.listShown, sheet.settled, covered = libraryTab != null || (routes.planOpen && !tablet)),
+                        )
                         // A new LZ/PZ starts at the crosshair, and the tools add there. An administrator can switch own aircraft off for an account (the
                         // server would refuse what it made).
                         Panel.Lz -> LzPanelHost(
@@ -487,6 +524,7 @@ fun MapHome(
             val latestRoutePlan by rememberUpdatedState(routePlan)
             val movableRoutePlan = remember { movableContentOf { inPane: Boolean -> latestRoutePlan(inPane) } }
             val head = when (current) {
+                Panel.Pack -> PanelHead(openPack?.name ?: pack.name.ifEmpty { "Pack" }, pack.subtitle)
                 Panel.Lz -> lzHead(if (tablet) lz.copy(page = LzPane.LIST.shows(lz.page) ?: LzPage.HOME) else lz) { diagrams.showPage(it) }
                 Panel.Threats -> PanelHead(current.label, if (counts.threats == 0) "This device only" else "${counts.threats} on the map · this device only")
                 Panel.Imports -> PanelHead(current.label, importsLine(imports.itemCount))
@@ -537,7 +575,7 @@ fun MapHome(
                                         DropdownMenu(
                                             expanded = true, onDismissRequest = dismiss, shape = MaterialTheme.shapes.large,
                                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(SWITCHER_WIDTH),
-                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss)) }
+                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack)) }
                                     }
                                 } else {
                                     null

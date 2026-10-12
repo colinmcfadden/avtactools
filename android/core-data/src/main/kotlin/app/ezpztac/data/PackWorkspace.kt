@@ -6,11 +6,16 @@ import app.ezpztac.missionpacks.PackLz
 import app.ezpztac.missionpacks.PackNotice
 import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.missionpacks.PackSentences
+import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramJson
 import app.ezpztac.model.DiagramNormalizer
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.RouteSet
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
@@ -18,15 +23,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * The open mission pack in the editors (docs/MISSION_PACKS.md §5a): its LZ/PZs open in the one [DiagramSession] and its route sets in the one
@@ -53,6 +56,12 @@ class PackWorkspace @Inject constructor(
 
     /** What happened to the packs, and to the items open in the editors, that the person should hear about. Never the server's words. */
     val notices: Flow<PackNotice> = merge(engine.notices, editors)
+
+    /** The items of the open pack open in the editors now (an LZ/PZ in the diagram session, a route set in the route session), by uuid. */
+    val openItems: Flow<Set<String>> = combine(engine.open, diagrams.active, routes.active) { state, diagram, set ->
+        val pack = state?.uuid ?: return@combine emptySet()
+        listOfNotNull(diagram?.id, set?.id).mapNotNull(PackRef::parse).filter { it.pack == pack }.map { it.item }.toSet()
+    }.distinctUntilChanged()
 
     /** Joins the editors to whichever pack is open, from now on. Once is enough; again changes nothing. */
     fun start() {
@@ -144,6 +153,62 @@ class PackWorkspace @Inject constructor(
         localId
     }
 
+    /**
+     * Closes item [itemUuid] of the open pack in its editor, if it is open there; it stays in the pack (the web's "Close here"). Its last change
+     * goes to the pack first ([DocumentSession.closeIfOpen]), and a save that fails is thrown once it is closed.
+     */
+    suspend fun closeItem(itemUuid: String) {
+        withContext(main) {
+            val pack = engine.open.value?.uuid ?: return@withContext
+            val localId = PackRef.localId(pack, itemUuid)
+            diagrams.closeIfOpen(localId)
+            routes.closeIfOpen(localId)
+        }
+    }
+
+    /**
+     * Renames item [itemUuid] of the open pack for everyone in it, with the history's sentence (the web's rename dialog: the name trimmed and in
+     * capitals, as every name in a pack is). Null once it is on its way; else why not: `bad_name` for a blank name or one past the server's 100
+     * characters (never cut here: the person chose it), `same_name`, `missing` (no pack open, or no such item), or the engine's refusal
+     * (`read_only`, `loading`, `paused`, …). An item open in an editor takes the new name from the pack, as it takes anyone's.
+     */
+    suspend fun renameItem(itemUuid: String, name: String): String? = withContext(main) {
+        val state = engine.open.value ?: return@withContext MISSING
+        val item = state.item(itemUuid) ?: return@withContext MISSING
+        val to = trimJs(name).uppercase()
+        if (to.isEmpty() || to.codePointCount(0, to.length) > MAX_NAME) return@withContext BAD_NAME
+        if (to == item.name) return@withContext SAME_NAME
+        val op = JsonObject(
+            linkedMapOf(
+                "type" to JsonPrimitive("item.rename"),
+                "item" to JsonPrimitive(itemUuid),
+                "name" to JsonPrimitive(to),
+                "summary" to JsonPrimitive(PackSentences.renameSummary(engine.me.value?.name, item.name, to)),
+            ),
+        )
+        engine.edit(state.uuid, listOf(op))
+    }
+
+    /**
+     * Removes item [itemUuid] from the open pack, for everyone in it (the web's "Remove from pack"): closed in its editor first, so its last change
+     * reaches the pack before it goes and nothing of it is kept as the person's own, then deleted with the history's sentence. Null once it is
+     * on its way; else why not, as [renameItem] says it.
+     */
+    suspend fun removeItem(itemUuid: String): String? = withContext(main) {
+        val state = engine.open.value ?: return@withContext MISSING
+        val item = state.item(itemUuid) ?: return@withContext MISSING
+        // What the pack would refuse is refused before anything is closed: closing first would set the item aside, and, paused, keep its last change
+        // as the person's own, for a removal that then never happens.
+        when {
+            state.session == null -> return@withContext "loading"
+            state.status == PackStatus.PAUSED -> return@withContext "paused"
+            state.status == PackStatus.GONE -> return@withContext "gone"
+            state.readOnly -> return@withContext "read_only"
+        }
+        closeItem(itemUuid)
+        engine.edit(state.uuid, listOf(PackSentences.deleteItemOp(itemUuid, item.name, engine.me.value?.name)))
+    }
+
     // [op] made in [pack], on the device once this returns true; false, with the person told why, when the pack would not take it.
     private suspend fun made(pack: String, op: JsonObject): Boolean {
         val refused = engine.edit(pack, listOf(op)) ?: return true
@@ -174,5 +239,22 @@ class PackWorkspace @Inject constructor(
 
     private fun tell(notice: PackNotice) {
         editors.tryEmit(notice)
+    }
+
+    companion object {
+        /** No pack is open, or it has no such item. */
+        const val MISSING = "missing"
+
+        /** A name that is blank, or longer than the server takes. */
+        const val BAD_NAME = "bad_name"
+
+        /** The name it has already. */
+        const val SAME_NAME = "same_name"
+
+        /** The most characters a pack item's name may have (the server's column). */
+        const val MAX_NAME = 100
+
+        // JavaScript's trim, as the web's rename dialog trims: Unicode's spaces and the byte order mark go, the information separators stay.
+        private fun trimJs(text: String): String = text.trim { (it.isWhitespace() && it !in '\u001C'..'\u001F') || it == '﻿' }
     }
 }

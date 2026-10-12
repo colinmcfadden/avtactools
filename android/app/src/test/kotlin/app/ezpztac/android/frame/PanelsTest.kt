@@ -4,6 +4,8 @@ import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.initialsOf
 import app.ezpztac.network.ApiUser
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Which panel shows and how high, which are offered, and what the account button and the badges say: plain logic, no screen. */
@@ -24,9 +26,30 @@ class PanelsTest {
 
     @Test
     fun `routes and threats are offered only while their features are on, as on the web`() {
-        assertEquals(Panel.entries, panelsFor(user(emptyMap())))
+        assertEquals(Panel.entries - Panel.Pack, panelsFor(user(emptyMap())))
         assertEquals(listOf(Panel.Lz, Panel.Threats, Panel.Imports), panelsFor(user(mapOf("routes" to false))))
         assertEquals(listOf(Panel.Lz, Panel.Routes, Panel.Imports), panelsFor(user(mapOf("threats" to false, "routes" to true))))
+    }
+
+    @Test
+    fun `the Pack panel comes first, and only while a pack is open for an account with Mission Packs`() {
+        assertEquals(Panel.entries, panelsFor(user(emptyMap()), packOpen = true))
+        assertEquals(Panel.Pack, panelsFor(user(emptyMap()), packOpen = true).first())
+        assertEquals(Panel.entries - Panel.Pack, panelsFor(user(mapOf("mission_packs" to false)), packOpen = true))
+        assertEquals(Panel.Lz, shownPanel(Panel.Pack, panelsFor(user(emptyMap()))))                  // the pack closed: the LZ/PZ panel
+        assertEquals("changed since you looked", spokenCount(Panel.Pack, PanelCounts(packNew = 2)))
+        assertEquals(null, spokenCount(Panel.Pack, PanelCounts()))
+    }
+
+    @Test
+    fun `the Pack panel is looked at only while it shows, in sight, with nothing over it`() {
+        assertTrue(lookingAtPack(Panel.Pack, tablet = false, listShown = false, detent = SheetDetent.Half, covered = false))
+        assertTrue(lookingAtPack(Panel.Pack, tablet = false, listShown = false, detent = SheetDetent.Full, covered = false))
+        assertFalse(lookingAtPack(Panel.Pack, tablet = false, listShown = true, detent = SheetDetent.Lowered, covered = false))
+        assertFalse(lookingAtPack(Panel.Pack, tablet = false, listShown = true, detent = SheetDetent.Half, covered = true))       // the Library, a plan page
+        assertFalse(lookingAtPack(Panel.Lz, tablet = false, listShown = true, detent = SheetDetent.Half, covered = false))
+        assertTrue(lookingAtPack(Panel.Pack, tablet = true, listShown = true, detent = SheetDetent.Lowered, covered = false))
+        assertFalse(lookingAtPack(Panel.Pack, tablet = true, listShown = false, detent = SheetDetent.Full, covered = false))      // waiting behind a pane
     }
 
     @Test

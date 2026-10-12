@@ -13,13 +13,17 @@ import app.ezpztac.data.PackEditorRig.Companion.json
 import app.ezpztac.data.PackEditorRig.Companion.packTest
 import app.ezpztac.missionpacks.InMemoryPackStore
 import app.ezpztac.missionpacks.PackNotice
-import app.ezpztac.missionpacks.PackSession
-import app.ezpztac.missionpacks.PackStore
 import app.ezpztac.missionpacks.PackRef
+import app.ezpztac.missionpacks.PackSession
 import app.ezpztac.missionpacks.PackStatus
+import app.ezpztac.missionpacks.PackStore
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramTarget
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
@@ -36,8 +40,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.Timeout
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 /** Making, opening and leaving a mission pack's items in the editors, as the pack screens will ask for them. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -219,6 +221,85 @@ class PackWorkspaceTest {
         } finally {
             r.close()
         }
+    }
+
+    @Test
+    fun `an item is renamed for everyone, in capitals, with its sentence, and one open in the editor takes the name from the pack`() = packTest { r ->
+        r.opened(ITEM, create(ITEM, "lz", "LZ HAWK", HAWK), create("rt-1", "route", "OP DK INGRESS", json("""{"version": 1, "routes": []}""")))
+        assertNull(r.workspace.renameItem("rt-1", "  op dk egress "))
+        assertNull(r.workspace.renameItem(ITEM, "lz eagle"))
+        r.advance(10_000)
+        assertEquals("OP DK EGRESS", r.server.name(PACK, "rt-1"))
+        assertEquals("LZ EAGLE", r.server.name(PACK, ITEM))
+        val renames = r.sent().flatten().filter { it.getValue("type").jsonPrimitive.content == "item.rename" }
+        assertEquals(
+            listOf("Sam B. renamed \"OP DK INGRESS\" to \"OP DK EGRESS\".", "Sam B. renamed \"LZ HAWK\" to \"LZ EAGLE\"."),
+            renames.map { it.getValue("summary").jsonPrimitive.content },
+        )
+        assertEquals("LZ EAGLE", r.diagrams.active.value!!.name)
+        assertTrue("nothing refused", r.notices.none { it is PackNotice.Refused || it is PackNotice.Dropped })
+    }
+
+    @Test
+    fun `a name that is blank, too long or the same, or an item not there, is not sent`() = packTest { r ->
+        assertEquals(PackWorkspace.MISSING, r.workspace.renameItem(ITEM, "LZ EAGLE"))                // no pack open
+        r.opened()
+        assertEquals(PackWorkspace.BAD_NAME, r.workspace.renameItem(ITEM, " \u00A0 "))
+        assertEquals(PackWorkspace.BAD_NAME, r.workspace.renameItem(ITEM, "X".repeat(101)))
+        assertNull(r.workspace.renameItem(ITEM, "\uD83D\uDE01".repeat(100)))                      // 100 characters, though 200 UTF-16 units
+        r.advance(10_000)
+        assertEquals(PackWorkspace.SAME_NAME, r.workspace.renameItem(ITEM, "\uD83D\uDE01".repeat(100)))
+        assertEquals(PackWorkspace.MISSING, r.workspace.renameItem("lz-nope", "LZ EAGLE"))
+        assertEquals(PackWorkspace.MISSING, r.workspace.removeItem("lz-nope"))
+        assertEquals(1, r.sent().flatten().count { it.getValue("type").jsonPrimitive.content == "item.rename" })
+    }
+
+    @Test
+    fun `an item removed while open sends its last change first, closes it, and keeps nothing as the person's own`() = packTest { r ->
+        r.opened()
+        r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.4}""")) }
+        assertNull(r.workspace.removeItem(ITEM))
+        r.advance(10_000)
+        assertNull(r.diagrams.active.value)
+        assertNull(r.server.data(PACK, ITEM))
+        val sent = r.sent().flatten().map { it.getValue("type").jsonPrimitive.content }
+        assertEquals("the change went before the removal", "item.delete", sent.last())
+        assertTrue(sent.size > 1)
+        assertEquals("Sam B. removed \"LZ HAWK\".", r.sent().flatten().last().getValue("summary").jsonPrimitive.content)
+        assertTrue("nobody told of a removal they made, nothing kept", r.notices.none { it is PackNotice.ItemRemoved || it is PackNotice.Kept } && r.keeper.records.isEmpty())
+    }
+
+    @Test
+    fun `a removal the pack would refuse is refused before the item is closed`() = packTest { r ->
+        r.server.createPack(PACK, "OP DK", owner = COLIN.id, members = mapOf(SAM.id to "viewer"))
+        r.server.elsewhere(PACK, COLIN.id, create(ITEM, "lz", "LZ HAWK", HAWK))
+        r.start()
+        r.openPack()
+        r.openItem(ITEM)
+        assertEquals("read_only", r.workspace.removeItem(ITEM))
+        assertEquals(LOCAL, r.diagrams.active.value?.id)                                       // still open here
+        assertEquals("LZ HAWK", r.server.name(PACK, ITEM))
+        assertTrue(r.keeper.records.isEmpty())
+    }
+
+    @Test
+    fun `closing an item here leaves it in the pack, and the items open here are said`() = packTest { r ->
+        r.opened(ITEM, create(ITEM, "lz", "LZ HAWK", HAWK), create("rt-1", "route", "OP DK INGRESS", json("""{"version": 1, "routes": []}""")))
+        val open = mutableListOf<Set<String>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.workspace.openItems.collect { open += it } }
+        r.openItem("rt-1")
+        assertEquals(setOf(ITEM, "rt-1"), open.last())
+        r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.4}""")) }
+        r.workspace.closeItem(ITEM)
+        r.advance(10_000)
+        assertNull(r.diagrams.active.value)
+        assertEquals(setOf("rt-1"), open.last())
+        assertEquals(34.4, r.serverData().getValue("graphics").jsonObject.getValue("helicopters").jsonArray[0].jsonObject.getValue("lat").jsonPrimitive.double, 0.0)
+        assertEquals("LZ HAWK", r.server.name(PACK, ITEM))
+        val own = r.diagramRepository.create(target, "LZ OWN")                                   // the person's own LZ/PZ is never one of the pack's
+        assertTrue(r.diagrams.open(own.id))
+        runCurrent()
+        assertEquals(setOf("rt-1"), open.last())
     }
 
     @Test

@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; P2 next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; P2b next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -320,7 +320,26 @@ opened by itself when packs or the phone's frame came back; and the rail told a 
 **P2 — Working in a pack.** The Pack panel (`PackItems`, `PackHistory`: the description, members and *Invite*, Items and History with
 "new since you looked", *Add from Library*, *Finish pack*), the panels' pack rows (`PackLive`: *Synced*, who is editing, "From Library ·
 Original changed"), the finished banner (`Finished`), read-only gating of the map and the sheet (*Deferred* 8), and the presence pointer
-(*Deferred* 7).
+(*Deferred* 7). **Split in three while building**, each reviewed on its own: P2a the Pack panel, P2b the LZ/PZ, Routes and Imports panels in a pack, P2c the finished banner,
+read-only and presence.
+
+**P2a — The Pack panel. Built.** A Pack tab first while a pack is open; the pack's head, description and who is in it and here now; Items by kind with what changed since this person
+looked, who changed it and when, where it came from and who else has it open; a tap shows an item in its panel; *Close here*, *Rename* and *Remove from pack* in each row's menu; History,
+newest first, with "New since you looked", the day headings and the two filters; the seen marker; the pack's notices in toasts. **Amended while building:**
+- ***Invite* and the members row as a button wait for P3**; *Add from Library* and *Finish pack* for P4 and P2c (no disabled buttons in the meantime).
+- **A point set cannot be shown yet** (*Deferred* 4): its row says so.
+- **Who else has an item open says "has it open"**, not the design's "editing" (nothing says someone is changing it), and **this person counts as here** (the design's "2 here now").
+- **An item's time is its date when it is another day**, not the web's clock time for up to a day.
+**Reviewed** (one independent review, 2026-10-12: 38 reported, 31 survived an adversarial check, about 23 distinct; each fix has a test where one can hold it, and each tested one was
+broken to see it fail): opening an item could end the app when what was open could not be saved; a pack reopened from the device's copy started "new" from an old marker; a failed
+history page was asked again for every presence frame, and the whole history was rebuilt for each with a parse that threw; the panel counted as looked at while a tablet's list waited out of
+sight or a plan page covered it, and stayed so after it went; a pack that went said each open item was removed; picking the open pack did nothing and a raise cut short left stale bookkeeping;
+a removal the pack would refuse closed the item first; busy taps were dropped without a word; rows were not keyed, so a menu could move to another item; the members count went stale without a
+team, and the dots and the count disagreed; the history read each person's initials, its filters used other words and no role, a failure was hidden once events showed, a filter whose person
+had gone kept filtering, and only the first page jumped to the newest; the rename field was wiped when someone else renamed the item; the device's copy never said it could not reach the pack;
+the rail's Pack tab had the workspace's glyph and no name; the frame tests drew a Pack tab where no pack was open. Tests: `PackPanelViewModelTest`, `PackPanelScreenTest`, `PackWorkspaceTest`,
+`PanelsTest`, `PhoneFrameTest`, `TabletFrameTest`.
+**Not verifiable here:** the sheet over the real map, TalkBack, and presence at its real rate on a device.
 
 **P3 — People.** *New pack* (`NewPack`), *Members* (`Members`: roles, invite by name or email, pending invites with resend and revoke,
 share with a team), and the teams page.

@@ -8,7 +8,7 @@ that moves the "where things stand" or "next" sections.
 Last refreshed: 2026-10-12 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
-S9 the tablet, P1 the workspace switcher, every review's fixes in; P2, working in a pack, next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
+S9 the tablet, P1 the workspace switcher, P2a the Pack panel, every review's fixes in; P2b, the panels in a pack, next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
 `docs/ANDROID_SCREENS_PLAN.md`; the screenshot guard and the 48-hour wipe went in S5).
 
 ---
@@ -34,7 +34,9 @@ S9 the tablet, P1 the workspace switcher, every review's fixes in; P2, working i
   tablet's frame (a rail, the panel in a pane beside the map, the open LZ/PZ's or route's plan in a pane on its right, the Library and the import review as large dialogs);
   turning a tablet or opening a foldable moves the map and the panels between the frames. P1: the workspace chip opens the switcher (invitations, the Library, the
   packs, the teams; a menu at the rail's tile on a tablet), opening a pack sets the person's own LZ/PZ and routes aside and the Library puts them back, the pack open last
-  opens again at launch, an invitation link's pack opens once joined, and the chip shows the pack's name, who is here and how it stands (new module `feature-packs`).
+  opens again at launch, an invitation link's pack opens once joined, and the chip shows the pack's name, who is here and how it stands (new module `feature-packs`). P2a: the Pack
+  panel (a Pack tab first while a pack is open): the pack's items by kind with what changed since the person looked, its history, opening, closing, renaming and removing its items, and
+  the pack's notices in toasts.
   **To try on a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet
   moves, dragging the sheet by its content, the status bar's icons, night mode's dimmed map, placing graphics by tapping the map while a tool's mode is on, and on the route's
   plan the keyboard, TalkBack and the date picker; none of that can be seen here. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
@@ -86,7 +88,7 @@ S9 the tablet, P1 the workspace switcher, every review's fixes in; P2, working i
 
 ## 2. Next work, in order
 
-1. **The screens**, S1–S9 and P1 done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*); P2–P4, the rest of the mission-pack screens, next (the owner
+1. **The screens**, S1–S9, P1 and P2a done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*); P2b–P4, the rest of the mission-pack screens, next (the owner
    tries the app on a device once they are done), and *T*
    (threats saved and shared: web and server first) beside S7, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
    AGENTS.md §17, *Mission packs on Android*). **The plan is `docs/ANDROID_SCREENS_PLAN.md`** (the owner's decisions, the steps S1–S9 and

@@ -5,17 +5,21 @@ import app.ezpztac.data.PackWorkspace
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.missionpacks.PackEngine
+import app.ezpztac.missionpacks.PackNotice
 import app.ezpztac.missionpacks.PackState
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.Invite
 import app.ezpztac.network.InviteAccepted
+import app.ezpztac.network.PackEventPage
 import app.ezpztac.network.PackSummary
 import app.ezpztac.network.TeamSummary
 import app.ezpztac.network.acceptInvite
 import app.ezpztac.network.declineInvite
 import app.ezpztac.network.listPacks
 import app.ezpztac.network.listTeams
+import app.ezpztac.network.markPackSeen
 import app.ezpztac.network.myInvites
+import app.ezpztac.network.packEvents
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -61,6 +65,25 @@ class EnginePackDoor @Inject constructor(engine: PackEngine, private val workspa
     override suspend fun closePack() = workspace.closePack()
 }
 
+/** The Pack panel's calls: the pack's history and seen marker over the API client, its items through the editors' join to the pack. */
+class EnginePackPanelDoor @Inject constructor(private val api: ApiClient, private val workspace: PackWorkspace) : PackPanelDoor {
+    override val openHere: Flow<Set<String>> = workspace.openItems
+
+    override val notices: Flow<PackNotice> = workspace.notices
+
+    override suspend fun events(pack: String, since: Long, limit: Int): PackEventPage = api.packEvents(pack, since, limit)
+
+    override suspend fun markSeen(pack: String, seq: Long): Long = api.markPackSeen(pack, seq).seenSeq
+
+    override suspend fun openItem(item: String): Boolean = workspace.openItem(item)
+
+    override suspend fun closeItem(item: String) = workspace.closeItem(item)
+
+    override suspend fun renameItem(item: String, name: String): String? = workspace.renameItem(item, name)
+
+    override suspend fun removeItem(item: String): String? = workspace.removeItem(item)
+}
+
 /** The Library's numbers, from its repositories: every LZ/PZ, set of routes (a mission included) and set of points saved. */
 class RepositoryLibraryTally @Inject constructor(diagrams: DiagramRepository, routes: RouteRepository, points: PointSetRepository) : LibraryTally {
     override val counts: Flow<LibraryCounts> =
@@ -78,4 +101,7 @@ internal abstract class PacksModule {
 
     @Binds
     abstract fun libraryTally(impl: RepositoryLibraryTally): LibraryTally
+
+    @Binds
+    abstract fun packPanelDoor(impl: EnginePackPanelDoor): PackPanelDoor
 }
