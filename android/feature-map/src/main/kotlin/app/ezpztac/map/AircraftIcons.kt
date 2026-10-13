@@ -1,6 +1,7 @@
 package app.ezpztac.map
 
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /** The colours an aircraft is drawn in; each shape names one by its role, so a palette can turn an aircraft red without redrawing it. */
@@ -48,12 +49,65 @@ sealed interface PathCommand {
 }
 
 /**
+ * How an aircraft's picture is cut from the units its shapes are drawn in, so that it is drawn to scale: a square [side] units across, centred on the
+ * middle of its rotors ([cx], [cy]: the mast, or midway between a tandem's two), because the map puts the middle of a picture on the aircraft's point
+ * and turns it about that point, which is where the separation maths measures from and the keep-out ring is drawn round; and [rotorSpan], the units
+ * that the profile's `rotor_diameter_m` is across (the disc's diameter; for tandem rotors the overall fore-to-aft span, which is what the profile gives).
+ */
+data class IconFrame(val cx: Double, val cy: Double, val side: Double, val rotorSpan: Double) {
+    /** The picture's width on the ground, in the airframe's rotor diameters. */
+    val widthPerRotorDiameter: Double get() = side / rotorSpan
+}
+
+/**
+ * How a picture [points] across is drawn for the map: with [px] pixels, and the bitmap density [densityDpi] that makes MapLibre count them as exactly
+ * [points]. MapLibre takes an image's pixel ratio from its bitmap's density (`densityDpi / 160`), so `px * 160 == densityDpi * points`.
+ */
+data class IconRaster(val px: Int, val densityDpi: Int) {
+    companion object {
+        /**
+         * As many pixels as a screen of [screenDensity] pixels to the point has for [points], so the picture is as sharp as the screen, though never
+         * fewer than [points] nor more than [maxPx]. The density is the whole number nearest the screen's that makes the pixels whole too, so the size
+         * is exact, not nearly so.
+         */
+        fun of(points: Int, screenDensity: Double, maxPx: Int): IconRaster {
+            require(points > 0 && maxPx >= points) { "$points points cannot be drawn in $maxPx pixels" }
+            val step = DEFAULT_DPI / gcd(points, DEFAULT_DPI)                    // a density that is a multiple of this makes points * density / 160 whole
+            val most = maxPx * DEFAULT_DPI / points / step * step
+            val density = ((screenDensity * DEFAULT_DPI / step).roundToInt() * step).coerceIn(DEFAULT_DPI, most)
+            return IconRaster(points * density / DEFAULT_DPI, density)
+        }
+
+        /** Android's baseline density, one pixel to the point (`DisplayMetrics.DENSITY_DEFAULT`). */
+        private const val DEFAULT_DPI = 160
+
+        private tailrec fun gcd(a: Int, b: Int): Int = if (b == 0) a else gcd(b, a % b)
+    }
+}
+
+/**
  * Top-down aircraft silhouettes (`aircraftIcons.js`), as shapes, so what an icon is made of is tested and the platform only has to draw it.
- * Each is drawn in a 100 by 100 box, nose up, centred on the mast, so turning it by the aircraft's heading just works and the rotor disc
- * lines up with the footprint the separation maths uses (the disc fills 92% of the box, as on the web).
+ * Each is drawn in a 100 by 100 box, nose up, its rotor in the upper middle (the mast at 50, 42; a tandem's two at 50, 26 and 50, 74), and its
+ * [frame] cuts the picture from that box with the rotor in the middle, so it turns about the mast and is drawn to scale. The web centres the box
+ * itself and makes it the rotor's diameter across, so its rotor is drawn 92% of its size and a little ahead of the aircraft's point.
  */
 object AircraftIcons {
     const val DISC = 46.0
+
+    /** Where a single rotor's mast is in the box. */
+    private const val MAST_X = 50.0
+    private const val MAST_Y = 42.0
+
+    /** A tandem's two masts, fore and aft, and their discs' radius. */
+    private const val FORE_Y = 26.0
+    private const val AFT_Y = 74.0
+    private const val TANDEM_DISC = 25.0
+
+    /** A single rotor's picture: 57 units each way from the mast, for the tail rotor, the farthest thing drawn, reaches 56.4 behind it. */
+    private val CONVENTIONAL = IconFrame(MAST_X, MAST_Y, 114.0, 2 * DISC)
+
+    /** A tandem's picture is the box itself, its middle midway between the masts: the rings reach 49.6 from it, fore and aft. */
+    private val TANDEM = IconFrame(MAST_X, (FORE_Y + AFT_Y) / 2, 100.0, AFT_Y - FORE_Y + 2 * TANDEM_DISC)
 
     /** The icon keys a profile can name; anything else is drawn as [GENERIC]. */
     val KEYS: List<String> = listOf("uh60", "ah64", "ch47", "uh72", "mh6", "generic")
@@ -71,6 +125,9 @@ object AircraftIcons {
     /** The key an icon is stored under: a name this version does not know is the generic one. */
     fun keyFor(iconKey: String?): String = if (iconKey in KEYS) iconKey!! else GENERIC
 
+    /** How [iconKey]'s picture is cut from its box, and how big its rotor is in it. */
+    fun frame(iconKey: String?): IconFrame = if (keyFor(iconKey) == "ch47") TANDEM else CONVENTIONAL
+
     private fun disc(cx: Double, cy: Double, r: Double) = IconShape.Circle(cx, cy, r, IconColor.DISC, IconColor.DISC_EDGE, 1.2)
 
     /** One line per blade, not per opposed pair, so a four-blade head reads as four blades. */
@@ -81,8 +138,8 @@ object AircraftIcons {
 
     /** Single main rotor with a tail boom, drawn back to front: disc, airframe, blades over everything, then the hub. */
     private fun conventional(bladeCount: Int, bodyWidth: Double, bodyLength: Double, tailWidth: Double, stabWidth: Double): List<IconShape> {
-        val cx = 50.0
-        val cy = 42.0                                               // the mast sits forward of centre, leaving room for the boom
+        val cx = MAST_X
+        val cy = MAST_Y                                             // the mast sits forward of centre, leaving room for the boom
         val halfBody = bodyLength / 2
         val noseY = cy - halfBody
         val tailY = cy + halfBody * 0.55
@@ -122,10 +179,10 @@ object AircraftIcons {
 
     /** Tandem rotors: two discs fore and aft over one long fuselage. */
     private fun tandem(): List<IconShape> {
-        val cx = 50.0
-        val fore = 26.0
-        val aft = 74.0
-        val r = 25.0
+        val cx = MAST_X
+        val fore = FORE_Y
+        val aft = AFT_Y
+        val r = TANDEM_DISC
         return buildList {
             add(disc(cx, fore, r))
             add(disc(cx, aft, r))

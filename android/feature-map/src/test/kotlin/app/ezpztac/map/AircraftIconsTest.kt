@@ -1,11 +1,77 @@
 package app.ezpztac.map
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 class AircraftIconsTest {
     private fun lines(key: String) = AircraftIcons.shapes(key).filterIsInstance<IconShape.Line>()
+
+    /** What a shape covers, half its stroke included, as left, top, right, bottom. A curve stays inside its control points, so a path's points bound it. */
+    private fun bounds(shape: IconShape): List<Double> = when (shape) {
+        is IconShape.Circle -> (shape.r + shape.strokeWidth / 2).let { listOf(shape.cx - it, shape.cy - it, shape.cx + it, shape.cy + it) }
+        is IconShape.Ellipse -> (shape.strokeWidth / 2).let { listOf(shape.cx - shape.rx - it, shape.cy - shape.ry - it, shape.cx + shape.rx + it, shape.cy + shape.ry + it) }
+        is IconShape.Rect -> (shape.strokeWidth / 2).let { listOf(shape.x - it, shape.y - it, shape.x + shape.w + it, shape.y + shape.h + it) }
+        // Round caps reach half the width past each end.
+        is IconShape.Line -> (shape.width / 2).let { listOf(min(shape.x1, shape.x2) - it, min(shape.y1, shape.y2) - it, max(shape.x1, shape.x2) + it, max(shape.y1, shape.y2) + it) }
+        is IconShape.Path -> {
+            val points = shape.commands.flatMap {
+                when (it) {
+                    is PathCommand.Move -> listOf(it.x to it.y)
+                    is PathCommand.Line -> listOf(it.x to it.y)
+                    is PathCommand.Cubic -> listOf(it.x1 to it.y1, it.x2 to it.y2, it.x to it.y)
+                    PathCommand.Close -> emptyList()
+                }
+            }
+            val half = shape.strokeWidth / 2
+            listOf(points.minOf { it.first } - half, points.minOf { it.second } - half, points.maxOf { it.first } + half, points.maxOf { it.second } + half)
+        }
+    }
+
+    @Test
+    fun `every picture has room for everything drawn in it, so nothing is cut off`() {
+        for (key in AircraftIcons.KEYS) {
+            val frame = AircraftIcons.frame(key)
+            val half = frame.side / 2
+            for (shape in AircraftIcons.shapes(key)) {
+                val (left, top, right, bottom) = bounds(shape)
+                assertTrue("$key: $shape", left >= frame.cx - half && right <= frame.cx + half && top >= frame.cy - half && bottom <= frame.cy + half)
+            }
+        }
+    }
+
+    @Test
+    fun `a single rotor's picture is centred on its mast, where the map puts the aircraft's point, and its rotor is the disc`() {
+        for (key in AircraftIcons.KEYS - "ch47") {
+            val frame = AircraftIcons.frame(key)
+            val disc = AircraftIcons.shapes(key).first() as IconShape.Circle                       // drawn first, under everything
+            val hub = AircraftIcons.shapes(key).last() as IconShape.Circle                         // and the hub last, over the blades
+            assertEquals(key, frame.cx to frame.cy, disc.cx to disc.cy)
+            assertEquals(key, frame.cx to frame.cy, hub.cx to hub.cy)
+            assertEquals(key, 2 * disc.r, frame.rotorSpan, 0.0)
+        }
+    }
+
+    @Test
+    fun `a tandem's picture is centred between its masts, and its rotor is the span from the front disc's tip to the back one's, as its profile gives it`() {
+        val frame = AircraftIcons.frame("ch47")
+        val discs = AircraftIcons.shapes("ch47").filterIsInstance<IconShape.Circle>().filter { it.fill == IconColor.DISC }
+        assertEquals((discs[0].cy + discs[1].cy) / 2, frame.cy, 0.0)
+        assertEquals(discs[0].cx, frame.cx, 0.0)
+        assertEquals(discs[1].cy + discs[1].r - (discs[0].cy - discs[0].r), frame.rotorSpan, 0.0)
+    }
+
+    @Test
+    fun `a picture is as many rotor diameters across as its frame is, and a name nobody knows is framed as the generic one`() {
+        assertEquals(114.0 / 92.0, AircraftIcons.frame("ah64").widthPerRotorDiameter, 1e-12)
+        assertEquals(100.0 / 98.0, AircraftIcons.frame("ch47").widthPerRotorDiameter, 1e-12)
+        assertEquals(AircraftIcons.frame("generic"), AircraftIcons.frame("flying-saucer"))
+        assertEquals(AircraftIcons.frame("generic"), AircraftIcons.frame(null))
+    }
 
     @Test
     fun `every profile icon key has a silhouette, and a name nobody knows is the generic one`() {
@@ -77,5 +143,38 @@ class AircraftIconsTest {
             }
             assertTrue("$key $shape paints something", used.isNotEmpty())
         }
+    }
+}
+
+class IconRasterTest {
+    @Test
+    fun `a picture is drawn with the pixels the screen has for its points, and its density says exactly that many points`() {
+        assertEquals(IconRaster(672, 560), IconRaster.of(192, 3.5, 1024))
+        assertEquals(IconRaster(384, 320), IconRaster.of(192, 2.0, 1024))
+        assertEquals(IconRaster(504, 420), IconRaster.of(192, 2.625, 1024))
+        assertEquals(IconRaster(192, 160), IconRaster.of(192, 1.0, 1024))
+    }
+
+    @Test
+    fun `on any screen the size is exact, within the cap, and never fewer pixels than points`() {
+        for (i in 40..640) {
+            val screen = i / 80.0                                                                // 0.5 to 8 pixels to the point
+            val r = IconRaster.of(192, screen, 1024)
+            assertEquals("screen $screen", r.px * 160, r.densityDpi * 192)
+            assertTrue("screen $screen", r.px in 192..1024)
+            if (screen * 160 in 160.0..850.0) assertTrue("screen $screen: ${r.densityDpi}", abs(r.densityDpi - screen * 160) <= 2.5)   // the nearest multiple of 5
+        }
+    }
+
+    @Test
+    fun `a screen denser than the cap is drawn at the cap, still exactly the size`() {
+        assertEquals(IconRaster(1020, 850), IconRaster.of(192, 6.0, 1024))
+        assertEquals(IconRaster(1020, 850), IconRaster.of(192, 40.0, 1024))
+    }
+
+    @Test
+    fun `a picture that would need more pixels than it may have is refused`() {
+        assertThrows(IllegalArgumentException::class.java) { IconRaster.of(192, 2.0, 100) }
+        assertThrows(IllegalArgumentException::class.java) { IconRaster.of(0, 2.0, 1024) }
     }
 }

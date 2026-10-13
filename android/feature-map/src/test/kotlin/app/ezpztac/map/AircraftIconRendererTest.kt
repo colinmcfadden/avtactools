@@ -17,18 +17,21 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [36])
 class AircraftIconRendererTest {
-    private fun at(bitmap: Bitmap, x: Double, y: Double): Int {
-        val scale = bitmap.width / 100.0
-        return bitmap.getPixel((x * scale).toInt(), (y * scale).toInt())
+    /** The pixel of [key]'s picture at ([x], [y]) in the box its shapes are drawn in, through its frame. */
+    private fun at(bitmap: Bitmap, key: String, x: Double, y: Double): Int {
+        val frame = AircraftIcons.frame(key)
+        val scale = bitmap.width / frame.side
+        return bitmap.getPixel(((x - frame.cx) * scale + bitmap.width / 2.0).toInt(), ((y - frame.cy) * scale + bitmap.height / 2.0).toInt())
     }
 
     @Test
-    fun `the bitmap is square, transparent outside the rotor disc, and the hub is where the mast is`() {
+    fun `the bitmap is square, transparent outside the rotor disc, and the hub is where the mast is, in the middle`() {
         val b = AircraftIconRenderer.render("uh60", IconState.NORMAL, 200)
         assertEquals(200, b.width)
         assertEquals(200, b.height)
-        assertEquals(0, Color.alpha(at(b, 2.0, 2.0)))                                        // a corner is clear
-        assertEquals(IconState.NORMAL.palette.getValue(IconColor.EDGE), at(b, 50.0, 42.0))    // the hub, in the outline colour
+        assertEquals(0, Color.alpha(b.getPixel(4, 4)))                                        // a corner is clear
+        assertEquals(IconState.NORMAL.palette.getValue(IconColor.EDGE), at(b, "uh60", 50.0, 42.0))    // the hub, in the outline colour...
+        assertEquals(IconState.NORMAL.palette.getValue(IconColor.EDGE), b.getPixel(100, 100))  // ...which is the middle of the picture
     }
 
     @Test
@@ -36,8 +39,8 @@ class AircraftIconRendererTest {
         val normal = AircraftIconRenderer.render("uh60", IconState.NORMAL, 200)
         val violation = AircraftIconRenderer.render("uh60", IconState.VIOLATION, 200)
         // On the fuselage, clear of the cockpit glass and of the blades.
-        assertEquals(IconState.NORMAL.palette.getValue(IconColor.BODY), at(normal, 57.0, 50.0))
-        assertEquals(IconState.VIOLATION.palette.getValue(IconColor.BODY), at(violation, 57.0, 50.0))
+        assertEquals(IconState.NORMAL.palette.getValue(IconColor.BODY), at(normal, "uh60", 57.0, 50.0))
+        assertEquals(IconState.VIOLATION.palette.getValue(IconColor.BODY), at(violation, "uh60", 57.0, 50.0))
     }
 
     @Test
@@ -51,8 +54,8 @@ class AircraftIconRendererTest {
     fun `the Chinook has two hubs`() {
         val b = AircraftIconRenderer.render("ch47", IconState.NORMAL, 200)
         val edge = IconState.NORMAL.palette.getValue(IconColor.EDGE)
-        assertEquals(edge, at(b, 50.0, 26.0))
-        assertEquals(edge, at(b, 50.0, 74.0))
+        assertEquals(edge, at(b, "ch47", 50.0, 26.0))
+        assertEquals(edge, at(b, "ch47", 50.0, 74.0))
     }
 
     @Test

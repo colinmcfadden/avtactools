@@ -77,7 +77,9 @@ data class LzScene(
                 add(feature("ga", point(ga.at), "icon" to JsonPrimitive(if (ga.direction == "right") "ga-right" else "ga-left"), "rotation" to JsonPrimitive(ga.rotationDeg)))
             }
             graphics.aircraft.forEach { a ->
-                val k0 = a.diameterM / (METERS_PER_POINT_AT_ZOOM_0 * cos(Math.toRadians(a.at.lat))) / AIRCRAFT_ICON_PX
+                // The rotor is what is to scale, and the picture is wider than it (the tail, and room round the mast): this many metres across on the ground.
+                val pictureM = a.diameterM * AircraftIcons.frame(a.iconKey).widthPerRotorDiameter
+                val k0 = pictureM / (METERS_PER_POINT_AT_ZOOM_0 * cos(Math.toRadians(a.at.lat))) / AIRCRAFT_ICON_PT
                 add(
                     feature(
                         "heli", point(a.at),
@@ -119,8 +121,11 @@ data class LzScene(
     companion object {
         val EMPTY = LzScene(null, emptyList(), emptyList(), null)
 
-        /** The aircraft bitmaps are this many points across, so the icon's size at a zoom is the aircraft's size on the ground over this. */
-        const val AIRCRAFT_ICON_PX = 192
+        /**
+         * The aircraft pictures are this many points across (points, not pixels: each bitmap's density says how many pixels that is,
+         * [AircraftIconRenderer.forMap]), so the icon's size at a zoom is the picture's width on the ground, in points at that zoom, over this.
+         */
+        const val AIRCRAFT_ICON_PT = 192
 
         /** Metres one point covers at the equator on zoom 0 of MapLibre's 512-point tiles. */
         const val METERS_PER_POINT_AT_ZOOM_0 = 78_271.516964

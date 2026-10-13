@@ -20,9 +20,9 @@ import org.maplibre.android.style.sources.ImageSource
 /**
  * Draws an [LzScene] on the map: the analysis boundary (a pale fill and an amber outline), a boundary being drawn (dashed), the target,
  * and the slope raster under all of them. Thin on purpose: *what* is drawn is the scene, which is tested; this only hands it to MapLibre,
- * which needs a GPU and cannot be tried here.
+ * which needs a GPU and cannot be tried here. [screenDensity] is the screen's pixels to the point, which the aircraft pictures are drawn for.
  */
-class DiagramOverlay {
+class DiagramOverlay(private val screenDensity: Float) {
     private var style: Style? = null
     private var vector: GeoJsonSource? = null
     private var latest: LzScene = LzScene.EMPTY
@@ -135,7 +135,8 @@ class DiagramOverlay {
                 PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP), PropertyFactory.iconAllowOverlap(true), PropertyFactory.iconIgnorePlacement(true), PropertyFactory.iconSize(0.7f),
             ),
         )
-        // An aircraft is drawn at its true size on the ground: its picture's width is its rotor diameter, which at each zoom is `k0 * 2^zoom` times the picture.
+        // An aircraft is drawn at its true size on the ground: its picture, LzScene.AIRCRAFT_ICON_PT points across, is drawn `k0 * 2^zoom` times that at
+        // each zoom, which is the picture's width on the ground (its rotor the airframe's rotor diameter) in points at that zoom.
         val aircraftSize = Expression.interpolate(
             Expression.exponential(2), Expression.zoom(),
             Expression.stop(0, Expression.get("k0")),
@@ -163,7 +164,7 @@ class DiagramOverlay {
         }
         for (a in scene.graphics.aircraft) {
             val name = LzScene.aircraftImage(a.iconKey, a.violating)
-            add(name) { AircraftIconRenderer.render(a.iconKey, if (a.violating) IconState.VIOLATION else IconState.NORMAL, LzScene.AIRCRAFT_ICON_PX) }
+            add(name) { AircraftIconRenderer.forMap(a.iconKey, if (a.violating) IconState.VIOLATION else IconState.NORMAL, screenDensity) }
         }
         if (scene.graphics.goArounds.isNotEmpty()) {
             add(GraphicsImages.GO_AROUND_LEFT) { GraphicsImages.goAround(right = false) }

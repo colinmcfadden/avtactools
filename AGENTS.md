@@ -765,6 +765,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   copies then drifted, each device's moves landing on a different one (the owner's first two-device run, 2026-10-13; §17, *Mission packs in the editors*). Every test
   passed because each device was tried alone, or a move was checked in what was sent rather than in what the other device then showed. Read the shared data as loosely as
   the web reads it, never let a fallback add what is already there, and check a change between two devices end to end (`RoutePackTwoDevicesTest`, the route scenario).
+- **MapLibre reads an image's size from its bitmap's density.** `Style.addImage` takes the image's pixel ratio from `Bitmap.getDensity() / 160` (`Style.toImage`,
+  MapLibre 13.6.1), and `Bitmap.createBitmap` gives a bitmap the screen's density, so the aircraft pictures, 192 pixels meant as 192 points, counted as 192 over the
+  screen's density in points (about 55 on a 560-dpi phone): every aircraft, sized to the metre by its `k0`, was drawn density-times too small on every device. No JVM
+  test could see it, since Robolectric's default screen is one pixel to the point. Give a bitmap whose size in points matters the density that says so (`IconRaster`,
+  `AircraftIconRenderer.forMap`), and test it under a dense qualifier (`AircraftMapImageTest` runs as `xxhdpi`, where the old bitmap fails).
 
 ---
 
@@ -824,6 +829,9 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - The Android manifest's verified link filter names only `ezpztac.app`, while `AuthLinks.SITE_HOSTS` also takes `www.ezpztac.app`: a `www.`
   link opens the browser, not the app. Left so (the owner's call, 2026-10-10); add the host to the filter (and to the site's
   `assetlinks.json`) if emails or shared links ever use it.
+- On Android the go-around arrows and a PZ marker's arrow head (`GraphicsImages`) are bitmaps of so many pixels handed to MapLibre with the screen's density
+  (§14), so they are drawn smaller on a denser screen (on a 3.5-density phone, four-sevenths of their size on a 2-density tablet). Give them a size in points (`IconRaster`) once
+  someone has judged on a device how big they should be. The aircraft are not affected (§17, *An aircraft is drawn to scale*).
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -1268,6 +1276,14 @@ client is built around not losing one:
     - **An aircraft is measured as the airframe it was placed as** (its `profileRef`, looked up in `AircraftProfiles.profiles`, falling back to the
       mission aircraft and then the UH-60L), by both `GraphicsViewModel` (separation alerts) and `HomeViewModel` (the map's icon and keep-out disc),
       and one is placed as the mission aircraft. See *Aircraft profiles*.
+    - **An aircraft is drawn to scale, on its point** (`LzScene`, `AircraftIcons.frame`, `IconRaster`, `AircraftIconRenderer.forMap`): the rotor drawn is the profile's
+      `rotor_diameter_m` on the ground at every zoom and latitude, as the web's `calculateSizePx` means it to be (`AircraftScaleTest`, and `AircraftMapImageTest` measures
+      it in the pixels). The layer's size is `k0 * 2^zoom` times the picture's `AIRCRAFT_ICON_PT` points, `k0` being the picture's width on the ground over the ground a
+      point covers at zoom 0. A picture is wider than its rotor, and its frame says by how much (a tandem's rotor is its overall fore-to-aft span, which is what its
+      profile gives); the frame is centred on the rotor, because the map centres a picture on the aircraft's point and turns it about that point, where the keep-out
+      ring, the separation lines and a tap's reach are measured from. The bitmap is drawn with the screen's pixels for its points (at most 1,024) and its density says
+      how many points those are (§14). **Not like the web**, whose sprite is its rotor's diameter across with the disc 92% of it and a little ahead of the point, and
+      never under 15 px: here a far zoom draws an aircraft as small as it is.
     - The list runs aircraft first, then PZ markers, sectors, go-arounds, doghouses, units, whatever was placed first.
     - **Doghouses** (`Doghouses`, `DoghouseBox`, the `DOGHOUSE` kind). The web's maths was extracted from `Doghouse.jsx` / `useDoghouses.js` into
       `feature/doghouses/doghouseFields.js` (no behaviour change) and pinned in `contracts/fixtures/workspace/doghouses.json`. Things that are
