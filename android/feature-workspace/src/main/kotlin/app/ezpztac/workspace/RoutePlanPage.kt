@@ -874,11 +874,27 @@ internal fun Segmented(
     }
 }
 
-/** Setting the clock at a point: the time to be there (`HH:MM:SS`), which the other points are timed from. *Clear* takes it away. */
+/**
+ * Setting the clock at a point: the time to be there (`HH:MM:SS`), which the other points are timed from. *Clear* takes it away. A clock changed under the
+ * open form (someone else's in a mission pack, an undo, the clock moved to another point) is shown, unless what is typed already says it, as every field of the
+ * plan shows a value changed under it; and *Set* applies only what differs from the clock the point has then ([onSet] checks it against the card's values).
+ * The form once remembered the clock it opened with, and *Set* put that back over someone else's.
+ */
 @Composable
 private fun ClockEditor(point: PlanPointUi, onSet: (String) -> String?, onClose: () -> Unit) {
-    var text by rememberSaveable(point.id) { mutableStateOf(point.values.clock) }
+    val clock = point.values.clock
+    var text by rememberSaveable(point.id) { mutableStateOf(clock) }
     var error by remember(point.id) { mutableStateOf<String?>(null) }
+    // The clock the form last showed: only a change from it is shown over what is typed, so a turn of the phone keeps a time typed and not yet set.
+    var seen by rememberSaveable(point.id) { mutableStateOf(clock) }
+    LaunchedEffect(clock) {
+        if (clock == seen) return@LaunchedEffect
+        seen = clock
+        if (text.trim() != clock.trim()) {
+            text = clock
+            error = null
+        }
+    }
     val set: () -> Unit = {
         error = onSet(text.trim())
         if (error == null) onClose()

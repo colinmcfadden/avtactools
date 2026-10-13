@@ -189,8 +189,11 @@ class GraphicsViewModel @Inject constructor(
         selection.select(GraphicRef("units", id))
     }
 
-    /** Applies what the unit builder holds to the held unit: its symbol and labels, nothing else. */
-    fun updateUnit(draft: UnitDraft) = edit("Unit") { c, _ -> if (c == "units") draft.patch else null }
+    /**
+     * Applies what the unit builder holds ([draft], made from [from], the unit as the builder showed it) to the held unit: of its symbol and labels, only what
+     * the person changed ([UnitDraft.patchOver]), so a part they left alone is never put back over someone else's change to it.
+     */
+    fun updateUnit(draft: UnitDraft, from: UnitDraft) = edit("Unit") { c, g -> if (c == "units") draft.patchOver(from, UnitDraft.hasCode(g)) else null }
 
     // -- Choosing ----------------------------------------------------------------------------------------------------------
 

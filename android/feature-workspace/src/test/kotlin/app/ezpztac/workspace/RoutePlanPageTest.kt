@@ -448,6 +448,85 @@ class RoutePlanPageTest {
         assertEquals(0, count("Clock time at .SP (HH:MM:SS)"))                                    // closed once it is set
     }
 
+    // The page over .SP held, whose own values are [values] as they stand: someone else's change, or an undo, changes them under the open card.
+    private fun changingPage(r: Recorder, values: androidx.compose.runtime.State<PointDraft>) {
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                val now = values.value
+                val sp = point("p2", ".SP", "ip", held = true, hasClock = now.clock.isNotEmpty(), clock = now.clock.ifEmpty { "--:--:--" }).copy(values = now)
+                RoutePlanPage(RoutesUiState(open = open(), detail = detail(point("p1", ".TGT", "target", first = true), sp), planOpen = true), r.actions, "16S GC 28936 55287", 0)
+            }
+        }
+    }
+
+    private fun clockField(): String =
+        compose.onNodeWithText("Clock time at .SP (HH:MM:SS)").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text
+
+    @Test
+    fun `a clock changed under its open form is shown there, and Set then sends nothing it did not change`() {
+        val r = Recorder()
+        val values = mutableStateOf(this.values.copy(clock = "12:30:00"))
+        changingPage(r, values)
+        compose.onNodeWithContentDescription("Set clock time at .SP, 12:30:00").performClick()
+        assertEquals("12:30:00", clockField())
+        // Someone else sets .SP's clock to 13:00 while the form is open (an undo would do the same).
+        values.value = values.value.copy(clock = "13:00:00")
+        compose.waitForIdle()
+        assertEquals("13:00:00", clockField())
+        compose.onNodeWithText("Set").performClick()
+        val applied = r.points.single()
+        assertEquals("what Set sends is the clock the point has: no change, never 12:30 put back over theirs", applied.before, applied.typed)
+    }
+
+    @Test
+    fun `a time typed and not set is replaced by a clock changed under it, and one that says the same is kept`() {
+        val r = Recorder()
+        val values = mutableStateOf(this.values.copy(clock = "12:30:00"))
+        changingPage(r, values)
+        compose.onNodeWithContentDescription("Set clock time at .SP, 12:30:00").performClick()
+        compose.onNodeWithText("Clock time at .SP (HH:MM:SS)").performTextReplacement("14:00:00")
+        values.value = values.value.copy(clock = "13:00:00")
+        compose.waitForIdle()
+        assertEquals("13:00:00", clockField())
+        // Typed with a space after it: the clock the point then takes says the same, so what is typed stays as it is.
+        compose.onNodeWithText("Clock time at .SP (HH:MM:SS)").performTextReplacement("15:00:00 ")
+        values.value = values.value.copy(clock = "15:00:00")
+        compose.waitForIdle()
+        assertEquals("15:00:00 ", clockField())
+        assertTrue("nothing was set on the way", r.points.isEmpty())
+    }
+
+    @Test
+    fun `a clock moved to another point under the open form empties it, and leaves nothing to set`() {
+        val r = Recorder()
+        val values = mutableStateOf(this.values.copy(clock = "12:30:00"))
+        changingPage(r, values)
+        compose.onNodeWithContentDescription("Set clock time at .SP, 12:30:00").performClick()
+        assertEquals("12:30:00", clockField())
+        values.value = values.value.copy(clock = "")
+        compose.waitForIdle()
+        assertEquals("", clockField())
+        compose.onNodeWithText("Set").assertIsNotEnabled()
+        compose.onNodeWithText("Clear").assertDoesNotExist()
+        assertTrue(r.points.isEmpty())
+    }
+
+    @Test
+    fun `a value changed under the open clock form is not put back by Set, which sends only the clock`() {
+        val r = Recorder()
+        val values = mutableStateOf(this.values)
+        changingPage(r, values)
+        compose.onNodeWithContentDescription("Set clock time at .SP, not set").performClick()
+        compose.onNodeWithText("Clock time at .SP (HH:MM:SS)").performTextInput("12:30")
+        // Someone else changes .SP's altitude meanwhile.
+        values.value = values.value.copy(altitudeValue = "300", altitudeRef = "msl")
+        compose.waitForIdle()
+        compose.onNodeWithText("Set").performClick()
+        val applied = r.points.single()
+        assertEquals(values.value, applied.before)
+        assertEquals(values.value.copy(clock = "12:30"), applied.typed)
+    }
+
     @Test
     fun `a clock refused keeps its form open with the words`() {
         page(detail(point("p1", ".TGT", "target", first = true), point("p2", ".SP", "ip", held = true))) { problem = "The time must be written hours:minutes, like 09:15 or 09:15:30." }

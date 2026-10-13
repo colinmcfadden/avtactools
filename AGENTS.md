@@ -1467,7 +1467,9 @@ client is built around not losing one:
       their own.
     - **The nav log lists only named points and only once there are two** (it is the planner's `points`, empty until then): a route with fewer shows the planner's warning instead.
     - **A field shows a value changed under it** (an undo, a fetched wind) unless what is typed already says the same number (`050` stays as typed): what is typed is never applied to a plan
-      it was not typed against, since each keystroke is checked against what the plan is then.
+      it was not typed against, since each keystroke is checked against what the plan is then. **So does the clock's own form**, which is applied only on *Set*: a clock changed under it
+      (someone else's in a mission pack, an undo, the clock moved to another point) is shown unless what is typed already says it, and *Set* applies only what differs from the clock the
+      point has then. It once kept the clock it opened with, and *Set* put that back over someone else's.
     - **Dates and times are typed on a text keyboard**, and so are altitudes and temperatures: Android's number pads have no hyphen, colon or minus sign.
     - **Winds and ground elevations** (`core-data`: `RoutePlanning`) are *fetched data*: they land in the route they were asked for through `RouteSession.update` (so, like an analysis, they
       are not an undo step and are applied to that route's record even if another set has been opened while the server answered), one fetch at a time. A failure is the app's words,
@@ -2149,9 +2151,11 @@ client is built around not losing one:
     never lets a failure reach the person.
   - **Units** are `{id, type?, path?, sidc, uniqueDesignation, higherFormation, lat, lon}` as the web keeps them. They are added from the unit builder at the
     crosshair (the web drops them a random few metres off the target), only on an analysed diagram, like every graphic. **Applying the builder to a unit
-    changes its symbol and labels and nothing else** (an older image unit keeps its `path`). As on the web, the builder knows five parts (affiliation,
-    function, echelon, the two labels): a unit made with another dimension or status is shown as ground and present once opened, and a function with no name
-    is kept and shown as `Other (code)`. The web's **threat presets are 14 characters**, one short of a SIDC, and milsymbol draws them anyway; they are kept
+    changes its symbol and labels and nothing else** (an older image unit keeps its `path`), **and of those only what the person changed** (`UnitDraft.patchOver`,
+    from what the builder showed): a part changed under the open builder (someone else's change in a mission pack, an undo) is shown, and what was typed into
+    another part is kept (`UnitDraft.following`). As on the web, the builder knows five parts (affiliation, function, echelon, the two labels): a unit made
+    with another dimension or status is shown as ground and present once opened, and is made so when a part of its symbol is changed; **not like the web**,
+    whose builder writes all three, a label changed alone keeps its symbol code. A function with no name is kept and shown as `Other (code)`. The web's **threat presets are 14 characters**, one short of a SIDC, and milsymbol draws them anyway; they are kept
     as they are because a threat's SIDC is what an AMPS `.ths` carries.
   - **A unit that is an old image** (no `sidc`) is listed as "Unit (image)" and drawn as the plain marker; it is not offered a symbol until the builder is applied.
 - **What cannot be seen here:** the map itself (no GPU: only the overlays are drawn, over a stand-in), and whether R8 strips something

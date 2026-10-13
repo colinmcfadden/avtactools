@@ -75,9 +75,9 @@ class GraphicsActions(
     val changeReach: (Double) -> Unit = {},
     val tipToCrosshair: () -> Unit = {},
     val setDirection: (String) -> Unit = {},
-    /** Adds a unit made in the unit builder at the crosshair; applies the builder to the held unit. */
+    /** Adds a unit made in the unit builder at the crosshair; applies the builder to the held unit (what it holds, and the unit as it showed it). */
     val addUnit: (UnitDraft) -> Unit = {},
-    val updateUnit: (UnitDraft) -> Unit = {},
+    val updateUnit: (draft: UnitDraft, from: UnitDraft) -> Unit = { _, _ -> },
     /** A doghouse's fields: each takes what was typed and answers with what is wrong with it, or null when it was taken. */
     val setDoghouseLabel: (String) -> String? = { null },
     val setDoghouseTime: (String) -> String? = { null },
@@ -342,13 +342,22 @@ private fun HeadingControls(heading: Double, actions: GraphicsActions) {
     }
 }
 
-/** The held unit in the unit builder: nothing changes until Apply, and Apply is there only when something differs. */
+/**
+ * The held unit in the unit builder: nothing changes until Apply, and Apply is there only when something differs. A part changed under it (someone else's
+ * change in a mission pack, an undo) is shown, and what the person made of another part is kept ([UnitDraft.following]); Apply changes only what differs.
+ */
 @Composable
 private fun UnitControls(ref: GraphicRef, held: UnitDraft, actions: GraphicsActions) {
-    var draft by remember(ref, held) { mutableStateOf(held) }
+    // The unit as it was when the person began, part by part, and what they have made of it.
+    var start by remember(ref) { mutableStateOf(held) }
+    var draft by remember(ref) { mutableStateOf(held) }
+    LaunchedEffect(held) {
+        draft = draft.following(start, held)
+        start = held
+    }
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         Text("Unit", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        UnitBuilder(draft, { draft = it }, "Apply", onConfirm = { actions.updateUnit(draft) }, confirmEnabled = draft != held)
+        UnitBuilder(draft, { draft = it }, "Apply", onConfirm = { actions.updateUnit(draft, start) }, confirmEnabled = draft != held)
     }
 }
 

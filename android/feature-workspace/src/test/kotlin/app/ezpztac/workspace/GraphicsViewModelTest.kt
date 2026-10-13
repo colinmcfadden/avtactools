@@ -923,7 +923,7 @@ class GraphicsViewModelTest {
         r.session.setQuietly { DiagramOps.patchGraphic(it, "units", r.graphic(ref)["id"], JsonObject(mapOf("callsign" to JsonPrimitive("DOG 6")))) }
         val before = r.graphic(ref)
 
-        r.model.updateUnit(hostileArmor)
+        r.model.updateUnit(hostileArmor, from = UnitDraft())
         advanceUntilIdle()
         val saved = r.graphic(ref)
         assertEquals("SHGPUCA---D----", text(saved, "sidc"))
@@ -938,11 +938,38 @@ class GraphicsViewModelTest {
     }
 
     @Test
+    fun `applying the builder changes only what differs from the unit as it is now`() = runTest(dispatcher) {
+        val r = opened()
+        val air = JsonObject(
+            mapOf(
+                "id" to JsonPrimitive("u-air"), "sidc" to JsonPrimitive("SFAPMFF--------"), "uniqueDesignation" to JsonPrimitive("DUSTOFF"),
+                "higherFormation" to JsonPrimitive(""), "lat" to JsonPrimitive(34.78), "lon" to JsonPrimitive(-84.08),
+            ),
+        )
+        r.session.setQuietly { DiagramOps.upsertGraphic(it, "units", air) }
+        advanceUntilIdle()
+        val ref = r.state.rows.single().ref
+        r.model.select(ref)
+        advanceUntilIdle()
+        val shown = r.state.inspector!!.unit!!
+        // Someone else gives it a higher formation while the builder is open; the person changes its designation only.
+        r.session.setQuietly { DiagramOps.patchGraphic(it, "units", JsonPrimitive("u-air"), JsonObject(mapOf("higherFormation" to JsonPrimitive("1-10")))) }
+        advanceUntilIdle()
+        r.model.updateUnit(shown.copy(uniqueDesignation = "DUSTOFF 2"), from = shown)
+        advanceUntilIdle()
+        val saved = r.graphic(ref)
+        assertEquals("DUSTOFF 2", text(saved, "uniqueDesignation"))
+        assertEquals("theirs, not the builder's empty one", "1-10", text(saved, "higherFormation"))
+        assertEquals("an air unit keeps its code when only a label changes", "SFAPMFF--------", text(saved, "sidc"))
+        assertEquals(1, r.state.undoDepth)
+    }
+
+    @Test
     fun `the builder cannot be applied to what is not a unit`() = runTest(dispatcher) {
         val r = opened()
         r.model.place(GraphicKind.PZ_MARKER, crosshair)
         advanceUntilIdle()
-        r.model.updateUnit(UnitDraft())
+        r.model.updateUnit(UnitDraft(), from = UnitDraft())
         advanceUntilIdle()
         assertEquals("That cannot be done to this graphic.", r.state.error)
         assertEquals(1, r.state.undoDepth)
@@ -984,7 +1011,7 @@ class GraphicsViewModelTest {
         advanceUntilIdle()
         assertEquals(UnitDraft(), r.state.inspector!!.unit)                                 // the builder starts from its defaults
 
-        r.model.updateUnit(UnitDraft("F", "UCA---", "-", "TANK", ""))
+        r.model.updateUnit(UnitDraft("F", "UCA---", "-", "TANK", ""), from = r.state.inspector!!.unit!!)
         advanceUntilIdle()
         val saved = r.graphic(row.ref)
         assertEquals("SFGPUCA--------", text(saved, "sidc"))

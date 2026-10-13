@@ -63,7 +63,7 @@ class GraphicsScreenTest {
             tipToCrosshair = { log += "tip" },
             setDirection = { log += "direction $it" },
             addUnit = { log += "add unit ${it.sidc} [${it.uniqueDesignation}] [${it.higherFormation}]" },
-            updateUnit = { log += "update unit ${it.sidc} [${it.uniqueDesignation}] [${it.higherFormation}]" },
+            updateUnit = { draft, _ -> log += "update unit ${draft.sidc} [${draft.uniqueDesignation}] [${draft.higherFormation}]" },
             setDoghouseLabel = { log += "label [$it]"; problem(it) },
             setDoghouseTime = { log += "time [$it]"; problem(it) },
             setDoghouseDistance = { log += "distance [$it]"; problem(it) },
@@ -473,6 +473,23 @@ class GraphicsScreenTest {
         compose.onNodeWithText("Apply").performScrollTo().assertIsEnabled()
         tap("Apply")
         assertEquals(listOf("update unit SHGPUCA-------- [9A/1-171] []"), r.log)                      // typed in at the start, where the cursor was
+    }
+
+    @Test
+    fun `a part of the held unit changed under the builder is shown, and what was typed into another is kept`() {
+        val r = Recorder()
+        val state = mutableStateOf(unitHeld())
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { GraphicsContent(state.value, "16S GD 66993 52949", r.actions) } }
+        }
+        compose.onNode(hasSetTextAction() and hasText("Designation")).performScrollTo().performTextInput("9")
+        // Someone else made it a company while the designation was being typed (or an undo did).
+        state.value = unitHeld(UnitDraft("H", "UCA---", "E", "A/1-171", ""))
+        compose.waitForIdle()
+        compose.onNodeWithText("SIDC SHGPUCA---E----").performScrollTo().assertIsDisplayed()
+        tap("Apply")
+        // The company, and the designation as typed: nothing typed was lost, and nothing of theirs put back.
+        assertEquals(listOf("update unit SHGPUCA---E---- [9A/1-171] []"), r.log)
     }
 
     @Test

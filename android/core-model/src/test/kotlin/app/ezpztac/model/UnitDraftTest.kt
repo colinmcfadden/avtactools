@@ -78,6 +78,32 @@ class UnitDraftTest {
     }
 
     @Test
+    fun `applying a draft changes only what differs from what it was made from`() {
+        val now = UnitDraft("H", "UCA---", "D", "A/1-171", "2-101")
+        assertEquals(JsonObject(emptyMap()), now.patchOver(now))
+        assertEquals(JsonObject(mapOf("uniqueDesignation" to JsonPrimitive("B/1-171"))), now.copy(uniqueDesignation = "B/1-171").patchOver(now))
+        assertEquals(JsonObject(mapOf("sidc" to JsonPrimitive("SHGPUCA---E----"))), now.copy(echelon = "E").patchOver(now))
+        assertEquals(setOf("sidc", "higherFormation"), now.copy(affiliation = "F", higherFormation = "").patchOver(now).keys)
+        // A unit of another dimension keeps its code when only a label changes; one with no code (an older image) takes the draft's.
+        val air = UnitDraft.of(unit("sidc" to "SFAPMFF--------", "uniqueDesignation" to "DUSTOFF"))
+        assertEquals(setOf("uniqueDesignation"), air.copy(uniqueDesignation = "DUSTOFF 2").patchOver(air, UnitDraft.hasCode(unit("sidc" to "SFAPMFF--------"))).keys)
+        val image = unit("path" to "/units/tank.svg")
+        assertEquals(JsonObject(mapOf("sidc" to JsonPrimitive("SFGPUCI--------"))), UnitDraft.of(image).patchOver(UnitDraft.of(image), UnitDraft.hasCode(image)))
+    }
+
+    @Test
+    fun `a part changed under the builder is shown, and what the person made of another is kept`() {
+        val start = UnitDraft("H", "UCA---", "D", "A/1-171", "2-101")
+        val typed = start.copy(uniqueDesignation = "B/1-171")
+        // Someone else made it a company meanwhile.
+        val now = start.copy(echelon = "E")
+        assertEquals(UnitDraft("H", "UCA---", "E", "B/1-171", "2-101"), typed.following(start, now))
+        // The same part changed both ways: what the person made of it stays, to be applied over theirs.
+        assertEquals("C/1-171", start.copy(uniqueDesignation = "C/1-171").following(start, start.copy(uniqueDesignation = "D/1-171")).uniqueDesignation)
+        assertEquals(now, start.following(start, now))
+    }
+
+    @Test
     fun `every function and echelon the builder offers makes a whole symbol code`() {
         for (function in SymbolPresets.unitFunctions) assertEquals(15, UnitDraft(functionId = function.functionId).sidc.length, function.id)
         for (echelon in SymbolPresets.echelons) assertEquals(15, UnitDraft(echelon = echelon.code).sidc.length, echelon.id)
