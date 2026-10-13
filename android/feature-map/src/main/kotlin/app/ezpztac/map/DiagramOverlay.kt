@@ -1,5 +1,6 @@
 package app.ezpztac.map
 
+import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
@@ -20,9 +21,10 @@ import org.maplibre.android.style.sources.ImageSource
 /**
  * Draws an [LzScene] on the map: the analysis boundary (a pale fill and an amber outline), a boundary being drawn (dashed), the target,
  * and the slope raster under all of them. Thin on purpose: *what* is drawn is the scene, which is tested; this only hands it to MapLibre,
- * which needs a GPU and cannot be tried here. [screenDensity] is the screen's pixels to the point, which the aircraft pictures are drawn for.
+ * which needs a GPU and cannot be tried here. The aircraft pictures are drawn for a screen of [screenDensity] pixels to the point, the UH-60's from
+ * [assets].
  */
-class DiagramOverlay(private val screenDensity: Float) {
+class DiagramOverlay(private val assets: AssetManager, private val screenDensity: Float) {
     private var style: Style? = null
     private var vector: GeoJsonSource? = null
     private var latest: LzScene = LzScene.EMPTY
@@ -164,7 +166,7 @@ class DiagramOverlay(private val screenDensity: Float) {
         }
         for (a in scene.graphics.aircraft) {
             val name = LzScene.aircraftImage(a.iconKey, a.violating)
-            add(name) { AircraftIconRenderer.forMap(a.iconKey, if (a.violating) IconState.VIOLATION else IconState.NORMAL, screenDensity) }
+            add(name) { AircraftIconRenderer.forMap(assets, a.iconKey, if (a.violating) IconState.VIOLATION else IconState.NORMAL, screenDensity) }
         }
         if (scene.graphics.goArounds.isNotEmpty()) {
             add(GraphicsImages.GO_AROUND_LEFT) { GraphicsImages.goAround(right = false) }

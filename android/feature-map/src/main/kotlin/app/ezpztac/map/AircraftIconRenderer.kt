@@ -1,13 +1,15 @@
 package app.ezpztac.map
 
+import android.content.res.AssetManager
 import android.graphics.Bitmap
 import androidx.core.graphics.createBitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import com.caverock.androidsvg.SVG
 
-/** Draws an aircraft's [AircraftIcons.shapes] into a bitmap. The shapes are tested as data; this only turns them into pixels. */
+/** Draws an aircraft's picture ([AircraftIcons.picture]) into a bitmap. What a picture is made of is tested as data; this only turns it into pixels. */
 object AircraftIconRenderer {
     /** The most pixels a picture is drawn with: enough for the sharpest screens at the size the map is given, without a picture costing megabytes. */
     const val MAX_PX = 1024
@@ -18,30 +20,42 @@ object AircraftIconRenderer {
      * of so many pixels counted as that many over the screen's density in points: every aircraft was drawn that many times too small on a device. It is
      * drawn here with the pixels the screen has for it ([IconRaster]) and its density set to say exactly how many points those are.
      */
-    fun forMap(iconKey: String, state: IconState, screenDensity: Float): Bitmap {
+    fun forMap(assets: AssetManager, iconKey: String, state: IconState, screenDensity: Float): Bitmap {
         val raster = IconRaster.of(LzScene.AIRCRAFT_ICON_PT, screenDensity.toDouble(), MAX_PX)
-        return render(iconKey, state, raster.px).apply { density = raster.densityDpi }
+        return render(assets, iconKey, state, raster.px).apply { density = raster.densityDpi }
     }
 
-    /** A square bitmap, [sizePx] a side, of the picture its [AircraftIcons.frame] cuts from the box: the rotor in the middle. Transparent where nothing is drawn. */
-    fun render(iconKey: String?, state: IconState, sizePx: Int): Bitmap {
+    /** A square bitmap, [sizePx] a side, of the picture its frame cuts out: the rotor in the middle. Transparent where nothing is drawn. */
+    fun render(assets: AssetManager, iconKey: String?, state: IconState, sizePx: Int): Bitmap = when (val picture = AircraftIcons.picture(iconKey)) {
+        is AircraftPicture.Svg -> renderSvg(assets.open(picture.asset).use { it.readBytes().decodeToString() }, state, sizePx)
+        is AircraftPicture.Silhouette -> renderSilhouette(picture, state, sizePx)
+    }
+
+    /** [svg] with its viewBox filling a square bitmap [sizePx] a side, in [state]'s colours: the normal accent replaced by the state's. */
+    internal fun renderSvg(svg: String, state: IconState, sizePx: Int): Bitmap {
+        val document = SVG.getFromString(svg.replace(IconState.NORMAL.hex, state.hex, ignoreCase = true))
+        val bitmap = createBitmap(sizePx, sizePx)
+        document.renderToCanvas(Canvas(bitmap), RectF(0f, 0f, sizePx.toFloat(), sizePx.toFloat()))
+        return bitmap
+    }
+
+    private fun renderSilhouette(picture: AircraftPicture.Silhouette, state: IconState, sizePx: Int): Bitmap {
         val bitmap = createBitmap(sizePx, sizePx)
         val canvas = Canvas(bitmap)
-        val frame = AircraftIcons.frame(iconKey)
+        val frame = picture.frame
         val scale = (sizePx / frame.side).toFloat()
         // The shapes are drawn in their box's units: the frame's middle goes to the bitmap's, and the frame fills it, strokes and all.
         canvas.translate(sizePx / 2f, sizePx / 2f)
         canvas.scale(scale, scale)
         canvas.translate(-frame.cx.toFloat(), -frame.cy.toFloat())
-        val palette = state.palette
         val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
 
-        fun paintFill(colour: IconColor?): Paint? = colour?.let { fill.apply { color = palette.getValue(it) } }
+        fun paintFill(colour: IconColor?): Paint? = colour?.let { fill.apply { color = state.colour(it) } }
         fun paintStroke(colour: IconColor?, width: Double): Paint? =
-            colour?.takeIf { width > 0 }?.let { stroke.apply { color = palette.getValue(it); strokeWidth = width.toFloat() } }
+            colour?.takeIf { width > 0 }?.let { stroke.apply { color = state.colour(it); strokeWidth = width.toFloat() } }
 
-        for (shape in AircraftIcons.shapes(iconKey)) {
+        for (shape in picture.shapes) {
             when (shape) {
                 is IconShape.Circle -> {
                     paintFill(shape.fill)?.let { canvas.drawCircle(shape.cx.toFloat(), shape.cy.toFloat(), shape.r.toFloat(), it) }

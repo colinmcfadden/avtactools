@@ -3,6 +3,7 @@ package app.ezpztac.map
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 
 /** Draws the device's position on [host]'s map while the GPS is tracking, and takes it off when it is not. */
@@ -15,8 +16,9 @@ fun GpsLayer(host: MapHost, gps: GpsState) {
 /** Draws the open diagram on [host]'s map: its boundary, target and slope raster. An empty scene takes the diagram off. */
 @Composable
 fun DiagramLayer(host: MapHost, scene: LzScene) {
+    val assets = LocalContext.current.assets
     val screenDensity = LocalDensity.current.density
-    val overlay = remember(host) { DiagramOverlay(screenDensity).also { host.onStyle(it::install) } }
+    val overlay = remember(host) { DiagramOverlay(assets, screenDensity).also { host.onStyle(it::install) } }
     LaunchedEffect(overlay, scene) { overlay.show(scene) }
 }
 

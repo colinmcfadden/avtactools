@@ -17,6 +17,8 @@ dependencies {
     api(project(":core-planning"))
     implementation(project(":core-symbols"))
     api(libs.maplibre.android)
+    // The UH-60's picture is an SVG (assets/aircraft/uh60.svg), drawn as core-symbols draws its symbols.
+    implementation(libs.androidsvg)
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
