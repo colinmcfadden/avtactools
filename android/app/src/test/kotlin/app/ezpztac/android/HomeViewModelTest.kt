@@ -236,6 +236,12 @@ class HomeViewModelTest {
         override val open = MutableStateFlow<PackState?>(null)
         override suspend fun openPack(uuid: String) = Unit
         override suspend fun closePack() = Unit
+
+        /** Where this person was said to be pointing, in order (null: nowhere). */
+        val pointed = mutableListOf<LatLon?>()
+        override fun point(lat: Double?, lon: Double?) {
+            pointed += if (lat != null && lon != null) LatLon(lat, lon) else null
+        }
     }
 
         private class Rig(scope: TestScope, val server: SlopeServer = SlopeServer(), listening: Boolean = true) {
@@ -1697,6 +1703,100 @@ class HomeViewModelTest {
         assertFalse(r.model.scene.value.locked)
         assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
         assertTrue(said.isEmpty())
+    }
+
+    // -- Presence: where this person points, and everyone else's pointers (P2e) ------------------------------------------------------
+
+    @Test
+    fun `this person points where the crosshair is, and with the finger while it moves something`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.model.cameraAt(LatLon(34.70, -84.10), byHand = true)
+        assertEquals(LatLon(34.70, -84.10), r.packs.pointed.last())
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        r.model.dragMoved(LatLon(34.7900, -84.0822))
+        assertEquals("the finger, while it moves something", LatLon(34.7900, -84.0822), r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.71, -84.10), byHand = true)                                   // the map moving under a drag is not the pointer
+        assertEquals(LatLon(34.7900, -84.0822), r.packs.pointed.last())
+        r.model.dragEnded(LatLon(34.7910, -84.0822))
+        assertEquals("the crosshair again", LatLon(34.71, -84.10), r.packs.pointed.last())
+        advanceUntilIdle()                                                                      // the map's scene has the marker where it was put
+        val marker = r.session.active.value!!.graphics.pzMarkers.single() as JsonObject
+        val now = LatLon((marker["lat"] as JsonPrimitive).content.toDouble(), (marker["lon"] as JsonPrimitive).content.toDouble())
+        assertTrue(r.model.dragStarted(now, view(now), touchRadiusPx = 24.0))
+        r.model.dragMoved(LatLon(now.lat + 0.001, now.lon))
+        assertEquals(LatLon(now.lat + 0.001, now.lon), r.packs.pointed.last())
+        r.model.dragCancelled()
+        assertEquals(LatLon(34.71, -84.10), r.packs.pointed.last())
+    }
+
+    @Test
+    fun `where the app takes the map by itself is never the pointer, and a covered map points nowhere`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.model.cameraAt(LatLon(34.70, -84.10), byHand = false)                                  // the view put back at launch
+        assertNull(r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.72, -84.12), byHand = true)
+        assertEquals(LatLon(34.72, -84.12), r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.720004, -84.120004), byHand = false)                          // the sheet settling keeps what is under the crosshair
+        assertEquals(LatLon(34.720004, -84.120004), r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.90, -84.30), byHand = false)                                  // a flight to the GPS fix
+        assertNull("the device's own position is never shared as the pointer", r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.91, -84.30), byHand = true)
+        assertEquals(LatLon(34.91, -84.30), r.packs.pointed.last())
+        r.model.mapCovered(true)                                                                  // the Library over the map
+        assertNull(r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.92, -84.30), byHand = true)
+        assertNull("nor while it is covered", r.packs.pointed.last())
+        r.model.mapCovered(false)
+        assertEquals(LatLon(34.92, -84.30), r.packs.pointed.last())
+        // A pack opening: where the person was looking before is not its to hear, until they move the map again.
+        r.packs.open.value = pack()
+        advanceUntilIdle()
+        assertNull(r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.93, -84.30), byHand = true)
+        assertEquals(LatLon(34.93, -84.30), r.packs.pointed.last())
+    }
+
+    private fun here(session: String, id: Int?, name: String?, at: kotlinx.serialization.json.JsonElement?) = kotlinx.serialization.json.buildJsonObject {
+        put("session", session)
+        if (id != null) put("user_id", id) else put("user_id", kotlinx.serialization.json.JsonNull)
+        if (name != null) put("name", name)
+        put("focus", kotlinx.serialization.json.buildJsonObject { if (at != null) put("at", at) })
+    }
+
+    private fun at(vararg values: Any) = kotlinx.serialization.json.JsonArray(
+        values.map { if (it is String) JsonPrimitive(it) else JsonPrimitive(it as Number) },
+    )
+
+    @Test
+    fun `everyone else pointing somewhere is drawn, named and in their colour, and this person and a pointer that is not one are not`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val people = listOf(
+            here("s-1", 1, "Colin McFadden", at(34.7, -84.1)),                                        // this person (the session's me)
+            here("s-2", 2, "Sam Bell", at(34.71, -84.11)),
+            here("s-3", 3, "Jess Reed", at(34.72, -84.12)),
+            here("s-3b", 3, "Jess Reed", at(34.73, -84.13)),                                          // her other device: a pointer of its own
+            here("s-4", 4, "Kim Lee", null),                                                           // here, pointing nowhere
+            here("s-5", 5, "Ann Ray", at("34.7", "-84.1")),                                           // not numbers
+            here("s-6", 6, "Bo Day", at(34.7, -84.1, 0)),                                             // not a place
+            here("s-7", null, null, at(34.74, -84.14)),                                               // nobody named
+        )
+        r.packs.open.value = pack().let { it.copy(people = people) }
+        advanceUntilIdle()
+        val pointers = r.model.pointers.value
+        assertEquals(listOf("s-2", "s-3", "s-3b", "s-7"), pointers.map { it.key })
+        assertEquals(listOf("Sam B.", "Jess R.", "Jess R.", "Someone"), pointers.map { it.label })
+        assertEquals(LatLon(34.71, -84.11), pointers.first().at)
+        assertEquals(app.ezpztac.map.PersonColors.of("2"), pointers.first().color)
+        assertEquals("by the name when there is no id", app.ezpztac.map.PersonColors.of(""), pointers.last().color)
+        r.packs.open.value = null
+        advanceUntilIdle()
+        assertTrue(r.model.pointers.value.isEmpty())
     }
 
     @Test

@@ -16,6 +16,8 @@ data class CameraState(
     val bearingDegrees: Double = 0.0,
     val paddingTopPx: Double = 0.0,
     val paddingBottomPx: Double = 0.0,
+    /** The move that brought it here began with the person's own gesture, not the app's. */
+    val byHand: Boolean = false,
 )
 
 /**

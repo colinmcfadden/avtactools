@@ -1,5 +1,8 @@
 package app.ezpztac.missionpacks
 
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,10 +19,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.serialization.json.JsonPrimitive
 
 /** What a drain in the background came to ([PackEngine.drainAll]). */
 public enum class DrainOutcome {
@@ -140,6 +142,7 @@ public class PackEngine(
             follow(null)
             haltLocked(clients.values.toList())
             mutableMe.value = null
+            synchronized(focusLock) { focusAt = null }
         }
     }
 
@@ -158,6 +161,8 @@ public class PackEngine(
                 return
             }
             current?.takeIf { it.uuid != uuid }?.stop()
+            // Another pack: where this person was pointing belongs to what they were doing before, not to it. The next move of the map says it.
+            synchronized(focusLock) { focusAt = null }
             var client = clients[uuid]
             if (client != null && (!client.usable || !client.reopen())) {
                 // Paused (opening it again is asking again) or stopping (keeping what the pack refused): let it finish, then a new one.
@@ -188,10 +193,49 @@ public class PackEngine(
         return client.edit(ops)
     }
 
-    /** What this person has open in the open pack (`{item}`), for everyone else's presence; null for nothing. */
-    public fun setFocus(focus: JsonObject?) {
-        openClient?.setFocus(focus)
+    // What this person has open and where they are pointing, for everyone else's presence: kept here, apart, and said together (the web's
+    // `{item, at}`), so neither part wipes the other, and said again to whichever client is open next. The item is said only to its own pack.
+    private val focusLock = Any()
+    private var focusItem: PackItemRef? = null
+    private var focusAt: Pair<Double, Double>? = null
+
+    /** What this person has open in the open pack ([ref], one of its items), for everyone else's presence; null for nothing. */
+    public fun setFocusItem(ref: PackItemRef?) {
+        synchronized(focusLock) { focusItem = ref }
+        openClient?.let { it.setFocus(focusFor(it.uuid)) }
     }
+
+    /**
+     * Where this person is pointing on the map ([lat], [lon]; the web's `at`, its mouse), for everyone else's presence: kept to 1e-5 degrees, about a
+     * metre, as the web keeps it, so the same place is not said again. Null for nowhere.
+     */
+    public fun setPointer(lat: Double?, lon: Double?) {
+        val at = if (lat != null && lon != null && lat.isFinite() && lon.isFinite()) rounded(lat) to rounded(lon) else null
+        synchronized(focusLock) {
+            if (at == focusAt) return
+            focusAt = at
+        }
+        openClient?.let { it.setFocus(focusFor(it.uuid)) }
+    }
+
+    // The focus as pack [pack] is told it: the item only if it is that pack's, the pointer wherever it is; null for neither.
+    private fun focusFor(pack: String): JsonObject? = synchronized(focusLock) {
+        val item = focusItem?.takeIf { it.pack == pack }?.item
+        val at = focusAt
+        if (item == null && at == null) {
+            null
+        } else {
+            JsonObject(
+                buildMap {
+                    if (item != null) put("item", JsonPrimitive(item))
+                    if (at != null) put("at", JsonArray(listOf(JsonPrimitive(at.first), JsonPrimitive(at.second))))
+                },
+            )
+        }
+    }
+
+    // `Math.round(x * 1e5) / 1e5`, as the web rounds a pointer; never -0, which JSON would write as one.
+    private fun rounded(degrees: Double): Double = Js.round(degrees * 1e5) / 1e5 + 0.0
 
     /** Asks the open pack for whatever is new now: after a change made outside the operation stream (a copy from the library). */
     public fun refresh() {
@@ -333,6 +377,8 @@ public class PackEngine(
             mutableOpen.value = client?.state?.value
         }
         changes.update { it + 1 }
+        // A pack opened (or a client that replaced one) hears where this person is and what of it they have open, as the one before did.
+        client?.setFocus(focusFor(client.uuid))
     }
 
     // From a client, on its own thread, as it sets a new state: shown if it is the open one.

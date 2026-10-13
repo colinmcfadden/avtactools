@@ -87,6 +87,7 @@ import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.PinLabelsLayer
 import app.ezpztac.map.PointLayer
+import app.ezpztac.map.PointersLayer
 import app.ezpztac.map.RouteLayer
 import app.ezpztac.map.ThreatLabelsLayer
 import app.ezpztac.map.ThreatLayer
@@ -259,6 +260,9 @@ fun MapHome(
         if (news) chosen = Panel.Pack
         if (raise) raisePack()
     }
+    // The map covered (the Library, a route's plan page, the phone's sheet at full height): nobody is pointing at it, for everyone else in a pack.
+    val mapCovered = libraryTab != null || (!tablet && (routes.planOpen || sheet.settled == SheetDetent.Full))
+    LaunchedEffect(mapCovered) { home.mapCovered(mapCovered) }
     LaunchedEffect(packPanel) { packPanel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // An item opened from the Pack panel is shown in its own panel (an LZ/PZ in LZ/PZ, a route set in Routes), as the web's dock does.
     LaunchedEffect(packPanel) { packPanel.opened.collect { kind -> chosen = if (kind == "route") Panel.Routes else Panel.Lz } }
@@ -303,7 +307,12 @@ fun MapHome(
             }
         }
     }
-    LaunchedEffect(host) { snapshotFlow { host.camera }.filterNotNull().collect(viewModel::onCamera) }
+    LaunchedEffect(host) {
+        snapshotFlow { host.camera }.filterNotNull().collect { camera ->
+            viewModel.onCamera(camera)
+            home.cameraAt(camera.center, camera.byHand)                                          // this person's pointer, for everyone else in a pack
+        }
+    }
     // A boundary or a route is drawn, or a tool places, by tapping the map: the sheet goes down to its header, so the map is there, each time one starts.
     LaunchedEffect(drawingWhat) { if (drawingWhat != null && !tablet) sheet.animateTo(SheetDetent.Lowered) }
     LaunchedEffect(threatsOn) { home.allowThreats(threatsOn) }
@@ -505,6 +514,7 @@ fun MapHome(
                     GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
                     PinLabelsLayer(host, routeScene, pointScene)
                     ThreatLabelsLayer(host, threatScene)
+                    PackPointers(host, home)
                     // At night the imagery is dimmed with the rest of the screen (docs/NATIVE_APPS_PLAN.md, "Night mode"); a tap goes through to the map.
                     if (night) NightDim()
                     // Anchored at the press, in the map's own pixels (this box is the map's).
@@ -704,6 +714,13 @@ internal suspend fun SnackbarHostState.panelToast(text: String, tab: LibraryTab,
         return
     }
     if (showSnackbar(text, actionLabel = "Open Library", withDismissAction = true, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) openLibrary(tab)
+}
+
+/** Everyone else's pointers in the open pack, collected where they are drawn: they move many times a second, and nothing else is built again as they do. */
+@Composable
+private fun PackPointers(host: app.ezpztac.map.MapHost, home: HomeViewModel) {
+    val pointers by home.pointers.collectAsStateWithLifecycle()
+    PointersLayer(host, pointers)
 }
 
 /** The map's menu as it was opened: where (its grid, and the press in the map's pixels), and what *Add route point here* would do then. */

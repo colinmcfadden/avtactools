@@ -265,6 +265,51 @@ class PackEngineTest {
         }
 
         @Test
+        fun `what this person has open and where they point are said together, the item only to its own pack`() = rig(live = LIVE) { r ->
+            val engine = r.engine()
+            engine.enable(SAM)
+            engine.setPointer(30.0, -80.0)                              // before the pack opened: where they were looking then is not its to hear
+            engine.setFocusItem(PackItemRef("p-1", "lz-1"))             // but what of it they have open is, as soon as it opens
+            engine.openPack("p-1")
+            runCurrent()
+            val first = r.server.sockets.single()
+            first.welcome(r.server.headSeq("p-1"))
+            runCurrent()
+            assertEquals(listOf(json("""{"item": "lz-1"}""")), first.presenceSent.toList())
+            engine.setPointer(34.7838249, -84.0822051)
+            r.advance(200)
+            assertEquals(json("""{"item": "lz-1", "at": [34.78382, -84.08221]}"""), first.presenceSent.last())
+            assertEquals(listOf("item", "at"), first.presenceSent.last()!!.keys.toList(), "the item first, as the web writes it")
+            val said = first.presenceSent.size
+            engine.setPointer(34.783821, -84.082209)                    // the same place to a metre: not said again
+            r.advance(200)
+            assertEquals(said, first.presenceSent.size)
+            engine.setPointer(null, null)
+            r.advance(200)
+            assertEquals(json("""{"item": "lz-1"}"""), first.presenceSent.last())
+            engine.setFocusItem(null)
+            r.advance(200)
+            assertNull(first.presenceSent.last())
+            // The next pack hears neither the item of the one before nor where this person pointed in it, until they point again.
+            engine.setFocusItem(PackItemRef("p-1", "lz-1"))
+            engine.setPointer(35.0, -85.0)
+            engine.openPack("p-2")
+            runCurrent()
+            val second = r.server.sockets.last()
+            second.welcome(r.server.headSeq("p-2"))
+            runCurrent()
+            assertTrue(second.presenceSent.isEmpty(), "${second.presenceSent}")
+            engine.setPointer(35.0, -85.0)
+            r.advance(200)
+            assertEquals(json("""{"at": [35.0, -85.0]}"""), second.presenceSent.last())
+            engine.setPointer(null, null)
+            r.advance(200)
+            engine.setPointer(-0.0, -0.0)                                // never "-0", which JSON would keep
+            r.advance(200)
+            assertEquals("""{"at":[0.0,0.0]}""", second.presenceSent.last().toString())
+        }
+
+        @Test
         fun `opened again while it still sends, its stream is opened again`() = rig(live = LIVE) { r ->
             val engine = r.engine()
             engine.enable(SAM)

@@ -239,7 +239,8 @@ object PackFacts {
 
     /** "Sam Bell" is "Sam B."; one word stays whole; nothing is "Someone" (Avatar.jsx's `shortName`). Never half a character. */
     fun shortName(name: String?): String {
-        val words = name.orEmpty().trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        // JavaScript's \s: the ASCII spaces, every Unicode space separator and the byte order mark (Java's \s is the ASCII ones only).
+        val words = name.orEmpty().split(JS_SPACES).filter { it.isNotEmpty() }
         if (words.size < 2) return words.firstOrNull() ?: "Someone"
         val last = words.last()
         return "${words.first()} ${String(Character.toChars(last.codePointAt(0)))}."
@@ -340,3 +341,6 @@ object PackFacts {
 
     private fun text(value: JsonElement?): String? = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
 }
+
+/** What JavaScript's `\s` matches: Java's own, the space separators (no-break, the ideographic and the rest) and U+FEFF. */
+private val JS_SPACES = Regex("[\\s\\p{Z}\\x{FEFF}]+")

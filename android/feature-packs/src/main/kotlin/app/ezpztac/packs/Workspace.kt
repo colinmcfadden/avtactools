@@ -66,6 +66,9 @@ interface PackDoor {
 
     /** Writes whatever of the open pack the editors hold now, so a change of the last moments is on its way before the pack is finished. Throws when a save failed. */
     suspend fun flushOpen() {}
+
+    /** Where this person is pointing on the map ([lat], [lon]), for everyone else in the open pack; null for nowhere. Said at most ten times a second. */
+    fun point(lat: Double?, lon: Double?) {}
 }
 
 /** The calls the switcher makes: the packs this person can open, the invitations waiting for them, their teams, and answering an invitation. */

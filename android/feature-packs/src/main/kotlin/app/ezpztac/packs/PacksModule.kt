@@ -83,6 +83,8 @@ class EnginePackDoor @Inject constructor(private val engine: PackEngine, private
     }
 
     override suspend fun flushOpen() = workspace.flushOpen()
+
+    override fun point(lat: Double?, lon: Double?) = engine.setPointer(lat, lon)
 }
 
 /** The Pack panel's calls: the pack's history and seen marker over the API client, its items through the editors' join to the pack. */

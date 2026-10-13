@@ -821,7 +821,7 @@ Only for the OPEN client, only in the foreground, and only one socket. OkHttp ho
   - 4401 never triggers a refresh directly. The next poll goes through executeSigned, which refreshes only if the token really lapsed, and the reconnect uses whatever is stored then.
 
 **Presence**
-`setFocus(focus)` is throttled to 100 ms and sent only after the welcome. A focus over 1 KB is not sent, because the service drops it silently. The focus is `{item}` for the open LZ/PZ; `at` waits for the map screens.
+`setFocus(focus)` is throttled to 100 ms and sent only after the welcome. A focus over 1 KB is not sent, because the service drops it silently. The focus is `{item, at}`: the open LZ/PZ and where this person is pointing (the crosshair, or the finger while it moves something), kept apart in the engine and said together (`setFocusItem`, `setPointer`; P2e of docs/ANDROID_SCREENS_PLAN.md).
 
 **Foreground**
 - `foreground(false)` (ON_STOP): close the socket with 1000; clear poll, presence and load. Sending continues while the process lives.

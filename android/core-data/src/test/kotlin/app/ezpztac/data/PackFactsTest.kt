@@ -233,6 +233,8 @@ class PackFactsTest {
     @Test
     fun `a short name is the first word and the last one's first letter, never half a character`() {
         assertEquals("Sam B.", PackFacts.shortName(" Sam   Bell "))
+        // JavaScript's \s splits on a no-break space, the ideographic space and the byte order mark too, so the web says "Sam B." for these.
+        for (space in listOf(0xA0, 0x3000, 0x2009, 0xFEFF)) assertEquals("U+%04X".format(space), "Sam B.", PackFacts.shortName("Sam" + Char(space) + "Bell"))
         assertEquals("Cher", PackFacts.shortName("Cher"))
         assertEquals("Someone", PackFacts.shortName(null))
         assertEquals("Ann 𝐀.", PackFacts.shortName("Ann 𝐀lpha"))

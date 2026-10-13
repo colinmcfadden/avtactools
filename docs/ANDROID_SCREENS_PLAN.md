@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; **P2b built and reviewed**, its findings fixed; **P2c built and reviewed**, its findings fixed; **P2d built and reviewed**, its findings fixed; P2e next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; **P2b built and reviewed**, its findings fixed; **P2c built and reviewed**, its findings fixed; **P2d built and reviewed**, its findings fixed; **P2e built and reviewed**, its findings fixed; P3 next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -432,6 +432,31 @@ not the tablet design's; the foot's type size and tablet form were not the desig
 after confirming *Finish* may meet the finished pack (as on the web, finishing comes first once asked), and the question dialogs show no progress (as on the web; a second
 ask is told the first is still under way). Tests: `WorkspaceViewModelTest`, `FinishedTest` (with screenshots, 360 dp and 840 dp at 2.0), `TabletFrameTest`,
 `WorkspaceChipsTest`, `PackWorkspaceTest`, `PackCallsTest`.
+
+**P2e — The presence pointer. Built.** Everyone else in the open pack who is pointing somewhere is drawn on the map (the design's PackLive): an arrow in their colour,
+its tip on the place, and their short name ("Sam B.") on a pill beside it (`PointersLayer`, feature-map). This person's own pointer goes to everyone else with their presence
+(`{item, at}`, as the web's), at most ten times a second. The engine keeps the two parts apart and says them together (`PackEngine.setFocusItem` / `setPointer`), so neither
+wipes the other, the item is said only to its own pack, and a client that opens next hears both. **Amended while building:**
+- **This person's pointer is the crosshair** (the middle of the map that shows), and the finger while it moves something: a touch screen has no mouse to follow, and the
+  design draws a pointer on the aircraft its person is moving.
+- **The design's arrow and pill**, not the web's bar and flag; **in the web's person colours** (`PersonColors`, Avatar.jsx's palette and hash), so a person is the same
+  colour on the web and here. The chip's faces keep the theme's containers (a pointer in those would not show on imagery), so a face and its pointer are not matched by colour:
+  the pointer is named.
+- **Not built:** a ring in the mover's colour on what they are moving (it needs a `holding` nobody sends), and a sign for a pointer off the screen.
+- **A device in the back drops out of presence** (its live stream closes there), where the web's tab keeps its last pointer up.
+- **The crosshair is the pointer only once the person has moved the map by hand** (`CameraState.byHand`, from MapLibre's gesture reason): where the app takes the map by
+  itself (a GPS fix, a search, the view put back at launch) is never shared, nor the crosshair while the map is covered (the Library, a route's plan page, the phone's sheet
+  at full height: the web's pointer goes when its mouse leaves the map), and a pack opened hears no pointer until the next pan.
+**Reviewed** (one independent review, 2026-10-12: 15 reported, 9 survived an adversarial check, about 7 distinct; each fix has a test where one can hold it, and each tested
+one was broken to see it fail): a GPS fix, or the camera put back at launch, went to everyone in the pack as this person's pointer without them touching the map, and so did
+the crosshair while the Library or a plan page covered it, and a pack opened heard where the person had been looking before; the person's own pointer, echoed back by the
+live service, woke the editors' join to a pack ten times a second during a drag, each time serialising the open LZ/PZ again on the main thread (`sameForALook`: a presence
+frame is no reason to look); the pointers were mirrored across the map in a right-to-left language; a name pill sliding in from the left popped in; each pointer was read twice
+by a screen reader, in words of its own rather than the design's; a name with a no-break or other Unicode space was not shortened as the web shortens it (`PackFacts.shortName`
+splits on JavaScript's spaces now, for every name it gives); and the "never -0" test did not reach its guard. Not changed: the finger is the pointer while it moves anything,
+a threat included (no threat is sent: only the place, as the web's mouse would); a frame built for every camera move, of which ten a second can go (cheap, and the client
+holds the rest). The older map labels (route points, threats, graphics) mirror in a right-to-left language too: a task of its own. Tests: `PackEngineTest`,
+`PackEditorLookTest`, `PackFactsTest`, `PointersTest` (with a screenshot), `HomeViewModelTest`.
 
 **P3 — People.** *New pack* (`NewPack`), *Members* (`Members`: roles, invite by name or email, pending invites with resend and revoke,
 share with a team), and the teams page.

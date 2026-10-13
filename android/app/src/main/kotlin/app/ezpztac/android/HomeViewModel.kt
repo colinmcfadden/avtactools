@@ -19,6 +19,7 @@ import app.ezpztac.data.MapFocus
 import app.ezpztac.data.MaskState
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.PackFacts
 import app.ezpztac.data.PackLock
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.RouteSelection
@@ -37,7 +38,9 @@ import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.GraphicsScene
 import app.ezpztac.map.LzScene
+import app.ezpztac.map.MapPointer
 import app.ezpztac.map.MapProjection
+import app.ezpztac.map.PersonColors
 import app.ezpztac.map.PointHitTest
 import app.ezpztac.map.PointScene
 import app.ezpztac.map.RouteHitTest
@@ -49,6 +52,7 @@ import app.ezpztac.map.ThreatMaskPicture
 import app.ezpztac.map.ThreatScene
 import app.ezpztac.map.UnitFootprints
 import app.ezpztac.missionpacks.PackRef
+import app.ezpztac.missionpacks.PackState
 import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.model.DragTarget
 import app.ezpztac.model.GraphicRef
@@ -58,6 +62,7 @@ import app.ezpztac.packs.PackDoor
 import app.ezpztac.symbols.SymbolRenderer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -74,6 +79,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 
 /** A diagram that was just opened: where the map goes, and the base map it was saved with. */
 data class OpenedDiagram(val id: String, val at: LatLon?, val baseMap: String?)
@@ -133,6 +143,46 @@ class HomeViewModel @Inject constructor(
 
     // The open pack's lock, once for each change (never for a pointer moving: a pack's state changes many times a second).
     private val packLock = packs.open.map { it?.let(PackLock::of) }.distinctUntilChanged()
+
+    /**
+     * Everyone else in the open pack who is pointing somewhere on the map (the web's PresenceLayer): a named pointer each, in their colour. Read at the rate
+     * people point (it is what moves the pointers), and never by anything that does more than draw them.
+     */
+    val pointers: StateFlow<List<MapPointer>> = combine(packs.open, packs.user) { state, user -> pointersOf(state, state?.session?.me ?: user) }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // This person's pointer, for everyone else in the open pack: where the crosshair is (the middle of the map that shows), once they have moved the map by hand,
+    // and the finger while it moves something. Never where the app took the map by itself (a GPS fix, a search, the view put back at launch), nor while
+    // something covers the map: the web's pointer is its mouse over the map, and only that.
+    private var crosshair: LatLon? = null
+    private var handPointed = false
+    private var mapCovered = false
+    private var finger: LatLon? = null
+
+    /**
+     * The camera moved: its [center] is where the crosshair is now, and [byHand] whether the person's own gesture moved it. A move the app made that leaves the
+     * crosshair where it was (the sheet settling, which keeps what was under it) changes nothing.
+     */
+    fun cameraAt(center: LatLon, byHand: Boolean) {
+        val before = crosshair
+        val moved = before == null || abs(before.lat - center.lat) > SAME_PLACE || abs(before.lon - center.lon) > SAME_PLACE
+        crosshair = center
+        if (byHand) handPointed = true else if (moved) handPointed = false
+        sayPointer()
+    }
+
+    /** Something covers the map (the Library, a route's plan page, the sheet at full height): nobody is pointing at it, and the pointer goes until it shows again. */
+    fun mapCovered(covered: Boolean) {
+        if (covered == mapCovered) return
+        mapCovered = covered
+        sayPointer()
+    }
+
+    private fun sayPointer() {
+        val at = finger ?: crosshair?.takeIf { handPointed && !mapCovered }
+        packs.point(at?.lat, at?.lon)
+    }
 
     // Why the open LZ/PZ, or set of routes, cannot be changed now: it is a read-only pack's. Read as the person acts, never a step behind.
     private fun lzLocked(): String? = packs.open.value?.let(PackLock::of)?.reasonFor(session.active.value?.id)
@@ -303,6 +353,13 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             // Kept when the session closes (sign-out), as the diagram is; a pack's set is the pack's, never the one the person's own work comes back to.
             routeSession.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { if (PackRef.parse(it.id) == null) lastSet.remember(it.id) }
+        }
+        // Another pack open (or none): where this person was pointing belonged to what they were doing before. The next move of the map by hand says it again.
+        viewModelScope.launch {
+            packs.open.map { it?.uuid }.distinctUntilChanged().collect {
+                handPointed = false
+                sayPointer()
+            }
         }
         // An LZ/PZ closed (and none opened in its place) takes a tool's mode with it.
         viewModelScope.launch {
@@ -484,13 +541,28 @@ class HomeViewModel @Inject constructor(
     }
 
     /** The finger holding what was picked up is now at [at]. */
-    fun dragMoved(at: LatLon) = mapDrag.move(at)
+    fun dragMoved(at: LatLon) {
+        mapDrag.move(at)
+        // The finger is the pointer while it moves something (the design's: Sam B.'s pointer is on the aircraft he is moving).
+        if (mapDrag.active.value != null) {
+            finger = at
+            sayPointer()
+        }
+    }
 
     /** The finger lifted at [at]: what was picked up is put down there. */
-    fun dragEnded(at: LatLon) = mapDrag.end(at)
+    fun dragEnded(at: LatLon) {
+        mapDrag.end(at)
+        finger = null
+        sayPointer()
+    }
 
     /** The touch was taken from the drag: what was picked up goes back where it was. */
-    fun dragCancelled() = mapDrag.cancel()
+    fun dragCancelled() {
+        mapDrag.cancel()
+        finger = null
+        sayPointer()
+    }
 
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */
     fun baseMapChosen(id: String) = session.setQuietly { it.copy(view = it.view.copy(mapStyle = id)) }
@@ -505,3 +577,24 @@ private fun TerrainAnalysis.toSlopeImage(): SlopeImage? {
     if (southWest.size < 2 || northEast.size < 2) return null
     return SlopeImage(south = southWest[0], west = southWest[1], north = northEast[0], east = northEast[1], dataUri = overlay)
 }
+
+/**
+ * Who else in the open pack is pointing where: everyone but this person ([me]; the web leaves out every one of this account's sessions) whose presence has an `at`
+ * of two numbers. Named as the history names people ("Sam B."), coloured as the web colours them, one for each session (a person with two devices open has two).
+ */
+internal fun pointersOf(state: PackState?, me: Int?): List<MapPointer> = state?.people.orEmpty().mapNotNull { person ->
+    val userId = (person["user_id"] as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull
+    if (me != null && userId == me) return@mapNotNull null
+    val at = ((person["focus"] as? JsonObject)?.get("at") as? JsonArray)?.takeIf { it.size == 2 } ?: return@mapNotNull null
+    val lat = (at[0] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull?.takeIf { it.isFinite() } ?: return@mapNotNull null
+    val lon = (at[1] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull?.takeIf { it.isFinite() } ?: return@mapNotNull null
+    val name = (person["name"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    val session = (person["session"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    MapPointer(
+        key = session ?: userId?.toString() ?: name.orEmpty(), at = LatLon(lat, lon), label = PackFacts.shortName(name),
+        color = PersonColors.of(userId?.toString() ?: name.orEmpty()),
+    )
+}
+
+/** Two crosshairs this close (about a metre) are the same place: a move of the app's that leaves the crosshair there is no move. */
+private const val SAME_PLACE = 1e-5

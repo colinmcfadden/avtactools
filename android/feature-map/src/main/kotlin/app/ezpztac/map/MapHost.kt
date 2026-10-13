@@ -59,6 +59,13 @@ class MapHost {
     /** A flight under way ([flyTo], [faceNorth]): a change of padding while it lasts is folded into it rather than cutting it short. */
     private var flight: Flight? = null
 
+    /** Whether the camera's last move began with the person's own gesture (a pan, a pinch), not the app's (a flight to a GPS fix or a search, a view put back). */
+    private var byHand = false
+
+    internal fun moveStarted(reason: Int) {
+        byHand = reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE
+    }
+
     private data class Padding(val top: Int, val bottom: Int) {
         fun array() = doubleArrayOf(0.0, top.toDouble(), 0.0, bottom.toDouble())
     }
@@ -105,6 +112,7 @@ class MapHost {
             LatLon(target.latitude, target.longitude), position.zoom, position.bearing,
             paddingTopPx = now?.getOrNull(1) ?: padding.top.toDouble(),
             paddingBottomPx = now?.getOrNull(3) ?: padding.bottom.toDouble(),
+            byHand = byHand,
         )
     }
 
@@ -233,6 +241,7 @@ fun EzpzMap(
                 isAttributionEnabled = true
                 isCompassEnabled = false                       // the app draws its own, in the design system
             }
+            map.addOnCameraMoveStartedListener { reason -> host.moveStarted(reason) }
             map.addOnCameraMoveListener { host.publishCamera(map) }
             map.addOnCameraIdleListener { host.publishCamera(map) }
             map.addOnMapClickListener { at -> tap(LatLon(at.latitude, at.longitude)); false }   // false: the map's own handling of a tap goes on

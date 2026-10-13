@@ -16,6 +16,7 @@ import app.ezpztac.missionpacks.PackState
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.missionpacks.Reconcile
 import app.ezpztac.missionpacks.TakeTheirs
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -26,7 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.util.UUID
 
 /**
  * Keeps the document open in one editor ([session]) in step with the open mission pack when it is one of the pack's items: the web's
@@ -93,7 +93,8 @@ internal class PackEditorSync<D : Any>(
         this.scope = scope
         val main = items.main
         scope.launch(main) { for (signal in wake) look() }
-        scope.launch(main) { engine.open.collect { wake.trySend(Unit) } }
+        // Not for a presence frame (people pointing, many times a second, this person's own echo among them): a look reads none of it.
+        scope.launch(main) { engine.open.distinctUntilChanged(::sameForALook).collect { wake.trySend(Unit) } }
         scope.launch(main) { engine.me.collect { wake.trySend(Unit) } }
         scope.launch(main) { session.active.map { it?.let(idOf) }.distinctUntilChanged().collect { wake.trySend(Unit) } }
         scope.launch(main) { items.saved.collect { wake.trySend(Unit) } }
@@ -290,6 +291,13 @@ internal class PackEditorSync<D : Any>(
         if (localId == focused && (localId == null || status == focusedOn)) return
         focused = localId
         focusedOn = status
-        engine.setFocus(localId?.let { PackRef.parse(it) }?.let { JsonObject(mapOf("item" to JsonPrimitive(it.item))) })
+        engine.setFocusItem(localId?.let { PackRef.parse(it) })
     }
 }
+
+/**
+ * Whether a look would find nothing new between [a] and [b]: the same pack, standing the same way, with the same session and items. A presence frame is a copy
+ * with only its people changed, which keeps the others' instances.
+ */
+internal fun sameForALook(a: PackState?, b: PackState?): Boolean =
+    a?.uuid == b?.uuid && a?.status == b?.status && a?.session === b?.session && a?.items === b?.items && a?.error == b?.error
