@@ -8,12 +8,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -204,6 +208,111 @@ class PanelsInPackTest {
         compose.onNodeWithText("Close here").performClick()
         assertEquals(listOf("open pack:p:rt-2", "close pack:p:rt-1"), log)
     }
+
+    // -- A finished pack (P2c) ------------------------------------------------------------------------------------------------------
+
+    private val finished = InPackUi("OP DK", "Finished by Sam B. on Oct 5 at 14:20", null, readOnly = true, lock = app.ezpztac.data.PackLock("p", "OP DK", "OP DK is finished: nothing in it can be changed.", "Off in a finished pack", true))
+    private val hint = "This pack is finished: you can look at everything in it and export its routes, but nothing can be changed."
+
+    private val lzFinished = lzState.copy(
+        current = lzState.current!!.copy(inPack = finished, chips = packLzChips(DiagramStatus.ANALYZED, true, null, false, false)),
+        pack = lzState.pack!!.copy(head = "OP DK · 4 items · finished · read-only", readOnly = true, hint = hint, off = "Off in a finished pack"),
+    )
+
+    @Test
+    fun `a finished pack's LZ-PZ offers no rename and nothing new, and its foot says who finished it`() {
+        show { LzHomeContent(lzFinished, LzPanelActions(), GRID) }
+        compose.onNodeWithContentDescription("Rename LZ IBIS (OWEST)").assertDoesNotExist()
+        compose.onNodeWithText("Finished by Sam B. on Oct 5 at 14:20").assertIsDisplayed()
+        compose.onNodeWithText("New LZ/PZ at the crosshair").assertDoesNotExist()
+        compose.onNodeWithText(hint).assertIsDisplayed()
+        compose.onNodeWithContentDescription("More actions for LZ IBIS (OWEST)").performClick()
+        compose.onNodeWithText("Rename").assertDoesNotExist()
+        compose.onNodeWithText("Close here").assertIsDisplayed()                                   // looking is not changing
+    }
+
+    @Test
+    fun `an empty finished pack says only that it is empty`() {
+        show { LzHomeContent(DiagramsUiState(pack = PackLzListUi("OP DK", "OP DK · 0 items · finished · read-only", emptyList(), readOnly = true, hint = hint)), LzPanelActions(), GRID) }
+        compose.onNodeWithText("Nothing in OP DK.").assertIsDisplayed()
+        compose.onNodeWithText("Tap New LZ/PZ", substring = true).assertDoesNotExist()
+    }
+
+    @Composable
+    private fun LockedPlan() = LzPlanContent(
+        lzFinished.current!!,
+        GraphicsUiState(listed = true, canEdit = false, locked = finished.reason),
+        BoundaryUiState(canStart = false, locked = finished.reason, drawnPoints = 4),
+        null, LzPanelActions(), GraphicsActions(), GRID,
+    )
+
+    @Test
+    fun `the plan of a finished pack's LZ-PZ has its tools and its analysis off, and says why`() {
+        show { LockedPlan() }
+        compose.onNodeWithText("Off in a finished pack").assertIsDisplayed()
+        compose.onNode(hasText("Re-analyze") and hasClickAction()).assertIsNotEnabled()
+        compose.onNodeWithText("Analyzed. Read-only here: you can look at it, not change it.").assertIsDisplayed()
+        compose.onNode(hasText("Helo") and hasClickAction()).assertIsNotEnabled()
+        compose.onNode(hasText("Draw LZ") and hasClickAction()).assertIsNotEnabled()
+        compose.onNodeWithText("Tools place where you tap the map", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Drawn boundary: 4 points.").assertIsDisplayed()
+        compose.onNodeWithText("Finished by Sam B. on Oct 5 at 14:20").assertIsDisplayed()
+        compose.onNodeWithContentDescription("More actions for LZ IBIS (OWEST)").performClick()
+        compose.onNodeWithText("Rename").assertDoesNotExist()
+    }
+
+    private val routesFinished = routesState.copy(
+        open = routesState.open!!.copy(inPack = finished, chips = packRouteChips(true, null, false, false), canUndo = false),
+        pack = routesState.pack!!.copy(readOnly = true, hint = hint),
+    )
+
+    @Test
+    fun `a finished pack's set offers no rename, its routes no rename or delete, and nothing to sketch`() {
+        show {
+            androidx.compose.foundation.layout.Column {
+                RoutesHomeContent(routesFinished, RoutesActions())
+                RoutesFooter(routesFinished, RoutesActions())
+            }
+        }
+        compose.onNodeWithContentDescription("Rename OP DK INGRESS").assertDoesNotExist()
+        compose.onNodeWithText("Finished by Sam B. on Oct 5 at 14:20").assertIsDisplayed()
+        compose.onNodeWithText(hint).assertExists()
+        compose.onNodeWithText("Sketch a route").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More actions for RED 1").performClick()
+        compose.onNodeWithText("Rename").assertDoesNotExist()
+        compose.onNodeWithText("Delete").assertDoesNotExist()
+        compose.onNodeWithText("Export this route as .msnx").assertIsDisplayed()                 // exporting changes nothing
+    }
+
+    @Test
+    fun `a route's rename and delete begun before its pack was finished go, and do not come back by themselves when it is reopened`() {
+        val state = mutableStateOf(routesState)
+        show { RoutesHomeContent(state.value, RoutesActions()) }
+        compose.onNodeWithContentDescription("More actions for RED 1").performClick()
+        compose.onNodeWithText("Rename").performClick()
+        compose.onNodeWithText("Route name").assertExists()
+        compose.onNodeWithContentDescription("More actions for RED 1").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.onNodeWithText("Delete \"RED 1\"? You can undo this until the set is closed.").assertExists()
+        state.value = routesFinished
+        compose.waitForIdle()
+        compose.onNodeWithText("Route name").assertDoesNotExist()
+        compose.onNodeWithText("Delete \"RED 1\"?", substring = true).assertDoesNotExist()
+        state.value = routesState
+        compose.waitForIdle()
+        compose.onNodeWithText("Route name").assertDoesNotExist()
+        compose.onNodeWithText("Delete \"RED 1\"?", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a sketch still under way when the pack is finished keeps its Cancel`() {
+        show { RoutesFooter(routesFinished.copy(drawing = RouteDrawingUi(1, false)), RoutesActions()) }
+        compose.onNodeWithText("Cancel").assertIsDisplayed()
+    }
+
+    @Test fun lzFinishedShot() = shot("lz-in-finished-pack") { LzHomeContent(lzFinished, LzPanelActions(), GRID) }
+
+    @Test fun lzPlanFinishedShot() = shot("lz-plan-in-finished-pack") { LockedPlan() }
 
     @Test fun lzInPack() = shot("lz-in-pack") { LzHomeContent(lzState, LzPanelActions(), GRID) }
 

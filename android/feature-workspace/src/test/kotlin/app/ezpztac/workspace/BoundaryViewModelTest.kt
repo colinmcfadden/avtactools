@@ -59,15 +59,15 @@ class BoundaryViewModelTest {
         override suspend fun terrainAnalysis(polygon: List<LatLon>, landingHeadingDeg: Double?): TerrainAnalysis = error("not asked for")
     }
 
-    private class Rig(scope: TestScope) {
+    private class Rig(scope: TestScope, val pack: FakeOpenPack = FakeOpenPack()) {
         val device = Device("A", FakeServer())
         val repository = DiagramRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler())
-        val session = DiagramSession(repository, scope.backgroundScope)
+        val session = DiagramSession(repository, scope.backgroundScope, pack.lzStore)
         val terrain = HeldTerrain()
         val analysis = AnalysisService(terrain, session, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
         val drawing = BoundaryDrawing(session)
         val corners = app.ezpztac.data.BoundaryCorners(session)
-        val model = BoundaryViewModel(drawing, session, analysis, corners)
+        val model = BoundaryViewModel(drawing, session, analysis, corners, pack)
         val state get() = model.state.value
     }
 
@@ -240,6 +240,35 @@ class BoundaryViewModelTest {
         assertFalse(r.state.drawing)
         assertNull(r.state.error)
         assertEquals(0, r.state.drawnPoints)
+    }
+
+    @Test
+    fun `in a finished pack the boundary is neither drawn again nor cut, and a held corner says why`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open()
+        r.session.setQuietly { DiagramOps.setAnalysisDraft(it, JsonObject(mapOf("customLZ" to ring(LatLon(34.0, -84.0), LatLon(34.0, -83.9), LatLon(34.1, -83.9), LatLon(34.1, -84.0))))) }
+        advanceUntilIdle()
+        val item = FakeOpenPack.lzOf("lz-1", checkNotNull(r.session.active.value).copy(id = "pack:p:lz-1"))
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished())
+        r.session.open("pack:p:lz-1")
+        r.corners.select(app.ezpztac.model.BoundaryCornerRef(true, 1))
+        advanceUntilIdle()
+        val locked = "OP DK is finished: nothing in it can be changed."
+        assertEquals(locked, r.state.locked)
+        assertFalse(r.state.canStart)
+        assertNull("the tools' lock line says it once", r.state.cannotStart)
+        val corner = checkNotNull(r.state.heldCorner)
+        assertTrue("the ring could lose one", corner.canDelete)
+        assertEquals(locked, corner.locked)
+        r.model.deleteCorner()
+        advanceUntilIdle()
+        assertEquals(locked, r.state.error)
+        assertEquals(4, r.state.drawnPoints)
+        r.model.start()
+        advanceUntilIdle()
+        assertEquals(locked, r.state.error)
+        assertFalse(r.state.drawing)
+        assertEquals(4, r.state.drawnPoints)
     }
 
     @Test

@@ -2,28 +2,29 @@ package app.ezpztac.workspace
 
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.DiagramRepository
-import app.ezpztac.data.InMemoryAircraftChoice
-import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.DrawingMode
 import app.ezpztac.data.GraphicPlacement
 import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.InMemoryAircraftChoice
+import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.PlaceTool
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.GraphicRef
-import app.ezpztac.model.UnitDraft
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.UnitDraft
 import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.sync.Device
 import app.ezpztac.sync.FakeServer
 import app.ezpztac.sync.InMemorySyncStore
 import app.ezpztac.sync.RecordingScheduler
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -40,7 +41,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import kotlin.math.abs
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GraphicsViewModelTest {
@@ -55,17 +55,17 @@ class GraphicsViewModelTest {
     private val grid = "16S GD 66993 52949"
     private val crosshair = LatLon(34.78382, -84.08219)
 
-    private class Rig(scope: TestScope, masterList: List<app.ezpztac.model.AircraftProfile> = emptyList()) {
+    private class Rig(scope: TestScope, masterList: List<app.ezpztac.model.AircraftProfile> = emptyList(), val pack: FakeOpenPack = FakeOpenPack()) {
         val device = Device("A", FakeServer())
         val repository = DiagramRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler())
-        val session = DiagramSession(repository, scope.backgroundScope)
+        val session = DiagramSession(repository, scope.backgroundScope, pack.lzStore)
         val selection = GraphicSelection()
         val choice = InMemoryAircraftChoice()
         val master = InMemoryMasterProfileStore(masterList)
         val aircraft = AircraftProfiles(device.store as InMemorySyncStore, master, { emptyList() }, choice, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), device.repository, RecordingScheduler())
         val mode = DrawingMode()
         val placement = GraphicPlacement(session, aircraft, mode)
-        val model = GraphicsViewModel(session, selection, aircraft, placement)
+        val model = GraphicsViewModel(session, selection, aircraft, placement, pack)
         val state get() = model.state.value
         val diagram: Diagram get() = checkNotNull(session.active.value)
 
@@ -99,6 +99,82 @@ class GraphicsViewModelTest {
         assertEquals(0, r.state.undoDepth)
         assertTrue(r.diagram.graphics.helicopters.isEmpty())
         assertNull("nothing was made, so nothing is held", r.selection.selected.value)     // the diagram refuses it too; this is the guard's own say
+    }
+
+    /** The analysed LZ/PZ [r] has open, with a helicopter on it, moved into pack p as item lz-1 under [session], and opened there. */
+    private suspend fun TestScope.inPack(r: Rig, session: app.ezpztac.missionpacks.PackSession) {
+        val item = FakeOpenPack.lzOf("lz-1", r.diagram.copy(id = "pack:p:lz-1"))
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.session.open("pack:p:lz-1")
+        advanceUntilIdle()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)                                       // placed while the pack took changes: a step undo could take back
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = session)
+        r.selection.clear()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `in a finished pack the graphics are listed and held, and nothing changes them`() = runTest(dispatcher) {
+        val r = opened()
+        inPack(r, FakeOpenPack.finished())
+        val locked = "OP DK is finished: nothing in it can be changed."
+        assertTrue(r.state.listed)
+        assertFalse(r.state.canEdit)
+        assertEquals(locked, r.state.locked)
+        val row = r.state.rows.single()
+        r.model.select(row.ref)
+        advanceUntilIdle()
+        assertNotNull("held, to be looked at", r.state.inspector)
+        val before = r.diagram
+        r.model.nudge(10.0, 0.0)
+        r.model.rotateBy(15.0)
+        r.model.setRotation(90.0)
+        r.model.moveToCrosshair(crosshair)
+        r.model.place(GraphicKind.PZ_MARKER, crosshair)
+        r.model.addUnit(UnitDraft(), crosshair)
+        r.model.delete()
+        r.model.undo()
+        r.model.redo()
+        advanceUntilIdle()
+        assertEquals("nothing changed", before, r.diagram)
+        assertEquals(locked, r.state.error)
+        assertEquals("still held: a delete refused keeps it", row.ref, r.selection.selected.value)
+        assertEquals(locked, r.model.beginPlacing(PlaceTool.HELICOPTER))
+        assertNull(r.placement.placing.value)
+        assertEquals(locked, r.model.setDoghouseLabel("[SP1]"))
+    }
+
+    @Test
+    fun `in a finished pack an LZ-PZ that is not analysed is locked too, so the steps it has are not offered to undo`() = runTest(dispatcher) {
+        val r = opened(analysed = false)
+        val item = FakeOpenPack.lzOf("lz-1", r.diagram.copy(id = "pack:p:lz-1"))
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.session.open("pack:p:lz-1")
+        r.session.edit("Rename") { it.copy(name = "LZ IBIS") }                                    // a step made while the pack took changes
+        advanceUntilIdle()
+        assertEquals(1, r.state.undoDepth)
+        assertNull(r.state.locked)
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        val locked = "OP DK is finished: nothing in it can be changed."
+        assertFalse(r.state.listed)
+        assertEquals(locked, r.state.locked)
+        r.model.undo()
+        advanceUntilIdle()
+        assertEquals("LZ IBIS", r.diagram.name)
+        assertEquals("and the refusal is said", locked, r.state.error)
+    }
+
+    @Test
+    fun `a pack that is reopened can be changed again`() = runTest(dispatcher) {
+        val r = opened()
+        inPack(r, FakeOpenPack.finished())
+        r.pack.state.value = FakeOpenPack.open(r.pack.state.value!!.items)
+        advanceUntilIdle()
+        assertTrue(r.state.canEdit)
+        assertNull(r.state.locked)
+        assertNull(r.model.beginPlacing(PlaceTool.HELICOPTER))
     }
 
     @Test

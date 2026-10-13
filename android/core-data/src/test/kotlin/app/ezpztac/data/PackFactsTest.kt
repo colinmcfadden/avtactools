@@ -28,7 +28,10 @@ import org.junit.Test
 /** What the panels say of an open pack and its items (P2b): one rule for each, shared by the Pack, LZ/PZ and Routes panels. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PackFactsTest {
-    private fun session(team: Boolean = false, audience: Int = 9, status: String = "active", readOnly: Boolean = false, pending: List<PendingOp> = emptyList()) = PackSession(
+    private fun session(
+        team: Boolean = false, audience: Int = 9, status: String = "active", readOnly: Boolean = false, pending: List<PendingOp> = emptyList(),
+        finishedBy: kotlinx.serialization.json.JsonElement? = null, finishedAt: String? = null,
+    ) = PackSession(
         1,
         buildJsonObject {
             put("uuid", "p")
@@ -36,6 +39,8 @@ class PackFactsTest {
             put("status", status)
             put("audience_count", audience)
             if (team) put("team", buildJsonObject { put("id", 3) }) else put("team", JsonNull)
+            finishedBy?.let { put("finished_by", it) }
+            finishedAt?.let { put("finished_at", it) }
         },
         buildJsonArray {
             add(buildJsonObject { put("user_id", 1); put("name", "Colin McFadden") })
@@ -155,6 +160,74 @@ class PackFactsTest {
         assertEquals("Saved to the pack as you work.", opening.savedLine)
         assertEquals("opening", opening.standing)
         assertTrue(PackGlance.of(PackState("p", PackStatus.LIVE, session(), emptyList(), emptyList(), null)).loaded)
+    }
+
+    private val sam = buildJsonObject { put("id", 2); put("name", "Sam Bell") }
+
+    private fun finished(by: kotlinx.serialization.json.JsonElement? = sam, at: String? = "2026-10-05T14:20:00") =
+        PackState("p", PackStatus.LIVE, session(status = "finished", readOnly = true, finishedBy = by, finishedAt = at), emptyList(), emptyList(), null)
+
+    private val viewing = PackState("p", PackStatus.LIVE, session(readOnly = true), emptyList(), emptyList(), null)
+
+    @Test
+    fun `a read-only pack is locked, finished or viewed, with its words for each place that says it`() {
+        assertNull(PackLock.of(PackState("p", PackStatus.LIVE, session(), emptyList(), emptyList(), null)))           // it takes changes
+        assertNull(PackLock.of(PackState("p", PackStatus.LOADING, null, emptyList(), emptyList(), null)))            // nothing is known yet: edits wait
+        val done = checkNotNull(PackLock.of(finished()))
+        assertEquals(PackLock("p", "OP DK", "OP DK is finished: nothing in it can be changed.", "Off in a finished pack", true), done)
+        assertEquals("OP DK was finished", done.stopped)
+        assertEquals("Read-only · OP DK is finished", done.pane)
+        val viewer = checkNotNull(PackLock.of(viewing))
+        assertEquals("You can view OP DK but not change it.", viewer.reason)
+        assertEquals("Off: you can view this pack, not change it", viewer.short)
+        assertEquals("You can only view OP DK now", viewer.stopped)
+        assertEquals("Read-only · you can view OP DK", viewer.pane)
+        // Only this pack's items: the person's own, another pack's, and nothing at all are not its to lock.
+        assertEquals(done.reason, done.reasonFor("pack:p:lz-1"))
+        assertNull(done.reasonFor("pack:q:lz-1"))
+        assertNull(done.reasonFor("library-uuid"))
+        assertNull(done.reasonFor(null))
+    }
+
+    @Test
+    fun `a finished pack's item says who finished it and when, and a viewer's that it can only be looked at`() {
+        val utc = java.time.ZoneOffset.UTC
+        val now = java.time.Instant.parse("2026-10-12T09:00:00Z")
+        assertEquals("Finished by Sam B. on Oct 5 at 14:20", PackFacts.lockedLine(finished(), utc, now))
+        assertEquals("Finished by Sam B. on Oct 5, 2025 at 14:20", PackFacts.lockedLine(finished(at = "2025-10-05T14:20:00"), utc, now))
+        assertEquals("Finished by Sam B. on Oct 5 at 16:20", PackFacts.lockedLine(finished(at = "2026-10-05T14:20:00Z"), java.time.ZoneOffset.ofHours(2), now))
+        assertEquals("Finished by the owner on Oct 5 at 14:20", PackFacts.lockedLine(finished(by = JsonNull), utc, now))  // the account has gone
+        assertEquals("Finished by Sam B.", PackFacts.lockedLine(finished(at = null), utc, now))
+        assertEquals("In OP DK. You can view it but not change it.", PackFacts.lockedLine(viewing, utc, now))
+        assertNull(PackFacts.lockedLine(PackState("p", PackStatus.LIVE, session(), emptyList(), emptyList(), null), utc, now))
+        assertEquals("This pack is finished: you can look at everything in it and export its routes, but nothing can be changed.", PackFacts.lockedHint(finished()))
+        assertTrue(PackFacts.lockedHint(viewing)!!.startsWith("You are a viewer in this pack"))
+        assertTrue(PackFacts.finished(finished()))
+        assertFalse(PackFacts.finished(viewing))
+    }
+
+    @Test
+    fun `finishing a pack changes the glance, and the lock is told once for each change`() = runTest {
+        val live = PackState("p", PackStatus.LIVE, session(), listOf(lz), emptyList(), null)
+        assertNotEquals(PackGlance.of(live), PackGlance.of(finished().copy(items = listOf(lz))))
+        assertNotEquals(PackGlance.of(finished()), PackGlance.of(viewing))
+        val open = object : OpenPack {
+            override val state = MutableStateFlow<PackState?>(null)
+            override suspend fun createLz(target: DiagramTarget, name: String?): String? = null
+            override suspend fun createRouteSet(name: String?): String? = null
+            override suspend fun openItem(itemUuid: String) = false
+            override suspend fun closeItem(itemUuid: String) = Unit
+            override suspend fun removeItem(itemUuid: String): String? = null
+        }
+        val seen = mutableListOf<PackLock?>()
+        val job = launch(UnconfinedTestDispatcher(testScheduler)) { open.lock.collect { seen += it } }
+        open.state.value = live
+        open.state.value = live.copy(people = listOf(pointing(34.1)))                             // someone pointing: no change to the lock
+        open.state.value = finished()
+        open.state.value = finished().copy(people = listOf(pointing(34.2)))
+        job.cancel()
+        assertEquals(listOf(null, PackLock.of(finished())), seen)
+        assertEquals(PackLock.of(finished()), open.lockNow())
     }
 
     @Test

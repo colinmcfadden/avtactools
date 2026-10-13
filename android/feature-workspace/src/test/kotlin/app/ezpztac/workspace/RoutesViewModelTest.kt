@@ -9,6 +9,7 @@ import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MasterProfileStore
 import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.PackFacts
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetView
@@ -65,6 +66,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -295,6 +297,107 @@ class RoutesViewModelTest {
         advanceUntilIdle()
         assertNotNull(r.state.open?.inPack)
         assertFalse(r.state.open!!.canSave)
+    }
+
+    @Test
+    fun `in a finished pack nothing is drawn or added, and its set is looked at, shared and hidden but never changed`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals(PackFacts.NOTHING_NEW, r.state.error)
+        assertTrue("nothing opened or made for the sketch", r.pack.log.isEmpty())
+        r.model.createSet("")
+        advanceUntilIdle()
+        assertTrue(r.pack.log.isEmpty())
+        assertEquals(MapPointAction.Locked("Off in a finished pack"), r.model.pointAction())
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        val open = checkNotNull(r.state.open)
+        val locked = "OP DK is finished: nothing in it can be changed."
+        assertEquals(locked, open.locked)
+        assertTrue(open.inPack!!.savedLine.startsWith("Finished by Sam B. on Oct "))
+        assertTrue(r.state.pack!!.readOnly)
+        assertEquals("This pack is finished: you can look at everything in it and export its routes, but nothing can be changed.", r.state.pack!!.hint)
+        val routeId = open.routes.single().id
+        r.model.selectRoute(routeId)
+        advanceUntilIdle()
+        val before = r.session.active.value
+        r.model.renameSet("pack:p:rt-1", "OP DK EGRESS")
+        r.model.renameRoute(routeId, "BLUE 1")
+        r.model.addShapingPoint(routeId, LatLon(34.0, -84.0))
+        r.model.addPointAt(LatLon(34.0, -84.0))
+        r.model.deleteRoute(routeId)
+        advanceUntilIdle()
+        assertEquals("nothing changed", before, r.session.active.value)
+        assertEquals(locked, r.state.error)
+        assertEquals(routeId, r.selection.held.value?.routeId)
+        var asked = 0
+        r.api.windsAnswer = { asked++; emptyMap() }
+        r.model.fetchWinds()
+        advanceUntilIdle()
+        assertNull("asked of nobody", r.state.fetching)
+        assertEquals(0, asked)
+        assertFalse(r.state.open!!.canUndo)
+        // A route hidden is the person's own: it stays theirs to do.
+        r.model.toggleVisible(routeId)
+        advanceUntilIdle()
+        assertFalse(r.session.active.value!!.routes.single().visible)
+    }
+
+    @Test
+    fun `in a finished pack a typed change to a route's plan is refused at its field, and one that changes nothing says nothing`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        val routeId = r.state.open!!.routes.single().id
+        r.model.selectRoute(routeId)
+        advanceUntilIdle()
+        val plan = checkNotNull(r.state.detail).plan
+        assertNull("the same values again: no change, no words", r.model.applyPlan(routeId, plan, plan))
+        assertEquals("OP DK is finished: nothing in it can be changed.", r.model.applyPlan(routeId, plan.copy(tempC = "22"), plan))
+    }
+
+    @Test
+    fun `in a finished pack a point is not moved, a step is not undone, and a route being drawn takes no more points`() = runTest {
+        val r = rig()
+        val route = app.ezpztac.model.SketchRoute(
+            id = "r1", name = "RED 1", color = "#FF453A", plan = app.ezpztac.model.RoutePlan(),
+            points = listOf(
+                app.ezpztac.model.RoutePoint(id = "a", lat = 34.7, lon = -84.1, kind = app.ezpztac.model.RoutePoint.KIND_AMPS, ptType = "turn", name = ".SP"),
+                app.ezpztac.model.RoutePoint(id = "b", lat = 34.8, lon = -84.1, kind = app.ezpztac.model.RoutePoint.KIND_AMPS, ptType = "turn", name = ".RP"),
+            ),
+        )
+        val item = FakeOpenPack.routesOf("rt-1", app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = listOf(route)))
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        r.model.renameRoute("r1", "BLUE 1")                                                     // while it took changes: a step undo could take back
+        r.model.startSketch()
+        r.model.addAtCrosshair(LatLon(34.0, -84.0))
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        val locked = "OP DK is finished: nothing in it can be changed."
+        val before = r.session.active.value
+        r.model.nudgePoint("r1", "a", 100.0, 0.0)
+        r.model.pointToCrosshair("r1", "a", LatLon(34.5, -84.5))
+        assertEquals(locked, r.model.pointToText("r1", "a", "16S GC 28864 55349"))
+        r.model.renamePoint("r1", "a", ".TGT")
+        r.model.undo()
+        r.model.redo()
+        advanceUntilIdle()
+        assertEquals(before, r.session.active.value)
+        assertEquals("BLUE 1", r.session.active.value!!.routes.single().name)
+        assertEquals(locked, r.state.error)
+        r.model.addAtCrosshair(LatLon(34.1, -84.1))
+        r.model.finishDrawing("RED 2")
+        advanceUntilIdle()
+        assertEquals("the draft took no more", 1, r.sketching.draft.value?.points?.size)
+        assertEquals(1, r.session.active.value!!.routes.size)
     }
 
     @Test
@@ -1172,6 +1275,54 @@ class RoutesViewModelTest {
         assertNull(r.state.fetching)
         assertEquals(PlanningNote("2 points · 1 METAR, 1 TAF", failed = false), r.state.note)
         assertEquals(270.0, r.route(id).plan.perPoint.getValue(ids[0]).wind!!.dirTrue, 0.0)
+    }
+
+    @Test
+    fun `winds or elevations on their way to a set whose pack is finished meanwhile are not applied, and the note says why`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val planned = r.session.active.value!!.copy(id = "pack:p:rt-1", name = "OP DK INGRESS")
+        val item = FakeOpenPack.routesOf("rt-1", planned)
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.model.openSet("pack:p:rt-1"); settle()
+        r.selection.select(id); settle()                                                        // held, as it was in the Library's copy
+        val ids = r.state.detail!!.points.map { it.id }
+        val winds = CompletableDeferred<Map<String, PointWindDto>>()
+        r.api.windsAnswer = { winds.await() }
+        r.model.fetchWinds(); settle()
+        assertEquals(PlanningKind.WINDS, r.state.fetching)
+        val before = r.session.active.value
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished()); settle()
+        assertNull(r.state.fetching)
+        assertEquals(PlanningNote("OP DK is finished: nothing in it can be changed.", failed = true, PlanningKind.WINDS), r.state.note)
+        winds.complete(mapOf(ids[0] to wind(270, 12.0, "METAR"))); settle()
+        assertSame("nothing applied", before, r.session.active.value)
+        assertEquals(PlanningNote("OP DK is finished: nothing in it can be changed.", failed = true, PlanningKind.WINDS), r.state.note)
+        // Elevations, as a viewer.
+        r.pack.state.value = FakeOpenPack.open(listOf(item)); settle()
+        val ground = CompletableDeferred<List<Double?>>()
+        r.api.elevationsAnswer = { ground.await() }
+        r.model.fetchElevations(); settle()
+        assertEquals(PlanningKind.ELEVATIONS, r.state.fetching)
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.viewing()); settle()
+        ground.complete(List(4) { 1000.0 }); settle()
+        assertNull(r.state.fetching)
+        assertEquals(PlanningNote("You can view OP DK but not change it.", failed = true, PlanningKind.ELEVATIONS), r.state.note)
+        assertFalse(r.state.detail!!.hasElevations)
+    }
+
+    @Test
+    fun `a fetch for the person's own set is not ended by a pack being finished`() = runTest(dispatcher) {
+        val r = rig()
+        openWithPlannedRoute(r)
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)))
+        val ground = CompletableDeferred<List<Double?>>()
+        r.api.elevationsAnswer = { ground.await() }
+        r.model.fetchElevations(); settle()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), session = FakeOpenPack.finished()); settle()
+        assertEquals(PlanningKind.ELEVATIONS, r.state.fetching)
+        ground.complete(List(4) { 1000.0 }); settle()
+        assertEquals(PlanningNote("Ground elevations for 4 points.", failed = false, PlanningKind.ELEVATIONS), r.state.note)
     }
 
     @Test

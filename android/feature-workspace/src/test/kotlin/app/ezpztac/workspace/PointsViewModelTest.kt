@@ -87,7 +87,7 @@ class PointsViewModelTest {
         override fun observe(kind: RecordKind) = inner.observe(kind).onEach { delay(lateMs) }
     }
 
-    private class Rig(scope: TestScope, lateMs: Long = 0) {
+    private class Rig(scope: TestScope, lateMs: Long = 0, val pack: FakeOpenPack = FakeOpenPack()) {
         val resolutions = mutableListOf<Triple<RecordKind, String, SyncEngine.Resolution>>()
         val server = FakeServer()
         val device = Device("A", server)
@@ -98,13 +98,13 @@ class PointsViewModelTest {
         val local = LocalPoints(sets, views, session)
         val selection = PointSelection()
         val routeRepository = RouteRepository(device.repository, store, RecordingScheduler(), StandardTestDispatcher(scope.testScheduler))
-        val routeSession = RouteSession(routeRepository, scope.backgroundScope)
+        val routeSession = RouteSession(routeRepository, scope.backgroundScope, pack.routeStore)
         val routeSelection = RouteSelection()
         val threats = ThreatStore(NoVault(), scope.backgroundScope, StandardTestDispatcher(scope.testScheduler)) { 1_000L }
         val threatFiles = ThreatFileLog(threats)
         val model = PointsViewModel(
             sets, local, views, selection, routeSession, routeSelection, ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            session, routeRepository, threatFiles,
+            session, routeRepository, threatFiles, pack,
         )
         val said = mutableListOf<String>()
         val state get() = model.state.value
@@ -413,6 +413,29 @@ class PointsViewModelTest {
         assertNull(r.state.held!!.addTo)                                                       // two, and none held: no guessing
         r.routeSelection.select("r2"); settle()
         assertEquals("R2", r.state.held!!.addTo)
+    }
+
+    @Test
+    fun `a finished pack's routes are not added to or moved from a held local point, and asking anyway says why`() = runTest(dispatcher) {
+        val r = rig()
+        val set = r.imported()
+        val routes = app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = listOf(route("r1", ".SP", ".TGT")))
+        val item = app.ezpztac.missionpacks.PackItemView("rt-1", "route", routes.name, app.ezpztac.model.RouteSets.serialize(routes), null)
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.routeSession.open("pack:p:rt-1")
+        r.routeSelection.select("r1", "r1-p0")
+        r.model.select(set.id, set.points.first().id); settle()
+        assertEquals("R1", r.state.held!!.addTo)                                               // a live pack's: offered as any set is
+        assertNotNull(r.state.held!!.useFor)
+        assertNull(r.state.held!!.locked)
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished()); settle()
+        assertNull(r.state.held!!.addTo)
+        assertNull(r.state.held!!.useFor)
+        assertEquals("and why", "OP DK is finished: nothing in it can be changed.", r.state.held!!.locked)
+        val before = r.routeSession.active.value
+        r.model.addToHeldRoute(); r.model.useForHeldRoutePoint(); settle()
+        assertEquals(before, r.routeSession.active.value)
+        assertEquals(List(2) { "OP DK is finished: nothing in it can be changed." }, r.said)
     }
 
     @Test

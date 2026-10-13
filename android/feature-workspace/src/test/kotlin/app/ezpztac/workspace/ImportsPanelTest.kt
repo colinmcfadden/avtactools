@@ -244,4 +244,12 @@ class ImportsPanelTest {
         assertEquals(0, count("Add to", substring = true))
         assertEquals(0, count("Use for", substring = true))
     }
+
+    @Test
+    fun `with a read-only pack's set open it says why nothing is offered, not how to open a set`() {
+        content(PointsUiState(held = held().copy(locked = "OP DK is finished: nothing in it can be changed.")))
+        compose.onNodeWithText("OP DK is finished: nothing in it can be changed.").performScrollTo().assertIsDisplayed()
+        assertEquals(0, count("Open a set of routes", substring = true))
+        assertEquals(0, count("Add to", substring = true))
+    }
 }

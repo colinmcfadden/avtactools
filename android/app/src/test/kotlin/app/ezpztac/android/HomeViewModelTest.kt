@@ -3,6 +3,7 @@ package app.ezpztac.android
 import app.ezpztac.android.frame.Panel
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramRepository
@@ -97,11 +98,13 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -129,7 +132,11 @@ class HomeViewModelTest {
     /** A server that measures every slope the same and keeps count; with [reachable] false it is a phone with no signal. */
     private class SlopeServer(var reachable: Boolean = true) : TerrainApi {
         val slopeCalls = mutableListOf<List<LatLon>>()
-        override suspend fun analyzeField(at: LatLon): FieldAnalysis = throw NetworkException("not asked in these tests", null, requestMayHaveBeenSent = false)
+
+        /** An area the model is still finding, answered when a test says; none and the area is not asked for. */
+        var field: kotlinx.coroutines.CompletableDeferred<FieldAnalysis>? = null
+        override suspend fun analyzeField(at: LatLon): FieldAnalysis =
+            field?.await() ?: throw NetworkException("not asked in these tests", null, requestMayHaveBeenSent = false)
         override suspend fun terrainAnalysis(polygon: List<LatLon>, landingHeadingDeg: Double?): TerrainAnalysis {
             slopeCalls += polygon
             if (!reachable) throw NetworkException("no signal", null, requestMayHaveBeenSent = false)
@@ -200,6 +207,29 @@ class HomeViewModelTest {
         }
     }
 
+    /** A pack's documents by their ids, as a session reads and writes them. */
+    private class PackDocs<D : Any>(private val idOf: (D) -> String) : app.ezpztac.data.DocumentStore<D> {
+        val docs = mutableMapOf<String, D>()
+        override suspend fun open(uuid: String): D? = docs[uuid]
+        override suspend fun save(document: D): D = document.also { docs[idOf(it)] = it }
+    }
+
+    /** Pack p, "OP DK": live, finished by Sam Bell, or one this person only views. */
+    private fun pack(finished: Boolean = false, viewer: Boolean = false) = PackState(
+        "p", app.ezpztac.missionpacks.PackStatus.LIVE,
+        app.ezpztac.missionpacks.PackSession(
+            1,
+            kotlinx.serialization.json.buildJsonObject {
+                put("uuid", "p")
+                put("name", "OP DK")
+                put("status", if (finished) "finished" else "active")
+                put("role", if (viewer) "viewer" else "editor")
+            },
+            kotlinx.serialization.json.JsonArray(emptyList()), emptyMap(), emptyMap(), emptyList(), 10, emptyList(), emptyList(), finished || viewer, null, false, emptyMap(),
+        ),
+        emptyList(), emptyList(), null,
+    )
+
     /** The workspace, as a test sets it: no pack open unless one says so. */
     private class NoPacks : PackDoor {
         override val user = MutableStateFlow<Int?>(null)
@@ -213,7 +243,10 @@ class HomeViewModelTest {
         val sync = SyncRepository(store, SequentialIds("t"))
         val scheduler = RecordingScheduler()
         val repository = DiagramRepository(sync, store, scheduler)
-        val session = DiagramSession(repository, scope.backgroundScope)
+        // A pack's LZ/PZs and route sets, as a session reads them: opened under their pack ids, as the app's are.
+        val lzPacks = PackDocs<app.ezpztac.model.Diagram> { it.id }
+        val routePacks = PackDocs<app.ezpztac.model.RouteSet> { it.id }
+        val session = DiagramSession(repository, scope.backgroundScope, lzPacks)
         // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and a slope being measured is work a test waits for.
         val analysis = AnalysisService(server, session, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
         val selection = GraphicSelection()
@@ -224,7 +257,7 @@ class HomeViewModelTest {
         val mode = DrawingMode()
         val drawing = BoundaryDrawing(session, mode)
         val routes = RouteRepository(sync, store, scheduler)
-        val routeSession = RouteSession(routes, scope.backgroundScope)
+        val routeSession = RouteSession(routes, scope.backgroundScope, routePacks)
         val routeSelection = RouteSelection()
         val sketching = RouteSketching(routeSession, aircraft, mode)
         val last = FakeLastDiagram()
@@ -245,9 +278,10 @@ class HomeViewModelTest {
         val corners = BoundaryCorners(session)
         val placement = GraphicPlacement(session, aircraft, mode)
         val packs = NoPacks()
+        val mapDrag = MapDrag(session, routeSession, threats)
         val model = HomeViewModel(
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, openSet, lastSet, openRouteSets, localPoints, pointSelection,
-            threats, threatSelection, weather, MapDrag(session, routeSession, threats), SlopeVisibility(), corners, masks, placement, packs, mapFocus,
+            threats, threatSelection, weather, mapDrag, SlopeVisibility(), corners, masks, placement, packs, mapFocus,
             symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
@@ -1477,6 +1511,192 @@ class HomeViewModelTest {
         assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
         r.drawing.cancel()
         assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+    }
+
+    private fun Rig.mapDragActive() = mapDrag.active.value
+
+    // -- A pack that turns read-only (P2c) -----------------------------------------------------------------------------------
+
+    /** The analysed LZ/PZ of pack p (item lz-1), with a PZ marker on it, open; the pack live until a test says otherwise. */
+    private suspend fun TestScope.packLz(r: Rig) {
+        val made = r.repository.open(r.analysed())!!
+        r.lzPacks.docs["pack:p:lz-1"] = made.let { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }.copy(id = "pack:p:lz-1")
+        r.packs.open.value = pack()
+        r.session.open("pack:p:lz-1")
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `when its pack is finished, a tool's mode on its LZ-PZ ends without taking anything back, and the person is told`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        packLz(r)
+        assertNull(r.placement.begin(PlaceTool.HELICOPTER))
+        r.placement.placeAt(LatLon(34.7838, -84.0822))
+        advanceUntilIdle()
+        val placed = r.session.active.value!!.graphics.helicopters.size
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertNull(r.placement.placing.value)
+        assertEquals("what was placed stays: ending is not taking back", placed, r.session.active.value!!.graphics.helicopters.size)
+        assertEquals(listOf("OP DK was finished: placing stopped."), said)
+        assertTrue(r.model.scene.value.locked)
+        // Nothing of it is picked up now: the press opens the map's menu instead.
+        assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        r.packs.open.value = pack()                                                              // reopened: it can be moved again
+        advanceUntilIdle()
+        assertFalse(r.model.scene.value.locked)
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+    }
+
+    @Test
+    fun `when this person is made a viewer, a boundary being drawn and a drag on its LZ-PZ end, in a viewer's words`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        packLz(r)
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        r.model.dragMoved(LatLon(34.7900, -84.0822))
+        val moved = r.session.active.value
+        val steps = r.session.undoDepth.value
+        r.packs.open.value = pack(viewer = true)
+        advanceUntilIdle()
+        assertNull(r.mapDragActive())
+        // Not moved back: that would be a change of its own, refused. The pack's rule puts back what it had not taken (no pack here to do it).
+        assertSame(moved, r.session.active.value)
+        assertEquals(steps, r.session.undoDepth.value)
+        assertEquals(listOf("You can only view OP DK now: moving stopped."), said)
+        r.packs.open.value = pack()
+        advanceUntilIdle()
+        r.drawing.start()
+        r.packs.open.value = pack(viewer = true)
+        advanceUntilIdle()
+        assertNull(r.drawing.draft.value)
+        assertEquals("You can only view OP DK now: the boundary being drawn was not kept.", said.last())
+    }
+
+    @Test
+    fun `when its pack is finished, a route being drawn into its set is not kept, and nothing of it is picked up`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        r.routePacks.docs["pack:p:rt-1"] = app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = emptyList())
+        r.packs.open.value = pack()
+        r.routeSession.open("pack:p:rt-1")
+        advanceUntilIdle()
+        assertNull(r.sketching.start())
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertNull(r.sketching.draft.value)
+        assertEquals(listOf("OP DK was finished: the route being drawn was not kept."), said)
+    }
+
+    @Test
+    fun `when its pack is finished, a point of its route set being moved stops where it is, its elevation not touched again`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        val line = route("r1", point("p1", here), point("p2", north)).copy(elevations = mapOf("p1" to 1200.0, "p2" to 1300.0))
+        r.routePacks.docs["pack:p:rt-1"] = app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = listOf(line))
+        r.packs.open.value = pack()
+        r.routeSession.open("pack:p:rt-1")
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(here, view(), touchRadiusPx = 24.0))
+        r.model.dragMoved(LatLon(34.7840, -84.0822))
+        val moved = r.routeSession.active.value
+        assertEquals(mapOf("p2" to 1300.0), moved!!.routes.single().elevations)              // moving forgot the old place's ground
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertNull(r.mapDragActive())
+        assertSame("no edit of its own: moving back would not bring the elevation back either", moved, r.routeSession.active.value)
+        assertEquals(listOf("OP DK was finished: moving stopped."), said)
+    }
+
+    @Test
+    fun `when its pack is finished, the analysis of its open LZ-PZ stops, and nothing of it is put on the LZ-PZ`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        packLz(r)
+        val answer = kotlinx.coroutines.CompletableDeferred<FieldAnalysis>()
+        r.server.field = answer
+        r.analysis.analyze("pack:p:lz-1")
+        advanceUntilIdle()
+        assertTrue(r.analysis.status.value is AnalysisStatus.Running)
+        val before = r.session.active.value
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertEquals(AnalysisStatus.Idle, r.analysis.status.value)
+        assertEquals(listOf("OP DK was finished: the analysis was stopped."), said)
+        answer.complete(FieldAnalysis("success", listOf(listOf(34.0, -84.0), listOf(34.1, -84.0), listOf(34.1, -84.1)), "1200", ""))
+        advanceUntilIdle()
+        assertSame(before, r.session.active.value)
+        assertTrue(r.server.slopeCalls.none { it.firstOrNull() == LatLon(34.0, -84.0) })       // and its slope is not asked for once the pack is read-only
+    }
+
+    @Test
+    fun `when its pack is finished, an analysis of one of its LZ-PZs that is no longer open stops too, whatever is open or not`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        packLz(r)
+        r.lzPacks.docs["pack:p:lz-2"] = r.lzPacks.docs.getValue("pack:p:lz-1").copy(id = "pack:p:lz-2")
+        r.server.field = kotlinx.coroutines.CompletableDeferred()
+        r.analysis.analyze("pack:p:lz-1")
+        r.session.open("pack:p:lz-2")                                                           // the analysis goes on for the one it was asked for
+        advanceUntilIdle()
+        assertEquals("pack:p:lz-1", (r.analysis.status.value as AnalysisStatus.Running).diagramId)
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertEquals(AnalysisStatus.Idle, r.analysis.status.value)
+        assertEquals(listOf("OP DK was finished: the analysis was stopped."), said)
+        // And with nothing open at all.
+        r.packs.open.value = pack()
+        advanceUntilIdle()
+        r.analysis.analyze("pack:p:lz-1")
+        r.session.close()
+        advanceUntilIdle()
+        assertTrue(r.analysis.status.value is AnalysisStatus.Running)
+        r.packs.open.value = pack(viewer = true)
+        advanceUntilIdle()
+        assertEquals(AnalysisStatus.Idle, r.analysis.status.value)
+        assertEquals("You can only view OP DK now: the analysis was stopped.", said.last())
+    }
+
+    @Test
+    fun `an analysis of the person's own LZ-PZ goes on when a pack is finished`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val own = r.analysed()
+        r.packs.open.value = pack()
+        r.server.field = kotlinx.coroutines.CompletableDeferred()
+        r.analysis.analyze(own)
+        advanceUntilIdle()
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertTrue(r.analysis.status.value is AnalysisStatus.Running)
+    }
+
+    @Test
+    fun `the person's own LZ-PZ is never locked by a pack, and nothing is said when nothing was under way`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertFalse(r.model.scene.value.locked)
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertTrue(said.isEmpty())
     }
 
     @Test

@@ -123,7 +123,8 @@ class DiagramOverlay {
         )
         // The handle at the end of the arrow, over its head: a long press here drags the tip alone (how far the marker reaches and which way it points).
         style.addLayer(
-            CircleLayer(PZ_TIP_HANDLE_LAYER, SOURCE).withFilter(role("pz-tip")).withProperties(
+            // Not in a read-only pack, where nothing is picked up.
+            CircleLayer(PZ_TIP_HANDLE_LAYER, SOURCE).withFilter(Expression.all(role("pz-tip"), Expression.eq(Expression.get("handle"), Expression.literal(true)))).withProperties(
                 PropertyFactory.circleRadius(9f), PropertyFactory.circleColor("#2F5BFF"), PropertyFactory.circleOpacity(0.55f),
                 PropertyFactory.circleStrokeColor("#FFFFFF"), PropertyFactory.circleStrokeWidth(2f),
             ),

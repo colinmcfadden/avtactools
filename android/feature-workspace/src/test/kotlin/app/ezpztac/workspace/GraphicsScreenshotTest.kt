@@ -56,7 +56,7 @@ class GraphicsScreenshotTest {
     )
 
     private fun state(rows: List<GraphicRowUi> = this.rows, inspector: InspectorUi? = null, alerts: List<String> = emptyList(), error: String? = null) =
-        GraphicsUiState(canEdit = true, rows = rows, inspector = inspector, alerts = alerts, undoDepth = 3, redoDepth = 1, error = error)
+        GraphicsUiState(listed = true, canEdit = true, rows = rows, inspector = inspector, alerts = alerts, undoDepth = 3, redoDepth = 1, error = error)
 
     private fun held(ref: GraphicRef, kind: GraphicKind, title: String, grid: String, rotation: Double? = null, reachFt: Long? = null, direction: String? = null) =
         InspectorUi(ref, kind, title, grid, "34.78382, -84.08219", rotation, reachFt, direction)

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.LoadedPointSet
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.OpenPack
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetViews
@@ -24,6 +25,8 @@ import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.UUID
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,8 +40,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.UUID
-import javax.inject.Inject
 
 /** One set of local points in the list: how it is shown on this device and where it is kept (the Library, or this session only). */
 data class PointSetRowUi(
@@ -82,6 +83,8 @@ data class HeldPointUi(
     val useFor: String?,
     /** The route this would be added to the end of, in words, or null when there is none to add to. */
     val addTo: String?,
+    /** Why the open set of routes is neither added to nor moved from here: it is a read-only pack's (finished, or this person a viewer in it). */
+    val locked: String? = null,
 ) {
     /** What to call the point in words. */
     val title: String get() = rawName.ifBlank { "(unnamed)" }
@@ -121,6 +124,8 @@ class PointsViewModel @Inject constructor(
     private val sessionPoints: SessionPointSets,
     routeSets: RouteRepository,
     threatFiles: ThreatFileLog,
+    /** The open Mission Pack: a read-only one's route set is not changed from here (P2c), so neither is offered then. */
+    private val pack: OpenPack = OpenPack.None,
 ) : ViewModel() {
     /** Where a new route point's id comes from. A test sets its own. */
     internal var newPointId: () -> String = { UUID.randomUUID().toString() }
@@ -144,12 +149,20 @@ class PointsViewModel @Inject constructor(
 
     private val files = combine(threatFiles.files, threatsAllowed) { files, allowed -> if (allowed) files else emptyList() }
 
-    private val held = combine(selection.held, routes.active, routeSelection.held) { held, open, heldRoute -> Triple(held, open, heldRoute) }
+    /** The open route set, as one this screen may add to or move points of: none when it is a read-only pack's, and then [locked] says why. */
+    private data class Changeable(val open: RouteSet?, val locked: String?)
 
-    val state: StateFlow<PointsUiState> = combine(localPoints.sets, held, missions, files) { sets, (held, open, heldRoute), missions, files ->
+    private val changeable = combine(routes.active, pack.lock) { open, lock ->
+        val why = lock?.reasonFor(open?.id)
+        Changeable(open.takeIf { why == null }, why)
+    }
+
+    private val held = combine(selection.held, changeable, routeSelection.held) { held, changeable, heldRoute -> Triple(held, changeable, heldRoute) }
+
+    val state: StateFlow<PointsUiState> = combine(localPoints.sets, held, missions, files) { sets, (held, changeable, heldRoute), missions, files ->
         PointsUiState(
             sets = sets.map { it.toRow() },
-            held = held?.let { h -> heldOf(sets.firstOrNull { it.set.id == h.setId }, h.pointId, open, heldRoute) },
+            held = held?.let { h -> heldOf(sets.firstOrNull { it.set.id == h.setId }, h.pointId, changeable, heldRoute) },
             missions = missions, threatFiles = files,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PointsUiState())
@@ -247,6 +260,10 @@ class PointsViewModel @Inject constructor(
         val point = state.value.held ?: return
         val heldRoute = routeSelection.held.value ?: return
         val pointId = heldRoute.pointId ?: return
+        pack.lockNow()?.reasonFor(routes.active.value?.id)?.let {
+            _notices.tryEmit(it)
+            return
+        }
         if (routes.active.value?.route(heldRoute.routeId)?.points?.none { it.id == pointId } != false) return
         routes.edit("Use local point") { set ->
             set.mapRoute(heldRoute.routeId) {
@@ -260,6 +277,10 @@ class PointsViewModel @Inject constructor(
     fun addToHeldRoute() {
         val point = state.value.held ?: return
         val open = routes.active.value?.takeIf { it.mission == null } ?: return                 // an imported mission's points are its file's: none is added to the end
+        pack.lockNow()?.reasonFor(open.id)?.let {
+            _notices.tryEmit(it)
+            return
+        }
         val route = routeToAddTo(open, routeSelection.held.value) ?: return
         val id = newPointId()
         routes.edit("Add local point") { set ->
@@ -276,8 +297,9 @@ class PointsViewModel @Inject constructor(
     /** The route a point is added to: the one being worked on, or the only one there is. */
     private fun routeToAddTo(open: RouteSet, held: RouteHeld?) = held?.routeId?.let(open::route) ?: open.routes.singleOrNull()
 
-    private fun heldOf(set: LoadedPointSet?, pointId: String, open: RouteSet?, heldRoute: RouteHeld?): HeldPointUi? {
+    private fun heldOf(set: LoadedPointSet?, pointId: String, changeable: Changeable, heldRoute: RouteHeld?): HeldPointUi? {
         val point = set?.set?.point(pointId) ?: return null
+        val open = changeable.open
         val route = heldRoute?.routeId?.let { open?.route(it) }
         val routePoint = heldRoute?.pointId?.let { id -> route?.points?.firstOrNull { it.id == id } }
         return HeldPointUi(
@@ -287,6 +309,7 @@ class PointsViewModel @Inject constructor(
             latLon = "%.5f, %.5f".format(java.util.Locale.ROOT, point.lat, point.lon),
             useFor = if (route != null && routePoint != null) "${route.name}: ${routePoint.name?.takeIf { it.isNotBlank() } ?: "unnamed point"}" else null,
             addTo = open?.takeIf { it.mission == null }?.let { routeToAddTo(it, heldRoute) }?.name,
+            locked = changeable.locked,
         )
     }
 

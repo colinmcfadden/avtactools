@@ -11,7 +11,10 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -38,6 +41,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /** The route's plan as a person meets it (docs/native-design: RoutePlan): the bar, the set, the whole route, a card for each point, and the total. */
 @RunWith(RobolectricTestRunner::class)
@@ -102,6 +106,124 @@ class RoutePlanPageTest {
     }
 
     private fun count(text: String, substring: Boolean = false) = compose.onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().size
+
+    @Test
+    fun `a finished pack's route plan is looked at and shared, never changed`() {
+        val finished = InPackUi("OP DK", "Finished by Sam B. on Oct 5 at 14:20", null, readOnly = true, lock = app.ezpztac.data.PackLock("p", "OP DK", "OP DK is finished: nothing in it can be changed.", "Off in a finished pack", true))
+        page(detail(*log4), open = open(madeUp = false).copy(inPack = finished, chips = packRouteChips(true, null, false, false)))
+        compose.onNodeWithText("OP DK is finished: nothing in it can be changed.").assertIsDisplayed()
+        compose.onNodeWithText("Personal · saves to your Library").assertDoesNotExist()
+        compose.onNodeWithText("Saved").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Fetch winds aloft for ROUTE 1").assertIsNotEnabled()
+        compose.onNode(hasText("Fetch elevations") and hasClickAction()).performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("Move").assertDoesNotExist()
+        compose.onNodeWithText("Shape only").assertDoesNotExist()
+        compose.onNodeWithText("Add a shaping point at the crosshair").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Clock time at .SP, not set").assertIsNotEnabled()
+        compose.onNodeWithText("IP · 16S GC 28864 55349").assertExists()                          // where it is, said, since nothing here moves it
+        compose.onNode(hasText("MSL") and hasClickAction()).assertIsNotEnabled()
+        compose.onNodeWithContentDescription("More actions for ROUTE 1").performClick()
+        compose.onNodeWithText("Rename").assertDoesNotExist()
+        compose.onNodeWithText("Delete").assertDoesNotExist()
+        compose.onNodeWithText("Export this route as .msnx").assertIsDisplayed()
+    }
+
+    private val finishedLock = app.ezpztac.data.PackLock("p", "OP DK", "OP DK is finished: nothing in it can be changed.", "Off in a finished pack", true)
+
+    /** The page over pack set OP DK, live until [locked] is set; what the plan keeps is the person's to change, as [r] records. */
+    private fun lockablePage(r: Recorder, locked: androidx.compose.runtime.MutableState<Boolean>) {
+        val live = InPackUi("OP DK", "Saved to OP DK as you work.", null, readOnly = false)
+        val finished = InPackUi("OP DK", "Finished by Sam B. on Oct 5 at 14:20", null, readOnly = true, lock = finishedLock)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                val set = open(madeUp = false).copy(inPack = if (locked.value) finished else live)
+                RoutePlanPage(RoutesUiState(open = set, detail = detail(*log4), planOpen = true), r.actions, "16S GC 28936 55287", 0)
+            }
+        }
+    }
+
+    @Test
+    fun `what was begun on a point goes when its pack turns read-only, and does not come back by itself when it is reopened`() {
+        val r = Recorder()
+        val locked = mutableStateOf(false)
+        lockablePage(r, locked)
+        compose.onNodeWithText("Point name").performTextReplacement("HAWK")
+        compose.onNodeWithContentDescription("Set clock time at .SP, not set").performClick()
+        compose.onNodeWithText("Clock time at .SP (HH:MM:SS)").assertExists()
+        compose.onNodeWithContentDescription("Show controls to move this point").performScrollTo().performClick()
+        val pad = "Put this point at the crosshair, 16S GC 28936 55287"
+        assertEquals(1, compose.onAllNodesWithContentDescription(pad).fetchSemanticsNodes().size)
+        locked.value = true
+        compose.waitForIdle()
+        // The name typed and not saved never was the point's: the read-only field shows the point's own.
+        assertEquals(".SP", compose.onNodeWithText("Point name").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
+        assertEquals(0, count("HAWK"))
+        assertEquals(0, count("Clock time at .SP (HH:MM:SS)"))
+        assertEquals(0, compose.onAllNodesWithContentDescription(pad).fetchSemanticsNodes().size)
+        locked.value = false
+        compose.waitForIdle()
+        assertEquals("not back by themselves", 0, count("Clock time at .SP (HH:MM:SS)"))
+        assertEquals(0, compose.onAllNodesWithContentDescription(pad).fetchSemanticsNodes().size)
+        assertEquals(0, count("Save name"))
+        assertTrue("nothing sent on the way", r.log.none { it.startsWith("renamePoint") })
+    }
+
+    @Test
+    fun `a refused value goes, with its words, when the pack turns read-only, and the plan's own value shows`() {
+        val r = Recorder().apply { problem = "Fuel flow must be between 0 and 20000." }
+        val locked = mutableStateOf(false)
+        lockablePage(r, locked)
+        compose.onNodeWithText("Fuel lb/hr").performTextReplacement("99999")
+        compose.onNodeWithText("Fuel flow must be between 0 and 20000.").assertIsDisplayed()
+        compose.onNodeWithText("10/12/2026").performTextReplacement("10/1")
+        compose.waitForIdle()
+        locked.value = true
+        compose.waitForIdle()
+        assertEquals(0, count("Fuel flow must be between 0 and 20000."))
+        assertEquals(0, count("99999"))
+        compose.onNodeWithText("10/12/2026").assertExists()                                      // the plan's date, not what was half typed
+        assertEquals(0, count("10/1"))
+    }
+
+    @Test
+    fun `the calendar closes when the pack turns read-only, and does not come back by itself when it is reopened`() {
+        val r = Recorder()
+        val locked = mutableStateOf(false)
+        lockablePage(r, locked)
+        compose.onNodeWithContentDescription("Choose the date from a calendar").performClick()
+        compose.waitForIdle()
+        assertTrue(count("Cancel") > 0)
+        locked.value = true
+        compose.waitForIdle()
+        assertEquals(0, count("Cancel"))
+        locked.value = false
+        compose.waitForIdle()
+        assertEquals(0, count("Cancel"))
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)                                                       // real text measurement: the stub measures every line as short
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi", fontScale = 2.0f)
+    fun `why a read-only pack's set cannot be changed is never cut, on a small phone at the largest text`() {
+        val long = "OPERATION DESERT KESTREL NORTHERN PHASE"
+        val reason = "$long is finished: nothing in it can be changed."
+        val finished = InPackUi(long, "Finished by Sam B. on Oct 5 at 14:20", null, readOnly = true, lock = app.ezpztac.data.PackLock("p", long, reason, "Off in a finished pack", true))
+        page(detail(*log4), open = open(madeUp = false).copy(inPack = finished, chips = packRouteChips(true, null, false, false)))
+        val layout = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithText(reason, useUnmergedTree = true).fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        val l = layout.single()
+        assertTrue("it takes more than two lines here: ${l.lineCount} lines", l.lineCount > 2)
+        assertFalse("it is cut", l.didOverflowHeight || l.isLineEllipsized(l.lineCount - 1))
+    }
+
+    @Test
+    fun `a pack's set says it is saved to the pack, never the Library`() {
+        val live = InPackUi("OP DK", "Saved to OP DK as you work. 4 members can see it.", null, readOnly = false)
+        page(detail(*log4), open = open(madeUp = false).copy(inPack = live, chips = packRouteChips(false, null, false, false)))
+        compose.onNodeWithText("In OP DK · saved to the pack as you work").assertIsDisplayed()
+        compose.onNodeWithText("Personal · saves to your Library").assertDoesNotExist()
+        compose.onNodeWithText("Saved").assertDoesNotExist()
+    }
 
     @Test
     @Config(qualifiers = "w1280dp-h800dp-xhdpi")

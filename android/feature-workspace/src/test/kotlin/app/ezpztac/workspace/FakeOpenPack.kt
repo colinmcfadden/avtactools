@@ -101,15 +101,20 @@ internal class FakeOpenPack : OpenPack {
 
     companion object {
         /** Pack p, "OP DK", Colin (1) this person, with Sam (2) in it and a team, so 4 can see it. */
-        fun session(readOnly: Boolean = false, status: String = "active", pending: List<PendingOp> = emptyList()) = PackSession(
+        fun session(
+            readOnly: Boolean = false, status: String = "active", pending: List<PendingOp> = emptyList(), role: String = "editor",
+            finishedBy: String? = null, finishedAt: String? = null,
+        ) = PackSession(
             1,
             buildJsonObject {
                 put("uuid", "p")
                 put("name", "OP DK")
                 put("status", status)
-                put("role", "editor")
+                put("role", role)
                 put("audience_count", 4)
                 put("team", buildJsonObject { put("id", 3) })
+                finishedBy?.let { by -> put("finished_by", buildJsonObject { put("id", 2); put("name", by) }) }
+                finishedAt?.let { put("finished_at", it) }
             },
             buildJsonArray {
                 add(buildJsonObject { put("user_id", 1); put("name", "Colin McFadden") })
@@ -123,6 +128,20 @@ internal class FakeOpenPack : OpenPack {
             val diagram = checkNotNull(DiagramNormalizer.fromTarget(DiagramJson.encode(target), mgrs = target.mgrs, id = "pack:p:$uuid"))
             return PackItemView(uuid, "lz", name, PackLz.lzItemData(diagram), buildJsonObject { put("source", source ?: JsonNull) })
         }
+
+        /** [diagram] as an LZ/PZ item of the pack, [uuid]. */
+        fun lzOf(uuid: String, diagram: Diagram): PackItemView =
+            PackItemView(uuid, "lz", diagram.name, PackLz.lzItemData(diagram), buildJsonObject { put("source", JsonNull) })
+
+        /** [set] as a route set item of the pack, [uuid]. */
+        fun routesOf(uuid: String, set: RouteSet): PackItemView =
+            PackItemView(uuid, "route", set.name, app.ezpztac.model.RouteSets.serialize(set), buildJsonObject { put("source", JsonNull) })
+
+        /** A finished pack, finished by Sam Bell on Oct 5 at 14:20 UTC. */
+        fun finished() = session(readOnly = true, status = "finished", finishedBy = "Sam Bell", finishedAt = "2026-10-05T14:20:00")
+
+        /** A live pack this person may only view. */
+        fun viewing() = session(readOnly = true, role = "viewer")
 
         /** A route set item of the pack with [routes] routes of [points] points each. */
         fun routes(uuid: String, name: String, routes: Int, points: Int = 3) = PackItemView(

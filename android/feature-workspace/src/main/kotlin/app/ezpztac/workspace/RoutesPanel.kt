@@ -28,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -103,7 +104,7 @@ fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Mo
                     }
                 }
                 state.open?.inPack == null -> Text(
-                    "No routes in ${pack.name} yet. Sketch a route, and it goes into the pack.",
+                    if (pack.readOnly) "No routes in ${pack.name}." else "No routes in ${pack.name} yet. Sketch a route, and it goes into the pack.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp),
                 )
             }
@@ -116,6 +117,10 @@ fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Mo
                     supporting = { SetLine(row) },
                 )
             }
+        }
+        // In a read-only pack, why nothing here can be changed (the web's hint).
+        pack?.hint?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp))
         }
         // The way to the Library's sets: not in a pack, whose sets are the panel's (the web shows nothing of the Library there).
         if (state.sets.isNotEmpty() && pack == null) {
@@ -159,11 +164,13 @@ private fun Muted(text: String) = Text(text, style = MaterialTheme.typography.bo
 private fun ActiveSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, exporting: Boolean, includeThreats: Boolean, threatCount: Int, actions: RoutesActions) {
     var renaming by rememberSaveable(open.uuid) { mutableStateOf<String?>(null) }
     var confirmDelete by rememberSaveable(open.uuid) { mutableStateOf(false) }
+    // A pack finished while its name was being typed: the field goes, and does not come back by itself if the pack is reopened.
+    LaunchedEffect(open.locked) { if (open.locked != null) renaming = null }
     Surface(shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.xs.dp)) {
             Row(Modifier.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(open.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                SmallIconButton(EzpzIcons.edit, "Rename ${open.name}") { renaming = open.name }
+                if (open.locked == null) SmallIconButton(EzpzIcons.edit, "Rename ${open.name}") { renaming = open.name }
                 SetMoreMenu(open, actions, onDelete = { confirmDelete = true })
             }
             // What it holds goes under its chips where both do not fit (large text), rather than being cut.
@@ -188,10 +195,10 @@ private fun ActiveSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, exporting: 
             }
             open.inPack?.let { pack ->
                 pack.alsoHere?.let { AlsoHere(it, Modifier.padding(top = Tokens.Spacing.sm.dp)) }
-                SavedToPack(pack.savedLine, Modifier.padding(top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp))
+                SavedToPack(pack.savedLine, Modifier.padding(top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp), locked = pack.reason != null)
             }
             if (threatCount > 0) ThreatsBox(threatCount, includeThreats, actions.includeThreats)
-            renaming?.let { name ->
+            renaming?.takeIf { open.locked == null }?.let { name ->
                 SetRenameField(
                     name, open.name, onChange = { renaming = it }, onDone = { actions.renameSet(open.uuid, it); renaming = null }, onCancel = { renaming = null },
                     inPack = open.inPack != null,
@@ -208,8 +215,11 @@ private fun ActiveSetCard(open: OpenSetUi, drawing: RouteDrawingUi?, exporting: 
                 open.isMission -> Note("An AMPS mission. Moving, renaming and adding points and the plan are written back into its file; its routes themselves stay as they are.")
             }
             HorizontalDivider(Modifier.padding(top = 2.dp, end = Tokens.Spacing.sm.dp), color = MaterialTheme.colorScheme.outlineVariant)
-            if (open.routes.isEmpty() && drawing == null) Note("No routes in this set yet. Sketch a route to start one.", bottom = true)
-            open.routes.forEach { RouteRow(it, actions, fixed = open.isMission, exporting = exporting, withThreats = includeThreats && threatCount > 0) }
+            if (open.routes.isEmpty() && drawing == null) {
+                Note(if (open.locked != null) "No routes in this set." else "No routes in this set yet. Sketch a route to start one.", bottom = true)
+            }
+            // A read-only pack's routes are as fixed as an imported mission's: shared, exported and hidden by each person, never renamed or deleted.
+            open.routes.forEach { RouteRow(it, actions, fixed = open.isMission || open.locked != null, exporting = exporting, withThreats = includeThreats && threatCount > 0) }
         }
     }
 }
@@ -333,6 +343,13 @@ private fun SetDeleteConfirm(name: String, onDelete: () -> Unit, onKeep: () -> U
 private fun RouteRow(route: RouteRowUi, actions: RoutesActions, fixed: Boolean, exporting: Boolean, withThreats: Boolean) {
     var rename by rememberSaveable(route.id) { mutableStateOf<String?>(null) }
     var confirmDelete by rememberSaveable(route.id) { mutableStateOf(false) }
+    // Let go of, not only hidden, when its pack turns read-only: it does not come back by itself on a reopen.
+    LaunchedEffect(fixed) {
+        if (fixed) {
+            rename = null
+            confirmDelete = false
+        }
+    }
     val dim = if (route.visible) Modifier else Modifier.alpha(0.6f)
     Column {
         Row(
@@ -360,7 +377,8 @@ private fun RouteRow(route: RouteRowUi, actions: RoutesActions, fixed: Boolean, 
             )
             Icon(painterResource(EzpzIcons.chevronRight), contentDescription = null, modifier = Modifier.padding(horizontal = 12.dp))
         }
-        rename?.let { name ->
+        // A route of a read-only pack is fixed: a rename or delete begun before it was finished goes (above) and is not offered again.
+        rename?.takeIf { !fixed }?.let { name ->
             Column(Modifier.padding(end = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
                 EzpzTextField(
                     value = name, onValueChange = { rename = it }, label = "Route name", imeAction = ImeAction.Done, capitalization = KeyboardCapitalization.Characters,
@@ -372,7 +390,7 @@ private fun RouteRow(route: RouteRowUi, actions: RoutesActions, fixed: Boolean, 
                 }
             }
         }
-        if (confirmDelete) {
+        if (confirmDelete && !fixed) {
             Column(Modifier.padding(end = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
                 Banner("Delete \"${route.name}\"? You can undo this until the set is closed.", BannerKind.Warning)
                 // Keeping it is the prominent answer.
@@ -466,6 +484,8 @@ internal fun RouteMoreMenu(
  */
 @Composable
 fun RoutesFooter(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier) {
+    // Nothing is drawn into a read-only pack (the web hides its foot); a sketch still under way keeps its Cancel.
+    if (state.pack?.readOnly == true && state.drawing == null) return
     Column(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow)) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(

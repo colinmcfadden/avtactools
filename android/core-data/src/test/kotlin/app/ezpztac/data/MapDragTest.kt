@@ -7,11 +7,11 @@ import app.ezpztac.model.DragTarget
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.MissionLink
+import app.ezpztac.model.Radars
 import app.ezpztac.model.RoutePlan
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.SketchRoute
 import app.ezpztac.model.Threat
-import app.ezpztac.model.Radars
 import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.sync.Device
 import app.ezpztac.sync.FakeServer
@@ -33,6 +33,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -147,6 +148,37 @@ class MapDragTest {
         assertEquals(0.0, metres(home, r.position("helicopters", "1")).first, 0.01)
         assertEquals(before, r.session.undoDepth.value)
         assertNull(r.drag.active.value)
+    }
+
+    @Test
+    fun `abandoning ends the drag where the thing is, with no edit of its own`() = runTest {
+        val r = rig(); r.openDiagram()
+        r.place("helicopters", helicopter(1, home))
+        r.drag.start(DragTarget.Graphic(GraphicRef("helicopters", "1")), home)
+        r.drag.move(GraphicEdits.offset(home, 300.0, 0.0))
+        val moved = r.session.active.value
+        val steps = r.session.undoDepth.value
+        r.drag.abandon()
+        assertSame("not moved back", moved, r.session.active.value)
+        assertEquals(steps, r.session.undoDepth.value)
+        assertNull(r.drag.active.value)
+        r.drag.move(home)                                                                       // over: the finger moves nothing now
+        assertSame(moved, r.session.active.value)
+        r.drag.abandon()                                                                        // and with nothing picked up, nothing happens
+        assertNull(r.drag.active.value)
+    }
+
+    @Test
+    fun `abandoning a threat drag leaves it where it is and writes it`() = runTest {
+        val r = rig()
+        val id = r.threats.add(Threat("SA-6", "SHGPEWRR------", home.lat, home.lon, "", "SOF", radars = Radars.defaultPair()))
+        advanceUntilIdle()
+        r.drag.start(DragTarget.Threat(id), home)
+        r.drag.move(GraphicEdits.offset(home, 500.0, 0.0))
+        r.drag.abandon()
+        advanceUntilIdle()
+        val kept = r.vault.kept!!.entries.single().threat
+        assertEquals(500.0, metres(home, LatLon(kept.lat, kept.lon)).first, 0.05)
     }
 
     @Test

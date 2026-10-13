@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; **P2b built and reviewed**, its findings fixed; P2c next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; **P2b built and reviewed**, its findings fixed; **P2c built and reviewed**, its findings fixed; P2d next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -320,8 +320,8 @@ opened by itself when packs or the phone's frame came back; and the rail told a 
 **P2 — Working in a pack.** The Pack panel (`PackItems`, `PackHistory`: the description, members and *Invite*, Items and History with
 "new since you looked", *Add from Library*, *Finish pack*), the panels' pack rows (`PackLive`: *Synced*, who is editing, "From Library ·
 Original changed"), the finished banner (`Finished`), read-only gating of the map and the sheet (*Deferred* 8), and the presence pointer
-(*Deferred* 7). **Split in three while building**, each reviewed on its own: P2a the Pack panel, P2b the LZ/PZ, Routes and Imports panels in a pack, P2c the finished banner,
-read-only and presence.
+(*Deferred* 7). **Split in five while building**, each reviewed on its own: P2a the Pack panel, P2b the LZ/PZ, Routes and Imports panels in a pack, P2c a read-only pack
+(finished, or this person a viewer), P2d the finished banner with *Finish*, *Reopen* and *Duplicate*, and P2e the presence pointer.
 
 **P2a — The Pack panel. Built.** A Pack tab first while a pack is open; the pack's head, description and who is in it and here now; Items by kind with what changed since this person
 looked, who changed it and when, where it came from and who else has it open; a tap shows an item in its panel; *Close here*, *Rename* and *Remove from pack* in each row's menu; History,
@@ -366,10 +366,41 @@ both panels; a set the pack refused was said twice. Tests: `PackFactsTest`, `Dia
 `RouteRepository` no dispatcher, so a mission's file work ran on a real thread under the test's virtual clock; it runs on the test's dispatcher now.
 **Not verifiable here:** the panels over the real map in a pack, TalkBack, and presence at its real rate on a device.
 
+**P2c — A read-only pack. Built.** While the open pack is read-only (finished by its owner, or this person a viewer in it: `PackLock`) nothing that would change one of
+its items is offered, what is asked anyway is refused in words before anything is changed or sent (the engine would put it back, with a toast), and what was under way on it
+when it turned read-only ends, with one toast saying what stopped. The open item's card and plan say why ("Finished by Sam B. on Oct 5 at 14:20"; a viewer: "In OP DK. You can
+view it but not change it."), the tools are off ("Off in a finished pack"), and the panels' foot says it in the web's words. **Amended while building:**
+- **Read-only is said once in each place**: the open item's chip and foot, the head and the tools' line. The pack's other rows do not each say *Read-only* (the design's;
+  the web marks every row).
+- **Rename is hidden**, as on the web and the tablet's design, not shown off (the phone's design).
+- **Not locked**: the mission aircraft (a device preference that changes nothing in the pack; the tablet's design locks it), the slope map and the weather, hiding a route
+  (each person's own), holding and looking at anything, *Close here*, sharing and exporting.
+- **The route's plan is the web's disabled fieldset**: its fields read-only (readable and heard, never dimmed), its references and buttons off, and moving, the kind of point,
+  *Shape only*, the clock and adding a point left out.
+- **What ends when it turns read-only** (`HomeViewModel`, `RoutesViewModel`): a tool's mode (ended, keeping what the pack took: cancelling would take it back, itself a
+  change), a boundary or route being drawn (not kept), a drag (ended where it is: moving it back would be a change too), an analysis of any of its LZ/PZs, open or not
+  (stopped), and winds or elevations on their way to its set (not applied, the note says why). What was begun on a screen (a name typed, a value refused, the calendar, the
+  clock, the move pad, a route's rename or delete) goes, and does not come back by itself on a reopen. **Not like the web**, which leaves them going.
+- **Nothing of a read-only pack's LZ/PZ or route set is picked up** by a long press: the map's menu opens instead, *Copy grid* and *Add threat here* in it, and *New LZ/PZ
+  here* and *Add route point here* off with their reason. A PZ marker's tip has no drag handle then.
+- **A viewer's words are Android's** where the designs have only the finished pack's.
+- The finished banner, *Finish*, *Reopen* and *Duplicate* are P2d; *Save a copy* is P4.
+**Reviewed** (one independent review, 2026-10-12: 25 reported, 19 survived an adversarial check, about 9 distinct; each fix has a test, and each was broken to see it fail): a drag
+ended by the lock was moved back, itself a change the pack refused and put back, with "went back" false when the pack had already taken part of it (now ended where it is, with
+no edit of its own: `MapDrag.abandon`); winds or elevations already on their way were applied to the read-only set, put back, and reported as found; an analysis of one of the
+pack's LZ/PZs that was no longer open, or with none open, ran on and was refused; an LZ/PZ not analysed kept *Undo* and *Redo* and the advice to analyse it, and the refusal
+of Undo was never shown; a point name typed and not saved stayed in the read-only field as if it were the point's, and a refused value or half-typed date with its words; the
+calendar, the clock, the move pad and a route's rename or delete were hidden, not let go, so a reopen brought them back by themselves; the held local point told the person to
+open a set of routes that was open (it says why now); the read-only reason in the route plan's strip was cut at two lines at large text; the analysis and the route-point drag
+were untested. Not changed: a change made just before the lock that the pack had not taken is put back by the engine's rule with its own toast, so the person can hear both what
+stopped and that the change was not saved; an empty set made for a sketch stays in the pack, said in the panel (it cannot be taken out of a read-only pack). Tests:
+`HomeViewModelTest`, `RoutesViewModelTest`, `GraphicsViewModelTest`, `GraphicsScreenTest` (`LockedUnanalysedGraphicsTest`), `RoutePlanPageTest` (at 360 dp and 2.0 with real
+text measurement), `PanelsInPackTest`, `PointsViewModelTest`, `ImportsPanelTest`, `MapDragTest`.
+
 **P3 — People.** *New pack* (`NewPack`), *Members* (`Members`: roles, invite by name or email, pending invites with resend and revoke,
 share with a team), and the teams page.
 
-**P4 — The pack dialogs.** `PackDialogs`: add a copy to a pack (from the Library's menu and the panels), update from the original, finish,
+**P4 — The pack dialogs.** `PackDialogs`: add a copy to a pack (from the Library's menu and the panels), update from the original (*Finish* is P2d's),
 save a copy to the Library; the keep-or-discard offer for edits a pack dropped (*Deferred* 2).
 
 ## How each step is checked

@@ -194,7 +194,7 @@ class LzPanelScreenTest {
     private fun plan(current: ActiveDiagramUi = activeLz(), canEdit: Boolean = true, canDraw: Boolean = true, placing: PlacementUi? = null) {
         show {
             LzPlanContent(
-                current, GraphicsUiState(canEdit = canEdit), BoundaryUiState(canStart = canDraw, clears = current.status == DiagramStatus.ANALYZED), placing,
+                current, GraphicsUiState(listed = canEdit, canEdit = canEdit), BoundaryUiState(canStart = canDraw, clears = current.status == DiagramStatus.ANALYZED), placing,
                 actions, GraphicsActions(), GRID,
             )
         }
@@ -258,7 +258,7 @@ class LzPanelScreenTest {
         val held = InspectorUi(GraphicRef("sectorsOfFire", "sec-12"), GraphicKind.SECTOR_OF_FIRE, "The held sector", GRID, null, rotation = null, reachFt = null, direction = null)
         show {
             LzPlanContent(
-                activeLz(), GraphicsUiState(canEdit = true, rows = rows, inspector = held), BoundaryUiState(canStart = true, clears = true), null,
+                activeLz(), GraphicsUiState(listed = true, canEdit = true, rows = rows, inspector = held), BoundaryUiState(canStart = true, clears = true), null,
                 actions, GraphicsActions(), GRID,
             )
         }

@@ -29,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -238,7 +239,7 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
                     }
                 }
                 current?.inPack == null -> Text(
-                    "Nothing in ${pack.name} yet. Tap New LZ/PZ at the crosshair, or long-press the map, and the new LZ/PZ goes into the pack.",
+                    if (pack.readOnly) "Nothing in ${pack.name}." else "Nothing in ${pack.name} yet. Tap New LZ/PZ at the crosshair, or long-press the map, and the new LZ/PZ goes into the pack.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -252,7 +253,8 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
                 )
             }
         }
-        ListRow(
+        // Nothing new goes into a read-only pack, so it is not offered (the web's foot says why).
+        if (pack?.readOnly != true) ListRow(
             EzpzIcons.addLocationAlt, "New LZ/PZ at the crosshair", onClick = actions.newHere, onClickLabel = "Make",
             supporting = {
                 Text(
@@ -280,6 +282,7 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
         }
         Text(
             when {
+                state.pack?.hint != null -> state.pack.hint
                 state.pack != null -> "New LZ/PZs you start while ${state.pack.name} is open are added to it."
                 current == null && state.open.isEmpty() -> "No LZ/PZ open. Move the map to a landing zone, or type its grid in the search bar, then tap New LZ/PZ."
                 else -> "Move the map, or type a grid in the search bar, then tap New LZ/PZ to open another."
@@ -376,11 +379,13 @@ internal fun Chips(chips: List<LzChip>, modifier: Modifier = Modifier) {
 private fun ActiveLzCard(current: ActiveDiagramUi, actions: LzPanelActions) {
     var renaming by rememberSaveable(current.uuid) { mutableStateOf<String?>(null) }
     var confirmDelete by rememberSaveable(current.uuid) { mutableStateOf(false) }
+    // A pack finished while its name was being typed: the field goes, and does not come back by itself if the pack is reopened.
+    LaunchedEffect(current.locked) { if (current.locked != null) renaming = null }
     Surface(shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.md.dp, end = Tokens.Spacing.sm.dp, bottom = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(current.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                SmallIconButton(EzpzIcons.edit, "Rename ${current.name}") { renaming = current.name }
+                if (current.locked == null) SmallIconButton(EzpzIcons.edit, "Rename ${current.name}") { renaming = current.name }
                 LzMoreMenu(current, actions, onRename = { renaming = current.name }, onDelete = { confirmDelete = true })
             }
             Text(
@@ -398,8 +403,8 @@ private fun ActiveLzCard(current: ActiveDiagramUi, actions: LzPanelActions) {
                 PillButton("Plan", onClick = { actions.showPage(LzPage.PLAN) }, icon = EzpzIcons.tune, style = PillStyle.Tonal)
                 if (current.inPack == null) SavesToLibrary(Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
             }
-            current.inPack?.let { SavedToPack(it.savedLine, Modifier.padding(top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp)) }
-            renaming?.let { name ->
+            current.inPack?.let { SavedToPack(it.savedLine, Modifier.padding(top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp), locked = it.reason != null) }
+            renaming?.takeIf { current.locked == null }?.let { name ->
                 RenameField(
                     name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null },
                     inPack = current.inPack != null,
@@ -428,11 +433,17 @@ private fun SaveButton(current: ActiveDiagramUi, save: () -> Unit) {
     }
 }
 
-/** "Saved to OP DK as you work. 4 members can see it." (the design's PackLive): a pack's item has no *Save*, and this says why. */
+/**
+ * "Saved to OP DK as you work. 4 members can see it." (the design's PackLive): a pack's item has no *Save*, and this says why; in a read-only pack ([locked])
+ * why nothing is saved, with a lock: "Finished by Colin M. on Oct 5 at 14:20".
+ */
 @Composable
-internal fun SavedToPack(line: String, modifier: Modifier = Modifier) {
+internal fun SavedToPack(line: String, modifier: Modifier = Modifier, locked: Boolean = false) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(16.dp))
+        Icon(
+            painterResource(if (locked) EzpzIcons.lock else EzpzIcons.groups), contentDescription = null,
+            tint = if (locked) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(16.dp),
+        )
         Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -474,7 +485,9 @@ private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRena
             SmallIconButton(EzpzIcons.moreVert, "More actions for ${current.name}") { open = true }
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
-            DropdownMenuItem(text = { Text("Rename") }, onClick = { open = false; onRename() }, leadingIcon = { Icon(painterResource(EzpzIcons.edit), contentDescription = null) })
+            if (current.locked == null) {
+                DropdownMenuItem(text = { Text("Rename") }, onClick = { open = false; onRename() }, leadingIcon = { Icon(painterResource(EzpzIcons.edit), contentDescription = null) })
+            }
             DropdownMenuItem(
                 text = {
                     Column {
@@ -560,6 +573,14 @@ fun LzPlanContent(
     var addingUnit by rememberSaveable { mutableStateOf(false) }
     var newUnit by rememberSaveable(stateSaver = UnitDraftSaver) { mutableStateOf(UnitDraft()) }
     var confirmDraw by rememberSaveable { mutableStateOf(false) }
+    // The pack finished (or this person made a viewer) while something was being started here: it goes, and does not come back by itself on a reopen.
+    LaunchedEffect(current.locked) {
+        if (current.locked != null) {
+            renaming = null
+            addingUnit = false
+            confirmDraw = false
+        }
+    }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Chips(current.chips)
         current.inPack?.alsoHere?.let { AlsoHere(it) }
@@ -567,9 +588,9 @@ fun LzPlanContent(
             // A pack's LZ/PZ is saved to the pack as it changes: no Save of its own, and where it is saved said in its place (the design's PackLive pane).
             if (current.inPack == null) SaveButton(current, actions.save)
             LzMoreMenu(current, actions, onRename = { renaming = current.name }, onDelete = { confirmDelete = true }, outlined = true)
-            current.inPack?.let { SavedToPack(it.savedLine, Modifier.weight(1f)) } ?: SavesToLibrary(Modifier.weight(1f))
+            current.inPack?.let { SavedToPack(it.savedLine, Modifier.weight(1f), locked = it.reason != null) } ?: SavesToLibrary(Modifier.weight(1f))
         }
-        renaming?.let { name ->
+        renaming?.takeIf { current.locked == null }?.let { name ->
             RenameField(
                 name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null },
                 inPack = current.inPack != null,
@@ -588,6 +609,13 @@ fun LzPlanContent(
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         SectionLabel("LZ/PZ tools")
+        // In a read-only pack every tool is off, and this says why (the design's "Off in a finished pack").
+        current.inPack?.short?.let { off ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(painterResource(EzpzIcons.lock), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                Text(off, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         boundary.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissBoundaryError) }
         ToolGrid(
             canPlace = graphics.canEdit, canDraw = boundary.canStart, drawing = boundary.drawing, placing = placing?.tool, addingUnit = addingUnit,
@@ -595,16 +623,19 @@ fun LzPlanContent(
             onTool = actions.beginTool,
             onUnit = { addingUnit = !addingUnit },
         )
-        Text(
-            when {
-                !graphics.canEdit -> "Analyze the LZ/PZ to place helicopters, PZs, sectors, units and go-arounds. Draw LZ draws its boundary yourself."
-                else -> "Tools place where you tap the map, or at the crosshair. Done and Cancel finish the mode."
-            },
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (current.locked == null) {
+            Text(
+                when {
+                    !graphics.canEdit -> "Analyze the LZ/PZ to place helicopters, PZs, sectors, units and go-arounds. Draw LZ draws its boundary yourself."
+                    else -> "Tools place where you tap the map, or at the crosshair. Done and Cancel finish the mode."
+                },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (boundary.drawnPoints > 0 && !boundary.drawing) {
             Text(
-                "Drawn boundary: ${boundary.drawnPoints} points. Analyze to measure it.", style = MaterialTheme.typography.bodyMedium,
+                if (current.locked != null) "Drawn boundary: ${boundary.drawnPoints} points." else "Drawn boundary: ${boundary.drawnPoints} points. Analyze to measure it.",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -711,7 +742,7 @@ private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
             }
             is AnalysisUi.Failed -> {
                 Banner(analysis.message, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissAnalysis)
-                if (current.canAnalyze) PillButton("Try again", onClick = actions.analyze, icon = EzpzIcons.refresh)
+                if (current.canAnalyze && current.locked == null) PillButton("Try again", onClick = actions.analyze, icon = EzpzIcons.refresh)
             }
             AnalysisUi.Idle -> Row(
                 Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
@@ -727,6 +758,8 @@ private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
                         Text(
                             when {
                                 !current.canAnalyze -> "Set a target to analyze this LZ/PZ."
+                                analyzed && current.locked != null -> "Analyzed. Read-only here: you can look at it, not change it."
+                                current.locked != null -> "Not analyzed. Nothing in this pack can be changed, so it cannot be analyzed here."
                                 analyzed && current.inPack != null -> "Analyzed. Planning graphics are unlocked."      // a pack's has no Save to unlock
                                 analyzed -> "Analyzed. Planning graphics and save are unlocked."
                                 else -> "Not analyzed yet. Analyzing finds the landing area and measures its slope; it needs a connection."
@@ -736,8 +769,10 @@ private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
                     }
                 }
                 if (current.canAnalyze) {
-                    if (analyzed) PillButton("Re-analyze", onClick = actions.analyze, icon = EzpzIcons.refresh, style = PillStyle.Tonal)
-                    else PillButton("Analyze", onClick = actions.analyze)
+                    // Off, not gone, in a read-only pack (the design's): the words beside it say why.
+                    val can = current.locked == null
+                    if (analyzed) PillButton("Re-analyze", onClick = actions.analyze, icon = EzpzIcons.refresh, style = PillStyle.Tonal, enabled = can)
+                    else PillButton("Analyze", onClick = actions.analyze, enabled = can)
                 }
             }
         }

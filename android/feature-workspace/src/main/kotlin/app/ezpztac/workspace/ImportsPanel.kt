@@ -516,7 +516,8 @@ private fun HeldPointCard(held: HeldPointUi, actions: ImportsActions, modifier: 
                 }
                 if (held.addTo == null) {
                     Text(
-                        "Open a set of routes and choose a route to add this point to it, or choose one of its points to move that point here.",
+                        // A read-only pack's set is open: why nothing is offered, rather than how to open one.
+                        held.locked ?: "Open a set of routes and choose a route to add this point to it, or choose one of its points to move that point here.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

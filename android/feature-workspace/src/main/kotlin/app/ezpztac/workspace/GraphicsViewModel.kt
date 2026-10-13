@@ -6,6 +6,7 @@ import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.GraphicPlacement
 import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.OpenPack
 import app.ezpztac.data.PlaceTool
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.geo.PlaceResult
@@ -24,6 +25,7 @@ import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.planning.PlanningGraphics
 import app.ezpztac.planning.RouteCalc
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +34,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import javax.inject.Inject
 
 /** The planning graphics the person can place. */
 enum class GraphicKind(val collection: String, val label: String, val placeable: Boolean = true) {
@@ -90,8 +91,12 @@ data class InspectorUi(
 data class PlacementUi(val tool: PlaceTool, val placed: Int, val error: String?)
 
 data class GraphicsUiState(
-    /** Graphics are placed only once the diagram is analysed: until then it has no landing zone for them to sit in. */
+    /** The diagram is analysed, so it has graphics to list: until then it has no landing zone for them to sit in. */
+    val listed: Boolean = false,
+    /** Graphics can be placed and changed: analysed, and not a read-only pack's ([locked]). */
     val canEdit: Boolean = false,
+    /** Why nothing here can be changed: the LZ/PZ is a read-only pack's (finished, or this person a viewer in it). Its graphics are still listed and held. */
+    val locked: String? = null,
     val rows: List<GraphicRowUi> = emptyList(),
     val inspector: InspectorUi? = null,
     /** The separation alerts, in the web's words. */
@@ -112,15 +117,21 @@ class GraphicsViewModel @Inject constructor(
     private val selection: GraphicSelection,
     private val aircraft: AircraftProfiles,
     private val placement: GraphicPlacement,
+    /** The open Mission Pack: a read-only one's LZ/PZ is looked at, never changed (P2c). */
+    private val pack: OpenPack = OpenPack.None,
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
     private val depths = combine(session.undoDepth, session.redoDepth, error) { undo, redo, error -> Triple(undo, redo, error) }
     private val airframes = combine(aircraft.profiles, aircraft.active) { list, chosen -> list to chosen }
 
-    val state: StateFlow<GraphicsUiState> = combine(session.active, selection.selected, depths, airframes) { diagram, selected, (undo, redo, error), (list, chosen) ->
-        uiStateOf(diagram, selected, undo, redo, error, list, chosen)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, GraphicsUiState())
+    val state: StateFlow<GraphicsUiState> =
+        combine(session.active, selection.selected, depths, airframes, pack.lock) { diagram, selected, (undo, redo, error), (list, chosen), lock ->
+            uiStateOf(diagram, selected, undo, redo, error, list, chosen, lock?.reasonFor(diagram?.id))
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, GraphicsUiState())
+
+    // Why the open LZ/PZ cannot be changed now: it is a read-only pack's. Every change asks first, so none is made only to be put back by the pack.
+    private fun locked(): String? = pack.lockNow()?.reasonFor(session.active.value?.id)
 
     // -- Placing -----------------------------------------------------------------------------------------------------------
 
@@ -130,10 +141,11 @@ class GraphicsViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** Turns [tool]'s mode on: map taps (and *Add at the crosshair*) place its graphic until *Done* or *Cancel*. Null when it is on; else why not. */
-    fun beginPlacing(tool: PlaceTool): String? = placement.begin(tool)
+    fun beginPlacing(tool: PlaceTool): String? = locked() ?: placement.begin(tool)
 
     /** Places the mode's graphic at [at] (the crosshair). */
     fun placeAt(at: LatLon?) {
+        locked()?.let { return fail(it) }
         placement.placeAt(at)
     }
 
@@ -147,6 +159,7 @@ class GraphicsViewModel @Inject constructor(
     fun place(kind: GraphicKind, at: LatLon?, direction: String? = null) {
         val diagram = session.active.value ?: return
         if (!diagram.canEditGraphics || !kind.placeable) return
+        locked()?.let { return fail(it) }
         if (at == null) return fail("Move the map to where it should go first.")
         val tool = when (kind) {
             GraphicKind.HELICOPTER -> PlaceTool.HELICOPTER
@@ -168,6 +181,7 @@ class GraphicsViewModel @Inject constructor(
     fun addUnit(draft: UnitDraft, at: LatLon?) {
         val diagram = session.active.value ?: return
         if (!diagram.canEditGraphics) return
+        locked()?.let { return fail(it) }
         if (at == null) return fail("Move the map to where it should go first.")
         val id = GraphicPlacement.newTextId("unit", GraphicPlacement.existingIds(diagram, "units"))
         error.value = null
@@ -191,6 +205,7 @@ class GraphicsViewModel @Inject constructor(
         val ref = selection.selected.value ?: return
         val diagram = session.active.value ?: return
         val graphic = DiagramOps.graphic(diagram, ref.collection, ref.key) ?: return
+        locked()?.let { return fail(it) }
         val changes = patch(ref.collection, graphic) ?: return fail(refusal)
         error.value = null
         session.edit(label) { DiagramOps.patchGraphic(it, ref.collection, graphic["id"], changes) }
@@ -233,6 +248,7 @@ class GraphicsViewModel @Inject constructor(
     // field is for, the answer is the words to show under the field (not the panel's banner, which may be scrolled out of sight).
 
     private fun editDoghouse(label: String, refusal: String, patch: JsonObject?): String? {
+        locked()?.let { return it }
         if (patch == null) return refusal
         edit(label) { c, _ -> if (c == "doghouses") patch else null }
         return null
@@ -252,15 +268,19 @@ class GraphicsViewModel @Inject constructor(
         val ref = selection.selected.value ?: return
         val diagram = session.active.value ?: return
         val graphic = DiagramOps.graphic(diagram, ref.collection, ref.key) ?: return
+        locked()?.let { return fail(it) }                                                     // and it stays held
         selection.clear()
         session.edit("Delete ${GraphicKind.of(ref.collection)?.label?.lowercase() ?: "graphic"}") { DiagramOps.removeGraphic(it, ref.collection, graphic["id"]) }
     }
 
+    // A read-only pack's LZ/PZ keeps the steps made before it was finished: taking one back would be a change the pack refuses.
     fun undo() {
+        locked()?.let { return fail(it) }
         session.undo()
     }
 
     fun redo() {
+        locked()?.let { return fail(it) }
         session.redo()
     }
 
@@ -275,9 +295,10 @@ class GraphicsViewModel @Inject constructor(
     // -- What the sheet shows ---------------------------------------------------------------------------------------------
 
     private fun uiStateOf(
-        diagram: Diagram?, selected: GraphicRef?, undo: Int, redo: Int, error: String?, profiles: List<AircraftProfile>, active: AircraftProfile,
+        diagram: Diagram?, selected: GraphicRef?, undo: Int, redo: Int, error: String?, profiles: List<AircraftProfile>, active: AircraftProfile, locked: String?,
     ): GraphicsUiState {
-        if (diagram == null || !diagram.canEditGraphics) return GraphicsUiState(undoDepth = undo, redoDepth = redo, error = error)
+        // Locked here too: an LZ/PZ not analysed has steps to undo as well (a rename, a boundary begun), and in a read-only pack none may be taken back.
+        if (diagram == null || !diagram.canEditGraphics) return GraphicsUiState(undoDepth = undo, redoDepth = redo, error = error, locked = locked)
         val resolve = { a: PlanningGraphics.Aircraft -> AircraftLookup.profileForAsset(a.profileRef, profiles, active) }
         val aircraft = diagram.graphics.helicopters.mapNotNull(PlanningGraphics.Aircraft::of)
         val alerts = PlanningGraphics.separationAlerts(aircraft, resolve)
@@ -305,7 +326,10 @@ class GraphicsViewModel @Inject constructor(
                 unit = if (row.kind == GraphicKind.UNIT) UnitDraft.of(o) else null,
             )
         }
-        return GraphicsUiState(canEdit = true, rows = rows, inspector = held, alerts = alerts.map { it.message }, undoDepth = undo, redoDepth = redo, error = error)
+        return GraphicsUiState(
+            listed = true, canEdit = locked == null, locked = locked, rows = rows, inspector = held, alerts = alerts.map { it.message }, undoDepth = undo,
+            redoDepth = redo, error = error,
+        )
     }
 
     private fun items(diagram: Diagram, collection: String) = when (collection) {

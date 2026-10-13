@@ -51,7 +51,7 @@ class LzPanelScreenshotTest {
     @Test
     fun plan() = shot("plan") {
         LzPlanContent(
-            activeLz(), GraphicsUiState(canEdit = true), BoundaryUiState(canStart = true, clears = true), PlacementUi(PlaceTool.HELICOPTER, 2, null),
+            activeLz(), GraphicsUiState(listed = true, canEdit = true), BoundaryUiState(canStart = true, clears = true), PlacementUi(PlaceTool.HELICOPTER, 2, null),
             LzPanelActions(), GraphicsActions(), GRID,
         )
     }

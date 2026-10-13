@@ -133,6 +133,16 @@ class MapDrag @Inject constructor(
         finish()
     }
 
+    /**
+     * The drag ends where the thing is, with no edit of its own: what can no longer be changed (its pack turned read-only) is not moved back either, since moving it back
+     * would itself be a change. What the pack already took stays; what it did not is put back to the pack's version by the pack's own rule.
+     */
+    fun abandon() {
+        val d = drag ?: return
+        if (d.origin is Origin.OfThreat) threats.settle()
+        finish()
+    }
+
     private fun finish() {
         drag = null
         _active.value = null

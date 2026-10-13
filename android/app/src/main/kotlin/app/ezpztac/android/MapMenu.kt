@@ -61,6 +61,8 @@ import kotlin.math.max
 /** What the map menu offers, and what each choice does. A choice whose panel this account is not offered is null, and not shown. */
 internal data class MapMenuChoices(
     val newLz: (() -> Unit)? = null,
+    /** Why *New LZ/PZ here* is off: a read-only pack is open, which nothing new goes into ("Off in a finished pack"). */
+    val newLzOff: String? = null,
     val addThreat: (() -> Unit)? = null,
     /** What *Add route point here* would do now, and doing it. */
     val routePoint: Pair<MapPointAction, () -> Unit>? = null,
@@ -152,7 +154,10 @@ internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoic
     }
     HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
     fun choose(action: () -> Unit): () -> Unit = { onDismiss(); action() }
-    choices.newLz?.let { MenuChoice(EzpzIcons.addLocationAlt, "New LZ/PZ here", "Opens another LZ/PZ with this target", choose(it), accent = true) }
+    choices.newLz?.let {
+        val off = choices.newLzOff
+        MenuChoice(EzpzIcons.addLocationAlt, "New LZ/PZ here", off ?: "Opens another LZ/PZ with this target", choose(it), accent = off == null, enabled = off == null)
+    }
     choices.addThreat?.let { MenuChoice(EzpzIcons.crisisAlert, "Add threat here", null, choose(it)) }
     choices.routePoint?.let { (action, add) ->
         val (supporting, enabled) = when (action) {
@@ -160,6 +165,7 @@ internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoic
             MapPointAction.StartRoute -> "Starts a new route here" to true
             MapPointAction.ChooseRoute -> "Tap a route first, to choose which" to false
             MapPointAction.Mission -> "An imported mission's routes are its file's" to false
+            is MapPointAction.Locked -> action.why to false
         }
         MenuChoice(EzpzIcons.route, "Add route point here", supporting, choose(add), enabled = enabled)
     }

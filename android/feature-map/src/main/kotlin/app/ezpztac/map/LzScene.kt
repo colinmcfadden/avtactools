@@ -38,6 +38,8 @@ data class LzScene(
      * point is seen too. Not the diagram's: it is kept only while the person is drawing, and becomes [drawn] when they finish.
      */
     val draft: List<LatLon> = emptyList(),
+    /** A read-only pack's LZ/PZ: drawn as it is, with nothing that invites a drag (a PZ marker's tip has no handle). */
+    val locked: Boolean = false,
     /** The corner of the boundary the person is holding (to delete it), if one is: drawn larger, in amber. */
     val heldCorner: BoundaryCornerRef? = null,
 ) {
@@ -69,7 +71,7 @@ data class LzScene(
             graphics.pzMarkers.forEach { pz ->
                 add(feature("pz", line(listOf(pz.anchor, pz.tip)), "selected" to JsonPrimitive(pz.selected)))
                 add(feature("pz-anchor", point(pz.anchor)))
-                add(feature("pz-tip", point(pz.tip), "bearing" to JsonPrimitive(GraphicsScene.bearing(pz.anchor, pz.tip))))
+                add(feature("pz-tip", point(pz.tip), "bearing" to JsonPrimitive(GraphicsScene.bearing(pz.anchor, pz.tip)), "handle" to JsonPrimitive(!locked)))
             }
             graphics.goArounds.forEach { ga ->
                 add(feature("ga", point(ga.at), "icon" to JsonPrimitive(if (ga.direction == "right") "ga-right" else "ga-left"), "rotation" to JsonPrimitive(ga.rotationDeg)))
@@ -138,6 +140,7 @@ data class LzScene(
             selected: GraphicRef? = null,
             draft: List<LatLon> = emptyList(),
             heldCorner: BoundaryCornerRef? = null,
+            locked: Boolean = false,
         ): LzScene {
             if (diagram == null) return EMPTY
             return LzScene(
@@ -148,6 +151,7 @@ data class LzScene(
                 graphics = GraphicsScene.of(diagram, profiles, active, selected),
                 draft = draft,
                 heldCorner = heldCorner,
+                locked = locked,
             )
         }
     }

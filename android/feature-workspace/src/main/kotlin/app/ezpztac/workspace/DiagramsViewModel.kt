@@ -13,6 +13,7 @@ import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenPack
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.PackGlance
+import app.ezpztac.data.PackLock
 import app.ezpztac.data.SlopeState
 import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.WeatherService
@@ -122,15 +123,38 @@ internal fun packLzChips(status: DiagramStatus, readOnly: Boolean, original: Str
 /** A pack's item the pack has every change of: said on the open one's card, and left unsaid in a list of the pack's, where it is what most rows would say (the web's). */
 internal val SYNCED_IN_PACK = LzChip("Synced", ChipTone.SUCCESS)
 
-/** The open LZ/PZ or set of routes is a Mission Pack's item: where it is saved ([savedLine]), who else is in it ([alsoHere]), and whether the pack takes changes. */
-data class InPackUi(val pack: String, val savedLine: String, val alsoHere: String?, val readOnly: Boolean)
+/**
+ * The open LZ/PZ or set of routes is a Mission Pack's item: where it is saved ([savedLine]; in a read-only pack, why not: "Finished by Colin M. on Oct 5 at
+ * 14:20"), who else is in it ([alsoHere]), and whether the pack takes changes. While it does not, [lock] says why: [reason] in a sentence, [short] in a tool's
+ * few words.
+ */
+data class InPackUi(
+    val pack: String,
+    val savedLine: String,
+    val alsoHere: String?,
+    val readOnly: Boolean,
+    val lock: PackLock? = null,
+) {
+    val reason: String? get() = lock?.reason
+    val short: String? get() = lock?.short
+}
 
 /**
  * A Mission Pack is open (P2b): its LZ/PZs are the panel's, in place of the person's own, which are set aside. [head] is the panel's subtitle
  * ("OP DK · 3 items · live"); [rows] the pack's LZ/PZs other than the one open, in the order they were added; [count] all of them, the open one too.
  * [opening] is what the panel says in their place while the device does not hold the pack yet (opening it for the first time, or it cannot be reached).
  */
-data class PackLzListUi(val name: String, val head: String, val rows: List<DiagramRow>, val count: Int = rows.size, val opening: String? = null)
+data class PackLzListUi(
+    val name: String,
+    val head: String,
+    val rows: List<DiagramRow>,
+    val count: Int = rows.size,
+    val opening: String? = null,
+    /** Nothing new can be added (finished, or a viewer): no *New LZ/PZ*, [hint] says why at the foot, and [off] where a way in is shown off. */
+    val readOnly: Boolean = false,
+    val hint: String? = null,
+    val off: String? = null,
+)
 
 /** Where the analysis of the open diagram has got to, for the card that offers it. */
 sealed interface AnalysisUi {
@@ -247,6 +271,9 @@ data class ActiveDiagramUi(
 ) {
     /** *Save* names an LZ/PZ that still has its made-up name, once it is analysed (the web's "Analyze to save"); a pack's are named in the pack. */
     val canSave: Boolean get() = inPack == null && madeUpName && status == DiagramStatus.ANALYZED && conflictOf == null
+
+    /** Why it cannot be changed: a read-only pack's. Looked at, analysed by nobody, named by nobody. */
+    val locked: String? get() = inPack?.reason
 }
 
 data class DiagramsUiState(
@@ -392,6 +419,7 @@ class DiagramsViewModel @Inject constructor(
         if (at == null) return fail("Move the map to where the LZ/PZ should be first.")
         val grid = MgrsConverter.toMgrs(at.lat, at.lon)?.format() ?: ""
         if (pack.state.value != null) {
+            if (pack.lockNow() != null) return fail(PackFacts.NOTHING_NEW)
             return run("The LZ/PZ could not be made.") {
                 pack.createLz(DiagramTarget(at.lat, at.lon, grid))
                 page.value = LzPage.HOME
@@ -536,6 +564,7 @@ class DiagramsViewModel @Inject constructor(
     /** Renames [uuid] [name]; with [replacing], the LZ/PZ that has the name is deleted first (the Library's *Replace*). */
     fun rename(uuid: String, name: String, replacing: String? = null) {
         val title = name.trim()
+        pack.lockNow()?.reasonFor(uuid)?.let { return fail(it) }
         if (title.isEmpty()) return fail("A diagram needs a name.")
         // A pack's own names are "LZ/PZ n", and nothing of a pack's is named to be saved: any name will do there, as on the web.
         if (PackRef.parse(uuid) == null && LzNames.isMadeUp(title)) return fail(LzNames.MADE_UP_REFUSED)
@@ -580,12 +609,16 @@ class DiagramsViewModel @Inject constructor(
             DiagramRow(
                 uuid = localId, name = item.name, status = diagram.status, grid = diagram.target?.mgrs?.takeIf { it.isNotBlank() },
                 sync = SyncStatus.SYNCED, conflictOf = null, isActive = false,
-                chips = packLzChips(diagram.status, glance.readOnly, PackFacts.original(item), PackFacts.fromLibrary(item), glance.waiting(item)) - SYNCED_IN_PACK,
+                // Read-only is said once, by the open card and the head, as the design draws it (the web marks every row).
+                chips = packLzChips(diagram.status, false, PackFacts.original(item), PackFacts.fromLibrary(item), glance.waiting(item)) - SYNCED_IN_PACK,
                 presence = glance.withItOpen(item.uuid).takeIf { it.isNotEmpty() }?.let(PackFacts::hasItOpen),
             )
         }
         val count = if (items.size == 1) "1 item" else "${items.size} items"
-        return PackLzListUi(glance.name, "${glance.name} · $count · ${glance.standing}", rows, count = items.size)
+        return PackLzListUi(
+            glance.name, "${glance.name} · $count · ${glance.standing}", rows, count = items.size, readOnly = glance.lock != null, hint = glance.lockedHint,
+            off = glance.lock?.short,
+        )
     }
 
     /**
@@ -597,6 +630,7 @@ class DiagramsViewModel @Inject constructor(
         val ours = glance?.takeIf { it.uuid == ref.pack }
         val item = ours?.itemOf(ui.uuid)
         val readOnly = ours?.readOnly == true
+        val lock = ours?.lock
         val chips = if (ours != null && item != null) {
             packLzChips(ui.status, readOnly, PackFacts.original(item), PackFacts.fromLibrary(item), ours.waiting(item))
         } else {
@@ -605,8 +639,8 @@ class DiagramsViewModel @Inject constructor(
         return ui.copy(
             chips = chips, madeUpName = false, sync = null, conflictOf = null,
             inPack = InPackUi(
-                ours?.name ?: "the pack", ours?.savedLine ?: "Saved to the pack as you work.",
-                item?.let { ours.withItOpen(it.uuid) }?.let(PackFacts::alsoHere), readOnly,
+                ours?.name ?: "the pack", (if (lock != null) ours.lockedLine else null) ?: ours?.savedLine ?: "Saved to the pack as you work.",
+                item?.let { ours.withItOpen(it.uuid) }?.let(PackFacts::alsoHere), readOnly, lock,
             ),
         )
     }
@@ -632,6 +666,7 @@ class DiagramsViewModel @Inject constructor(
     /** Analyses the open diagram: finds the landing area around its target, then measures the slope over it. */
     fun analyze() {
         val open = session.active.value ?: return
+        pack.lockNow()?.reasonFor(open.id)?.let { return fail(it) }                         // asked of nobody: its result would be put back
         analysis.analyze(open.id)
     }
 

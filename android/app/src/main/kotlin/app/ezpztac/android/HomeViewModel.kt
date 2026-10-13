@@ -6,6 +6,7 @@ import app.ezpztac.android.frame.Panel
 import app.ezpztac.android.frame.PanelCounts
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDraft
 import app.ezpztac.data.BoundaryDrawing
@@ -18,6 +19,7 @@ import app.ezpztac.data.MapFocus
 import app.ezpztac.data.MaskState
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.PackLock
 import app.ezpztac.data.PointSelection
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
@@ -33,6 +35,7 @@ import app.ezpztac.map.CornerHitTest
 import app.ezpztac.map.DragHitTest
 import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
+import app.ezpztac.map.GraphicsScene
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.PointHitTest
@@ -64,6 +67,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -122,6 +126,19 @@ class HomeViewModel @Inject constructor(
     /** Somewhere the person has just brought in (a mission's routes) that the map should go to. */
     val focus: SharedFlow<MapFocus.Request> = mapFocus.requests
 
+    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    /** What the map stopped when the open pack turned read-only under it (finished, or this person made a viewer), in words, for the frame's toasts. */
+    val notices: SharedFlow<String> = _notices.asSharedFlow()
+
+    // The open pack's lock, once for each change (never for a pointer moving: a pack's state changes many times a second).
+    private val packLock = packs.open.map { it?.let(PackLock::of) }.distinctUntilChanged()
+
+    // Why the open LZ/PZ, or set of routes, cannot be changed now: it is a read-only pack's. Read as the person acts, never a step behind.
+    private fun lzLocked(): String? = packs.open.value?.let(PackLock::of)?.reasonFor(session.active.value?.id)
+
+    private fun routesLocked(): String? = packs.open.value?.let(PackLock::of)?.reasonFor(routeSession.active.value?.id)
+
     /**
      * What the map draws for the open diagram: its target, boundary, planning graphics (the one being held with a halo) and, once measured,
      * the slope raster. The raster is shown only while the boundary is still the one it was measured for. Each aircraft is drawn as the
@@ -129,7 +146,7 @@ class HomeViewModel @Inject constructor(
      */
     val scene: StateFlow<LzScene> = combine(
         session.active, analysis.slopes,
-        combine(selection.selected, drawing.draft, slopeVisibility.shown, boundaryCorners.held) { held, draft, shown, corner -> HeldView(held, draft, shown, corner) },
+        combine(selection.selected, drawing.draft, slopeVisibility.shown, boundaryCorners.held, packLock) { held, draft, shown, corner, lock -> HeldView(held, draft, shown, corner, lock) },
         aircraft.profiles, aircraft.active,
     ) { diagram, slopes, view, profiles, active ->
         val (selected, draft, slopeShown, heldCorner) = view
@@ -137,11 +154,14 @@ class HomeViewModel @Inject constructor(
         // A boundary being drawn belongs to the diagram it was started on: on another one it is not drawn (and is dropped when that one opens).
         val corners = draft?.takeIf { it.diagramId == diagram?.id }?.points.orEmpty()
         // The heat map is drawn only while the person has it on; it is measured either way.
-        LzScene.of(diagram, measured?.analysis?.toSlopeImage()?.takeIf { slopeShown }, profiles = profiles, active = active, selected = selected, draft = corners, heldCorner = heldCorner)
+        LzScene.of(
+            diagram, measured?.analysis?.toSlopeImage()?.takeIf { slopeShown }, profiles = profiles, active = active, selected = selected, draft = corners, heldCorner = heldCorner,
+            locked = view.lock?.reasonFor(diagram?.id) != null,
+        )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
 
     /** What the map's scene is built from besides the diagram: what is held, what is being drawn, whether the heat map is on, and the boundary corner held. */
-    private data class HeldView(val selected: GraphicRef?, val draft: BoundaryDraft?, val slopeShown: Boolean, val corner: BoundaryCornerRef?)
+    private data class HeldView(val selected: GraphicRef?, val draft: BoundaryDraft?, val slopeShown: Boolean, val corner: BoundaryCornerRef?, val lock: PackLock?)
 
     /** The button for the slope heat map: there only while the open diagram has a slope measured, saying whether it is drawn. */
     val slopeToggle: StateFlow<SlopeToggleUi?> = combine(session.active, analysis.slopes, slopeVisibility.shown) { diagram, slopes, shown ->
@@ -288,6 +308,63 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             session.active.collect { diagram -> if (diagram == null) placement.end() }
         }
+        // The pack turned read-only (finished by its owner, or this person made a viewer) while something was under way on its LZ/PZ: it ends, keeping only
+        // what the pack already has (a tool's mode ends rather than cancels, whose taking back would itself be a change), and the person is told what stopped.
+        viewModelScope.launch {
+            combine(packLock, session.active.map { it?.id }.distinctUntilChanged()) { lock, id -> lock?.takeIf { it.reasonFor(id) != null }?.let { it to id } }
+                .collect { pair ->
+                    val (lock, id) = pair ?: return@collect
+                    val stopped = mutableListOf<String>()
+                    if (placement.placing.value?.diagramId == id) {
+                        placement.end()
+                        stopped += "placing stopped"
+                    }
+                    if (drawing.draft.value?.diagramId == id) {
+                        drawing.cancel()
+                        stopped += "the boundary being drawn was not kept"
+                    }
+                    val held = mapDrag.active.value
+                    if (held is DragTarget.Graphic || held is DragTarget.PzTip) {
+                        // Ended where it is, not moved back: moving it back would itself be a change, refused. What the pack had not taken yet is put back by its own rule.
+                        mapDrag.abandon()
+                        stopped += "moving stopped"
+                    }
+                    val running = analysis.status.value
+                    if (running is AnalysisStatus.Running && running.diagramId == id) {
+                        analysis.cancel()
+                        stopped += "the analysis was stopped"
+                    }
+                    if (stopped.isNotEmpty()) _notices.tryEmit("${lock.stopped}: ${stopped.joinToString(", ")}.")
+                }
+        }
+        // An analysis goes on for the LZ/PZ it was asked for after another is opened, or none: one of the pack's that is not open now is stopped too, whatever is open.
+        // (The open one's is said with the rest of what stopped on it, above.)
+        viewModelScope.launch {
+            packLock.collect { lock ->
+                if (lock == null) return@collect
+                val running = analysis.status.value as? AnalysisStatus.Running ?: return@collect
+                if (running.diagramId == session.active.value?.id || lock.reasonFor(running.diagramId) == null) return@collect
+                analysis.cancel()
+                _notices.tryEmit("${lock.stopped}: the analysis was stopped.")
+            }
+        }
+        // And on its set of routes: a route being drawn is not kept, and a point being moved goes back.
+        viewModelScope.launch {
+            combine(packLock, routeSession.active.map { it?.id }.distinctUntilChanged()) { lock, id -> lock?.takeIf { it.reasonFor(id) != null }?.let { it to id } }
+                .collect { pair ->
+                    val (lock, id) = pair ?: return@collect
+                    val stopped = mutableListOf<String>()
+                    if (sketching.draft.value?.setId == id) {
+                        sketching.cancel()
+                        stopped += "the route being drawn was not kept"
+                    }
+                    if (mapDrag.active.value is DragTarget.RoutePoint) {
+                        mapDrag.abandon()                                                     // not moved back, as above: its elevation would not come back either
+                        stopped += "moving stopped"
+                    }
+                    if (stopped.isNotEmpty()) _notices.tryEmit("${lock.stopped}: ${stopped.joinToString(", ")}.")
+                }
+        }
         // What was held on a set of routes, and a route half drawn, belonged to the set before: another set, or none, starts clean.
         viewModelScope.launch {
             routeSession.active.distinctUntilChangedBy { it?.id }.collect { set ->
@@ -378,7 +455,10 @@ class HomeViewModel @Inject constructor(
      */
     fun dragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
         if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null) return false
-        val target = DragHitTest.pick(scene.value.graphics, threatScene.value, routes.value, view, at, touchRadiusPx, unitFootprints) ?: return false
+        // Nothing of a read-only pack's LZ/PZ or set of routes is picked up: a press there opens the map's menu, as on the ground. A threat (the person's own) still is.
+        val graphics = if (lzLocked() != null) GraphicsScene.EMPTY else scene.value.graphics
+        val routeScene = if (routesLocked() != null) RouteScene.EMPTY else routes.value
+        val target = DragHitTest.pick(graphics, threatScene.value, routeScene, view, at, touchRadiusPx, unitFootprints) ?: return false
         return mapDrag.start(target, at)
     }
 

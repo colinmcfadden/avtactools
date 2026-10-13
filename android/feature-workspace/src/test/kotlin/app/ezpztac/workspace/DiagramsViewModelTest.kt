@@ -9,6 +9,7 @@ import app.ezpztac.data.InMemoryAircraftChoice
 import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.InMemoryOpenDiagramStore
 import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.PackFacts
 import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.data.WeatherApi
@@ -1019,6 +1020,62 @@ class DiagramsViewModelTest {
         r.pack.state.value = FakeOpenPack.open(listOf(hawk, crow))
         advanceUntilIdle()
         assertEquals("HAWK came back, and is read again: nothing kept it meanwhile", 3, r.model.packReads)
+    }
+
+    @Test
+    fun `in a finished pack nothing new is made, its LZ-PZ is not renamed or analysed, and the panel says why`() = runTest(dispatcher) {
+        val r = rig()
+        val hawk = FakeOpenPack.lz("lz-1", "LZ HAWK", DiagramTarget(34.78, -84.08, grid))
+        val crow = FakeOpenPack.lz("lz-2", "LZ CROW", DiagramTarget(34.79, -84.09, grid), source = buildJsonObject { put("original", "changed") })
+        r.pack.state.value = FakeOpenPack.open(listOf(hawk, crow), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        assertEquals(PackFacts.NOTHING_NEW, r.model.state.value.error)
+        assertTrue("nothing asked of the pack", r.pack.log.isEmpty())
+        r.model.open("pack:p:lz-1")
+        advanceUntilIdle()
+        val s = r.model.state.value
+        val current = checkNotNull(s.current)
+        assertEquals("OP DK is finished: nothing in it can be changed.", current.locked)
+        assertEquals("Off in a finished pack", current.inPack?.short)
+        assertTrue(current.inPack!!.savedLine.startsWith("Finished by Sam B. on Oct "))
+        assertEquals(listOf("Target set", "Read-only"), current.chips.map { it.text })
+        val pack = checkNotNull(s.pack)
+        assertTrue(pack.readOnly)
+        assertEquals("Off in a finished pack", pack.off)
+        assertEquals("This pack is finished: you can look at everything in it and export its routes, but nothing can be changed.", pack.hint)
+        assertEquals("OP DK · 2 items · finished · read-only", pack.head)
+        assertEquals("the other rows say what holds of them, not read-only: the card and the head say that", listOf("Target set", "Original changed"), pack.rows.single().chips.map { it.text })
+        r.model.rename("pack:p:lz-1", "LZ RAVEN")
+        advanceUntilIdle()
+        assertEquals(current.locked, r.model.state.value.error)
+        assertEquals("LZ HAWK", r.session.active.value?.name)
+        var asked = 0
+        r.terrain.find = { asked++; error("not to be asked") }
+        r.model.analyze()
+        advanceUntilIdle()
+        assertEquals(current.locked, r.model.state.value.error)
+        assertEquals("nothing asked of the server", 0, asked)
+    }
+
+    @Test
+    fun `a viewer's pack is locked too, in a viewer's words, and the lock lifts when they are made an editor`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.lz("lz-1", "LZ HAWK", DiagramTarget(34.78, -84.08, grid))), session = FakeOpenPack.viewing())
+        advanceUntilIdle()
+        r.model.open("pack:p:lz-1")
+        advanceUntilIdle()
+        assertEquals("You can view OP DK but not change it.", r.model.state.value.current?.locked)
+        assertEquals("In OP DK. You can view it but not change it.", r.model.state.value.current?.inPack?.savedLine)
+        assertEquals("OP DK · 1 item · live · view only", r.model.state.value.pack?.head)
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.lz("lz-1", "LZ HAWK", DiagramTarget(34.78, -84.08, grid))))
+        advanceUntilIdle()
+        assertNull(r.model.state.value.current?.locked)
+        assertFalse(r.model.state.value.pack!!.readOnly)
+        r.model.rename("pack:p:lz-1", "LZ RAVEN")
+        advanceUntilIdle()
+        assertEquals("LZ RAVEN", r.session.active.value?.name)
     }
 
     @Test

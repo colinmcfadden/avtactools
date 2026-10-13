@@ -111,6 +111,18 @@ class MapMenuTest {
     fun `add route point here in an imported mission says why not, and cannot be chosen`() =
         routePoint(MapPointAction.Mission, "An imported mission's routes are its file's", enabled = false)
 
+    @Test
+    fun `add route point here in a finished pack says it is off, and cannot be chosen`() =
+        routePoint(MapPointAction.Locked("Off in a finished pack"), "Off in a finished pack", enabled = false)
+
+    @Test
+    fun `a new LZ-PZ here is off in a finished pack, and says so where it would say what it does`() {
+        show(MapMenuChoices(newLz = {}, newLzOff = "Off in a finished pack"))
+        compose.onNodeWithText("Off in a finished pack").assertIsDisplayed()
+        compose.onNodeWithText("Opens another LZ/PZ with this target").assertDoesNotExist()
+        compose.onNode(hasText("New LZ/PZ here") and hasClickAction()).assertIsNotEnabled()
+    }
+
     // -- The real menu: its popup, where it goes, and its grid ----------------------------------------------------------------
 
     private fun menu(choices: MapMenuChoices, mode: ThemeMode = ThemeMode.Dark, at: IntOffset = IntOffset(300, 1100)) = compose.setContent {

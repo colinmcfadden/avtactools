@@ -121,25 +121,28 @@ fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: Gra
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Planning graphics", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            if (state.canEdit || state.undoDepth > 0 || state.redoDepth > 0) {
+            // Not in a read-only pack: a step taken back there would be a change the pack refuses.
+            if (state.locked == null && (state.canEdit || state.undoDepth > 0 || state.redoDepth > 0)) {
                 Row {
                     TextAction("Undo", onClick = actions.undo, enabled = state.undoDepth > 0)
                     TextAction("Redo", onClick = actions.redo, enabled = state.redoDepth > 0)
                 }
             }
         }
-        if (!state.canEdit) {
+        // Said before anything else, whether or not it is analysed: a refusal of Undo on an LZ/PZ not analysed is said too.
+        state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
+        if (!state.listed) {
             Text(
-                "Analyze the landing zone first: aircraft, PZ markers, sectors and go-arounds are placed in it.",
+                // Not advice the pack would refuse: in a read-only pack it cannot be analysed here (the analysis section says why).
+                if (state.locked != null) "This LZ/PZ was not analysed, so its graphics are not listed." else "Analyze the landing zone first: aircraft, PZ markers, sectors and go-arounds are placed in it.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             return@Column
         }
         state.alerts.forEach { Banner(it, BannerKind.Warning) }
-        state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
 
-        if (placeButtons) PlaceButtons(crosshairGrid, actions.place, onUnit = { addingUnit = !addingUnit })
-        if (placeButtons && addingUnit) {
+        if (placeButtons && state.canEdit) PlaceButtons(crosshairGrid, actions.place, onUnit = { addingUnit = !addingUnit })
+        if (placeButtons && state.canEdit && addingUnit) {
             Surface(shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
                     Text("New unit", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
@@ -149,7 +152,11 @@ fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: Gra
         }
         if (state.rows.isEmpty()) {
             Text(
-                if (placeButtons) "Nothing placed yet. Move the map, then tap what to put at the crosshair." else "Nothing placed yet. Pick a tool, then tap the map or add at the crosshair.",
+                when {
+                    state.locked != null -> "Nothing is placed on this LZ/PZ."
+                    placeButtons -> "Nothing placed yet. Move the map, then tap what to put at the crosshair."
+                    else -> "Nothing placed yet. Pick a tool, then tap the map or add at the crosshair."
+                },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -168,7 +175,7 @@ fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: Gra
                 // A panel that is not showing has nothing to scroll: the controls are where they are when it opens.
             }
         }
-        state.inspector?.let { Box(Modifier.bringIntoViewRequester(inspectorView)) { Inspector(it, actions) } }
+        state.inspector?.let { Box(Modifier.bringIntoViewRequester(inspectorView)) { Inspector(it, actions, state.locked) } }
     }
 }
 
@@ -226,8 +233,11 @@ private fun GraphicRow(row: GraphicRowUi, select: (GraphicRef) -> Unit) {
 /** How far a nudge goes, in feet: a rotor-disc's worth of change, a fine one, and a coarse one. */
 internal val NUDGE_STEPS_FT = listOf(10, 50, 200)
 
+/**
+ * The held graphic, with the controls its kind has; in a read-only pack ([locked], why) what it is and how it stands, in words, and nothing to change it with.
+ */
 @Composable
-private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
+private fun Inspector(inspector: InspectorUi, actions: GraphicsActions, locked: String? = null) {
     var step by rememberSaveable { mutableIntStateOf(1) }
     val feet = NUDGE_STEPS_FT[step.coerceIn(NUDGE_STEPS_FT.indices)].toDouble()
     Surface(
@@ -243,6 +253,10 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
                     inspector.latLon?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 TextAction("Done", onClick = actions.deselect)
+            }
+            if (locked != null) {
+                ReadOnlyValues(inspector, locked)
+                return@Column
             }
 
             // Move: a pad of four arrows and a step, because dragging a symbol with gloves on a bouncing phone is not a plan.
@@ -260,6 +274,20 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
 
             SecondaryButton("Delete this ${inspector.kind.label.lowercase()}", onClick = actions.delete)
         }
+    }
+}
+
+/** A held graphic of a read-only pack: why it cannot be changed, then what the controls would have shown, as words. */
+@Composable
+private fun ReadOnlyValues(inspector: InspectorUi, locked: String) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Text(locked, style = MaterialTheme.typography.bodyMedium, color = muted)
+    inspector.rotation?.let { Text("Heading ${it.toLong()}°", style = MaterialTheme.typography.labelLarge, color = muted) }
+    inspector.reachFt?.let { Text("Reach ${withCommas(it)} ft", style = MaterialTheme.typography.labelLarge, color = muted) }
+    inspector.direction?.let { Text("Pattern: ${if (it == "right") "Right" else "Left"}", style = MaterialTheme.typography.labelLarge, color = muted) }
+    inspector.doghouse?.let { d ->
+        d.feeds?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = muted) }
+        Text("Label ${d.label} · Time ${d.time} · ${d.distanceKm} km · ${d.airspeedKts} kts", style = MaterialTheme.typography.labelLarge, color = muted)
     }
 }
 

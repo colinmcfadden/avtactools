@@ -6,6 +6,12 @@ import app.ezpztac.missionpacks.PackSession
 import app.ezpztac.missionpacks.PackState
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.DiagramTarget
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeParseException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +53,12 @@ interface OpenPack {
     /** Takes [itemUuid] out of the pack, for everyone in it; null once it is on its way, else why not (`read_only`, `loading`, …). */
     suspend fun removeItem(itemUuid: String): String?
 
+    /** The open pack's lock ([PackLock]), once for each change: null outside a pack and while the open one can be changed. A presence frame never changes it. */
+    val lock: Flow<PackLock?> get() = state.map { it?.let(PackLock::of) }.distinctUntilChanged()
+
+    /** The open pack's lock now, for a refusal made as an action is asked for. */
+    fun lockNow(): PackLock? = state.value?.let(PackLock::of)
+
     companion object {
         /** No pack ever open: the panels as they were before packs. */
         val None: OpenPack = object : OpenPack {
@@ -61,6 +73,45 @@ interface OpenPack {
             override suspend fun closeItem(itemUuid: String) = Unit
 
             override suspend fun removeItem(itemUuid: String): String? = "missing"
+        }
+    }
+}
+
+/**
+ * The open pack is read-only (finished by its owner, or this person a viewer in it), and why, in words for each place that says it: nothing in it may be changed, so
+ * the editors offer nothing that would change one of its items, and refuse what is asked anyway with [reason] (P2c, docs/ANDROID_SCREENS_PLAN.md).
+ */
+data class PackLock(
+    val pack: String,
+    val name: String,
+    /** "OP DK is finished: nothing in it can be changed.", or "You can view OP DK but not change it." */
+    val reason: String,
+    /** A tool's line where it is off: "Off in a finished pack" (the design's), "Off: you can view this pack, not change it". */
+    val short: String,
+    val finished: Boolean,
+) {
+    /** What was under way when it turned read-only is said to have stopped after this: "OP DK was finished", "You can only view OP DK now". */
+    val stopped: String get() = if (finished) "$name was finished" else "You can only view $name now"
+
+    /** A plan's line under its title: "Read-only · OP DK is finished" (the design's), "Read-only · you can view OP DK". */
+    val pane: String get() = if (finished) "Read-only · $name is finished" else "Read-only · you can view $name"
+
+    /** Why [documentId] cannot be changed: it is an item of this pack. Null for the person's own, or another pack's. */
+    fun reasonFor(documentId: String?): String? = reason.takeIf { documentId != null && PackRef.parse(documentId)?.pack == pack }
+
+    companion object {
+        /** The lock of [state], or null while its pack can be changed (or before the device holds it, when nothing is known: edits wait then, never lost). */
+        fun of(state: PackState): PackLock? {
+            if (!state.readOnly) return null
+            val finished = PackFacts.finished(state)
+            val name = PackFacts.name(state)
+            return PackLock(
+                pack = state.uuid,
+                name = name,
+                reason = if (finished) "$name is finished: nothing in it can be changed." else "You can view $name but not change it.",
+                short = if (finished) "Off in a finished pack" else "Off: you can view this pack, not change it",
+                finished = finished,
+            )
         }
     }
 }
@@ -82,6 +133,12 @@ class PackGlance private constructor(
     val standing: String,
     /** "Saved to OP DK as you work. 4 members can see it." */
     val savedLine: String,
+    /** Why nothing in it can be changed, while it is read-only. */
+    val lock: PackLock?,
+    /** The open item's foot while it is read-only: "Finished by Colin M. on Oct 5 at 14:20", "In OP DK. You can view it but not change it." */
+    val lockedLine: String?,
+    /** What a panel says at its foot while the pack is read-only (the web's hint): it is finished, or this person a viewer. */
+    val lockedHint: String?,
     val items: List<PackItemView>,
     private val pending: Set<String>,
     private val openBy: Map<String, List<String>>,
@@ -102,14 +159,15 @@ class PackGlance private constructor(
         if (this === other) return true
         if (other !is PackGlance) return false
         return uuid == other.uuid && name == other.name && loaded == other.loaded && status == other.status && readOnly == other.readOnly &&
-            standing == other.standing && savedLine == other.savedLine && pending == other.pending && openBy == other.openBy && sameItems(items, other.items)
+            standing == other.standing && savedLine == other.savedLine && lock == other.lock && lockedLine == other.lockedLine && lockedHint == other.lockedHint &&
+            pending == other.pending && openBy == other.openBy && sameItems(items, other.items)
     }
 
     override fun hashCode(): Int = uuid.hashCode() * 31 + items.size
 
     companion object {
-        /** The glance at [state]. */
-        fun of(state: PackState): PackGlance {
+        /** The glance at [state]; dates in [zone], a year said only when it is not [now]'s. */
+        fun of(state: PackState, zone: ZoneId = ZoneId.systemDefault(), now: Instant = Instant.now()): PackGlance {
             val session = state.session
             val loaded = session != null
             val pending = session?.pending.orEmpty().mapNotNull { (it.op["item"] as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }.toSet()
@@ -117,6 +175,7 @@ class PackGlance private constructor(
             return PackGlance(
                 uuid = state.uuid, name = if (loaded) PackFacts.name(state) else "the pack", loaded = loaded, status = state.status, readOnly = state.readOnly,
                 standing = PackFacts.standing(state), savedLine = if (loaded) PackFacts.savedLine(state) else "Saved to the pack as you work.",
+                lock = PackLock.of(state), lockedLine = PackFacts.lockedLine(state, zone, now), lockedHint = PackFacts.lockedHint(state),
                 items = state.items, pending = pending, openBy = openBy,
             )
         }
@@ -212,6 +271,66 @@ object PackFacts {
         state.readOnly -> "live · view only"
         else -> "live"
     }
+
+    /** The pack has been finished by its owner: read-only for everyone until it is reopened. */
+    fun finished(state: PackState): Boolean = state.session?.let { text(it.pack["status"]) } == "finished"
+
+    /** Said when something new is asked for in a read-only pack (the web's words). */
+    const val NOTHING_NEW = "This pack is read-only, so nothing new can be added to it."
+
+    /**
+     * The open item's foot while the pack is read-only: "Finished by Colin M. on Oct 5 at 14:20" (the design's; "the owner" when the account has gone, and no date
+     * when there is none), or "In OP DK. You can view it but not change it." (the web's); null while it can be changed.
+     */
+    fun lockedLine(state: PackState, zone: ZoneId, now: Instant): String? {
+        if (!state.readOnly) return null
+        if (!finished(state)) return "In ${name(state)}. You can view it but not change it."
+        val pack = state.session?.pack
+        val by = text((pack?.get("finished_by") as? JsonObject)?.get("name"))?.takeIf { it.isNotBlank() }?.let(::shortName) ?: "the owner"
+        val at = instant(text(pack?.get("finished_at")))
+        return "Finished by $by" + if (at != null) " on ${dateAtTime(at, zone, now)}" else ""
+    }
+
+    /** What the panels say at their foot while the pack is read-only (the web's hint, less the LZ card export Android has not got). */
+    fun lockedHint(state: PackState): String? = when {
+        !state.readOnly -> null
+        finished(state) -> "This pack is finished: you can look at everything in it and export its routes, but nothing can be changed."
+        else -> "You are a viewer in this pack: you can look at everything in it, but not change it. Its owner can make you an editor."
+    }
+
+    /** A server time: with its offset, or without as UTC (the API writes naive UTC times); null for none or one that cannot be read. */
+    fun instant(iso: String?): Instant? {
+        if (iso.isNullOrBlank()) return null
+        // Which it is is told from the text first, so the common case (no offset) parses once and throws nothing.
+        return try {
+            if (OFFSET.containsMatchIn(iso)) OffsetDateTime.parse(iso).toInstant() else LocalDateTime.parse(iso).toInstant(ZoneOffset.UTC)
+        } catch (_: DateTimeParseException) {
+            null
+        }
+    }
+
+    // A time that says where it is: "Z", or "+05:00" / "-0500" at its end.
+    private val OFFSET = Regex("(?:[zZ]|[+-]\\d\\d:?\\d\\d)$")
+
+    /** "13:42", the clock in [zone]; 24-hour, as crews read it. */
+    fun clockTime(at: Instant, zone: ZoneId): String {
+        val time = at.atZone(zone)
+        return "${pad(time.hour)}:${pad(time.minute)}"
+    }
+
+    /** "Oct 4", or "Oct 4, 2025" in another year. */
+    fun shortDate(at: Instant, zone: ZoneId, now: Instant): String {
+        val date = at.atZone(zone).toLocalDate()
+        val day = "${MONTHS[date.monthValue - 1]} ${date.dayOfMonth}"
+        return if (date.year == now.atZone(zone).year) day else "$day, ${date.year}"
+    }
+
+    /** "Oct 5 at 14:20", or "Oct 5, 2025 at 14:20" in another year (the web's `dateAtTime`). */
+    fun dateAtTime(at: Instant, zone: ZoneId, now: Instant): String = "${shortDate(at, zone, now)} at ${clockTime(at, zone)}"
+
+    private fun pad(n: Int) = if (n < 10) "0$n" else n.toString()
+
+    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
     /** "Saved to OP DK as you work. 4 members can see it." (the web's card foot). */
     fun savedLine(state: PackState): String {

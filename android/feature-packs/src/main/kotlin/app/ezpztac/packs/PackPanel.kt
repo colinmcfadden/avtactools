@@ -160,7 +160,6 @@ data class PackPanelUi(
 
 /** The Pack panel's words, the web's (PackPanel.jsx, usePackWorkspace.jsx, time.js), with times in the person's zone. */
 object PackPanelWords {
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
     private val GROUPS = listOf("lz" to "LZ/PZ", "route" to "Routes", "pointset" to "Point sets")
     private val ROLE_WORDS = mapOf("owner" to "the owner", "editor" to "an editor", "viewer" to "a viewer")
 
@@ -203,34 +202,16 @@ object PackPanelWords {
     fun shortName(name: String?): String = PackFacts.shortName(name)
 
     /** A server time: with its offset, or without as UTC (the API writes naive UTC times); null for none or one that cannot be read. */
-    fun instant(iso: String?): Instant? {
-        if (iso.isNullOrBlank()) return null
-        // Which it is is told from the text first, so the common case (no offset) parses once and throws nothing.
-        return try {
-            if (OFFSET.containsMatchIn(iso)) OffsetDateTime.parse(iso).toInstant() else LocalDateTime.parse(iso).toInstant(ZoneOffset.UTC)
-        } catch (_: DateTimeParseException) {
-            null
-        }
-    }
-
-    // A time that says where it is: "Z", or "+05:00" / "-0500" at its end.
-    private val OFFSET = Regex("(?:[zZ]|[+-]\\d\\d:?\\d\\d)$")
+    fun instant(iso: String?): Instant? = PackFacts.instant(iso)
 
     /** "Sam B. has it open", "Sam B. and Jess R. have it open". */
     fun hasItOpen(names: List<String>): String = PackFacts.hasItOpen(names)
 
     /** "13:42", the clock in [zone]; 24-hour, as crews read it. */
-    fun clockTime(at: Instant, zone: ZoneId): String {
-        val time = at.atZone(zone)
-        return "${pad(time.hour)}:${pad(time.minute)}"
-    }
+    fun clockTime(at: Instant, zone: ZoneId): String = PackFacts.clockTime(at, zone)
 
     /** "Oct 4", or "Oct 4, 2025" in another year. */
-    fun shortDate(at: Instant, zone: ZoneId, now: Instant): String {
-        val date = at.atZone(zone).toLocalDate()
-        val day = "${MONTHS[date.monthValue - 1]} ${date.dayOfMonth}"
-        return if (date.year == now.atZone(zone).year) day else "$day, ${date.year}"
-    }
+    fun shortDate(at: Instant, zone: ZoneId, now: Instant): String = PackFacts.shortDate(at, zone, now)
 
     /**
      * When an item last changed: "just now", "4 min ago" within the hour, "13:21" earlier today, else "Oct 4" (the design's words). **Not like the
@@ -334,8 +315,6 @@ object PackPanelWords {
         1 -> "It is in your Library as “${saved[0].name}”."
         else -> "They are in your Library: " + saved.joinToString(", ") { "“${it.name}”" } + "."
     }
-
-    private fun pad(n: Int) = n.toString().padStart(2, '0')
 
     private fun withCommas(n: Int): String = n.toString().reversed().chunked(3).joinToString(",").reversed()
 }

@@ -8,17 +8,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -58,6 +57,7 @@ import androidx.compose.material3.TextFieldLabelPosition
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,6 +67,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -87,6 +88,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,8 +105,8 @@ import app.ezpztac.designsystem.ToastHost
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.planning.PlanDraft
 import app.ezpztac.planning.PointDraft
-import kotlinx.coroutines.flow.drop
 import java.util.UUID
+import kotlinx.coroutines.flow.drop
 
 private val SPEED_CHOICES = listOf("GS" to "ground", "IAS" to "indicated", "TAS" to "true")
 private val SPEED_WORDS = mapOf("ground" to "ground speed", "indicated" to "indicated airspeed", "true" to "true airspeed")
@@ -123,6 +125,12 @@ private val TOTAL_MIN = 200.dp
 
 /** Past this font scale a point card's header has no room for the clock beside the name: the clock goes under it. */
 private const val LARGE_TEXT = 1.3f
+
+/**
+ * The route's plan is a read-only pack's (finished, or this person a viewer): every field is read-only and every control that would change the route is off or
+ * left out, as the web's plan is a disabled fieldset. Provided by [RoutePlanPage]; read where the controls are drawn.
+ */
+internal val LocalPlanReadOnly = staticCompositionLocalOf { false }
 
 /**
  * The held route's plan (the design's RoutePlan), a page of its own over the map: the route with its totals, share and more; the set it is in with *Save*; the
@@ -147,53 +155,64 @@ fun RoutePlanPage(
     var renaming by rememberSaveable(detail.routeId) { mutableStateOf<String?>(null) }
     var confirmDelete by rememberSaveable(detail.routeId) { mutableStateOf(false) }
     val withThreats = state.includeThreats && threatCount > 0
+    val readOnly = open.locked != null
+    // The pack finished (or this person made a viewer) while a rename or a delete was begun: it goes, and does not come back by itself on a reopen.
+    LaunchedEffect(readOnly) {
+        if (readOnly) {
+            renaming = null
+            confirmDelete = false
+        }
+    }
     // A new page for a screen reader, said by its name, as a destination of its own would be.
     Surface(modifier.fillMaxSize().semantics { paneTitle = "Plan of ${detail.name}" }, color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-                PlanTopBar(
-                    detail, row, open.isMission, state.exporting, open.canUndo, open.canRedo, actions, withThreats, onRename = { renaming = detail.name },
-                    onDelete = { confirmDelete = true }, inPane = inPane,
-                )
-                SetStrip(open, actions.save)
-                // What the bar's menu and the buttons below ask (a rename, a delete, a refusal) is said here, under the bars, where it is in sight however far down the page is scrolled.
-                val notices = state.error != null || state.exportWarning != null || renaming != null || confirmDelete
-                if (notices) {
-                    Column(Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                        state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
-                        state.exportWarning?.let { Banner(it, BannerKind.Warning, actionLabel = "Dismiss", onAction = actions.dismissExportWarning) }
-                        renaming?.let { name ->
-                            RouteRenameField(name, onChange = { renaming = it }, onDone = { actions.renameRoute(detail.routeId, it); renaming = null }, onCancel = { renaming = null })
-                        }
-                        if (confirmDelete) {
-                            Banner("Delete \"${detail.name}\"? You can undo this until the set is closed.", BannerKind.Warning)
-                            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                                PillButton("Keep it", onClick = { confirmDelete = false }, style = PillStyle.Tonal)
-                                TextAction("Delete", onClick = { confirmDelete = false; actions.closePlan(); actions.deleteRoute(detail.routeId) })
+        CompositionLocalProvider(LocalPlanReadOnly provides readOnly) {
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
+                    // A read-only pack's route is as fixed as an imported mission's: shared and exported, never renamed or deleted.
+                    PlanTopBar(
+                        detail, row, open.isMission || readOnly, state.exporting, open.canUndo, open.canRedo, actions, withThreats, onRename = { renaming = detail.name },
+                        onDelete = { confirmDelete = true }, inPane = inPane,
+                    )
+                    SetStrip(open, actions.save)
+                    // What the bar's menu and the buttons below ask (a rename, a delete, a refusal) is said here, under the bars, where it is in sight however far down the page is scrolled.
+                    val notices = state.error != null || state.exportWarning != null || renaming != null || confirmDelete
+                    if (notices) {
+                        Column(Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                            state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
+                            state.exportWarning?.let { Banner(it, BannerKind.Warning, actionLabel = "Dismiss", onAction = actions.dismissExportWarning) }
+                            renaming?.let { name ->
+                                RouteRenameField(name, onChange = { renaming = it }, onDone = { actions.renameRoute(detail.routeId, it); renaming = null }, onCancel = { renaming = null })
+                            }
+                            if (confirmDelete) {
+                                Banner("Delete \"${detail.name}\"? You can undo this until the set is closed.", BannerKind.Warning)
+                                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                                    PillButton("Keep it", onClick = { confirmDelete = false }, style = PillStyle.Tonal)
+                                    TextAction("Delete", onClick = { confirmDelete = false; actions.closePlan(); actions.deleteRoute(detail.routeId) })
+                                }
                             }
                         }
                     }
-                }
-                // The keyboard shortens the scrolled area (so a field being typed into is brought above it), rather than padding the content under it.
-                Column(
-                    Modifier.weight(1f).fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = Tokens.Spacing.lg.dp),
-                    verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
-                ) {
-                    WholeRoute(detail, state.fetching, actions)
-                    state.note?.takeIf { it.kind == PlanningKind.WINDS }?.let { Note(it, actions) }
-                    PointsSection(detail, crosshairGrid, actions)
-                    TotalCard(detail, state.fetching, actions)
-                    state.note?.takeIf { it.kind == PlanningKind.ELEVATIONS }?.let { Note(it, actions) }
-                    Column(Modifier.padding(horizontal = Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-                        Text(
-                            "${detail.aircraft} · speeds, altitudes and winds are “to” each point and export to AMPS.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        detail.warnings.forEach { Banner(it, BannerKind.Warning) }
+                    // The keyboard shortens the scrolled area (so a field being typed into is brought above it), rather than padding the content under it.
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = Tokens.Spacing.lg.dp),
+                        verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+                    ) {
+                        WholeRoute(detail, state.fetching, actions)
+                        state.note?.takeIf { it.kind == PlanningKind.WINDS }?.let { Note(it, actions) }
+                        PointsSection(detail, crosshairGrid, actions)
+                        TotalCard(detail, state.fetching, actions)
+                        state.note?.takeIf { it.kind == PlanningKind.ELEVATIONS }?.let { Note(it, actions) }
+                        Column(Modifier.padding(horizontal = Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                            Text(
+                                "${detail.aircraft} · speeds, altitudes and winds are “to” each point and export to AMPS.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            detail.warnings.forEach { Banner(it, BannerKind.Warning) }
+                        }
                     }
                 }
+                snackbars?.let { ToastHost(it, Modifier.align(Alignment.BottomCenter).imePadding().navigationBarsPadding().padding(Tokens.Spacing.lg.dp)) }
             }
-            snackbars?.let { ToastHost(it, Modifier.align(Alignment.BottomCenter).imePadding().navigationBarsPadding().padding(Tokens.Spacing.lg.dp)) }
         }
     }
 }
@@ -269,14 +288,27 @@ private fun SetStrip(open: OpenSetUi, save: () -> Unit) {
                     Text(open.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     open.chips.lastOrNull()?.let { StateChip(it.text, it.tone.status(), icon = it.icon) }
                 }
+                // Where it is kept: the person's Library, or the pack it is saved to as it changes, or (read-only) why it cannot be.
+                val pack = open.inPack
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-                    Icon(painterResource(EzpzIcons.person), contentDescription = null, tint = EzpzTheme.status.accent, modifier = Modifier.size(14.dp))
-                    Text("Personal · saves to your Library", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    Icon(
+                        painterResource(if (pack == null) EzpzIcons.person else if (pack.reason != null) EzpzIcons.lock else EzpzIcons.groups), contentDescription = null,
+                        tint = if (pack?.reason != null) MaterialTheme.colorScheme.onSurfaceVariant else EzpzTheme.status.accent, modifier = Modifier.size(14.dp),
+                    )
+                    Text(
+                        when {
+                            pack == null -> "Personal · saves to your Library"
+                            pack.lock != null -> pack.lock.reason
+                            else -> "In ${pack.pack} · saved to the pack as you work"
+                        },
+                        // Why nothing can be changed is never cut short (a pack's name can be long, the text large); the other lines keep to two.
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = if (pack?.lock != null) Int.MAX_VALUE else 2,
+                    )
                 }
             }
             if (open.canSave) {
                 PillButton("Save", onClick = save, icon = EzpzIcons.save, style = PillStyle.Tonal, modifier = Modifier.semantics { contentDescription = "Save ${open.name}" })
-            } else if (!open.madeUpName || open.isMission) {
+            } else if (open.inPack == null && (!open.madeUpName || open.isMission)) {
                 PillButton("Saved", onClick = {}, icon = EzpzIcons.check, style = PillStyle.Tonal, enabled = false)
             }
         }
@@ -311,7 +343,7 @@ private fun WholeRoute(detail: RouteDetailUi, fetching: PlanningKind?, actions: 
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             SectionTitle("Whole route", Modifier.weight(1f))
             AccentTextButton(
-                if (fetching == PlanningKind.WINDS) "Fetching winds…" else "Fetch winds", EzpzIcons.air, enabled = fetching == null,
+                if (fetching == PlanningKind.WINDS) "Fetching winds…" else "Fetch winds", EzpzIcons.air, enabled = fetching == null && !LocalPlanReadOnly.current,
                 description = "Fetch winds aloft for ${detail.name}", onClick = actions.fetchWinds,
             )
         }
@@ -378,6 +410,16 @@ private fun DateField(planDate: String, routeId: String, modifier: Modifier, app
     val (visit, nextVisit) = rememberVisit("date:$routeId")
     val applyNow by rememberUpdatedState(apply)
     val visitNow by rememberUpdatedState(visit)
+    val readOnly = LocalPlanReadOnly.current
+    val readOnlyNow by rememberUpdatedState(readOnly)
+    // Read-only now: the calendar closes for good (it does not come back by itself on a reopen), and the field shows the plan's date, not what was half typed.
+    LaunchedEffect(readOnly) {
+        if (readOnly) {
+            picking = false
+            field.setTextAndPlaceCursorAtEnd(shown)
+            error = null
+        }
+    }
     // A date changed under the field (an undo, the calendar) is shown, unless what is typed already says it.
     LaunchedEffect(planDate) {
         if (PlanDates.toPlan(field.text.toString()) != planDate.trim()) {
@@ -388,11 +430,15 @@ private fun DateField(planDate: String, routeId: String, modifier: Modifier, app
     LaunchedEffect(field) {
         snapshotFlow { field.text.toString() }.drop(1).collect { typed ->
             error = null
+            // Read-only, nothing is typed: the text changes only to show the plan's date, which is not applied back to it.
+            if (readOnlyNow) return@collect
             PlanDates.toPlan(typed)?.let { error = applyNow(it, visitNow) }
         }
     }
     OutlinedTextField(
         state = field,
+        // Read-only, not disabled: it can still be read, selected and heard; a date someone else sets still shows.
+        readOnly = readOnly,
         modifier = modifier.onFocusChanged {
             if (it.isFocused) nextVisit()
             else if (field.text.isNotBlank() && PlanDates.toPlan(field.text.toString()) == null) error = "Type the date as mm/dd/yyyy."
@@ -406,11 +452,11 @@ private fun DateField(planDate: String, routeId: String, modifier: Modifier, app
         supportingText = error?.let { { Text(it) } },
         shape = RoundedCornerShape(Tokens.Radius.sm.dp),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
-        trailingIcon = {
-            IconButton(onClick = { picking = true }) { Icon(painterResource(EzpzIcons.calendarMonth), contentDescription = "Choose the date from a calendar") }
+        trailingIcon = if (readOnly) null else {
+            { IconButton(onClick = { picking = true }) { Icon(painterResource(EzpzIcons.calendarMonth), contentDescription = "Choose the date from a calendar") } }
         },
     )
-    if (picking) {
+    if (picking && !readOnly) {
         val picker = rememberDatePickerState(initialSelectedDateMillis = PlanDates.millisOf(planDate))
         DatePickerDialog(
             onDismissRequest = { picking = false },
@@ -452,10 +498,14 @@ private fun LiveField(
     var text by rememberSaveable(key) { mutableStateOf(value) }
     var error by remember(key) { mutableStateOf<String?>(null) }
     val (visit, nextVisit) = rememberVisit(key)
+    val readOnly = LocalPlanReadOnly.current
     LaunchedEffect(value) { if (!sameNumber(text, value)) { text = value; error = null } }
+    // Read-only now: the field shows the plan's value, never text that was refused or not applied, which could no longer be.
+    LaunchedEffect(readOnly) { if (readOnly) { text = value; error = null } }
     OutlinedTextField(
         value = text,
         onValueChange = { typed -> text = typed; error = onType(typed, visit) },
+        readOnly = readOnly,
         modifier = modifier.onFocusChanged {
             if (it.isFocused) nextVisit()
             else if (text.isBlank()) { text = value; error = null }
@@ -478,6 +528,7 @@ private fun PointsSection(detail: RouteDetailUi, crosshairGrid: String?, actions
         SectionTitle("Points", Modifier.weight(1f))
         Text(countOf(detail.points.size, "point"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    val readOnly = LocalPlanReadOnly.current
     Column(Modifier.padding(horizontal = Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         detail.heldShaping?.let { ShapingPointCard(detail.routeId, it, crosshairGrid, actions, fixedType = detail.isMission) }
         if (detail.points.isEmpty()) {
@@ -496,9 +547,9 @@ private fun PointsSection(detail: RouteDetailUi, crosshairGrid: String?, actions
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // In an imported mission the point put on the line is a named one that splits the leg (the file has no other kind to give it).
-        CrosshairLine(crosshairGrid)
-        PillButton(
+        // In an imported mission the point put on the line is a named one that splits the leg (the file has no other kind to give it). Nothing is added in a read-only pack.
+        if (!readOnly) CrosshairLine(crosshairGrid)
+        if (!readOnly) PillButton(
             if (detail.isMission) "Add a point at the crosshair" else "Add a shaping point at the crosshair", onClick = { actions.addShapingPoint(detail.routeId) },
             icon = EzpzIcons.addLocationAlt, style = PillStyle.Outlined,
             modifier = Modifier.semantics {
@@ -627,15 +678,26 @@ private fun OpenPointCard(routeId: String, point: PlanPointUi, color: Color, cro
     val local = if (name != point.name) actions.localPointNamed(name) else null
     val saveName: () -> Unit = { if (name != point.name) actions.renamePoint(routeId, point.id, name) else focus.clearFocus() }
     val largeText = LocalDensity.current.fontScale > LARGE_TEXT
+    val readOnly = LocalPlanReadOnly.current
+    // Read-only now: a name typed and not saved goes (it never was the point's), and the clock and the move controls close for good, not to come back on a reopen.
+    LaunchedEffect(readOnly) {
+        if (readOnly) {
+            name = point.name
+            clockOpen = false
+            moving = false
+        }
+    }
     Surface(shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         BoxWithConstraints(Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.md.dp, end = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.md.dp)) {
             val wide = maxWidth >= WIDE && !largeText
             val clock: @Composable () -> Unit = {
                 OutlinedButton(
                     onClick = { clockOpen = !clockOpen },
+                    enabled = !readOnly,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     modifier = Modifier.heightIn(min = 48.dp).semantics {
-                        contentDescription = if (point.clock.startsWith("--")) "Set clock time at $title, not set" else "Set clock time at $title, ${point.clock}"
+                        val time = if (point.clock.startsWith("--")) "not set" else point.clock
+                        contentDescription = if (readOnly) "Clock time at $title, $time" else "Set clock time at $title, $time"
                     },
                     contentPadding = PaddingValues(start = 10.dp, end = 14.dp),
                 ) {
@@ -653,6 +715,7 @@ private fun OpenPointCard(routeId: String, point: PlanPointUi, color: Color, cro
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { saveName() }),
                         placeholder = { Text(if (point.first) ".SP" else "") },
+                        readOnly = readOnly,
                     )
                     if (wide) clock()
                     IconButton(onClick = { actions.selectPoint(point.id) }, modifier = Modifier.size(48.dp)) {
@@ -660,7 +723,7 @@ private fun OpenPointCard(routeId: String, point: PlanPointUi, color: Color, cro
                     }
                 }
                 if (!wide) Box(Modifier.padding(start = 32.dp, top = Tokens.Spacing.sm.dp)) { clock() }
-                if (name != point.name) {
+                if (!readOnly && name != point.name) {
                     Text(
                         local?.let { "Matches a local point: saving puts this point on it${it.chartElevationFt?.let { ft -> ", at ${withCommas(Math.round(ft))} ft" }.orEmpty()}." }
                             ?: "Shown in AMPS. Left blank, the point is known by its place in the route.",
@@ -668,7 +731,7 @@ private fun OpenPointCard(routeId: String, point: PlanPointUi, color: Color, cro
                     )
                     TextAction("Save name", onClick = saveName, modifier = Modifier.padding(start = 24.dp))
                 }
-                if (clockOpen) ClockEditor(point, onSet = { text -> apply(values.copy(clock = text), null) }, onClose = { clockOpen = false })
+                if (clockOpen && !readOnly) ClockEditor(point, onSet = { text -> apply(values.copy(clock = text), null) }, onClose = { clockOpen = false })
                 PointValues(routeId, point, wide, ::apply)
                 HorizontalDivider(Modifier.padding(top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 Row(Modifier.heightIn(min = 44.dp).padding(end = Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
@@ -676,14 +739,22 @@ private fun OpenPointCard(routeId: String, point: PlanPointUi, color: Color, cro
                     Text(point.facts, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(point.elapsed, style = MaterialTheme.typography.titleMedium)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!fixedType) TypeMenu(title, point.ptType) { actions.setPointType(routeId, point.id, it) }
-                    TextButton(onClick = { moving = !moving }, modifier = Modifier.semantics { contentDescription = if (moving) "Hide the controls to move $title" else "Show controls to move this point" }) {
-                        Text(if (moving) "Done moving" else "Move")
+                if (readOnly) {
+                    // Where it is, said, since nothing here moves it: what it is and its grid.
+                    Text(
+                        "${typeWord(point.ptType)} · ${point.grid}", style = EzpzText.grid.copy(fontSize = MaterialTheme.typography.bodyMedium.fontSize),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Tokens.Spacing.xs.dp),
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!fixedType) TypeMenu(title, point.ptType) { actions.setPointType(routeId, point.id, it) }
+                        TextButton(onClick = { moving = !moving }, modifier = Modifier.semantics { contentDescription = if (moving) "Hide the controls to move $title" else "Show controls to move this point" }) {
+                            Text(if (moving) "Done moving" else "Move")
+                        }
+                        if (!fixedType) TextButton(onClick = { actions.makeShaping(routeId, point.id) }) { Text("Shape only") }
                     }
-                    if (!fixedType) TextButton(onClick = { actions.makeShaping(routeId, point.id) }) { Text("Shape only") }
                 }
-                if (moving) PointPosition(routeId, point.id, point.grid, crosshairGrid, actions)
+                if (moving && !readOnly) PointPosition(routeId, point.id, point.grid, crosshairGrid, actions)
             }
         }
     }
@@ -766,6 +837,8 @@ internal fun Segmented(
     description: String,
     modifier: Modifier = Modifier,
     words: Map<String, String> = emptyMap(),
+    /** Off in a read-only pack's plan: the choice is shown, and a screen reader hears it cannot be changed. */
+    enabled: Boolean = !LocalPlanReadOnly.current,
     onSelect: (String) -> Unit,
 ) {
     val outline = MaterialTheme.colorScheme.outline
@@ -785,7 +858,7 @@ internal fun Segmented(
             Row(
                 Modifier.weight(1f).fillMaxHeight().heightIn(min = 46.dp)
                     .background(if (chosen) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, shape)
-                    .selectable(selected = chosen, role = Role.RadioButton) { if (!chosen) onSelect(value) }
+                    .selectable(selected = chosen, role = Role.RadioButton, enabled = enabled) { if (!chosen) onSelect(value) }
                     .semantics { words[value]?.let { contentDescription = "$label, $it" } }
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
@@ -830,13 +903,21 @@ private fun ShapingPointCard(routeId: String, point: ShapingPointUi, crosshairGr
     Surface(shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             Text("Shaping point", style = MaterialTheme.typography.titleMedium)
+            val readOnly = LocalPlanReadOnly.current
             Text(
-                if (fixedType) "It only bends the line, as AMPS calculated it. Moving it moves the shape of the leg in the mission's file."
-                else "It only bends the line. Make it a route point to give it a name, an altitude or a time.",
+                when {
+                    readOnly -> "It only bends the line."
+                    fixedType -> "It only bends the line, as AMPS calculated it. Moving it moves the shape of the leg in the mission's file."
+                    else -> "It only bends the line. Make it a route point to give it a name, an altitude or a time."
+                },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            PointPosition(routeId, point.id, point.grid, crosshairGrid, actions)
-            if (!fixedType) PillButton("Make it a route point", onClick = { actions.makeNamed(routeId, point.id) }, style = PillStyle.Tonal)
+            if (readOnly) {
+                Text(point.grid, style = EzpzText.grid.copy(fontSize = MaterialTheme.typography.bodyMedium.fontSize), color = MaterialTheme.colorScheme.onSurface)
+            } else {
+                PointPosition(routeId, point.id, point.grid, crosshairGrid, actions)
+                if (!fixedType) PillButton("Make it a route point", onClick = { actions.makeNamed(routeId, point.id) }, style = PillStyle.Tonal)
+            }
         }
     }
 }
@@ -886,7 +967,7 @@ private fun TotalCard(detail: RouteDetailUi, fetching: PlanningKind?, actions: R
                         detail.hasElevations -> "Refresh elevations"
                         else -> "Fetch elevations"
                     },
-                    onClick = actions.fetchElevations, icon = EzpzIcons.terrain, style = PillStyle.Tonal, enabled = fetching == null,
+                    onClick = actions.fetchElevations, icon = EzpzIcons.terrain, style = PillStyle.Tonal, enabled = fetching == null && !LocalPlanReadOnly.current,
                 )
             },
         ) {

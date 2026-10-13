@@ -314,6 +314,7 @@ fun MapHome(
     LaunchedEffect(diagrams) { diagrams.notices.collect { toast(it, LibraryTab.LZ) } }
     LaunchedEffect(routesModel) { routesModel.notices.collect { toast(it, LibraryTab.ROUTES) } }
     LaunchedEffect(threatsModel) { threatsModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    LaunchedEffect(home) { home.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // A page inside the LZ/PZ panel (an LZ/PZ's plan, every LZ/PZ, the aircraft): Back goes back up it, as its arrow does.
     BackHandler(enabled = current == Panel.Lz && (if (tablet) lz.page == LzPage.AIRCRAFT else lz.page != LzPage.HOME)) { diagrams.showPage(lzBack(lz)) }
     BackHandler(enabled = current == Panel.Routes && routes.page != RoutesPage.HOME) { routesModel.showPage(RoutesPage.HOME) }
@@ -504,6 +505,7 @@ fun MapHome(
                         expanded = menuOpen, place = open?.place, at = open?.at ?: IntOffset.Zero, onDismiss = { menuOpen = false },
                         choices = if (open == null) MapMenuChoices() else MapMenuChoices(
                             newLz = if (Panel.Lz in panels) ({ diagrams.newAt(open.place.at); chosen = Panel.Lz }) else null,
+                            newLzOff = lz.pack?.off,
                             addThreat = if (threatsOn) ({ threatsModel.beginAdd(open.place.at) }) else null,
                             routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); chosen = Panel.Routes } else null,
                             copyGrid = { copyGrid(open.place.grid) },
@@ -535,7 +537,8 @@ fun MapHome(
                 if (current == Panel.Imports) PillButton("Import", onClick = { importMenu = true }, icon = EzpzIcons.fileOpen)
             }
             // The Routes panel's foot: Sketch a route and Import .msnx, pinned under the sets open now.
-            val footer: (@Composable () -> Unit)? = if (current == Panel.Routes && routes.page == RoutesPage.HOME) {
+            // None in a read-only pack, which nothing is drawn into (a sketch still under way keeps its Cancel).
+            val footer: (@Composable () -> Unit)? = if (current == Panel.Routes && routes.page == RoutesPage.HOME && !(routes.pack?.readOnly == true && routes.drawing == null)) {
                 { RoutesFooterHost(onImport = importFiles, crosshair = state.center, viewModel = routesModel) }
             } else {
                 null
@@ -701,7 +704,9 @@ private fun supportingPanes(
     val open = lz.current
     val lzPane = if (lz.page == LzPage.PLAN && open != null) {
         SupportingPane(
-            key = "lz:${open.uuid}", title = open.name, subtitle = "Aircraft, analysis and tools", closeLabel = "Close the ${open.name} pane",
+            key = "lz:${open.uuid}", title = open.name, closeLabel = "Close the ${open.name} pane",
+            // The design's "Read-only · OP DK is finished" in a read-only pack.
+            subtitle = open.inPack?.lock?.pane ?: "Aircraft, analysis and tools",
             onClose = { diagrams.showPage(LzPage.HOME) }, request = lz.planAsked,
         ) {
             Column(

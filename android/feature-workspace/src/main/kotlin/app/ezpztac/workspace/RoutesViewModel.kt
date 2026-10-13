@@ -50,6 +50,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -125,7 +126,16 @@ internal fun packRouteChips(readOnly: Boolean, original: String?, fromLibrary: B
  * ("OP DK · 2 route sets"); [rows] the pack's sets other than the one open, in the order they were added; [count] all of them, the open one too.
  * [opening] is what the panel says in their place while the device does not hold the pack yet.
  */
-data class PackRoutesListUi(val name: String, val head: String, val rows: List<RouteSetRow>, val count: Int = rows.size, val opening: String? = null)
+data class PackRoutesListUi(
+    val name: String,
+    val head: String,
+    val rows: List<RouteSetRow>,
+    val count: Int = rows.size,
+    val opening: String? = null,
+    /** Nothing new can be drawn into it (finished, or a viewer): no *Sketch a route*, and [hint] says why. */
+    val readOnly: Boolean = false,
+    val hint: String? = null,
+)
 
 /** `1 route`, `4 points`. */
 internal fun countOf(n: Int, one: String): String = if (n == 1) "1 $one" else "$n ${one}s"
@@ -176,6 +186,9 @@ data class OpenSetUi(
 
     /** *Save* names a set of sketched routes that still has its made-up name, once it has a route to save; a pack's are named in the pack. */
     val canSave: Boolean get() = inPack == null && madeUpName && !isMission && routes.isNotEmpty() && conflictOf == null
+
+    /** Why it cannot be changed: a read-only pack's. Its routes are looked at, shared and exported; each person may still hide one (that is their own). */
+    val locked: String? get() = inPack?.reason
 }
 
 /** A route being drawn. */
@@ -336,6 +349,10 @@ class RoutesViewModel @Inject constructor(
     /** One thing the panel asks for at a time, as the LZ/PZ panel does: a second tap while a set is being made or opened is not a second set. */
     private var busy = false
 
+    /** The winds or elevations being fetched, and the set they were asked for: ended if that set's pack turns read-only before they come. */
+    private var fetchJob: Job? = null
+    private var fetchFor: String? = null
+
     // What the panel reads of the open pack: a presence frame that only moves someone's pointer is not passed on (PackGlance).
     private val listed = combine(repository.observe(), openSets.ids, pack.glance) { summaries, open, glance -> Triple(summaries, open, glance) }
 
@@ -366,7 +383,8 @@ class RoutesViewModel @Inject constructor(
             error = local.error,
         )
     }.combine(depths) { state, (undo, redo) ->
-        state.copy(open = state.open?.copy(canUndo = undo > 0, canRedo = redo > 0))
+        // Not in a read-only pack: a step taken back there would be a change the pack refuses.
+        state.copy(open = state.open?.let { it.copy(canUndo = undo > 0 && it.locked == null, canRedo = redo > 0 && it.locked == null) })
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RoutesUiState())
 
     init {
@@ -384,6 +402,15 @@ class RoutesViewModel @Inject constructor(
         // The plan page is the held route's: when the route held changes (undone out of existence, put down, another held), the page is not opened again by holding it later.
         viewModelScope.launch {
             selection.held.collect { held -> if (held?.routeId != local.value.planFor) local.update { it.copy(planFor = null) } }
+        }
+        // Winds or elevations on their way to a set whose pack has turned read-only are not applied (the pack would put them back): the fetch ends, and its note says why.
+        viewModelScope.launch {
+            pack.lock.collect { lock ->
+                val why = lock?.reasonFor(fetchFor) ?: return@collect
+                val job = fetchJob?.takeIf { it.isActive } ?: return@collect
+                job.cancel()
+                local.update { it.copy(fetching = null, note = it.fetching?.let { kind -> PlanningNote(why, failed = true, kind) } ?: it.note) }
+            }
         }
         // A sketch that ends without a route takes the set made for it away again (cancelled, or dropped as another set opened).
         viewModelScope.launch {
@@ -420,12 +447,15 @@ class RoutesViewModel @Inject constructor(
             RouteSetRow(
                 uuid = PackRef.localId(glance.uuid, item.uuid), name = item.name, routeCount = routes.size, sync = SyncStatus.SYNCED, conflictOf = null, isOpen = false,
                 pointCount = points,
-                chips = packRouteChips(glance.readOnly, PackFacts.original(item), PackFacts.fromLibrary(item), glance.waiting(item)) - SYNCED_IN_PACK,
+                // Read-only is said once, by the open card and the head, as the design draws it (the web marks every row).
+                chips = packRouteChips(false, PackFacts.original(item), PackFacts.fromLibrary(item), glance.waiting(item)) - SYNCED_IN_PACK,
                 presence = glance.withItOpen(item.uuid).takeIf { it.isNotEmpty() }?.let(PackFacts::hasItOpen),
             )
         }
         val count = if (items.size == 1) "1 route set" else "${items.size} route sets"
-        return PackRoutesListUi(glance.name, "${glance.name} · $count · ${glance.standing}", rows, count = items.size)
+        return PackRoutesListUi(
+            glance.name, "${glance.name} · $count · ${glance.standing}", rows, count = items.size, readOnly = glance.lock != null, hint = glance.lockedHint,
+        )
     }
 
     /**
@@ -437,15 +467,19 @@ class RoutesViewModel @Inject constructor(
         val ours = glance?.takeIf { it.uuid == ref.pack }
         val item = ours?.itemOf(open.uuid)
         val readOnly = ours?.readOnly == true
+        val lock = ours?.lock
         return open.copy(
             chips = if (ours != null && item != null) packRouteChips(readOnly, PackFacts.original(item), PackFacts.fromLibrary(item), ours.waiting(item)) else emptyList(),
             madeUpName = false, sync = null, conflictOf = null,
             inPack = InPackUi(
-                ours?.name ?: "the pack", ours?.savedLine ?: "Saved to the pack as you work.",
-                item?.let { ours.withItOpen(it.uuid) }?.let(PackFacts::alsoHere), readOnly,
+                ours?.name ?: "the pack", (if (lock != null) ours.lockedLine else null) ?: ours?.savedLine ?: "Saved to the pack as you work.",
+                item?.let { ours.withItOpen(it.uuid) }?.let(PackFacts::alsoHere), readOnly, lock,
             ),
         )
     }
+
+    // Why the open set cannot be changed now: it is a read-only pack's. Every change asks first, so none is made only to be put back by the pack.
+    private fun locked(): String? = pack.lockNow()?.reasonFor(session.active.value?.id)
 
     // [uuid]'s item in the open pack, when it is one.
     private fun packItem(uuid: String): String? = PackRef.parse(uuid)?.takeIf { it.pack == pack.state.value?.uuid }?.item
@@ -632,6 +666,7 @@ class RoutesViewModel @Inject constructor(
 
     /** Makes an empty set and opens it. A blank [name] is the next made-up one (`SKETCHED ROUTES`), upper-cased as the web names routes. In a pack, the pack's next. */
     fun createSet(name: String) {
+        if (pack.lockNow() != null) return fail(PackFacts.NOTHING_NEW)
         val title = RouteSetNames.clean(name).ifEmpty { RouteSetNames.next(state.value.sets.map { it.name }) }
         run("The set could not be made.") { make(title) }
     }
@@ -747,6 +782,7 @@ class RoutesViewModel @Inject constructor(
 
     /** Renames [uuid] [name]; with [replacing], the set that has the name is deleted first (the Library's *Replace*). */
     fun renameSet(uuid: String, name: String, replacing: String? = null) {
+        pack.lockNow()?.reasonFor(uuid)?.let { return fail(it) }
         val title = RouteSetNames.clean(name)
         if (title.isEmpty()) return fail("A set needs a name.")
         // A mission is named for its file and never offers Save, so no name of its own is "made up".
@@ -811,6 +847,7 @@ class RoutesViewModel @Inject constructor(
     fun toggleVisible(routeId: String) = session.edit("Show or hide route") { set -> set.mapRoute(routeId) { it.copy(visible = !it.visible) } }
 
     fun renameRoute(routeId: String, name: String) {
+        locked()?.let { return fail(it) }
         if (isMission()) return fail(MISSION_ROUTES_ARE_THE_FILES)
         val title = name.trim().uppercase()
         if (title.isEmpty()) return fail("A route needs a name.")
@@ -818,6 +855,7 @@ class RoutesViewModel @Inject constructor(
     }
 
     fun deleteRoute(routeId: String) {
+        locked()?.let { return fail(it) }                                                     // and it stays held
         if (isMission()) return fail(MISSION_ROUTES_ARE_THE_FILES)
         if (selection.held.value?.routeId == routeId) selection.clear()
         session.edit("Delete route") { it.without(routeId) }
@@ -834,9 +872,11 @@ class RoutesViewModel @Inject constructor(
     private fun fetch(kind: PlanningKind, ask: suspend (setId: String, routeId: String) -> PlanningOutcome) {
         val set = session.active.value ?: return
         val routeId = selection.held.value?.routeId?.takeIf { set.route(it) != null } ?: return
+        locked()?.let { return fail(it) }                                                     // asked of nobody: what came back would be put back
         if (local.value.fetching != null) return                                          // one at a time: the server's answers would otherwise cross
         local.update { it.copy(fetching = kind, note = null, noteFor = routeId) }
-        viewModelScope.launch {
+        fetchFor = set.id
+        fetchJob = viewModelScope.launch {
             val note = try {
                 when (val outcome = ask(set.id, routeId)) {
                     is PlanningOutcome.Done -> PlanningNote(outcome.message, failed = false, kind)
@@ -863,7 +903,11 @@ class RoutesViewModel @Inject constructor(
         return when (val checked = typed.check(before)) {
             is PlanDraft.Checked.Refused -> checked.message
             is PlanDraft.Checked.Valid -> {
-                if (checked.patch != PlanPatch()) session.edit("Change plan", coalesce) { set -> set.mapRoute(routeId) { SketchOps.withPlan(it, checked.patch) } }
+                // Only a change is refused: a field set again to what the pack says (someone else's change arriving) is no change, and says nothing.
+                if (checked.patch != PlanPatch()) {
+                    locked()?.let { return it }
+                    session.edit("Change plan", coalesce) { set -> set.mapRoute(routeId) { SketchOps.withPlan(it, checked.patch) } }
+                }
                 null
             }
         }
@@ -879,6 +923,7 @@ class RoutesViewModel @Inject constructor(
             is PointDraft.Checked.Refused -> checked.message
             is PointDraft.Checked.Valid -> {
                 if (!checked.isEmpty) {
+                    locked()?.let { return it }
                     session.edit("Change point", coalesce) { set ->
                         set.mapRoute(routeId) { route ->
                             var next = route
@@ -912,6 +957,7 @@ class RoutesViewModel @Inject constructor(
      * point's puts the point on it, with its charted elevation, as the web does (a local point with no elevation leaves the point with none).
      */
     fun renamePoint(routeId: String, pointId: String, name: String) {
+        locked()?.let { return fail(it) }
         val match = localNames.value.match(name)
         session.edit("Rename point") { set ->
             set.mapRoute(routeId) { SketchOps.rename(it, pointId, match.name, snapTo = match.at?.let { at -> at.lat to at.lon }, chartElevationFt = match.chartElevationFt) }
@@ -920,12 +966,14 @@ class RoutesViewModel @Inject constructor(
 
     /** Changes what a named point is: `target`, `ip` or `turn`. */
     fun setPointType(routeId: String, pointId: String, ptType: String) {
+        locked()?.let { return fail(it) }
         if (isMission()) return fail(MISSION_POINT_TYPES_ARE_THE_FILES)
         session.edit("Change point type") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_AMPS, ptType = ptType)) } }
     }
 
     /** Makes a named point only shape the line. Refused (in words) for one of the last two named points: a leg needs two ends. */
     fun makeShaping(routeId: String, pointId: String) {
+        locked()?.let { return fail(it) }
         if (isMission()) return fail(MISSION_POINT_TYPES_ARE_THE_FILES)
         val route = session.active.value?.route(routeId) ?: return
         if (SketchOps.designate(route, pointId, PointSpec(RoutePoint.KIND_SHAPING)) == route) {
@@ -941,13 +989,14 @@ class RoutesViewModel @Inject constructor(
 
     /** Puts a point at the crosshair, [at]. */
     fun pointToCrosshair(routeId: String, pointId: String, at: LatLon?) {
+        locked()?.let { return fail(it) }
         if (at == null) return fail("Move the map to where the point should go first.")
         fail(null)
         movePoint(routeId, pointId) { at }
     }
 
     /** Puts a point at a grid or coordinate the person typed. Null when it is moved, else the words for the field. */
-    fun pointToText(routeId: String, pointId: String, text: String): String? = when (val place = PlaceSearch.resolve(text)) {
+    fun pointToText(routeId: String, pointId: String, text: String): String? = locked() ?: when (val place = PlaceSearch.resolve(text)) {
         is PlaceResult.Found -> { movePoint(routeId, pointId) { place.at }; null }
         is PlaceResult.NotUnderstood -> place.message
     }
@@ -955,6 +1004,7 @@ class RoutesViewModel @Inject constructor(
     private fun movePoint(routeId: String, pointId: String, to: (LatLon) -> LatLon) {
         val route = session.active.value?.route(routeId) ?: return
         if (route.points.none { it.id == pointId }) return
+        locked()?.let { return fail(it) }
         session.edit("Move point") { set ->
             set.mapRoute(routeId) { r ->
                 val p = r.points.firstOrNull { it.id == pointId } ?: return@mapRoute r
@@ -974,6 +1024,7 @@ class RoutesViewModel @Inject constructor(
      * file has no shaping point to give: the point is a **named** one (`.NEWPT`, as the web makes it) that splits the leg it is on.
      */
     fun addShapingPoint(routeId: String, at: LatLon?) {
+        locked()?.let { return fail(it) }
         if (at == null) return fail("Move the map to where the point should go first.")
         val route = session.active.value?.route(routeId) ?: return
         val id = newPointId()
@@ -992,16 +1043,20 @@ class RoutesViewModel @Inject constructor(
 
     /** Makes a point that only shaped the line a named one: a turn point, called `.CP` until it is named. */
     fun makeNamed(routeId: String, pointId: String) {
+        locked()?.let { return fail(it) }
         if (isMission()) return fail(MISSION_POINT_TYPES_ARE_THE_FILES)
         session.edit("Make route point") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_AMPS, ptType = "turn")) } }
     }
 
+    // A read-only pack's set keeps the steps made before it was finished: taking one back would be a change the pack refuses.
     fun undo() {
+        locked()?.let { return fail(it) }
         session.undo()
         dropStaleSelection()
     }
 
     fun redo() {
+        locked()?.let { return fail(it) }
         session.redo()
         dropStaleSelection()
     }
@@ -1014,7 +1069,13 @@ class RoutesViewModel @Inject constructor(
 
     // -- Drawing ---------------------------------------------------------------------------------------------
 
-    fun startDrawing() = fail(if (isMission()) MISSION_ROUTES_ARE_THE_FILES else sketching.start())
+    fun startDrawing() = fail(
+        when {
+            pack.lockNow() != null -> PackFacts.NOTHING_NEW
+            isMission() -> MISSION_ROUTES_ARE_THE_FILES
+            else -> sketching.start()
+        },
+    )
 
     /**
      * The panel's *Sketch a route*: drawn into the set on the map when it is a set of sketched routes; otherwise (none open, or an imported mission, whose routes
@@ -1022,6 +1083,7 @@ class RoutesViewModel @Inject constructor(
      * map's taps. In a pack with none of its sets open, into one of the pack's ([sketchInPack]).
      */
     fun startSketch(first: LatLon? = null) {
+        if (pack.lockNow() != null) return fail(PackFacts.NOTHING_NEW)                     // a route drawn in a read-only pack would go into it
         val open = session.active.value
         if (open != null && open.mission == null) {
             val refused = sketching.start()
@@ -1082,7 +1144,8 @@ class RoutesViewModel @Inject constructor(
                 val set = session.active.value?.takeIf { it.id == made } ?: return@launch
                 if (set.routes.isNotEmpty() || set.unreadable.isNotEmpty() || set.name != name) return@launch
                 val item = packItem(made) ?: return@launch
-                pack.removeItem(item)
+                // The pack would not take it out (finished meanwhile, or paused): it stays, and the person is told rather than left to find it.
+                if (pack.removeItem(item) != null) local.update { it.copy(error = "The empty set made for the route stays in the pack: it could not be taken out.") }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -1119,6 +1182,7 @@ class RoutesViewModel @Inject constructor(
 
     /** What the map menu's *Add route point here* would do now. */
     fun pointAction(): MapPointAction {
+        pack.lockNow()?.let { return MapPointAction.Locked(it.short) }
         val open = session.active.value ?: return MapPointAction.StartRoute
         if (open.mission != null) return MapPointAction.Mission
         val route = selection.held.value?.routeId?.let(open::route) ?: open.routes.singleOrNull()
@@ -1148,11 +1212,13 @@ class RoutesViewModel @Inject constructor(
             MapPointAction.StartRoute -> startSketch(first = at)
             MapPointAction.ChooseRoute -> fail(CHOOSE_A_ROUTE)
             MapPointAction.Mission -> fail(MISSION_ROUTES_ARE_THE_FILES)
+            is MapPointAction.Locked -> fail(PackFacts.NOTHING_NEW)
         }
     }
 
     /** Puts a point down at the crosshair, [at]. */
     fun addAtCrosshair(at: LatLon?) {
+        locked()?.let { return fail(it) }
         if (at == null) return fail("Move the map to where the point should go first.")
         if (!sketching.addPoint(at)) fail("That point could not be added.") else local.update { it.copy(error = null) }
     }
@@ -1164,6 +1230,7 @@ class RoutesViewModel @Inject constructor(
 
     /** Makes the drawn line a route of the open set and holds it, so its row is the one open. */
     fun finishDrawing(name: String = "") {
+        locked()?.let { return fail(it) }
         when (val result = sketching.finish(name)) {
             is SketchFinish.Done -> {
                 madeForSketch = null                                                       // it has a route: it is a set like any other
@@ -1238,6 +1305,9 @@ sealed interface MapPointAction {
 
     /** An imported mission is open: its routes are its file's. */
     data object Mission : MapPointAction
+
+    /** A read-only pack is open: nothing can be drawn or added in it. [why] says so in a tool's few words ("Off in a finished pack"). */
+    data class Locked(val why: String) : MapPointAction
 }
 
 internal const val STILL_WORKING = "Still finishing the last change. Try again in a moment."
