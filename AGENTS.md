@@ -824,6 +824,9 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - Accepting an invitation link is not repeatable by the account that accepted it: a second accept answers 410 `invite_gone`. So an answer lost
   on the way (a read timeout after the server took it) is tried again and reads "already used" to someone who has just joined, on the web and
   Android alike. The server could answer a repeat by the same account with what it joined (owner to decide).
+- **An aircraft placed as a person's own airframe carries only its slug** (`profileId`, the web's and Android's alike), and own airframes are per account: on every other
+  member's device it is drawn and its separation measured as that device's mission aircraft (else the UH-60L), not as the airframe it was placed as. Carrying the airframe's
+  geometry with the aircraft (rotor diameter, tip clearance, picture) would change the shared shape: owner to decide, web first.
 - The Android manifest's verified link filter names only `ezpztac.app`, while `AuthLinks.SITE_HOSTS` also takes `www.ezpztac.app`: a `www.`
   link opens the browser, not the app. Left so (the owner's call, 2026-10-10); add the host to the filter (and to the site's
   `assetlinks.json`) if emails or shared links ever use it.
@@ -1608,6 +1611,17 @@ client is built around not losing one:
     two people stand as one person's arrow, the later; kept apart they would leave an arrow from the moved anchor to a tip set for the old one, a length and direction nobody gave it. A
     sector's corners and a boundary's are lists without ids, which `PackDiff` sends whole already. The web drags graphics, which changes both coordinates, and turns a PZ marker by its tip
     alone (`LzPackTwoDevicesTest`, `PackLzWholeTest`).
+  - **What an analysis found goes whole** (`LzPackKind.analysisWhole`): its boundary, results, grid elevation and position in words, in one patch of the analysis. `PackDiff`
+    sends only the fields that changed (and follows the results into their object), so two analyses at once, of two boundaries, left the later one's boundary with whatever of the
+    earlier one's results it happened not to change. A corner deleted from that boundary sends the rest of what was found with it; a boundary drawn by hand (`customLZ`) goes alone.
+  - **Every setting of an LZ/PZ is held on two devices** (`LzPackSettingsTest`, the owner's rule of 2026-10-13: every setting of a planning graphic or a route syncs on change, and
+    only each person's view stays theirs): each graphic placed, moved (nudge, crosshair, typed grid, drag), turned and deleted, a PZ marker's reach and tip, a sector's shape, a
+    go-around's side, a doghouse's label, time, distance, airspeed and heading (and the flight data it gives), a unit's symbol and labels, an aircraft's airframe, the target, a
+    boundary drawn and a corner deleted, an analysis come back (a quiet change, sent though another LZ/PZ is open by then), the name: each found identical on the other device's open
+    LZ/PZ and in the pack, on its copy while it is closed and once opened there, undone as a change of its own, and made by two people at once (two settings of one graphic both stand;
+    one setting stands whole as the later made it). What stays each person's: the base map, the LZ outline and the slope map (an LZ/PZ's `view`), and on Android the slope switch,
+    a device choice. **An aircraft carries only its airframe's slug** (`profileId`), so one placed as a person's own airframe is drawn and measured as each device's mission aircraft
+    where that profile is not (§15).
   - `PackWorkspace` opens and closes packs (closing whatever of the pack being left is open in the editors first, so its last change reaches it while it still takes it, and both editors
     and the switch even when a save fails, which it then throws), opens an item in its editor, and makes a new LZ/PZ or route set in the open pack (`createLz`, `createRouteSet`: the web's names,
     `LZ/PZ n` and `ROUTES n`, and creation sentences).
@@ -2134,8 +2148,8 @@ client is built around not losing one:
     a footprint nobody chose). The altitude limits are not in the form (the web has none), so a profile being changed keeps its own.
   - **An account whose `aircraft_profiles` feature is off** (`ApiUser.hasFeature`) can choose from the admin's list but is not offered New, Copy or Edit:
     the server answers a create with 403 `feature_disabled`, which the outbox would hold as blocked.
-  - Deleting an own profile that is the mission aircraft falls back to the UH-60L; diagrams placed with it keep the geometry they were placed with
-    (it is in the diagram).
+  - Deleting an own profile that is the mission aircraft falls back to the UH-60L; diagrams placed with it then draw and measure its aircraft as the
+    mission aircraft, since an aircraft carries only its airframe's slug (§15).
   - **Not done:** the map icon is chosen by name, not by its picture; a route does not yet start from the mission aircraft's defaults (there are no routes yet).
 - **Symbols and units** (`core-symbols`, `core-model`: `Sidc`, `UnitDraft`; `feature-map`: `UnitMarker`; `feature-workspace`: `UnitBuilder`).
   - **One source of truth for what a symbol looks like: the web's milsymbol.** The plan's decision (milsymbol in the system JS engine, not a native

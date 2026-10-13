@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 
@@ -126,6 +127,26 @@ class PackLzWholeTest {
         val op = sent(drawn).single()
         assertValue(JsonArray(listOf(JsonPrimitive("analysis"))), op["path"], "at the analysis")
         assertValue(json("""{"customLZ": [[34.5, -84.1], [34.512, -84.1], [34.51, -84.09]]}"""), op["value"], "the boundary, whole")
+    }
+
+    @Test
+    fun `what an analysis found goes whole, though some of it is as it was`() {
+        // Analysed again: a new boundary and area, the same capacity and grid elevation. PackDiff would send the boundary and the area alone.
+        val again = opened().let { d ->
+            DiagramOps.completeAnalysis(d, json("""{"detectedLZ": [[34.5, -84.1], [34.512, -84.1], [34.512, -84.088]], "results": {"area": 2}}"""))
+        }
+        val op = sent(again).single()
+        assertValue(JsonArray(listOf(JsonPrimitive("analysis"))), op["path"], "one patch of the analysis")
+        assertValue(
+            json("""{"detectedLZ": [[34.5, -84.1], [34.512, -84.1], [34.512, -84.088]], "results": {"area": 2}, "gridElevation": "1200", "latLong": ""}"""),
+            op["value"], "all it found",
+        )
+        // A corner deleted from what it found: the rest of it goes too, as the document has it.
+        val cornered = opened().let { d -> DiagramOps.setAnalysisDraft(d, json("""{"detectedLZ": [[34.5, -84.1], [34.51, -84.1], [34.505, -84.095]]}""")) }
+        assertEquals(setOf("detectedLZ", "results", "gridElevation", "latLong"), sent(cornered).single().getValue("value").jsonObject.keys)
+        // A boundary drawn by hand is not what an analysis found: it goes alone.
+        val drawn = opened().let { d -> DiagramOps.setAnalysisDraft(d, json("""{"customLZ": [[34.5, -84.1], [34.512, -84.1], [34.51, -84.09]]}""")) }
+        assertEquals(setOf("customLZ"), sent(drawn).single().getValue("value").jsonObject.keys)
     }
 
     @Test

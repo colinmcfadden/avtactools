@@ -145,8 +145,10 @@ public class LzPackKind(private val env: DiagramNormalizer.Environment = Diagram
      * from the anchor say, so a turn (the tip alone) kept apart from a move (anchor and tip) could leave the arrow from the moved anchor to a tip set for
      * the old one, a length and direction nobody gave it; together, the later stands whole. A sector's corners and a boundary's are lists without ids,
      * which [PackDiff] sends whole already. The web drags a graphic, which changes both coordinates; it turns a PZ marker by its tip alone.
+     *
+     * What an analysis found is one value too ([analysisWhole]): its boundary, its results, the grid's elevation and the position in words.
      */
-    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = keptWhole(ops, after, WHOLES)
+    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = analysisWhole(keptWhole(ops, after, WHOLES), after)
 
     // The view kept on the device, read as the web reads one (a value it does not understand is the default), without the clock.
     private fun viewOf(diagram: Diagram, view: JsonElement): DiagramView = DiagramNormalizer.normalize(
@@ -169,6 +171,53 @@ public class LzPackKind(private val env: DiagramNormalizer.Environment = Diagram
             WholeValue(listOf("lat", "lon", "tipLat", "tipLon")) { path -> isGraphic(path) { it == "pzMarkers" } },
             WholeValue(listOf("lat", "lon")) { path -> isGraphic(path) { it in PLACED } },
         )
+
+        // What one analysis finds, or a corner deleted from what it found: its boundary, its results, the grid's elevation and the position in words.
+        private val RESULT = listOf("detectedLZ", "results", "gridElevation", "latLong")
+
+        private val ANALYSIS = JsonArray(listOf(JsonPrimitive("analysis")))
+
+        private fun pathOf(op: JsonObject): JsonArray? = op["path"] as? JsonArray
+
+        // A patch of the analysis itself.
+        private fun atAnalysis(op: JsonObject): Boolean =
+            (op["type"] as? JsonPrimitive)?.content == "patch" && pathOf(op)?.let { it.size == 1 && isField(it[0], "analysis") } == true
+
+        // An operation inside one of the result's fields: [PackDiff] follows the results into their object.
+        private fun insideResult(op: JsonObject): Boolean =
+            pathOf(op)?.let { p -> p.size >= 2 && isField(p[0], "analysis") && RESULT.any { isField(p[1], it) } } == true
+
+        /**
+         * [ops] with what an analysis found sent whole: when any of [RESULT] changed, one patch of the analysis carries all four as [after] has them (null
+         * included: no results is a value), in the place of the analysis's own patch (whose other fields it keeps, a drawn boundary cleared with it) or of the
+         * first operation inside the results, which go. [PackDiff] sends only the fields that changed, so two analyses at once, of two boundaries, would
+         * leave the later one's boundary with whatever of the earlier one's results it happened not to change: results measured for another boundary.
+         */
+        fun analysisWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> {
+            val analysis = (after as? JsonObject)?.get("analysis") as? JsonObject ?: return ops
+            val touches = { op: JsonObject -> insideResult(op) || (atAnalysis(op) && (op["value"] as? JsonObject)?.keys?.any { it in RESULT } == true) }
+            if (ops.none(touches)) return ops
+            val anchor = ops.indexOfFirst { atAnalysis(it) }.takeIf { it >= 0 } ?: ops.indexOfFirst(touches)
+            val own = ops[anchor].takeIf(::atAnalysis)?.get("value") as? JsonObject
+            val value = LinkedHashMap<String, JsonElement>(own ?: emptyMap())
+            RESULT.forEach { value[it] = analysis[it] ?: JsonNull }
+            // The operation's own fields (its item, its sentence) stay; it becomes the patch of the analysis.
+            val merged = JsonObject(
+                LinkedHashMap(ops[anchor]).apply {
+                    remove("after")
+                    put("type", JsonPrimitive("patch"))
+                    put("path", ANALYSIS)
+                    put("value", JsonObject(value))
+                },
+            )
+            return ops.mapIndexedNotNull { i, op ->
+                when {
+                    i == anchor -> merged
+                    insideResult(op) -> null
+                    else -> op
+                }
+            }
+        }
     }
 }
 
