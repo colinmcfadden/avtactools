@@ -131,6 +131,8 @@ data class PackPanelUi(
     val finished: Boolean = false,
     val readOnly: Boolean = false,
     val canEdit: Boolean = false,
+    /** This person owns the pack: Members offers them inviting, and the panel an *Invite* of its own. */
+    val owner: Boolean = false,
     val description: String? = null,
     val members: Int = 0,
     val faces: List<PersonUi> = emptyList(),
@@ -143,6 +145,10 @@ data class PackPanelUi(
     /** The members line: "4 members · 2 here now". */
     val membersLine: String
         get() = PackPanelWords.count(members, "member", "members") + if (here > 0) " · $here here now" else ""
+
+    /** The members row as a screen reader hears it (the design's): "4 members, 2 here now. Manage members". */
+    val membersButton: String
+        get() = PackPanelWords.count(members, "member", "members") + (if (here > 0) ", $here here now" else "") + ". Manage members"
 
     /** A dot on History while something someone else changed since this person looked is waiting there. */
     val historyHasNew: Boolean get() = newCount > 0 && tab != PackTab.HISTORY

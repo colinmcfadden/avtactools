@@ -493,6 +493,36 @@ before each name; and the adapter over the API client, which carries every call'
 *Who can open it* measure 46 dp inside a 48 dp row (the row is the touch target). Tests: `NewPackViewModelTest`, `NewPackTest` (with screenshots), `ApiPeopleApiTest`,
 `WorkspaceViewModelTest`, `PackCallsTest`.
 
+**P3b — Members. Built.** The Pack panel's members row ("4 members, 2 here now. Manage members") opens Members of the open pack, and its owner's *Invite* beside it opens
+it at the invite field: a page on a phone (the design's AP Members: *Back to OP DK*, *Done*), a dialog 840 dp wide on a tablet (AT Members: the invite and the team on
+the left, the people on the right, the note and *Done* at its foot). Everyone sees who is in the pack, here now (from the open pack's presence) or when they last looked;
+its owner invites a teammate by name or anyone by email address (the field holds who is chosen, and *Invite* brings them in as the role beside it), changes a member's
+role, hands the pack over or takes someone off, sends an invitation waiting again or withdraws it, and shares the pack with one of their teams (what it can do, and no
+longer sharing). **Amended while building:**
+- **A window of its own on both** (a full-screen dialog on a phone, as New pack's), so the keyboard and a screen reader stay in it, with toasts of its own while it is up
+  (`MapHome` sends Members' words there, else to the frame's).
+- **Withdrawing an invitation and no longer sharing with a team are asked first** (the web does neither; the design draws *Revoke* in the error colour), with handing over
+  and taking off, which the web asks. Each question is the web's words, or Android's in its manner.
+- **An invitation whose email did not go is said** (`email_sent` false, for an invitation and for one sent again), and **when one stops working goes by the calendar**:
+  "expires tomorrow" (the web's "expires today" is anything within a day).
+- **People that could not be loaded are said with *Try again***, over what was shown last (the web's Teams says "Loading…" for ever; its Members says nothing).
+- **One change at a time, for the account the page was opened for**: another asked meanwhile is said not to be done; what a change came to is never said to another
+  account, and the page goes when another pack is opened or the account changes. After each change the people are read again and the open pack asked for what is new.
+- **A refused invitation is said under the field**, and what was typed stays (the web's toast does the same for Members; its Teams clears the address).
+- **Invitations that could not be had leave the members shown** ("The invitations waiting could not be loaded." with *Try again*, where they would be).
+- **Not built:** the members of a pack someone is in only through its team are not listed (as on the web: `members` is the pack's own); nor are the open pack's own members
+  shown while the server cannot be reached (the web lists the session's, without addresses).
+**Reviewed** (one independent review, 2026-10-13: 21 reported, 19 survived an adversarial check, 17 distinct; each fix has a test, and each was broken to see it fail):
+a change still on its way when the page was put away and opened again left the new page free to start a second (the change now belongs to the view model, and lands
+only on the page it was asked from: its refusal never goes under the new page's field); a toast showing when the page closed stranded every later one, since the page's
+own host timed it (Members now draws the frame's toasts over itself); after a hand-over the owner's controls stayed until the people came back, and a question asked
+meanwhile did nothing when confirmed (the person is an editor on the page at once, and a load that says they are not lets the question go); invitations that could not be
+had took the members with them; the "Here now" dot was a character read aloud; the owner's *Invite* squeezed the members row until "members" broke mid-word on a small
+phone (it goes under the row unless the row fits whole beside it, and with no *Invite* the row has the width: the layout crashed with an empty slot); New pack, over the
+Pack panel, was not counted as covering it (one rule now says what covers the frame); and ten gaps in the tests (an older answer arriving last, close, a change finishing
+after close, the owner gates on a tablet, the owner flag, the invitations call's account, the Send key, teams that failed, the person's own zone). Not changed: an
+invitation answered meanwhile and then withdrawn or sent again reads "That invitation link is not valid." (the server's `invite_not_found`, in the web's words). Tests: `MembersViewModelTest`, `MembersTest` (with screenshots), `ApiPeopleApiTest`, `PackPanelViewModelTest`, `PackCallsTest`.
+
 **P4 — The pack dialogs.** `PackDialogs`: add a copy to a pack (from the Library's menu and the panels), update from the original (*Finish* is P2d's),
 save a copy to the Library; the keep-or-discard offer for edits a pack dropped (*Deferred* 2).
 

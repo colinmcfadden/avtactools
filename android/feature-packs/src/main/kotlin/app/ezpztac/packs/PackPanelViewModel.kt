@@ -369,6 +369,7 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
             finished = session.status == "finished",
             readOnly = readOnly,
             canEdit = !readOnly && (role == "owner" || role == "editor"),
+            owner = role == "owner",
             description = text(session.pack["description"])?.takeIf { it.isNotBlank() },
             members = audience(session),
             faces = faces,

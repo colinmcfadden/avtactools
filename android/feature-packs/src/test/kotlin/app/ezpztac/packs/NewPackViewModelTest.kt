@@ -99,6 +99,13 @@ class NewPackViewModelTest {
             refuse[email]?.let { throw it }
             return email !in notEmailed
         }
+
+        // Members' calls: New pack never makes them.
+        override suspend fun people(uuid: String, user: Int): PackPeople = error("not asked")
+        override suspend fun changeMember(uuid: String, userId: Int, role: String, user: Int) = error("not asked")
+        override suspend fun removeMember(uuid: String, userId: Int, user: Int) = error("not asked")
+        override suspend fun resendInvite(uuid: String, inviteId: Int, user: Int): Boolean = error("not asked")
+        override suspend fun revokeInvite(uuid: String, inviteId: Int, user: Int) = error("not asked")
     }
 
     private class Rig(val scope: TestScope, user: Int?) {

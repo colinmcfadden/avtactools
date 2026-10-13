@@ -77,6 +77,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
+import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.initialsOf
@@ -319,7 +320,7 @@ private val SIDE_BY_SIDE = 340.dp
 
 /** A field whose value is chosen from a menu (the design's exposed dropdown): its label, its value and a word under it, and the menu's arrow. */
 @Composable
-private fun FieldMenu(
+internal fun FieldMenu(
     label: String,
     value: String,
     supporting: String?,
@@ -423,7 +424,7 @@ internal fun foundWords(count: Int) = if (count == 1) "1 person on your teams" e
 
 /** A suggestion: a teammate found (their initials), or the address typed (a letter). */
 @Composable
-private fun PersonRow(initials: String?, title: String, subtitle: String, enabled: Boolean, onClick: () -> Unit) {
+internal fun PersonRow(initials: String?, title: String, subtitle: String, enabled: Boolean, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.xs.dp),
@@ -468,14 +469,25 @@ private fun InviteeRow(invitee: Invitee, busy: Boolean, actions: NewPackActions)
     )
 }
 
-/** A person's face: their initials, or a letter for someone invited by address. Not read aloud: the name or address beside it says who it is. */
+/**
+ * A person's face: their initials, or a letter for someone invited by address, with a dot when they are [here] now. Not read aloud: the name or address beside it
+ * says who it is.
+ */
 @Composable
-private fun Face(initials: String?) {
-    Box(Modifier.size(40.dp).clearAndSetSemantics {}.background(MaterialTheme.colorScheme.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
-        if (initials != null) {
-            Text(initials, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-        } else {
-            Icon(painterResource(EzpzIcons.mail), contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
+internal fun Face(initials: String?, here: Boolean = false) {
+    Box(Modifier.size(40.dp).clearAndSetSemantics {}) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+            if (initials != null) {
+                Text(initials, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            } else {
+                Icon(painterResource(EzpzIcons.mail), contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
+            }
+        }
+        if (here) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(12.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape).padding(2.dp)
+                    .background(EzpzTheme.status.success, CircleShape),
+            )
         }
     }
 }

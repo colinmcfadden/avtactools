@@ -174,6 +174,11 @@ internal fun BesideOrUnder(
     Layout(contents = listOf(words, buttons), modifier = modifier) { (wordsPart, buttonsPart), constraints ->
         val gap = space.roundToPx()
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        if (buttonsPart.isEmpty()) {
+            // No buttons (none offered to this person): the words have the width.
+            val w = wordsPart.single().measure(loose)
+            return@Layout layout(constraints.maxWidth, maxOf(w.height, constraints.minHeight)) { w.place(0, 0) }
+        }
         val wanted = buttonsPart.single().maxIntrinsicWidth(Constraints.Infinity)
         val room = constraints.maxWidth - wanted - gap
         val beside = if (whole) wordsPart.single().maxIntrinsicWidth(Constraints.Infinity) <= room else room >= wordsMin.roundToPx()

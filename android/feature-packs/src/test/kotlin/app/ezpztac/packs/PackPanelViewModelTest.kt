@@ -260,11 +260,18 @@ class PackPanelViewModelTest {
         assertEquals("4 members · 2 here now", s.membersLine)                                        // the audience, a team's included; this person is here too
         assertEquals(listOf("CM" to true, "SB" to true, "JR" to false), s.faces.map { it.initials to it.here })
         assertTrue(s.canEdit)
+        assertTrue(s.owner)
+        assertEquals("4 members, 2 here now. Manage members", s.membersButton)
         assertEquals("North Georgia night LZ/PZ and route planning.", s.description)
+        r.open(session(role = "editor"))
+        advanceUntilIdle()
+        assertTrue(r.model.state.value.canEdit)
+        assertFalse(r.model.state.value.owner)                                                       // an editor has no Invite
         r.open(session(role = "viewer", readOnly = true))
         advanceUntilIdle()
         assertEquals("Mission Pack · you are a viewer", r.model.state.value.subtitle)
         assertFalse(r.model.state.value.canEdit)
+        assertFalse(r.model.state.value.owner)
         r.open(session(status = "finished", readOnly = true), items = emptyList())
         advanceUntilIdle()
         assertTrue(r.model.state.value.finished)

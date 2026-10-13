@@ -99,6 +99,8 @@ import app.ezpztac.network.ApiUser
 import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
 import app.ezpztac.packs.PackChip
+import app.ezpztac.packs.MembersHost
+import app.ezpztac.packs.MembersViewModel
 import app.ezpztac.packs.NewPackHost
 import app.ezpztac.packs.NewPackViewModel
 import app.ezpztac.packs.PackDialogsHost
@@ -145,7 +147,9 @@ import app.ezpztac.workspace.importsLine
 import app.ezpztac.workspace.offersLibrary
 import app.ezpztac.workspace.rememberFileImport
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** How far from a graphic's point a finger still counts as on it: the platform's minimum touch target is 48 dp across, so 24 dp each way. */
@@ -253,6 +257,13 @@ fun MapHome(
     }
     // New Mission Pack, from the switcher: once it is made it opens, raised as a pack picked in the switcher is.
     val newPack: NewPackViewModel = hiltViewModel()
+    val newPackOpen by remember(newPack) { newPack.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
+    // Members of the open pack, from the Pack panel: a page (a dialog on a tablet) that draws the frame's toasts over itself.
+    val members: MembersViewModel = hiltViewModel()
+    val membersOpen by remember(members) { members.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
+    LaunchedEffect(members) { members.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // A page or dialog over the frame (the Library, Members, New pack): nobody is looking at the map or the Pack panel under it.
+    val overFrame = libraryTab != null || membersOpen || newPackOpen
     LaunchedEffect(newPack) {
         newPack.made.collect { uuid ->
             pickedPack(uuid)
@@ -273,7 +284,7 @@ fun MapHome(
         if (raise) raisePack()
     }
     // The map covered (the Library, a route's plan page, the phone's sheet at full height): nobody is pointing at it, for everyone else in a pack.
-    val mapCovered = libraryTab != null || (!tablet && (routes.planOpen || sheet.settled == SheetDetent.Full))
+    val mapCovered = overFrame || (!tablet && (routes.planOpen || sheet.settled == SheetDetent.Full))
     LaunchedEffect(mapCovered) { home.mapCovered(mapCovered) }
     LaunchedEffect(packPanel) { packPanel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // An item opened from the Pack panel is shown in its own panel (an LZ/PZ in LZ/PZ, a route set in Routes), as the web's dock does.
@@ -395,7 +406,9 @@ fun MapHome(
                     when (panel) {
                         // Looking at it: the panel showing, in sight (not lowered on a phone, not collapsed on a tablet).
                         Panel.Pack -> PackPanelHost(
-                            packPanel, looking = lookingAtPack(current, tablet, tabletState.listShown, sheet.settled, covered = libraryTab != null || (routes.planOpen && !tablet)),
+                            packPanel,
+                            looking = lookingAtPack(current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || (routes.planOpen && !tablet)),
+                            onMembers = { invite -> members.open(openPack?.name.orEmpty(), invite) },
                         )
                         // A new LZ/PZ starts at the crosshair, and the tools add there. An administrator can switch own aircraft off for an account (the
                         // server would refuse what it made).
@@ -666,6 +679,7 @@ fun MapHome(
             // Finishing, reopening or duplicating the open pack, asked about wherever it was asked for; and a new pack.
             PackDialogsHost(workspace)
             if (packsHere) NewPackHost(newPack, tablet)
+            if (packsHere) MembersHost(members, tablet, snackbars)
             // The Library (the design's): opening an item from it shuts it and shows the panel the item is in, as the web's does; renaming, deleting and settling a
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(

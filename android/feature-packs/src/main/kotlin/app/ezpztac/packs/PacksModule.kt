@@ -8,6 +8,7 @@ import app.ezpztac.missionpacks.PackEngine
 import app.ezpztac.missionpacks.PackNotice
 import app.ezpztac.missionpacks.PackState
 import app.ezpztac.network.ApiClient
+import app.ezpztac.network.OtherAccountException
 import app.ezpztac.network.Invite
 import app.ezpztac.network.InviteAccepted
 import app.ezpztac.network.PackEventPage
@@ -24,6 +25,12 @@ import app.ezpztac.network.finishPack
 import app.ezpztac.network.inviteToPack
 import app.ezpztac.network.listPacks
 import app.ezpztac.network.listTeams
+import app.ezpztac.network.pack
+import app.ezpztac.network.packInvites
+import app.ezpztac.network.changePackMember
+import app.ezpztac.network.removePackMember
+import app.ezpztac.network.resendPackInvite
+import app.ezpztac.network.revokePackInvite
 import app.ezpztac.network.markPackSeen
 import app.ezpztac.network.myInvites
 import app.ezpztac.network.packEvents
@@ -36,6 +43,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -98,6 +106,41 @@ class ApiPeopleApi @Inject constructor(private val api: ApiClient) : PeopleApi {
     }
 
     override suspend fun invite(uuid: String, email: String, role: String, user: Int): Boolean = api.inviteToPack(uuid, email, role, asUser = user).value.emailSent != false
+
+    override suspend fun people(uuid: String, user: Int): PackPeople {
+        val pack = api.pack(uuid, asUser = user)
+        val owner = pack.role == "owner"
+        // Only the owner may see the invitations; theirs are those not yet answered. Ones that could not be had leave the members shown (not another account's: that
+        // is no answer at all).
+        val pending = if (!owner) {
+            emptyList()
+        } else {
+            try {
+                api.packInvites(uuid, asUser = user).filter { it.status == "pending" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: OtherAccountException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+        }
+        return PackPeople(pack.name, pack.role, pack.members, pending, pack.team?.let { SharedTeam(it.id, it.name, it.role ?: "editor") })
+    }
+
+    override suspend fun changeMember(uuid: String, userId: Int, role: String, user: Int) {
+        api.changePackMember(uuid, userId, role, asUser = user)
+    }
+
+    override suspend fun removeMember(uuid: String, userId: Int, user: Int) {
+        api.removePackMember(uuid, userId, asUser = user)
+    }
+
+    override suspend fun resendInvite(uuid: String, inviteId: Int, user: Int): Boolean = api.resendPackInvite(uuid, inviteId, asUser = user).emailSent != false
+
+    override suspend fun revokeInvite(uuid: String, inviteId: Int, user: Int) {
+        api.revokePackInvite(uuid, inviteId, asUser = user)
+    }
 }
 
 /** The packs the device runs: the engine's open pack, opened and closed through the editors' join to it. */

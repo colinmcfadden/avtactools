@@ -40,6 +40,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -69,6 +70,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
+import app.ezpztac.designsystem.PillButton
+import app.ezpztac.designsystem.PillStyle
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.StateChip
 import app.ezpztac.designsystem.StatusTone
@@ -83,12 +86,14 @@ class PackPanelActions(
     val remove: (String) -> Unit = {},
     val person: (String?) -> Unit = {},
     val item: (String?) -> Unit = {},
+    /** Members of the pack, its invite field taking the keyboard when [Boolean] (the owner's *Invite*). */
+    val members: (invite: Boolean) -> Unit = {},
 )
 
 /** The panel's actions over its view model. */
-fun actionsOf(viewModel: PackPanelViewModel) = PackPanelActions(
+fun actionsOf(viewModel: PackPanelViewModel, onMembers: (invite: Boolean) -> Unit = {}) = PackPanelActions(
     tab = viewModel::selectTab, open = viewModel::open, closeHere = viewModel::closeHere, rename = viewModel::rename, remove = viewModel::remove,
-    person = viewModel::filterPerson, item = viewModel::filterItem,
+    person = viewModel::filterPerson, item = viewModel::filterItem, members = onMembers,
 )
 
 /**
@@ -96,14 +101,14 @@ fun actionsOf(viewModel: PackPanelViewModel) = PackPanelActions(
  * a phone, not collapsed on a tablet): while it is, and the app is in front, what is new is marked as seen after a moment, as on the web.
  */
 @Composable
-fun PackPanelHost(viewModel: PackPanelViewModel, looking: Boolean) {
+fun PackPanelHost(viewModel: PackPanelViewModel, looking: Boolean, onMembers: (invite: Boolean) -> Unit = {}) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val inSight = looking && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     LaunchedEffect(inSight) { viewModel.setLooking(inSight) }
     // The panel goes (the pack closed or gone): nobody is looking at what opens next until it is shown.
     DisposableEffect(viewModel) { onDispose { viewModel.setLooking(false) } }
-    PackPanelContent(state, actionsOf(viewModel))
+    PackPanelContent(state, actionsOf(viewModel, onMembers))
 }
 
 /**
@@ -128,13 +133,23 @@ fun PackPanelContent(state: PackPanelUi, actions: PackPanelActions, modifier: Mo
             if (state.readOnly && !state.finished) StateChip("View only", StatusTone.Neutral, icon = EzpzIcons.visibility)
         }
         state.description?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics(mergeDescendants = true) {},
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
-        ) {
-            Faces(state.faces, Modifier.clearAndSetSemantics { }, shown = 4, size = 28.dp, markHere = true)
-            Text(state.membersLine, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-        }
+        // Who is in it, as a way to Members (the design's); its owner has an Invite of its own beside it, which opens Members at the invite field.
+        // (Invite goes under the row where beside it the words would not fit on one line.)
+        BesideOrUnder(
+            Modifier.fillMaxWidth(),
+            words = {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium).clickable(role = Role.Button) { actions.members(false) }
+                        .clearAndSetSemantics { contentDescription = state.membersButton; role = Role.Button }.padding(vertical = Tokens.Spacing.xs.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+                ) {
+                    Faces(state.faces, Modifier, shown = 4, size = 28.dp, markHere = true)
+                    Text(state.membersLine, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                }
+            },
+            buttons = { if (state.owner) PillButton("Invite", onClick = { actions.members(true) }, icon = EzpzIcons.personAdd, style = PillStyle.Outlined) },
+            space = Tokens.Spacing.sm.dp, whole = true,
+        )
         ViewChoice(state, actions)
         when (state.tab) {
             PackTab.ITEMS -> Items(state, actions, onRename = { renaming = it }, onRemove = { removing = it })

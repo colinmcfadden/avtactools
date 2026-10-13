@@ -98,7 +98,7 @@ public suspend fun ApiClient.createPack(
 }
 
 /** The pack with its members and every item, exactly as after its `head_seq`. A pack the caller is not in is a 404 (`pack_not_found`). */
-public suspend fun ApiClient.pack(uuid: String): Pack = decode(execute(call("GET", PackPaths.pack(uuid))))
+public suspend fun ApiClient.pack(uuid: String, asUser: Int? = null): Pack = decode(execute(call("GET", PackPaths.pack(uuid), asUser = asUser)))
 
 /**
  * Renames or describes the pack (an editor may), or shares it with a team or stops sharing it (only the owner). Only what is given
@@ -219,19 +219,19 @@ public suspend fun ApiClient.addPackMember(uuid: String, userId: Int, role: Stri
 ).member
 
 /** Changes a member's role (the owner only). `owner` hands the pack over, and the old owner stays as an editor. */
-public suspend fun ApiClient.changePackMember(uuid: String, userId: Int, role: String): PackMember = decode<MemberBody>(
-    execute(call("PUT", "${PackPaths.pack(uuid)}/members/$userId", body = buildJsonObject { put("role", role) })),
+public suspend fun ApiClient.changePackMember(uuid: String, userId: Int, role: String, asUser: Int? = null): PackMember = decode<MemberBody>(
+    execute(call("PUT", "${PackPaths.pack(uuid)}/members/$userId", body = buildJsonObject { put("role", role) }, asUser = asUser)),
 ).member
 
 /** Removes a member (the owner only), or leaves the pack (the caller's own id). The owner hands the pack over first. */
-public suspend fun ApiClient.removePackMember(uuid: String, userId: Int): StatusReply =
-    decode(execute(call("DELETE", "${PackPaths.pack(uuid)}/members/$userId")))
+public suspend fun ApiClient.removePackMember(uuid: String, userId: Int, asUser: Int? = null): StatusReply =
+    decode(execute(call("DELETE", "${PackPaths.pack(uuid)}/members/$userId", asUser = asUser)))
 
 // -- Invitations to a pack ------------------------------------------------------------
 
 /** The pack's invitations not yet answered (the owner only). */
-public suspend fun ApiClient.packInvites(uuid: String): List<Invite> =
-    decode<InvitesBody>(execute(call("GET", "${PackPaths.pack(uuid)}/invites"))).invites
+public suspend fun ApiClient.packInvites(uuid: String, asUser: Int? = null): List<Invite> =
+    decode<InvitesBody>(execute(call("GET", "${PackPaths.pack(uuid)}/invites", asUser = asUser))).invites
 
 /**
  * Invites anyone by email (the owner only). Inviting the same address again sends a new link in place of the old one
@@ -243,12 +243,12 @@ public suspend fun ApiClient.inviteToPack(uuid: String, email: String, role: Str
 }
 
 /** Sends a new link, good for another 14 days; the old one stops working. */
-public suspend fun ApiClient.resendPackInvite(uuid: String, inviteId: Int): InviteReply =
-    decode(execute(call("POST", "${PackPaths.pack(uuid)}/invites/$inviteId/resend")))
+public suspend fun ApiClient.resendPackInvite(uuid: String, inviteId: Int, asUser: Int? = null): InviteReply =
+    decode(execute(call("POST", "${PackPaths.pack(uuid)}/invites/$inviteId/resend", asUser = asUser)))
 
 /** Withdraws an invitation (the owner only). */
-public suspend fun ApiClient.revokePackInvite(uuid: String, inviteId: Int): Invite =
-    decode<InviteBody>(execute(call("DELETE", "${PackPaths.pack(uuid)}/invites/$inviteId"))).invite
+public suspend fun ApiClient.revokePackInvite(uuid: String, inviteId: Int, asUser: Int? = null): Invite =
+    decode<InviteBody>(execute(call("DELETE", "${PackPaths.pack(uuid)}/invites/$inviteId", asUser = asUser))).invite
 
 // -- The caller's own invitations -------------------------------------------------------
 

@@ -10,11 +10,14 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -24,9 +27,8 @@ class ApiPeopleApiTest {
     private val me = 6
     private val server = MockWebServer().also { it.start() }
     private val user = ApiUser(id = me, email = "colin@example.com", name = "Colin", role = "user", isAdmin = false, isActive = true, features = emptyMap(), accessOk = true)
-    private val client = ApiClient(
-        server.url("/").toString(), OkHttpClient(), ClientInfo.android("1.4.0", 212), InMemorySessionStore(StoredSession("access", "refresh", 4_000_000_000, user)),
-    ).also { runBlocking { it.restore() } }
+    private val store = InMemorySessionStore(StoredSession("access", "refresh", 4_000_000_000, user))
+    private val client = ApiClient(server.url("/").toString(), OkHttpClient(), ClientInfo.android("1.4.0", 212), store).also { runBlocking { it.restore() } }
     private val api = ApiPeopleApi(client)
 
     @After
@@ -38,9 +40,63 @@ class ApiPeopleApiTest {
 
     private fun json(text: String): JsonElement = Json.parseToJsonElement(text)
 
-    private fun pack(team: String = "null") = """{"audience_count": 1, "created_at": "2026-10-12T10:00:00", "description": "", "finished_at": null, "finished_by": null, "head_seq": 1,
-        "item_count": 0, "item_counts": {"lz": 0, "pointset": 0, "route": 0}, "items": [], "live_url": null, "member_count": 1, "members": [], "name": "OP DK",
-        "owner": {"id": 6, "name": "Colin"}, "role": "owner", "seen_seq": 0, "status": "active", "team": $team, "updated_at": "2026-10-12T10:00:00", "uuid": "u-1"}"""
+    private fun pack(team: String = "null", role: String = "owner", members: String = "[]") = """{"audience_count": 1, "created_at": "2026-10-12T10:00:00", "description": "",
+        "finished_at": null, "finished_by": null, "head_seq": 1, "item_count": 0, "item_counts": {"lz": 0, "pointset": 0, "route": 0}, "items": [], "live_url": null,
+        "member_count": 1, "members": $members, "name": "OP DK", "owner": {"id": 6, "name": "Colin"}, "role": "$role", "seen_seq": 0, "status": "active", "team": $team,
+        "updated_at": "2026-10-12T10:00:00", "uuid": "u-1"}"""
+
+    private fun invite(id: Int, status: String) = """{"created_at": "x", "email": "a$id@b.co", "expires_at": "x", "id": $id, "invited_by": {"id": 6, "name": "Colin"},
+        "role": "editor", "status": "$status", "team": null}"""
+
+    @Test
+    fun `a pack's people are its members and team, and for its owner the invitations not yet answered`() = runBlocking {
+        val members = """[{"added_at": "x", "email": "sam@b.co", "name": "Sam", "role": "editor", "seen_at": null, "user_id": 7}]"""
+        answer(200, pack(team = """{"id": 3, "member_count": 18, "name": "B Co", "role": null}""", members = members))
+        answer(200, """{"invites": [${invite(5, "pending")}, ${invite(6, "accepted")}, ${invite(7, "revoked")}]}""")
+        val people = api.people("u-1", me)
+        assertEquals("OP DK", people.pack)
+        assertTrue(people.owner)
+        assertEquals(listOf(7), people.members.map { it.userId })
+        assertEquals(listOf(5), people.pending!!.map { it.id })
+        assertEquals(SharedTeam(3, "B Co", "editor"), people.shared)                                // a role not said is the default
+        assertEquals("/api/packs/u-1/invites", server.takeRequest().let { server.takeRequest().requestUrl!!.encodedPath })
+        answer(200, pack(role = "editor"))
+        assertTrue(api.people("u-1", me).pending!!.isEmpty())
+        assertEquals(3, server.requestCount)                                                        // an editor's invitations are not asked for
+    }
+
+    @Test
+    fun `invitations that could not be had leave the members, and another account between the two calls is no answer`() = runBlocking {
+        answer(200, pack(members = """[{"added_at": "x", "email": "sam@b.co", "name": "Sam", "role": "editor", "seen_at": null, "user_id": 7}]"""))
+        answer(500, """{"status": "error"}""")
+        val people = api.people("u-1", me)
+        assertEquals(listOf(7), people.members.map { it.userId })
+        assertNull(people.pending)                                                                   // not none: not known
+        server.takeRequest()
+        server.takeRequest()
+
+        // The account changes while the pack is read: its invitations are never asked for as anyone, and nothing is answered.
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                runBlocking { store.write(StoredSession("access-b", "refresh-b", 4_000_000_000, user.copy(id = me + 1, email = "b@b.co"))) }
+                return MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(pack())
+            }
+        }
+        try {
+            api.people("u-1", me)
+            fail("answered for another account")
+        } catch (_: OtherAccountException) {
+        }
+        assertEquals(3, server.requestCount)                                                        // the pack only
+    }
+
+    @Test
+    fun `an invitation sent again says whether its email went`() = runBlocking {
+        answer(200, """{"email_sent": false, "invite": ${invite(5, "pending")}}""")
+        assertFalse(api.resendInvite("u-1", 5, me))
+        answer(200, """{"invite": ${invite(5, "pending")}}""")
+        assertTrue(api.resendInvite("u-1", 5, me))
+    }
 
     @Test
     fun `a pack made says whether this try made it, and who shares it as what`() = runBlocking {
@@ -85,6 +141,8 @@ class ApiPeopleApiTest {
         val calls: List<suspend () -> Unit> = listOf(
             { api.teams(other) }, { api.searchPeople("sam", other) }, { api.createPack("OP DK", "", null, "u-1", other) },
             { api.updatePack("u-1", PackChange(name = "X"), other) }, { api.addMember("u-1", 7, "editor", other) }, { api.invite("u-1", "a@b.co", "editor", other) },
+            { api.people("u-1", other) }, { api.changeMember("u-1", 7, "viewer", other) }, { api.removeMember("u-1", 7, other) },
+            { api.resendInvite("u-1", 5, other) }, { api.revokeInvite("u-1", 5, other) },
         )
         calls.forEachIndexed { i, call ->
             try {
