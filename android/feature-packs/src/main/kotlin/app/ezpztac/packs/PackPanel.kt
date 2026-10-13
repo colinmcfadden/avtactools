@@ -48,6 +48,15 @@ interface PackPanelDoor {
 
     /** Removes [item] from the pack for everyone; null once it is on its way, else why not. */
     suspend fun removeItem(item: String): String?
+
+    /**
+     * Keeps in this person's Library their version of what open pack [pack] would not take, and lets those edits go: what came of it ([PackNotice.Kept],
+     * [PackNotice.NothingToKeep]; empty when there was nothing of them left to keep), or null when nothing was done and the edits still wait.
+     */
+    suspend fun keepDropped(pack: String): List<PackNotice>?
+
+    /** Lets go of the edits open pack [pack] would not take that [ids] names (those the person was shown), without keeping them; how many went. */
+    suspend fun discardDropped(pack: String, ids: Set<String>): Int
 }
 
 /** The Pack panel's two views: what the pack holds, and what has happened in it. */
@@ -141,6 +150,13 @@ data class PackPanelUi(
     val newCount: Int = 0,
     val groups: List<ItemGroupUi> = emptyList(),
     val history: HistoryUi = HistoryUi(),
+    /** How many of this person's edits the pack would not take while it was open, waiting to be kept or let go, and why ([droppedReasons]). */
+    val dropped: Int = 0,
+    val droppedReasons: Set<String> = emptySet(),
+    /** Those edits' names (`client_op_id`), so a discard lets go of only what was shown. */
+    val droppedIds: List<String> = emptyList(),
+    /** Their version is being saved to the Library now. */
+    val keepingDropped: Boolean = false,
 ) {
     /** The members line: "4 members · 2 here now". */
     val membersLine: String
@@ -196,6 +212,7 @@ object PackPanelWords {
         "read_only" to "you can only look at it now",
         "gone" to "it is no longer available to you",
         "signed_out" to "you signed out before they were sent",
+        "item_too_large" to "an item would be larger than a pack can hold (5 MB)",
     )
 
     /** "1 member", "4 members". */
@@ -306,7 +323,7 @@ object PackPanelWords {
             is PackNotice.Dropped -> {
                 val what = if (notice.count == 1) "One of your changes was" else "${notice.count} of your changes were"
                 val why = notice.reasons.firstNotNullOfOrNull { LOST_WORDS[it] } ?: "the pack would not take them"
-                "$what not taken by $pack: $why. Your version goes to your Library when you leave the pack."
+                "$what not taken by $pack: $why. Keep your version from the Pack panel; it goes to your Library when you leave the pack anyway."
             }
             is PackNotice.NothingToKeep -> "A change could not be kept: ${REFUSED_WORDS[notice.reason] ?: "there was nothing to keep"}."
             is PackNotice.OwnSkipped ->
@@ -315,6 +332,26 @@ object PackPanelWords {
             is PackNotice.Gone -> null
         }
     }
+
+    /**
+     * The notice over a pack's items for edits it would not take (PackPanel.jsx's): the count, in bold, then why (the web's words for the two reasons it
+     * names, the reason itself when it is another) and what to do.
+     */
+    fun dropped(count: Int, reasons: Set<String>): Pair<String, String> {
+        val what = if (count == 1) "One of your changes was not taken." else "${withCommas(count)} of your changes were not taken."
+        val why = when {
+            reasons.any { it in WEB_SAYS } -> "The pack was finished, or you can only view it now."
+            else -> reasons.firstNotNullOfOrNull { LOST_WORDS[it] }?.let { it.replaceFirstChar(Char::uppercaseChar) + "." }
+                ?: if (count == 1) "The pack would not take it." else "The pack would not take them."
+        }
+        return what to "$why Keep your version so the work is not lost."
+    }
+
+    /** What a keep asked for saved: "Saved “LZ HAWK (my edits)” to your Library", each name, so its toast offers the Library. */
+    fun keptYours(saved: List<KeptOutcome.Saved>): String = "Saved " + saved.joinToString(", ") { "“${it.name}”" } + " to your Library"
+
+    // The reasons the web's notice says in its own words ("The pack was finished, or you can only view it now.").
+    private val WEB_SAYS = setOf("pack_finished", "read_only")
 
     private fun keptWords(saved: List<KeptOutcome.Saved>): String = when (saved.size) {
         0 -> ""

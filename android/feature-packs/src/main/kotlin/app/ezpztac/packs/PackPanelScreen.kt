@@ -1,5 +1,6 @@
 package app.ezpztac.packs
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -7,11 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -20,6 +24,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,10 +52,12 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -59,10 +66,11 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -73,9 +81,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
+import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.PillStyle
-import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.StateChip
 import app.ezpztac.designsystem.StatusTone
 import app.ezpztac.designsystem.Tokens
@@ -95,6 +103,10 @@ class PackPanelActions(
     val update: ((String) -> Unit)? = null,
     /** Asks what to call a copy of an item saved to this person's Library (D); none: not offered. */
     val saveCopy: ((String) -> Unit)? = null,
+    /** Keeps in the Library this person's version of what the pack would not take. */
+    val keepDropped: () -> Unit = {},
+    /** Lets go of what pack [pack] would not take that [ids] names (those shown when asked). */
+    val discardDropped: (pack: String, ids: Set<String>) -> Unit = { _, _ -> },
 )
 
 /** The panel's actions over its view model. */
@@ -106,6 +118,7 @@ fun actionsOf(
 ) = PackPanelActions(
     tab = viewModel::selectTab, open = viewModel::open, closeHere = viewModel::closeHere, rename = viewModel::rename, remove = viewModel::remove,
     person = viewModel::filterPerson, item = viewModel::filterItem, members = onMembers, update = onUpdate, saveCopy = onSaveCopy,
+    keepDropped = viewModel::keepDropped, discardDropped = viewModel::discardDropped,
 )
 
 /**
@@ -137,6 +150,7 @@ fun PackPanelHost(
 fun PackPanelContent(state: PackPanelUi, actions: PackPanelActions, modifier: Modifier = Modifier) {
     var renaming by rememberSaveable(state.uuid) { mutableStateOf<String?>(null) }
     var removing by rememberSaveable(state.uuid) { mutableStateOf<String?>(null) }
+    var discarding by rememberSaveable(state.uuid) { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         if (!state.loaded) {
             Text(
@@ -146,6 +160,7 @@ fun PackPanelContent(state: PackPanelUi, actions: PackPanelActions, modifier: Mo
             return@Column
         }
         if (state.unreachable) Banner("The pack cannot be reached. Your changes stay here and are sent when it can.", BannerKind.Warning)
+        if (state.dropped > 0) DroppedNotice(state, onKeep = actions.keepDropped, onDiscard = { discarding = true })
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             if (state.finished) StateChip("Finished", StatusTone.Neutral, icon = EzpzIcons.lock) else StateChip("Active", StatusTone.Success)
             if (state.readOnly && !state.finished) StateChip("View only", StatusTone.Neutral, icon = EzpzIcons.visibility)
@@ -192,7 +207,81 @@ fun PackPanelContent(state: PackPanelUi, actions: PackPanelActions, modifier: Mo
             RemoveDialog(item, state.name, onRemove = { removing = null; actions.remove(uuid) }, onCancel = { removing = null })
         }
     }
+    if (discarding) {
+        val pack = state.uuid
+        if (pack == null || state.dropped == 0 || state.keepingDropped) {
+            LaunchedEffect(Unit) { discarding = false }                                       // kept or let go meanwhile: nothing left to ask about
+        } else {
+            // What was counted in the question is what goes: a drop that came since stays, to be offered on its own.
+            DiscardDialog(state, onDiscard = { discarding = false; actions.discardDropped(pack, state.droppedIds.toSet()) }, onCancel = { discarding = false })
+        }
+    }
 }
+
+/**
+ * Edits the pack would not take while it was open (PackPanel.jsx's notice): how many and why, then *Save my version to Library*, and, Android's own,
+ * *Discard…* (asked first). Left alone, they are kept in the Library when the pack is left.
+ */
+@Composable
+private fun DroppedNotice(state: PackPanelUi, onKeep: () -> Unit, onDiscard: () -> Unit) {
+    val (what, rest) = PackPanelWords.dropped(state.dropped, state.droppedReasons)
+    val tint = EzpzTheme.status.warning
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = tint.copy(alpha = 0.10f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(Tokens.Radius.lg.dp),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.30f)),
+    ) {
+        Row(
+            Modifier.padding(start = Tokens.Spacing.md.dp, end = Tokens.Spacing.lg.dp, top = Tokens.Spacing.md.dp, bottom = Tokens.Spacing.md.dp),
+            horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+        ) {
+            Icon(painterResource(EzpzIcons.warning), contentDescription = null, tint = tint, modifier = Modifier.padding(top = 2.dp).size(Tokens.Size.iconSmall.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(what) }
+                        append(" ")
+                        append(rest)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+                    // Its words take a second line rather than be cut (a narrow phone, large text).
+                    FilledTonalButton(
+                        onClick = onKeep, enabled = !state.keepingDropped, modifier = Modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(50),
+                        contentPadding = PaddingValues(start = 16.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),
+                    ) {
+                        Icon(painterResource(EzpzIcons.save), contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(Tokens.Spacing.sm.dp))
+                        Text(if (state.keepingDropped) "Saving…" else "Save my version to Library", maxLines = 2, textAlign = TextAlign.Center)
+                    }
+                    TextButton(onClick = onDiscard, enabled = !state.keepingDropped, modifier = Modifier.heightIn(min = 48.dp)) { Text("Discard…") }
+                }
+            }
+        }
+    }
+}
+
+/** Asks before letting go of what the pack would not take: it is not kept anywhere once discarded. */
+@Composable
+private fun DiscardDialog(state: PackPanelUi, onDiscard: () -> Unit, onCancel: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(if (state.dropped == 1) "Discard your change?" else "Discard your ${state.dropped} changes?") },
+        text = { Text(discardText(state.dropped, state.name)) },
+        confirmButton = { TextButton(onClick = onDiscard, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Discard") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    )
+}
+
+/** What discarding the edits a pack would not take does. */
+internal fun discardText(count: Int, pack: String): String =
+    (if (count == 1) "$pack did not take it, and it" else "$pack did not take them, and they") + " will not be kept in your Library. This cannot be undone."
+
 
 /** Items or History (the design's segmented control); History carries a dot while something changed since this person looked waits there. */
 @Composable

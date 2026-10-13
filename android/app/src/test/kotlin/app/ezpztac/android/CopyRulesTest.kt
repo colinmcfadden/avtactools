@@ -1,9 +1,12 @@
 package app.ezpztac.android
 
+import app.ezpztac.missionpacks.KeptOutcome
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.packs.OpenPackUi
+import app.ezpztac.packs.PackPanelWords
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.workspace.LibraryTab
+import app.ezpztac.workspace.offersLibrary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -78,5 +81,12 @@ class CopyRulesTest {
         assertNull(CopyRules.bannerCopy("0c4f8e2b-7a19-4c3d-a6e5-9b1d2f3e4a57") { asked += it })
         assertNull(CopyRules.bannerCopy(null) { asked += it })
         assertNull(CopyRules.bannerCopy("pack:dk:lz-1", null))
+    }
+
+    @Test
+    fun `what a keep of the edits a pack would not take saved offers the Library, as the Saved toasts do`() {
+        val saved = listOf(KeptOutcome.Saved("a", "lz", "1", "LZ HAWK (my edits)"), KeptOutcome.Saved("b", "route", "2", "OP DK INGRESS (my edits)"))
+        assertTrue(offersLibrary(PackPanelWords.keptYours(saved)))
+        assertTrue(offersLibrary(PackPanelWords.keptYours(saved.take(1))))
     }
 }

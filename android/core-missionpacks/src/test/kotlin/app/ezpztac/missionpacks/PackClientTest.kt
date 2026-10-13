@@ -1274,11 +1274,53 @@ class PackClientTest {
             client.edit(listOf(setHeading(90)))
             runCurrent()
             assertEquals(1, r.stored()!!.dropped.size)
-            client.keepDropped()
+            val before = r.notices.size
+            val told = client.keepDropped()
             assertEquals(90, headingOf(r.keeper.records.single().version.data))
             assertTrue(client.session.dropped.isEmpty())
             assertTrue(r.stored()!!.dropped.isEmpty())
-            assertTrue(r.notices.last() is PackNotice.Kept)
+            assertTrue(told!!.single() is PackNotice.Kept)                // answered to whoever asked,
+            assertEquals(before, r.notices.size)                        // and not told to everyone as well
+        }
+
+        @Test
+        fun `a keep that fails answers nothing and keeps what waits`() = rig(live = null) { r ->
+            val client = r.start()
+            r.server.finish("p-1", COLIN.id)
+            client.edit(listOf(setHeading(90)))
+            runCurrent()
+            r.keeper.failNext = 1
+            assertNull(client.keepDropped())
+            assertEquals(1, client.session.dropped.size)
+        }
+
+        @Test
+        fun `a keep with nothing of the edits left to keep lets them go and answers so`() = rig(live = null) { r ->
+            val client = r.start()
+            r.server.finish("p-1", COLIN.id)
+            client.edit(listOf(json("""{"type": "item.delete", "item": "lz-1"}""")))      // a removal: no version of the item is left
+            runCurrent()
+            assertEquals(1, client.session.dropped.size)
+            assertEquals(emptyList<PackNotice>(), client.keepDropped())
+            assertTrue(client.session.dropped.isEmpty())
+            assertTrue(r.keeper.calls.isEmpty())
+            assertNull(client.keepDropped())                                // nothing waits now: nothing done
+        }
+
+        @Test
+        fun `a discard lets go of only the edits it names, and says how many went`() = rig(live = null) { r ->
+            val client = r.start()
+            r.server.finish("p-1", COLIN.id)
+            client.edit(listOf(setHeading(90), setHeading(95)))
+            runCurrent()
+            val ids = client.session.dropped.map { PackSessions.text(it.op["client_op_id"])!! }
+            assertEquals(2, ids.size)
+            assertEquals(1, client.discardDropped(setOf(ids[0], "op-unknown")))
+            assertEquals(listOf(ids[1]), client.session.dropped.map { PackSessions.text(it.op["client_op_id"]) })
+            assertEquals(0, client.discardDropped(setOf(ids[0])))           // already gone
+            client.halt()
+            assertEquals(0, client.discardDropped())                        // ended: nothing let go
+            assertEquals(1, r.stored()!!.dropped.size)
         }
 
         @Test

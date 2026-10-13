@@ -291,19 +291,27 @@ internal class PackClient(
         work.launch { catchUpNow(background = false) }
     }
 
-    /** Keeps in the library the person's version of whatever the pack would not take, and lets those edits go. */
-    suspend fun keepDropped() {
-        withContext(confined) { if (!ended) keepNow() }
-    }
+    /**
+     * Keeps in the library the person's version of whatever the pack would not take, and lets those edits go. What came of it is answered (a [PackNotice.Kept],
+     * a [PackNotice.NothingToKeep]), never told: the person asked, and the screen that asked says it. An empty answer: the edits were let go with nothing of
+     * them to keep (what they changed is no longer in the pack). Null: nothing was done (no session, nothing waiting, the client ended, or the library could
+     * not be written), and what waits stays.
+     */
+    suspend fun keepDropped(): List<PackNotice>? = withContext(confined) { if (!ended) keepNow(tell = false) else null }
 
-    /** Lets go of the edits the pack would not take, without keeping them. */
-    suspend fun discardDropped() {
-        withContext(confined) {
-            lock.withLock {
-                val session = current.session ?: return@withLock
-                if (ended || session.dropped.isEmpty()) return@withLock
-                commit(session, PackSessions.withoutDropped(session, session.dropped.mapNotNull { PackSessions.text(it.op["client_op_id"]) }.toSet()))
-            }
+    /**
+     * Lets go of the edits the pack would not take, without keeping them: those named by [ids] (the ones the person was shown; a drop that came since stays,
+     * to be told of and offered on its own), or all of them. How many were let go: none when the client ended first, or they were dealt with already.
+     */
+    suspend fun discardDropped(ids: Set<String>? = null): Int = withContext(confined) {
+        lock.withLock {
+            val session = current.session ?: return@withLock 0
+            if (ended || session.dropped.isEmpty()) return@withLock 0
+            val waiting = session.dropped.mapNotNull { PackSessions.text(it.op["client_op_id"]) }.toSet()
+            val going = if (ids == null) waiting else waiting intersect ids
+            if (going.isEmpty()) return@withLock 0
+            commit(session, PackSessions.withoutDropped(session, going))
+            going.size
         }
     }
 
@@ -801,11 +809,11 @@ internal class PackClient(
 
     // What the pack would not take, as the person's own version of each item, saved to the library; then let go. One whose version
     // is not kept (the library failed) stays, to be kept later. Under the lock, so no edit lands between reading and letting go.
-    private suspend fun keepNow() {
+    private suspend fun keepNow(tell: Boolean = true): List<PackNotice>? {
         var notices = emptyList<PackNotice>()
         lock.withLock {
-            val session = current.session ?: return
-            if (session.dropped.isEmpty()) return
+            val session = current.session ?: return null
+            if (session.dropped.isEmpty()) return null
             // Each item's version is named for good by its first dropped edit, so keeping it again makes no second record.
             val firstDropped = LinkedHashMap<String, String>()
             session.dropped.forEach { dropped ->
@@ -825,7 +833,7 @@ internal class PackClient(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    return
+                    return null
                 }
             }
             val answered = outcomes.map { it.key }.toSet()
@@ -839,7 +847,8 @@ internal class PackClient(
                 outcomes.filterIsInstance<KeptOutcome.NothingToKeep>().forEach { add(PackNotice.NothingToKeep(uuid, it.key, it.reason)) }
             }
         }
-        notices.forEach(notify)
+        if (tell) notices.forEach(notify)
+        return notices
     }
 
     // -- The session -------------------------------------------------------------------------------------------------------

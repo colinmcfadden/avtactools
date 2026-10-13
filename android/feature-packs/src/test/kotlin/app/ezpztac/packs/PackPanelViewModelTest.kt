@@ -1,5 +1,6 @@
 package app.ezpztac.packs
 
+import app.ezpztac.missionpacks.DroppedOp
 import app.ezpztac.missionpacks.KeptOutcome
 import app.ezpztac.missionpacks.PackItemView
 import app.ezpztac.missionpacks.PackNotice
@@ -113,6 +114,7 @@ class PackPanelViewModelTest {
         audience: Int = 4,
         team: Boolean = true,
         description: String? = "North Georgia night LZ/PZ and route planning.",
+        dropped: List<DroppedOp> = emptyList(),
     ) = PackSession(
         me,
         buildJsonObject {
@@ -131,7 +133,7 @@ class PackPanelViewModelTest {
             add(member(2, "Sam Bell"))
             add(member(3, "Jess Reed"))
         },
-        emptyMap(), emptyMap(), emptyList(), seq, emptyList(), emptyList(), readOnly, null, false, emptyMap(),
+        emptyMap(), emptyMap(), emptyList(), seq, emptyList(), dropped, readOnly, null, false, emptyMap(),
     )
 
     private fun member(id: Int, name: String) = buildJsonObject { put("user_id", id); put("name", name); put("role", "editor") }
@@ -194,6 +196,18 @@ class PackPanelViewModelTest {
         override suspend fun closeItem(item: String) { log += "close $item" }
         override suspend fun renameItem(item: String, name: String): String? { log += "rename $item $name"; return refuse }
         override suspend fun removeItem(item: String): String? { log += "remove $item"; return refuse }
+        var keepAnswer: List<PackNotice>? = null
+        var keepHold: CompletableDeferred<Unit>? = null
+        var discarded = 1
+        override suspend fun keepDropped(pack: String): List<PackNotice>? {
+            log += "keep $pack"
+            keepHold?.await()
+            return keepAnswer
+        }
+        override suspend fun discardDropped(pack: String, ids: Set<String>): Int {
+            log += "discard $pack ${ids.sorted()}"
+            return discarded
+        }
     }
 
     private inner class Rig(scope: TestScope) {
@@ -205,7 +219,9 @@ class PackPanelViewModelTest {
         }
         val notices = mutableListOf<String>()
         val opened = mutableListOf<String>()
+        val kept = mutableListOf<CopyNotice>()
         init {
+            scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.kept.collect { kept += it } }
             scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.notices.collect { notices += it } }
             scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.opened.collect { opened += it } }
         }
@@ -624,11 +640,160 @@ class PackPanelViewModelTest {
         assertEquals(
             listOf(
                 "“LZ HAWK” was removed from the pack. Your changes to it are in your Library as “LZ HAWK (my edits)”.",
-                "2 of your changes were not taken by OP DK: the pack was finished. Your version goes to your Library when you leave the pack.",
+                "2 of your changes were not taken by OP DK: the pack was finished. Keep your version from the Pack panel; it goes to your Library when you leave the pack anyway.",
                 "A change to OP EAGLE could not be saved: you can only look at it now. It is in your Library as “LZ HAWK (my edits)”.",
                 "One of your changes changed nothing, as what it changed was already gone. The history says which.",
             ),
             r.notices,
+        )
+    }
+
+    // -- The edits the pack would not take ---------------------------------------------------------------------------------------------------
+
+    private fun dropped(vararg reasons: String) = reasons.mapIndexed { i, reason -> DroppedOp(buildJsonObject { put("client_op_id", "op-$i"); put("item", "lz-2") }, reason) }
+
+    @Test
+    fun `the edits the pack would not take are counted, with why, and kept from the panel with the Library to open`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open(session(dropped = dropped("pack_finished", "pack_finished")))
+        advanceUntilIdle()
+        assertEquals(2, r.model.state.value.dropped)
+        assertEquals(setOf("pack_finished"), r.model.state.value.droppedReasons)
+        val saved = KeptOutcome.Saved("k", "lz", "lib-1", "LZ HAWK (my edits)")
+        r.panel.keepAnswer = listOf(PackNotice.Kept("p", "OP DK", listOf(saved), setOf("pack_finished")))
+        r.panel.keepHold = CompletableDeferred()
+        r.model.keepDropped()
+        advanceUntilIdle()
+        assertTrue(r.model.state.value.keepingDropped)                                                   // "Saving…" meanwhile
+        r.model.keepDropped()
+        assertEquals(listOf(PackPanelViewModel.STILL_WORKING), r.notices)                                 // one at a time
+        r.panel.keepHold!!.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(r.model.state.value.keepingDropped)
+        assertEquals(listOf("keep p"), r.panel.log.filter { it.startsWith("keep") })
+        assertEquals(listOf(CopyNotice("Saved “LZ HAWK (my edits)” to your Library", library = "lz")), r.kept)
+    }
+
+    @Test
+    fun `a keep that did nothing says so and the offer stays, and what had nothing to keep is said in words`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open(session(dropped = dropped("read_only")))
+        advanceUntilIdle()
+        r.model.keepDropped()
+        advanceUntilIdle()
+        assertEquals(listOf(PackPanelViewModel.KEEP_FAILED), r.notices)
+        assertTrue(r.kept.isEmpty())
+        r.panel.keepAnswer = listOf(PackNotice.NothingToKeep("p", "k", "empty_point_set"))
+        r.panel.keepHold = CompletableDeferred()
+        r.model.keepDropped()
+        advanceUntilIdle()
+        r.open(session(dropped = emptyList()))                                                          // the engine let it go
+        r.panel.keepHold!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("A change could not be kept: a point set needs at least one point.", r.notices.last())
+    }
+
+    @Test
+    fun `a keep with nothing left to keep says why rather than that it failed, and one stopped part way says the rest waits`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open(session(dropped = dropped("pack_finished")))
+        advanceUntilIdle()
+        r.panel.keepAnswer = emptyList()
+        r.model.keepDropped()
+        advanceUntilIdle()
+        assertEquals(listOf(PackPanelViewModel.NOTHING_LEFT), r.notices)
+        r.panel.keepAnswer = listOf(PackNotice.Kept("p", "OP DK", listOf(KeptOutcome.Saved("k", "lz", "lib-1", "LZ HAWK (my edits)")), emptySet()))
+        r.model.keepDropped()                                                                           // one item kept, another still waiting
+        advanceUntilIdle()
+        assertEquals("Saved “LZ HAWK (my edits)” to your Library", r.kept.single().words)
+        assertEquals(PackPanelViewModel.KEEP_REST_FAILED, r.notices.last())
+    }
+
+    @Test
+    fun `a keep that did nothing once the pack was left is not said to have failed, as the close keeps them`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open(session(dropped = dropped("pack_finished")))
+        advanceUntilIdle()
+        r.panel.keepHold = CompletableDeferred()
+        r.model.keepDropped()
+        advanceUntilIdle()
+        r.door.open.value = null
+        r.panel.keepHold!!.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(r.notices.isEmpty())
+    }
+
+    @Test
+    fun `the panel's actions reach the view model`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open(session(dropped = dropped("pack_finished")))
+        advanceUntilIdle()
+        val actions = actionsOf(r.model)
+        actions.keepDropped()
+        advanceUntilIdle()
+        actions.discardDropped("p", setOf("op-0"))
+        advanceUntilIdle()
+        assertEquals(listOf("keep p", "discard p [op-0]"), r.panel.log.filter { it.startsWith("keep") || it.startsWith("discard") })
+    }
+
+    @Test
+    fun `nothing is kept when nothing waits, and what is kept is never said to another account`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open()
+        advanceUntilIdle()
+        r.model.keepDropped()
+        advanceUntilIdle()
+        assertTrue(r.panel.log.none { it.startsWith("keep") })
+        r.open(session(dropped = dropped("pack_finished")))
+        r.panel.keepAnswer = listOf(PackNotice.Kept("p", "OP DK", listOf(KeptOutcome.Saved("k", "lz", "lib-1", "LZ HAWK (my edits)")), emptySet()))
+        r.panel.keepHold = CompletableDeferred()
+        advanceUntilIdle()
+        r.model.keepDropped()
+        advanceUntilIdle()
+        r.door.user.value = 2
+        r.panel.keepHold!!.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(r.kept.isEmpty())
+        assertTrue(r.notices.isEmpty())
+    }
+
+    @Test
+    fun `the edits the pack would not take are discarded only for the pack asked about, only those shown, and what came of it is said`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open(session(dropped = dropped("pack_finished", "pack_finished")))
+        advanceUntilIdle()
+        assertEquals(listOf("op-0", "op-1"), r.model.state.value.droppedIds)
+        r.model.discardDropped("q", setOf("op-0"))
+        r.model.discardDropped("p", emptySet())
+        advanceUntilIdle()
+        assertTrue(r.panel.log.none { it.startsWith("discard") })
+        r.model.discardDropped("p", setOf("op-0", "op-1"))
+        advanceUntilIdle()
+        assertEquals(listOf("discard p [op-0, op-1]"), r.panel.log.filter { it.startsWith("discard") })
+        assertEquals(listOf(PackPanelViewModel.DISCARDED), r.notices)
+        r.panel.discarded = 0
+        r.model.discardDropped("p", setOf("op-0"))
+        advanceUntilIdle()
+        assertEquals(PackPanelViewModel.NOTHING_DISCARDED, r.notices.last())
+    }
+
+    @Test
+    fun `the notice says why in the web's words, or the reason itself when the web has none for it`() {
+        assertEquals(
+            "One of your changes was not taken." to "The pack was finished, or you can only view it now. Keep your version so the work is not lost.",
+            PackPanelWords.dropped(1, setOf("pack_finished")),
+        )
+        assertEquals("1,200 of your changes were not taken.", PackPanelWords.dropped(1200, setOf("read_only")).first)
+        assertEquals("It is no longer available to you. Keep your version so the work is not lost.", PackPanelWords.dropped(2, setOf("gone")).second)
+        assertEquals(
+            "An item would be larger than a pack can hold (5 MB). Keep your version so the work is not lost.",
+            PackPanelWords.dropped(1, setOf("item_too_large")).second,
+        )
+        assertEquals("The pack would not take them. Keep your version so the work is not lost.", PackPanelWords.dropped(2, setOf("http_400")).second)
+        assertEquals("The pack would not take it. Keep your version so the work is not lost.", PackPanelWords.dropped(1, setOf("http_400")).second)
+        assertEquals(
+            "Saved “LZ HAWK (my edits)”, “OP DK INGRESS (my edits)” to your Library",
+            PackPanelWords.keptYours(listOf(KeptOutcome.Saved("a", "lz", "1", "LZ HAWK (my edits)"), KeptOutcome.Saved("b", "route", "2", "OP DK INGRESS (my edits)"))),
         )
     }
 

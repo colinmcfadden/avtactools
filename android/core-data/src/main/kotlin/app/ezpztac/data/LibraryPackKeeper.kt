@@ -9,9 +9,10 @@ import app.ezpztac.sync.Operation
 import app.ezpztac.sync.OutboxEntry
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncStore
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import java.util.UUID
 
 /**
  * [PackKeeper] on the library: the person's own version of an item a pack would not take their edits to, saved as a new record of their
@@ -30,7 +31,22 @@ internal class LibraryPackKeeper(
     /** When a kept version is noted as made ([LocalRecord.updatedAt]), as SyncRepository.create notes every record made here. */
     private val clock: () -> String = { java.time.Instant.now().toString() },
 ) : PackKeeper {
-    override suspend fun keep(pack: String, versions: List<KeptVersion>): List<KeptOutcome> = versions.map { keepOne(it) }
+    // In order, and stopping at the first that fails: what was kept before it is answered (so its edits are let go and it goes up), the rest is offered
+    // again later, as PackKeeper says. Only a failure that kept nothing throws.
+    override suspend fun keep(pack: String, versions: List<KeptVersion>): List<KeptOutcome> {
+        val kept = mutableListOf<KeptOutcome>()
+        for (version in versions) {
+            try {
+                kept += keepOne(version)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (kept.isEmpty()) throw e
+                break
+            }
+        }
+        return kept
+    }
 
     private suspend fun keepOne(version: KeptVersion): KeptOutcome {
         val kind = KINDS[version.kind] ?: return KeptOutcome.NothingToKeep(version.key, "unknown_kind")

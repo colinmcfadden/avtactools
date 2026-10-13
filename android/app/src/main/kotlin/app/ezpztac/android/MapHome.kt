@@ -365,6 +365,12 @@ fun MapHome(
     // A toast from a panel; the Saved one offers its Library tab (the design's Saved: Open Library), if the account has it when the toast is shown: the collectors
     // below outlive a change of features, so they read the tabs as they are now.
     val libraryTabs by rememberUpdatedState(libraryTabsFor(panels))
+    LaunchedEffect(packPanel) {
+        packPanel.kept.collect { notice ->
+            val tab = notice.library?.let(CopyRules::libraryTabOf)
+            if (tab == null) snackbars.showSnackbar(notice.words, withDismissAction = true) else snackbars.panelToast(notice.words, tab, libraryTabs) { libraryTab = it }
+        }
+    }
     LaunchedEffect(itemCopies) {
         itemCopies.notices.collect { notice ->
             val tab = notice.library?.let(CopyRules::libraryTabOf)

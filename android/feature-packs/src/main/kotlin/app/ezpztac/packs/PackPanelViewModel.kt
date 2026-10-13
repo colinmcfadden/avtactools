@@ -92,13 +92,18 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
     private val historyWake = Channel<Unit>(Channel.CONFLATED)
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 8)
     private val _opened = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    private val _kept = MutableSharedFlow<CopyNotice>(extraBufferCapacity = 4)
     private val working = MutableStateFlow(false)
+    private val keeping = MutableStateFlow<String?>(null)
 
     /** What happened that the person should hear about, in words, for the frame's toasts. */
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
     /** An item was opened in its editor: its kind (`lz`, `route`), so the frame shows the panel it is in. */
     val opened: SharedFlow<String> = _opened.asSharedFlow()
+
+    /** What a keep of the edits the pack would not take saved, for a toast that offers the Library ([CopyNotice.library]: the first one's kind). */
+    val kept: SharedFlow<CopyNotice> = _kept.asSharedFlow()
 
     private val openHere = panel.openHere.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
@@ -113,8 +118,9 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
         context.pack to historyUi(history.takeIf { it.pack == context.pack && context.pack != null } ?: History(), filters, context, since.second.takeIf { since.first == context.pack })
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, null to HistoryUi())
 
-    val state: StateFlow<PackPanelUi> = combine(view, tab, historyView) { inputs, tab, history -> uiOf(inputs, tab, history) }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, PackPanelUi())
+    val state: StateFlow<PackPanelUi> = combine(view, tab, historyView, keeping) { inputs, tab, history, keeping ->
+        uiOf(inputs, tab, history).let { ui -> if (keeping != null && keeping == ui.uuid) ui.copy(keepingDropped = true) else ui }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, PackPanelUi())
 
     private data class Inputs(val state: PackState?, val user: Int?, val open: Set<String>, val seen: Seen)
 
@@ -282,6 +288,58 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
 
     // One action at a time: one asked while another runs is said not to be done (by the caller), never run beside it. False when one was running.
     // Whatever an action throws is said, never let reach the app (each catches what it expects; this is the backstop).
+    /**
+     * Keeps in this person's Library their version of what the open pack would not take (the web's *Save my version to Library*), and says what was
+     * saved, with the Library to open. Nothing kept (the library could not be written) says so, and the offer stays.
+     */
+    fun keepDropped() {
+        val state = door.open.value ?: return
+        if (state.session?.dropped.isNullOrEmpty()) return
+        val pack = state.uuid
+        val user = door.user.value
+        val started = act {
+            keeping.value = pack
+            try {
+                keepNow(pack, user)
+            } finally {
+                keeping.value = null
+            }
+        }
+        if (!started) _notices.tryEmit(STILL_WORKING)
+    }
+
+    private suspend fun keepNow(pack: String, user: Int?) {
+        val told = panel.keepDropped(pack)
+        if (door.user.value != user) return
+        val stillOpen = door.open.value?.takeIf { it.uuid == pack }
+        if (told == null) {
+            // Nothing was done. Still open, it is offered again; left meanwhile, its close keeps them and says so.
+            if (stillOpen != null) _notices.tryEmit(KEEP_FAILED)
+            return
+        }
+        val saved = told.filterIsInstance<PackNotice.Kept>().flatMap { it.saved }
+        if (saved.isNotEmpty()) _kept.tryEmit(CopyNotice(PackPanelWords.keptYours(saved), library = saved.first().kind))
+        told.filterIsInstance<PackNotice.NothingToKeep>().forEach { notice -> PackPanelWords.notice(notice, null)?.let { _notices.tryEmit(it) } }
+        when {
+            told.isEmpty() -> _notices.tryEmit(NOTHING_LEFT)                                            // let go, what they changed being gone
+            stillOpen?.session?.dropped?.isNotEmpty() == true -> _notices.tryEmit(KEEP_REST_FAILED)     // some kept, the library stopped part way
+        }
+    }
+
+    /**
+     * Lets go of the edits the open pack [pack] would not take that [ids] names (those the person was shown and asked about), without keeping them. A drop
+     * that came since stays. Says whether any went.
+     */
+    fun discardDropped(pack: String, ids: Set<String>) {
+        if (door.open.value?.uuid != pack || ids.isEmpty()) return
+        val user = door.user.value
+        val started = act {
+            val gone = panel.discardDropped(pack, ids)
+            if (door.user.value == user) _notices.tryEmit(if (gone > 0) DISCARDED else NOTHING_DISCARDED)
+        }
+        if (!started) _notices.tryEmit(STILL_WORKING)
+    }
+
     private fun act(block: suspend () -> Unit): Boolean {
         if (!working.compareAndSet(false, true)) return false
         viewModelScope.launch {
@@ -366,6 +424,9 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
             loaded = true,
             unreachable = state.status == PackStatus.OFFLINE || state.status == PackStatus.ERROR,
             subtitle = PackPanelWords.subtitle(role),
+            dropped = session.dropped.size,
+            droppedReasons = session.dropped.map { it.reason }.toSet(),
+            droppedIds = session.dropped.mapNotNull { text(it.op["client_op_id"]) },
             finished = session.status == "finished",
             readOnly = readOnly,
             canEdit = !readOnly && (role == "owner" || role == "editor"),
@@ -455,6 +516,11 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
         const val POINT_SETS_LATER = "Point sets from a pack are not drawn on the map yet."
         const val NAME_REFUSED = "Give it a name of 1 to 100 characters."
         const val STILL_WORKING = "Still working on the last change. Try again in a moment."
+        const val KEEP_FAILED = "Your version could not be saved to your Library. Try again."
+        const val KEEP_REST_FAILED = "The rest could not be saved to your Library. Try again."
+        const val NOTHING_LEFT = "There was nothing of those changes left to keep: what they changed is no longer in the pack."
+        const val DISCARDED = "Your changes the pack did not take were discarded."
+        const val NOTHING_DISCARDED = "Those changes were no longer waiting, so nothing was discarded."
 
         /** Whether [item] was changed since [since] by someone other than [me] (usePackSeen.js's `changedSince`). */
         internal fun changedSince(item: PackItemView, since: Long?, me: Int?): Boolean {

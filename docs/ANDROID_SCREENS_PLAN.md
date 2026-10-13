@@ -629,6 +629,32 @@ web's history sentence (the server's, as P4a decided), the `cloud_save` feature,
 the pack's state does not list for a moment. 43 mutations of these rules, each killed by its test. Tests: `PackItemCopyViewModelTest`, `ItemDialogsTest`,
 `ApiPackItemCallsTest`, `PackPanelScreenTest`, `PanelsInPackTest`, `CopyRulesTest`, `LibraryToPackTest`, `LibraryPackKeeperTest`, `PackWorkspaceTest`, `PackMessagesTest`.
 
+**P4c — The edits a pack would not take. Built.** While a pack is open, the edits it would not take (finished meanwhile, this person made a viewer, an
+item too large) wait on the device (`PackSession.dropped`); the Pack panel says so at its top, as the web's does (*One of your changes was not taken.*, why,
+*Keep your version so the work is not lost.*), with *Save my version to Library* and, Android's own, *Discard…*, asked first. Left alone they are kept in the
+Library when the pack is left, as before. **Amended while building:**
+- **A keep answers the screen that asked, rather than telling everyone** (`PackClient.keepDropped`): what it saved is said as *Saved “LZ HAWK (my edits)” to
+  your Library*, whose toast offers the Library; the engine still asks for the library's sync, which hearing its own notice used to do. **Three answers, kept
+  apart**: nothing done (no session, nothing waiting, the library not written: null, *could not be saved*, and the offer stays; not said once the pack was
+  left, whose close keeps them and says so), nothing of them left to keep (what they changed is gone from the pack: they are let go, and it says why), and what
+  was saved. A library that stops part way keeps what it had saved (`LibraryPackKeeper` stops at the first failure and answers the rest, as `PackKeeper`
+  says), and the rest is said to wait.
+- **A discard lets go of only what the question counted** (the edits' ids, from the frame the person saw), so a drop that came after stays, to be told and
+  offered on its own; it says how many went, and *nothing was discarded* when they were dealt with first.
+- **Why, in words that are true**: the web's sentence (*The pack was finished, or you can only view it now.*) for those two reasons; else the reason's own
+  (*An item would be larger than a pack can hold (5 MB).*), else *The pack would not take it*.
+- The engine's *not taken* toast now points at the panel: *Keep your version from the Pack panel; it goes to your Library when you leave the pack anyway.*
+**Reviewed** (one independent review, 2026-10-13: 17 reported, 11 survived an adversarial check, about 7 distinct; each fix has a test, and each was broken to see it
+fail): an empty answer meant both *not done* and *nothing left to keep*, so a keep that had let the edits go said it failed; a discard could take edits dropped after
+its question was shown, and said they were discarded when nothing was; a keep the library stopped part way said none was saved and asked for no sync; an item too
+large was blamed on a finished pack; the door's two calls had default bodies a missing override would compile against; and the panel's actions were not tested to
+reach the view model. Refuted: an answer said after another pack was opened (it is true, and the close's keep is the documented fallback), the kept toast's frame
+wiring (untested like every `MapHome` collector), the question surviving a pack switch (it names the pack it would discard from), and the *Saving…* flag on another
+pack (it passes by itself). 29 mutations of these rules, each killed by its test. Tests: `PackClientTest`, `PackEngineTest`, `LibraryPackKeeperTest`,
+`PackPanelViewModelTest`, `PackPanelScreenTest`, `CopyRulesTest`.
+
+With P4c the redesign's screens S1–S9 and P1–P4 are built; the owner tries the app on a device next.
+
 
 ## How each step is checked
 

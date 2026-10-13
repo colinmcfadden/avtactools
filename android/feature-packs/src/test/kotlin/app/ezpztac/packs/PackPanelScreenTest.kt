@@ -7,11 +7,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -19,11 +23,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -181,6 +187,62 @@ class PackPanelScreenTest {
         val update = compose.onNodeWithContentDescription("Update LZ HAWK (ROCK) from the changed original").fetchSemanticsNode()
         assertTrue("beside the words", update.boundsInRoot.left >= name.boundsInRoot.right && update.boundsInRoot.top < name.boundsInRoot.bottom + 40f)
     }
+
+    @Test
+    fun `edits the pack would not take are offered to be kept, or discarded once asked`() {
+        val log = mutableListOf<String>()
+        val actions = PackPanelActions(keepDropped = { log += "keep" }, discardDropped = { pack, ids -> log += "discard $pack ${ids.sorted()}" })
+        var state by mutableStateOf(items.copy(dropped = 2, droppedReasons = setOf("pack_finished"), droppedIds = listOf("op-1", "op-2")))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Surface { Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) { PackPanelContent(state, actions) } } } }
+        compose.onNodeWithText("2 of your changes were not taken.", substring = true).assertIsDisplayed()
+        compose.onNode(hasText("Save my version to Library") and hasClickAction()).performClick()
+        compose.onNode(hasText("Discard…") and hasClickAction()).performClick()
+        compose.onNodeWithText("Discard your 2 changes?").assertExists()
+        compose.onNode(hasText("Cancel") and hasClickAction()).performClick()
+        compose.onNodeWithText("Discard your 2 changes?").assertDoesNotExist()
+        compose.onNode(hasText("Discard…") and hasClickAction()).performClick()
+        compose.onNode(hasText("Discard") and hasClickAction()).performClick()
+        assertEquals(listOf("keep", "discard p [op-1, op-2]"), log)
+        state = state.copy(keepingDropped = true)
+        compose.waitForIdle()
+        compose.onNode(hasText("Saving…") and hasClickAction()).assertIsNotEnabled()
+        compose.onNode(hasText("Discard…") and hasClickAction()).assertIsNotEnabled()
+        state = state.copy(keepingDropped = false, dropped = 0)
+        compose.waitForIdle()
+        compose.onNodeWithText("not taken", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a discard asked about is let go once there is nothing left to discard`() {
+        var state by mutableStateOf(items.copy(dropped = 1, droppedReasons = setOf("read_only")))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Surface { Column(Modifier.verticalScroll(rememberScrollState())) { PackPanelContent(state, PackPanelActions()) } } } }
+        compose.onNode(hasText("Discard…") and hasClickAction()).performClick()
+        compose.onNodeWithText("Discard your change?").assertExists()
+        state = state.copy(dropped = 0)                                                                    // kept by the pack's close, or another device
+        compose.waitForIdle()
+        compose.onNodeWithText("Discard your change?").assertDoesNotExist()
+        state = state.copy(dropped = 1)
+        compose.waitForIdle()
+        compose.onNodeWithText("Discard your change?").assertDoesNotExist()                             // not asked again by itself
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi", fontScale = 1.3f)
+    fun `on a narrow phone at large text the keep's words take a second line rather than be cut`() {
+        show(items.copy(dropped = 1, droppedReasons = setOf("gone")))
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("Save my version to Library", useUnmergedTree = true).fetchSemanticsNode()
+            .config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        assertFalse(layouts.single().hasVisualOverflow)
+        assertEquals(2, layouts.single().lineCount)
+    }
+
+    @Test
+    fun droppedShot() = shot("pack-dropped", items.copy(dropped = 2, droppedReasons = setOf("pack_finished")))
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi", fontScale = 1.3f)
+    fun droppedNarrowShot() = shot("pack-dropped-narrow", items.copy(dropped = 1, droppedReasons = setOf("gone")))
 
     @Test
     fun `a viewer cannot update a copy, but can save one to the Library`() {

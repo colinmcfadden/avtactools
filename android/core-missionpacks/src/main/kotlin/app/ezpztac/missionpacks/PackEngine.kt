@@ -242,15 +242,19 @@ public class PackEngine(
         openClient?.refresh()
     }
 
-    /** Keeps in the library the person's version of what the open pack [pack] refused, and lets those edits go. */
-    public suspend fun keepDropped(pack: String) {
-        openClient?.takeIf { it.uuid == pack }?.keepDropped()
+    /**
+     * Keeps in the library the person's version of what the open pack [pack] refused, and lets those edits go: what came of it, answered to the screen that
+     * asked rather than told to every one ([PackClient.keepDropped]). Null for a pack not open, or when nothing was done.
+     */
+    public suspend fun keepDropped(pack: String): List<PackNotice>? {
+        val told = openClient?.takeIf { it.uuid == pack }?.keepDropped()
+        // What was kept is a new record in the library, which the library's own sync sends up, as after a keep the engine made itself ([heard]).
+        if (told.orEmpty().any { it is PackNotice.Kept }) requestBackgroundDrain()
+        return told
     }
 
-    /** Lets go of what the open pack [pack] refused, without keeping it. */
-    public suspend fun discardDropped(pack: String) {
-        openClient?.takeIf { it.uuid == pack }?.discardDropped()
-    }
+    /** Lets go of what the open pack [pack] refused, without keeping it: those named by [ids], or all. How many were let go ([PackClient.discardDropped]). */
+    public suspend fun discardDropped(pack: String, ids: Set<String>? = null): Int = openClient?.takeIf { it.uuid == pack }?.discardDropped(ids) ?: 0
 
     // -- The app ---------------------------------------------------------------------------------------------------------------
 

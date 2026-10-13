@@ -8,6 +8,9 @@ import app.ezpztac.model.PointSets
 import app.ezpztac.sync.Operation
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncRepository
+import app.ezpztac.sync.SyncStore
+import app.ezpztac.sync.SyncTransaction
+import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -15,6 +18,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -96,6 +100,28 @@ class LibraryPackKeeperTest {
         assertEquals(lz.data.toString(), diagram.data.toString())
         val pointSet = store.transaction { record(RecordKind.POINT_SET, LibraryPackKeeper.uuidFor("copy:p-1:3")) }!!
         assertEquals("""{"points":${points.data}}""", pointSet.data.toString())                 // still in the object the library holds every set in
+    }
+
+    @Test
+    fun `a library that fails part way answers what it kept, and only a failure that kept nothing throws`() = runBlocking<Unit> {
+        var transactions = 0
+        var failAt = 2
+        val failing = object : SyncStore {
+            override suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T {
+                if (++transactions == failAt) throw IOException("disk full")
+                return store.transaction(block)
+            }
+        }
+        val partly = LibraryPackKeeper(failing)
+        assertEquals(listOf(lz.key), partly.keep("p-1", listOf(lz, routes, points)).map { it.key })
+        assertNull(store.transaction { record(RecordKind.ROUTE, LibraryPackKeeper.uuidFor(routes.key)) })   // stopped there: offered again later
+        transactions = 0
+        failAt = 1
+        try {
+            partly.keep("p-1", listOf(routes))
+            fail("kept nothing, and answered as if it had")
+        } catch (_: IOException) {
+        }
     }
 
     @Test

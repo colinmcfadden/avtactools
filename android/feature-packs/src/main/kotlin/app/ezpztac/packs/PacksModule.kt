@@ -261,7 +261,7 @@ class EnginePackDoor @Inject constructor(private val engine: PackEngine, private
 }
 
 /** The Pack panel's calls: the pack's history and seen marker over the API client, its items through the editors' join to the pack. */
-class EnginePackPanelDoor @Inject constructor(private val api: ApiClient, private val workspace: PackWorkspace) : PackPanelDoor {
+class EnginePackPanelDoor @Inject constructor(private val api: ApiClient, private val workspace: PackWorkspace, private val engine: PackEngine) : PackPanelDoor {
     override val openHere: Flow<Set<String>> = workspace.openItems
 
     override val notices: Flow<PackNotice> = workspace.notices
@@ -277,6 +277,10 @@ class EnginePackPanelDoor @Inject constructor(private val api: ApiClient, privat
     override suspend fun renameItem(item: String, name: String): String? = workspace.renameItem(item, name)
 
     override suspend fun removeItem(item: String): String? = workspace.removeItem(item)
+
+    override suspend fun keepDropped(pack: String): List<PackNotice>? = engine.keepDropped(pack)
+
+    override suspend fun discardDropped(pack: String, ids: Set<String>): Int = engine.discardDropped(pack, ids)
 }
 
 /** The Library's numbers, from its repositories: every LZ/PZ, set of routes (a mission included) and set of points saved. */

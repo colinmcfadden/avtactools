@@ -451,12 +451,14 @@ class PackEngineTest {
             r.server.finish("p-1", COLIN.id)
             engine.edit("p-1", listOf(setHeading("p-1", 90)))
             runCurrent()
-            engine.keepDropped("p-2")
-            engine.discardDropped("p-2")
+            assertNull(engine.keepDropped("p-2"))
+            assertEquals(0, engine.discardDropped("p-2"))
             assertEquals(1, r.stored("p-1")!!.dropped.size)
-            engine.keepDropped("p-1")
+            val syncs = r.backgroundSyncs
+            assertTrue(engine.keepDropped("p-1")!!.single() is PackNotice.Kept)
             assertEquals(90, headingOf(r.keeper.records.single().version.data))
             assertTrue(r.stored("p-1")!!.dropped.isEmpty())
+            assertEquals(syncs + 1, r.backgroundSyncs, "what was kept goes up with the library's sync")
 
             r.server.reopen("p-1", COLIN.id)
             r.advance(3_000)                                            // the poll hears it is open again
@@ -465,7 +467,7 @@ class PackEngineTest {
             assertNull(engine.edit("p-1", listOf(setHeading("p-1", 95))))
             runCurrent()
             assertEquals(1, r.stored("p-1")!!.dropped.size)
-            engine.discardDropped("p-1")
+            assertEquals(1, engine.discardDropped("p-1"))
             assertTrue(r.stored("p-1")!!.dropped.isEmpty())
             engine.closePack()
             runCurrent()
