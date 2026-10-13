@@ -3,6 +3,7 @@ package app.ezpztac.packs
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.PackFacts
+import app.ezpztac.missionpacks.PackHistory
 import app.ezpztac.missionpacks.PackItemView
 import app.ezpztac.missionpacks.PackNotice
 import app.ezpztac.missionpacks.PackSession
@@ -66,6 +67,7 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
     private data class History(
         val pack: String? = null,
         val user: Int? = null,
+        /** The newest of the log held, oldest first. */
         val events: List<PackEvent> = emptyList(),
         val fetchedTo: Long? = null,
         val loading: Boolean = false,
@@ -488,23 +490,26 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
         // A filter whose person or item has gone keeps nothing back, and says so: it is not left filtering under a label that says it does not.
         val person = people.firstOrNull { it.key == filters.person } ?: people.first()
         val item = itemChoices.firstOrNull { it.key == filters.item } ?: itemChoices.first()
-        val shown = history.events
-            .filter { person.key == null || it.actor.id?.toString() == person.key }
-            .filter { item.key == null || it.item == item.key }
-            .sortedByDescending { it.seq }
-        fun ui(event: PackEvent, at: Instant?, fresh: Boolean): EventUi {
+        // One line for each change, however many operations it went to the pack as (PackHistory: a doghouse turned is two, an analysis five), newest
+        // first. A line's events share who, what and where; the newest says when.
+        val shown = PackHistory.lines(history.events, since)
+            .filter { line -> person.key == null || line.first().actor.id?.toString() == person.key }
+            .filter { line -> item.key == null || line.first().item == item.key }
+            .asReversed()
+        fun ui(line: List<PackEvent>, at: Instant?, fresh: Boolean): EventUi {
+            val event = line.last()
             val name = event.item?.let(context.names::get)
             val (lead, rest) = PackPanelWords.eventLine(event, name)
-            val meta = listOfNotNull(at?.let { PackPanelWords.clockTime(it, zone) }, PackPanelWords.where(event, name)).joinToString(" · ")
+            val meta = listOfNotNull(at?.let { PackPanelWords.clockTime(it, zone) }, PackPanelWords.where(line, name)).joinToString(" · ")
             val who = event.actor.id?.let { PersonUi(it, event.actor.name, PackWords.initials(event.actor.name), me = it == me) }
-            return EventUi(event.seq, who, lead, rest, event.status == "skipped", meta, fresh)
+            return EventUi(line.first().seq, who, lead, rest, event.status == "skipped", meta, fresh)
         }
-        val timed = shown.map { it to PackPanelWords.instant(it.createdAt) }
-        val (fresh, rest) = timed.partition { (event, _) -> since != null && event.seq > since && event.actor.id != me }
+        val timed = shown.map { it to PackPanelWords.instant(it.last().createdAt) }
+        val (fresh, rest) = timed.partition { (line, _) -> since != null && line.last().seq > since && line.last().actor.id != me }
         val groups = buildList {
-            if (fresh.isNotEmpty()) add(EventGroupUi("New since you looked · ${fresh.size}", true, fresh.map { (e, at) -> ui(e, at, true) }))
+            if (fresh.isNotEmpty()) add(EventGroupUi("New since you looked · ${fresh.size}", true, fresh.map { (line, at) -> ui(line, at, true) }))
             rest.groupBy { (_, at) -> at?.let { PackPanelWords.dayLabel(it, zone, now) } ?: "Earlier" }
-                .forEach { (title, events) -> add(EventGroupUi(title, false, events.map { (e, at) -> ui(e, at, false) })) }
+                .forEach { (title, lines) -> add(EventGroupUi(title, false, lines.map { (line, at) -> ui(line, at, false) })) }
         }
         return HistoryUi(history.loading, history.failed, groups, people, person, itemChoices, item)
     }

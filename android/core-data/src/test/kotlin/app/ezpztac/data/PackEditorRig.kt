@@ -63,6 +63,8 @@ internal class PackEditorRig(
     },
     /** Whose device this is: Sam's, unless it is another device beside his ([other]). */
     val me: PackUser = SAM,
+    /** A name for this device when its person has another beside it ([other]): its operations' ids carry it, as each device's own ids differ. */
+    private val device: String? = null,
 ) {
     val dispatcher = StandardTestDispatcher(test.testScheduler)
     val scope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -100,8 +102,12 @@ internal class PackEditorRig(
     }
     val keeper = RecordingKeeper()
     private var ids = 0
-    // Sam's are op-1, op-2…; another device's carry its person's id too, as the server answers an id it has logged from its log, whoever sent it.
-    val engine = PackEngine(api, copy, keeper, scope, dispatcher, newId = { if (me == SAM) "op-${++ids}" else "op-${me.id}-${++ids}" })
+    // Sam's are op-1, op-2…; another device's carry its person's id too, or its own name, as the server answers an id it has logged from its log,
+    // whoever sent it.
+    val engine = PackEngine(
+        api, copy, keeper, scope, dispatcher,
+        newId = { device?.let { "op-$it-${++ids}" } ?: if (me == SAM) "op-${++ids}" else "op-${me.id}-${++ids}" },
+    )
     val env = DiagramNormalizer.Environment(now = { NOW }, newId = { "made-${++ids}" })
     val lzItems = PackItemStore(engine, lzKind?.invoke(env) ?: LzPackKind(env), copy, { it.id }, dispatcher, dispatcher)
     val routeItems = PackItemStore<RouteSet>(engine, RoutePackKind, copy, { it.id }, dispatcher, dispatcher)
@@ -175,8 +181,11 @@ internal class PackEditorRig(
     fun sent(): List<List<JsonObject>> =
         batches.map { batch -> batch.getValue("ops").jsonArray.map { JsonObject(it.jsonObject - "client_op_id") } }
 
-    /** Another device, [who]'s, beside this one: the same pack server, the same virtual clock, a copy, a library and editors of its own. */
-    fun other(who: PackUser = COLIN): PackEditorRig = PackEditorRig(test, server = server, me = who)
+    /**
+     * Another device, [who]'s, beside this one: the same pack server, the same virtual clock, a copy, a library and editors of its own. [device] names it
+     * when [who] has another device beside it (the same account signed in on a phone and a tablet).
+     */
+    fun other(who: PackUser = COLIN, device: String? = null): PackEditorRig = PackEditorRig(test, server = server, me = who, device = device)
 
     /** Item [item]'s data as the server holds it. */
     fun serverData(item: String = ITEM, pack: String = PACK): JsonObject = server.data(pack, item) as JsonObject

@@ -424,6 +424,47 @@ class PackPanelViewModelTest {
     }
 
     @Test
+    fun `a change the pack logged as several operations is one line, and what is new is never folded into what was seen`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open(session(seq = 14, seen = 8))
+        // A doghouse turned goes as its heading and the landing heading it gives, an analysis as five operations: each is an event, all with the
+        // change's one sentence.
+        val turned = "Sam Bell turned a doghouse on LZ IBIS."
+        val analysed = "Colin McFadden analyzed LZ IBIS."
+        val jess = "Jess Reed turned a doghouse on LZ IBIS."
+        val renamed = "Sam Bell turned a doghouse on LZ CROW."
+        r.panel.pages += PackEventPage(
+            listOf(
+                event(5, 1, "Colin McFadden", analysed, at = "2026-10-12T13:05:00"),
+                event(6, 1, "Colin McFadden", analysed, at = "2026-10-12T13:05:00"),
+                event(7, 1, "Colin McFadden", analysed, at = "2026-10-12T13:05:00"),
+                event(8, 2, "Sam Bell", turned, at = "2026-10-12T13:08:00"),
+                event(9, 2, "Sam Bell", turned, at = "2026-10-12T13:09:00"),
+                event(10, 2, "Sam Bell", turned, at = "2026-10-12T13:09:00"),
+                event(11, 3, "Jess Reed", jess, at = "2026-10-12T13:11:00"),
+                event(12, 3, "Jess Reed", jess, status = "skipped", reason = "target_missing", at = "2026-10-12T13:11:00"),
+                // A rename sent with a turn, of an item since removed: by the name the rename gave it.
+                event(13, 2, "Sam Bell", renamed, item = "lz-gone", type = "item.rename", op = buildJsonObject { put("name", "LZ CROW") }, at = "2026-10-12T13:20:00"),
+                event(14, 2, "Sam Bell", renamed, item = "lz-gone", at = "2026-10-12T13:20:00"),
+            ),
+            14, false, 14,
+        )
+        r.model.selectTab(PackTab.HISTORY)
+        advanceUntilIdle()
+        val groups = r.model.state.value.history.groups
+        assertEquals(listOf("New since you looked · 4", "Earlier today"), groups.map { it.title })
+        // Each line by its first event: Sam's turn after where new starts (8) apart from his turn before it, Jess's applied and skipped apart.
+        assertEquals(listOf(13L, 12L, 11L, 9L), groups[0].events.map { it.seq })
+        assertEquals(listOf(8L, 5L), groups[1].events.map { it.seq })
+        assertEquals("13:20 · LZ CROW", groups[0].events[0].meta)
+        assertEquals("13:09 · LZ IBIS", groups[0].events[3].meta)                                     // when the change was made: its newest event
+        assertEquals("Colin McFadden" to " analyzed LZ IBIS.", groups[1].events[1].let { it.lead to it.rest })
+        r.model.filterPerson("2")
+        advanceUntilIdle()
+        assertEquals(listOf(13L, 9L, 8L), r.model.state.value.history.groups.flatMap { it.events }.map { it.seq })
+    }
+
+    @Test
     fun `a history that could not be loaded says so, and is tried again when the pack changes`() = runTest(dispatcher) {
         val r = Rig(this)
         r.open()

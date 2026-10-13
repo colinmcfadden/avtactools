@@ -292,9 +292,16 @@ object PackPanelWords {
         return if (actor.isNotEmpty() && event.actor.id != null && summary.startsWith(actor)) actor to summary.substring(actor.length) else "" to summary
     }
 
-    /** Where an event happened: the item's name, else the name it had, else "Removed item"; "Members" or "Pack" for the pack's own. */
-    fun where(event: PackEvent, itemName: String?): String {
-        if (event.item != null) return itemName ?: (event.op["name"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: "Removed item"
+    /**
+     * Where a line of the history happened ([line]: the events of one change, oldest first, `PackHistory.lines`): the item's name, else the last name
+     * an operation of it gave the item (a removed item by the name it had: an `item.rename` sent with an edit), else "Removed item"; "Members" or
+     * "Pack" for the pack's own.
+     */
+    fun where(line: List<PackEvent>, itemName: String?): String {
+        val event = line.last()
+        if (event.item != null) {
+            return itemName ?: line.mapNotNull { (it.op["name"] as? JsonPrimitive)?.takeIf { name -> name.isString }?.content }.lastOrNull() ?: "Removed item"
+        }
         return if (event.type.startsWith("member") || event.type.startsWith("invite")) "Members" else "Pack"
     }
 
