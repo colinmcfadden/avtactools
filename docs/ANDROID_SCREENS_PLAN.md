@@ -598,6 +598,37 @@ one), a conflict copy open in a panel (none can be opened), and the Library copy
 `LibraryToPackTest`, `SessionWritesTest`, `SyncFailureTest`, `EngineSyncRunnerTest`, `CopyRulesTest`, `PackCopyViewModelTest`, `CopiesTest`, `NewPackViewModelTest`,
 `NewPackTest`, `LibraryPageTest`, `LzPanelScreenTest`, `RoutesScreenTest`, `RoutesViewModelTest`, `PackCallsTest`.
 
+**P4b — Updating a copy, and copies to the Library. Built.** A copy in a pack whose Library original has changed (the server's `original: changed`) is updated
+from it (the design's PackDialogs B, the web's `UpdateFromOriginalDialog`): *Update* beside its row in the Pack panel and *Update from original…* in its menu, for
+anyone who can change the pack; the dialog says when the original changed and what in the pack the update replaces (the count in bold, then the last change's
+sentence, "your last" for the person's own), and *Update from original* is drawn in the error colour, since it replaces work. Any item, finished pack or not, is
+saved to the person's own Library (D, the web's `SaveCopyDialog`): *Save a copy to Library…* in the Pack panel's menu and in the LZ/PZ and Routes panels' menus
+in a pack (the tablet's plan pane too), and *Save a copy to Library* on a finished pack's banner and band, of the pack's LZ/PZ open; it is named `NAME copy`
+to start with, and its toast offers *Open Library*. **Amended while building:**
+- **An update cannot be made twice, so the person's own work goes first**: the editors' last change is written and their pending edits waited for (10 s, as a
+  finish waits), then the original's last change is written and uploaded (P4a's rules, `LibraryCopier.readyOriginal`), each refused in the update's own words
+  when it cannot be done. An answer that was lost (none came, or a proxy's 502, 504, 520 to 524) says it may have been made and asks the pack what is new. The
+  server writes the history's sentence, as for a copy in.
+- **A copy to the Library is made on the device** (`PackKeeper.keep` under a key of its own, then a sync asked for). **Not like the web**, which asks the server
+  to copy its version: it works with no signal, and it is the item as this person sees it (`PackWorkspace.seenData`: the editor's document while the item is
+  open in one, a change the pack has not taken yet, or holds back while it is paused, included). It is kept as it is (`KeptVersion.asIs`), as the server's own
+  save keeps it, a route set's own fields and version too; what a pack refused is still kept in the library's form.
+- **One at a time, for the account and the pack it was asked about**: another account ends it and puts its dialog away; another pack opened puts an idle
+  dialog away, while one on its way keeps it until its answer, which is then said in a toast. Who is here (presence frames) never touches them.
+- **A row's *Update* goes under its words** where beside them it would leave the words less than 168 dp (a 360 dp phone at large text), rather than cut the
+  name and its chips.
+- A copy that does not say which Library item it came from (the server's `original_unknown`) is told to add the original again.
+**Reviewed** (one independent review, 2026-10-13: 25 reported, 22 survived an adversarial check, about 16 distinct; each fix has a test, and each was broken to see it
+fail): a store that failed while the original was made ready escaped the update and would have ended the app; an answer that came once another pack was open was
+wiped by the next presence frame without a word, and a copy then said the item was no longer in the pack; the update said P4a's words about adding; an earlier
+ask's answer landed on a later dialog for the same item; the dialog was never told who asked, so the person's own last change was named as someone else's; a copy
+saved while the pack was paused left out the change held back on the device; a route set's copy lost its own fields and version; the row's *Update* squeezed the
+name and its chips at 360 dp; and gaps in the tests (the order of the flush and the update, a copy read before its flush, the calls themselves, a proxy's lost
+answer, a real wait, names counted in characters, the banner with no copy and the band's, a dialog on its way across a change of pack or account). Refuted: the
+web's history sentence (the server's, as P4a decided), the `cloud_save` feature, which Android reads nowhere yet (an app-wide gap, not this step's), and an item
+the pack's state does not list for a moment. 43 mutations of these rules, each killed by its test. Tests: `PackItemCopyViewModelTest`, `ItemDialogsTest`,
+`ApiPackItemCallsTest`, `PackPanelScreenTest`, `PanelsInPackTest`, `CopyRulesTest`, `LibraryToPackTest`, `LibraryPackKeeperTest`, `PackWorkspaceTest`, `PackMessagesTest`.
+
 
 ## How each step is checked
 

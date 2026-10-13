@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -44,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
@@ -88,12 +91,21 @@ class PackPanelActions(
     val item: (String?) -> Unit = {},
     /** Members of the pack, its invite field taking the keyboard when [Boolean] (the owner's *Invite*). */
     val members: (invite: Boolean) -> Unit = {},
+    /** Asks whether to update a copy from its Library original (the design's PackDialogs B); none: not offered. */
+    val update: ((String) -> Unit)? = null,
+    /** Asks what to call a copy of an item saved to this person's Library (D); none: not offered. */
+    val saveCopy: ((String) -> Unit)? = null,
 )
 
 /** The panel's actions over its view model. */
-fun actionsOf(viewModel: PackPanelViewModel, onMembers: (invite: Boolean) -> Unit = {}) = PackPanelActions(
+fun actionsOf(
+    viewModel: PackPanelViewModel,
+    onMembers: (invite: Boolean) -> Unit = {},
+    onUpdate: ((String) -> Unit)? = null,
+    onSaveCopy: ((String) -> Unit)? = null,
+) = PackPanelActions(
     tab = viewModel::selectTab, open = viewModel::open, closeHere = viewModel::closeHere, rename = viewModel::rename, remove = viewModel::remove,
-    person = viewModel::filterPerson, item = viewModel::filterItem, members = onMembers,
+    person = viewModel::filterPerson, item = viewModel::filterItem, members = onMembers, update = onUpdate, saveCopy = onSaveCopy,
 )
 
 /**
@@ -101,14 +113,20 @@ fun actionsOf(viewModel: PackPanelViewModel, onMembers: (invite: Boolean) -> Uni
  * a phone, not collapsed on a tablet): while it is, and the app is in front, what is new is marked as seen after a moment, as on the web.
  */
 @Composable
-fun PackPanelHost(viewModel: PackPanelViewModel, looking: Boolean, onMembers: (invite: Boolean) -> Unit = {}) {
+fun PackPanelHost(
+    viewModel: PackPanelViewModel,
+    looking: Boolean,
+    onMembers: (invite: Boolean) -> Unit = {},
+    onUpdate: ((String) -> Unit)? = null,
+    onSaveCopy: ((String) -> Unit)? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val inSight = looking && lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     LaunchedEffect(inSight) { viewModel.setLooking(inSight) }
     // The panel goes (the pack closed or gone): nobody is looking at what opens next until it is shown.
     DisposableEffect(viewModel) { onDispose { viewModel.setLooking(false) } }
-    PackPanelContent(state, actionsOf(viewModel, onMembers))
+    PackPanelContent(state, actionsOf(viewModel, onMembers, onUpdate, onSaveCopy))
 }
 
 /**
@@ -223,83 +241,121 @@ private fun Items(state: PackPanelUi, actions: PackPanelActions, onRename: (Stri
 @Composable
 private fun ItemRow(item: PackItemUi, canEdit: Boolean, actions: PackPanelActions, onRename: (String) -> Unit, onRemove: (String) -> Unit) {
     var menu by remember { mutableStateOf(false) }
-    Row(
+    // The design's *Update* beside the row, for whoever copied it in, while the original has changed and the pack can be changed; under the row's
+    // words where beside them it would leave the words less than [ROW_WORDS_MIN] (a narrow phone, large text), rather than cut the name and its chips.
+    val update = actions.update?.takeIf { item.original == "changed" && canEdit && !item.sending }
+    val measurer = rememberTextMeasurer()
+    val label = MaterialTheme.typography.labelLarge
+    val density = LocalDensity.current
+    BoxWithConstraints(
         Modifier.fillMaxWidth()
             .background(if (item.openHere) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, RoundedCornerShape(Tokens.Radius.md.dp))
             .padding(end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            Modifier.weight(1f).heightIn(min = 60.dp)
-                .clickable(role = Role.Button, onClickLabel = if (item.canOpen) "Show on the map" else null) { actions.open(item.uuid) }
-                .semantics(mergeDescendants = true) { contentDescription = item.description; selected = item.openHere }
-                .padding(start = Tokens.Spacing.md.dp, top = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.sm.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.lg.dp),
-        ) {
-            Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(painterResource(kindIcon(item.kind)), contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        item.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        color = if (item.openHere) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (item.isNew) Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape))
+        val updateWidth = if (update == null) 0.dp else with(density) { measurer.measure(UPDATE, label).size.width.toDp() } + 24.dp
+        val beside = maxWidth - ROW_LEAD - updateWidth - 48.dp >= ROW_WORDS_MIN
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.weight(1f).heightIn(min = 60.dp)
+                        .clickable(role = Role.Button, onClickLabel = if (item.canOpen) "Show on the map" else null) { actions.open(item.uuid) }
+                        .semantics(mergeDescendants = true) { contentDescription = item.description; selected = item.openHere }
+                        .padding(start = Tokens.Spacing.md.dp, top = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.sm.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.lg.dp),
+                ) {
+                    Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(painterResource(kindIcon(item.kind)), contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                item.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = if (item.openHere) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            if (item.isNew) Box(Modifier.size(8.dp).background(MaterialTheme.colorScheme.tertiary, CircleShape))
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Ringed in the row's own colour, so the ring parts it from its neighbours and draws no outline round it.
+                            item.who?.let { PersonFace(it, 20.dp, ring = if (item.openHere) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow) }
+                            Text(item.meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (item.fromLibrary || item.editing.isNotEmpty()) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
+                                item.editing.forEach { StateChip(PackPanelWords.hasItOpen(listOf(it)), StatusTone.Neutral, icon = EzpzIcons.visibility) }
+                                if (item.fromLibrary) StateChip("From Library", StatusTone.Neutral, icon = EzpzIcons.collectionsBookmark)
+                                when (item.original) {
+                                    "changed" -> StateChip("Original changed", StatusTone.Warning, icon = EzpzIcons.update)
+                                    "deleted" -> StateChip("Original deleted", StatusTone.Neutral)
+                                }
+                            }
+                        }
+                    }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Ringed in the row's own colour, so the ring parts it from its neighbours and draws no outline round it.
-                    item.who?.let { PersonFace(it, 20.dp, ring = if (item.openHere) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow) }
-                    Text(item.meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (item.fromLibrary || item.editing.isNotEmpty()) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
-                        item.editing.forEach { StateChip(PackPanelWords.hasItOpen(listOf(it)), StatusTone.Neutral, icon = EzpzIcons.visibility) }
-                        if (item.fromLibrary) StateChip("From Library", StatusTone.Neutral, icon = EzpzIcons.collectionsBookmark)
-                        when (item.original) {
-                            "changed" -> StateChip("Original changed", StatusTone.Warning, icon = EzpzIcons.update)
-                            "deleted" -> StateChip("Original deleted", StatusTone.Neutral)
+                if (beside) update?.let { ask -> UpdateButton(item.name) { ask(item.uuid) } }
+                Box {
+                    IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(painterResource(EzpzIcons.moreVert), contentDescription = "More actions for ${item.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                        if (item.openHere) {
+                            DropdownMenuItem(
+                                text = { Column { Text("Close here"); Text("It stays in the pack", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                                leadingIcon = { Icon(painterResource(EzpzIcons.close), contentDescription = null) },
+                                onClick = { menu = false; actions.closeHere(item.uuid) },
+                            )
+                        } else if (item.canOpen) {
+                            DropdownMenuItem(
+                                text = { Text("Open") }, leadingIcon = { Icon(painterResource(EzpzIcons.visibility), contentDescription = null) },
+                                onClick = { menu = false; actions.open(item.uuid) },
+                            )
+                        }
+                        update?.let { ask ->
+                            DropdownMenuItem(
+                                text = { Text("Update from original…") }, leadingIcon = { Icon(painterResource(EzpzIcons.refresh), contentDescription = null) },
+                                onClick = { menu = false; ask(item.uuid) },
+                            )
+                        }
+                        // Anyone in the pack keeps a copy of their own, a finished pack's too.
+                        actions.saveCopy?.let { save ->
+                            DropdownMenuItem(
+                                text = { Text("Save a copy to Library…") }, leadingIcon = { Icon(painterResource(EzpzIcons.contentCopy), contentDescription = null) },
+                                onClick = { menu = false; save(item.uuid) },
+                            )
+                        }
+                        if (canEdit && !item.sending) {
+                            DropdownMenuItem(
+                                text = { Text("Rename") }, leadingIcon = { Icon(painterResource(EzpzIcons.edit), contentDescription = null) },
+                                onClick = { menu = false; onRename(item.uuid) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Remove from pack", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = { menu = false; onRemove(item.uuid) },
+                            )
+                        }
+                        if (!item.openHere && !item.canOpen && !(canEdit && !item.sending) && actions.saveCopy == null) {
+                            DropdownMenuItem(text = { Text(PackPanelViewModel.POINT_SETS_LATER) }, onClick = { menu = false }, enabled = false)
                         }
                     }
                 }
             }
-        }
-        Box {
-            IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(EzpzIcons.moreVert), contentDescription = "More actions for ${item.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                if (item.openHere) {
-                    DropdownMenuItem(
-                        text = { Column { Text("Close here"); Text("It stays in the pack", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-                        leadingIcon = { Icon(painterResource(EzpzIcons.close), contentDescription = null) },
-                        onClick = { menu = false; actions.closeHere(item.uuid) },
-                    )
-                } else if (item.canOpen) {
-                    DropdownMenuItem(
-                        text = { Text("Open") }, leadingIcon = { Icon(painterResource(EzpzIcons.visibility), contentDescription = null) },
-                        onClick = { menu = false; actions.open(item.uuid) },
-                    )
-                }
-                if (canEdit && !item.sending) {
-                    DropdownMenuItem(
-                        text = { Text("Rename") }, leadingIcon = { Icon(painterResource(EzpzIcons.edit), contentDescription = null) },
-                        onClick = { menu = false; onRename(item.uuid) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Remove from pack", color = MaterialTheme.colorScheme.error) },
-                        leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                        onClick = { menu = false; onRemove(item.uuid) },
-                    )
-                }
-                if (!item.openHere && !item.canOpen && !(canEdit && !item.sending)) {
-                    DropdownMenuItem(text = { Text(PackPanelViewModel.POINT_SETS_LATER) }, onClick = { menu = false }, enabled = false)
-                }
-            }
+            if (!beside) update?.let { ask -> UpdateButton(item.name, Modifier.padding(start = ROW_LEAD - 12.dp)) { ask(item.uuid) } }
         }
     }
 }
+
+/** A copy's *Update*, named for a screen reader by what it updates. */
+@Composable
+private fun UpdateButton(name: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp).semantics { contentDescription = "Update $name from the changed original" }) { Text(UPDATE) }
+}
+
+private const val UPDATE = "Update"
+
+// What comes before an item's words (the padding and the kind's icon, and the space after it), and the least the words keep beside *Update*.
+private val ROW_LEAD = (Tokens.Spacing.md + 40 + Tokens.Spacing.lg).dp
+private val ROW_WORDS_MIN = 168.dp
 
 private fun kindIcon(kind: String): Int = when (kind) {
     "lz" -> EzpzIcons.flightLand

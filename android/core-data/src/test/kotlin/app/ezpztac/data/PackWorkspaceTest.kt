@@ -315,6 +315,26 @@ class PackWorkspaceTest {
     }
 
     @Test
+    fun `what this person sees of an item is the editor's document while it is open, a change held back while the pack is paused included`() = packTest { r ->
+        r.opened(ITEM, create(ITEM, "lz", "LZ HAWK", HAWK), create("lz-2", "lz", "LZ IBIS", HAWK))
+        r.server.setFeature(SAM.id, false)
+        r.engine.refresh()
+        runCurrent()
+        assertEquals(PackStatus.PAUSED, r.engine.open.value!!.status)
+        r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.6}""")) }
+        r.advance(10_000)
+        fun lat(data: kotlinx.serialization.json.JsonElement?) =
+            data!!.jsonObject.getValue("graphics").jsonObject.getValue("helicopters").jsonArray[0].jsonObject.getValue("lat").jsonPrimitive.double
+        val pack = r.engine.open.value!!.item(ITEM)!!.data
+        assertTrue("held back, not in the pack", lat(pack) != 34.6)
+        val seen = r.workspace.seenData(ITEM)
+        assertEquals(34.6, lat(seen), 0.0)
+        assertNull("this person's own fields are not in it", seen!!.jsonObject["view"])
+        assertEquals(r.engine.open.value!!.item("lz-2")!!.data, r.workspace.seenData("lz-2"))  // not open in an editor: the pack's own
+        assertNull(r.workspace.seenData("lz-nope"))
+    }
+
+    @Test
     fun `closing the pack sends the last change of its items first, and closes them`() = packTest { r ->
         r.opened()
         r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.4}""")) }

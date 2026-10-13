@@ -52,8 +52,11 @@ data class AddToPackUi(
     val error: String? = null,
 )
 
-/** What a copy came to, for the frame's toasts: [openPack] when the toast offers *Open pack* (a copy into a pack that is not the one open). */
-data class CopyNotice(val words: String, val openPack: String? = null)
+/**
+ * What a copy came to, for the frame's toasts: [openPack] when the toast offers *Open pack* (a copy into a pack that is not the one open), [library] the kind
+ * (`lz`, `route`, `pointset`) when it offers *Open Library* (a copy saved to the Library).
+ */
+data class CopyNotice(val words: String, val openPack: String? = null, val library: String? = null)
 
 /**
  * Copies of the person's own Library items into a mission pack: into one chosen in a dialog (from the Library's menu and the LZ/PZ and Routes panels, outside a

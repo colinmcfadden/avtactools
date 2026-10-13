@@ -24,6 +24,7 @@ public object PackMessages {
         "unreadable_source" to "That Library item cannot be read.",
         "not_your_original" to "Only the person who copied this in can update it from the original.",
         "original_gone" to "The original is no longer in your Library.",
+        "original_unknown" to "This copy does not say which Library item it came from, so it cannot be updated from it. Add the original again instead.",
         "empty_point_set" to "A point set with no points cannot be saved.",
         "not_a_teammate" to "Only people on one of your teams can be added by name. Invite anyone else by email.",
         "already_member" to "They are already in it.",

@@ -52,8 +52,9 @@ internal class LibraryPackKeeper(
     // point set's points as {"points": [...]}, which is how the library holds every set. A set with no points cannot be saved (the server
     // refuses one), so there is nothing to keep. The pack holds an LZ/PZ or a route set as an object and a point set as a list, always
     // (PackOps refuses anything else).
-    private fun documentOf(kind: RecordKind, version: KeptVersion): JsonObject? = when (kind) {
-        RecordKind.POINT_SET -> (version.data as? JsonArray)?.takeIf { it.isNotEmpty() }?.let { JsonObject(mapOf("points" to it)) }
+    private fun documentOf(kind: RecordKind, version: KeptVersion): JsonObject? = when {
+        kind == RecordKind.POINT_SET -> (version.data as? JsonArray)?.takeIf { it.isNotEmpty() }?.let { JsonObject(mapOf("points" to it)) }
+        version.asIs && version.data is JsonObject -> version.data as JsonObject
         else -> PackActions.libraryData(version.kind, version.data) as? JsonObject
     }
 

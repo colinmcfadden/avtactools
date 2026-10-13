@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.JsonElement
 
 /**
  * The workspace edits go to: the Library (the person's own), or one Mission Pack (docs/MISSION_PACKS.md). One is open at a time, as on the web.
@@ -69,6 +70,12 @@ interface PackDoor {
 
     /** Where this person is pointing on the map ([lat], [lon]), for everyone else in the open pack; null for nowhere. Said at most ten times a second. */
     fun point(lat: Double?, lon: Double?) {}
+
+    /**
+     * Item [item] of the open pack as this person sees it, as the pack's data: the editor's document while it is open in one (a change the pack has not
+     * taken, or holds back while it is paused, included), else the pack's own. Null when the open pack has no such item.
+     */
+    suspend fun seenData(item: String): JsonElement? = open.value?.item(item)?.data
 }
 
 /** The calls the switcher makes: the packs this person can open, the invitations waiting for them, their teams, and answering an invitation. */

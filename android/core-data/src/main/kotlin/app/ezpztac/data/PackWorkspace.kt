@@ -1,6 +1,7 @@
 package app.ezpztac.data
 
 import app.ezpztac.missionpacks.PackEngine
+import app.ezpztac.missionpacks.PackItemView
 import app.ezpztac.missionpacks.PackKeeper
 import app.ezpztac.missionpacks.PackLz
 import app.ezpztac.missionpacks.PackNotice
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -202,6 +204,23 @@ class PackWorkspace @Inject constructor(
         val pack = engine.open.value?.uuid ?: return@withContext
         if (diagrams.active.value?.id?.let(PackRef::parse)?.pack == pack) diagrams.flush()
         if (routes.active.value?.id?.let(PackRef::parse)?.pack == pack) routes.flush()
+    }
+
+    /**
+     * Item [itemUuid] of the open pack as this person sees it, as the pack's data: the editor's document while it is open in one, as its next change would
+     * send it (a change the pack has not taken, or holds back while it is paused, included; each person's own fields not), else the pack's own view of it.
+     * Null when the open pack has no such item. What a copy saved to the Library is made from.
+     */
+    suspend fun seenData(itemUuid: String): JsonElement? = withContext(main) {
+        val state = engine.open.value ?: return@withContext null
+        val item = state.item(itemUuid) ?: return@withContext null
+        val localId = PackRef.localId(state.uuid, itemUuid)
+        shown(diagrams, lzItems, localId, item) ?: shown(routes, routeItems, localId, item) ?: item.data
+    }
+
+    private fun <D : Any> shown(session: DocumentSession<D>, items: PackItemStore<D>, localId: String, item: PackItemView): JsonElement? {
+        val document = session.active.value?.takeIf { items.idOf(it) == localId } ?: return null
+        return items.kind.docOf(document, items.baseline(localId)?.carryFrom ?: item.data)
     }
 
     /**

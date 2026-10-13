@@ -79,8 +79,9 @@ import java.time.ZoneId
 
 /**
  * A finished pack, said where the person works (the design's Finished): who finished it and when, that it is read-only for everyone, and what can
- * still be done with it: *Duplicate as new pack* for anyone in it, *Reopen pack* for its owner. On a phone a card at the top of the panel showing
- * ([FinishedBanner]); on a tablet a band across the top beside the rail ([FinishedBand]). Both say it again to a screen reader when it changes.
+ * still be done with it: *Save a copy to Library* of the LZ/PZ open ([onSaveCopy], when one of the pack's is), *Duplicate as new pack* for anyone in it,
+ * *Reopen pack* for its owner. On a phone a card at the top of the panel showing ([FinishedBanner]); on a tablet a band across the top beside the rail
+ * ([FinishedBand]). Both say it again to a screen reader when it changes.
  */
 @Composable
 fun FinishedBanner(
@@ -88,6 +89,7 @@ fun FinishedBanner(
     onDuplicate: () -> Unit,
     onReopen: () -> Unit,
     modifier: Modifier = Modifier,
+    onSaveCopy: (() -> Unit)? = null,
     zone: ZoneId = ZoneId.systemDefault(),
     now: Instant = Instant.now(),
 ) {
@@ -106,8 +108,10 @@ fun FinishedBanner(
                     modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
                 )
             }
+            // The design's first: a copy of the LZ/PZ open, kept to work on, on a row of its own.
+            onSaveCopy?.let { save -> SaveCopyButton(Modifier.padding(top = 12.dp), onClick = save) }
             // Each button takes a line of its own where both do not fit (large text), and its words a second line before they are cut.
-            FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(Modifier.padding(top = if (onSaveCopy != null) 8.dp else 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FinishedButton("Duplicate as new pack", null, outlined = true, onClick = onDuplicate)
                 if (pack.owner) FinishedButton("Reopen pack", EzpzIcons.lockOpen, outlined = false, onClick = onReopen)
             }
@@ -128,6 +132,7 @@ fun FinishedBand(
     onDuplicate: () -> Unit,
     onReopen: () -> Unit,
     modifier: Modifier = Modifier,
+    onSaveCopy: (() -> Unit)? = null,
     zone: ZoneId = ZoneId.systemDefault(),
     now: Instant = Instant.now(),
 ) {
@@ -150,6 +155,7 @@ fun FinishedBand(
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (pack.owner) FinishedButton("Reopen pack", null, outlined = false, onClick = onReopen)
                         FinishedButton("Duplicate as new pack", EzpzIcons.contentCopy, outlined = true, onClick = onDuplicate)
+                        onSaveCopy?.let { save -> SaveCopyButton(onClick = save) }
                     }
                 },
             )
@@ -216,6 +222,19 @@ private val WORDS_MIN = 320.dp
 private fun LockCircle(icon: Int, size: Int) {
     Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape), contentAlignment = Alignment.Center) {
         Icon(painterResource(icon), contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(size.dp))
+    }
+}
+
+/** The design's tonal *Save a copy to Library* (of the LZ/PZ open). */
+@Composable
+private fun SaveCopyButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick, modifier = modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(50),
+        contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+    ) {
+        Icon(painterResource(EzpzIcons.libraryAdd), contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(Tokens.Spacing.sm.dp))
+        Text("Save a copy to Library", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium), maxLines = 2, textAlign = TextAlign.Center)
     }
 }
 

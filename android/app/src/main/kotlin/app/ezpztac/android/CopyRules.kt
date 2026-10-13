@@ -1,5 +1,6 @@
 package app.ezpztac.android
 
+import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.packs.OpenPackUi
 import app.ezpztac.sync.RecordKind
@@ -26,6 +27,27 @@ internal object CopyRules {
         LibraryTab.LZ -> RecordKind.LZ
         LibraryTab.ROUTES -> RecordKind.ROUTE
         LibraryTab.POINTS -> RecordKind.POINT_SET
+    }
+
+    /** The Library tab a kind of pack item (`lz`, `route`, `pointset`) is kept under once saved there. */
+    fun libraryTabOf(kind: String): LibraryTab? = when (kind) {
+        "lz" -> LibraryTab.LZ
+        "route" -> LibraryTab.ROUTES
+        "pointset" -> LibraryTab.POINTS
+        else -> null
+    }
+
+    /** The pack item an editor's id names (`pack:<pack>:<item>`), or null for one of the person's own. */
+    fun packItemOf(ref: String): String? = PackRef.parse(ref)?.item
+
+    /**
+     * A finished pack's *Save a copy to Library*: of the LZ/PZ open ([current], its editor's id) when it is one of the pack's (the web's banner offers
+     * it only then), through [saveCopy]; null when there is none to offer.
+     */
+    fun bannerCopy(current: String?, saveCopy: ((String) -> Unit)?): (() -> Unit)? {
+        val open = current?.takeIf { packItemOf(it) != null } ?: return null
+        val save = saveCopy ?: return null
+        return { save(open) }
     }
 
     /** What a pack made to start with items from the Library waits for, as the pack open changes: its own opening, nothing yet, or another pack (let go). */

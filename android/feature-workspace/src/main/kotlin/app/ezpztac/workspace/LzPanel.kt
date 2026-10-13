@@ -117,6 +117,8 @@ class LzPanelActions(
     val addUnit: (UnitDraft) -> Unit = {},
     /** Asks which Mission Pack a copy of the open LZ/PZ ([uuid], [name]) goes into; none: not offered (no packs here, or one is open). */
     val addToPack: ((uuid: String, name: String) -> Unit)? = null,
+    /** Asks what to call a copy of the open pack's LZ/PZ ([uuid], the editor's id) saved to this person's Library; none: not offered. */
+    val saveCopy: ((uuid: String) -> Unit)? = null,
 )
 
 /**
@@ -135,6 +137,8 @@ fun LzPanelHost(
     onBrowseLibrary: () -> Unit = {},
     /** Asks which Mission Pack a copy of the open LZ/PZ goes into: given while packs run here and none is open. */
     onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
+    /** Asks what to call a copy of a pack's LZ/PZ open here, saved to the Library: given while a pack is open. */
+    onSaveCopy: ((uuid: String) -> Unit)? = null,
     viewModel: DiagramsViewModel = hiltViewModel(),
     graphics: GraphicsViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
@@ -152,7 +156,7 @@ fun LzPanelHost(
         analyze = viewModel::analyze, stopAnalysis = viewModel::stopAnalysis, dismissAnalysis = viewModel::dismissAnalysisError,
         selectAircraft = viewModel::selectAircraft, refreshWeather = viewModel::refreshWeather, toggleSlope = viewModel::toggleSlope,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
-        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack,
+        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy,
     )
     val graphicsActions = GraphicsActions(
         select = graphics::select, deselect = graphics::deselect, nudge = graphics::nudge, moveToCrosshair = { graphics.moveToCrosshair(crosshair) },
@@ -513,6 +517,14 @@ private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRena
                 DropdownMenuItem(
                     text = { Text("Add to Mission Pack…") }, onClick = { open = false; addToPack(current.uuid, current.name) },
                     leadingIcon = { Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
+                )
+            }
+            // A pack's LZ/PZ, finished or not, can be kept as a copy of this person's own.
+            val saveCopy = actions.saveCopy
+            if (current.inPack != null && saveCopy != null) {
+                DropdownMenuItem(
+                    text = { Text("Save a copy to Library…") }, onClick = { open = false; saveCopy(current.uuid) },
+                    leadingIcon = { Icon(painterResource(EzpzIcons.contentCopy), contentDescription = null) },
                 )
             }
             // A pack's LZ/PZ is removed for everyone from the Pack panel, never deleted from here.

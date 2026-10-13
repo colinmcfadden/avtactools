@@ -101,7 +101,9 @@ import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
 import app.ezpztac.packs.AddToPackHost
 import app.ezpztac.packs.PackChip
+import app.ezpztac.packs.ItemDialogsHost
 import app.ezpztac.packs.PackCopyViewModel
+import app.ezpztac.packs.PackItemCopyViewModel
 import app.ezpztac.packs.MembersHost
 import app.ezpztac.packs.MembersViewModel
 import app.ezpztac.packs.NewPackHost
@@ -287,6 +289,10 @@ fun MapHome(
             }
         }
     }
+    // A pack's item kept as a copy of the person's own, and a copy updated from its Library original (the design's PackDialogs D and B): from the Pack panel, the
+    // LZ/PZ and Routes panels' menus in a pack, and a finished pack's banner.
+    val itemCopies: PackItemCopyViewModel = hiltViewModel()
+    val saveCopy: ((String) -> Unit)? = if (openPack != null) ({ ref -> CopyRules.packItemOf(ref)?.let(itemCopies::askSave) }) else null
     val askCopy: ((RecordKind) -> (uuid: String, name: String) -> Unit)? =
         if (CopyRules.asksWhere(packsHere, openPack)) ({ kind -> { uuid, name -> copies.ask(kind, uuid, name) } }) else null
     // The pack a Library item is added to rather than opened: the one open, while this person can change it.
@@ -359,6 +365,12 @@ fun MapHome(
     // A toast from a panel; the Saved one offers its Library tab (the design's Saved: Open Library), if the account has it when the toast is shown: the collectors
     // below outlive a change of features, so they read the tabs as they are now.
     val libraryTabs by rememberUpdatedState(libraryTabsFor(panels))
+    LaunchedEffect(itemCopies) {
+        itemCopies.notices.collect { notice ->
+            val tab = notice.library?.let(CopyRules::libraryTabOf)
+            if (tab == null) snackbars.showSnackbar(notice.words, withDismissAction = true) else snackbars.panelToast(notice.words, tab, libraryTabs) { libraryTab = it }
+        }
+    }
     suspend fun toast(text: String, tab: LibraryTab) = snackbars.panelToast(text, tab, libraryTabs) { libraryTab = it }
     val copyGrid: (String) -> Unit = { text ->
         scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Grid", text))) }
@@ -446,24 +458,29 @@ fun MapHome(
                     if (maintenance != null) Banner(maintenance, BannerKind.Warning)
                     if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
                     // A finished pack, said at the top of every panel on a phone (a tablet has its band across the top instead).
-                    if (!tablet) openPack?.takeIf { it.finished }?.let { FinishedBanner(it, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen) }
+                    if (!tablet) {
+                        openPack?.takeIf { it.finished }?.let {
+                            FinishedBanner(it, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen, onSaveCopy = CopyRules.bannerCopy(lz.current?.uuid, saveCopy))
+                        }
+                    }
                     when (panel) {
                         // Looking at it: the panel showing, in sight (not lowered on a phone, not collapsed on a tablet).
                         Panel.Pack -> PackPanelHost(
                             packPanel,
                             looking = lookingAtPack(current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || (routes.planOpen && !tablet)),
                             onMembers = { invite -> members.open(openPack?.name.orEmpty(), invite) },
+                            onUpdate = itemCopies::askUpdate, onSaveCopy = itemCopies::askSave,
                         )
                         // A new LZ/PZ starts at the crosshair, and the tools add there. An administrator can switch own aircraft off for an account (the
                         // server would refuse what it made).
                         Panel.Lz -> LzPanelHost(
                             crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
                             onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
-                            onAddToPack = askCopy?.invoke(RecordKind.LZ),
+                            onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
-                            onAddToPack = askCopy?.invoke(RecordKind.ROUTE),
+                            onAddToPack = askCopy?.invoke(RecordKind.ROUTE), onSaveCopy = saveCopy,
                         )
                         Panel.Threats -> ThreatsHost(
                             onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
@@ -694,11 +711,13 @@ fun MapHome(
                     footer = footer,
                     supporting = supportingPanes(
                         routes, lz, crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), diagrams = diagrams,
-                        routesModel = routesModel, routePlan = movableRoutePlan, onAddToPack = askCopy?.invoke(RecordKind.LZ),
+                        routesModel = routesModel, routePlan = movableRoutePlan, onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
                     ),
                     // The Library, Members and Teams draw the toasts over themselves, as dialogs: the frame's under their scrim would be a second copy.
                     toasts = libraryTab == null && !membersOpen && !teamsOpen,
-                    band = openPack?.takeIf { it.finished }?.let { finished -> { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen) } },
+                    band = openPack?.takeIf { it.finished }?.let { finished ->
+                        { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen, onSaveCopy = CopyRules.bannerCopy(lz.current?.uuid, saveCopy)) }
+                    },
                     modifier = if (libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
@@ -787,6 +806,7 @@ fun MapHome(
             // Adding a copy to a pack, asked from the Library among others: drawn after it, so its window is the one on top. A window shown earlier stays under
             // one made later, so it is made again when the Library's window is (it opens, or turns from a page into a tablet's dialog).
             if (packsHere) key(tablet, libraryTab != null) { AddToPackHost(copies, tablet) }
+            if (packsHere) ItemDialogsHost(itemCopies, tablet)
         }
     }
 }
@@ -823,6 +843,8 @@ private fun supportingPanes(
     routesModel: RoutesViewModel, routePlan: @Composable (Boolean) -> Unit,
     /** Asks which Mission Pack a copy of the open LZ/PZ goes into, as the phone's plan page does. */
     onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
+    /** Asks what to call a copy of the pack's LZ/PZ open, saved to the Library, as the phone's plan page does. */
+    onSaveCopy: ((uuid: String) -> Unit)? = null,
 ): List<SupportingPane> {
     val open = lz.current
     val lzPane = if (lz.page == LzPage.PLAN && open != null) {
@@ -838,6 +860,7 @@ private fun supportingPanes(
             ) {
                 LzPanelHost(
                     crosshair = crosshair, crosshairGrid = crosshairGrid, canMakeAircraft = canMakeAircraft, pane = LzPane.PLAN, viewModel = diagrams, onAddToPack = onAddToPack,
+                    onSaveCopy = onSaveCopy,
                 )
                 Spacer(Modifier.height(Tokens.Spacing.lg.dp))
             }

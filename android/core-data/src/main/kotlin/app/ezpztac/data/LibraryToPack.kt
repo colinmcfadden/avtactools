@@ -81,6 +81,12 @@ interface LibraryCopier {
 
     /** The uuid record [uuid] is held under now: another, once a copy has seen it kept under a new identity (deleted elsewhere). */
     fun currentId(uuid: String): String = uuid
+
+    /**
+     * Before a copy is updated from its original, record [uuid] of [kind]: its last change written and on the server (null), or why not. One this device does not
+     * hold is left to the server, which says what it has of it.
+     */
+    suspend fun readyOriginal(kind: RecordKind, uuid: String, user: Int): CopyIn? = null
 }
 
 /**
@@ -115,26 +121,46 @@ class LibraryToPack(
 
     override suspend fun copyIn(pack: String, kind: RecordKind, uuid: String, item: String, user: Int): CopyIn {
         val word = requireNotNull(KINDS[kind]) { "A $kind cannot go in a pack" }
+        return when (val ready = ready(kind, uuid, user)) {
+            is Ready.Not -> ready.why
+            Ready.Missing -> CopyIn.Gone
+            is Ready.Up -> {
+                val saved = copy(pack, PackSource.ClientUuid(word, ready.id), item, user)
+                CopyIn.Copied(saved.value.item.name, again = !saved.created)
+            }
+        }
+    }
+
+    override suspend fun readyOriginal(kind: RecordKind, uuid: String, user: Int): CopyIn? = (ready(kind, uuid, user) as? Ready.Not)?.why
+
+    /** Where record [uuid] stands for the server: up under an id, not on this device, or not up and why. */
+    private sealed interface Ready {
+        data class Up(val id: String) : Ready
+        data object Missing : Ready
+        data class Not(val why: CopyIn) : Ready
+    }
+
+    /** The record's last change written and uploaded, as a copy or an update needs it: the server works from the version it holds. */
+    private suspend fun ready(kind: RecordKind, uuid: String, user: Int): Ready {
         val asked = currentId(uuid)
         var id = try {
             open.write(kind, asked)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            return CopyIn.Unsaved
+            return Ready.Not(CopyIn.Unsaved)
         }
         move(asked, id)
-        var record = records.record(kind, id) ?: return CopyIn.Gone
+        var record = records.record(kind, id) ?: return Ready.Missing
         if (!uploaded(record)) {
             val result = upload.upload(user)
             result.recreated.forEach { (from, to) -> move(from, to) }
-            if (id in result.conflicts) return CopyIn.Conflicted
+            if (id in result.conflicts) return Ready.Not(CopyIn.Conflicted)
             id = result.recreated[id] ?: id
-            record = records.record(kind, id) ?: return CopyIn.Gone
-            if (!uploaded(record)) return if (id in result.blocked) CopyIn.Refused else CopyIn.NotUploaded(result.stopped, result.ran)
+            record = records.record(kind, id) ?: return Ready.Missing
+            if (!uploaded(record)) return Ready.Not(if (id in result.blocked) CopyIn.Refused else CopyIn.NotUploaded(result.stopped, result.ran))
         }
-        val saved = copy(pack, PackSource.ClientUuid(word, id), item, user)
-        return CopyIn.Copied(saved.value.item.name, again = !saved.created)
+        return Ready.Up(id)
     }
 
     companion object {

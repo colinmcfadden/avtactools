@@ -87,6 +87,18 @@ class LibraryPackKeeperTest {
     }
 
     @Test
+    fun `a copy saved as it is keeps a route set's own fields and version, as the server's save to the library does`() = runBlocking<Unit> {
+        val copy = routes.copy(key = "copy:p-1:1", name = "MISSION 1 copy", asIs = true)
+        keeper.keep("p-1", listOf(copy, lz.copy(key = "copy:p-1:2", asIs = true), points.copy(key = "copy:p-1:3", asIs = true)))
+        val set = store.transaction { record(RecordKind.ROUTE, LibraryPackKeeper.uuidFor(copy.key)) }!!
+        assertEquals(copy.data.toString(), set.data.toString())
+        val diagram = store.transaction { record(RecordKind.LZ, LibraryPackKeeper.uuidFor("copy:p-1:2")) }!!
+        assertEquals(lz.data.toString(), diagram.data.toString())
+        val pointSet = store.transaction { record(RecordKind.POINT_SET, LibraryPackKeeper.uuidFor("copy:p-1:3")) }!!
+        assertEquals("""{"points":${points.data}}""", pointSet.data.toString())                 // still in the object the library holds every set in
+    }
+
+    @Test
     fun `a version kept is noted as made when it was kept, as every record made here is`() = runBlocking<Unit> {
         val timed = LibraryPackKeeper(store) { "2026-10-12T09:00:00Z" }
         timed.keep("p-1", listOf(routes))

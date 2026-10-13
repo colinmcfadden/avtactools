@@ -47,6 +47,15 @@ import app.ezpztac.network.searchPeople
 import app.ezpztac.network.team
 import app.ezpztac.network.teamInvites
 import app.ezpztac.network.updatePack
+import app.ezpztac.missionpacks.KeptOutcome
+import app.ezpztac.missionpacks.KeptVersion
+import app.ezpztac.missionpacks.PackKeeper
+import app.ezpztac.network.PackItemSource
+import app.ezpztac.network.packItem
+import app.ezpztac.network.updateFromOriginal
+import app.ezpztac.sync.SyncScheduler
+import java.util.UUID
+import kotlinx.serialization.json.JsonElement
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -153,6 +162,30 @@ class ApiPeopleApi @Inject constructor(private val api: ApiClient) : PeopleApi {
     }
 }
 
+/**
+ * The calls updating a copy and saving a pack's item make: the first two over the API client, for the account asked for; a copy to the Library on the device
+ * (the engine's keeper, which keeps a pack's refused edits the same way), then a sync asked for so it goes up.
+ */
+class ApiPackItemCalls @Inject constructor(
+    private val api: ApiClient,
+    private val keeper: PackKeeper,
+    private val scheduler: SyncScheduler,
+) : PackItemCalls {
+    override suspend fun source(pack: String, item: String, user: Int): PackItemSource? = api.packItem(pack, item, asUser = user).source
+
+    override suspend fun updateFromOriginal(pack: String, item: String, user: Int) {
+        api.updateFromOriginal(pack, item, asUser = user)
+    }
+
+    override suspend fun saveToLibrary(pack: String, kind: String, name: String, data: JsonElement): KeptOutcome {
+        // A key of its own each time: every copy saved is a record of its own (the keeper names a record by its key). As it is, as the server's own
+        // save to the library keeps it: a route set's own fields and version too.
+        val kept = keeper.keep(pack, listOf(KeptVersion("copy:$pack:${UUID.randomUUID()}", kind, name, data, asIs = true))).single()
+        if (kept is KeptOutcome.Saved) scheduler.requestSync()
+        return kept
+    }
+}
+
 /** Teams' calls over the API client, each for the account asked for. */
 class ApiTeamsApi @Inject constructor(private val api: ApiClient) : TeamsApi {
     override suspend fun teams(user: Int): List<TeamSummary> = api.listTeams(asUser = user)
@@ -223,6 +256,8 @@ class EnginePackDoor @Inject constructor(private val engine: PackEngine, private
     override suspend fun flushOpen() = workspace.flushOpen()
 
     override fun point(lat: Double?, lon: Double?) = engine.setPointer(lat, lon)
+
+    override suspend fun seenData(item: String): JsonElement? = workspace.seenData(item)
 }
 
 /** The Pack panel's calls: the pack's history and seen marker over the API client, its items through the editors' join to the pack. */
@@ -270,4 +305,7 @@ internal abstract class PacksModule {
 
     @Binds
     abstract fun teamsApi(impl: ApiTeamsApi): TeamsApi
+
+    @Binds
+    abstract fun packItemCalls(impl: ApiPackItemCalls): PackItemCalls
 }

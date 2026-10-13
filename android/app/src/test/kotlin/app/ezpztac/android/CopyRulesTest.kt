@@ -59,4 +59,24 @@ class CopyRulesTest {
         assertEquals(CopyRules.LibraryAfter.OPEN_LIBRARY, CopyRules.libraryAfter("new", "new"))
         assertEquals(CopyRules.LibraryAfter.LET_GO, CopyRules.libraryAfter("new", "dk"))
     }
+
+    @Test
+    fun `a pack item saved to the Library is found on its Library tab, and an editor's id names its pack item`() {
+        assertEquals(LibraryTab.LZ, CopyRules.libraryTabOf("lz"))
+        assertEquals(LibraryTab.ROUTES, CopyRules.libraryTabOf("route"))
+        assertEquals(LibraryTab.POINTS, CopyRules.libraryTabOf("pointset"))
+        assertNull(CopyRules.libraryTabOf("threat"))
+        assertEquals("lz-1", CopyRules.packItemOf("pack:p:lz-1"))
+        assertNull(CopyRules.packItemOf("0c4f8e2b-7a19-4c3d-a6e5-9b1d2f3e4a57"))                     // one of the person's own
+    }
+
+    @Test
+    fun `a finished pack's banner saves a copy of its LZ-PZ open, and offers none for the person's own or with no way to save`() {
+        val asked = mutableListOf<String>()
+        CopyRules.bannerCopy("pack:dk:lz-1") { asked += it }!!.invoke()
+        assertEquals(listOf("pack:dk:lz-1"), asked)
+        assertNull(CopyRules.bannerCopy("0c4f8e2b-7a19-4c3d-a6e5-9b1d2f3e4a57") { asked += it })
+        assertNull(CopyRules.bannerCopy(null) { asked += it })
+        assertNull(CopyRules.bannerCopy("pack:dk:lz-1", null))
+    }
 }

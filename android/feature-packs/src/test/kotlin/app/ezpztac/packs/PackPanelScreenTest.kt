@@ -24,6 +24,7 @@ import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -143,6 +144,53 @@ class PackPanelScreenTest {
         compose.onNodeWithText("Rename").assertDoesNotExist()
         compose.onNodeWithText("Remove from pack").assertDoesNotExist()
         compose.onNodeWithText("View only").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a copy whose original changed has Update beside it and in its menu, and anyone can save an item to the Library`() {
+        val log = mutableListOf<String>()
+        show(items, actions = PackPanelActions(update = { log += "update $it" }, saveCopy = { log += "copy $it" }))
+        compose.onNodeWithContentDescription("Update LZ HAWK (ROCK) from the changed original").performClick()
+        compose.onNodeWithContentDescription("Update LZ IBIS (OWEST) from the changed original").assertDoesNotExist()   // its original did not change
+        compose.onNodeWithContentDescription("More actions for LZ HAWK (ROCK)").performClick()
+        compose.onNodeWithText("Update from original…").performClick()
+        compose.onNodeWithContentDescription("More actions for OP DK INGRESS").performClick()
+        compose.onNodeWithText("Update from original…").assertDoesNotExist()
+        compose.onNodeWithText("Save a copy to Library…").performClick()
+        assertEquals(listOf("update lz-2", "update lz-2", "copy rt-1"), log)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi", fontScale = 1.3f)
+    fun `on a narrow phone at large text Update goes under the row's words, rather than cut its name`() {
+        val asked = mutableListOf<String>()
+        show(items, actions = PackPanelActions(update = { asked += it }))
+        val name = compose.onNodeWithText("LZ HAWK (ROCK)", useUnmergedTree = true).fetchSemanticsNode()
+        val update = compose.onNodeWithContentDescription("Update LZ HAWK (ROCK) from the changed original").fetchSemanticsNode()
+        assertTrue("under the words", update.boundsInRoot.top >= name.boundsInRoot.bottom)
+        compose.onNodeWithText("Original changed", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Update LZ HAWK (ROCK) from the changed original").performClick()
+        assertEquals(listOf("lz-2"), asked)
+        compose.onRoot().captureRoboImage("build/screenshots/pack-items-update-narrow.png")
+    }
+
+    @Test
+    fun `on a wide row Update stands beside the words`() {
+        show(items, actions = PackPanelActions(update = {}))
+        val name = compose.onNodeWithText("LZ HAWK (ROCK)", useUnmergedTree = true).fetchSemanticsNode()
+        val update = compose.onNodeWithContentDescription("Update LZ HAWK (ROCK) from the changed original").fetchSemanticsNode()
+        assertTrue("beside the words", update.boundsInRoot.left >= name.boundsInRoot.right && update.boundsInRoot.top < name.boundsInRoot.bottom + 40f)
+    }
+
+    @Test
+    fun `a viewer cannot update a copy, but can save one to the Library`() {
+        val log = mutableListOf<String>()
+        show(items.copy(canEdit = false, readOnly = true), actions = PackPanelActions(update = { log += "update $it" }, saveCopy = { log += "copy $it" }))
+        compose.onNodeWithContentDescription("Update LZ HAWK (ROCK) from the changed original").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More actions for LZ HAWK (ROCK)").performClick()
+        compose.onNodeWithText("Update from original…").assertDoesNotExist()
+        compose.onNodeWithText("Save a copy to Library…").performClick()
+        assertEquals(listOf("copy lz-2"), log)
     }
 
     @Test

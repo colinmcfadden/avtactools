@@ -291,6 +291,14 @@ private fun SetMoreMenu(open: OpenSetUi, actions: RoutesActions, onDelete: () ->
                     leadingIcon = { Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
                 )
             }
+            // A pack's set, finished or not, can be kept as a copy of this person's own.
+            val saveCopy = actions.saveCopy
+            if (open.inPack != null && saveCopy != null) {
+                DropdownMenuItem(
+                    text = { Text("Save a copy to Library…") }, onClick = { expanded = false; saveCopy(open.uuid) },
+                    leadingIcon = { Icon(painterResource(EzpzIcons.contentCopy), contentDescription = null) },
+                )
+            }
             // A pack's set is removed for everyone from the Pack panel, never deleted from here.
             if (open.inPack == null) {
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { expanded = false; onDelete() }, leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null) })

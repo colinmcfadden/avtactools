@@ -19,6 +19,11 @@ class PackMessagesTest {
     @Test
     fun `a refusal is told in the app's words, never the server's`() {
         assertEquals("This pack is finished. It is read-only until its owner reopens it.", PackMessages.words(PackFailure(423, "pack_finished")))
+        // An update from the original the server cannot make, in words that say what to do instead.
+        assertEquals(
+            "This copy does not say which Library item it came from, so it cannot be updated from it. Add the original again instead.",
+            PackMessages.words(PackFailure(409, "original_unknown")),
+        )
         // A server fault's text (a Python exception) is never shown.
         val fault = ApiException(500, null, "KeyError: 'name'", body = Json.parseToJsonElement("""{"error": "KeyError: 'name'"}""").jsonObject)
         assertEquals("Something went wrong on the server. Try again.", PackMessages.words(PackFailure.of(fault)))

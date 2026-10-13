@@ -11,6 +11,7 @@ import app.ezpztac.sync.SyncRepository
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -177,5 +178,21 @@ class LibraryToPackTest {
         api.restore()
         val refused = runCatching { copyCall(api)("p1", PackSource.ClientUuid("lz", "u1"), "lz-a", 7) }.exceptionOrNull()
         assertTrue("$refused", refused is app.ezpztac.network.OtherAccountException)
+    }
+
+    @Test
+    fun `an original is made ready for an update as a copy would be, and one not on this device is left to the server`() = runBlocking {
+        record(up = true)
+        assertNull(copier.readyOriginal(RecordKind.LZ, "u1", 6))
+        assertTrue(log.none { it.startsWith("upload") || it.startsWith("copy") })
+        records.edit(RecordKind.LZ, "u1", name = "LZ HAWK 2")
+        uploads = { Uploaded(ran = true, stopped = StopReason.Offline) }
+        assertEquals(CopyIn.NotUploaded(StopReason.Offline, ran = true), copier.readyOriginal(RecordKind.LZ, "u1", 6))
+        uploads = { markUp(RecordKind.LZ, "u1"); Uploaded(ran = true, conflicts = setOf("u1")) }
+        assertEquals(CopyIn.Conflicted, copier.readyOriginal(RecordKind.LZ, "u1", 6))
+        assertNull(copier.readyOriginal(RecordKind.LZ, "elsewhere", 6))
+        writes = { _, _ -> error("disk full") }
+        assertEquals(CopyIn.Unsaved, copier.readyOriginal(RecordKind.LZ, "u1", 6))
+        assertTrue(log.none { it.startsWith("copy") })
     }
 }

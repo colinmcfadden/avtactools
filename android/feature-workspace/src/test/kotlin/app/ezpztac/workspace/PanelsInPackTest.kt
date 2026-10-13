@@ -1,6 +1,7 @@
 package app.ezpztac.workspace
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -229,6 +230,37 @@ class PanelsInPackTest {
         compose.onNodeWithContentDescription("More actions for LZ IBIS (OWEST)").performClick()
         compose.onNodeWithText("Rename").assertDoesNotExist()
         compose.onNodeWithText("Close here").assertIsDisplayed()                                   // looking is not changing
+    }
+
+    @Test
+    fun `a pack's LZ-PZ and route set, finished or not, are saved to the Library from their menus, and the person's own are not`() {
+        val log = mutableListOf<String>()
+        show {
+            Column {
+                LzHomeContent(lzFinished, LzPanelActions(saveCopy = { log += "copy $it" }), GRID)
+                RoutesHomeContent(routesState, RoutesActions(saveCopy = { log += "copy $it" }))
+            }
+        }
+        compose.onNodeWithContentDescription("More actions for LZ IBIS (OWEST)").performClick()
+        compose.onNodeWithText("Save a copy to Library…").performClick()
+        compose.onNodeWithContentDescription("More actions for OP DK INGRESS").performClick()
+        compose.onNodeWithText("Save a copy to Library…").performClick()
+        assertEquals(listOf("copy pack:p:lz-1", "copy pack:p:rt-1"), log)
+    }
+
+    @Test
+    fun `the person's own LZ-PZ and route set have no Save a copy`() {
+        val own = routesState.copy(open = routesState.open!!.copy(uuid = "0c4f8e2b-7a19-4c3d-a6e5-9b1d2f3e4a57", name = "MY INGRESS", inPack = null), pack = null)
+        show {
+            Column {
+                LzHomeContent(DiagramsUiState(current = activeLz(name = "LZ HAWK")), LzPanelActions(saveCopy = {}), GRID)
+                RoutesHomeContent(own, RoutesActions(saveCopy = {}))
+            }
+        }
+        compose.onNodeWithContentDescription("More actions for LZ HAWK").performClick()
+        compose.onNodeWithText("Save a copy to Library…").assertDoesNotExist()
+        compose.onNodeWithContentDescription("More actions for MY INGRESS").performClick()
+        compose.onNodeWithText("Save a copy to Library…").assertDoesNotExist()
     }
 
     @Test
