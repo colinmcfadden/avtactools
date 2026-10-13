@@ -150,7 +150,7 @@ class AircraftMapImageTest {
     }
 
     @Test
-    fun `nothing is cut off at the picture's edge, but the UH-60's tail loop, whose outline is the edge`() {
+    fun `nothing is cut off at the picture's edge, the UH-60's tail loop included`() {
         for (key in AircraftIcons.KEYS) {
             val b = forMap(key, IconState.NORMAL, 3f)
             val last = b.width - 1
@@ -159,10 +159,24 @@ class AircraftMapImageTest {
             val bottom = (0 until b.width).filter { Color.alpha(b.getPixel(it, last)) > 0 }
             if (key != "uh60") assertTrue("$key touches its bottom", bottom.isEmpty())
             else {
-                // The loop's outline is the tail rotor's tip, 19.76 m from the main rotor's, and the picture ends there: half its 5-decimetre edge is beyond.
+                // The outer half of the loop's 5-decimetre outline is the picture's edge, the least margin that keeps it whole: the bottom row is painted only there.
                 val pxPerDm = b.width / AircraftIcons.UH60_FRAME.side
-                assertTrue("the UH-60 touches its bottom only at its loop: $bottom", bottom.isNotEmpty() && bottom.all { abs(it + 0.5 - b.width / 2.0) <= (4.2 + 2.5) * pxPerDm + 1 })
+                assertTrue("the UH-60 touches its bottom only at its loop: $bottom", bottom.all { abs(it + 0.5 - b.width / 2.0) <= (4.2 + 2.5) * pxPerDm + 1 })
             }
         }
+        // That row being painted cannot show the loop is whole, so the UH-60 is drawn again with room round its frame, at the same pixels to the decimetre:
+        // nothing is painted beyond the frame, so nothing the frame cuts out is lost.
+        val frame = AircraftIcons.UH60_FRAME
+        val svg = assets.open(AircraftIcons.UH60_ASSET).use { it.readBytes().decodeToString() }
+        val room = 10.0
+        val side = frame.side + 2 * room
+        val wider = Regex("viewBox=\"[^\"]*\"").replace(svg) { "viewBox=\"${-side / 2} ${-side / 2} $side $side\"" }
+        val pxPerDm = 3.0 * LzScene.AIRCRAFT_ICON_PT / frame.side
+        val size = (side * pxPerDm).roundToInt()
+        val b = AircraftIconRenderer.renderSvg(wider, IconState.NORMAL, size)
+        val scale = size / side
+        val inside = (room * scale).toInt() until kotlin.math.ceil((room + frame.side) * scale).toInt()
+        val beyond = (0 until size).flatMap { y -> (0 until size).filter { x -> (x !in inside || y !in inside) && Color.alpha(b.getPixel(x, y)) > 0 }.map { x -> x to y } }
+        assertTrue("the UH-60 is painted beyond its frame at ${beyond.take(5)}", beyond.isEmpty())
     }
 }

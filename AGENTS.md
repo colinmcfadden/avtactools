@@ -1290,11 +1290,12 @@ client is built around not losing one:
       (`frontend/public/icons/helicopter.png`) redrawn to the UH-60L/M's published dimensions as `feature-map/src/main/assets/aircraft/uh60.svg`, in decimetres with the
       mast at 0, 0; its header lists them and `Uh60SvgTest` holds them (rotor 53 ft 8 in, fuselage 50 ft 0¾ in by 7 ft 9 in, stabilator 14 ft 4½ in, the tail loop
       ending where the turning tail rotor does, 64 ft 10 in from the main rotor's tip). AndroidSVG draws it with its green swapped for the state's (`renderSvg`), so
-      the file may hold no colour but black and that green. Its frame is its viewBox, 231.6 square round the mast, its rotor 163.6 across: the profile's
-      `rotor_diameter_m` scales the whole picture, so 16.36 m draws it at its published size. The tail loop's outline is the picture's edge, so the outer half of
-      its black edge is cut off. **The other airframes keep the web's silhouettes** (`aircraftIcons.js`) in those colours and at the UH-60's line weights for the
-      size of their rotors; four blades are turned into an X, as the original's are, because one up the nose and its twin down the tail would hide the fuselage
-      under lines that bold (an odd count keeps one up the nose, as on the web). **Not like the web**, which still draws white silhouettes.
+      the file may hold no colour but black and that green. Its frame is its viewBox, 236.6 square round the mast, its rotor 163.6 across: the profile's
+      `rotor_diameter_m` scales the whole picture, so 16.36 m draws it at its published size. The outer half of the tail loop's outline is the picture's edge, the
+      least margin that keeps every stroke whole (`Uh60SvgTest`; at 231.6 it was cut flat). **The other airframes keep the web's silhouettes**
+      (`aircraftIcons.js`) in those colours and at the UH-60's line weights for the size of their rotors; four blades are turned into an X, as the original's
+      are, because one up the nose and its twin down the tail would hide the fuselage under lines that bold (an odd count keeps one up the nose, as on the
+      web). **Not like the web**, which still draws white silhouettes.
     - The list runs aircraft first, then PZ markers, sectors, go-arounds, doghouses, units, whatever was placed first.
     - **Doghouses** (`Doghouses`, `DoghouseBox`, the `DOGHOUSE` kind). The web's maths was extracted from `Doghouse.jsx` / `useDoghouses.js` into
       `feature/doghouses/doghouseFields.js` (no behaviour change) and pinned in `contracts/fixtures/workspace/doghouses.json`. Things that are

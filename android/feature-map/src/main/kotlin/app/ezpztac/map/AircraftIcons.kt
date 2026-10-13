@@ -116,10 +116,11 @@ object AircraftIcons {
     const val UH60_ASSET = "aircraft/uh60.svg"
 
     /**
-     * The UH-60's picture is its SVG's viewBox, a square 231.6 decimetres across centred on the mast (the tail rotor's tip, 115.8 behind it, is its
-     * edge), and its rotor 163.6 across: the profile's rotor diameter scales the whole picture, so the published 16.36 m draws it at its published size.
+     * The UH-60's picture is its SVG's viewBox, a square 236.6 decimetres across centred on the mast (the tail rotor's tip is 115.8 behind it, and the
+     * outer half of the loop's outline reaches 118.3, the edge, so no stroke is cut), and its rotor 163.6 across: the profile's rotor diameter scales the
+     * whole picture, so the published 16.36 m draws it at its published size.
      */
-    val UH60_FRAME = IconFrame(0.0, 0.0, 231.6, 163.6)
+    val UH60_FRAME = IconFrame(0.0, 0.0, 236.6, 163.6)
 
     /** Where a single rotor's mast is in the box. */
     private const val MAST_X = 50.0

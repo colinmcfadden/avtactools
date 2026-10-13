@@ -97,7 +97,7 @@ class AircraftIconsTest {
 
     @Test
     fun `a picture is as many rotor diameters across as its frame is`() {
-        assertEquals(231.6 / 163.6, AircraftIcons.frame("uh60").widthPerRotorDiameter, 1e-12)
+        assertEquals(236.6 / 163.6, AircraftIcons.frame("uh60").widthPerRotorDiameter, 1e-12)
         assertEquals(114.0 / 92.0, AircraftIcons.frame("ah64").widthPerRotorDiameter, 1e-12)
         assertEquals(104.0 / 98.0, AircraftIcons.frame("ch47").widthPerRotorDiameter, 1e-12)
     }

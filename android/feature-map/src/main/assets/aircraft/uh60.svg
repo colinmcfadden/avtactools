@@ -5,9 +5,10 @@
   UH-60L/M: main rotor 16.36 m across (53 ft 8 in, radius 81.8); fuselage 15.26 m long (50 ft 0.75 in), nose 5.25 m
   ahead of the mast, and 2.36 m wide (7 ft 9 in); stabilator 4.38 m span (14 ft 4.5 in), at the foot of the tail pylon 9.5 m behind the mast; tail rotor 3.35 m across
   (11 ft) with its hub 9.905 m behind the mast, so 19.76 m overall with the rotors turning (64 ft 10 in), which is
-  where the loop at the tail ends. Strokes are centred on the true outlines. #64F338 is replaced to draw other states.
+  where the loop at the tail ends. Strokes are centred on the true outlines, and the viewBox reaches 118.3 each way, half
+  the loop's 5-wide outline beyond its end, so every stroke is drawn whole. #64F338 is replaced to draw other states.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-115.8 -115.8 231.6 231.6">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-118.3 -118.3 236.6 236.6">
   <!-- main rotor disc: green on a black edge, so it reads on any base map -->
   <circle cx="0" cy="0" r="81.8" fill="none" stroke="#000000" stroke-width="14"/>
   <circle cx="0" cy="0" r="81.8" fill="none" stroke="#64F338" stroke-width="10"/>

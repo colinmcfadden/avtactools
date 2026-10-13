@@ -6,6 +6,7 @@ import org.junit.Test
 import org.w3c.dom.Element
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.math.abs
 
 /**
  * The UH-60's picture (`assets/aircraft/uh60.svg`) held to the aircraft's published dimensions (UH-60L/M), as the file is: one unit is a decimetre and
@@ -76,14 +77,39 @@ class Uh60SvgTest {
     }
 
     @Test
-    fun `the tail loop ends where the turning tail rotor does, 64 ft 10 in from the main rotor's tip, at the picture's edge`() {
+    fun `the tail loop ends where the turning tail rotor does, 64 ft 10 in from the main rotor's tip, and its outline is inside the picture`() {
         assertEquals(2, loop.size)
         for (path in loop) {
             val aft = points(path).maxOf { it.second }
             val ahead = rotor.first().number("r")                                          // the main rotor's tip, ahead of the mast
             assertEquals(feet(64, 10.0), (aft + ahead) / 10, 0.005)
-            assertEquals(viewBox[1] + viewBox[3], aft, 1e-9)                              // the picture ends there
+            // The picture ends half the widest outline beyond the loop's end, the black one under the green, so that outline is drawn whole.
+            assertTrue(aft + path.number("stroke-width") / 2 <= viewBox[1] + viewBox[3] + 1e-9)
         }
+        assertEquals(viewBox[1] + viewBox[3], loop.maxOf { points(it).maxOf { p -> p.second } + it.number("stroke-width") / 2 }, 1e-9)
+    }
+
+    /** What [shape] covers, half its stroke included, as left, top, right, bottom. A curve stays inside its control points, so a path's points bound it. */
+    private fun bounds(shape: Element): List<Double> {
+        val half = shape.getAttribute("stroke-width").takeIf { it.isNotEmpty() }?.toDouble()?.div(2) ?: 0.0
+        return when (shape.tagName) {
+            "circle" -> (shape.number("r") + half).let { listOf(shape.number("cx") - it, shape.number("cy") - it, shape.number("cx") + it, shape.number("cy") + it) }
+            "rect" -> listOf(shape.number("x") - half, shape.number("y") - half, shape.number("x") + shape.number("width") + half, shape.number("y") + shape.number("height") + half)
+            // Round caps reach half the width past each end, and round joins no further; the loop's joins meet smoothly, so they have no point.
+            else -> points(shape).let { p -> listOf(p.minOf { it.first } - half, p.minOf { it.second } - half, p.maxOf { it.first } + half, p.maxOf { it.second } + half) }
+        }
+    }
+
+    @Test
+    fun `every stroke is drawn whole, and the picture is no wider than that needs`() {
+        val shapes = listOf("circle", "path", "rect").flatMap(::elements)
+        val (minX, minY, width, height) = viewBox
+        for (shape in shapes) {
+            val (left, top, right, bottom) = bounds(shape)
+            assertTrue("${shape.tagName} ${shape.getAttribute("d")}", left >= minX - 1e-9 && top >= minY - 1e-9 && right <= minX + width + 1e-9 && bottom <= minY + height + 1e-9)
+        }
+        // The least margin that keeps every stroke whole: what reaches farthest from the mast reaches the edge, so the rotor is as large as it can be drawn.
+        assertEquals(width / 2, shapes.maxOf { shape -> bounds(shape).maxOf { abs(it) } }, 1e-9)
     }
 
     @Test
