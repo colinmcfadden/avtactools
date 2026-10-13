@@ -358,6 +358,7 @@ function App() {
   const { doghouses, updateDoghouse } = useDoghouses(targetLocation, setFlightData, {
     doghouses: activeGraphics.doghouses ?? [],
     setDoghouses,
+    diagramId: activeDiagramId,
   });
   const {
     helicopters,

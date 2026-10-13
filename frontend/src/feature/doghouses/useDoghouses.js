@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { flightDataFromDoghouses, flightDoghouses } from "./doghouseFields";
 
 const toCoordinates = (target) => {
@@ -58,12 +58,14 @@ export const createDefaultDoghouses = (target, namespace) => {
 
 /**
  * Optional controlled-state shape:
- *   { doghouses: Doghouse[], setDoghouses: React.Dispatch<React.SetStateAction<Doghouse[]>> }
+ *   { doghouses: Doghouse[], setDoghouses: React.Dispatch<React.SetStateAction<Doghouse[]>>, diagramId }
+ * `diagramId` names whose doghouses they are (App.js: the diagram on the map).
  */
 export const useDoghouses = (targetLocation, setFlightData, options = {}) => {
   const [internalDoghouses, setInternalDoghouses] = useState([]);
   const controlledDoghouses = options?.doghouses;
   const controlledSetDoghouses = options?.setDoghouses;
+  const diagramId = options?.diagramId;
   const isControlled =
     controlledDoghouses !== undefined &&
     typeof controlledSetDoghouses === "function";
@@ -83,14 +85,23 @@ export const useDoghouses = (targetLocation, setFlightData, options = {}) => {
     });
   };
 
+  // The flight data follows the doghouses when they change, or when another diagram's are on the map; not each time the same doghouses
+  // come again in a new list. A mission pack's version put into the diagram (someone else's change, or this person's put back by a pack
+  // that takes nothing) makes every list anew, and following the doghouses then put their headings back over the flight data it brought
+  // and sent that as this person's own change: a landing heading typed elsewhere was undone, a turn heard on the live stream (its landing
+  // heading a moment before its doghouse) came back twice, and a read-only pack's LZ/PZ without the headings went round for ever.
+  const followed = useRef(null);
   useEffect(() => {
     if (!setFlightData) return;
+    const seen = JSON.stringify(doghouseList);
+    if (followed.current && followed.current.diagramId === diagramId && followed.current.seen === seen) return;
+    followed.current = { diagramId, seen };
 
     const { landing, takeoff } = flightDoghouses(doghouseList);
     if (landing || takeoff) {
       setFlightData((previous) => flightDataFromDoghouses(doghouseList, previous));
     }
-  }, [doghouseList, setFlightData]);
+  }, [doghouseList, setFlightData, diagramId]);
 
   useEffect(() => {
     const handleEdit = (event) => {
