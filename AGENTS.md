@@ -770,6 +770,14 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   screen's density in points (about 55 on a 560-dpi phone): every aircraft, sized to the metre by its `k0`, was drawn density-times too small on every device. No JVM
   test could see it, since Robolectric's default screen is one pixel to the point. Give a bitmap whose size in points matters the density that says so (`IconRaster`,
   `AircraftIconRenderer.forMap`), and test it under a dense qualifier (`AircraftMapImageTest` runs as `xxhdpi`, where the old bitmap fails).
+- **The pack applies a patch field by field, so a value that is one to a person must go whole.** Each field of a patch stands alone, the later on each: a place sent as the
+  one coordinate a nudge changed, an altitude as its number alone, an analysis as the fields that happened to differ, met someone else's change to the other part and stood as
+  half of each, where nobody put it; and two people giving one point its first values at once lost one, because a new entry goes as one object. Tests that made one change on
+  one device never showed it; the same setting, and two settings of one thing, made on two devices at once did (`LzPackSettingsTest`, `RoutePackSettingsTest`, 2026-10-13).
+  Say for each setting what is one value (`PackKind.keepWhole`), and try both on two devices.
+- **A form that keeps what it opened with puts back what changed under it.** The route's clock form and the unit builder took their values when they opened and applied them
+  all on *Set* or *Apply*, so someone else's change in a pack, or an undo, made while one was open was undone without a word. A field follows what changes under it unless
+  what is typed already says the same, and only what the person changed is applied (`PointDraft.check(before, …)`, `UnitDraft.patchOver`).
 
 ---
 
@@ -2047,6 +2055,9 @@ client is built around not losing one:
   - **The pointer is rounded to 1e-5 degrees** (the web's), and the same place is not said again, so a camera moving a pixel at a time sends nothing new.
   - **Only where the person put the map by hand is shared** (`CameraState.byHand`): never a GPS fix, a search or the view put back at launch (that would be the device's own
     position), nor the crosshair while the map is covered, nor in a pack just opened until the next pan (the engine clears the pointer on `openPack`).
+  - **After a drag the pointer goes back to the crosshair, on purpose** (assessed 2026-10-13, asked whether the jump looks like a stray point): the crosshair is where a
+    phone's pointer rests and where its at-the-crosshair actions happen, so a pointer left at the drop point would show the person somewhere their next action is not. The
+    web's stays at the drop point only because a mouse stays where it was let go, and jumps as far when the mouse is moved quickly. The owner's to change.
   - **A presence frame is no reason for the editors to look** (`sameForALook`): the person's own pointer comes back to them from the live service ten times a second.
   - **The pointers are collected where they are drawn** (`PackPointers`): a pack's people change many times a second, and nothing else is built again as they move.
   - **A person is the web's colour for them** (`PersonColors.of(user_id ?: name)`, Avatar.jsx's hash over code points, each counted by its first UTF-16 unit); every session is
