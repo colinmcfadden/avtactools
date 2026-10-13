@@ -58,10 +58,43 @@ public interface PackKind<D : Any> {
      * [ops], a change that makes a shape of this kind into [after] (what this person sends, or someone else's change laid over this person's
      * versions), with each value that is one to a person kept whole: an operation that changes some of its fields carries the rest as [after]
      * has them, so two people's changes never leave it half one's and half the other's. The operations as they are by default; a route
-     * point's place is one ([RoutePackKind]).
+     * point's place is one ([RoutePackKind]), and so are a planning graphic's and the target ([LzPackKind]).
      */
     public fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = ops
 }
+
+/**
+ * A value that is one to a person, whose fields an editor changes together: the [fields] of the object an operation's path names, wherever [at] says
+ * the path is one. Each field of a patch stands on its own in the pack (the later on each), so a patch that changed some of them would let a change made
+ * elsewhere meanwhile leave the value half one person's and half the other's, where nobody put it ([keptWhole]).
+ */
+internal class WholeValue(val fields: List<String>, val at: (JsonArray) -> Boolean)
+
+/**
+ * [ops] with each patch that changes some of the fields of one of [wholes] carrying the rest of them as [after] (the document they make) has them, after
+ * its own, in the value's order; a field [after] does not hold is left out. Any other operation as it is.
+ */
+internal fun keptWhole(ops: List<JsonObject>, after: JsonElement?, wholes: List<WholeValue>): List<JsonObject> = ops.map { op ->
+    val value = op["value"] as? JsonObject
+    val path = op["path"] as? JsonArray
+    if ((op["type"] as? JsonPrimitive)?.content != "patch" || value == null || path == null) return@map op
+    val whole = wholes.firstOrNull { it.at(path) } ?: return@map op
+    val missing = whole.fields.filter { it !in value }
+    if (missing.isEmpty() || missing.size == whole.fields.size) return@map op
+    val target = path.fold<JsonElement, JsonElement?>(after) { at, segment -> stepInto(at, segment) } as? JsonObject ?: return@map op
+    val rest = missing.mapNotNull { field -> target[field]?.takeUnless { it is JsonNull }?.let { field to it } }
+    if (rest.isEmpty()) return@map op
+    JsonObject(LinkedHashMap(op).apply { put("value", JsonObject(LinkedHashMap(value).apply { rest.forEach { (field, it) -> put(field, it) } })) })
+}
+
+/** One step along an operation's path, as [PackOps] takes it: an object's field (none when it is null), or a list's element by id. */
+internal fun stepInto(node: JsonElement?, segment: JsonElement): JsonElement? = when (segment) {
+    is JsonObject -> (node as? JsonArray)?.firstOrNull { it is JsonObject && "id" in it && Js.strictEquals(it["id"], segment["id"]) }
+    else -> (node as? JsonObject)?.get((segment as JsonPrimitive).content)?.takeUnless { it is JsonNull }
+}
+
+/** Whether [segment] of an operation's path is the field [name]. */
+internal fun isField(segment: JsonElement, name: String): Boolean = segment is JsonPrimitive && segment.isString && segment.content == name
 
 /**
  * An LZ/PZ item as a [Diagram] (usePackLz). Each person's own fields are the view (base map, LZ outline, slope map); the times and
@@ -105,12 +138,38 @@ public class LzPackKind(private val env: DiagramNormalizer.Environment = Diagram
     override fun describe(before: JsonElement?, after: JsonElement?, name: String?, actor: String?): String =
         PackLz.describeLzChange(before, after, name, actor)
 
+    /**
+     * A planning graphic's place is one value, and so is the target: a patch that moves one in one direction only (each arrow of the nudge pad changes one
+     * coordinate) carries the rest of it as [after] has it, so a move north here and a move east elsewhere leave it where one of the two put it, never at
+     * this latitude and the other's longitude. A PZ marker's anchor and tip are one value, not two: its tip is a place, put where its reach and bearing
+     * from the anchor say, so a turn (the tip alone) kept apart from a move (anchor and tip) could leave the arrow from the moved anchor to a tip set for
+     * the old one, a length and direction nobody gave it; together, the later stands whole. A sector's corners and a boundary's are lists without ids,
+     * which [PackDiff] sends whole already. The web drags a graphic, which changes both coordinates; it turns a PZ marker by its tip alone.
+     */
+    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = keptWhole(ops, after, WHOLES)
+
     // The view kept on the device, read as the web reads one (a value it does not understand is the default), without the clock.
     private fun viewOf(diagram: Diagram, view: JsonElement): DiagramView = DiagramNormalizer.normalize(
         JsonObject(mapOf("view" to view)),
         DiagramNormalizer.Options(id = diagram.id, createdAt = diagram.createdAt, updatedAt = diagram.updatedAt),
         env,
     ).view
+
+    private companion object {
+        // The graphics a place is all there is to: `lat` and `lon`.
+        private val PLACED = setOf("helicopters", "goArounds", "doghouses", "units")
+
+        // `["graphics", collection, {id}]`: a graphic of a collection [collection] accepts.
+        private fun isGraphic(path: JsonArray, collection: (String) -> Boolean): Boolean =
+            path.size == 3 && isField(path[0], "graphics") && path[2] is JsonObject &&
+                (path[1] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let(collection) == true
+
+        val WHOLES = listOf(
+            WholeValue(listOf("lat", "lon", "mgrs")) { path -> path.size == 1 && isField(path[0], "target") },
+            WholeValue(listOf("lat", "lon", "tipLat", "tipLon")) { path -> isGraphic(path) { it == "pzMarkers" } },
+            WholeValue(listOf("lat", "lon")) { path -> isGraphic(path) { it in PLACED } },
+        )
+    }
 }
 
 /**
@@ -186,24 +245,13 @@ public object RoutePackKind : PackKind<RouteSet> {
      * a move to a typed grid there would otherwise leave the point at the grid's longitude and this latitude: where nobody put it. The web moves a point by
      * dragging it, which changes both.
      */
-    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = ops.map { op ->
-        val value = op["value"] as? JsonObject
-        val path = op["path"] as? JsonArray
-        if ((op["type"] as? JsonPrimitive)?.content != "patch" || value == null || path == null || ("lat" in value) == ("lon" in value) || !isPointPath(path)) {
-            return@map op
-        }
-        val point = path.fold<JsonElement, JsonElement?>(after) { at, segment -> step(at, segment) } as? JsonObject ?: return@map op
-        val other = if ("lat" in value) "lon" else "lat"
-        val place = point[other] ?: return@map op
-        JsonObject(LinkedHashMap(op).apply { put("value", JsonObject(LinkedHashMap(value).apply { put(other, place) })) })
-    }
+    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = keptWhole(ops, after, WHOLES)
 
     // `["routes", {id}, "points", {id}]`: a point of a route.
     private fun isPointPath(path: JsonArray): Boolean =
-        path.size == 4 && Js.strictEquals(path[0], ROUTES) && path[1] is JsonObject && Js.strictEquals(path[2], POINTS) && path[3] is JsonObject
+        path.size == 4 && isField(path[0], "routes") && path[1] is JsonObject && isField(path[2], "points") && path[3] is JsonObject
 
-    private val ROUTES = JsonPrimitive("routes")
-    private val POINTS = JsonPrimitive("points")
+    private val WHOLES = listOf(WholeValue(listOf("lat", "lon"), ::isPointPath))
 
     private const val SET = "set"
 
@@ -224,18 +272,12 @@ public object RoutePackKind : PackKind<RouteSet> {
         var deepest = -1
         for ((depth, segment) in path.withIndex()) {
             if (node is JsonObject && segment is JsonPrimitive) deepest = depth
-            node = step(node, segment) ?: break
+            node = stepInto(node, segment) ?: break
         }
         if (deepest < 1) return null
-        val value = path.subList(0, deepest + 1).fold<JsonElement, JsonElement?>(after) { at, segment -> step(at, segment) } ?: return null
+        val value = path.subList(0, deepest + 1).fold<JsonElement, JsonElement?>(after) { at, segment -> stepInto(at, segment) } ?: return null
         val field = JsonObject(mapOf((path[deepest] as JsonPrimitive).content to value))
         return JsonObject(linkedMapOf("type" to JsonPrimitive("patch"), "path" to JsonArray(path.subList(0, deepest)), "value" to field))
-    }
-
-    // One step along an operation's path, as PackOps takes it: an object's field (none when it is null), or a list's element by id.
-    private fun step(node: JsonElement?, segment: JsonElement): JsonElement? = when (segment) {
-        is JsonObject -> (node as? JsonArray)?.firstOrNull { it is JsonObject && "id" in it && Js.strictEquals(it["id"], segment["id"]) }
-        else -> (node as? JsonObject)?.get((segment as JsonPrimitive).content)?.takeUnless { it is JsonNull }
     }
 
     /** A route of the pack's set that the editor's routes are measured against: [json] as the pack has it, and [version], what it is compared as. */

@@ -1,5 +1,7 @@
 package app.ezpztac.missionpacks
 
+import app.ezpztac.model.Diagram
+import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.RouteSet
 import kotlinx.coroutines.withTimeout
@@ -313,7 +315,62 @@ public object PackScenarioBook {
                 assertEquals(setOf("sp", "cp1"), editor.document?.routes?.single()?.elevations?.keys)
             }
         },
+        PackScenario("an aircraft moved north on one device and east on the other stands whole where the later move put it, on both devices and in the pack") { env ->
+            val colin = env.person("Colin P.")
+            val sam = env.person("Sam B.")
+            val pack = env.createPack(colin, "OP DK")
+            env.addMember(pack, colin, sam, "editor")
+            env.send(pack, colin, json("""{"type": "item.create", "item": "lz-1", "kind": "lz", "name": "LZ HAWK", "data": $HAWK}"""))
+            val a = env.device("A", colin)
+            val b = env.device("B", sam)
+            a.enable()
+            a.open(pack)
+            b.enable()
+            b.open(pack)
+            eventually("both devices have LZ HAWK") { a.item("lz-1") != null && b.item("lz-1") != null }
+            val onA = PackLzEditor(a, pack, "lz-1").apply { open() }
+            val onB = PackLzEditor(b, pack, "lz-1").apply { open() }
+
+            // Colin, with no signal, nudges Chalk 1 north (its latitude alone changes); Sam nudges it east, and his reaches the pack first.
+            a.network.offline = true
+            onA.change { moved(it, lat = 34.5009, lon = null) }
+            assertNull(onA.look())
+            onB.change { moved(it, lat = null, lon = -84.0988) }
+            assertNull(onB.look())
+            b.sent(pack)
+            a.online()
+            a.sent(pack)
+            // Colin's move reached the pack later: it stands whole, his latitude and the longitude he had, never his latitude and Sam's longitude.
+            val later = LatLon(34.5009, -84.1)
+            eventually("both editors have Chalk 1 where Colin put it") {
+                onA.look() == null && onB.look() == null && onA.at("helicopters", CHALK_1) == later && onB.at("helicopters", CHALK_1) == later
+            }
+            val chalk1 = env.data(pack, colin, "lz-1")!!.jsonObject.getValue("graphics").jsonObject.getValue("helicopters").jsonArray
+                .single { it.jsonObject["id"] == CHALK_1 }.jsonObject
+            assertEquals(later, LatLon(chalk1.getValue("lat").jsonPrimitive.double, chalk1.getValue("lon").jsonPrimitive.double))
+            for (editor in listOf(onA, onB)) assertEquals(LatLon(34.501, -84.1), editor.at("helicopters", CHALK_2))
+        },
     )
+
+    // -- LZ HAWK ----------------------------------------------------------------------------------------------------------------
+
+    private val CHALK_1 = JsonPrimitive(101)
+    private val CHALK_2 = JsonPrimitive(102)
+
+    // LZ HAWK as a client in step with today's web writes it: analysed, two aircraft.
+    private val HAWK = """{"schemaVersion": 2, "status": "analyzed",
+        "target": {"lat": 34.5, "lon": -84.1, "mgrs": "16S GC 28864 55349"}, "mapData": {"mgrs": "16S GC 28864 55349"}, "flightData": {"landing_hdg": "090°"},
+        "analysis": {"customLZ": null, "detectedLZ": [[34.5, -84.1], [34.51, -84.1], [34.51, -84.09]], "results": {"area": 1}, "gridElevation": "1200", "latLong": ""},
+        "graphics": {"helicopters": [{"id": 101, "lat": 34.5, "lon": -84.1, "rotation": 90, "type": "helo", "profileId": "uh60l"},
+                                     {"id": 102, "lat": 34.501, "lon": -84.1, "rotation": 90, "type": "helo", "profileId": "uh60l"}],
+                     "doghouses": [], "pzMarkers": [], "sectorsOfFire": [], "goArounds": [], "units": [], "measurements": [], "exportBox": null}}"""
+
+    // HAWK's Chalk 1 moved as the inspector's nudge pad moves it ([lat] or [lon] null: not moved that way).
+    private fun moved(diagram: Diagram, lat: Double?, lon: Double?): Diagram {
+        val chalk1 = checkNotNull(DiagramOps.graphic(diagram, "helicopters", "101"))
+        val patch = JsonObject(mapOf("lat" to (lat?.let(::JsonPrimitive) ?: chalk1.getValue("lat")), "lon" to (lon?.let(::JsonPrimitive) ?: chalk1.getValue("lon"))))
+        return DiagramOps.patchGraphic(diagram, "helicopters", CHALK_1, patch)
+    }
 
     // -- ROUTES 1 ---------------------------------------------------------------------------------------------------------------
 

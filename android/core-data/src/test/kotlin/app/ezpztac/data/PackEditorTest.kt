@@ -128,7 +128,8 @@ class PackEditorTest {
         r.diagrams.close()
         runCurrent()
         assertNull(r.diagrams.active.value)
-        assertJson(JsonArray(listOf(patchAt(101, """{"lat": 34.4}""", "Sam B. moved Chalk 1 on LZ HAWK."))), JsonArray(r.sent().single()), "the change")
+        // With its whole place: a move north alone carries the longitude (LzPackKind.keepWhole).
+        assertJson(JsonArray(listOf(patchAt(101, """{"lat": 34.4, "lon": -84.1}""", "Sam B. moved Chalk 1 on LZ HAWK."))), JsonArray(r.sent().single()), "the change")
     }
 
     @Test
@@ -181,7 +182,7 @@ class PackEditorTest {
         assertEquals(34.5, r.helicopter(0).getValue("lat").jsonPrimitive.double, 0.0)
         assertEquals("their change stays", "270°", r.doc().flightData.getValue("landing_hdg").jsonPrimitive.content)
         r.advance(STILL)
-        assertJson(JsonArray(listOf(patchAt(101, """{"lat": 34.5}""", "Sam B. moved Chalk 1 on LZ HAWK."))), JsonArray(r.sent()[1]), "the undo")
+        assertJson(JsonArray(listOf(patchAt(101, """{"lat": 34.5, "lon": -84.1}""", "Sam B. moved Chalk 1 on LZ HAWK."))), JsonArray(r.sent()[1]), "the undo")
         assertEquals(2, r.sent().size)
         assertEquals("270°", r.serverData().getValue("flightData").jsonObject.getValue("landing_hdg").jsonPrimitive.content)
         assertEquals(34.5, r.serverHelicopter(0).getValue("lat").jsonPrimitive.double, 0.0)
@@ -193,7 +194,7 @@ class PackEditorTest {
         r.diagrams.edit("Move", change = move(101, """{"lat": 34.499}"""))
         r.theirs(json("""{"type": "patch", "item": "lz-1", "path": ["graphics", "helicopters", {"id": 102}], "value": {"heading": 270}}"""))
         assertEquals("ours went at once, without waiting out the pause", 1, r.sent().size)
-        assertJson(JsonArray(listOf(patchAt(101, """{"lat": 34.499}""", "Sam B. moved Chalk 1 on LZ HAWK."))), JsonArray(r.sent().single()), "ours")
+        assertJson(JsonArray(listOf(patchAt(101, """{"lat": 34.499, "lon": -84.1}""", "Sam B. moved Chalk 1 on LZ HAWK."))), JsonArray(r.sent().single()), "ours")
         assertEquals(34.499, r.helicopter(0).getValue("lat").jsonPrimitive.double, 0.0)
         assertEquals(270, r.helicopter(1).getValue("heading").jsonPrimitive.int)
         r.advance(10_000)
@@ -284,8 +285,8 @@ class PackEditorTest {
         assertJson(
             JsonArray(
                 listOf(
-                    JsonArray(listOf(patchAt(101, """{"lat": 34.499}""", "Sam B. moved Chalk 1 on LZ HAWK."))),
-                    JsonArray(listOf(patchAt(101, """{"lat": 34.498}""", "Sam B. moved Chalk 1 on LZ HAWK."))),
+                    JsonArray(listOf(patchAt(101, """{"lat": 34.499, "lon": -84.1}""", "Sam B. moved Chalk 1 on LZ HAWK."))),
+                    JsonArray(listOf(patchAt(101, """{"lat": 34.498, "lon": -84.1}""", "Sam B. moved Chalk 1 on LZ HAWK."))),
                 ),
             ),
             JsonArray(r.sent().map(::JsonArray)), "what was sent",

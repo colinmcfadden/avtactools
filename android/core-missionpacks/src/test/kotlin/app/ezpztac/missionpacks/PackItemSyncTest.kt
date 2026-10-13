@@ -349,7 +349,8 @@ class PackItemSyncTest {
             e.change("lz-1", edit = move(101, """{"lat": 34.4}"""))
             e.close("lz-1")
             e.advance(1_000)
-            assertSent("""[[{"type": "patch", "item": "lz-1", "path": ["graphics", "helicopters", {"id": 101}], "value": {"lat": 34.4},
+            // Not like the web, which sends the latitude alone: an aircraft's place is one value (LzPackKind.keepWhole).
+            assertSent("""[[{"type": "patch", "item": "lz-1", "path": ["graphics", "helicopters", {"id": 101}], "value": {"lat": 34.4, "lon": -84.1},
                              "summary": "Colin M. moved Chalk 1 on LZ HAWK."}]]""", e.sent)
             val packs = e.items[0].data.jsonObject.getValue("graphics").jsonObject.getValue("helicopters").jsonArray
             assertEquals(34.4, packs[0].jsonObject.getValue("lat").jsonPrimitive.double)
@@ -426,10 +427,11 @@ class PackItemSyncTest {
             e.advance(1_000)
             e.change("lz-1", edit = move(101, """{"lat": 34.498}"""))
             e.advance(1_000)
+            // Each with the aircraft's whole place, not like the web (LzPackKind.keepWhole).
             assertSent(
-                """[[{"type": "patch", "item": "lz-1", "path": ["graphics", "helicopters", {"id": 101}], "value": {"lat": 34.499},
+                """[[{"type": "patch", "item": "lz-1", "path": ["graphics", "helicopters", {"id": 101}], "value": {"lat": 34.499, "lon": -84.1},
                        "summary": "Colin M. moved Chalk 1 on LZ HAWK."}],
-                    [{"type": "patch", "item": "lz-1", "path": ["graphics", "helicopters", {"id": 101}], "value": {"lat": 34.498},
+                    [{"type": "patch", "item": "lz-1", "path": ["graphics", "helicopters", {"id": 101}], "value": {"lat": 34.498, "lon": -84.1},
                        "summary": "Colin M. moved Chalk 1 on LZ HAWK."}]]""",
                 e.sent,
             )
