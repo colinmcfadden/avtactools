@@ -14,9 +14,11 @@ on:
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
       # Every web file a fixture pins, and what it imports: the mission packs' rules, sentences and session
-      # (packs/*.json), the LZ normaliser and the sketch's routes they read through, and the route code.
+      # (packs/*.json), the LZ normaliser and the sketch's routes they read through, the doghouses and the
+      # flight data they give (workspace/doghouses.json, packs/settings.json, packs/history.json), and the route code.
       - "frontend/src/feature/missionPacks/**"
       - "frontend/src/feature/lzWorkspace/**"
+      - "frontend/src/feature/doghouses/**"
       - "frontend/src/feature/msnxImport/**"
       - "frontend/src/feature/localPoints/**"
       - "frontend/src/feature/threats/**"
@@ -31,9 +33,11 @@ on:
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
       # Every web file a fixture pins, and what it imports: the mission packs' rules, sentences and session
-      # (packs/*.json), the LZ normaliser and the sketch's routes they read through, and the route code.
+      # (packs/*.json), the LZ normaliser and the sketch's routes they read through, the doghouses and the
+      # flight data they give (workspace/doghouses.json, packs/settings.json, packs/history.json), and the route code.
       - "frontend/src/feature/missionPacks/**"
       - "frontend/src/feature/lzWorkspace/**"
+      - "frontend/src/feature/doghouses/**"
       - "frontend/src/feature/msnxImport/**"
       - "frontend/src/feature/localPoints/**"
       - "frontend/src/feature/threats/**"
