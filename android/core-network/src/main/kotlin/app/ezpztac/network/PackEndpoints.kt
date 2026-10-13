@@ -73,13 +73,14 @@ public suspend fun ApiClient.listPacks(): List<PackSummary> =
 
 /**
  * Makes a pack the caller owns. Pass the [uuid] the device chose and a retry after a lost response returns the first pack
- * ([Saved.created] false) instead of making a second. A pack is shared with a team only by [TeamShare.With].
+ * ([Saved.created] false) instead of making a second. A pack is shared with a team only by [TeamShare.With]. For [asUser] when given.
  */
 public suspend fun ApiClient.createPack(
     name: String,
     description: String? = null,
     share: TeamShare = TeamShare.Unchanged,
     uuid: String? = null,
+    asUser: Int? = null,
 ): Saved<Pack> {
     val response = execute(
         call(
@@ -90,6 +91,7 @@ public suspend fun ApiClient.createPack(
                 if (share is TeamShare.With) { put("team_id", share.teamId); put("team_role", share.role) }
                 if (uuid != null) put("uuid", uuid)
             },
+            asUser = asUser,
         ),
     )
     return Saved(decode(response), created = response.status == 201)
@@ -100,13 +102,14 @@ public suspend fun ApiClient.pack(uuid: String): Pack = decode(execute(call("GET
 
 /**
  * Renames or describes the pack (an editor may), or shares it with a team or stops sharing it (only the owner). Only what is given
- * is sent. A finished pack refuses a new name or description with 423 `pack_finished`.
+ * is sent. A finished pack refuses a new name or description with 423 `pack_finished`. For [asUser] when given.
  */
 public suspend fun ApiClient.updatePack(
     uuid: String,
     name: String? = null,
     description: String? = null,
     share: TeamShare = TeamShare.Unchanged,
+    asUser: Int? = null,
 ): Pack = decode(
     execute(
         call(
@@ -120,6 +123,7 @@ public suspend fun ApiClient.updatePack(
                     is TeamShare.With -> { put("team_id", share.teamId); put("team_role", share.role) }
                 }
             },
+            asUser = asUser,
         ),
     ),
 )
@@ -210,8 +214,8 @@ public suspend fun ApiClient.savePackItemToLibrary(uuid: String, item: String, n
 // -- Members ------------------------------------------------------------------------
 
 /** Adds someone who shares a team with the owner (the owner only). Anyone else is invited by email ([inviteToPack]). */
-public suspend fun ApiClient.addPackMember(uuid: String, userId: Int, role: String = "editor"): PackMember = decode<MemberBody>(
-    execute(call("POST", "${PackPaths.pack(uuid)}/members", body = buildJsonObject { put("user_id", userId); put("role", role) })),
+public suspend fun ApiClient.addPackMember(uuid: String, userId: Int, role: String = "editor", asUser: Int? = null): PackMember = decode<MemberBody>(
+    execute(call("POST", "${PackPaths.pack(uuid)}/members", body = buildJsonObject { put("user_id", userId); put("role", role) }, asUser = asUser)),
 ).member
 
 /** Changes a member's role (the owner only). `owner` hands the pack over, and the old owner stays as an editor. */
@@ -233,8 +237,8 @@ public suspend fun ApiClient.packInvites(uuid: String): List<Invite> =
  * Invites anyone by email (the owner only). Inviting the same address again sends a new link in place of the old one
  * ([Saved.created] false). 30 an hour per person ([RateLimitedException]).
  */
-public suspend fun ApiClient.inviteToPack(uuid: String, email: String, role: String = "editor"): Saved<InviteReply> {
-    val response = execute(call("POST", "${PackPaths.pack(uuid)}/invites", body = buildJsonObject { put("email", email); put("role", role) }))
+public suspend fun ApiClient.inviteToPack(uuid: String, email: String, role: String = "editor", asUser: Int? = null): Saved<InviteReply> {
+    val response = execute(call("POST", "${PackPaths.pack(uuid)}/invites", body = buildJsonObject { put("email", email); put("role", role) }, asUser = asUser))
     return Saved(decode(response), created = response.status == 201)
 }
 
@@ -267,7 +271,7 @@ public suspend fun ApiClient.acceptInviteLink(token: String, asUser: Int? = null
 // -- Teams ----------------------------------------------------------------------------
 
 /** The caller's teams, by name. */
-public suspend fun ApiClient.listTeams(): List<TeamSummary> = decode<TeamsBody>(execute(call("GET", "/api/teams"))).teams
+public suspend fun ApiClient.listTeams(asUser: Int? = null): List<TeamSummary> = decode<TeamsBody>(execute(call("GET", "/api/teams", asUser = asUser))).teams
 
 /** Makes a team the caller owns. */
 public suspend fun ApiClient.createTeam(name: String): Team =
@@ -309,8 +313,8 @@ public suspend fun ApiClient.revokeTeamInvite(id: Int, inviteId: Int): Invite =
 // -- People -----------------------------------------------------------------------------
 
 /** People who share a team with the caller, by name or sign-in address ([q]: 2 to 100 characters). Nobody else is ever found. */
-public suspend fun ApiClient.searchPeople(q: String): List<UserBrief> =
-    decode<UsersBody>(execute(call("GET", "/api/users/search", query = mapOf("q" to q)))).users
+public suspend fun ApiClient.searchPeople(q: String, asUser: Int? = null): List<UserBrief> =
+    decode<UsersBody>(execute(call("GET", "/api/users/search", query = mapOf("q" to q), asUser = asUser))).users
 
 // -- The pack engine's calls --------------------------------------------------------------
 //

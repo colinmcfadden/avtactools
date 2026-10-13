@@ -944,4 +944,13 @@ class WorkspaceViewModelTest {
         r.model.duplicateEdited()
         assertTrue((r.model.dialog.value as PackDialog.Duplicate).sending)
     }
+
+    @Test
+    fun `New pack closes the switcher before it opens, and is not offered without a way to make one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val log = mutableListOf<String>()
+        actionsOf(r.model, close = { log += "close" }, onNewPack = { log += "new pack" }).newPack!!()
+        assertEquals(listOf("close", "new pack"), log)
+        assertNull(actionsOf(r.model, close = {}).newPack)
+    }
 }

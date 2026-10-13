@@ -12,17 +12,24 @@ import app.ezpztac.network.Invite
 import app.ezpztac.network.InviteAccepted
 import app.ezpztac.network.PackEventPage
 import app.ezpztac.network.PackSummary
+import app.ezpztac.network.TeamShare
 import app.ezpztac.network.TeamSummary
+import app.ezpztac.network.UserBrief
 import app.ezpztac.network.acceptInvite
+import app.ezpztac.network.addPackMember
+import app.ezpztac.network.createPack
 import app.ezpztac.network.declineInvite
 import app.ezpztac.network.duplicatePack
 import app.ezpztac.network.finishPack
+import app.ezpztac.network.inviteToPack
 import app.ezpztac.network.listPacks
 import app.ezpztac.network.listTeams
 import app.ezpztac.network.markPackSeen
 import app.ezpztac.network.myInvites
 import app.ezpztac.network.packEvents
 import app.ezpztac.network.reopenPack
+import app.ezpztac.network.searchPeople
+import app.ezpztac.network.updatePack
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -62,6 +69,35 @@ class ApiPacksApi @Inject constructor(private val api: ApiClient) : PacksApi {
     }
 
     override suspend fun duplicate(uuid: String, name: String, user: Int): PackMade = api.duplicatePack(uuid, name, asUser = user).let { PackMade(it.uuid, it.name) }
+}
+
+/** The calls about people over the API client, each for the account asked for. */
+class ApiPeopleApi @Inject constructor(private val api: ApiClient) : PeopleApi {
+    override suspend fun teams(user: Int): List<TeamSummary> = api.listTeams(asUser = user)
+
+    override suspend fun searchPeople(query: String, user: Int): List<UserBrief> = api.searchPeople(query, asUser = user)
+
+    override suspend fun createPack(name: String, description: String, team: TeamPick?, uuid: String, user: Int): PackCreated {
+        val share = team?.let { TeamShare.With(it.teamId, it.role) } ?: TeamShare.Unchanged
+        val saved = api.createPack(name, description, share, uuid, asUser = user)
+        val pack = saved.value
+        return PackCreated(pack.uuid, pack.name, pack.description, pack.team?.let { TeamPick(it.id, it.role ?: "editor") }, saved.created)
+    }
+
+    override suspend fun updatePack(uuid: String, change: PackChange, user: Int) {
+        val share = when {
+            !change.setTeam -> TeamShare.Unchanged
+            change.team == null -> TeamShare.None                                                  // sent as no team: leaving it out keeps the one there
+            else -> TeamShare.With(change.team.teamId, change.team.role)
+        }
+        api.updatePack(uuid, change.name, change.description, share, asUser = user)
+    }
+
+    override suspend fun addMember(uuid: String, userId: Int, role: String, user: Int) {
+        api.addPackMember(uuid, userId, role, asUser = user)
+    }
+
+    override suspend fun invite(uuid: String, email: String, role: String, user: Int): Boolean = api.inviteToPack(uuid, email, role, asUser = user).value.emailSent != false
 }
 
 /** The packs the device runs: the engine's open pack, opened and closed through the editors' join to it. */
@@ -126,4 +162,7 @@ internal abstract class PacksModule {
 
     @Binds
     abstract fun packPanelDoor(impl: EnginePackPanelDoor): PackPanelDoor
+
+    @Binds
+    abstract fun peopleApi(impl: ApiPeopleApi): PeopleApi
 }

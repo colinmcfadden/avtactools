@@ -263,6 +263,24 @@ class PackCallsTest {
         }
     }
 
+    @Test
+    fun `making a pack and bringing people in are made for one account, and never sent under another's session`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("pack: create") }
+            assertTrue(rig.client.createPack("OP DK", "", TeamShare.With(3, "viewer"), uuid = "0f0e0d0c-0b0a-4908-8706-050403020100", asUser = me).created)
+            val other = me + 1
+            assertThrows<OtherAccountException> { rig.client.createPack("OP DK", uuid = "0f0e0d0c-0b0a-4908-8706-050403020100", asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.updatePack(pack, name = "OP DK", asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.addPackMember(pack, 7, asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.inviteToPack(pack, "a@example.com", asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.searchPeople("sam", asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.listTeams(asUser = other) }
+            assertEquals(1, rig.requests.size)                                                          // only the first went
+            val sent = json(rig.requests.single().body.readUtf8())
+            assertEquals(json("""{"name": "OP DK", "description": "", "team_id": 3, "team_role": "viewer", "uuid": "0f0e0d0c-0b0a-4908-8706-050403020100"}"""), sent)
+        }
+    }
+
     // -- Ids --------------------------------------------------------------------------------------
 
     @Test

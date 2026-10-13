@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,11 +48,12 @@ import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.PillStyle
 import app.ezpztac.designsystem.Tokens
 
-/** What the switcher does: open a workspace (null for the Library), answer an invitation, close. */
+/** What the switcher does: open a workspace (null for the Library), answer an invitation, close, and make a new pack (offered when given). */
 class SwitcherActions(
     val pick: (String?) -> Unit = {},
     val answer: (id: Int, accept: Boolean) -> Unit = { _, _ -> },
     val close: () -> Unit = {},
+    val newPack: (() -> Unit)? = null,
 )
 
 /**
@@ -61,23 +63,24 @@ class SwitcherActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SwitcherSheet(viewModel: WorkspaceViewModel, onDismiss: () -> Unit, onPick: (String?) -> Unit = {}) {
+fun SwitcherSheet(viewModel: WorkspaceViewModel, onDismiss: () -> Unit, onPick: (String?) -> Unit = {}, onNewPack: (() -> Unit)? = null) {
     val state by viewModel.switcher.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.switcherOpened() }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        SwitcherContent(state, actionsOf(viewModel, onDismiss, onPick), Modifier.verticalScroll(rememberScrollState()))
+        SwitcherContent(state, actionsOf(viewModel, onDismiss, onPick, onNewPack), Modifier.verticalScroll(rememberScrollState()))
     }
 }
 
 /**
  * The switcher's actions over the view model: choosing a workspace closes it first (and tells [onPick], so the frame can show the pack's panel once
- * it opens), and so does an invitation that let the person in to a pack.
+ * it opens), and so do an invitation that let the person in to a pack and *New pack* ([onNewPack]).
  */
-fun actionsOf(viewModel: WorkspaceViewModel, close: () -> Unit, onPick: (String?) -> Unit = {}) = SwitcherActions(
+fun actionsOf(viewModel: WorkspaceViewModel, close: () -> Unit, onPick: (String?) -> Unit = {}, onNewPack: (() -> Unit)? = null) = SwitcherActions(
     pick = { uuid -> close(); onPick(uuid); viewModel.switchTo(uuid) },
     answer = { id, accept -> viewModel.answer(id, accept, onJoined = close) },
     close = close,
+    newPack = onNewPack?.let { open -> { close(); open() } },
 )
 
 /**
@@ -119,7 +122,15 @@ fun SwitcherContent(state: SwitcherUi, actions: SwitcherActions, modifier: Modif
                 if (inLibrary) Icon(painterResource(EzpzIcons.check), contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp))
             }
         }
-        Label("Mission Packs")
+        Row(Modifier.fillMaxWidth().padding(end = Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { Label("Mission Packs") }
+            actions.newPack?.let { newPack ->
+                TextButton(onClick = newPack, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp).padding(top = Tokens.Spacing.sm.dp)) {
+                    Icon(painterResource(EzpzIcons.add), contentDescription = null, modifier = Modifier.size(20.dp))
+                    Text("New pack", modifier = Modifier.padding(start = Tokens.Spacing.sm.dp))
+                }
+            }
+        }
         if (state.loaded && state.packs.isEmpty()) {
             Text(
                 "No packs yet. A Mission Pack is a shared space for one operation: everyone in it edits the same LZ/PZs, routes and point sets.",

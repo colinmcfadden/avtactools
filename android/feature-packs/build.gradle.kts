@@ -20,4 +20,5 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     testImplementation(project(":core-testing"))
+    testImplementation(libs.okhttp.mockwebserver)                // the calls about people, over the real client
 }

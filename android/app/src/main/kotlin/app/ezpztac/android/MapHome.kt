@@ -99,6 +99,8 @@ import app.ezpztac.network.ApiUser
 import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
 import app.ezpztac.packs.PackChip
+import app.ezpztac.packs.NewPackHost
+import app.ezpztac.packs.NewPackViewModel
 import app.ezpztac.packs.PackDialogsHost
 import app.ezpztac.packs.PackHeaderMenu
 import app.ezpztac.packs.PackPanelFoot
@@ -249,7 +251,17 @@ fun MapHome(
             raiseFor = uuid
         }
     }
-    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack)
+    // New Mission Pack, from the switcher: once it is made it opens, raised as a pack picked in the switcher is.
+    val newPack: NewPackViewModel = hiltViewModel()
+    LaunchedEffect(newPack) {
+        newPack.made.collect { uuid ->
+            pickedPack(uuid)
+            workspace.refresh()
+            workspace.switchTo(uuid)
+        }
+    }
+    LaunchedEffect(newPack) { newPack.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack, onNewPack = newPack::start)
     var packShownFor by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(openPack?.uuid) {
         val uuid = openPack?.uuid
@@ -602,7 +614,7 @@ fun MapHome(
                                         DropdownMenu(
                                             expanded = true, onDismissRequest = dismiss, shape = MaterialTheme.shapes.large,
                                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(SWITCHER_WIDTH),
-                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack)) }
+                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack, newPack::start)) }
                                     }
                                 } else {
                                     null
@@ -651,8 +663,9 @@ fun MapHome(
             }
             // The held route's plan (the design's RoutePlan): a page of its own over the frame, with the frame's toasts.
             if (!tablet) movableRoutePlan(false)
-            // Finishing, reopening or duplicating the open pack, asked about wherever it was asked for.
+            // Finishing, reopening or duplicating the open pack, asked about wherever it was asked for; and a new pack.
             PackDialogsHost(workspace)
+            if (packsHere) NewPackHost(newPack, tablet)
             // The Library (the design's): opening an item from it shuts it and shows the panel the item is in, as the web's does; renaming, deleting and settling a
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(

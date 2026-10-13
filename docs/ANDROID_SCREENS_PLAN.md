@@ -459,7 +459,39 @@ holds the rest). The older map labels (route points, threats, graphics) mirror i
 `PackEditorLookTest`, `PackFactsTest`, `PointersTest` (with a screenshot), `HomeViewModelTest`.
 
 **P3 — People.** *New pack* (`NewPack`), *Members* (`Members`: roles, invite by name or email, pending invites with resend and revoke,
-share with a team), and the teams page.
+share with a team), and the teams page. Built in three steps, each reviewed on its own: P3a New pack, P3b Members, P3c Teams.
+
+**P3a — New pack. Built.** The switcher's *New pack* (beside its *Mission Packs* heading, phone sheet and tablet menu alike) opens New Mission Pack: a full-screen dialog
+on a phone (the design's AP NewPack: *Create* in its bar), a dialog 560 dp wide on a tablet (AT NewPack: *Cancel* and *Create pack* at its foot, the *Just me* line under
+the choice). A name (typed in capitals, at most 100 characters, a blank one refused in the web's words at the field), what it is for, who can open it (*Just me*, *A team*
+and what it can do, or *Specific people*), and people found by name among the person's teammates or invited by email address, each an editor or a viewer. Once made it
+opens, raised as a pack picked in the switcher is, and "Made OP DK. You are its owner." is said. **Amended while building:**
+- **Made under a uuid the form chose** (`createPack(uuid=)`): a try whose answer was lost and is made again is the same pack, never a second (the web sends none). A try that
+  finds the pack an earlier one made (`created` false) sets on it what was changed in the form since (`updatePack`); a uuid the server will not take (`uuid_taken`: a pack of
+  theirs deleted since had it) is given up for the next try.
+- **The teams are asked for each time the form opens**, and *A team* is the default for someone in one however late the list comes, unless they have chosen already (the web
+  takes the choice once, as the dialog opens, so a late list leaves the pack unshared). Teams that could not be had are said as such, never as "not in a team".
+- **Someone who could not be brought in is said with why** when one reason holds for all ("Could not add Sam Bell: They are already in it. Try again from Members."; the web
+  keeps only the names), and an invitation whose email did not go is said (`email_sent` false; the web says nothing). The pack stands either way.
+- **The form is one account's** (`asUser` on every call it makes, and on `listTeams` and `searchPeople`): another account, or packs stopping, puts it away; a pack made while
+  the account changed is neither opened nor said.
+- **What the person field holds is not lost at Create**: a whole address typed and not yet added is invited (the person meant it); a name typed and not chosen from the list
+  is refused at the field, which takes the keyboard (the web drops both without a word). What the field found comes in a card under it, brought into sight above the
+  keyboard and headed with how many ("2 people on your teams", said to a screen reader); Done takes the address typed or the one teammate found. The tablet has the
+  design's *Add to the invite list* button.
+- **Why the pack was not made is a banner** under the phone's bar (over the tablet's foot), in sight however far the form is scrolled; only a name that will not do is said
+  at the name, which takes the keyboard.
+- **Not built:** *Start with items from my Library* (it opens Add from Library, which is P4).
+**Reviewed** (two independent reviews, 2026-10-12 and -13: 17 reported, 15 survived an adversarial check, 14 distinct; each fix has a test, and each was broken to see it
+fail): a teams list that came while the pack was being made turned a *Just me* that was shown into *A team*, so a try again shared the pack with the whole team; a try that found
+the pack an earlier one made sent its name and description whatever changed (each field sent is a line in every member's history), and one whose change failed opened the pack
+unshared without a word (the form now stays, said in the banner, and the next try sets it); the name and description were trimmed as Kotlin trims, keeping a byte order mark
+the web drops (a name of one looked blank and was made); choosing someone already chosen made a viewer an editor again; the suggestions came under the keyboard, an address typed
+and not tapped was silently left out, and Done did nothing unless an address was typed; why a pack was not made was said only at the name, scrolled out of sight; an address was
+cut at 360 dp beside its buttons (they go under it now, unless it fits whole); the tablet's dialog was 512 dp, its margin taken from the 560; a face's initials were read aloud
+before each name; and the adapter over the API client, which carries every call's account and turns "no team" into "stop sharing", had no test. Not changed: the segments of
+*Who can open it* measure 46 dp inside a 48 dp row (the row is the touch target). Tests: `NewPackViewModelTest`, `NewPackTest` (with screenshots), `ApiPeopleApiTest`,
+`WorkspaceViewModelTest`, `PackCallsTest`.
 
 **P4 — The pack dialogs.** `PackDialogs`: add a copy to a pack (from the Library's menu and the panels), update from the original (*Finish* is P2d's),
 save a copy to the Library; the keep-or-discard offer for edits a pack dropped (*Deferred* 2).

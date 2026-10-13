@@ -64,6 +64,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -157,16 +158,26 @@ fun FinishedBand(
 }
 
 /**
- * [words] with [buttons] beside them at the end while the words keep [WORDS_MIN] of room (a wide tablet), else the buttons on a line of their own under them (a
- * narrow window, or large text), so the words are never squeezed to a sliver.
+ * [words] with [buttons] beside them at the end while the words keep [wordsMin] of room (a wide tablet), else the buttons on a line of their own under them (a
+ * narrow window, or large text), so the words are never squeezed to a sliver. With [whole], the words stay beside the buttons only where they fit there on one
+ * line (an address is not broken over lines to keep its buttons beside it).
  */
 @Composable
-private fun BesideOrUnder(modifier: Modifier, words: @Composable () -> Unit, buttons: @Composable () -> Unit) {
+internal fun BesideOrUnder(
+    modifier: Modifier,
+    words: @Composable () -> Unit,
+    buttons: @Composable () -> Unit,
+    wordsMin: Dp = WORDS_MIN,
+    space: Dp = 16.dp,
+    whole: Boolean = false,
+) {
     Layout(contents = listOf(words, buttons), modifier = modifier) { (wordsPart, buttonsPart), constraints ->
-        val gap = 16.dp.roundToPx()
+        val gap = space.roundToPx()
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
         val wanted = buttonsPart.single().maxIntrinsicWidth(Constraints.Infinity)
-        if (constraints.maxWidth - wanted - gap >= WORDS_MIN.roundToPx()) {
+        val room = constraints.maxWidth - wanted - gap
+        val beside = if (whole) wordsPart.single().maxIntrinsicWidth(Constraints.Infinity) <= room else room >= wordsMin.roundToPx()
+        if (beside) {
             val b = buttonsPart.single().measure(loose.copy(maxWidth = wanted))
             val w = wordsPart.single().measure(loose.copy(maxWidth = constraints.maxWidth - b.width - gap))
             val height = maxOf(w.height, b.height, constraints.minHeight)
