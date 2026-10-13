@@ -27,6 +27,7 @@ import app.ezpztac.packs.PackStatusLine
 import app.ezpztac.packs.PackWords
 import app.ezpztac.packs.PersonUi
 import com.github.takahirom.roborazzi.captureRoboImage
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -100,5 +101,18 @@ class WorkspaceChipsTest {
         onScreen(PackWords.chipDescription(long))
         compose.onNodeWithText(PackWords.status(long)).assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/screenshots/workspace-chips-largest.png")
+    }
+
+    @Test
+    @Config(fontScale = 2.0f)
+    fun `at the largest text a finished pack keeps its name, a lock standing for its words`() {
+        val finished = OpenPackUi("p-dk", "OP DK", people, PackStatus.LIVE, finished = true, readOnly = true, pending = 0, role = "owner")
+        show(finished)
+        onScreen(PackWords.chipDescription(finished))
+        compose.onNodeWithText("· Finished", useUnmergedTree = true).assertDoesNotExist()
+        val layout = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithText("OP DK", useUnmergedTree = true).fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        assertFalse("the name is cut", layout.single().isLineEllipsized(0))
+        compose.onRoot().captureRoboImage("build/screenshots/workspace-chips-finished-largest.png")
     }
 }

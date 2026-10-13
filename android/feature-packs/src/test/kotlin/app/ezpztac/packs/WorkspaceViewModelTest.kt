@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -85,6 +86,22 @@ class WorkspaceViewModelTest {
             answerFail?.let { throw it }
             invites = invites.filter { it.id != inviteId }
         }
+
+        // Finishing, reopening and duplicating: what was asked and for whom, held while [actHold] is set, refused with [actFail].
+        var actFail: Exception? = null
+        var actHold: CompletableDeferred<Unit>? = null
+        var made = PackMade("p-copy", "OP DK 2")
+        private suspend fun act(what: String) {
+            asked += what
+            actHold?.await()
+            actFail?.let { throw it }
+        }
+        override suspend fun finish(uuid: String, user: Int) = act("finish $uuid as $user")
+        override suspend fun reopen(uuid: String, user: Int) = act("reopen $uuid as $user")
+        override suspend fun duplicate(uuid: String, name: String, user: Int): PackMade {
+            act("duplicate $uuid $name as $user")
+            return made
+        }
     }
 
     private class FakeDoor : PackDoor {
@@ -108,6 +125,16 @@ class WorkspaceViewModelTest {
             hold?.await()
             open.value = null
             fail?.let { throw it }
+        }
+
+        /** Thrown by the editors' last save before a finish. */
+        var flushFail: Exception? = null
+        override fun refresh() {
+            log += "refresh"
+        }
+        override suspend fun flushOpen() {
+            log += "flush"
+            flushFail?.let { throw it }
         }
     }
 
@@ -571,5 +598,350 @@ class WorkspaceViewModelTest {
         r.door.hold?.complete(Unit)
         advanceUntilIdle()
         assertEquals("p-ib", r.door.open.value?.uuid)
+    }
+
+    // -- Finishing, reopening and duplicating (P2d) ------------------------------------------------------------------------------
+
+    /** Pack OP DK as its session holds it: [role] this person's, finished by [by] when [finished], with [pending] edits not yet confirmed. */
+    private fun dkState(role: String = "owner", finished: Boolean = false, by: String? = "Colin McFadden", pending: Int = 0, status: PackStatus = PackStatus.LIVE): PackState {
+        val pack = buildJsonObject {
+            put("uuid", JsonPrimitive("p-dk"))
+            put("name", JsonPrimitive("OP DK"))
+            put("status", JsonPrimitive(if (finished) "finished" else "active"))
+            put("role", JsonPrimitive(role))
+            if (finished) {
+                put("finished_at", JsonPrimitive("2026-10-05T14:20:00"))
+                put("finished_by", if (by == null) kotlinx.serialization.json.JsonNull else buildJsonObject { put("id", JsonPrimitive(7)); put("name", JsonPrimitive(by)) })
+            }
+        }
+        val ops = List(pending) { app.ezpztac.missionpacks.PendingOp(buildJsonObject { put("client_op_id", JsonPrimitive("op-$it")) }, app.ezpztac.missionpacks.PendingState.SENT) }
+        val session = PackSession(7, pack, JsonArray(emptyList()), emptyMap(), emptyMap(), emptyList(), 10, ops, emptyList(), finished || role == "viewer", null, false, emptyMap())
+        return PackState("p-dk", status, session, emptyList(), emptyList(), null)
+    }
+
+    private suspend fun TestScope.inDk(r: Rig, state: PackState = dkState()) {
+        r.door.user.value = 7
+        advanceUntilIdle()
+        r.door.open.value = state
+        advanceUntilIdle()
+        r.door.log.clear()
+        r.api.asked.clear()
+    }
+
+    @Test
+    fun `the owner finishes the pack, asked first, the editors written, then finished, the pack and the lists asked for again, and said`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r)
+        r.model.askFinish()
+        assertEquals(PackDialog.Finish("p-dk", "OP DK"), r.model.dialog.value)
+        r.model.finish()
+        assertNull("the question goes first, as on the web", r.model.dialog.value)
+        advanceUntilIdle()
+        assertEquals(listOf("finish p-dk as 7"), r.api.asked)
+        assertEquals(listOf("flush", "refresh"), r.door.log)
+        assertEquals(listOf("OP DK is finished and read-only for everyone."), r.notices)
+    }
+
+    @Test
+    fun `changes still on their way are waited for, and a pack that does not take them in time is not finished`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r, dkState(pending = 2))
+        r.model.askFinish()
+        r.model.finish()
+        advanceTimeBy(5_000)
+        assertTrue("not yet", r.api.asked.isEmpty())
+        r.door.open.value = dkState(pending = 0)                                                   // they reached the pack
+        advanceUntilIdle()
+        assertEquals(listOf("finish p-dk as 7"), r.api.asked)
+        // Offline: they never go.
+        r.api.asked.clear()
+        r.notices.clear()
+        r.door.open.value = dkState(pending = 1, status = PackStatus.OFFLINE)
+        advanceUntilIdle()
+        r.model.askFinish()
+        r.model.finish()
+        advanceUntilIdle()
+        assertTrue(r.api.asked.isEmpty())
+        assertEquals(listOf("Your last changes are still on their way to OP DK. Finish it once they are sent."), r.notices)
+    }
+
+    @Test
+    fun `a last change that could not be written stops the finish, in words`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r)
+        r.door.flushFail = IllegalStateException("disk full")
+        r.model.askFinish()
+        r.model.finish()
+        advanceUntilIdle()
+        assertTrue(r.api.asked.isEmpty())
+        assertEquals(listOf("The last change to OP DK could not be saved, so it was not finished."), r.notices)
+    }
+
+    @Test
+    fun `only the owner is asked about finishing an active pack and reopening a finished one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r, dkState(role = "editor"))
+        r.model.askFinish()
+        assertNull(r.model.dialog.value)
+        r.door.open.value = dkState(role = "editor", finished = true)
+        advanceUntilIdle()
+        r.model.askReopen()
+        assertNull(r.model.dialog.value)
+        r.door.open.value = dkState(finished = true)
+        advanceUntilIdle()
+        r.model.askFinish()
+        assertNull("finished already", r.model.dialog.value)
+        r.model.askReopen()
+        assertEquals(PackDialog.Reopen("p-dk", "OP DK"), r.model.dialog.value)
+        r.model.finish()                                                                            // not what was asked: nothing happens
+        advanceUntilIdle()
+        assertTrue(r.api.asked.isEmpty())
+    }
+
+    @Test
+    fun `the owner reopens the pack, and a refusal is said in the app's words`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r, dkState(finished = true))
+        r.model.askReopen()
+        r.model.reopen()
+        advanceUntilIdle()
+        assertEquals(listOf("reopen p-dk as 7"), r.api.asked)
+        assertEquals(listOf("refresh"), r.door.log)
+        assertEquals(listOf("OP DK is open for editing again."), r.notices)
+        r.notices.clear()
+        r.api.actFail = ApiException(403, "owner_only", "Only the pack's owner can do that.")
+        r.model.askReopen()
+        r.model.reopen()
+        advanceUntilIdle()
+        assertEquals(listOf("Only the pack's owner can do that."), r.notices)
+    }
+
+    @Test
+    fun `one finish or reopen at a time, and what it came to is not said to the next account`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r)
+        r.api.actHold = CompletableDeferred()
+        r.model.askFinish()
+        r.model.finish()
+        advanceUntilIdle()
+        r.door.open.value = dkState(finished = true)
+        advanceUntilIdle()
+        r.model.askReopen()
+        r.model.reopen()
+        advanceUntilIdle()
+        assertEquals(listOf(PackPanelViewModel.STILL_WORKING), r.notices)
+        r.door.user.value = 8                                                                       // signed out, and someone else in
+        advanceUntilIdle()
+        r.api.actHold?.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf(PackPanelViewModel.STILL_WORKING), r.notices)
+    }
+
+    @Test
+    fun `anyone in the pack duplicates it, named as they type it in capitals, and the copy opens`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r, dkState(role = "viewer", finished = true))
+        r.model.askDuplicate()
+        assertEquals(PackDialog.Duplicate("p-dk", "OP DK", "OP DK 2"), r.model.dialog.value)
+        r.api.actHold = CompletableDeferred()
+        r.model.duplicate("  op eagle  ")
+        advanceUntilIdle()
+        assertEquals(true, (r.model.dialog.value as PackDialog.Duplicate).sending)
+        r.model.dismissDialog()                                                                     // not while it is made
+        assertTrue(r.model.dialog.value is PackDialog.Duplicate)
+        r.model.duplicate("again")                                                                  // nor a second one
+        r.api.made = PackMade("p-eagle", "OP EAGLE")
+        r.api.actHold?.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("duplicate p-dk OP EAGLE as 7"), r.api.asked)
+        assertNull(r.model.dialog.value)
+        assertEquals("p-eagle", r.door.open.value?.uuid)
+        assertEquals(listOf("Made OP EAGLE."), r.notices)
+    }
+
+    @Test
+    fun `a name that will not do is said in the dialog, and nothing is sent`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r)
+        r.model.askDuplicate()
+        r.model.duplicate("   ")
+        assertEquals("Give it a name.", (r.model.dialog.value as PackDialog.Duplicate).error)
+        r.model.duplicate("A".repeat(101))
+        assertEquals("Give it a name of 1 to 100 characters.", (r.model.dialog.value as PackDialog.Duplicate).error)
+        r.model.duplicate("OP" + Char(9) + "DK")
+        assertEquals("Give it a name of 1 to 100 characters.", (r.model.dialog.value as PackDialog.Duplicate).error)
+        // A hundred characters, emoji among them, is a hundred: counted as characters, not as the halves an emoji is written in.
+        r.model.duplicate(String(Character.toChars(0x1F681)).repeat(100))
+        advanceUntilIdle()
+        assertEquals(1, r.api.asked.size)
+        assertTrue(r.notices.isEmpty() || r.notices == listOf("Made OP DK 2."))
+    }
+
+    @Test
+    fun `a copy refused is said in the dialog, and one whose answer was lost says it may have been made`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r)
+        r.model.askDuplicate()
+        r.api.actFail = ApiException(400, "invalid_name", "Give the pack a name of 1 to 100 characters.")
+        r.model.duplicate("OP DK 2")
+        advanceUntilIdle()
+        val refused = r.model.dialog.value as PackDialog.Duplicate
+        assertEquals("Give it a name of 1 to 100 characters.", refused.error)
+        assertFalse(refused.sending)
+        assertEquals("OP DK 2", refused.name)
+        r.api.actFail = app.ezpztac.network.NetworkException("read timed out", null, requestMayHaveBeenSent = true)
+        r.model.duplicate("OP DK 2")
+        advanceUntilIdle()
+        assertEquals(LOST_COPY, (r.model.dialog.value as PackDialog.Duplicate).error)
+        assertEquals("p-dk", r.door.open.value?.uuid)                                               // nothing opened
+        r.api.actFail = app.ezpztac.network.NetworkException("no route", null, requestMayHaveBeenSent = false)
+        r.model.duplicate("OP DK 2")
+        advanceUntilIdle()
+        assertEquals("There is no connection to the server. Try again when you are back online.", (r.model.dialog.value as PackDialog.Duplicate).error)
+    }
+
+    @Test
+    fun `a question goes with its pack and its account, but a copy being made waits for its answer`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r)
+        r.model.askFinish()
+        r.door.open.value = null                                                                     // back in the Library
+        advanceUntilIdle()
+        assertNull(r.model.dialog.value)
+        r.door.open.value = dkState()
+        advanceUntilIdle()
+        r.model.askDuplicate()
+        r.api.actHold = CompletableDeferred()
+        r.model.duplicate("OP DK 2")
+        advanceUntilIdle()
+        r.door.open.value = null
+        advanceUntilIdle()
+        assertTrue("still being made", r.model.dialog.value is PackDialog.Duplicate)
+        r.door.user.value = 8
+        advanceUntilIdle()
+        assertNull("another account", r.model.dialog.value)
+        r.api.actHold?.complete(Unit)
+        advanceUntilIdle()
+        assertTrue("nothing said to them", r.notices.none { it.startsWith("Made") })
+        assertNull(r.door.open.value)
+    }
+
+    @Test
+    fun `the open pack says who this person is in it, who finished it and when, from its session or else its line`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r, dkState(finished = true))
+        val open = r.model.open.value!!
+        assertTrue(open.owner)
+        assertEquals("Colin McFadden", open.finishedBy)
+        assertEquals(
+            "OP DK was finished by Colin McFadden on Oct 5 at 14:20." to "It is read-only for everyone.",
+            PackWords.finished(open, ZoneId.of("UTC"), java.time.Instant.parse("2026-10-12T00:00:00Z")),
+        )
+        r.door.open.value = dkState(finished = true, by = null)                                      // the account that finished it went
+        advanceUntilIdle()
+        assertEquals(
+            "OP DK was finished by its owner on Oct 5, 2026 at 10:20." to "It is read-only for everyone.",
+            PackWords.finished(r.model.open.value!!, ZoneId.of("America/New_York"), java.time.Instant.parse("2027-01-12T00:00:00Z")),
+        )
+        // Before the device holds it: its line in the list.
+        r.api.packs = listOf(razor.copy(role = "viewer", finishedBy = PackPerson(4, "Sam Bell")))
+        r.model.refresh()
+        r.door.open.value = PackState("p-rz", PackStatus.LOADING, null, emptyList(), emptyList(), null)
+        advanceUntilIdle()
+        val listed = r.model.open.value!!
+        assertFalse(listed.owner)
+        assertEquals("viewer", listed.role)
+        assertEquals("OP RAZORBILL was finished by Sam Bell on Sep 22 at 14:00.", PackWords.finished(listed, ZoneId.of("UTC"), java.time.Instant.parse("2026-10-12T00:00:00Z")).first)
+    }
+
+    @Test
+    fun `leaving the pack, or packs stopping, while its changes are on their way is not their having arrived, and nothing is finished`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r, dkState(pending = 2))
+        r.model.askFinish()
+        r.model.finish()
+        advanceTimeBy(2_000)
+        r.door.open.value = null                                                                     // back to Personal: its client still drains the edits
+        advanceUntilIdle()
+        assertTrue(r.api.asked.isEmpty())
+        assertEquals(listOf("OP DK was not finished: it is not open here now."), r.notices)
+        // Another pack opened meanwhile.
+        r.notices.clear()
+        r.door.open.value = dkState(pending = 1)
+        advanceUntilIdle()
+        r.model.askFinish()
+        r.model.finish()
+        advanceTimeBy(1_000)
+        r.door.open.value = PackState("p-ex", PackStatus.LIVE, null, emptyList(), emptyList(), null)
+        advanceUntilIdle()
+        assertTrue(r.api.asked.isEmpty())
+        assertEquals(listOf("OP DK was not finished: it is not open here now."), r.notices)
+        // Packs stopped for the account (signed out, below the minimum version): nothing is sent, and nothing said to whoever is here next.
+        r.notices.clear()
+        r.door.open.value = dkState(pending = 1)
+        advanceUntilIdle()
+        r.model.askFinish()
+        r.model.finish()
+        advanceTimeBy(1_000)
+        r.door.user.value = null
+        r.door.open.value = null
+        advanceUntilIdle()
+        assertTrue(r.api.asked.isEmpty())
+        assertTrue(r.notices.isEmpty())
+    }
+
+    @Test
+    fun `a pack whose client is being replaced holds nothing yet, and is waited for until it says what is pending`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r, dkState(pending = 1))
+        r.model.askFinish()
+        r.model.finish()
+        advanceTimeBy(1_000)
+        r.door.open.value = PackState("p-dk", PackStatus.LOADING, null, emptyList(), emptyList(), null)    // read back from the device first
+        advanceTimeBy(1_000)
+        assertTrue("not settled by holding nothing", r.api.asked.isEmpty())
+        r.door.open.value = dkState(pending = 0)
+        advanceUntilIdle()
+        assertEquals(listOf("finish p-dk as 7"), r.api.asked)
+    }
+
+    @Test
+    fun `a copy made whose answer could not be read is said to be there, and one lost behind the proxy may have been made`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r)
+        r.model.askDuplicate()
+        r.api.actFail = ApiException(201, "unreadable_response", "The server's answer could not be read.")
+        r.model.duplicate("OP DK 2")
+        advanceUntilIdle()
+        assertNull("made: not to be made again", r.model.dialog.value)
+        assertEquals(listOf(COPY_MADE), r.notices)
+        assertEquals("p-dk", r.door.open.value?.uuid)
+        for (gateway in listOf(502, 504, 524)) {
+            r.model.askDuplicate()
+            r.api.actFail = ApiException(gateway, null, "Bad gateway")
+            r.model.duplicate("OP DK 2")
+            advanceUntilIdle()
+            assertEquals("$gateway", LOST_COPY, (r.model.dialog.value as PackDialog.Duplicate).error)
+        }
+        r.api.actFail = ApiException(500, null, "boom")                                             // the server's own failure: it did not make it
+        r.model.duplicate("OP DK 2")
+        advanceUntilIdle()
+        assertEquals("Something went wrong on the server. Try again.", (r.model.dialog.value as PackDialog.Duplicate).error)
+    }
+
+    @Test
+    fun `what was said of a name goes when it is typed again, but not while the copy is made`() = runTest(dispatcher) {
+        val r = Rig(this)
+        inDk(r)
+        r.model.askDuplicate()
+        r.model.duplicate(" ")
+        assertEquals("Give it a name.", (r.model.dialog.value as PackDialog.Duplicate).error)
+        r.model.duplicateEdited()
+        assertNull((r.model.dialog.value as PackDialog.Duplicate).error)
+        r.api.actHold = CompletableDeferred()
+        r.model.duplicate("OP DK 2")
+        advanceUntilIdle()
+        r.model.duplicateEdited()
+        assertTrue((r.model.dialog.value as PackDialog.Duplicate).sending)
     }
 }

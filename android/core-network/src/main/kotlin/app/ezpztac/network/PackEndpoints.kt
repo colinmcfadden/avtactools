@@ -127,15 +127,21 @@ public suspend fun ApiClient.updatePack(
 /** Deletes the pack and everything in it (the owner only). */
 public suspend fun ApiClient.deletePack(uuid: String): StatusReply = decode(execute(call("DELETE", PackPaths.pack(uuid))))
 
-/** Finishes the pack (the owner only): every edit is then refused with 423, the owner's included. Finishing it again changes nothing. */
-public suspend fun ApiClient.finishPack(uuid: String): Pack = decode(execute(call("POST", "${PackPaths.pack(uuid)}/finish")))
+/**
+ * Finishes the pack (the owner only): every edit is then refused with 423, the owner's included. Finishing it again changes nothing. Made for the account
+ * [asUser] when given, never under another's session.
+ */
+public suspend fun ApiClient.finishPack(uuid: String, asUser: Int? = null): Pack = decode(execute(call("POST", "${PackPaths.pack(uuid)}/finish", asUser = asUser)))
 
-/** Reopens a finished pack (the owner only). */
-public suspend fun ApiClient.reopenPack(uuid: String): Pack = decode(execute(call("POST", "${PackPaths.pack(uuid)}/reopen")))
+/** Reopens a finished pack (the owner only), for [asUser] when given. */
+public suspend fun ApiClient.reopenPack(uuid: String, asUser: Int? = null): Pack = decode(execute(call("POST", "${PackPaths.pack(uuid)}/reopen", asUser = asUser)))
 
-/** A new pack the caller owns, with a copy of every item; a finished pack can be duplicated. The server names it "<name> (copy)" unless [name] is given. */
-public suspend fun ApiClient.duplicatePack(uuid: String, name: String? = null): Pack = decode(
-    execute(call("POST", "${PackPaths.pack(uuid)}/duplicate", body = buildJsonObject { if (name != null) put("name", name) })),
+/**
+ * A new pack the caller owns, with a copy of every item; a finished pack can be duplicated. The server names it "<name> (copy)" unless [name] is given. Not
+ * repeatable: an answer lost on the way may have made the copy. For [asUser] when given.
+ */
+public suspend fun ApiClient.duplicatePack(uuid: String, name: String? = null, asUser: Int? = null): Pack = decode(
+    execute(call("POST", "${PackPaths.pack(uuid)}/duplicate", body = buildJsonObject { if (name != null) put("name", name) }, asUser = asUser)),
 )
 
 /** A page of the pack's log after [since], oldest first, for the History panel. Send [PackEventPage.cursor] back as [since] for the next. */

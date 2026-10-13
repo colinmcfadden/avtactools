@@ -92,9 +92,15 @@ import app.ezpztac.map.ThreatLabelsLayer
 import app.ezpztac.map.ThreatLayer
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.missionpacks.InviteState
+import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiUser
+import app.ezpztac.packs.FinishedBand
+import app.ezpztac.packs.FinishedBanner
 import app.ezpztac.packs.PackChip
+import app.ezpztac.packs.PackDialogsHost
+import app.ezpztac.packs.PackHeaderMenu
+import app.ezpztac.packs.PackPanelFoot
 import app.ezpztac.packs.PackPanelHost
 import app.ezpztac.packs.PackPanelViewModel
 import app.ezpztac.packs.PackStatusLine
@@ -363,6 +369,8 @@ fun MapHome(
                 ) {
                     if (maintenance != null) Banner(maintenance, BannerKind.Warning)
                     if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
+                    // A finished pack, said at the top of every panel on a phone (a tablet has its band across the top instead).
+                    if (!tablet) openPack?.takeIf { it.finished }?.let { FinishedBanner(it, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen) }
                     when (panel) {
                         // Looking at it: the panel showing, in sight (not lowered on a phone, not collapsed on a tablet).
                         Panel.Pack -> PackPanelHost(
@@ -535,11 +543,16 @@ fun MapHome(
             // The Imports panel's Import, beside its title (the design's): the same menu as the frame's chip.
             val headerActions: @Composable RowScope.() -> Unit = {
                 if (current == Panel.Imports) PillButton("Import", onClick = { importMenu = true }, icon = EzpzIcons.fileOpen)
+                // The pack's own menu (the web's ⋯): a copy of it, for anyone in it.
+                if (current == Panel.Pack) openPack?.takeIf { it.status != PackStatus.GONE }?.let { PackHeaderMenu(it.name, onDuplicate = workspace::askDuplicate) }
             }
             // The Routes panel's foot: Sketch a route and Import .msnx, pinned under the sets open now.
             // None in a read-only pack, which nothing is drawn into (a sketch still under way keeps its Cancel).
             val footer: (@Composable () -> Unit)? = if (current == Panel.Routes && routes.page == RoutesPage.HOME && !(routes.pack?.readOnly == true && routes.drawing == null)) {
                 { RoutesFooterHost(onImport = importFiles, crosshair = state.center, viewModel = routesModel) }
+            } else if (current == Panel.Pack && pack.loaded && openPack?.let { it.owner && !it.finished && it.status != PackStatus.GONE } == true) {
+                // The Pack panel's foot, for its owner while it is not finished: *Finish pack*.
+                { PackPanelFoot(onFinish = workspace::askFinish, tablet = tablet) }
             } else {
                 null
             }
@@ -570,7 +583,8 @@ fun MapHome(
                         workspace = openPack.let { pack ->
                             RailWorkspace(
                                 // Only a tile that opens the switcher says it changes the workspace.
-                                label = pack?.name ?: "Personal", description = if (packsHere) PackWords.chipDescription(pack) else "Workspace: Personal", pack = pack != null,
+                                label = pack?.name ?: "Personal", description = if (packsHere) PackWords.railDescription(pack) else "Workspace: Personal", pack = pack != null,
+                                finished = pack?.finished == true,
                                 menu = if (packsHere) {
                                     { dismiss ->
                                         val switcher by workspace.switcher.collectAsStateWithLifecycle()
@@ -597,6 +611,7 @@ fun MapHome(
                     ),
                     // The Library's own toasts are drawn over it, as a dialog: the frame's under its scrim would be a second copy.
                     toasts = libraryTab == null,
+                    band = openPack?.takeIf { it.finished }?.let { finished -> { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen) } },
                     modifier = if (libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
@@ -626,6 +641,8 @@ fun MapHome(
             }
             // The held route's plan (the design's RoutePlan): a page of its own over the frame, with the frame's toasts.
             if (!tablet) movableRoutePlan(false)
+            // Finishing, reopening or duplicating the open pack, asked about wherever it was asked for.
+            PackDialogsHost(workspace)
             // The Library (the design's): opening an item from it shuts it and shows the panel the item is in, as the web's does; renaming, deleting and settling a
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(

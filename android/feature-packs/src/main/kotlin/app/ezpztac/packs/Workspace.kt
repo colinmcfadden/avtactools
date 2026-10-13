@@ -1,5 +1,6 @@
 package app.ezpztac.packs
 
+import app.ezpztac.data.PackFacts
 import app.ezpztac.designsystem.initialsOf
 import app.ezpztac.missionpacks.PackState
 import app.ezpztac.missionpacks.PackStatus
@@ -8,6 +9,7 @@ import app.ezpztac.network.InviteAccepted
 import app.ezpztac.network.PackItemCounts
 import app.ezpztac.network.PackSummary
 import app.ezpztac.network.TeamSummary
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
@@ -58,6 +60,12 @@ interface PackDoor {
     suspend fun openPack(uuid: String)
 
     suspend fun closePack()
+
+    /** Asks the open pack for what is new now: after a finish or a reopen, which are not operations of its own. */
+    fun refresh() {}
+
+    /** Writes whatever of the open pack the editors hold now, so a change of the last moments is on its way before the pack is finished. Throws when a save failed. */
+    suspend fun flushOpen() {}
 }
 
 /** The calls the switcher makes: the packs this person can open, the invitations waiting for them, their teams, and answering an invitation. */
@@ -72,6 +80,49 @@ interface PacksApi {
     suspend fun accept(inviteId: Int): InviteAccepted
 
     suspend fun decline(inviteId: Int)
+
+    /** Finishes pack [uuid] for the account [user] (its owner only): read-only for everyone, the owner included. */
+    suspend fun finish(uuid: String, user: Int)
+
+    /** Reopens pack [uuid] for the account [user] (its owner only). */
+    suspend fun reopen(uuid: String, user: Int)
+
+    /** A new pack [user] owns, named [name], with a copy of everything in [uuid]: what it was made as. Not repeatable (a lost answer may have made it). */
+    suspend fun duplicate(uuid: String, name: String, user: Int): PackMade
+}
+
+/** A pack made by duplicating another: its uuid and the name the server gave it. */
+data class PackMade(val uuid: String, val name: String)
+
+/** A question about the open pack the frame shows, whatever asked it: finishing it, reopening it, or the copy's name ([uuid]: the pack asked about). */
+sealed interface PackDialog {
+    val uuid: String
+    val pack: String
+
+    data class Finish(override val uuid: String, override val pack: String) : PackDialog
+
+    data class Reopen(override val uuid: String, override val pack: String) : PackDialog
+
+    /** The copy's [name] as typed; [sending] while it is made (the dialog stays, and cannot be put away), [error] why it was not. */
+    data class Duplicate(override val uuid: String, override val pack: String, val name: String, val sending: Boolean = false, val error: String? = null) : PackDialog
+
+    companion object {
+        /** The server's limit for a pack's name, counted as characters. */
+        const val MAX_NAME = 100
+
+        /** The copy's first name, the web's: "OP DK 2", cut to the limit by characters (never through one). */
+        fun copyName(name: String): String = cut("$name 2", MAX_NAME)
+
+        /** Why [name] (trimmed, in capitals) will not do as a pack's name, or null: the server's rule (1 to 100 characters, no control characters). */
+        fun refusal(name: String): String? = when {
+            name.isEmpty() -> "Give it a name."
+            name.codePointCount(0, name.length) > MAX_NAME || name.any { it.code < 0x20 || it.code == 0x7F } -> PackPanelViewModel.NAME_REFUSED
+            else -> null
+        }
+
+        private fun cut(text: String, max: Int): String =
+            if (text.codePointCount(0, text.length) <= max) text else text.substring(0, text.offsetByCodePoints(0, max))
+    }
 }
 
 /** The person's Library in numbers, for the switcher's Library row. */
@@ -95,9 +146,18 @@ data class OpenPackUi(
     val readOnly: Boolean,
     /** Edits on the device that the pack has not confirmed yet. */
     val pending: Int,
+    /** This person's role in it (owner, editor or viewer); null before anything says. */
+    val role: String? = null,
+    /** Who finished it, by their whole name; null when nobody is named (their account went). */
+    val finishedBy: String? = null,
+    /** When it was finished, as the server wrote it. */
+    val finishedAt: String? = null,
 ) {
     /** The others here now. */
     val others: Int get() = people.count { !it.me }
+
+    /** This person owns it: only the owner finishes and reopens a pack. */
+    val owner: Boolean get() = role == "owner"
 }
 
 /**
@@ -217,9 +277,20 @@ object PackWords {
         else -> "Live · all changes synced"
     }
 
+    /**
+     * A finished pack in the web's words, in two sentences (the design sets the first apart): "OP DK was finished by Colin McFadden on Oct 5 at 14:20."
+     * and "It is read-only for everyone.". By "its owner" when nobody is named; the date in [zone] (the person's), with the year when it is not [now]'s.
+     */
+    fun finished(pack: OpenPackUi, zone: ZoneId = ZoneId.systemDefault(), now: Instant = Instant.now()): Pair<String, String> {
+        val by = pack.finishedBy?.trim()?.takeIf { it.isNotEmpty() } ?: "its owner"
+        val at = PackFacts.instant(pack.finishedAt)?.let { " on ${PackFacts.dateAtTime(it, zone, now)}" }.orEmpty()
+        return "${pack.name} was finished by $by$at." to "It is read-only for everyone."
+    }
+
     /** What the workspace chip says to a screen reader: the design's "Workspace: Mission Pack OP DK. 4 people here now: …. Change workspace". */
     fun chipDescription(pack: OpenPackUi?): String {
         if (pack == null) return "Workspace: Personal. Change workspace"
+        if (pack.finished) return "Workspace: Mission Pack ${pack.name}, finished and read-only. Change workspace"
         val names = pack.people.map { it.name }
         val here = when {
             names.isEmpty() -> ""
@@ -230,18 +301,31 @@ object PackWords {
         return "Workspace: Mission Pack ${pack.name}.$here Change workspace"
     }
 
+    /** What the tablet rail's workspace tile says (the design's AT screens): the chip's words, but a finished pack is "finished" alone. */
+    fun railDescription(pack: OpenPackUi?): String =
+        if (pack?.finished == true) "Workspace: Mission Pack ${pack.name}, finished. Change workspace" else chipDescription(pack)
+
     /** A person's initials, for their face in the chip: the account button's rule ([initialsOf]): "Colin McFadden" is CM, "Sam B." is SB. */
     fun initials(name: String): String = initialsOf(name)
 
     /** The open pack from the engine's state, named from its session or else its line in the list. */
     fun openPack(state: PackState, listed: List<PackSummary>, me: Int?): OpenPackUi {
         val session = state.session
-        val name = session?.pack?.get("name")?.let { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
-            ?: listed.firstOrNull { it.uuid == state.uuid }?.name ?: "Mission Pack"
-        val finished = (session?.status ?: listed.firstOrNull { it.uuid == state.uuid }?.status) == "finished"
+        val row = listed.firstOrNull { it.uuid == state.uuid }
+        val name = session?.pack?.get("name")?.let(::textOf) ?: row?.name ?: "Mission Pack"
+        val finished = (session?.status ?: row?.status) == "finished"
         val people = state.people.mapNotNull { person(it, me) }.distinctBy { it.id ?: it.name }
-        return OpenPackUi(state.uuid, name, people, state.status, finished, state.readOnly, session?.pending?.size ?: 0)
+        // The session says how it stands now; the list, only before the device holds it.
+        val role = if (session != null) session.pack["role"]?.let(::textOf) else row?.role
+        val by = if (session != null) (session.pack["finished_by"] as? JsonObject)?.get("name")?.let(::textOf) else row?.finishedBy?.name
+        val at = if (session != null) session.pack["finished_at"]?.let(::textOf) else row?.finishedAt
+        return OpenPackUi(
+            state.uuid, name, people, state.status, finished, state.readOnly, session?.pending?.size ?: 0,
+            role = role, finishedBy = by?.takeIf { it.isNotBlank() }, finishedAt = at,
+        )
     }
+
+    private fun textOf(element: kotlinx.serialization.json.JsonElement): String? = (element as? JsonPrimitive)?.takeIf { it.isString }?.content
 
     private fun person(json: JsonObject, me: Int?): PersonUi? {
         val id = (json["user_id"] as? JsonPrimitive)?.intOrNull

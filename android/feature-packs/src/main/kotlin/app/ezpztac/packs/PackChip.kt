@@ -49,12 +49,20 @@ fun PackChip(pack: OpenPackUi, onClick: () -> Unit, modifier: Modifier = Modifie
         modifier = modifier.heightIn(min = 32.dp).clearAndSetSemantics { contentDescription = PackWords.chipDescription(pack) },
     ) {
         Row(Modifier.padding(start = Tokens.Spacing.sm.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(painterResource(EzpzIcons.groupsFill), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
+            // Finished (the design's Finished): the outlined icon, the name in the surface's text, "· Finished" after it, and nobody's face.
+            Icon(painterResource(if (pack.finished) EzpzIcons.groups else EzpzIcons.groupsFill), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
             Text(
-                pack.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onTertiaryContainer,
+                pack.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                color = if (pack.finished) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onTertiaryContainer,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
             )
-            Faces(pack.people, shown = if (LocalDensity.current.fontScale > LARGE_TEXT) 1 else MAX_FACES)
+            if (pack.finished && LocalDensity.current.fontScale > LARGE_TEXT) {
+                Icon(painterResource(EzpzIcons.lock), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            } else if (pack.finished) {
+                Text("· Finished", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+            } else {
+                Faces(pack.people, shown = if (LocalDensity.current.fontScale > LARGE_TEXT) 1 else MAX_FACES)
+            }
             Icon(painterResource(EzpzIcons.arrowDropDown), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
         }
     }
@@ -119,9 +127,14 @@ internal fun faceColours(person: PersonUi): Pair<Color, Color> {
 @Composable
 fun PackStatusLine(pack: OpenPackUi, modifier: Modifier = Modifier) {
     val words = PackWords.status(pack)
+    val troubled = pack.status == PackStatus.ERROR || pack.status == PackStatus.GONE
+    val waiting = pack.status == PackStatus.LOADING || pack.status == PackStatus.PAUSED
+    // Finished it says so (its words come first, as on the web), with a lock in the text's own colour: not the tick of a pack whose changes reach everyone.
+    val locked = pack.finished && !troubled && !waiting
     val tone = when {
-        pack.status == PackStatus.ERROR || pack.status == PackStatus.GONE -> MaterialTheme.colorScheme.error
-        pack.pending > 0 || pack.status == PackStatus.LOADING || pack.status == PackStatus.OFFLINE || pack.status == PackStatus.PAUSED -> EzpzTheme.status.warning
+        troubled -> MaterialTheme.colorScheme.error
+        locked -> MaterialTheme.colorScheme.onSurfaceVariant
+        pack.pending > 0 || waiting || pack.status == PackStatus.OFFLINE -> EzpzTheme.status.warning
         else -> EzpzTheme.status.success
     }
     Surface(
@@ -132,7 +145,9 @@ fun PackStatusLine(pack: OpenPackUi, modifier: Modifier = Modifier) {
             Modifier.heightIn(min = 28.dp).padding(horizontal = Tokens.Spacing.sm.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (tone == EzpzTheme.status.success) {
+            if (locked) {
+                Icon(painterResource(EzpzIcons.lock), contentDescription = null, tint = tone, modifier = Modifier.size(16.dp))
+            } else if (tone == EzpzTheme.status.success) {
                 Icon(painterResource(EzpzIcons.cloudDone), contentDescription = null, tint = tone, modifier = Modifier.size(16.dp))
             } else {
                 Box(Modifier.size(8.dp).border(4.dp, tone, CircleShape))

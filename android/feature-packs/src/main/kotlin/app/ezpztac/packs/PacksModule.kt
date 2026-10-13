@@ -15,11 +15,14 @@ import app.ezpztac.network.PackSummary
 import app.ezpztac.network.TeamSummary
 import app.ezpztac.network.acceptInvite
 import app.ezpztac.network.declineInvite
+import app.ezpztac.network.duplicatePack
+import app.ezpztac.network.finishPack
 import app.ezpztac.network.listPacks
 import app.ezpztac.network.listTeams
 import app.ezpztac.network.markPackSeen
 import app.ezpztac.network.myInvites
 import app.ezpztac.network.packEvents
+import app.ezpztac.network.reopenPack
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -49,11 +52,21 @@ class ApiPacksApi @Inject constructor(private val api: ApiClient) : PacksApi {
     override suspend fun decline(inviteId: Int) {
         api.declineInvite(inviteId)
     }
+
+    override suspend fun finish(uuid: String, user: Int) {
+        api.finishPack(uuid, asUser = user)
+    }
+
+    override suspend fun reopen(uuid: String, user: Int) {
+        api.reopenPack(uuid, asUser = user)
+    }
+
+    override suspend fun duplicate(uuid: String, name: String, user: Int): PackMade = api.duplicatePack(uuid, name, asUser = user).let { PackMade(it.uuid, it.name) }
 }
 
 /** The packs the device runs: the engine's open pack, opened and closed through the editors' join to it. */
 @Singleton
-class EnginePackDoor @Inject constructor(engine: PackEngine, private val workspace: PackWorkspace) : PackDoor {
+class EnginePackDoor @Inject constructor(private val engine: PackEngine, private val workspace: PackWorkspace) : PackDoor {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override val user: StateFlow<Int?> = engine.me.map { it?.id }.stateIn(scope, SharingStarted.Eagerly, engine.me.value?.id)
@@ -63,6 +76,13 @@ class EnginePackDoor @Inject constructor(engine: PackEngine, private val workspa
     override suspend fun openPack(uuid: String) = workspace.openPack(uuid)
 
     override suspend fun closePack() = workspace.closePack()
+
+    override fun refresh() {
+        engine.wake()                                                                            // a client waiting to load again tries now
+        engine.refresh()
+    }
+
+    override suspend fun flushOpen() = workspace.flushOpen()
 }
 
 /** The Pack panel's calls: the pack's history and seen marker over the API client, its items through the editors' join to the pack. */

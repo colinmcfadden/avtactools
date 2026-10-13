@@ -1,7 +1,7 @@
 # Android screens: the plan they are built from
 
 Status (2026-10-12): **S1, S2 and S3 built** (on `feat/android-screens`) and reviewed together, the review's findings fixed; **S4 built and reviewed**, its review's
-findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; **P2b built and reviewed**, its findings fixed; **P2c built and reviewed**, its findings fixed; P2d next. The owner tries the app on a device once
+findings fixed; **S5 built and reviewed**, its findings fixed; **S6 built and reviewed**, its findings fixed; **S7 built and reviewed**, its findings fixed; **S8 built and reviewed**, its findings fixed; **S9 built and reviewed**, its findings fixed; **P1 built and reviewed**, its findings fixed; **P2a built and reviewed**, its findings fixed; **P2b built and reviewed**, its findings fixed; **P2c built and reviewed**, its findings fixed; **P2d built and reviewed**, its findings fixed; P2e next. The owner tries the app on a device once
 the whole build (S7–S9, P1–P4) is done (2026-10-12). **Threats may now be saved and shared** (the owner, 2026-10-12): a step
 of its own, *T*, below. The redesigned shell first (S1–S9), then the mission-pack screens in it (P1–P4). Each step is one
 commit (or a small stack), built the way the mission-pack engine was (`docs/ANDROID_MISSION_PACKS_PLAN.md`): implemented with its tests,
@@ -384,7 +384,7 @@ view it but not change it."), the tools are off ("Off in a finished pack"), and 
 - **Nothing of a read-only pack's LZ/PZ or route set is picked up** by a long press: the map's menu opens instead, *Copy grid* and *Add threat here* in it, and *New LZ/PZ
   here* and *Add route point here* off with their reason. A PZ marker's tip has no drag handle then.
 - **A viewer's words are Android's** where the designs have only the finished pack's.
-- The finished banner, *Finish*, *Reopen* and *Duplicate* are P2d; *Save a copy* is P4.
+- The finished banner, *Finish*, *Reopen* and *Duplicate* are P2d's; *Save a copy* is P4.
 **Reviewed** (one independent review, 2026-10-12: 25 reported, 19 survived an adversarial check, about 9 distinct; each fix has a test, and each was broken to see it fail): a drag
 ended by the lock was moved back, itself a change the pack refused and put back, with "went back" false when the pack had already taken part of it (now ended where it is, with
 no edit of its own: `MapDrag.abandon`); winds or elevations already on their way were applied to the read-only set, put back, and reported as found; an analysis of one of the
@@ -396,6 +396,42 @@ were untested. Not changed: a change made just before the lock that the pack had
 stopped and that the change was not saved; an empty set made for a sketch stays in the pack, said in the panel (it cannot be taken out of a read-only pack). Tests:
 `HomeViewModelTest`, `RoutesViewModelTest`, `GraphicsViewModelTest`, `GraphicsScreenTest` (`LockedUnanalysedGraphicsTest`), `RoutePlanPageTest` (at 360 dp and 2.0 with real
 text measurement), `PanelsInPackTest`, `PointsViewModelTest`, `ImportsPanelTest`, `MapDragTest`.
+
+**P2d — A finished pack: the banner, *Finish*, *Reopen*, *Duplicate*. Built.** A finished pack is said where the person works: on a phone a card at the top of the
+panel showing (`FinishedBanner`), on a tablet a band across the top beside the rail (`FinishedBand`, `TabletFrame`'s `band`): "OP DK was finished by Colin McFadden on Oct 5
+at 14:20. It is read-only for everyone.", *Duplicate as new pack* for anyone in it and *Reopen pack* for its owner ("You own OP DK, so only you can reopen it."). The owner of
+a pack not finished has *Finish pack* in the Pack panel's foot (`PackPanelFoot`). Finishing and reopening are asked first in the web's words, then the pack is asked for what
+is new (`PackEngine.refresh`: its finish is an event in its log) and the switcher's lists again. *Duplicate* names the copy ("OP DK 2", in capitals, at most 100 characters
+counted as characters) and opens it once made ("Made OP DK 2."). A finished pack's chip says "· Finished" with nobody's face, its status line has a lock, and the rail's tile a
+lock on its corner. The logic is `WorkspaceViewModel`'s (`PackDialog`, `finish`, `reopen`, `duplicate`). **Amended while building:**
+- **The phone's banner is at the top of every panel**, not only the LZ/PZ panel (the design draws only that one): a finished pack opens on its Pack panel, where *Reopen*
+  would otherwise be nowhere, and the web's banner stands over the map whatever is open. The tablet's band is over every panel, as the design draws it.
+- **No *Save a copy to Library* yet** (P4).
+- **The Reopen confirmation and the Duplicate dialog are the web's** (the design draws neither); the tablet's Finish dialog has the phone's paragraph, not the tablet's
+  three lines.
+- ***Duplicate* is also in the Pack panel header's menu** (the web's ⋯ on a pack), so a pack not finished can be copied: the design draws no way in.
+- **A finish waits for this person's changes** (up to 10 s, after writing what the editors hold) and is refused in words if they are still on their way. **Not like the web**,
+  which finishes over them: the pack would then refuse them.
+- **What a copy came to is said in the app's words** (the web's dialog shows the network library's own text); an answer lost on the way says the copy may have been made
+  (the call is not repeatable).
+- **The status line stays for a finished pack**, with a lock in the text's colour (the design draws none; the web's says "Read-only for everyone" beside a green dot).
+- **The chip's "· Finished" is in the surface's quieter text colour**: the design's lilac is not a token.
+- The finish, reopen and copy are made for the account here (`asUser`), as every account-bound write is.
+- **The tablet's band puts its buttons under its words** where the words would keep less than 320 dp beside them (a narrow window, large text), and never takes more than
+  40% of the window's height (past that it scrolls). The rail's tile says "finished" alone (the tablet design's), the chip "finished and read-only" (the phone's).
+- **Past 1.3× text a finished chip shows a lock for "· Finished"** (the design's board D draws one), so the pack's name is not cut.
+- **The foot is each frame's own**: the phone's text button with a flag, the tablet's outlined one with a task mark.
+**Reviewed** (one independent review, 2026-10-12: 21 reported, 17 survived an adversarial check, about 10 distinct; each fix has a test, and each was broken to see it fail):
+leaving the pack, another pack opening or packs stopping during a finish's wait was taken as this person's changes having arrived, so the finish went out while the left
+pack's client still drained them (refused, and kept as their own); a client being replaced, which holds nothing yet, counted as nothing pending; a copy made whose answer
+could not be read, or lost behind the proxy (502, 504, 520 to 524), was said as "no connection" or "try again", inviting a second copy; a finish or reopen was not looked
+at by a pack whose client was waiting to load again, so it stayed shown as active (`PackDoor.refresh` wakes it now); the tablet's band squeezed its words to a sliver at
+large text in a narrow window and could take most of its height; a finished chip gave its room to "· Finished" before the name; the copy's dialog kept a refusal under a
+name typed again, said nothing to a screen reader when the copy failed, and took the field (and the keyboard) away while it was made; the rail's words and its lock were
+not the tablet design's; the foot's type size and tablet form were not the design's; and `flushOpen` had taken `renameItem`'s documentation. Not changed: a change made
+after confirming *Finish* may meet the finished pack (as on the web, finishing comes first once asked), and the question dialogs show no progress (as on the web; a second
+ask is told the first is still under way). Tests: `WorkspaceViewModelTest`, `FinishedTest` (with screenshots, 360 dp and 840 dp at 2.0), `TabletFrameTest`,
+`WorkspaceChipsTest`, `PackWorkspaceTest`, `PackCallsTest`.
 
 **P3 — People.** *New pack* (`NewPack`), *Members* (`Members`: roles, invite by name or email, pending invites with resend and revoke,
 share with a team), and the teams page.

@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +40,7 @@ import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.designsystem.rememberPanelSheetState
+import app.ezpztac.missionpacks.PackStatus
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -218,6 +221,61 @@ class TabletFrameTest {
         packs = true
         compose.waitForIdle()
         compose.onNodeWithText("The switcher").assertDoesNotExist()
+    }
+
+    /** A finished pack's frame: its band across the top beside the rail, and the rail's tile with its lock. */
+    private fun finishedFrame(band: Boolean) = compose.setContent {
+        EzpzTheme(ThemeMode.Dark) {
+            TabletFrame(
+                Panel.entries, Panel.Lz, PanelCounts(), {}, remember { SnackbarHostState() },
+                TabletRail({}, {}, {}, workspace = RailWorkspace(label = "OP DK", description = "Workspace: Mission Pack OP DK, finished and read-only. Change workspace", pack = true, finished = true)),
+                panel = { panel -> Column(Modifier.padding(16.dp)) { Text("${panel.label} panel body") } },
+                band = if (band) {
+                    { Box(Modifier.fillMaxWidth().height(72.dp).background(MaterialTheme.colorScheme.surfaceContainer)) { Text("OP DK was finished.", Modifier.padding(16.dp)) } }
+                } else {
+                    null
+                },
+            ) { Box(Modifier.fillMaxSize().background(Color(0xFF3A4A3A))) { Text("The map", Modifier.padding(16.dp)) } }
+        }
+    }
+
+    @Test
+    fun `a finished pack's band runs across the top beside the rail, over the panel and the map`() {
+        finishedFrame(band = true)
+        val band = compose.onNodeWithText("OP DK was finished.").fetchSemanticsNode().boundsInRoot
+        val list = compose.onNodeWithText("LZ/PZ panel body").fetchSemanticsNode().boundsInRoot
+        val map = compose.onNodeWithText("The map").fetchSemanticsNode().boundsInRoot
+        val rail = compose.onNodeWithContentDescription("Workspace: Mission Pack OP DK, finished and read-only. Change workspace").fetchSemanticsNode().boundsInRoot
+        assertTrue("beside the rail", band.left >= rail.right)
+        assertTrue("over the panel", band.bottom <= list.top)
+        assertTrue("over the map", band.bottom <= map.top)
+        assertTrue("the rail runs the full height", rail.top < band.bottom)
+    }
+
+    @Test
+    @Config(qualifiers = "w840dp-h480dp-xhdpi", fontScale = 2.0f)
+    fun `on a short tablet window at the largest text the band leaves the panel and the map most of the height`() {
+        val pack = app.ezpztac.packs.OpenPackUi(
+            "p", "OP DK", emptyList(), PackStatus.LIVE, finished = true, readOnly = true, pending = 0, role = "owner", finishedBy = "Colin McFadden", finishedAt = "2026-10-05T14:20:00",
+        )
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                TabletFrame(
+                    Panel.entries, Panel.Lz, PanelCounts(), {}, remember { SnackbarHostState() }, TabletRail({}, {}, {}),
+                    panel = { panel -> Column(Modifier.padding(16.dp)) { Text("${panel.label} panel body") } },
+                    band = { app.ezpztac.packs.FinishedBand(pack, {}, {}) },
+                ) { Box(Modifier.fillMaxSize().background(Color(0xFF3A4A3A)).semantics { contentDescription = "The map" }) }
+            }
+        }
+        val window = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val map = compose.onNodeWithContentDescription("The map").fetchSemanticsNode().boundsInRoot
+        assertTrue("the map keeps ${map.height} of ${window.height}", map.height >= window.height * 0.6f - 1)
+    }
+
+    @Test
+    fun finishedShot() {
+        finishedFrame(band = true)
+        compose.onRoot().captureRoboImage("build/screenshots/tablet-finished.png")
     }
 
     @Test

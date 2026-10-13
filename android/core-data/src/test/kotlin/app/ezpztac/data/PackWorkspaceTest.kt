@@ -303,6 +303,18 @@ class PackWorkspaceTest {
     }
 
     @Test
+    fun `before a finish the last change of the open item is written at once, not after the pause`() = packTest { r ->
+        r.opened()
+        r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.6}""")) }
+        r.workspace.flushOpen()
+        r.advance(100)                                                                          // well inside the session's pause
+        val queued = r.engine.open.value?.session?.pending.orEmpty()
+        assertTrue("on its way", queued.isNotEmpty() || r.sent().isNotEmpty())
+        r.advance(10_000)
+        assertEquals(34.6, r.serverData().getValue("graphics").jsonObject.getValue("helicopters").jsonArray[0].jsonObject.getValue("lat").jsonPrimitive.double, 0.0)
+    }
+
+    @Test
     fun `closing the pack sends the last change of its items first, and closes them`() = packTest { r ->
         r.opened()
         r.diagrams.edit("Move") { DiagramOps.patchGraphic(it, "helicopters", JsonPrimitive(101), json("""{"lat": 34.4}""")) }

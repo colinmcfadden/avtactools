@@ -195,6 +195,16 @@ class PackWorkspace @Inject constructor(
     }
 
     /**
+     * Writes whatever of the open pack the editors hold now (a change still in the session's pause), so it is on its way to the pack: before the pack is
+     * finished, which would refuse it. Throws when a save failed.
+     */
+    suspend fun flushOpen() = withContext(main) {
+        val pack = engine.open.value?.uuid ?: return@withContext
+        if (diagrams.active.value?.id?.let(PackRef::parse)?.pack == pack) diagrams.flush()
+        if (routes.active.value?.id?.let(PackRef::parse)?.pack == pack) routes.flush()
+    }
+
+    /**
      * Removes item [itemUuid] from the open pack, for everyone in it (the web's "Remove from pack"): closed in its editor first, so its last change
      * reaches the pack before it goes and nothing of it is kept as the person's own, then deleted with the history's sentence. Null once it is
      * on its way; else why not, as [renameItem] says it.

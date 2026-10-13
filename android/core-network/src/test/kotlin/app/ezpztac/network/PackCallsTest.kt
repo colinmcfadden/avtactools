@@ -251,6 +251,18 @@ class PackCallsTest {
         }
     }
 
+    @Test
+    fun `finishing, reopening and duplicating are made for one account, and never sent under another's session`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("pack: finish") }
+            assertEquals("finished", rig.client.finishPack(pack, asUser = me).status)
+            assertThrows<OtherAccountException> { rig.client.finishPack(pack, asUser = me + 1) }
+            assertThrows<OtherAccountException> { rig.client.reopenPack(pack, asUser = me + 1) }
+            assertThrows<OtherAccountException> { rig.client.duplicatePack(pack, "OP DK 2", asUser = me + 1) }
+            assertEquals(1, rig.requests.size)                                                          // only the first went
+        }
+    }
+
     // -- Ids --------------------------------------------------------------------------------------
 
     @Test

@@ -2,6 +2,8 @@ package app.ezpztac.android.frame
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -28,6 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -97,6 +102,8 @@ class RailWorkspace(
     val description: String = "Workspace: Personal",
     val pack: Boolean = false,
     val menu: (@Composable (onDismiss: () -> Unit) -> Unit)? = null,
+    /** The pack is finished: the tile wears a lock (the design's AT Finished). */
+    val finished: Boolean = false,
 )
 
 /**
@@ -218,6 +225,8 @@ fun TabletFrame(
     supporting: List<SupportingPane> = emptyList(),
     /** Whether the toasts are drawn over the map (not while something drawn over the frame draws them itself). */
     toasts: Boolean = true,
+    /** Across the top beside the rail, over the panes and the map (a finished pack's, the design's AT Finished): it takes the window's top inset itself. */
+    band: (@Composable () -> Unit)? = null,
     mapScreen: @Composable (MapFrame) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -225,11 +234,13 @@ fun TabletFrame(
     val standing = supporting.lastOrNull()
     LaunchedEffect(current) { state.panelShown(current) }
     LaunchedEffect(standing?.key, standing?.request) { state.supportShown(standing?.key, standing?.request ?: 0) }
-    val top = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
+    // Under a band the panes and the map start below the window's top inset, which the band has taken.
+    val top = if (band != null) 0.dp else WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var mapHeight by remember { mutableIntStateOf(0) }
     BoxWithConstraints(modifier.fillMaxSize()) {
         val panes = state.panes(maxWidth, standing != null)
+        val bandMax = maxHeight * BAND_MAX_SHARE
         // A field left focused in a list that goes out of sight (collapsed, or waiting behind a supporting pane) keeps no keyboard up and takes nothing typed.
         LaunchedEffect(panes.list) {
             state.listShown = panes.list
@@ -242,6 +253,11 @@ fun TabletFrame(
                 state.showList()
                 onPick(picked)
             })
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+            if (band != null) {
+                Box(Modifier.heightIn(max = bandMax).verticalScroll(rememberScrollState())) { band() }
+            }
+            Row(Modifier.weight(1f).fillMaxWidth().then(if (band != null) Modifier.consumeWindowInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)) else Modifier)) {
             // The panel's list: always composed (its scroll, its pickers, what it listens for), laid out only while it stands. A surface, so what is drawn on it
             // takes the palette's colour for text, as in the phone's sheet.
             Surface(
@@ -299,6 +315,8 @@ fun TabletFrame(
                     }
                 }
             }
+            }
+            }
         }
     }
 }
@@ -325,7 +343,7 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
                     Box {
                         RailTile(
                             if (workspace.pack) EzpzIcons.groupsFill else EzpzIcons.personFill, workspace.label, workspace.description, tonal = false,
-                            onClick = workspace.menu?.let { { switching = true } }, pack = workspace.pack,
+                            onClick = workspace.menu?.let { { switching = true } }, pack = workspace.pack, locked = workspace.finished,
                         )
                         if (switching) workspace.menu?.invoke { switching = false }
                     }
@@ -378,7 +396,7 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
  * no [onClick] it is a label, not a button.
  */
 @Composable
-private fun RailTile(icon: Int, label: String, description: String, tonal: Boolean, onClick: (() -> Unit)?, pack: Boolean = false) {
+private fun RailTile(icon: Int, label: String, description: String, tonal: Boolean, onClick: (() -> Unit)?, pack: Boolean = false, locked: Boolean = false) {
     val color = when {
         pack -> MaterialTheme.colorScheme.tertiaryContainer
         tonal -> MaterialTheme.colorScheme.secondaryContainer
@@ -395,8 +413,22 @@ private fun RailTile(icon: Int, label: String, description: String, tonal: Boole
         Modifier.width(80.dp).then(click).semantics(mergeDescendants = true) { contentDescription = description }.padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Surface(shape = MaterialTheme.shapes.large, color = color, border = border, shadowElevation = if (tonal) 1.dp else 0.dp) {
-            Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) { Icon(painterResource(icon), contentDescription = null, tint = tint) }
+        Box {
+            Surface(shape = MaterialTheme.shapes.large, color = color, border = border, shadowElevation = if (tonal) 1.dp else 0.dp) {
+                Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) { Icon(painterResource(icon), contentDescription = null, tint = tint) }
+            }
+            // A finished pack's lock, on the tile's corner (the design's): a 22 dp disc with a 14 dp lock, its edge 5 dp past the tile's, ringed outside in the
+            // rail's colour so it stands off the tile.
+            if (locked) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).offset(7.dp, 7.dp).size(26.dp).background(MaterialTheme.colorScheme.surfaceContainerLow, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(Modifier.size(22.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(painterResource(EzpzIcons.lockFill), contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
         }
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
     }
@@ -442,6 +474,9 @@ val TABLET_MIN: Dp = 840.dp
 /** The window height the tablet's frame needs as well (Material's medium height): its rail holds what the phone's search bar and chips do. */
 val TABLET_MIN_HEIGHT: Dp = 480.dp
 internal val RAIL_WIDTH: Dp = 96.dp
+/** The most of the window's height a band across the top may take: the panes and the map keep the rest. */
+private const val BAND_MAX_SHARE = 0.4f
+
 internal val LIST_WIDTH: Dp = 344.dp
 internal val SUPPORT_WIDTH: Dp = 320.dp
 
