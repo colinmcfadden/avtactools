@@ -814,6 +814,10 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   sends null for them; a route set's own fields and version are nulled and made 1 by the reshape; an id-less (or number, text, true, list) route
   makes `usePackRoutes` send the set again without end once anything changes it; and a null route, or `routes` that is an object, makes the set
   fail to open (`restoreSketchRoute` reads `route.id` of null; `routes.map` of an object).
+- A route's ground elevations are kept by point id with nothing saying where they were fetched (`elevations: {pointId: ft}`), so a point moved on one device while another
+  device's fetch for it was out, whose move reaches that device only after the answer, can still end with the old place's ground in the pack: the device that fetched
+  could not know (Android keeps fetched data only for a point still where it was asked, *Winds and ground elevations*, §17; the web keeps any answer). Closing it needs the
+  place a ground was fetched for kept with it, a change to the shared shape (owner to decide, web first).
 - The web reads the server's saved-record times (`updated_at`, `isoformat()` of a naive `utcnow()`, with no offset) as the browser's local time, so the
   Library's *Updated* is off by the person's offset from UTC. Android reads them as UTC (*The Library*, §17); fix on the web by sending an offset from the server or reading
   as UTC.
@@ -1475,6 +1479,10 @@ client is built around not losing one:
       are not an undo step and are applied to that route's record even if another set has been opened while the server answered), one fetch at a time. A failure is the app's words,
       never the server's (the 500 text names a Python type). A time is asked for as an instant in the device's zone (`RouteWinds.instantText`); the question and the merge are held to
       `routes/winds.json`, whose times are wall-clock to the millisecond so the fixture does not depend on the zone it was made in (a Date holds milliseconds, and the request carries them).
+      **What was fetched for a place lands only on a point still there**: an answer takes seconds, and a point moved meanwhile (here, or by someone else in a mission pack, once this
+      device has their move) or taken away gets nothing from it, in each version of the set (an undo step where the point was elsewhere keeps what it had), and the person is told how
+      many. Winds too: a wind is the nearest station's for that place, and once it is a plan value nothing marks it as fetched, so one that landed where it was not asked for could
+      never be told from one typed there, nor dropped when the point moves on. **Not like the web**, which keeps whatever answers under the point's id.
   - **Moving and adding points from the plan** (`RoutesViewModel`: `nudgePoint`, `pointToCrosshair`, `pointToText`, `addShapingPoint`; `RoutePlanPage`: `PointPosition`). The same controls a held
     graphic has (`NudgeSteps`/`NudgePad`/`EntryRow` are shared with `GraphicsScreen`), because dragging a point in gloves is not a plan: a pad of four arrows with a 10/50/200 ft step, *put at the
     crosshair*, and a grid or coordinate typed in (`PlaceSearch`, so the words for a refusal are the search field's). A named point's controls are folded behind *Move this point*; a held shaping

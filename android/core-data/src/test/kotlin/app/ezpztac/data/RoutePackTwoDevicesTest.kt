@@ -21,6 +21,7 @@ import app.ezpztac.planning.DraftPoint
 import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.planning.SketchOps
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
@@ -330,6 +331,40 @@ class RoutePackTwoDevicesTest {
         assertEquals(where, b.at("pt-4"))
         assertEquals(listOf(ROUTE), a.serverRouteIds(item))
         assertEquals(emptyList<List<JsonObject>>(), b.sent())
+    }
+
+    // -- Fetched data and a point moved meanwhile ------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `ground fetched on one device for a point the other moved meanwhile is not kept for it, here, there or in the pack`() = twoDevices { a, b ->
+        val item = drawnOnA(a, b)
+        val held = kotlinx.coroutines.CompletableDeferred<List<Double?>>()
+        val planning = RoutePlanning(
+            object : PlanningApi {
+                override suspend fun elevations(points: List<LatLon>): List<Double?> = held.await()
+                override suspend fun routeWinds(points: List<app.ezpztac.network.WindQuestion>): Map<String, app.ezpztac.network.PointWindDto> = emptyMap()
+            },
+            a.routes,
+        )
+        // Colin asks for the ground under RED 1's named points; while the service answers, Sam moves .CP1 and Colin's device hears of it.
+        val fetch = async { planning.fetchElevations(a.set().id, ROUTE) }
+        a.advance(1)
+        b.nudge("pt-2", northFt = 300.0, eastFt = 0.0)
+        val where = b.at("pt-2")
+        b.advance(STILL)
+        a.advance(POLL)
+        assertEquals(where, a.at("pt-2"))
+        held.complete(listOf(1_000.0, 1_010.0, 1_020.0, 1_030.0, 1_040.0))
+        fetch.await()
+        a.advance(STILL); b.advance(POLL); b.advance(POLL)
+        // The ground fetched for where .CP1 was is nobody's: not on Colin's device, not sent, not on Sam's.
+        for (rig in listOf(a, b)) {
+            assertEquals(null, rig.set().route(ROUTE)!!.elevations["pt-2"])
+            assertEquals(1_000.0, rig.set().route(ROUTE)!!.elevations["pt-1"])
+        }
+        val ground = a.serverData(item).getValue("routes").jsonArray.single().jsonObject.getValue("elevations").jsonObject
+        assertEquals(JsonNull, ground["pt-2"] ?: JsonNull)
+        assertEquals(where, b.at("pt-2"))
     }
 
     // -- Sets the web made, and what the types cannot hold --------------------------------------------------------------------------------------
