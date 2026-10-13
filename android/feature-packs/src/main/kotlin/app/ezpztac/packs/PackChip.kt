@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.ezpztac.designsystem.ChipLine
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.Tokens
@@ -39,34 +40,50 @@ import app.ezpztac.missionpacks.PackStatus
 /**
  * The workspace chip in a pack (the design's PackLive): the pack's name in its colour, the faces of who has it open (three, then "+N"; one at large text),
  * and the switcher's arrow. One button for a screen reader, which says the pack and who is here ([PackWords.chipDescription]). [onClick] opens the
- * switcher. Given less room than it would take, the name gives way (cut with an ellipsis), never the faces or the arrow.
+ * switcher. As tall as the other controls on the phone's row (40 dp, the map's `MapChrome.CHIPS_HEIGHT`), a 48 dp touch target.
+ *
+ * Given less room than it would take (the phone's row holds the search and the account beside it), what only adds gives way first, then the name is cut
+ * (with an ellipsis): the faces (three, then one, then none), then the arrow, and for a finished pack "· Finished" gives way to its lock, then its group icon
+ * (the lock says what it is). What says how the pack stands is never given up.
  */
 @Composable
 fun PackChip(pack: OpenPackUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val large = LocalDensity.current.fontScale > LARGE_TEXT
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         onClick = onClick, shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = MaterialTheme.colorScheme.onSurface, shadowElevation = 2.dp,
-        modifier = modifier.heightIn(min = 32.dp).clearAndSetSemantics { contentDescription = PackWords.chipDescription(pack) },
+        modifier = modifier.heightIn(min = 40.dp).clearAndSetSemantics { contentDescription = PackWords.chipDescription(pack) },
     ) {
-        Row(Modifier.padding(start = Tokens.Spacing.sm.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            // Finished (the design's Finished): the outlined icon, the name in the surface's text, "· Finished" after it, and nobody's face.
-            Icon(painterResource(if (pack.finished) EzpzIcons.groups else EzpzIcons.groupsFill), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
-            Text(
-                pack.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
-                color = if (pack.finished) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onTertiaryContainer,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
-            )
-            if (pack.finished && LocalDensity.current.fontScale > LARGE_TEXT) {
-                Icon(painterResource(EzpzIcons.lock), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
-            } else if (pack.finished) {
-                Text("· Finished", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
-            } else {
-                Faces(pack.people, shown = if (LocalDensity.current.fontScale > LARGE_TEXT) 1 else MAX_FACES)
-            }
-            Icon(painterResource(EzpzIcons.arrowDropDown), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        val lock: @Composable () -> Unit = { Icon(painterResource(EzpzIcons.lock), contentDescription = null, tint = muted, modifier = Modifier.size(16.dp)) }
+        // Finished (the design's Finished): the outlined icon, the name in the surface's text, "· Finished" after it (or its lock), and nobody's face.
+        val extras: List<@Composable () -> Unit> = when {
+            pack.finished && large -> listOf(lock)
+            pack.finished -> listOf({ Text("· Finished", style = MaterialTheme.typography.labelLarge, color = muted, maxLines = 1, softWrap = false) }, lock)
+            pack.people.size > 1 && !large -> listOf({ Faces(pack.people, shown = MAX_FACES) }, { Faces(pack.people, shown = 1) })
+            else -> listOf({ Faces(pack.people, shown = 1) })
         }
+        ChipLine(
+            lead = {
+                Icon(painterResource(if (pack.finished) EzpzIcons.groups else EzpzIcons.groupsFill), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
+            },
+            name = {
+                Text(
+                    pack.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                    color = if (pack.finished) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onTertiaryContainer,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            },
+            extras = extras,
+            arrow = { Icon(painterResource(EzpzIcons.arrowDropDown), contentDescription = null, tint = muted, modifier = Modifier.size(18.dp)) },
+            // A finished pack's last mark (its lock) stays, and its group icon may go, the lock saying what it is; the faces may all go.
+            extrasMayGo = !pack.finished,
+            leadMayGo = pack.finished,
+            modifier = Modifier.padding(start = Tokens.Spacing.sm.dp, end = 6.dp),
+        )
     }
 }
+
 
 /**
  * Who has the pack open, or who is in it: [shown] faces, side by side, then "+N" for the rest. Nothing when there is nobody. [size] is the faces'

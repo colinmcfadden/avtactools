@@ -130,13 +130,16 @@ class MapViewModel @Inject constructor(
 
     // -- Search ------------------------------------------------------------------------------------------
 
-    fun search(text: String) {
-        when (val result = PlaceSearch.resolve(text)) {
-            is PlaceResult.Found -> {
-                _state.update { it.copy(searchError = null) }
-                _commands.tryEmit(MapCommand.FlyTo(result.at, SEARCH_ZOOM))
-            }
-            is PlaceResult.NotUnderstood -> _state.update { it.copy(searchError = result.message) }
+    /** Looks for [text]: true when it is a place, which the map then flies to; false when it was not understood, said in [MapUiState.searchError]. */
+    fun search(text: String): Boolean = when (val result = PlaceSearch.resolve(text)) {
+        is PlaceResult.Found -> {
+            _state.update { it.copy(searchError = null) }
+            _commands.tryEmit(MapCommand.FlyTo(result.at, SEARCH_ZOOM))
+            true
+        }
+        is PlaceResult.NotUnderstood -> {
+            _state.update { it.copy(searchError = result.message) }
+            false
         }
     }
 

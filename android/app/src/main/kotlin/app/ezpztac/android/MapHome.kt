@@ -61,6 +61,7 @@ import app.ezpztac.android.frame.RailWorkspace
 import app.ezpztac.android.frame.SupportingPane
 import app.ezpztac.android.frame.TabletFrame
 import app.ezpztac.android.frame.TabletRail
+import app.ezpztac.android.frame.WorkspaceChips
 import app.ezpztac.android.frame.lookingAtPack
 import app.ezpztac.android.frame.panelsFor
 import app.ezpztac.android.frame.pick
@@ -75,15 +76,12 @@ import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
-import app.ezpztac.map.ChipAction
-import app.ezpztac.map.ChipsThatFit
 import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.GraphicLabelsLayer
 import app.ezpztac.map.MapChromeBoxes
 import app.ezpztac.map.MgrsGridLayer
-import app.ezpztac.map.MapChip
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
@@ -95,6 +93,7 @@ import app.ezpztac.map.RouteLayer
 import app.ezpztac.map.ThreatLabelsLayer
 import app.ezpztac.map.ThreatLayer
 import app.ezpztac.map.rememberMapHost
+import app.ezpztac.map.rememberMapSearchState
 import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.LatLon
@@ -102,7 +101,6 @@ import app.ezpztac.network.ApiUser
 import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
 import app.ezpztac.packs.AddToPackHost
-import app.ezpztac.packs.PackChip
 import app.ezpztac.packs.ItemDialogsHost
 import app.ezpztac.packs.PackCopyViewModel
 import app.ezpztac.packs.PackItemCopyViewModel
@@ -207,6 +205,8 @@ fun MapHome(
     val drawingWhat by home.drawingWhat.collectAsStateWithLifecycle()
     val slopeToggle by home.slopeToggle.collectAsStateWithLifecycle()
     val host = rememberMapHost()
+    // The phone's search, folded into the row or open across it, and what was typed (a tablet's bar is always open): the frame folds it.
+    val search = rememberMapSearchState()
     // What floats over the map, where the map's screen lays it out: the MGRS grid's labels keep off it.
     val chrome = remember { MapChromeBoxes() }
     val density = LocalDensity.current
@@ -356,10 +356,11 @@ fun MapHome(
     // the menu closes (menuOpen false), so it does not empty as it fades.
     var menu by remember { mutableStateOf<OpenMapMenu?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
-    val account: @Composable () -> Unit = {
+    // On the phone's row it floats over the map on a disc of its own; on a tablet it is the rail's.
+    val account: @Composable (floating: Boolean) -> Unit = { floating ->
         AccountButton(
             name = user.name, email = user.email, version = stringResource(R.string.home_version, version, build),
-            night = night, onNight = display::setNight, onSignOut = onSignOut, notice = stringResource(R.string.classification_notice),
+            night = night, onNight = display::setNight, onSignOut = onSignOut, notice = stringResource(R.string.classification_notice), floating = floating,
         )
     }
     // A tablet opens the open LZ/PZ's plan beside the map when one is opened (the design's supporting pane); its close button puts it away until another is opened.
@@ -520,36 +521,23 @@ fun MapHome(
                     padding = frame.padding,
                     controlsBottom = frame.controlsBottom,
                     // On a tablet the account, the workspace, Import and the Library are the rail's.
-                    account = { if (!tablet) account() },
+                    account = { if (!tablet) account(true) },
                     // Not under a sheet at full height, which would leave a sliver of it showing above its edge.
                     belowChips = { if (tablet || sheet.heading != SheetDetent.Full) openPack?.let { PackStatusLine(it) } },
                     chips = {
                         if (!tablet) {
-                            // The workspace: the person's own, or the open pack's in its colour; it opens the switcher while packs run here.
-                            // Import and the Library give up their words before the workspace's is cut (a narrow phone, large text, a long name).
-                            ChipsThatFit(
-                                lead = {
-                                    val pack = openPack
-                                    if (pack != null) {
-                                        PackChip(pack, onClick = { switcherOpen = true })
-                                    } else if (packsHere) {
-                                        MapChip(EzpzIcons.person, "Personal", description = PackWords.chipDescription(null), trailingIcon = EzpzIcons.arrowDropDown, onClick = { switcherOpen = true })
-                                    } else {
-                                        MapChip(EzpzIcons.person, "Personal", description = "Workspace: Personal")
-                                    }
+                            // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
+                            WorkspaceChips(
+                                openPack, packsHere, onSwitcher = { switcherOpen = true }, onImport = { importMenu = true },
+                                onLibrary = {
+                                    focus.clearFocus()
+                                    libraryTab = libraryTabFor(current)
                                 },
-                                chips = listOf(
-                                    ChipAction(EzpzIcons.fileOpen, "Import", "Import a mission, local points or threats") { importMenu = true },
-                                    // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
-                                    ChipAction(EzpzIcons.collectionsBookmark, "Library", "Library: everything you have saved") {
-                                        focus.clearFocus()
-                                        libraryTab = libraryTabFor(current)
-                                    },
-                                ),
                             )
                         }
                     },
                     buttonsAtFoot = tablet,
+                    search = search,
                     // Over the readout, above the sheet: only there while a boundary or a route is being drawn (never both), or something on the map is held.
                     overlay = {
                         // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).
@@ -587,8 +575,11 @@ fun MapHome(
                     EzpzMap(
                         host = host, style = state.style, initial = viewModel.initialCamera, padding = frame.padding, modifier = Modifier.fillMaxSize(),
                         onTap = { at ->
-                            // Distances between points on the screen do not depend on where its middle is, so the size of the view is not needed here.
-                            host.camera?.let { camera -> home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) }
+                            // With the phone's search open, a tap on the map folds it and does nothing else.
+                            if (!search.foldOnTap()) {
+                                // Distances between points on the screen do not depend on where its middle is, so the size of the view is not needed here.
+                                host.camera?.let { camera -> home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) }
+                            }
                         },
                         // A long press on a graphic, a threat or a point of a route picks it up; the finger then moves it, and lifting puts it down.
                         onPickUp = { at ->
@@ -695,7 +686,7 @@ fun MapHome(
                             focus.clearFocus()
                             libraryTab = libraryTabFor(current)
                         },
-                        account = account,
+                        account = { account(false) },
                         workspace = openPack.let { pack ->
                             RailWorkspace(
                                 // Only a tile that opens the switcher says it changes the workspace.

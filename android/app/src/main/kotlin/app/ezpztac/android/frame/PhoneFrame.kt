@@ -112,10 +112,10 @@ fun PhoneFrame(
             val anchors = sheet.anchors
             val resting = sheet.heading.let { if (it == SheetDetent.Full) SheetDetent.Half else it }
             val bottom: Dp = anchors?.let { with(density) { it.heightOf(resting).toDp() } } ?: PanelSheetDefaults.LoweredHeight
-            val frame = MapFrame(padding = MapPadding(top = top + MapChrome.SEARCH_BOTTOM, bottom = bottom), controlsBottom = { edgeOf(sheet) })
+            val frame = MapFrame(padding = MapPadding(top = top + MapChrome.ROW_BOTTOM, bottom = bottom), controlsBottom = { edgeOf(sheet) })
             // The map first, then the sheet over it: drawn here, not by the map screen, so the panels are never inside the map's content. The map and the panels are
-            // each moved between the phone's and the tablet's frames whole (MapHome), and one moved inside another breaks Compose. The sheet stops below the search
-            // bar and the chips at its full height, so what is drawn is the same.
+            // each moved between the phone's and the tablet's frames whole (MapHome), and one moved inside another breaks Compose. The sheet stops below the row at
+            // its full height, so what is drawn is the same.
             mapScreen(frame)
             PanelSheet(
                 state = sheet,

@@ -11,7 +11,8 @@ panel) S7 the Library (with record times, database version 4) and S8 the map's l
 S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, P3c Teams, P4a copies into a pack, P4b updating a copy and copies to the Library, P4c the edits a pack would not take, every review's fixes in: S1–S9 and P1–P4 are built, and the owner's device run is next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
 `docs/ANDROID_SCREENS_PLAN.md`; the screenshot guard and the 48-hour wipe went in S5). Since then, outside the plan: the web's MGRS grid on the Android
 map, from the Layers menu (AGENTS.md §17, *The MGRS grid*), its code ported and held to `contracts/fixtures/mgrs/grid.json`; the fix for what the owner's first
-two-device run found, a pack's route written twice (§1); and the audit of every setting in a pack that followed it (§1).
+two-device run found, a pack's route written twice (§1); the audit of every setting in a pack that followed it (§1); and the owner's changes to the phone's frame
+from the same day's device run (§1): the search, the workspace, Import and the Library on one row.
 
 ---
 
@@ -99,6 +100,10 @@ two-device run found, a pack's route written twice (§1); and the audit of every
   could replace another's; the route's clock form and the unit builder put back what changed under them; a ground elevation or a wind fetched for a point that moved meanwhile
   landed on it; the web's clock threw on a pack's null; and the UH-60 picture's tail loop was cut off at high zoom. What is left for the owner is in AGENTS.md §15 (an
   aircraft placed as a person's own airframe, two clocks set at once, and the web's own partial values and forms).
+- **The phone's frame, the owner's changes of 2026-10-13** (from a run on a Samsung S26 Ultra; the Galaxy Tab Active5 in portrait has the phone's frame too, and its
+  tablet frame in landscape is unchanged). Space on a phone is tight, so the search bar is folded into a round button at the start of **one row** with the workspace chip,
+  Import, the Library and the account, and opens across the row when touched (AGENTS.md §17, *The phone's row*); a pack's faces and the chips' arrows give way before a
+  name is cut. **To try on a device:** the keyboard coming up as the search opens, and the row over real imagery.
 - **Everything else is still compiled and unit-tested on a JVM only.** The map layers (MapLibre),
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output
   and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
