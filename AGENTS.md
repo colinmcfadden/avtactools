@@ -824,6 +824,15 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - Accepting an invitation link is not repeatable by the account that accepted it: a second accept answers 410 `invite_gone`. So an answer lost
   on the way (a read timeout after the server took it) is tried again and reads "already used" to someone who has just joined, on the web and
   Android alike. The server could answer a repeat by the same account with what it joined (owner to decide).
+- **The web sends only the part of a plan value that changed, and a point's first values as one object** (`packDiff.js`): an altitude's number typed on the web
+  while its reference is changed on another device can still end as the one's number and the other's reference, and a point given an altitude on the web and a wind elsewhere at once
+  can lose one. Android sends each whole, and each first value apart (`RoutePackKind.keepWhole`, §17), which holds only while the other device is Android too. The same goes for a
+  PZ marker, whose tip the web sends alone when it is dragged. The web would need the same in its `usePackItemSync` flush, with a fixture for both: web first.
+- **Two people setting the clock at two points at once leave both with a clock**: the clock is kept on the point (`plan.perPoint[id].clock`), and each person's setting clears only the
+  clocks their device knew of. The planner then times the route from whichever of the two comes first on the route, not from the one set later. Keeping it one value needs it
+  out of the points (owner to decide, web first).
+- **The web's clock form and unit builder keep what they opened with** (`RoutePlanSection.jsx`'s `clockEdit`, `UnitBuilder.jsx`'s initial parts): someone else's clock or unit part
+  changed under them is put back by *Set* or *Apply*. Android's follow what changes under them (§17, *The held route's plan*, *Units*).
 - **An aircraft placed as a person's own airframe carries only its slug** (`profileId`, the web's and Android's alike), and own airframes are per account: on every other
   member's device it is drawn and its separation measured as that device's mission aircraft (else the UH-60L), not as the airframe it was placed as. Carrying the airframe's
   geometry with the aircraft (rotor diameter, tip clearance, picture) would change the shared shape: owner to decide, web first.
@@ -1622,6 +1631,14 @@ client is built around not losing one:
     one setting stands whole as the later made it). What stays each person's: the base map, the LZ outline and the slope map (an LZ/PZ's `view`), and on Android the slope switch,
     a device choice. **An aircraft carries only its airframe's slug** (`profileId`), so one placed as a person's own airframe is drawn and measured as each device's mission aircraft
     where that profile is not (§15).
+  - **A route's plan values go whole, and a point's first values go apart** (`RoutePackKind.keepWhole`): each altitude (its number and what it is measured from), speed (its number
+    and kind) and wind (its direction and speed), the route's and each point's, is sent whole, so 500 typed here and MSL chosen there never make 500 MSL; and a point given its first
+    values of its own (an entry of `plan.perPoint` it did not have) gets each as a `set` of its own (`pointValuesApart`), which makes the entry where the pack has none and leaves the rest
+    of one it has: sent as one object, the later of two people's first values for one point (an altitude here, a wind there) replaced the other's. **Not like the web**, whose diff
+    sends only the part of a value that changed and a new entry whole (§15). Every route setting is held on two devices as the LZ/PZ's are (`RoutePackSettingsTest`): a route drawn
+    (its colour with it), points added, put on the line, renamed (and onto a local point), designated and re-designated, moved every way, the date, temperature and fuel flow, a point's
+    altitude, speed and wind, the clock set, moved and cleared, winds and ground fetched (quiet, and for a set no longer open), a route's name and deletion, the set's name. What stays
+    each person's: the routes they hid. `PackScenarioBook` holds a point's first values and its altitude changed in part on the fake, in Room and on the real Flask server.
   - `PackWorkspace` opens and closes packs (closing whatever of the pack being left is open in the editors first, so its last change reaches it while it still takes it, and both editors
     and the switch even when a save fails, which it then throws), opens an item in its editor, and makes a new LZ/PZ or route set in the open pack (`createLz`, `createRouteSet`: the web's names,
     `LZ/PZ n` and `ROUTES n`, and creation sentences).

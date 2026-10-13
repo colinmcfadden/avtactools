@@ -1,9 +1,12 @@
 package app.ezpztac.missionpacks
 
+import app.ezpztac.model.AltitudeSetting
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.PointOverride
 import app.ezpztac.model.RouteSet
+import app.ezpztac.model.Wind
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -350,7 +353,56 @@ public object PackScenarioBook {
             assertEquals(later, LatLon(chalk1.getValue("lat").jsonPrimitive.double, chalk1.getValue("lon").jsonPrimitive.double))
             for (editor in listOf(onA, onB)) assertEquals(LatLon(34.501, -84.1), editor.at("helicopters", CHALK_2))
         },
+        PackScenario("a checkpoint given its first altitude on one device and its first wind on the other has both, and its altitude stands whole as the later set it") { env ->
+            val colin = env.person("Colin P.")
+            val sam = env.person("Sam B.")
+            val pack = env.createPack(colin, "OP DK")
+            env.addMember(pack, colin, sam, "editor")
+            env.send(pack, colin, json("""{"type": "item.create", "item": "rt-1", "kind": "route", "name": "ROUTES 1", "data": $RED_1}"""))
+            val a = env.device("A", colin)
+            val b = env.device("B", sam)
+            a.enable()
+            a.open(pack)
+            b.enable()
+            b.open(pack)
+            eventually("both devices have ROUTES 1") { a.item("rt-1") != null && b.item("rt-1") != null }
+            val onA = PackRouteEditor(a, pack, "rt-1").apply { open() }
+            val onB = PackRouteEditor(b, pack, "rt-1").apply { open() }
+
+            // The checkpoint has no values of its own: Colin, with no signal, gives it an altitude; Sam a wind, which reaches the pack first.
+            a.network.offline = true
+            onA.change { own(it, "cp1") { o -> o.copy(altitude = AltitudeSetting(500.0, "agl")) } }
+            assertNull(onA.look())
+            onB.change { own(it, "cp1") { o -> o.copy(wind = Wind(250.0, 18.0)) } }
+            assertNull(onB.look())
+            b.sent(pack)
+            a.online()
+            a.sent(pack)
+            eventually("both editors have the checkpoint's altitude and its wind") {
+                onA.look() == null && onB.look() == null && listOf(onA, onB).all { it.document?.route(RED_1_ID)?.plan?.perPoint?.get("cp1") == PointOverride(AltitudeSetting(500.0, "agl"), wind = Wind(250.0, 18.0)) }
+            }
+            val held = env.data(pack, colin, "rt-1")!!.jsonObject.getValue("routes").jsonArray[0].jsonObject.getValue("plan").jsonObject.getValue("perPoint").jsonObject.getValue("cp1").jsonObject
+            assertEquals(setOf("altitude", "wind"), held.keys)
+
+            // Then each changes that altitude in part, Colin its number and Sam what it is measured from: Sam's reaches the pack later, and stands whole.
+            b.network.offline = true
+            onA.change { own(it, "cp1") { o -> o.copy(altitude = AltitudeSetting(700.0, "agl")) } }
+            assertNull(onA.look())
+            onB.change { own(it, "cp1") { o -> o.copy(altitude = AltitudeSetting(500.0, "msl")) } }
+            assertNull(onB.look())
+            a.sent(pack)
+            b.online()
+            b.sent(pack)
+            eventually("both editors have Sam's altitude, never Colin's number measured from the sea") {
+                onA.look() == null && onB.look() == null && listOf(onA, onB).all { it.document?.route(RED_1_ID)?.plan?.perPoint?.get("cp1")?.altitude == AltitudeSetting(500.0, "msl") }
+            }
+        },
     )
+
+    // [route] with point [pointId]'s own values changed by [change], as the route's plan changes them.
+    private fun own(set: RouteSet, pointId: String, change: (PointOverride) -> PointOverride): RouteSet = set.mapRoute(RED_1_ID) { route ->
+        route.copy(plan = route.plan.copy(perPoint = route.plan.perPoint + (pointId to change(route.plan.perPoint[pointId] ?: PointOverride()))))
+    }
 
     // -- LZ HAWK ----------------------------------------------------------------------------------------------------------------
 

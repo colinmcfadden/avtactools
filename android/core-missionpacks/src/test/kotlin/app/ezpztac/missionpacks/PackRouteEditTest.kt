@@ -3,11 +3,13 @@ package app.ezpztac.missionpacks
 import app.ezpztac.missionpacks.PackFixtures.assertValue
 import app.ezpztac.missionpacks.PackFixtures.item
 import app.ezpztac.missionpacks.PackFixtures.localId
+import app.ezpztac.model.Airspeed
 import app.ezpztac.model.AltitudeSetting
 import app.ezpztac.model.PointOverride
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.RouteSet
 import app.ezpztac.model.SketchRoute
+import app.ezpztac.model.Wind
 import app.ezpztac.testing.Fixtures
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -214,6 +216,83 @@ class PackRouteEditTest {
         )
         val point = routes(PackFixtures.applyAll("route", elsewhere, plan.ops.map { JsonObject(it - "summary") }))[0].jsonObject.getValue("points").jsonArray[1].jsonObject
         assertValue(json("""{"lat": 34.6009, "lon": -84.2}"""), JsonObject(point.filterKeys { it == "lat" || it == "lon" }), "where it is")
+    }
+
+    // [route] with point [pointId]'s own values changed by [change], as the route's plan changes them (SketchOps.withOverride, withClock).
+    private fun own(route: SketchRoute, pointId: String, change: (PointOverride) -> PointOverride): SketchRoute =
+        route.copy(plan = route.plan.copy(perPoint = route.plan.perPoint + (pointId to change(route.plan.perPoint[pointId] ?: PointOverride()))))
+
+    // What [mine], made from [item], is sent as, without the sentences.
+    private fun ops(item: PackItemView, mine: RouteSet): List<JsonObject> {
+        val local = localId(item)
+        val plan = checkNotNull(PackItemSync.flushPlan(RoutePackKind, local, PackItemSync.settled(RoutePackKind, local, item), item, mine, "Sam B."))
+        return plan.ops.map { JsonObject(it - "summary" - "item") }
+    }
+
+    @Test
+    fun `an altitude, a speed and a wind changed in part are each sent whole, the route's and a point's`() {
+        val item = afterSend(
+            grounded,
+            RoutePackKind.fromItem(localId(grounded), grounded, null).mapRoute("r-1") {
+                own(it, "p-2") { o -> o.copy(altitude = AltitudeSetting(300.0, "msl"), airspeed = Airspeed(90.0, "indicated"), wind = Wind(270.0, 15.0)) }
+            },
+        )
+        val opened = RoutePackKind.fromItem(localId(item), item, null)
+        // The number of the altitude alone, its reference alone, the kind of speed alone, the wind's speed alone: each with the rest of its value.
+        val point = opened.mapRoute("r-1") {
+            own(it, "p-2") { o -> o.copy(altitude = AltitudeSetting(500.0, "msl"), airspeed = Airspeed(90.0, "true"), wind = Wind(270.0, 25.0)) }
+        }
+        val values = ops(item, point).associate { op -> (op.getValue("path").jsonArray.last() as JsonPrimitive).content to op.getValue("value") }
+        assertValue(json("""{"value": 500, "ref": "msl"}"""), values["altitude"], "the altitude")
+        assertValue(json("""{"type": "true", "value": 90}"""), values["airspeed"], "the speed")
+        assertValue(json("""{"speedKts": 25, "dirTrue": 270}"""), values["wind"], "the wind")
+        val route = opened.mapRoute("r-1") { it.copy(plan = it.plan.copy(altitude = it.plan.altitude.copy(ref = "msl"))) }
+        val altitude = ops(item, route).single()
+        assertValue(JsonArray(listOf(JsonPrimitive("routes"), json("""{"id": "r-1"}"""), JsonPrimitive("plan"), JsonPrimitive("altitude"))), altitude["path"], "the route's")
+        assertEquals(setOf("value", "ref"), altitude.getValue("value").jsonObject.keys)
+    }
+
+    @Test
+    fun `the first values given to a point go each as its own, so values given it at once by two people all stand`() {
+        val opened = RoutePackKind.fromItem(localId(grounded), grounded, null)
+        val altitude = ops(grounded, opened.mapRoute("r-1") { own(it, "p-2") { o -> o.copy(altitude = AltitudeSetting(400.0, "agl")) } })
+        assertEquals(listOf("set"), altitude.map { it.getValue("type").jsonPrimitive.content })
+        assertValue(
+            JsonArray(listOf(JsonPrimitive("routes"), json("""{"id": "r-1"}"""), JsonPrimitive("plan"), JsonPrimitive("perPoint"), JsonPrimitive("p-2"), JsonPrimitive("altitude"))),
+            altitude.single()["path"], "a set of the one value",
+        )
+        val wind = ops(grounded, opened.mapRoute("r-1") { own(it, "p-2") { o -> o.copy(wind = Wind(90.0, 10.0)) } })
+        // Whichever reaches the pack first, both stand.
+        for (order in listOf(altitude + wind, wind + altitude)) {
+            val entry = plan(PackFixtures.applyAll("route", grounded.data, order)).getValue("perPoint").jsonObject.getValue("p-2").jsonObject
+            assertEquals(setOf("altitude", "wind"), entry.keys)
+        }
+        // A point's own values that went (sent as null) go as they were.
+        // The clock moved from p-1 to p-2: p-1, which had only the clock, goes; p-2 is given its first value.
+        val cleared = ops(grounded, opened.mapRoute("r-1") { r -> own(r.copy(plan = r.plan.copy(perPoint = r.plan.perPoint - "p-1")), "p-2") { o -> o.copy(clock = "12:30:00") } })
+        assertEquals(setOf("patch", "set"), cleared.map { it.getValue("type").jsonPrimitive.content }.toSet())
+    }
+
+    @Test
+    fun `someone else's altitude changed in part is laid over an older version whole`() {
+        val item = afterSend(
+            grounded,
+            RoutePackKind.fromItem(localId(grounded), grounded, null).mapRoute("r-1") { own(it, "p-2") { o -> o.copy(altitude = AltitudeSetting(300.0, "msl")) } },
+        )
+        val local = localId(item)
+        val base = PackItemSync.settled(RoutePackKind, local, item)
+        val showing = RoutePackKind.fromItem(local, item, null)
+        val older = showing.mapRoute("r-1") { own(it, "p-2") { o -> o.copy(altitude = AltitudeSetting(150.0, "agl")) } }
+        // Someone else's reference alone, as the web sends it.
+        val theirs = item.copy(
+            data = PackFixtures.applyAll(
+                "route", item.data,
+                listOf(json("""{"type": "patch", "path": ["routes", {"id": "r-1"}, "plan", "perPoint", "p-2", "altitude"], "value": {"ref": "agl"}}""")),
+            ),
+        )
+        val taken = PackItemSync.takeTheirs(RoutePackKind, local, base, theirs)
+        assertEquals(AltitudeSetting(300.0, "agl"), taken.apply(showing).route("r-1")!!.plan.perPoint.getValue("p-2").altitude)
+        assertEquals(AltitudeSetting(300.0, "agl"), taken.apply(older).route("r-1")!!.plan.perPoint.getValue("p-2").altitude, "their altitude whole, not half of it")
     }
 
     @Test

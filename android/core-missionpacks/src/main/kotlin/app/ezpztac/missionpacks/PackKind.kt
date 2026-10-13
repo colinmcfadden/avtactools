@@ -57,8 +57,10 @@ public interface PackKind<D : Any> {
     /**
      * [ops], a change that makes a shape of this kind into [after] (what this person sends, or someone else's change laid over this person's
      * versions), with each value that is one to a person kept whole: an operation that changes some of its fields carries the rest as [after]
-     * has them, so two people's changes never leave it half one's and half the other's. The operations as they are by default; a route
-     * point's place is one ([RoutePackKind]), and so are a planning graphic's and the target ([LzPackKind]).
+     * has them, so two people's changes never leave it half one's and half the other's; and what is several settings sent as one object, each
+     * setting on its own, so neither person's is lost under the other's. The operations as they are by default; a route point's place, a plan's
+     * altitude, speed and wind, and a point's own values are a route set's ([RoutePackKind]), a planning graphic's place, the target and what an
+     * analysis found an LZ/PZ's ([LzPackKind]).
      */
     public fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = ops
 }
@@ -293,14 +295,65 @@ public object RoutePackKind : PackKind<RouteSet> {
      * carries the other coordinate too, as [after] has it. Each field of a patch stands on its own in the pack, the later on each, so a move north here and
      * a move to a typed grid there would otherwise leave the point at the grid's longitude and this latitude: where nobody put it. The web moves a point by
      * dragging it, which changes both.
+     *
+     * So is each of a plan's altitude (its number and what it is measured from), speed (its number and kind) and wind (its direction and speed), the
+     * route's and each point's: the route's plan applies them together, and 500 typed here with MSL chosen there would otherwise leave 500 MSL, which
+     * nobody gave. The web sends only the part that changed.
+     *
+     * A point's own values are each their own setting, though: one given to a point that had none ([pointValuesApart]).
      */
-    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = keptWhole(ops, after, WHOLES)
+    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = pointValuesApart(keptWhole(ops, after, WHOLES))
 
     // `["routes", {id}, "points", {id}]`: a point of a route.
     private fun isPointPath(path: JsonArray): Boolean =
         path.size == 4 && isField(path[0], "routes") && path[1] is JsonObject && isField(path[2], "points") && path[3] is JsonObject
 
-    private val WHOLES = listOf(WholeValue(listOf("lat", "lon"), ::isPointPath))
+    // `["routes", {id}, "plan", ...]`, [size] long: inside a route's plan.
+    private fun inPlan(path: JsonArray, size: Int): Boolean =
+        path.size == size && isField(path[0], "routes") && path[1] is JsonObject && isField(path[2], "plan")
+
+    // `["routes", {id}, "plan", name]` or `["routes", {id}, "plan", "perPoint", point, name]`: one of a route's plan values, or one of a point's own.
+    private fun isPlanValue(path: JsonArray, name: String): Boolean =
+        (inPlan(path, 4) && isField(path[3], name)) || (inPlan(path, 6) && isField(path[3], "perPoint") && Js.isString(path[4]) && isField(path[5], name))
+
+    // `["routes", {id}, "plan", "perPoint"]`: a route's points' own values.
+    private fun isPerPoint(path: JsonArray): Boolean = inPlan(path, 4) && isField(path[3], "perPoint")
+
+    private val WHOLES = listOf(
+        WholeValue(listOf("lat", "lon"), ::isPointPath),
+        WholeValue(listOf("value", "ref")) { isPlanValue(it, "altitude") },
+        WholeValue(listOf("value", "type")) { isPlanValue(it, "airspeed") },
+        WholeValue(listOf("dirTrue", "speedKts")) { isPlanValue(it, "wind") },
+    )
+
+    /**
+     * [ops] with the values given to a point that had none of its own sent as the settings they are: a patch of a route's `perPoint` gives such a point its
+     * entry whole (an object where there was none), and the later of two people giving one point its first values at once (an altitude here, a wind there)
+     * would replace the other's entry, and lose what they set. Each value of a new entry goes instead as a `set` of its own, which makes the entry where the
+     * pack has none and leaves the rest of one it has. What else the patch carries (an entry that went, sent as null) goes as it was.
+     */
+    private fun pointValuesApart(ops: List<JsonObject>): List<JsonObject> = ops.flatMap { op ->
+        val path = op["path"] as? JsonArray
+        val value = op["value"] as? JsonObject
+        if ((op["type"] as? JsonPrimitive)?.content != "patch" || path == null || value == null || !isPerPoint(path)) return@flatMap listOf(op)
+        // An entry with nothing in it would make nothing: it goes as it is.
+        val entries = value.filterValues { it is JsonObject && it.isNotEmpty() }
+        if (entries.isEmpty()) return@flatMap listOf(op)
+        val rest = value.filterKeys { it !in entries }
+        val kept = if (rest.isEmpty()) emptyList() else listOf(JsonObject(LinkedHashMap(op).apply { put("value", JsonObject(rest)) }))
+        kept + entries.flatMap { (point, entry) ->
+            (entry as JsonObject).map { (field, it) ->
+                // The operation's own fields (its item, its sentence) stay.
+                JsonObject(
+                    LinkedHashMap(op).apply {
+                        put("type", JsonPrimitive("set"))
+                        put("path", JsonArray(path + JsonPrimitive(point) + JsonPrimitive(field)))
+                        put("value", it)
+                    },
+                )
+            }
+        }
+    }
 
     private const val SET = "set"
 
