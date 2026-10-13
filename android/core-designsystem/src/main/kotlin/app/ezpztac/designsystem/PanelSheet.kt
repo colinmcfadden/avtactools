@@ -236,7 +236,8 @@ fun rememberPanelSheetState(initial: SheetDetent = SheetDetent.Lowered): PanelSh
  *
  * Dragging the sheet moves it, and so does scrolling its content: a list scrolled up raises the sheet first, and one already at its top lowers
  * it, as Material's sheet does. A tap on the handle steps it up; [raiseLabel] and [lowerLabel] name the same moves for a screen reader.
- * [topLimit] is how far below the top of the space the sheet may rise.
+ * [topLimit] is how far below the top of the space the sheet may rise. While [inert] (on its way off the screen as the phone's frame hides) the part that shows
+ * takes every touch on it and answers none, and the map above it keeps its own.
  */
 @Composable
 fun PanelSheet(
@@ -247,6 +248,7 @@ fun PanelSheet(
     halfFraction: Float = PanelSheetDefaults.HalfFraction,
     raiseLabel: String = "Raise the panel",
     lowerLabel: String = "Lower the panel",
+    inert: Boolean = false,
     header: @Composable () -> Unit,
     footer: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
@@ -286,6 +288,8 @@ fun PanelSheet(
                 val sheet = measurable.measure(Constraints.fixed(constraints.maxWidth, height - top))
                 layout(constraints.maxWidth, height) { sheet.placeRelative(0, top) }
             }
+            // After the layout: only the part that shows, never the map above it.
+            .then(if (inert) TakesNoTouch else Modifier)
             .nestedScroll(scroll)
             .anchoredDraggable(state.draggable, Orientation.Vertical, interactionSource = state.interactions, flingBehavior = fling),
         shape = RoundedCornerShape(topStart = Tokens.Radius.sheet.dp, topEnd = Tokens.Radius.sheet.dp),

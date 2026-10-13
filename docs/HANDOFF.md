@@ -12,7 +12,7 @@ S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and 
 `docs/ANDROID_SCREENS_PLAN.md`; the screenshot guard and the 48-hour wipe went in S5). Since then, outside the plan: the web's MGRS grid on the Android
 map, from the Layers menu (AGENTS.md §17, *The MGRS grid*), its code ported and held to `contracts/fixtures/mgrs/grid.json`; the fix for what the owner's first
 two-device run found, a pack's route written twice (§1); the audit of every setting in a pack that followed it (§1); and the owner's changes to the phone's frame
-from the same day's device run (§1): the search, the workspace, Import and the Library on one row.
+from the same day's device run (§1): the search, the workspace, Import and the Library on one row, and a tap on the map that hides the frame.
 
 ---
 
@@ -103,7 +103,10 @@ from the same day's device run (§1): the search, the workspace, Import and the 
 - **The phone's frame, the owner's changes of 2026-10-13** (from a run on a Samsung S26 Ultra; the Galaxy Tab Active5 in portrait has the phone's frame too, and its
   tablet frame in landscape is unchanged). Space on a phone is tight, so the search bar is folded into a round button at the start of **one row** with the workspace chip,
   Import, the Library and the account, and opens across the row when touched (AGENTS.md §17, *The phone's row*); a pack's faces and the chips' arrows give way before a
-  name is cut. **To try on a device:** the keyboard coming up as the search opens, and the row over real imagery.
+  name is cut. And **a tap on the map that holds and puts down nothing hides the frame** (the row, the sheet, the bar; the readout, the map's buttons and the crosshair
+  stay) and the next shows it again, as do Back, choosing a panel and opening something (AGENTS.md §17, *The phone's frame hidden*). **To try on a device:** the keyboard
+  coming up as the search opens, the row over real imagery, the frame sliding away over the real map with the crosshair gliding to the middle, that a double tap or a quick
+  zoom never hides it, and TalkBack (the frame never hides while it explores by touch).
 - **Everything else is still compiled and unit-tested on a JVM only.** The map layers (MapLibre),
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output
   and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged

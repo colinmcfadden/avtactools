@@ -61,12 +61,18 @@ class MapChromeBoxes {
     fun shown(): List<Rect> = boxes.values.filter { it.width > 0f && it.height > 0f }
 }
 
-/** Reports where this piece of what floats over the map is to [boxes] under [key], and takes it away when it goes. */
+/**
+ * Reports where this piece of what floats over the map is to [boxes] under [key], and takes it away when it goes, or while it is not [shown] (the phone's row while
+ * its frame is hidden: what is not laid out is not told by being placed, so it is taken away here).
+ */
 @Composable
-fun Modifier.chromeBox(boxes: MapChromeBoxes?, key: String): Modifier {
+fun Modifier.chromeBox(boxes: MapChromeBoxes?, key: String, shown: Boolean = true): Modifier {
     if (boxes == null) return this
-    DisposableEffect(boxes, key) { onDispose { boxes.boxes.remove(key) } }
-    return onGloballyPositioned { boxes.boxes[key] = it.boundsInRoot() }
+    DisposableEffect(boxes, key, shown) {
+        if (!shown) boxes.boxes.remove(key)
+        onDispose { boxes.boxes.remove(key) }
+    }
+    return if (shown) onGloballyPositioned { boxes.boxes[key] = it.boundsInRoot() } else this
 }
 
 /**

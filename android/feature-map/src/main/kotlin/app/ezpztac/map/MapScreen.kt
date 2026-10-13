@@ -40,6 +40,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,6 +80,7 @@ import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.PanelSheetDefaults
 import app.ezpztac.designsystem.Tokens
+import app.ezpztac.designsystem.keptAway
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -124,6 +126,18 @@ object MapChrome {
 
     /** A tablet's map buttons stand this far above the map's foot (the design's AT screens). */
     val FOOT_GAP: Dp = 24.dp
+}
+
+/**
+ * How far the phone's frame has gone (a tap on the map hides it, the owner's decision of 2026-10-13): [hidden] once it is going or gone, [away] once it is all the
+ * way off the screen, and [fraction] (0 shown, 1 hidden) read as it is drawn, so a frame of the slide is not a composition. A tablet's frame never hides.
+ */
+@Stable
+class FrameHiding(val hidden: Boolean = false, val away: Boolean = false, val fraction: () -> Float = { 0f }) {
+    companion object {
+        /** The frame shown, as a tablet's always is. */
+        val SHOWN = FrameHiding()
+    }
 }
 
 /**
@@ -173,9 +187,13 @@ fun MapScreen(
     chrome: MapChromeBoxes? = null,
     /** The search: folded or open on a phone, and what was typed. Held by the frame, which folds it (a tap on the map). */
     search: MapSearchState = rememberMapSearchState(),
+    /** The phone's frame hiding (a tap on the map): the row, what is said under it and the search go with it, up off the screen; the rest stays. */
+    hiding: FrameHiding = FrameHiding.SHOWN,
     map: @Composable () -> Unit,
 ) {
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+    // The search goes with the frame (and the keyboard with it).
+    LaunchedEffect(hiding.hidden) { if (hiding.hidden) search.close() }
     Box(modifier.fillMaxSize()) {
         map()
 
@@ -230,7 +248,17 @@ fun MapScreen(
                 Box(Modifier.padding(top = Tokens.Spacing.sm.dp)) { belowChips() }
             }
         } else {
-            Column(Modifier.fillMaxWidth().chromeBox(chrome, "search").windowInsetsPadding(top).padding(top = MapChrome.ROW_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp)) {
+            // Hidden with the frame: up off the screen and fading as it goes, then not laid out at all, so what floats over the map reports nothing for it.
+            Column(
+                Modifier.fillMaxWidth().chromeBox(chrome, "search", shown = !hiding.away)
+                    .keptAway(hiding.hidden, hiding.away)
+                    .graphicsLayer {
+                        val gone = hiding.fraction()
+                        translationY = -gone * size.height
+                        alpha = 1f - gone
+                    }
+                    .windowInsetsPadding(top).padding(top = MapChrome.ROW_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp),
+            ) {
                 MapTopRow(search, state.searchError, onSearch, onClearSearchError, account, chips)
                 // What is said under the row stops short of the map's buttons, which stand at the end below it.
                 val clear = Modifier.padding(top = Tokens.Spacing.sm.dp, end = MapChrome.BUTTON + Tokens.Spacing.sm.dp)

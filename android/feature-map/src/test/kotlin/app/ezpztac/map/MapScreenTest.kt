@@ -58,6 +58,9 @@ class MapScreenTest {
     private var found = true
     private val search = MapSearchState()
     private var said by mutableStateOf<String?>(null)
+
+    /** How far the phone's frame has gone (a tap on the map hides it). */
+    private var hiding by mutableStateOf(FrameHiding.SHOWN)
     private val notUnderstood = "Could not read that as a grid or a coordinate."
 
     private fun state(
@@ -81,7 +84,7 @@ class MapScreenTest {
                     onClearSearchError = { log += "clearError"; said = null }, onSelectStyle = { log += "style $it" },
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
                     onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding, buttonsAtFoot = buttonsAtFoot,
-                    onToggleGrid = grid?.let { { log += "grid" } }, chrome = chrome, search = search,
+                    onToggleGrid = grid?.let { { log += "grid" } }, chrome = chrome, search = search, hiding = hiding,
                     map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40))) },          // stands in for the GPU-drawn map
                 )
             }
@@ -326,6 +329,46 @@ class MapScreenTest {
         show(state())
         compose.onNodeWithContentDescription("Base map: Satellite").performClick()
         compose.onNodeWithText("MGRS grid").assertDoesNotExist()
+    }
+
+    @Test
+    fun `with the phone's frame hidden the row and what is said under it go, the search folds, and the grid's labels may use the edge they left`() {
+        val chrome = MapChromeBoxes()
+        found = false
+        show(state(), chrome = chrome)
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("NOWHERE")
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        compose.onNodeWithText(notUnderstood).assertIsDisplayed()
+        val row = chrome.boxes.getValue("search")
+        assertTrue("the row is told: $row", row.height > 0f)
+        hiding = FrameHiding(hidden = true, away = true)
+        compose.waitForIdle()
+        assertFalse(search.expanded)
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search a grid or lat/long").assertDoesNotExist()
+        compose.onNodeWithText(notUnderstood).assertDoesNotExist()
+        assertEquals("nothing is told for the row", null, chrome.boxes["search"])
+        // What stays: the map's buttons and the readout.
+        compose.onNodeWithContentDescription("Base map: Satellite").assertIsDisplayed()
+        compose.onNode(hasContentDescription("Grid under the crosshair", substring = true)).assertIsDisplayed()
+        hiding = FrameHiding.SHOWN
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Search a grid or lat/long").assertIsDisplayed()
+        assertTrue(chrome.boxes.getValue("search").height > 0f)
+    }
+
+    @Test
+    fun `while the frame slides away the row says nothing, and it is drawn going up off the screen`() {
+        show(state())
+        var gone by mutableStateOf(0f)
+        hiding = FrameHiding(hidden = true, away = false) { gone }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Search a grid or lat/long").assertDoesNotExist()
+        gone = 0.5f
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Base map: Satellite").assertIsDisplayed()
     }
 
     @Test

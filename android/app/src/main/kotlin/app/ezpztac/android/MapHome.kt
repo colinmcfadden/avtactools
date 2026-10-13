@@ -62,6 +62,8 @@ import app.ezpztac.android.frame.SupportingPane
 import app.ezpztac.android.frame.TabletFrame
 import app.ezpztac.android.frame.TabletRail
 import app.ezpztac.android.frame.WorkspaceChips
+import app.ezpztac.android.frame.rememberFrameState
+import app.ezpztac.android.frame.rememberTouchExploration
 import app.ezpztac.android.frame.lookingAtPack
 import app.ezpztac.android.frame.panelsFor
 import app.ezpztac.android.frame.pick
@@ -245,9 +247,13 @@ fun MapHome(
     val workspace: WorkspaceViewModel = hiltViewModel()
     val openPack by workspace.open.collectAsStateWithLifecycle()
     val packsHere by workspace.available.collectAsStateWithLifecycle()
-    var chosen by rememberSaveable { mutableStateOf(Panel.Lz) }
+    // The panel chosen, and whether the phone's frame is hidden (a tap on the map hides it): choosing a panel, by the person or in code, shows the frame.
+    val frameState = rememberFrameState()
     val panels = remember(user.features, openPack != null) { panelsFor(user, packOpen = openPack != null) }
-    val current = shownPanel(chosen, panels)
+    val current = shownPanel(frameState.chosen, panels)
+    // The frame never hides while an accessibility service explores by touch (nothing would say it went, or how to bring it back), nor on a tablet.
+    val exploring by rememberTouchExploration()
+    LaunchedEffect(exploring, tablet) { if (exploring || tablet) frameState.show() }
     // Threats are drawn, held and taken in only while the account has them, which is while their panel is offered.
     val threatsOn = Panel.Threats in panels
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
@@ -257,11 +263,12 @@ fun MapHome(
     // invitation link) shows its panel where it was. The bookkeeping is done before the sheet moves: a raise cut short by a finger leaves nothing stale.
     var raiseFor by remember { mutableStateOf<String?>(null) }
     val raisePack: () -> Unit = {
+        frameState.show()
         if (tablet) tabletState.showList() else scope.launch { if (sheet.settled == SheetDetent.Lowered) sheet.animateTo(SheetDetent.Half) }
     }
     val pickedPack: (String?) -> Unit = { uuid ->
         if (uuid != null && uuid == openPack?.uuid) {
-            chosen = Panel.Pack
+            frameState.choose(Panel.Pack)
             raisePack()
         } else {
             raiseFor = uuid
@@ -334,15 +341,15 @@ fun MapHome(
         val raise = news && raiseFor == uuid
         packShownFor = uuid
         raiseFor = null
-        if (news) chosen = Panel.Pack
+        if (news) frameState.choose(Panel.Pack)                                                // a pack opened or joined shows the frame
         if (raise) raisePack()
     }
     // The map covered (the Library, a route's plan page, the phone's sheet at full height): nobody is pointing at it, for everyone else in a pack.
-    val mapCovered = overFrame || (!tablet && (routes.planOpen || sheet.settled == SheetDetent.Full))
+    val mapCovered = overFrame || (!tablet && (routes.planOpen || (sheet.settled == SheetDetent.Full && !frameState.hidden)))
     LaunchedEffect(mapCovered) { home.mapCovered(mapCovered) }
     LaunchedEffect(packPanel) { packPanel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // An item opened from the Pack panel is shown in its own panel (an LZ/PZ in LZ/PZ, a route set in Routes), as the web's dock does.
-    LaunchedEffect(packPanel) { packPanel.opened.collect { kind -> chosen = if (kind == "route") Panel.Routes else Panel.Lz } }
+    LaunchedEffect(packPanel) { packPanel.opened.collect { kind -> frameState.choose(if (kind == "route") Panel.Routes else Panel.Lz) } }
     // The sheet goes with what holds it (packs stopping, the frame turning into a tablet's): when they come back it is not open by itself.
     LaunchedEffect(tablet, packsHere) { if (tablet || !packsHere) switcherOpen = false }
     LaunchedEffect(workspace) { workspace.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
@@ -475,10 +482,12 @@ fun MapHome(
                         }
                     }
                     when (panel) {
-                        // Looking at it: the panel showing, in sight (not lowered on a phone, not collapsed on a tablet).
+                        // Looking at it: the panel showing, in sight (not lowered on a phone, not collapsed on a tablet, not with the phone's frame hidden).
                         Panel.Pack -> PackPanelHost(
                             packPanel,
-                            looking = lookingAtPack(current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || (routes.planOpen && !tablet)),
+                            looking = lookingAtPack(
+                                current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || (!tablet && (routes.planOpen || frameState.hidden)),
+                            ),
                             onMembers = { invite -> members.open(openPack?.name.orEmpty(), invite) },
                             onUpdate = itemCopies::askUpdate, onSaveCopy = itemCopies::askSave,
                         )
@@ -500,8 +509,8 @@ fun MapHome(
                         // A mission opens in Routes and a threat file's threats are in Threats: each panel, shown at the height the sheet is.
                         Panel.Imports -> ImportsHost(
                             threatsAllowed = threatsOn,
-                            onOpenMission = if (Panel.Routes in panels) { uuid -> routesModel.openSet(uuid); chosen = Panel.Routes } else null,
-                            onOpenThreats = { chosen = Panel.Threats },
+                            onOpenMission = if (Panel.Routes in panels) { uuid -> routesModel.openSet(uuid); frameState.choose(Panel.Routes) } else null,
+                            onOpenThreats = { frameState.choose(Panel.Threats) },
                             viewModel = importsModel,
                         )
                     }
@@ -538,6 +547,7 @@ fun MapHome(
                     },
                     buttonsAtFoot = tablet,
                     search = search,
+                    hiding = frame.hiding,
                     // Over the readout, above the sheet: only there while a boundary or a route is being drawn (never both), or something on the map is held.
                     overlay = {
                         // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).
@@ -557,9 +567,10 @@ fun MapHome(
                                             threatsModel.editHeld()                                   // a threat: its form, over everything
                                         } else {
                                             panel?.let {
-                                                chosen = it
+                                                frameState.choose(it)
                                                 if (it == Panel.Lz) diagrams.showPage(LzPage.PLAN)     // a graphic's controls are on its LZ/PZ's plan
                                             }
+                                            frameState.show()                                          // the sheet raised: the frame with it
                                             if (tablet) tabletState.showList() else scope.launch { sheet.animateTo(SheetDetent.Full) }
                                         }
                                     },
@@ -578,7 +589,11 @@ fun MapHome(
                             // With the phone's search open, a tap on the map folds it and does nothing else.
                             if (!search.foldOnTap()) {
                                 // Distances between points on the screen do not depend on where its middle is, so the size of the view is not needed here.
-                                host.camera?.let { camera -> home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) }
+                                host.camera?.let { camera ->
+                                    val frames = home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density)
+                                    // One that held and put down nothing hides the phone's frame, or shows it again (a tablet's never hides).
+                                    if (frames && !tablet) frameState.tapped(exploring)
+                                }
                             }
                         },
                         // A long press on a graphic, a threat or a point of a route picks it up; the finger then moves it, and lifting puts it down.
@@ -613,10 +628,10 @@ fun MapHome(
                     MapMenu(
                         expanded = menuOpen, place = open?.place, at = open?.at ?: IntOffset.Zero, onDismiss = { menuOpen = false },
                         choices = if (open == null) MapMenuChoices() else MapMenuChoices(
-                            newLz = if (Panel.Lz in panels) ({ diagrams.newAt(open.place.at); chosen = Panel.Lz }) else null,
+                            newLz = if (Panel.Lz in panels) ({ diagrams.newAt(open.place.at); frameState.choose(Panel.Lz) }) else null,
                             newLzOff = lz.pack?.off,
                             addThreat = if (threatsOn) ({ threatsModel.beginAdd(open.place.at) }) else null,
-                            routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); chosen = Panel.Routes } else null,
+                            routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); frameState.choose(Panel.Routes) } else null,
                             copyGrid = { copyGrid(open.place.grid) },
                         ),
                     )
@@ -670,7 +685,7 @@ fun MapHome(
                     counts = counts,
                     onPick = { picked ->
                         focus.clearFocus()                                                   // a field in the panel left behind keeps no keyboard up
-                        chosen = picked
+                        frameState.choose(picked)
                     },
                     snackbars = snackbars,
                     rail = TabletRail(
@@ -733,7 +748,7 @@ fun MapHome(
                     onPick = { picked ->
                         val (panel, detent) = pick(current, sheet.settled, picked)
                         focus.clearFocus()                                                   // a field in the panel left behind keeps no keyboard up
-                        chosen = panel
+                        frameState.choose(panel)
                         scope.launch { sheet.animateTo(detent) }
                     },
                     sheet = sheet,
@@ -744,6 +759,10 @@ fun MapHome(
                     footer = footer,
                     // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
                     modifier = if (routes.planOpen || libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
+                    // A tap on the map hides it; Back shows it again, unless a page over the frame has Back for itself.
+                    hidden = frameState.hidden,
+                    onShow = frameState::show,
+                    backShows = !routes.planOpen && !overFrame,
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
                 )
@@ -773,7 +792,7 @@ fun MapHome(
                         }
                         libraryTab = null
                         if (panel in panels) {
-                            chosen = panel
+                            frameState.choose(panel)
                             if (tablet) tabletState.showList() else if (sheet.settled == SheetDetent.Lowered) scope.launch { sheet.animateTo(SheetDetent.Half) }
                         }
                     },

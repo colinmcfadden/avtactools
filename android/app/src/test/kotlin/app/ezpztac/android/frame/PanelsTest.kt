@@ -53,6 +53,44 @@ class PanelsTest {
     }
 
     @Test
+    fun `the frame's tap hides the phone's frame and shows it again, and never hides it while a screen reader explores by touch`() {
+        val frame = FrameState()
+        frame.tapped(exploring = false)
+        assertTrue(frame.hidden)
+        frame.tapped(exploring = false)
+        assertFalse(frame.hidden)
+        frame.tapped(exploring = true)
+        assertFalse(frame.hidden)
+        frame.hide()
+        frame.tapped(exploring = true)                                                               // exploring, a tap only ever shows it
+        assertFalse(frame.hidden)
+    }
+
+    @Test
+    fun `a panel chosen, by the person or in code, shows the frame, even the panel already chosen`() {
+        val frame = FrameState(Panel.Routes, hidden = true)
+        frame.choose(Panel.Routes)
+        assertFalse(frame.hidden)
+        assertEquals(Panel.Routes, frame.chosen)
+        frame.hide()
+        frame.choose(Panel.Threats)
+        assertFalse(frame.hidden)
+        assertEquals(Panel.Threats, frame.chosen)
+        frame.hide()
+        frame.show()
+        assertFalse(frame.hidden)
+    }
+
+    @Test
+    fun `as the frame hides, the readout goes from the sheet's edge to the foot of the screen with it`() {
+        assertEquals(1500f, controlsEdge(1500f, 0f, 2400f, measured = true)!!, 0.01f)
+        assertEquals(1950f, controlsEdge(1500f, 0.5f, 2400f, measured = true)!!, 0.01f)
+        assertEquals(2400f, controlsEdge(1500f, 1f, 2400f, measured = true)!!, 0.01f)
+        assertEquals(2400f, controlsEdge(null, 0.2f, 2400f, measured = true)!!, 0.01f)             // no sheet laid out: the foot
+        assertEquals(1500f, controlsEdge(1500f, 1f, 2400f, measured = false)!!, 0.01f)             // nothing measured yet: as before
+    }
+
+    @Test
     fun `a panel no longer offered gives way to the first`() {
         assertEquals(Panel.Lz, shownPanel(Panel.Threats, listOf(Panel.Lz, Panel.Routes, Panel.Imports)))
         assertEquals(Panel.Routes, shownPanel(Panel.Routes, Panel.entries))

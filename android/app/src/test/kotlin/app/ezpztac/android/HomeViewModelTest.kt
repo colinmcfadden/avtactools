@@ -830,6 +830,118 @@ class HomeViewModelTest {
         r.model.mapTapped(LatLon(34.78, -84.08), view(), touchRadiusPx = 24.0)
         assertEquals(null, r.selection.selected.value)
     }
+
+    // -- Which tap is the frame's (it hides the phone's frame, or shows it again) ------------------------------------------------
+
+    private val ground = LatLon(34.7800, -84.0900)                                              // nothing of the rigs' graphics, routes or threats is near
+
+    @Test
+    fun `a tap on empty ground with nothing held is the frame's, again and again`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertTrue("nothing under the finger", r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+    }
+
+    @Test
+    fun `a tap on something holds it and is not the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertFalse(r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+    }
+
+    @Test
+    fun `a tap that puts down a graphic only puts it down, and the next is the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertNull(r.selection.selected.value)
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+    }
+
+    @Test
+    fun `a tap that puts down a threat, a local point or a corner is not the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val threat = r.threat(LatLon(34.7838, -84.0822))
+        val set = r.importedSet()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.threatSelection.select(threat)
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertNull(r.threatSelection.held.value)
+        r.pointSelection.select(set.id, set.points.first().id)
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertNull(r.pointSelection.held.value)
+        r.corners.select(app.ezpztac.model.BoundaryCornerRef(false, 0))
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertNull(r.corners.held.value)
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))                    // nothing left to put down
+    }
+
+    @Test
+    fun `a threat held but hidden is not on the map, and a tap is the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val threat = r.threat(LatLon(34.7838, -84.0822))
+        r.threats.setVisible(threat, false)
+        advanceUntilIdle()
+        r.threatSelection.select(threat)
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+    }
+
+    @Test
+    fun `a tap that puts down a route's point or shaping point is not the frame's, and the route stays held, alone, which does not hold back the next`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.routes.create(
+            "MISSION",
+            listOf(route("r1", point("p1", here), point("s1", LatLon(34.7843, -84.0832), name = "", kind = "shaping"), point("p2", north))),
+        )
+        r.routeSession.open(made.id)
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p2")
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+        r.routeSelection.select("r1", "s1")
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+        assertTrue("a route held alone has no bar", r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)  // and stays held
+    }
+
+    @Test
+    fun `while a boundary or a route is drawn, or a tool places, a tap is never the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertNull(r.placement.begin(PlaceTool.HELICOPTER))
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        r.placement.finish()
+        r.drawing.start()
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        r.drawing.cancel()
+        r.openRoute()
+        r.sketching.start()
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        r.sketching.cancel()
+        r.routeSelection.clear()
+        r.selection.clear()
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+    }
     // -- Drawing a boundary -----------------------------------------------------------------------------------------------
 
     @Test

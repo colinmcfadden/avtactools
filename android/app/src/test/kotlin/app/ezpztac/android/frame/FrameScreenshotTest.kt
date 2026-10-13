@@ -66,6 +66,7 @@ class FrameScreenshotTest {
         panel: Panel = Panel.Routes,
         pack: OpenPackUi? = null,
         search: MapSearchState = MapSearchState(),
+        hidden: Boolean = false,
     ) {
         val styles = MapStyles.available("pk.t")
         val sheet = PanelSheetState(detent)
@@ -76,12 +77,13 @@ class FrameScreenshotTest {
                     sheet = sheet, snackbars = remember { SnackbarHostState() },
                     head = PanelHead(panel.label, subtitle = if (panel == Panel.Threats) "1 · this device only" else null),
                     panel = { StandInPanel(it) },
+                    hidden = hidden,
                 ) { frame ->
                     MapScreen(
                         state = MapUiState(styles, styles.first(), Readout.of(LatLon(34.783817, -84.08219))),
                         camera = CameraState(LatLon(34.78, -84.08), 16.0), gps = GpsState.Off,
                         onSearch = { true }, onClearSearchError = {}, onSelectStyle = {}, onToggleGps = {}, onGpsPermissionResult = {}, onLocateMe = {}, onFaceNorth = {},
-                        padding = frame.padding, controlsBottom = frame.controlsBottom, search = search,
+                        padding = frame.padding, controlsBottom = frame.controlsBottom, search = search, hiding = frame.hiding,
                         account = {
                             AccountButton("Colin McFadden", "pilot@example.com", "Version 1.9.0 (1)", night = mode == ThemeMode.Night, onNight = {}, onSignOut = {}, notice = "", floating = true)
                         },
@@ -128,6 +130,14 @@ class FrameScreenshotTest {
     @Test
     @Config(qualifiers = "w360dp-h780dp-xxhdpi", fontScale = 2.0f)
     fun personal360LargestNight() = shot("personal-360-font-2.0-night", SheetDetent.Lowered, ThemeMode.Night)
+
+    // The frame hidden by a tap on the map: the readout, the map's buttons and the crosshair stay, the readout at the foot.
+    @Test fun hidden412() = shot("hidden-412", SheetDetent.Half, pack = longPack, panel = Panel.Pack, hidden = true)
+    @Test fun hiddenNight412() = shot("hidden-night-412", SheetDetent.Full, ThemeMode.Night, hidden = true)
+
+    @Test
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi")
+    fun hidden360() = shot("hidden-360", SheetDetent.Lowered, hidden = true)
 
     @Test
     @Config(fontScale = 1.3f)

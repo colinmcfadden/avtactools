@@ -448,28 +448,34 @@ class HomeViewModel @Inject constructor(
      * and while a route is being drawn a point of it, wherever it falls: nothing else on the map can be held until the person finishes or cancels.
      * Otherwise a planning graphic is held first; failing that a route or one of its points; failing that a local point (tapping the held one puts it
      * down); a tap on nothing puts down the graphic, the route's point and the local point (the route being worked on stays, so drawing and editing it carry on).
+     *
+     * Answers whether the tap was the frame's (the owner's decision of 2026-10-13: it hides the phone's frame, or shows it again): one on nothing, with nothing
+     * being drawn or placed, that put nothing down either. A tap with something held only puts it down, so the next one is the frame's. A route held alone has no
+     * bar over the map, stays held, and does not keep the tap from being the frame's.
      */
-    fun mapTapped(at: LatLon, view: MapProjection, touchRadiusPx: Double) {
+    fun mapTapped(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
         if (drawing.draft.value != null) {
             drawing.addPoint(at)
-            return
+            return false
         }
         if (sketching.draft.value != null) {
             sketching.addPoint(at)
-            return
+            return false
         }
         // A planning tool's mode puts its graphic where the map is tapped, wherever that is: nothing is held until Done or Cancel.
         if (placement.placing.value != null) {
             placement.placeAt(at)
-            return
+            return false
         }
+        // What this tap puts down if it finds nothing: then it is that, and not the frame's.
+        val held = heldBeforeTap()
         val hit = GraphicHitTest.pick(scene.value.graphics, view, at, touchRadiusPx, unitFootprints)
         if (hit != null) {
             boundaryCorners.clear()
             pointSelection.clear()
             threatSelection.clear()
             selection.select(hit)
-            return
+            return false
         }
         selection.clear()
         val threat = ThreatHitTest.pick(threatScene.value, view, at, touchRadiusPx)
@@ -478,7 +484,7 @@ class HomeViewModel @Inject constructor(
             pointSelection.clear()
             routeSelection.releasePoint()
             threatSelection.toggle(threat)
-            return
+            return false
         }
         threatSelection.clear()
         val route = RouteHitTest.pick(routes.value, view, at, touchRadiusPx)
@@ -486,7 +492,7 @@ class HomeViewModel @Inject constructor(
             boundaryCorners.clear()
             pointSelection.clear()
             routeSelection.select(route.routeId, route.pointId)
-            return
+            return false
         }
         routeSelection.releasePoint()
         // A corner of the boundary is the lowest thing on the map: held only when nothing above it was.
@@ -494,13 +500,29 @@ class HomeViewModel @Inject constructor(
         if (corner != null) {
             pointSelection.clear()
             boundaryCorners.select(corner)
-            return
+            return false
         }
         boundaryCorners.clear()
         // A local point is under the routes (a route point snapped onto one is the route's), and over nothing: a tap on nothing puts it down.
         val point = PointHitTest.pick(points.value, view, at, touchRadiusPx)
-        if (point != null) pointSelection.toggle(point.setId, point.pointId) else pointSelection.clear()
+        if (point != null) {
+            pointSelection.toggle(point.setId, point.pointId)
+            return false
+        }
+        pointSelection.clear()
+        return !held
     }
+
+    /**
+     * Whether something on the map is held that a tap on nothing puts down: a planning graphic, a threat that is drawn, a point of a route (named or shaping), a
+     * corner of a boundary, a local point. Not a route held alone, which such a tap keeps.
+     */
+    private fun heldBeforeTap(): Boolean =
+        selection.selected.value != null ||
+            threatSelection.held.value?.let { id -> threatsAllowed.value && threats.entries.value.any { it.id == id && it.visible } } == true ||
+            routeSelection.held.value?.pointId != null ||
+            boundaryCorners.held.value != null ||
+            pointSelection.held.value != null
 
     // -- Picking something up with a long press and dragging it ---------------------------------------------------------------
 
