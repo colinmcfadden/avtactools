@@ -814,9 +814,6 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   sends null for them; a route set's own fields and version are nulled and made 1 by the reshape; an id-less (or number, text, true, list) route
   makes `usePackRoutes` send the set again without end once anything changes it; and a null route, or `routes` that is an object, makes the set
   fail to open (`restoreSketchRoute` reads `route.id` of null; `routes.map` of an object).
-- The web's `withPointClock` (`sketchOps.js`) throws on a route whose `plan.perPoint` holds a null entry (`const { clock, ...rest } = over` of null): setting a clock
-  on such a route fails. A pack's route has one whenever a point's overrides went (the web's own `withPointOverride(…, null)` and Android's clock and clear send the
-  key as null), so fix it on the web (`over ?? {}`), as everything else there already reads `perPoint?.[id]?.…`.
 - On Android an LZ/PZ graphic's place is not yet sent whole: an aircraft nudged north on one device (its longitude unchanged, so not sent) while dragged on another can
   end at the one's latitude and the other's longitude, as a route point could before `PackKind.keepWhole` (§17, *Mission packs in the editors*). `LzPackKind` has no
   `keepWhole` yet; the web drags graphics, which changes both coordinates.

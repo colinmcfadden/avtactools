@@ -60,6 +60,14 @@ const PLANNED = (() => {
 const PLANNED_BOTH = withPointClock(withPointOverride(FIVE, "p2", { altitude: { value: 150, ref: "msl" } }), "p2", "12:30:00");
 // A route whose first leg has no length (its two points are in the same place).
 const DUPED = { ...FIVE, points: [FIVE.points[0], { ...FIVE.points[1], lat: FIVE.points[0].lat, lon: FIVE.points[0].lon }, ...FIVE.points.slice(2)] };
+// PLANNED as a mission pack leaves it. No operation deletes a key, so one that went is sent as null: a point whose overrides went is null in
+// `perPoint` (p1), a clock taken from a point with other overrides is null in its entry (p2), and the ground fetched for a point moved off it is
+// null in `elevations` (p3). Each is none, as every reader of a route takes it.
+const PACKED = {
+  ...PLANNED,
+  elevations: { p1: 1000, p3: null },
+  plan: { ...PLANNED.plan, perPoint: { ...PLANNED.plan.perPoint, p1: null, p2: { ...PLANNED.plan.perPoint.p2, clock: null } } },
+};
 
 const op = (name, route, args, result) => ({ name, route: saved(route), args: saved(args), expected: saved(result) });
 
@@ -97,6 +105,7 @@ const sketchFixture = () => ({
     op("a drag", FIVE, { pointId: "p3", lat: 34.75, lon: -84.2, chartElevationFt: null }, movePoint(FIVE, "p3", 34.75, -84.2, undefined)),
     op("a drag onto a local point carries its charted elevation", FIVE, { pointId: "p3", lat: 34.75, lon: -84.2, chartElevationFt: 1180 }, movePoint(FIVE, "p3", 34.75, -84.2, 1180)),
     op("a drag off it drops the charted elevation", movePoint(FIVE, "p3", 34.75, -84.2, 1180), { pointId: "p3", lat: 34.76, lon: -84.21, chartElevationFt: null }, movePoint(movePoint(FIVE, "p3", 34.75, -84.2, 1180), "p3", 34.76, -84.21, undefined)),
+    op("a drag on a route a pack left nulls in", PACKED, { pointId: "p4", lat: 34.75, lon: -84.2, chartElevationFt: null }, movePoint(PACKED, "p4", 34.75, -84.2, undefined)),
   ],
   insert: [
     ["between the first two", 34.705, -84.095],
@@ -123,13 +132,19 @@ const sketchFixture = () => ({
     op("an empty clock clears the anchor, and a point left with nothing is dropped", PLANNED, { pointId: "p2", clock: "" }, withPointClock(PLANNED, "p2", "")),
     op("moving the anchor keeps the old anchor's other overrides", PLANNED_BOTH, { pointId: "p3", clock: "14:00" }, withPointClock(PLANNED_BOTH, "p3", "14:00")),
     op("a clock on a point that has overrides keeps them", PLANNED, { pointId: "p3", clock: "10:00" }, withPointClock(PLANNED, "p3", "10:00")),
+    op("a clock set on a route a pack left nulls in: a null point has nothing, and a null clock is none", PACKED, { pointId: "p3", clock: "13:00:00" }, withPointClock(PACKED, "p3", "13:00:00")),
+    op("a clock cleared on such a route", PACKED, { pointId: "p4", clock: "" }, withPointClock(PACKED, "p4", "")),
+    op("an override on a point a pack left null", PACKED, { pointId: "p1", patch: { altitude: { value: 100, ref: "msl" } } }, withPointOverride(PACKED, "p1", { altitude: { value: 100, ref: "msl" } })),
+    op("an override merges with an entry whose clock a pack left null", PACKED, { pointId: "p2", patch: { wind: { dirTrue: 90, speedKts: 5 } } }, withPointOverride(PACKED, "p2", { wind: { dirTrue: 90, speedKts: 5 } })),
+    op("null clears a point a pack left null", PACKED, { pointId: "p1", patch: null }, withPointOverride(PACKED, "p1", null)),
+    op("a patch on such a route keeps its nulls none", PACKED, { patch: { tempC: 5 } }, withPlanPatch(PACKED, { tempC: 5 })),
   ],
   rename: [
     op("a name", FIVE, { pointId: "p2", name: ".IP1", coords: null, chartElevationFt: null }, renamePoint(FIVE, "p2", ".IP1", null, undefined)),
     op("snapped to a local point's place and elevation", FIVE, { pointId: "p2", name: ".CAMP", coords: { lat: 34.9, lon: -84.3 }, chartElevationFt: 1500 }, renamePoint(FIVE, "p2", ".CAMP", { lat: 34.9, lon: -84.3 }, 1500)),
     op("snapped with no elevation", FIVE, { pointId: "p2", name: ".CAMP", coords: { lat: 34.9, lon: -84.3 }, chartElevationFt: null }, renamePoint(FIVE, "p2", ".CAMP", { lat: 34.9, lon: -84.3 }, undefined)),
   ],
-  routes: { five: saved(FIVE), six: saved(SIX), threeAmps: saved(THREE_AMPS), twoAmps: saved(TWO_AMPS), planned: saved(PLANNED), plannedBoth: saved(PLANNED_BOTH), duped: saved(DUPED) },
+  routes: { five: saved(FIVE), six: saved(SIX), threeAmps: saved(THREE_AMPS), twoAmps: saved(TWO_AMPS), planned: saved(PLANNED), plannedBoth: saved(PLANNED_BOTH), duped: saved(DUPED), packed: saved(PACKED) },
 });
 
 describe("sketched route operations", () => {
@@ -146,5 +161,12 @@ describe("sketched route operations", () => {
       p3: { wind: { dirTrue: 270, speedKts: 15 } },
       p4: { clock: "12:30:00" },
     });
+    expect(saved(PACKED).plan.perPoint).toEqual({
+      p1: null,
+      p2: { altitude: { value: 200, ref: "agl" }, airspeed: { value: 90, type: "indicated" }, clock: null },
+      p3: { wind: { dirTrue: 270, speedKts: 15 } },
+      p4: { clock: "12:30:00" },
+    });
+    expect(saved(PACKED).elevations).toEqual({ p1: 1000, p3: null });
   });
 });

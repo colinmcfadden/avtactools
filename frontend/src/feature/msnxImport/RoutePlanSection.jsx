@@ -77,7 +77,8 @@ const RoutePlanSection = ({
 
   const localByName = useMemo(() => indexLocalPointsByName(localPointNames), [localPointNames]);
 
-  const hasElevations = Object.keys(route.elevations || {}).length > 0;
+  // A ground a mission pack left null (a point moved off it: a key that went is sent as null) is none.
+  const hasElevations = Object.values(route.elevations || {}).some((ft) => ft != null);
 
   const handleFetchElevations = async () => {
     setFetchingElev(true);

@@ -3,16 +3,17 @@ package app.ezpztac.planning
 import app.ezpztac.model.Airspeed
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.AltitudeSetting
+import app.ezpztac.model.RouteSets
 import app.ezpztac.model.SketchRoute
 import app.ezpztac.model.Wind
 import app.ezpztac.testing.Fixtures
 import app.ezpztac.testing.JsonCompare
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
@@ -32,7 +33,9 @@ class SketchFixtureTest {
     private fun cases(key: String) = fixture.getValue(key).jsonArray.map { it.jsonObject }
     private fun label(c: JsonObject) = (c["label"] ?: c["name"])!!.jsonPrimitive.content
 
-    private fun route(element: JsonElement) = json.decodeFromJsonElement<SketchRoute>(element)
+    // A route read as the app reads one (RouteSets): a value a mission pack left null where a key went (a point's overrides, a clock, the ground of a
+    // point moved off it) is none, as the web reads it; read strictly, such a route could not be read at all.
+    private fun route(element: JsonElement): SketchRoute = RouteSets.parse("set", null, "", JsonObject(mapOf("routes" to JsonArray(listOf(element))))).routes.single()
     private fun encoded(route: SketchRoute?): JsonElement = route?.let { json.encodeToJsonElement(it) } ?: JsonNull
 
     private fun counter(prefix: String): () -> String {
