@@ -1,12 +1,18 @@
 package app.ezpztac.missionpacks
 
+import app.ezpztac.model.LatLon
+import app.ezpztac.model.RouteSet
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -65,7 +71,8 @@ public class PackScenario(public val name: String, public val fakeOnly: Boolean 
  * server does, and running them through each store is what shows the stores agree.
  *
  * Each starts from OP DK: Colin's pack, Sam an editor in it, and LZ HAWK (landing heading 270) made by Colin, open on Colin's device A
- * and Sam's device B. Neither device has a live stream (the real one here has none either): each asks for what is new every so often.
+ * and Sam's device B; the route scenario has the set ROUTES 1 in it instead, open in an editor on each device ([PackRouteEditor]). Neither
+ * device has a live stream (the real one here has none either): each asks for what is new every so often.
  */
 public object PackScenarioBook {
     /** Fast enough that a story takes a second or two, against the fake or the real server. */
@@ -255,7 +262,84 @@ public object PackScenarioBook {
             s.b.engine.foreground(true)
             eventually("Sam's device has all eight") { s.b.heading() == 108 }
         },
+        PackScenario("a route's checkpoint moved on one device reaches the other in place, and the pack holds the route once, at the later move") { env ->
+            val colin = env.person("Colin P.")
+            val sam = env.person("Sam B.")
+            val pack = env.createPack(colin, "OP DK")
+            env.addMember(pack, colin, sam, "editor")
+            env.send(pack, colin, json("""{"type": "item.create", "item": "rt-1", "kind": "route", "name": "ROUTES 1", "data": $RED_1}"""))
+            val a = env.device("A", colin)
+            val b = env.device("B", sam)
+            a.enable()
+            a.open(pack)
+            b.enable()
+            b.open(pack)
+            eventually("both devices have ROUTES 1") { a.item("rt-1") != null && b.item("rt-1") != null }
+            val onA = PackRouteEditor(a, pack, "rt-1").apply { open() }
+            val onB = PackRouteEditor(b, pack, "rt-1").apply { open() }
+
+            // Colin nudges the RP north, as the app moves a point: the ground fetched for its old place goes with it, which the pack is sent as null.
+            onA.change { movedRp(it, lat = 34.6045, lon = null) }
+            assertNull(onA.look())
+            a.sent(pack)
+            assertNull(onA.look())                                     // in step: nothing more (an editor once sent the route again here)
+            a.sent(pack)
+            assertEquals(listOf(RED_1_ID), routeIds(env.data(pack, colin, "rt-1")), "the pack holds RED 1 once")
+            eventually("Sam's editor has the RP where Colin put it") { onB.look() == null && onB.at(RED_1_ID, "rp") == LatLon(34.6045, -84.2) }
+            assertEquals(LatLon(34.55, -84.15), onB.at(RED_1_ID, "cp1"))
+
+            // Sam puts it at a grid while Colin, with no signal, nudges it east from where he had it: Colin's reaches the pack later, and stands whole.
+            a.network.offline = true
+            onB.change { movedRp(it, lat = 34.58, lon = -84.23) }
+            assertNull(onB.look())
+            b.sent(pack)
+            onA.change { movedRp(it, lat = null, lon = -84.195) }
+            assertNull(onA.look())
+            a.online()
+            a.sent(pack)
+            val later = LatLon(34.6045, -84.195)
+            eventually("both editors have the RP where Colin put it last") {
+                onA.look() == null && onB.look() == null && onA.at(RED_1_ID, "rp") == later && onB.at(RED_1_ID, "rp") == later
+            }
+            val data = env.data(pack, colin, "rt-1")
+            assertEquals(listOf(RED_1_ID), routeIds(data), "the pack still holds RED 1 once")
+            val route = data!!.jsonObject.getValue("routes").jsonArray[0].jsonObject
+            val rp = route.getValue("points").jsonArray.map { it.jsonObject }.single { it["id"]?.jsonPrimitive?.contentOrNull == "rp" }
+            assertEquals(later, LatLon(rp.getValue("lat").jsonPrimitive.double, rp.getValue("lon").jsonPrimitive.double))
+            // The ground of the point moved is gone, the others' kept.
+            assertEquals(listOf("cp1", "sp"), route.getValue("elevations").jsonObject.filterValues { it !is JsonNull }.keys.sorted())
+            for (editor in listOf(onA, onB)) {
+                assertEquals(LatLon(34.55, -84.15), editor.at(RED_1_ID, "cp1"))
+                assertEquals(setOf("sp", "cp1"), editor.document?.routes?.single()?.elevations?.keys)
+            }
+        },
     )
+
+    // -- ROUTES 1 ---------------------------------------------------------------------------------------------------------------
+
+    private const val RED_1_ID = "sketch-1760000000000-ab12cd34"
+
+    // RED 1 as the web writes it into a pack: the SP, a checkpoint and the RP, the ground fetched for each.
+    private val RED_1 = """{"version": 1, "routes": [{"id": "$RED_1_ID", "name": "RED 1", "color": "#FF453A",
+        "plan": {"aircraft": "UH-60L Black Hawk", "aircraftProfile": "uh60l", "airspeed": {"value": 100, "type": "ground"}, "altitude": {"value": 50, "ref": "agl"},
+                 "wind": {"dirTrue": 0, "speedKts": 0}, "tempC": 15, "fuelFlowLbHr": 960, "date": "", "perPoint": {}},
+        "elevations": {"sp": 1000, "cp1": 1010, "rp": 1020},
+        "points": [
+          {"id": "sp", "lat": 34.5, "lon": -84.1, "ele": null, "role": "start", "kind": "amps", "ptType": "start", "name": ".SP"},
+          {"id": "cp1", "lat": 34.55, "lon": -84.15, "ele": null, "role": "waypoint", "kind": "amps", "ptType": "turn", "name": ".CP1"},
+          {"id": "rp", "lat": 34.6, "lon": -84.2, "ele": null, "role": "waypoint", "kind": "amps", "ptType": "ip", "name": ".RP"}]}]}"""
+
+    // RED 1's RP moved as the app moves a point ([lat] or [lon] null: not moved that way), the ground fetched for its old place forgotten.
+    private fun movedRp(set: RouteSet, lat: Double?, lon: Double?): RouteSet = set.mapRoute(RED_1_ID) { route ->
+        route.copy(
+            points = route.points.map { if (it.id == "rp") it.copy(lat = lat ?: it.lat, lon = lon ?: it.lon, chartElevationFt = null) else it },
+            elevations = route.elevations - "rp",
+        )
+    }
+
+    // The ids of the routes of a route set's data, in order.
+    private fun routeIds(data: JsonElement?): List<String?> =
+        ((data as? JsonObject)?.get("routes") as? JsonArray).orEmpty().map { ((it as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull }
 
     // -- OP DK ----------------------------------------------------------------------------------------------------------------
 

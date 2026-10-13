@@ -1,6 +1,8 @@
 package app.ezpztac.data
 
+import app.ezpztac.model.LatLon
 import app.ezpztac.model.RouteSet
+import app.ezpztac.planning.SketchOps
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -30,3 +32,16 @@ class RouteSession(
     idOf = { it.id },
     reidentify = { set, saved -> set.copy(id = saved.id, savedId = saved.savedId) },
 )
+
+/**
+ * The set with point [pointId] of route [routeId] moved to where [to] puts it (given where it is), as a person moves one: the Routes panel's nudge, the
+ * crosshair and a typed grid, and a drag on the map ([MapDrag]). It forgets a charted elevation the point had snapped to ([SketchOps.move]) and the ground
+ * elevation fetched for the old place, which is not this place's (altitudes AGL would be measured from the wrong ground): the web keeps the fetched one;
+ * here it is dropped until the next fetch, and a mission pack is sent it as null. The same set when the route has no such point.
+ */
+fun RouteSet.withPointMoved(routeId: String, pointId: String, to: (LatLon) -> LatLon): RouteSet = mapRoute(routeId) { route ->
+    val point = route.points.firstOrNull { it.id == pointId } ?: return@mapRoute route
+    val at = to(LatLon(point.lat, point.lon))
+    val moved = SketchOps.move(route, pointId, at.lat, at.lon, null)
+    if (pointId in moved.elevations) moved.copy(elevations = moved.elevations - pointId) else moved
+}

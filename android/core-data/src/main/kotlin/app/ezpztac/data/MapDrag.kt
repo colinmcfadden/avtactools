@@ -7,7 +7,6 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.RouteSet
 import app.ezpztac.planning.GraphicEdits
-import app.ezpztac.planning.SketchOps
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -105,9 +104,7 @@ class MapDrag @Inject constructor(
             is Origin.OfPoint -> routeSession.edit("Move point", d.key) { set ->
                 origin.moves.fold(set) { acc, (routeId, point) ->
                     val moved = GraphicEdits.offset(point.at, northM, eastM)
-                    acc.mapRoute(routeId) { r ->
-                        SketchOps.move(r, point.pointId, moved.lat, moved.lon, null).let { m -> if (point.pointId in m.elevations) m.copy(elevations = m.elevations - point.pointId) else m }
-                    }
+                    acc.withPointMoved(routeId, point.pointId) { moved }
                 }
             }
             is Origin.OfThreat -> {

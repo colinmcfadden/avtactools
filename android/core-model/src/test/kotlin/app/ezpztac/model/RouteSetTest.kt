@@ -111,6 +111,33 @@ class RouteSetTest {
     }
 
     @Test
+    fun `a ground elevation or a point's values that are null are none, as the web reads them, and the route is read`() {
+        // What a mission pack's operations leave: a key that went is sent as null (no operation deletes one), so a point moved off the ground fetched
+        // for it, or a clock moved to another point, leaves `{"p2": null}`. The web reads it as none (`elevations[id] ?? null`,
+        // `perPoint?.[id]?.altitude`); read strictly, the whole route could not be read, and a pack's editor wrote it a second time.
+        val route = fixtureRoutes.getValue("planned").jsonObject
+        val plan = route.getValue("plan").jsonObject
+        val perPoint = JsonObject(plan.getValue("perPoint").jsonObject + ("p4" to JsonNull))
+        val withNulls = JsonObject(
+            route + mapOf(
+                "elevations" to buildJsonObject { put("p1", 1200.0); put("p2", JsonNull); put("p4", 1250) },
+                "plan" to JsonObject(plan + ("perPoint" to perPoint)),
+            ),
+        )
+        val set = read(doc(withNulls))
+
+        assertTrue(set.unreadable.isEmpty(), "the route was read")
+        val read = set.routes.single()
+        assertEquals(mapOf("p1" to 1200.0, "p4" to 1250.0), read.elevations)
+        assertEquals(listOf("p2", "p3"), read.plan.perPoint.keys.toList())
+        assertEquals(PointOverride(wind = Wind(270.0, 15.0)), read.plan.perPoint["p3"])
+        // Written back, a null is no value: nothing else of the route changes.
+        val written = RouteSets.serialize(set).getValue("routes").jsonArray.single().jsonObject
+        assertSameJson(JsonObject(withNulls - "visible"), JsonObject(written - "visible"), "the route written back")
+        assertFalse("p2" in written.getValue("elevations").jsonObject)
+    }
+
+    @Test
     fun `a document with no routes is an empty set and a point with no position makes its route unreadable`() {
         assertEquals(emptyList<SketchRoute>(), read(JsonObject(emptyMap())).routes)
         assertEquals(emptyList<SketchRoute>(), read(JsonObject(mapOf("routes" to JsonNull))).routes)

@@ -5,6 +5,7 @@ import kotlinx.serialization.descriptors.elementNames
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -65,8 +66,9 @@ public object RouteSets {
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; encodeDefaults = true; explicitNulls = false }
 
     /**
-     * The set a record holds. Tolerant: a document with no `routes` is an empty set, and a route that cannot be read as one is kept as it was
-     * ([RouteSet.unreadable]) instead of being thrown away or failing the whole set.
+     * The set a record holds. Tolerant: a document with no `routes` is an empty set, a ground elevation or a point's "to" values that are null are none (as
+     * the web reads them, and as a mission pack leaves a key that went), and a route that cannot be read as one is kept as it was ([RouteSet.unreadable])
+     * instead of being thrown away or failing the whole set.
      */
     public fun parse(id: String, savedId: Int?, name: String, data: JsonObject): RouteSet {
         val raw = (data["routes"] as? JsonArray) ?: JsonArray(emptyList())
@@ -111,7 +113,7 @@ public object RouteSets {
     private fun readRoute(element: JsonElement): SketchRoute? {
         val obj = element as? JsonObject ?: return null
         val route = try {
-            json.decodeFromJsonElement(SketchRoute.serializer(), obj)
+            json.decodeFromJsonElement(SketchRoute.serializer(), withoutNullEntries(obj))
         } catch (_: IllegalArgumentException) {                                        // SerializationException is one
             return null
         }
@@ -131,6 +133,26 @@ public object RouteSets {
         val typed = json.encodeToJsonElement(SketchRoute.serializer(), route).jsonObject
         return withExtras(JsonObject(typed + mapOf("points" to JsonArray(points), "plan" to plan)), route.extras)
     }
+
+    /**
+     * [route] with the null entries of its two maps taken out, for the types to read: a ground elevation, or a point's "to" values, that is null is none,
+     * as the web reads them (`elevationsFt[p.id] ?? null`, `plan.perPoint?.[p.id]?.altitude`). A mission pack's route has them, because no operation
+     * deletes a key: one that went is sent as null (a point moved off the ground fetched for it, a clock moved to another point). Read strictly, one such
+     * entry made the whole route one this version could not read, and a pack's editor then wrote the route a second time (`RoutePackKind`).
+     */
+    private fun withoutNullEntries(route: JsonObject): JsonObject {
+        val elevations = (route["elevations"] as? JsonObject)?.withoutNulls()
+        val plan = route["plan"] as? JsonObject
+        val perPoint = (plan?.get("perPoint") as? JsonObject)?.withoutNulls()
+        if (elevations == null && perPoint == null) return route
+        val fields = LinkedHashMap(route)
+        if (elevations != null) fields["elevations"] = elevations
+        if (plan != null && perPoint != null) fields["plan"] = JsonObject(LinkedHashMap(plan).apply { put("perPoint", perPoint) })
+        return JsonObject(fields)
+    }
+
+    /** This object without its entries that are null; null when it has none. */
+    private fun JsonObject.withoutNulls(): JsonObject? = if (values.none { it is JsonNull }) null else JsonObject(filterValues { it !is JsonNull })
 
     /** The keys of [obj] that [serializer]'s class does not have: what a newer release added. */
     private fun unknown(obj: JsonObject, serializer: KSerializer<*>): JsonObject {

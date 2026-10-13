@@ -56,13 +56,16 @@ internal class PackEditorRig(
     val packStore: PackStore = InMemoryPackStore(),
     live: String? = null,
     lzKind: ((DiagramNormalizer.Environment) -> PackKind<Diagram>)? = null,
+    /** The pack server: this device's own, or one another device's rig shares ([other]). */
+    val server: FakePackServer = FakePackServer(live).apply {
+        person(COLIN.id, COLIN.name)
+        person(SAM.id, SAM.name)
+    },
+    /** Whose device this is: Sam's, unless it is another device beside his ([other]). */
+    val me: PackUser = SAM,
 ) {
     val dispatcher = StandardTestDispatcher(test.testScheduler)
     val scope = CoroutineScope(SupervisorJob() + dispatcher)
-    val server = FakePackServer(live).apply {
-        person(COLIN.id, COLIN.name)
-        person(SAM.id, SAM.name)
-    }
 
     /** Set once this device has sent more batches, or written its copy more often, than any test does: the editor and the pack never settled. */
     var runaway = false
@@ -77,9 +80,13 @@ internal class PackEditorRig(
                 runaway = true
                 throw NetworkException("More than $MAX_BATCHES batches: the editor and the pack never settle.", requestMayHaveBeenSent = false)
             }
+            batches += batch
             return server.sendOps(uuid, batch, asUser)
         }
     }
+
+    // Every batch this device sent, as it was sent (the server's own list has every device's).
+    private val batches = mutableListOf<JsonObject>()
     private val copy = object : PackStore by packStore {
         private var writes = 0
 
@@ -93,7 +100,8 @@ internal class PackEditorRig(
     }
     val keeper = RecordingKeeper()
     private var ids = 0
-    val engine = PackEngine(api, copy, keeper, scope, dispatcher, newId = { "op-${++ids}" })
+    // Sam's are op-1, op-2…; another device's carry its person's id too, as the server answers an id it has logged from its log, whoever sent it.
+    val engine = PackEngine(api, copy, keeper, scope, dispatcher, newId = { if (me == SAM) "op-${++ids}" else "op-${me.id}-${++ids}" })
     val env = DiagramNormalizer.Environment(now = { NOW }, newId = { "made-${++ids}" })
     val lzItems = PackItemStore(engine, lzKind?.invoke(env) ?: LzPackKind(env), copy, { it.id }, dispatcher, dispatcher)
     val routeItems = PackItemStore<RouteSet>(engine, RoutePackKind, copy, { it.id }, dispatcher, dispatcher)
@@ -118,7 +126,7 @@ internal class PackEditorRig(
 
     /** Sam is signed in with Mission Packs on, and the editors are joined to whatever pack is open. */
     suspend fun start() {
-        engine.enable(SAM)
+        engine.enable(me)
         workspace.start()
         scope.launch { workspace.notices.collect { notices += it } }
         test.runCurrent()
@@ -165,7 +173,10 @@ internal class PackEditorRig(
 
     /** Every batch this device sent, each its operations without their ids. */
     fun sent(): List<List<JsonObject>> =
-        server.batches.map { batch -> batch.getValue("ops").jsonArray.map { JsonObject(it.jsonObject - "client_op_id") } }
+        batches.map { batch -> batch.getValue("ops").jsonArray.map { JsonObject(it.jsonObject - "client_op_id") } }
+
+    /** Another device, [who]'s, beside this one: the same pack server, the same virtual clock, a copy, a library and editors of its own. */
+    fun other(who: PackUser = COLIN): PackEditorRig = PackEditorRig(test, server = server, me = who)
 
     /** Item [item]'s data as the server holds it. */
     fun serverData(item: String = ITEM, pack: String = PACK): JsonObject = server.data(pack, item) as JsonObject

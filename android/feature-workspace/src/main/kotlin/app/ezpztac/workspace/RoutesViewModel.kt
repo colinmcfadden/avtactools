@@ -20,6 +20,7 @@ import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSetSummary
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SketchFinish
+import app.ezpztac.data.withPointMoved
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.geo.PlaceResult
@@ -1005,15 +1006,8 @@ class RoutesViewModel @Inject constructor(
         val route = session.active.value?.route(routeId) ?: return
         if (route.points.none { it.id == pointId }) return
         locked()?.let { return fail(it) }
-        session.edit("Move point") { set ->
-            set.mapRoute(routeId) { r ->
-                val p = r.points.firstOrNull { it.id == pointId } ?: return@mapRoute r
-                val moved = to(LatLon(p.lat, p.lon))
-                // The ground elevation fetched for the old place is not this place's: AGL would be measured from the wrong ground. The web keeps it (a
-                // drag leaves `elevations` alone); here it is dropped until the next fetch, and the altitudes say they have no ground to go by.
-                SketchOps.move(r, pointId, moved.lat, moved.lon, null).let { m -> if (pointId in m.elevations) m.copy(elevations = m.elevations - pointId) else m }
-            }
-        }
+        // The ground elevation fetched for the old place goes with it (the web keeps it): the altitudes say they have no ground to go by until the next fetch.
+        session.edit("Move point") { set -> set.withPointMoved(routeId, pointId, to) }
     }
 
     /** Where a new point's id comes from. A test sets its own. */

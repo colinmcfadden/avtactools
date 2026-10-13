@@ -172,7 +172,7 @@ public object PackItemSync {
     public fun <D : Any> settled(kind: PackKind<D>, localId: String, item: PackItemView): PackBaseline =
         settled(item, kind.currentShape(localId, item))
 
-    /** [flushPlan] for an editor's [document] of [kind], open under [localId], by [actor]. */
+    /** [flushPlan] for an editor's [document] of [kind], open under [localId], by [actor], each value that is one to a person sent whole ([PackKind.keepWhole]). */
     public fun <D : Any> flushPlan(kind: PackKind<D>, localId: String, base: PackBaseline, item: PackItemView, document: D, actor: String?): FlushPlan? =
         flushPlan(
             uuid = item.uuid,
@@ -183,12 +183,13 @@ public object PackItemSync {
             theirShape = { kind.currentShape(localId, item) },
             describe = ChangeSentence(kind::describe),
             actor = actor,
-        )
+        )?.let { plan -> plan.copy(ops = kind.keepWhole(plan.ops, plan.sentDoc)) }
 
     /**
      * How an editor takes the pack's version of [item] without breaking its undo. Remember [TakeTheirs.baseline] first, then apply
      * [TakeTheirs.apply] to every version of the document the editor holds (the one showing and each undo step): someone else's change
-     * since [base] ([takeTheirsDelta]) is laid over each one's own shape ([rebase]), keeping its own fields ([PackKind.withShared]). The
+     * since [base] ([takeTheirsDelta], each value that is one to a person whole: [PackKind.keepWhole]) is laid over each one's own shape
+     * ([rebase]), keeping its own fields ([PackKind.withShared]). The
      * version showing, which has not changed since [base], then becomes exactly the pack's; an older one keeps what this person did
      * there, with the other's change carried in, so undo takes back only this person's own steps. A version whose name is the one the
      * pack had takes the pack's new name. With no [base], or a change that would replace the content whole, each version takes the
@@ -197,7 +198,8 @@ public object PackItemSync {
     public fun <D : Any> takeTheirs(kind: PackKind<D>, localId: String, base: PackBaseline?, item: PackItemView): TakeTheirs<D> {
         val theirs = kind.currentShape(localId, item)
         val baseline = settled(item, theirs)
-        val delta = base?.let { takeTheirsDelta(it, theirs) }
+        // A value that is one to a person (a route point's place) is carried into an older version whole, never half of it.
+        val delta = base?.let { takeTheirsDelta(it, theirs) }?.let { kind.keepWhole(it, theirs) }
         if (base == null || delta == null) return TakeTheirs(baseline) { document -> kind.withShared(document, theirs, item.name) }
         return TakeTheirs(baseline) { document ->
             val name = kind.nameOf(document)

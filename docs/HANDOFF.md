@@ -10,7 +10,8 @@ panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threat
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
 S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, P3c Teams, P4a copies into a pack, P4b updating a copy and copies to the Library, P4c the edits a pack would not take, every review's fixes in: S1–S9 and P1–P4 are built, and the owner's device run is next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
 `docs/ANDROID_SCREENS_PLAN.md`; the screenshot guard and the 48-hour wipe went in S5). Since then, outside the plan: the web's MGRS grid on the Android
-map, from the Layers menu (AGENTS.md §17, *The MGRS grid*), its code ported and held to `contracts/fixtures/mgrs/grid.json`.
+map, from the Layers menu (AGENTS.md §17, *The MGRS grid*), its code ported and held to `contracts/fixtures/mgrs/grid.json`; and the fix for what the owner's first
+two-device run found, a pack's route written twice (§1).
 
 ---
 
@@ -86,6 +87,10 @@ map, from the Layers menu (AGENTS.md §17, *The MGRS grid*), its code ported and
 - **First device run, 2026-10-04 (emulator):** sign-in, the map, the sheet, the system picker, importing a real AMPS mission (GOAT SUCKER.msnx), tapping and long-press-dragging a route point
   all worked, the upgrade of an existing database to version 2 kept its data, and the move reached the mission file on the server (one point of 91 changed, every other part byte for byte).
   It also found a bug no JVM test could: Android's XML parser throws on `setXIncludeAware(false)`, so **every mission import had been refused on a device**. Fixed (AGENTS.md §14).
+- **The owner's first two-device run, 2026-10-13** (a phone and a tablet in one pack, against a local backend, so polling): a route checkpoint moved on one device did not move on
+  the other, or showed elsewhere, and the web then drew the route twice. A point moved off its fetched ground (or a clock moved to another point) left a null the Android
+  reader refused, so the editor wrote the route a second time; fixed, and a point's place now goes whole (AGENTS.md §17, *Mission packs in the editors*). **A pack touched
+  before the fix may hold a route twice**: delete that route (on the web, or on Android with the fix; it takes every copy) and draw it again, or make the set again.
 - **Everything else is still compiled and unit-tested on a JVM only.** The map layers (MapLibre),
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output
   and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
