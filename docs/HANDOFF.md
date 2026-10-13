@@ -5,10 +5,10 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-12 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
+Last refreshed: 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
-S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, every review's fixes in; P3c Teams next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
+S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, P3c Teams, every review's fixes in; P4 (the pack dialogs) next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
 `docs/ANDROID_SCREENS_PLAN.md`; the screenshot guard and the 48-hour wipe went in S5).
 
 ---
@@ -41,7 +41,8 @@ S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and 
   offered or done, and what was under way ends with a toast. P2d: a finished pack says so at the top of the panels (a band on a tablet), its owner finishes and
   reopens it, and anyone in it duplicates it. P2e: everyone else in the pack is a named pointer on the map, and this person's crosshair is theirs. P3a: the switcher's *New pack* makes one (a name, who can
   open it: just them, a team, or people found by name or invited by email) and opens it. P3b: the Pack panel's members row opens Members (roles, hand over, take off,
-  invitations waiting, sharing with a team), its owner's *Invite* at the invite field.
+  invitations waiting, sharing with a team), its owner's *Invite* at the invite field. P3c: the switcher's *Manage teams* opens Teams (new team, rename, members and roles,
+  inviting by email, leaving and deleting).
   **To try on a device:** the crosshair and the map gliding together when the sheet settles, a fly-to while the sheet
   moves, dragging the sheet by its content, the status bar's icons, night mode's dimmed map, placing graphics by tapping the map while a tool's mode is on, and on the route's
   plan the keyboard, TalkBack and the date picker; none of that can be seen here. `develop` was fast-forwarded on 2026-10-08 over the stack that had been waiting (the Android branch
@@ -93,7 +94,7 @@ S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and 
 
 ## 2. Next work, in order
 
-1. **The screens**, S1–S9, P1, P2a–P2e, P3a and P3b done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*); P3c and P4, the rest of the mission-pack screens, next (the owner
+1. **The screens**, S1–S9, P1, P2a–P2e and P3a–P3c done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*); P4, the last of the mission-pack screens, next (the owner
    tries the app on a device once they are done), and *T*
    (threats saved and shared: web and server first) beside S7, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
    AGENTS.md §17, *Mission packs on Android*). **The plan is `docs/ANDROID_SCREENS_PLAN.md`** (the owner's decisions, the steps S1–S9 and

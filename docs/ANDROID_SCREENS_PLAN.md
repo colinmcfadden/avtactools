@@ -523,6 +523,38 @@ Pack panel, was not counted as covering it (one rule now says what covers the fr
 after close, the owner gates on a tablet, the owner flag, the invitations call's account, the Send key, teams that failed, the person's own zone). Not changed: an
 invitation answered meanwhile and then withdrawn or sent again reads "That invitation link is not valid." (the server's `invite_not_found`, in the web's words). Tests: `MembersViewModelTest`, `MembersTest` (with screenshots), `ApiPeopleApiTest`, `PackPanelViewModelTest`, `PackCallsTest`.
 
+**P3c — Teams. Built.** The switcher's teams line has *Manage teams* (the design's), which opens Teams. There is no native design for it: it follows the web's
+TeamsDialog, laid out as Members is, a page on a phone (the person's teams, then a team's page over the list, *Back to your teams*) and a dialog 840 dp wide on a tablet
+(the list beside the team shown, *Done* at its foot). A team's page: its name (renamed by its owner or an admin, from the phone's bar), who is in it and since when,
+inviting by email as a member (or an admin: the owner's choice), each member's role (the owner's: member, admin, or handing the team over), taking someone off as the
+server allows (the owner anyone else, an admin members only), the invitations waiting (withdrawn), and *Delete team* for the owner, *Leave team* for everyone else; and
+*New team*, named in a dialog of its own. **Amended while building:**
+- **A team just made is shown at once**, and stays chosen until a list that has it comes back (an older list without it does not take it away).
+- **A new team whose answer was lost may have been made** (the server takes no uuid for one): said so, and the list asked for again, rather than invited to be made twice.
+- **Withdrawing an invitation is asked first** (the web does not); **a refused invitation keeps the address** (the web clears it); **failures are the app's words**
+  (the web shows the library's raw text for a team made or renamed); **teams or a team that could not be loaded say so with *Try again*** (the web says "Loading…" for ever);
+  an invitation whose email did not go is said ("Withdraw it and invite them again": the server keeps each invitation, so inviting again makes another).
+- **One change at a time, for the account the page was opened for**, landing only on the page it was asked from (Members' rule); another account puts the page away.
+- **Pending rows say when they stop working**, as Members' do (the web's say only when they were sent).
+- **What is begun belongs to the team it was begun on**: a question, a rename, an address typed and the role beside it go when another team is shown, and a change
+  answered once another team is shown is said in a toast, never put on that team's page.
+**Reviewed** (one independent review, 2026-10-13: 27 reported, all 27 survived an adversarial check, about 22 distinct; each fix has a test, and each was broken to see it
+fail): a question, a rename, an address typed and its role, begun on one team, stayed when another was chosen and could be done to it (each now names its team, goes
+when another is shown, and is done only while it is still this person's to do); right after choosing, the last team's page passed for the new one, so its controls acted
+on the old team; a change answered once another team was chosen put its refusal under that team's field, or emptied it; the list and the team were read again only
+after a change that worked, and not for a page put away and opened again meanwhile; a team gone (404) read "That pack is gone" and stayed chosen (a team's words now,
+and the list asked for again, which shows another), and `owner_only` and `invalid_role` named a pack's owner or "Choose a role"; a new team or a rename could go beside a
+change under way, and an answer that could not be read was taken for a refusal (one change at a time; a 2xx is a change made); a hand-over left the owner's controls until
+the team came back (this person is an admin on the page at once, and a question no longer theirs is let go, there and when the team is read again: one asked
+while the hand-over was on its way stayed up, found while this was written up); a team left or deleted while
+another was shown moved the page off it; on a phone the list and each team's page shared one scroll, every row was read "not selected", a page on its way was titled
+"Teams", and an admin's fixed "Member" was read "As", "Member"; the switcher's teams line squeezed *Manage teams* at large text (it goes under the line now, with
+Members' layout, which crashed when a menu measured it with no bound: the tablet's switcher, found by its test before it shipped); a tablet showed the frame's toasts twice,
+one under the scrim of Members or Teams; and gaps in the tests (Back, the loading words, each status an answer can be lost behind, *Manage teams* closing the switcher, a
+stale failure, a list that drops the team shown). Not changed: a rename's and a question's own check of the team are kept though nothing in the view model can reach them
+any more (`showing` puts both away first). 106 mutations of these rules, each killed by its test. Tests: `TeamsViewModelTest`, `TeamsTest` (with screenshots), `ApiTeamsApiTest`, `WorkspaceViewModelTest`,
+`SwitcherTest`, `PackCallsTest`.
+
 **P4 — The pack dialogs.** `PackDialogs`: add a copy to a pack (from the Library's menu and the panels), update from the original (*Finish* is P2d's),
 save a copy to the Library; the keep-or-discard offer for edits a pack dropped (*Deferred* 2).
 

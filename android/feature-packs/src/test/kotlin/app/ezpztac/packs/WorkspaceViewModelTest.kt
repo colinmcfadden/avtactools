@@ -953,4 +953,13 @@ class WorkspaceViewModelTest {
         assertEquals(listOf("close", "new pack"), log)
         assertNull(actionsOf(r.model, close = {}).newPack)
     }
+
+    @Test
+    fun `Manage teams closes the switcher before Teams opens, and is not offered without a way to open it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val log = mutableListOf<String>()
+        actionsOf(r.model, close = { log += "close" }, onTeams = { log += "teams" }).teams!!()
+        assertEquals(listOf("close", "teams"), log)
+        assertNull(actionsOf(r.model, close = {}).teams)
+    }
 }

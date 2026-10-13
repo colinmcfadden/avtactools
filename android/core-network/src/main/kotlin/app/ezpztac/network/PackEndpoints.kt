@@ -274,41 +274,41 @@ public suspend fun ApiClient.acceptInviteLink(token: String, asUser: Int? = null
 public suspend fun ApiClient.listTeams(asUser: Int? = null): List<TeamSummary> = decode<TeamsBody>(execute(call("GET", "/api/teams", asUser = asUser))).teams
 
 /** Makes a team the caller owns. */
-public suspend fun ApiClient.createTeam(name: String): Team =
-    decode(execute(call("POST", "/api/teams", body = buildJsonObject { put("name", name) })))
+public suspend fun ApiClient.createTeam(name: String, asUser: Int? = null): Team =
+    decode(execute(call("POST", "/api/teams", body = buildJsonObject { put("name", name) }, asUser = asUser)))
 
 /** A team and its members. A team the caller is not in is a 404 (`team_not_found`). */
-public suspend fun ApiClient.team(id: Int): Team = decode(execute(call("GET", "/api/teams/$id")))
+public suspend fun ApiClient.team(id: Int, asUser: Int? = null): Team = decode(execute(call("GET", "/api/teams/$id", asUser = asUser)))
 
 /** Renames a team (its owner or an admin). */
-public suspend fun ApiClient.renameTeam(id: Int, name: String): Team =
-    decode(execute(call("PUT", "/api/teams/$id", body = buildJsonObject { put("name", name) })))
+public suspend fun ApiClient.renameTeam(id: Int, name: String, asUser: Int? = null): Team =
+    decode(execute(call("PUT", "/api/teams/$id", body = buildJsonObject { put("name", name) }, asUser = asUser)))
 
 /** Deletes a team (its owner only). Packs shared with it stop being shared, each saying so in its log. */
-public suspend fun ApiClient.deleteTeam(id: Int): StatusReply = decode(execute(call("DELETE", "/api/teams/$id")))
+public suspend fun ApiClient.deleteTeam(id: Int, asUser: Int? = null): StatusReply = decode(execute(call("DELETE", "/api/teams/$id", asUser = asUser)))
 
 /** Changes a member's role (the owner only): `owner` hands the team over and the old owner becomes an admin; else `admin` or `member`. */
-public suspend fun ApiClient.changeTeamMember(id: Int, userId: Int, role: String): Team =
-    decode(execute(call("PUT", "/api/teams/$id/members/$userId", body = buildJsonObject { put("role", role) })))
+public suspend fun ApiClient.changeTeamMember(id: Int, userId: Int, role: String, asUser: Int? = null): Team =
+    decode(execute(call("PUT", "/api/teams/$id/members/$userId", body = buildJsonObject { put("role", role) }, asUser = asUser)))
 
 /** Leaves the team (the caller's own id), or removes someone (the owner; an admin removes members only). */
-public suspend fun ApiClient.removeTeamMember(id: Int, userId: Int): StatusReply =
-    decode(execute(call("DELETE", "/api/teams/$id/members/$userId")))
+public suspend fun ApiClient.removeTeamMember(id: Int, userId: Int, asUser: Int? = null): StatusReply =
+    decode(execute(call("DELETE", "/api/teams/$id/members/$userId", asUser = asUser)))
 
 /** The team's invitations not yet answered (its owner or an admin). */
-public suspend fun ApiClient.teamInvites(id: Int): List<Invite> =
-    decode<InvitesBody>(execute(call("GET", "/api/teams/$id/invites"))).invites
+public suspend fun ApiClient.teamInvites(id: Int, asUser: Int? = null): List<Invite> =
+    decode<InvitesBody>(execute(call("GET", "/api/teams/$id/invites", asUser = asUser))).invites
 
 /**
  * Invites someone to the team by [email], or with none makes a single-use link whose [InviteReply.token] is in this answer and
  * never again. Only the owner can invite an `admin`.
  */
-public suspend fun ApiClient.inviteToTeam(id: Int, email: String? = null, role: String = "member"): InviteReply = decode(
-    execute(call("POST", "/api/teams/$id/invites", body = buildJsonObject { put("role", role); if (email != null) put("email", email) })),
+public suspend fun ApiClient.inviteToTeam(id: Int, email: String? = null, role: String = "member", asUser: Int? = null): InviteReply = decode(
+    execute(call("POST", "/api/teams/$id/invites", body = buildJsonObject { put("role", role); if (email != null) put("email", email) }, asUser = asUser)),
 )
 
-public suspend fun ApiClient.revokeTeamInvite(id: Int, inviteId: Int): Invite =
-    decode<InviteBody>(execute(call("DELETE", "/api/teams/$id/invites/$inviteId"))).invite
+public suspend fun ApiClient.revokeTeamInvite(id: Int, inviteId: Int, asUser: Int? = null): Invite =
+    decode<InviteBody>(execute(call("DELETE", "/api/teams/$id/invites/$inviteId", asUser = asUser))).invite
 
 // -- People -----------------------------------------------------------------------------
 

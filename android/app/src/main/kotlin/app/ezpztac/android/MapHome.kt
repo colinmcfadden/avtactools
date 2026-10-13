@@ -103,6 +103,8 @@ import app.ezpztac.packs.MembersHost
 import app.ezpztac.packs.MembersViewModel
 import app.ezpztac.packs.NewPackHost
 import app.ezpztac.packs.NewPackViewModel
+import app.ezpztac.packs.TeamsHost
+import app.ezpztac.packs.TeamsViewModel
 import app.ezpztac.packs.PackDialogsHost
 import app.ezpztac.packs.PackHeaderMenu
 import app.ezpztac.packs.PackPanelFoot
@@ -262,8 +264,12 @@ fun MapHome(
     val members: MembersViewModel = hiltViewModel()
     val membersOpen by remember(members) { members.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
     LaunchedEffect(members) { members.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
-    // A page or dialog over the frame (the Library, Members, New pack): nobody is looking at the map or the Pack panel under it.
-    val overFrame = libraryTab != null || membersOpen || newPackOpen
+    // Teams, from the switcher's teams line: a page (a dialog on a tablet) drawing the frame's toasts over itself.
+    val teams: TeamsViewModel = hiltViewModel()
+    val teamsOpen by remember(teams) { teams.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
+    LaunchedEffect(teams) { teams.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // A page or dialog over the frame (the Library, Members, Teams, New pack): nobody is looking at the map or the Pack panel under it.
+    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen
     LaunchedEffect(newPack) {
         newPack.made.collect { uuid ->
             pickedPack(uuid)
@@ -272,7 +278,7 @@ fun MapHome(
         }
     }
     LaunchedEffect(newPack) { newPack.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
-    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack, onNewPack = newPack::start)
+    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack, onNewPack = newPack::start, onTeams = teams::open)
     var packShownFor by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(openPack?.uuid) {
         val uuid = openPack?.uuid
@@ -627,7 +633,7 @@ fun MapHome(
                                         DropdownMenu(
                                             expanded = true, onDismissRequest = dismiss, shape = MaterialTheme.shapes.large,
                                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(SWITCHER_WIDTH),
-                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack, newPack::start)) }
+                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack, newPack::start, teams::open)) }
                                     }
                                 } else {
                                     null
@@ -644,8 +650,8 @@ fun MapHome(
                         routes, lz, crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), diagrams = diagrams,
                         routesModel = routesModel, routePlan = movableRoutePlan,
                     ),
-                    // The Library's own toasts are drawn over it, as a dialog: the frame's under its scrim would be a second copy.
-                    toasts = libraryTab == null,
+                    // The Library, Members and Teams draw the toasts over themselves, as dialogs: the frame's under their scrim would be a second copy.
+                    toasts = libraryTab == null && !membersOpen && !teamsOpen,
                     band = openPack?.takeIf { it.finished }?.let { finished -> { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen) } },
                     modifier = if (libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
                     panel = { p -> movablePanels.getValue(p)() },
@@ -680,6 +686,7 @@ fun MapHome(
             PackDialogsHost(workspace)
             if (packsHere) NewPackHost(newPack, tablet)
             if (packsHere) MembersHost(members, tablet, snackbars)
+            if (packsHere) TeamsHost(teams, tablet, snackbars)
             // The Library (the design's): opening an item from it shuts it and shows the panel the item is in, as the web's does; renaming, deleting and settling a
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(

@@ -13,29 +13,39 @@ import app.ezpztac.network.Invite
 import app.ezpztac.network.InviteAccepted
 import app.ezpztac.network.PackEventPage
 import app.ezpztac.network.PackSummary
+import app.ezpztac.network.Team
 import app.ezpztac.network.TeamShare
 import app.ezpztac.network.TeamSummary
 import app.ezpztac.network.UserBrief
 import app.ezpztac.network.acceptInvite
 import app.ezpztac.network.addPackMember
+import app.ezpztac.network.changeTeamMember
 import app.ezpztac.network.createPack
+import app.ezpztac.network.createTeam
+import app.ezpztac.network.deleteTeam
 import app.ezpztac.network.declineInvite
 import app.ezpztac.network.duplicatePack
 import app.ezpztac.network.finishPack
 import app.ezpztac.network.inviteToPack
+import app.ezpztac.network.inviteToTeam
 import app.ezpztac.network.listPacks
 import app.ezpztac.network.listTeams
 import app.ezpztac.network.pack
 import app.ezpztac.network.packInvites
 import app.ezpztac.network.changePackMember
 import app.ezpztac.network.removePackMember
+import app.ezpztac.network.removeTeamMember
+import app.ezpztac.network.renameTeam
 import app.ezpztac.network.resendPackInvite
 import app.ezpztac.network.revokePackInvite
+import app.ezpztac.network.revokeTeamInvite
 import app.ezpztac.network.markPackSeen
 import app.ezpztac.network.myInvites
 import app.ezpztac.network.packEvents
 import app.ezpztac.network.reopenPack
 import app.ezpztac.network.searchPeople
+import app.ezpztac.network.team
+import app.ezpztac.network.teamInvites
 import app.ezpztac.network.updatePack
 import dagger.Binds
 import dagger.Module
@@ -143,6 +153,55 @@ class ApiPeopleApi @Inject constructor(private val api: ApiClient) : PeopleApi {
     }
 }
 
+/** Teams' calls over the API client, each for the account asked for. */
+class ApiTeamsApi @Inject constructor(private val api: ApiClient) : TeamsApi {
+    override suspend fun teams(user: Int): List<TeamSummary> = api.listTeams(asUser = user)
+
+    override suspend fun team(id: Int, user: Int): TeamPage {
+        val team = api.team(id, asUser = user)
+        // Only its owner or an admin may see its invitations; theirs are those not yet answered. Ones that could not be had leave the members shown.
+        val invites = if (team.role != "owner" && team.role != "admin") {
+            emptyList()
+        } else {
+            try {
+                api.teamInvites(id, asUser = user).filter { it.status == "pending" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: OtherAccountException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+        }
+        return TeamPage(team, invites)
+    }
+
+    override suspend fun createTeam(name: String, user: Int): Team = api.createTeam(name, asUser = user)
+
+    override suspend fun renameTeam(id: Int, name: String, user: Int) {
+        api.renameTeam(id, name, asUser = user)
+    }
+
+    override suspend fun deleteTeam(id: Int, user: Int) {
+        api.deleteTeam(id, asUser = user)
+    }
+
+    override suspend fun changeMember(id: Int, userId: Int, role: String, user: Int) {
+        api.changeTeamMember(id, userId, role, asUser = user)
+    }
+
+    override suspend fun removeMember(id: Int, userId: Int, user: Int) {
+        api.removeTeamMember(id, userId, asUser = user)
+    }
+
+    override suspend fun invite(id: Int, email: String, role: String, user: Int): Boolean =
+        api.inviteToTeam(id, email, role, asUser = user).emailSent != false
+
+    override suspend fun revokeInvite(id: Int, inviteId: Int, user: Int) {
+        api.revokeTeamInvite(id, inviteId, asUser = user)
+    }
+}
+
 /** The packs the device runs: the engine's open pack, opened and closed through the editors' join to it. */
 @Singleton
 class EnginePackDoor @Inject constructor(private val engine: PackEngine, private val workspace: PackWorkspace) : PackDoor {
@@ -208,4 +267,7 @@ internal abstract class PacksModule {
 
     @Binds
     abstract fun peopleApi(impl: ApiPeopleApi): PeopleApi
+
+    @Binds
+    abstract fun teamsApi(impl: ApiTeamsApi): TeamsApi
 }

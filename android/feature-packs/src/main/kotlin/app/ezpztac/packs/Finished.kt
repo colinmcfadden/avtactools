@@ -174,21 +174,25 @@ internal fun BesideOrUnder(
     Layout(contents = listOf(words, buttons), modifier = modifier) { (wordsPart, buttonsPart), constraints ->
         val gap = space.roundToPx()
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        // A width without a bound (a menu asking how wide its content would be) is all room: beside, as wide as the two are.
+        val bounded = constraints.hasBoundedWidth
         if (buttonsPart.isEmpty()) {
             // No buttons (none offered to this person): the words have the width.
             val w = wordsPart.single().measure(loose)
-            return@Layout layout(constraints.maxWidth, maxOf(w.height, constraints.minHeight)) { w.place(0, 0) }
+            val width = if (bounded) constraints.maxWidth else maxOf(w.width, constraints.minWidth)
+            return@Layout layout(width, maxOf(w.height, constraints.minHeight)) { w.place(0, 0) }
         }
         val wanted = buttonsPart.single().maxIntrinsicWidth(Constraints.Infinity)
         val room = constraints.maxWidth - wanted - gap
-        val beside = if (whole) wordsPart.single().maxIntrinsicWidth(Constraints.Infinity) <= room else room >= wordsMin.roundToPx()
+        val beside = !bounded || if (whole) wordsPart.single().maxIntrinsicWidth(Constraints.Infinity) <= room else room >= wordsMin.roundToPx()
         if (beside) {
             val b = buttonsPart.single().measure(loose.copy(maxWidth = wanted))
-            val w = wordsPart.single().measure(loose.copy(maxWidth = constraints.maxWidth - b.width - gap))
+            val w = wordsPart.single().measure(if (bounded) loose.copy(maxWidth = constraints.maxWidth - b.width - gap) else loose)
+            val width = if (bounded) constraints.maxWidth else maxOf(w.width + gap + b.width, constraints.minWidth)
             val height = maxOf(w.height, b.height, constraints.minHeight)
-            layout(constraints.maxWidth, height) {
+            layout(width, height) {
                 w.place(0, (height - w.height) / 2)
-                b.place(constraints.maxWidth - b.width, (height - b.height) / 2)
+                b.place(width - b.width, (height - b.height) / 2)
             }
         } else {
             val w = wordsPart.single().measure(loose)

@@ -135,7 +135,8 @@ fun MembersHost(viewModel: MembersViewModel, tablet: Boolean, snackbars: Snackba
             } else {
                 MembersContent(state, actions, tablet = false, modifier = Modifier.fillMaxSize())
             }
-            // The frame's toasts, drawn again over the page: the frame's host times them whether or not the page is up, so none is left showing when it goes.
+            // The frame's toasts, drawn over the page in place of the frame's own (a tablet's frame stops drawing them while it is open, or they would show twice,
+            // one under the scrim): the frame's host times them whether or not the page is up, so none is left showing when it goes.
             ToastHost(snackbars, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.safeDrawing).imePadding().padding(horizontal = Tokens.Spacing.lg.dp))
         }
     }
@@ -358,7 +359,7 @@ private fun RoleSegments(role: String, enabled: Boolean, onChoose: (String) -> U
 
 /** A choice shown on a pill with the menu's arrow (the design's role chips): [description] says what it is and that it changes. */
 @Composable
-private fun MenuChip(text: String, description: String, options: List<Pair<String, String>>, enabled: Boolean, onChoose: (String) -> Unit) {
+internal fun MenuChip(text: String, description: String, options: List<Pair<String, String>>, enabled: Boolean, onChoose: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         Row(

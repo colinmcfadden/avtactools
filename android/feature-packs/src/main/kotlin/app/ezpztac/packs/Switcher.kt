@@ -48,12 +48,13 @@ import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.PillStyle
 import app.ezpztac.designsystem.Tokens
 
-/** What the switcher does: open a workspace (null for the Library), answer an invitation, close, and make a new pack (offered when given). */
+/** What the switcher does: open a workspace (null for the Library), answer an invitation, close, and make a new pack or manage teams (each offered when given). */
 class SwitcherActions(
     val pick: (String?) -> Unit = {},
     val answer: (id: Int, accept: Boolean) -> Unit = { _, _ -> },
     val close: () -> Unit = {},
     val newPack: (() -> Unit)? = null,
+    val teams: (() -> Unit)? = null,
 )
 
 /**
@@ -63,12 +64,12 @@ class SwitcherActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SwitcherSheet(viewModel: WorkspaceViewModel, onDismiss: () -> Unit, onPick: (String?) -> Unit = {}, onNewPack: (() -> Unit)? = null) {
+fun SwitcherSheet(viewModel: WorkspaceViewModel, onDismiss: () -> Unit, onPick: (String?) -> Unit = {}, onNewPack: (() -> Unit)? = null, onTeams: (() -> Unit)? = null) {
     val state by viewModel.switcher.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.switcherOpened() }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        SwitcherContent(state, actionsOf(viewModel, onDismiss, onPick, onNewPack), Modifier.verticalScroll(rememberScrollState()))
+        SwitcherContent(state, actionsOf(viewModel, onDismiss, onPick, onNewPack, onTeams), Modifier.verticalScroll(rememberScrollState()))
     }
 }
 
@@ -76,11 +77,18 @@ fun SwitcherSheet(viewModel: WorkspaceViewModel, onDismiss: () -> Unit, onPick: 
  * The switcher's actions over the view model: choosing a workspace closes it first (and tells [onPick], so the frame can show the pack's panel once
  * it opens), and so do an invitation that let the person in to a pack and *New pack* ([onNewPack]).
  */
-fun actionsOf(viewModel: WorkspaceViewModel, close: () -> Unit, onPick: (String?) -> Unit = {}, onNewPack: (() -> Unit)? = null) = SwitcherActions(
+fun actionsOf(
+    viewModel: WorkspaceViewModel,
+    close: () -> Unit,
+    onPick: (String?) -> Unit = {},
+    onNewPack: (() -> Unit)? = null,
+    onTeams: (() -> Unit)? = null,
+) = SwitcherActions(
     pick = { uuid -> close(); onPick(uuid); viewModel.switchTo(uuid) },
     answer = { id, accept -> viewModel.answer(id, accept, onJoined = close) },
     close = close,
     newPack = onNewPack?.let { open -> { close(); open() } },
+    teams = onTeams?.let { open -> { close(); open() } },
 )
 
 /**
@@ -140,10 +148,22 @@ fun SwitcherContent(state: SwitcherUi, actions: SwitcherActions, modifier: Modif
         }
         state.packs.forEach { pack -> PackRow(pack, enabled = !state.busy, actions) }
         HorizontalDivider(Modifier.padding(vertical = Tokens.Spacing.sm.dp), color = MaterialTheme.colorScheme.outlineVariant)
-        Row(Modifier.padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
-            Icon(painterResource(EzpzIcons.diversity3), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-            Text(state.teams, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        }
+        // Manage teams goes under the line where both do not fit (a 360 dp phone at large text), never squeezing the line to a word a row.
+        BesideOrUnder(
+            Modifier.fillMaxWidth().padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.sm.dp),
+            words = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+                    Icon(painterResource(EzpzIcons.diversity3), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                    Text(state.teams, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            buttons = {
+                actions.teams?.let { teams ->
+                    TextButton(onClick = teams, modifier = Modifier.heightIn(min = 48.dp)) { Text("Manage teams") }
+                }
+            },
+            wordsMin = 168.dp, space = Tokens.Spacing.sm.dp,
+        )
     }
 }
 
