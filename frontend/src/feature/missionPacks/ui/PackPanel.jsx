@@ -6,6 +6,7 @@ import Icon from "../../ui/Icon";
 import MoreMenu from "../../ui/MoreMenu";
 import { clockTime, shortDate, timeAgo } from "../../ui/time";
 import * as packApi from "../packApi";
+import { historyLines } from "../packHistory";
 import { changedSince } from "../usePackSeen";
 import "./packs.css";
 
@@ -175,34 +176,40 @@ const History = ({ packUuid, headSeq, newSince, me, members, items, api }) => {
   }, []);
 
   const byUuid = useMemo(() => new Map(items.map((item) => [item.uuid, item])), [items]);
+  // One line for each change, however many operations it went to the pack as (packHistory.js), newest first. A line's events share
+  // who, what and where; the newest says when.
+  const lines = useMemo(() => historyLines(events, newSince).reverse(), [events, newSince]);
   const shown = useMemo(
     () =>
-      [...events]
-        .reverse()
-        .filter((e) => person === "all" || String(e.actor?.id) === person)
-        .filter((e) => itemFilter === "all" || e.item === itemFilter),
-    [events, person, itemFilter],
+      lines
+        .filter((line) => person === "all" || String(line[0].actor?.id) === person)
+        .filter((line) => itemFilter === "all" || line[0].item === itemFilter),
+    [lines, person, itemFilter],
   );
-  const isFresh = (e) => newSince != null && e.seq > newSince && e.actor?.id !== me;
+  const newest = (line) => line[line.length - 1];
+  const isFresh = (line) => newSince != null && newest(line).seq > newSince && newest(line).actor?.id !== me;
   const fresh = shown.filter(isFresh);
-  const older = shown.filter((e) => !isFresh(e));
+  const older = shown.filter((line) => !isFresh(line));
 
   const groups = [];
-  older.forEach((event) => {
-    const label = dayLabel(event.created_at);
-    if (groups.length === 0 || groups[groups.length - 1].label !== label) groups.push({ label, events: [] });
-    groups[groups.length - 1].events.push(event);
+  older.forEach((line) => {
+    const label = dayLabel(newest(line).created_at);
+    if (groups.length === 0 || groups[groups.length - 1].label !== label) groups.push({ label, lines: [] });
+    groups[groups.length - 1].lines.push(line);
   });
 
-  const row = (event) => {
+  const row = (line) => {
+    const event = newest(line);
+    // A removed item by the name it had: the last an operation of the change gave it (a rename sent with an edit).
+    const named = line.map((e) => e.op?.name).filter((name) => name != null);
     const where = event.item
-      ? byUuid.get(event.item)?.name ?? event.op?.name ?? "Removed item"
+      ? byUuid.get(event.item)?.name ?? named[named.length - 1] ?? "Removed item"
       : /^(member|invite)/.test(event.type ?? "")
         ? "Members"
         : "Pack";
     const system = !event.actor?.id;
     return (
-      <div key={event.seq} className={`packs-history__event${event.status === "skipped" ? " packs-history__event--skipped" : ""}`}>
+      <div key={line[0].seq} className={`packs-history__event${event.status === "skipped" ? " packs-history__event--skipped" : ""}`}>
         {system ? (
           <span className="packs-history__system" aria-hidden="true"><Icon name="layers" size={12} /></span>
         ) : (
@@ -244,7 +251,7 @@ const History = ({ packUuid, headSeq, newSince, me, members, items, api }) => {
       {groups.map((group) => (
         <React.Fragment key={group.label}>
           <div className="packs-history__divider">{group.label}</div>
-          {group.events.map(row)}
+          {group.lines.map(row)}
         </React.Fragment>
       ))}
     </>

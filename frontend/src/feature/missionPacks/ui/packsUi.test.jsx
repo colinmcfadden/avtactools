@@ -170,6 +170,32 @@ describe("the pack panel", () => {
     expect(screen.getByText("New since you looked · 3")).toBeInTheDocument();
   });
 
+  it("shows a change the pack logged as several operations as one line, never folding what is new into what was seen", async () => {
+    // A doghouse turned goes as its heading and the landing heading it gives, an analysis as five operations: each is an event, all
+    // with the change's one sentence.
+    const event = (seq, actor, summary, extra = {}) => ({
+      seq, type: "patch", item: "lz-1", actor, summary, status: "applied", reason: null, op: { type: "patch", path: [], value: {} },
+      created_at: minutesAgo(30 - seq), ...extra,
+    });
+    const colin = { id: 1, name: "Colin McFadden" };
+    const sam = { id: 2, name: "Sam Bell" };
+    const jess = { id: 3, name: "Jess Reyes" };
+    const api = { getEvents: jest.fn().mockResolvedValue({ events: [
+      event(5, colin, "Colin M. analyzed LZ IBIS."), event(6, colin, "Colin M. analyzed LZ IBIS."), event(7, colin, "Colin M. analyzed LZ IBIS."),
+      event(8, sam, "Sam B. turned a doghouse on LZ IBIS."),
+      event(9, sam, "Sam B. turned a doghouse on LZ IBIS."), event(10, sam, "Sam B. turned a doghouse on LZ IBIS."),
+      event(11, jess, "Jess R. turned a doghouse on LZ IBIS."),
+      event(12, jess, "Jess R. turned a doghouse on LZ IBIS.", { status: "skipped", reason: "target_missing" }),
+    ], has_more: false, head_seq: 12 }) };
+    renderPanel("history", { api, pack: { ...pack, head_seq: 12 } });
+    expect(await screen.findAllByText("Colin M. analyzed LZ IBIS.")).toHaveLength(1);
+    // Sam's turn after where new starts (8) is one line, apart from his turn before it; Jess's applied and skipped are a line each.
+    expect(screen.getByText("New since you looked · 3")).toBeInTheDocument();
+    expect(screen.getAllByText("Sam B. turned a doghouse on LZ IBIS.")).toHaveLength(2);
+    expect(screen.getAllByText("Jess R. turned a doghouse on LZ IBIS.")).toHaveLength(1);
+    expect(screen.getAllByText(/Edit skipped:/)).toHaveLength(1);
+  });
+
   it("shows the newest events of a long history, not the oldest page after where it started", async () => {
     const api = { getEvents: jest.fn((uuid, since) => Promise.resolve(since === 100
       ? { events: [{ seq: 101, type: "set", item: "lz-1", actor: { id: 2, name: "Sam Bell" }, summary: "An old change.", status: "applied", created_at: minutesAgo(60) }], has_more: true, head_seq: 1000 }
