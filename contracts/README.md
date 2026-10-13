@@ -23,7 +23,7 @@ contracts/
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
-│  ├─ packs/        ops.json, diff.json, edit.json, shared.json, describe.json, session.json
+│  ├─ packs/        ops.json, diff.json, edit.json, shared.json, describe.json, session.json, settings.json
 │  │                reference: the web app (feature/missionPacks/)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
 └─ scripts/         generators: the fixtures PyGeodesy owns, and tokens.py
@@ -69,6 +69,7 @@ reference is.
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | `core-missionpacks` (`PackOps`: every case, strictly: status, reason, null kept apart from absent, keys in JavaScript's order; `PackOpsFixtureTest`) |
 | `packs/diff.json` | `frontend/src/contracts/packDiffFixtures.test.js` | — | `core-missionpacks` (`PackDiff`: the operations an editor's change is sent as, every case strictly and in order, each rebuilt with `PackOps`, and every `sameData` pair; the `webBug` cases and pairs are not copied and have tests of the right behaviour; `PackDiffFixtureTest`) |
 | `packs/shared.json`, `packs/describe.json`, `packs/edit.json` | `frontend/src/contracts/packSharedFixtures.test.js` | — | `core-missionpacks` (`PackLz`, `PackRoutes`, `PackPoints`, `PackSentences`, `PackEdit`: what is each person's own, the history's sentences and new items' names, how one edit is put together; every case, the `webBug` ones not copied and tested for the right behaviour; `PackSharedFixtureTest`, `PackDescribeFixtureTest`, `PackEditFixtureTest`) |
+| `packs/settings.json` | `frontend/src/contracts/packSettingsFixtures.test.js` | — | `core-missionpacks` (`LzPackKind`, `RoutePackKind`, `PackDiff`: each setting's item read and written back unchanged, the web's operations for it strictly and in order, and what the port sends instead, kept whole, rebuilding the same item; `PackSettingsFixtureTest`) |
 | `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | `core-missionpacks` (`PackSessions`: every scenario step by step, with the whole session, what is visible, each answer and the `dropped_versions`, strictly: null kept apart from absent, keys in JavaScript's order; `PackSessionFixtureTest`) |
 
 iOS joins this table when it starts; it reads the same files.
@@ -98,6 +99,7 @@ sync is held to these files:
 | `shared.json` | What of an item is each person's own and never sent; a set's points made ready; the name and library form of a person's own version of an item ("NAME (my edits)"); the shape an editor gives an LZ/PZ or route set it opens, which the reshape in `edit.json` brings an older item to | `packLz.js`, `packRoutes.js` (with `useLzWorkspace.normalizeLzDiagram` and `useRouteSketch.restoreSketchRoute`), `usePackPoints.js`, `packSentences.js`, `packActions.js` |
 | `describe.json` | The history's sentences, who a person is in them, and how a new item is named and made | `packLz.js`, `packRoutes.js`, `usePackPoints.js`, `packSentences.js`, `packActions.js` |
 | `session.json` | How an open pack is held: edits made here, batches, the server's events and refusals, reloads, what is shown, and what is kept when the pack will not take an edit | `packSession.js` |
+| `settings.json` | Every setting of a planning graphic or a route the web makes in a pack, as the item before and after it and the operations sent for it, made by the web's own code | the graphics' hooks through `useLzWorkspace`'s reducer as `App.js` wires them, `sketchOps.js` and `routeWinds.js` as `useRouteSketch` applies them, `packDiff.js` |
 
 - **`webBug: true`** marks a case that pins a known web bug, kept because the web is the reference until it
   is fixed and the file regenerated (`AGENTS.md` §15): a sentence or name cut through an emoji (a lone

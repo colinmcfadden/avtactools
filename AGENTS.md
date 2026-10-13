@@ -1639,6 +1639,10 @@ client is built around not losing one:
     (its colour with it), points added, put on the line, renamed (and onto a local point), designated and re-designated, moved every way, the date, temperature and fuel flow, a point's
     altitude, speed and wind, the clock set, moved and cleared, winds and ground fetched (quiet, and for a set no longer open), a route's name and deletion, the set's name. What stays
     each person's: the routes they hid. `PackScenarioBook` holds a point's first values and its altitude changed in part on the fake, in Room and on the real Flask server.
+  - **What the web writes for each setting is pinned** (`contracts/fixtures/packs/settings.json`, made by the web's own hooks and sketch operations as `App.js` and
+    `useRouteSketch` apply them): Android reads each item before and after the setting and writes it back unchanged, finds the web's operations for it, and what it sends
+    instead rebuilds the same item (`PackSettingsFixtureTest`, which also names the settings where Android sends more than the web: a PZ marker's tip, part of a plan value,
+    a point's first values).
   - `PackWorkspace` opens and closes packs (closing whatever of the pack being left is open in the editors first, so its last change reaches it while it still takes it, and both editors
     and the switch even when a save fails, which it then throws), opens an item in its editor, and makes a new LZ/PZ or route set in the open pack (`createLz`, `createRouteSet`: the web's names,
     `LZ/PZ n` and `ROUTES n`, and creation sentences).
