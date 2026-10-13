@@ -556,7 +556,48 @@ any more (`showing` puts both away first). 106 mutations of these rules, each ki
 `SwitcherTest`, `PackCallsTest`.
 
 **P4 — The pack dialogs.** `PackDialogs`: add a copy to a pack (from the Library's menu and the panels), update from the original (*Finish* is P2d's),
-save a copy to the Library; the keep-or-discard offer for edits a pack dropped (*Deferred* 2).
+save a copy to the Library; the keep-or-discard offer for edits a pack dropped (*Deferred* 2). Built in three steps, each reviewed on its own: P4a copies into a
+pack, P4b updating a copy from its original and saving a pack's item to the Library, P4c the offer for edits a pack dropped.
+
+**P4a — Copies into a pack. Built.** One of the person's own Library items (an LZ/PZ, a set of sketched routes, a set of local points) is copied into a pack
+(the design's PackDialogs A, the web's `AddToPackDialog`): *Add to Mission Pack…* in the Library's item menu, in the open LZ/PZ's menu and in the open set of
+routes' menu, outside a pack; the dialog lists the person's packs (*4 members · you can edit*), one finished or view-only greyed with why (*Finished Sep 22.
+Reopen it to add items.*), and *Add copy*; once made, a toast offers *Open pack*. The design's tablet rows (a tile at the row's end, the chosen row tinted). While a pack is open that this person can change,
+the Library's *Open* is *Add to pack* (the web's), the Pack panel's foot has *Add from Library* (the design's, which opens the Library so), and New pack's
+*Start with items from my Library* (the design's switch) opens it once the pack is made and open. **Amended while building:**
+- **What the person sees is what goes in.** The server copies the version it holds, so the open document is written first, and a record with changes the server
+  has not had is uploaded (the outbox sent, nothing pulled, off the main thread, under a sync's own rules looked at before every try: the account signed in,
+  its plans on the device, the app not too old; a sync already running is waited for) and looked at again. One whose change could not be uploaded is not copied
+  in an older version, and the dialog says why: no signal, signed out, the server refused that change for good, or another device changed it too (the record is
+  then that device's version: settled in the Library first). **Not like the web**, which copies the last saved version whatever is on the map.
+- **A copy is asked for by the record's own identity** (`client_uuid`, which the device chose) **with an item id kept through every try**: a try after an
+  answer that was lost finds the first copy (the server answers 200, said as *already there, from an earlier try*) rather than making a second. **Not like the
+  web**, whose every press makes a new item id. Into the open pack, the id is kept per record until the copy is in, and follows a record seen moving to a new
+  uuid. A refusal that the pack has that id already (a copy since removed) takes a new one, since that one can never go.
+- **The dialog can be closed while its copy is made** (it can take a sync): the copy goes on and a toast says what it came to. One copy at a time; another
+  account ends the copy under way. The Library's *Add to pack* says *Adding…* on its row meanwhile, and none other can be pressed.
+- **The server writes the history's sentence** (it knows who asked): *Colin added "LZ HAWK" (copied from their library).*
+- **One rule wherever it is asked**: any of the person's own, analysed or not, with routes or none (the server takes them, and a pack's own LZ/PZs start
+  unanalysed). **Not offered:** an imported mission (a pack cannot hold one yet; the Library says so in a pack), a conflict copy before it is settled, the
+  Imports panel's sets (as on the web; the Library's Local points tab has them), and a viewer (known from the switcher's list before the pack's own state) or a
+  finished pack. A pack still opening says so rather than that this person can only view it. **Not built:** a copy made offline, to go when back online (an owner
+  decision, *Deferred* 5), and the web's several-at-once Add from Library dialog (the Library adds one at a time and stays open).
+- **The delete confirmation says what it does not touch**, as the design's does: *Copies you added to a Mission Pack are not affected.*
+- **New pack's option is the design's on each frame**: a switch after a rule on a phone, a checkbox row (*· choose after creating*) on a tablet.
+**Reviewed** (one independent review, 2026-10-13: 45 reported, 33 survived an adversarial check, about 20 distinct; each fix has a test, and each was broken to see it
+fail): a sync conflict met by the upload copied the other device's version and said it was added (now refused in words, with the Library to settle it); a record
+whose change the server refused for good was told to try again in a moment, for ever; a kept item id the pack already had was sent again and again; a try made
+again after the open document was kept under a new id asked for the old uuid and was told it was gone; a pack still opening, or one this person can only view,
+offered *Add to pack* and then said they could only view it; the upload ran a whole sync, pull included, on the main thread, checked the account once before
+waiting up to 20 s, and was not ended by another account; the dialog could not be closed for as long as that took, and *Still working* went to a toast under it;
+a disabled menu icon was drawn white; the tablet's plan pane had no *Add to Mission Pack…*; the dialog's window could lie under the Library's on a tablet; the
+Library showed nothing while a copy was made; an editor's *Add from Library* stood at the foot's end; the rows, the group's name and the tablet's layout were not
+the design's, nor New pack's tablet option; and gaps in the tests (an edited record the server holds, the open document written first, the upload's turn and
+its account, the host passing the pack's actions on, the frame's rules, now `CopyRules`). Refuted: a sync left waiting behind the upload (the next save asks for
+one), a conflict copy open in a panel (none can be opened), and the Library copying what the panels refused (one rule now). 85 mutations of these rules, each killed by its test. Tests:
+`LibraryToPackTest`, `SessionWritesTest`, `SyncFailureTest`, `EngineSyncRunnerTest`, `CopyRulesTest`, `PackCopyViewModelTest`, `CopiesTest`, `NewPackViewModelTest`,
+`NewPackTest`, `LibraryPageTest`, `LzPanelScreenTest`, `RoutesScreenTest`, `RoutesViewModelTest`, `PackCallsTest`.
+
 
 ## How each step is checked
 

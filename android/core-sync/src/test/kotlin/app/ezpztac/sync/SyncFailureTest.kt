@@ -37,6 +37,33 @@ internal class SyncFailureTest {
 
     private fun rig(block: suspend Rig.() -> Unit) = runBlocking<Unit> { Rig().block() }
 
+    // -- Sending only -------------------------------------------------------------------------
+
+    @Test
+    fun `sending only pushes the queue and learns nothing new, and waits its turn behind a sync`() = rig {
+        b.repository.create(kind, "CROW", lz("elsewhere"))
+        b.sync()
+        val made = a.repository.create(kind, "HAWK", lz("one"))
+        val before = server.log.size
+        val report = a.engine.send()
+        assertEquals(1, report.pushed)
+        assertTrue(server.log.drop(before).none { it.startsWith("changes") }, "nothing pulled")
+        assertEquals(SyncStatus.SYNCED, a.record(kind, made.uuid)!!.status)
+        assertEquals(listOf("HAWK"), a.names(kind))                                            // CROW is not brought down
+
+        val held = CompletableDeferred<Unit>()
+        a.repository.edit(kind, made.uuid, name = "HAWK 2")
+        server.onWrite = { held.await() }
+        coroutineScope {
+            val syncing = async { a.sync() }
+            while (server.log.none { it.startsWith("update") }) kotlinx.coroutines.yield()
+            assertTrue(a.engine.send().skipped)
+            server.onWrite = null
+            held.complete(Unit)
+            syncing.await()
+        }
+    }
+
     // -- No signal ---------------------------------------------------------------------------
 
     @Test

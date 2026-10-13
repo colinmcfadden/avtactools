@@ -7,6 +7,7 @@ import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.missionpacks.DrainOutcome
 import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.data.AccountScope
+import app.ezpztac.data.Uploaded
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.Ownership
@@ -27,12 +28,15 @@ import app.ezpztac.sync.InMemorySyncStore
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.RecordingScheduler
 import app.ezpztac.sync.SequentialIds
+import app.ezpztac.sync.StopReason
 import app.ezpztac.sync.SyncApi
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.doc
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -50,6 +54,7 @@ import java.util.Collections
  * first: the runner has to do what the shell does at launch itself, and has to keep to the shell's rule that only the plans of the account
  * signed in are synced.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class EngineSyncRunnerTest {
     private fun config(minimum: String?) = AppConfig(
         1, "1.7.6", AppConfig.MinAppVersion(android = minimum), AppConfig.Maintenance(false, null),
@@ -243,6 +248,110 @@ class EngineSyncRunnerTest {
             assertEquals("$minimum", 0, r.device.pending())
             assertEquals("$minimum", 1, r.packs.drained.size)
         }
+    }
+
+    // A copy into a mission pack: the server copies the version it holds, so the record's last change is uploaded first, under a sync's own rules.
+    @Test
+    fun `an upload for a copy sends the Library's waiting changes for the account signed in, and drains no pack`() = runTest {
+        val signedIn = AuthState.SignedIn(user(1))
+        val r = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1)
+
+        val uploaded = r.runner.upload(1)
+
+        assertEquals(Uploaded(ran = true), uploaded)
+        assertEquals(0, r.device.pending())
+        assertEquals(emptyList<PackUser>(), r.packs.drained)
+        assertEquals(0, r.auth.configLooks)                                                         // the minimum last heard is what it goes by
+    }
+
+    @Test
+    fun `no upload runs for another account, another account's plans, an app too old, or nobody signed in`() = runTest {
+        val signedIn = AuthState.SignedIn(user(1))
+        val asked = listOf(
+            rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1) to 2,
+            rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 2) to 1,
+            rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1, minimum = "9.0.0") to 1,
+            rig(FakeAuth(stored = signedIn), owner = 1) to 1,                                          // the session not read in this process
+        )
+        asked.forEachIndexed { i, (r, user) ->
+            assertEquals("$i", Uploaded(ran = false), r.runner.upload(user))
+            assertEquals("$i", emptyList<String>(), r.server.log)
+            assertEquals("$i", 1, r.device.pending())
+        }
+    }
+
+    @Test
+    fun `an upload that stops says why`() = runTest {
+        val signedIn = AuthState.SignedIn(user(1))
+        val r = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1)
+        r.server.offlineWrites = 1
+
+        assertEquals(Uploaded(ran = true, stopped = StopReason.Offline), r.runner.upload(1))
+        assertEquals(1, r.device.pending())
+    }
+
+    @Test
+    fun `an upload only sends, what changed elsewhere is not brought down for a copy`() = runTest {
+        val signedIn = AuthState.SignedIn(user(1))
+        val r = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1)
+        r.runner.upload(1)
+        assertTrue(r.server.log.none { it.startsWith("changes") })
+        assertEquals(listOf("LZ HAWK"), r.device.records(RecordKind.LZ).map { it.name })
+    }
+
+    @Test
+    fun `an upload says which records another device changed too, which the server refused, and which it gave a new identity`() = runTest {
+        val signedIn = AuthState.SignedIn(user(1))
+        val r = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1)
+        r.runner.upload(1)
+        r.device.edit(RecordKind.LZ, "made-here", name = "LZ HAWK 2")
+        r.server.editElsewhere(RecordKind.LZ, "made-here", name = "LZ HAWK (web)")
+        assertEquals(setOf("made-here"), r.runner.upload(1).conflicts)
+
+        val refused = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1)
+        refused.server.failName = "LZ HAWK" to app.ezpztac.network.ApiException(400, "invalid_name", "x")
+        assertEquals(setOf("made-here"), refused.runner.upload(1).blocked)
+
+        val gone = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1)
+        gone.runner.upload(1)
+        gone.device.edit(RecordKind.LZ, "made-here", name = "LZ HAWK 2")
+        gone.server.deleteElsewhere(RecordKind.LZ, "made-here")
+        assertEquals(setOf("made-here"), gone.runner.upload(1).recreated.keys)
+    }
+
+    @Test
+    fun `an upload waits for a sync already running, then sends`() = runTest {
+        val signedIn = AuthState.SignedIn(user(1))
+        val r = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1)
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        r.server.onWrite = { held.await() }
+        backgroundScope.launch { r.runner.runOnce() }
+        runCurrent()
+        backgroundScope.launch { kotlinx.coroutines.delay(1_000); r.server.onWrite = null; held.complete(Unit) }
+        val uploaded = r.runner.upload(1)
+        assertTrue(uploaded.ran)
+        assertEquals(0, r.device.pending())
+    }
+
+    @Test
+    fun `an upload whose account goes while it waits for its turn does not run`() = runTest {
+        val signedIn = AuthState.SignedIn(user(1))
+        val r = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 1)
+        val held = kotlinx.coroutines.CompletableDeferred<Unit>()
+        r.server.onWrite = { held.await() }
+        backgroundScope.launch { r.runner.runOnce() }
+        runCurrent()
+        backgroundScope.launch { kotlinx.coroutines.delay(1_000); r.auth.state.value = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN) }
+        assertEquals(Uploaded(ran = false), r.runner.upload(1))
+        held.complete(Unit)
+    }
+
+    @Test
+    fun `no upload runs for another account, even one whose plans this device holds`() = runTest {
+        val signedIn = AuthState.SignedIn(user(1))
+        val r = rig(FakeAuth(stored = signedIn, initial = signedIn), owner = 2)                     // account 2's plans, account 1 signed in
+        assertEquals(Uploaded(ran = false), r.runner.upload(2))
+        assertEquals(emptyList<String>(), r.server.log)
     }
 
     @Test

@@ -252,6 +252,22 @@ class RoutesScreenTest {
     }
 
     @Test
+    fun `a set of sketched routes is added to a Mission Pack from its menu, never a mission`() {
+        val log = mutableListOf<String>()
+        val withPacks = RoutesActions(addToPack = { uuid, name -> log += "pack:$uuid:$name" })
+        var state by mutableStateOf(RoutesUiState(open = open(one, name = "GOAT SUCKER", mission = true)))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { RoutesHomeContent(state, withPacks, threatCount = 0) } } }
+        compose.onNodeWithContentDescription("More actions for GOAT SUCKER").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").assertDoesNotExist()
+        compose.onNodeWithText("Close").performClick()
+        state = RoutesUiState(open = open())
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("More actions for SKETCHED ROUTES").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").performClick()
+        assertEquals(listOf("pack:s1:SKETCHED ROUTES"), log)
+    }
+
+    @Test
     fun `deleting the set is asked about first`() {
         val r = home(RoutesUiState(open = open(one, name = "NIGHT INFIL", madeUp = false)))
         compose.onNodeWithContentDescription("More actions for NIGHT INFIL").performClick()

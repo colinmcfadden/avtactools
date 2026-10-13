@@ -1,5 +1,8 @@
 package app.ezpztac.packs
 
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +56,7 @@ class NewPackTest {
     private val actions = NewPackActions(
         name = { log += "name $it" }, audience = { log += "audience $it" }, team = { log += "team $it" }, teamRole = { log += "can $it" },
         query = { log += "query $it" }, pick = { log += "pick ${it.id}" }, pickEmail = { log += "invite" }, role = { key, role -> log += "role $key $role" },
-        remove = { log += "remove $it" }, create = { log += "create" }, close = { log += "close" },
+        remove = { log += "remove $it" }, create = { log += "create" }, close = { log += "close" }, withLibrary = { log += "library $it" },
     )
     private val teams = listOf(TeamOption(3, "B Co 2-10 AVN", 18), TeamOption(4, "HHC", 1))
     private val team = NewPackUi(open = true, name = "OP DK", description = "North Georgia night LZ/PZ and route planning.", audience = Audience.TEAM, teams = teams, teamsLoaded = true, teamId = 3)
@@ -86,6 +89,25 @@ class NewPackTest {
         compose.onNodeWithText("Only you can open it", substring = true).assertDoesNotExist()
         compose.onNodeWithContentDescription("Cancel, close without creating a pack").performClick()
         assertEquals("close", log.last())
+    }
+
+    @Test
+    fun `the form can start the pack with items from the Library, a switch read as one`() {
+        show(team.copy(withLibrary = true))
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch) and hasText("Start with items from my Library", substring = true))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ToggleableState, ToggleableState.On)).performScrollTo().performClick()
+        compose.onNodeWithText("Choose them after creating. Each goes in as a copy.").assertExists()
+        assertEquals(listOf("library false"), log)
+    }
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-xhdpi")
+    fun `a tablet's form starts the pack with items from the Library from the design's checkbox row`() {
+        show(team, tablet = true)
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox) and hasText("Start with items from my Library · choose after creating"))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ToggleableState, ToggleableState.Off)).performScrollTo().performClick()
+        compose.onNodeWithText("Choose them after creating. Each goes in as a copy.").assertDoesNotExist()
+        assertEquals(listOf("library true"), log)
     }
 
     @Test

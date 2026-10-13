@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -98,7 +99,9 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiUser
 import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
+import app.ezpztac.packs.AddToPackHost
 import app.ezpztac.packs.PackChip
+import app.ezpztac.packs.PackCopyViewModel
 import app.ezpztac.packs.MembersHost
 import app.ezpztac.packs.MembersViewModel
 import app.ezpztac.packs.NewPackHost
@@ -116,6 +119,7 @@ import app.ezpztac.packs.SwitcherContent
 import app.ezpztac.packs.SwitcherSheet
 import app.ezpztac.packs.WorkspaceViewModel
 import app.ezpztac.packs.actionsOf
+import app.ezpztac.sync.RecordKind
 import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsUiState
@@ -268,6 +272,26 @@ fun MapHome(
     val teams: TeamsViewModel = hiltViewModel()
     val teamsOpen by remember(teams) { teams.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
     LaunchedEffect(teams) { teams.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // A copy of the person's own item into a Mission Pack (the design's PackDialogs A): from the Library's menu and the LZ/PZ and Routes panels while packs run
+    // here and none is open, and the Library's *Add to pack* while one is open that this person can change. A copy into a pack not open offers to open it.
+    val copies: PackCopyViewModel = hiltViewModel()
+    LaunchedEffect(copies) {
+        copies.notices.collect { notice ->
+            val pack = notice.openPack
+            if (pack == null) {
+                snackbars.showSnackbar(notice.words, withDismissAction = true)
+            } else if (snackbars.showSnackbar(notice.words, actionLabel = "Open pack", withDismissAction = true, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                libraryTab = null
+                pickedPack(pack)
+                workspace.switchTo(pack)
+            }
+        }
+    }
+    val askCopy: ((RecordKind) -> (uuid: String, name: String) -> Unit)? =
+        if (CopyRules.asksWhere(packsHere, openPack)) ({ kind -> { uuid, name -> copies.ask(kind, uuid, name) } }) else null
+    // The pack a Library item is added to rather than opened: the one open, while this person can change it.
+    val addingTo = CopyRules.addingTo(packsHere, openPack)
+    val adding by copies.adding.collectAsStateWithLifecycle()
     // A page or dialog over the frame (the Library, Members, Teams, New pack): nobody is looking at the map or the Pack panel under it.
     val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen
     LaunchedEffect(newPack) {
@@ -278,6 +302,20 @@ fun MapHome(
         }
     }
     LaunchedEffect(newPack) { newPack.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // A pack made to start with items from the Library: the Library opens on it once it is the pack open, adding to it. Another pack opened first lets it go.
+    var libraryAfter by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(newPack) { newPack.withLibrary.collect { libraryAfter = it } }
+    LaunchedEffect(openPack?.uuid) {
+        val wanted = libraryAfter ?: return@LaunchedEffect
+        when (CopyRules.libraryAfter(wanted, openPack?.uuid)) {
+            CopyRules.LibraryAfter.WAIT -> Unit                                                    // still on its way
+            CopyRules.LibraryAfter.OPEN_LIBRARY -> {
+                libraryTab = libraryTabsFor(panels).firstOrNull() ?: LibraryTab.LZ
+                libraryAfter = null
+            }
+            CopyRules.LibraryAfter.LET_GO -> libraryAfter = null
+        }
+    }
     if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack, onNewPack = newPack::start, onTeams = teams::open)
     var packShownFor by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(openPack?.uuid) {
@@ -421,9 +459,11 @@ fun MapHome(
                         Panel.Lz -> LzPanelHost(
                             crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
                             onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
+                            onAddToPack = askCopy?.invoke(RecordKind.LZ),
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
+                            onAddToPack = askCopy?.invoke(RecordKind.ROUTE),
                         )
                         Panel.Threats -> ThreatsHost(
                             onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
@@ -591,9 +631,15 @@ fun MapHome(
             // None in a read-only pack, which nothing is drawn into (a sketch still under way keeps its Cancel).
             val footer: (@Composable () -> Unit)? = if (current == Panel.Routes && routes.page == RoutesPage.HOME && !(routes.pack?.readOnly == true && routes.drawing == null)) {
                 { RoutesFooterHost(onImport = importFiles, crosshair = state.center, viewModel = routesModel) }
-            } else if (current == Panel.Pack && pack.loaded && openPack?.let { it.owner && !it.finished && it.status != PackStatus.GONE } == true) {
-                // The Pack panel's foot, for its owner while it is not finished: *Finish pack*.
-                { PackPanelFoot(onFinish = workspace::askFinish, tablet = tablet) }
+            } else if (current == Panel.Pack && CopyRules.footShown(pack.loaded, openPack, canAdd = addingTo != null)) {
+                // The Pack panel's foot while it is not finished: *Add from Library* for anyone who can change it (the Library, adding to the pack), *Finish pack*
+                // for its owner.
+                {
+                    PackPanelFoot(
+                        onFinish = if (openPack?.owner == true) workspace::askFinish else null, tablet = tablet,
+                        onAddFromLibrary = if (addingTo != null) ({ libraryTab = libraryTabs.firstOrNull() ?: LibraryTab.LZ }) else null,
+                    )
+                }
             } else {
                 null
             }
@@ -648,7 +694,7 @@ fun MapHome(
                     footer = footer,
                     supporting = supportingPanes(
                         routes, lz, crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), diagrams = diagrams,
-                        routesModel = routesModel, routePlan = movableRoutePlan,
+                        routesModel = routesModel, routePlan = movableRoutePlan, onAddToPack = askCopy?.invoke(RecordKind.LZ),
                     ),
                     // The Library, Members and Teams draw the toasts over themselves, as dialogs: the frame's under their scrim would be a second copy.
                     toasts = libraryTab == null && !membersOpen && !teamsOpen,
@@ -730,10 +776,17 @@ fun MapHome(
                             LibraryTab.POINTS -> importsModel.resolve(row.uuid, how)
                         }
                     },
+                    addToPack = askCopy?.let { ask -> { row -> ask(CopyRules.recordKindOf(row.tab))(row.uuid, row.name) } },
+                    addToOpenPack = { row -> copies.addToOpen(CopyRules.recordKindOf(row.tab), row.uuid, row.name) },
                 ),
                 snackbars = snackbars,
                 large = tablet,
+                addingTo = addingTo,
+                adding = adding,
             )
+            // Adding a copy to a pack, asked from the Library among others: drawn after it, so its window is the one on top. A window shown earlier stays under
+            // one made later, so it is made again when the Library's window is (it opens, or turns from a page into a tablet's dialog).
+            if (packsHere) key(tablet, libraryTab != null) { AddToPackHost(copies, tablet) }
         }
     }
 }
@@ -768,6 +821,8 @@ private data class OpenMapMenu(val place: MapMenuPlace, val at: IntOffset, val r
 private fun supportingPanes(
     routes: RoutesUiState, lz: DiagramsUiState, crosshair: LatLon?, crosshairGrid: String?, canMakeAircraft: Boolean, diagrams: DiagramsViewModel,
     routesModel: RoutesViewModel, routePlan: @Composable (Boolean) -> Unit,
+    /** Asks which Mission Pack a copy of the open LZ/PZ goes into, as the phone's plan page does. */
+    onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
 ): List<SupportingPane> {
     val open = lz.current
     val lzPane = if (lz.page == LzPage.PLAN && open != null) {
@@ -781,7 +836,9 @@ private fun supportingPanes(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.xs.dp),
                 verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
             ) {
-                LzPanelHost(crosshair = crosshair, crosshairGrid = crosshairGrid, canMakeAircraft = canMakeAircraft, pane = LzPane.PLAN, viewModel = diagrams)
+                LzPanelHost(
+                    crosshair = crosshair, crosshairGrid = crosshairGrid, canMakeAircraft = canMakeAircraft, pane = LzPane.PLAN, viewModel = diagrams, onAddToPack = onAddToPack,
+                )
                 Spacer(Modifier.height(Tokens.Spacing.lg.dp))
             }
         }

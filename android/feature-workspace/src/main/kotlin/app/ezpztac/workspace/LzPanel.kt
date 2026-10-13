@@ -115,6 +115,8 @@ class LzPanelActions(
     val dismissBoundaryError: () -> Unit = {},
     /** Adds a unit made in the unit builder at the crosshair. */
     val addUnit: (UnitDraft) -> Unit = {},
+    /** Asks which Mission Pack a copy of the open LZ/PZ ([uuid], [name]) goes into; none: not offered (no packs here, or one is open). */
+    val addToPack: ((uuid: String, name: String) -> Unit)? = null,
 )
 
 /**
@@ -131,6 +133,8 @@ fun LzPanelHost(
     pane: LzPane = LzPane.WHOLE,
     /** Opens the Library on its LZ/PZ tab. */
     onBrowseLibrary: () -> Unit = {},
+    /** Asks which Mission Pack a copy of the open LZ/PZ goes into: given while packs run here and none is open. */
+    onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
     viewModel: DiagramsViewModel = hiltViewModel(),
     graphics: GraphicsViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
@@ -148,7 +152,7 @@ fun LzPanelHost(
         analyze = viewModel::analyze, stopAnalysis = viewModel::stopAnalysis, dismissAnalysis = viewModel::dismissAnalysisError,
         selectAircraft = viewModel::selectAircraft, refreshWeather = viewModel::refreshWeather, toggleSlope = viewModel::toggleSlope,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
-        addUnit = { draft -> graphics.addUnit(draft, crosshair) },
+        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack,
     )
     val graphicsActions = GraphicsActions(
         select = graphics::select, deselect = graphics::deselect, nudge = graphics::nudge, moveToCrosshair = { graphics.moveToCrosshair(crosshair) },
@@ -469,7 +473,10 @@ internal fun SmallIconButton(icon: Int, description: String, onClick: () -> Unit
     }
 }
 
-/** The open LZ/PZ's other actions: rename, close (it stays in the Library) and delete (asked about first, where it is asked). */
+/**
+ * The open LZ/PZ's other actions: rename, close (it stays in the Library), *Add to Mission Pack…* (one of the person's own: a copy, analysed or not, as the
+ * Library's) and delete (asked about first, where it is asked).
+ */
 @Composable
 private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRename: () -> Unit, onDelete: () -> Unit, outlined: Boolean = false) {
     var open by remember { mutableStateOf(false) }
@@ -501,6 +508,13 @@ private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRena
                 onClick = { open = false; actions.close(current.uuid) },
                 leadingIcon = { Icon(painterResource(EzpzIcons.close), contentDescription = null) },
             )
+            val addToPack = actions.addToPack
+            if (current.inPack == null && addToPack != null) {
+                DropdownMenuItem(
+                    text = { Text("Add to Mission Pack…") }, onClick = { open = false; addToPack(current.uuid, current.name) },
+                    leadingIcon = { Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
+                )
+            }
             // A pack's LZ/PZ is removed for everyone from the Pack panel, never deleted from here.
             if (current.inPack == null) {
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { open = false; onDelete() }, leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null) })

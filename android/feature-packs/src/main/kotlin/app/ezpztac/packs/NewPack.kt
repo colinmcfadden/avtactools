@@ -27,18 +27,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
@@ -70,6 +74,9 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -97,12 +104,13 @@ class NewPackActions(
     val remove: (String) -> Unit = {},
     val create: () -> Unit = {},
     val close: () -> Unit = {},
+    val withLibrary: (Boolean) -> Unit = {},
 )
 
 fun newPackActionsOf(viewModel: NewPackViewModel) = NewPackActions(
     name = viewModel::name, description = viewModel::description, audience = viewModel::audience, team = viewModel::team, teamRole = viewModel::teamRole,
     query = viewModel::query, pick = viewModel::pick, pickEmail = viewModel::pickEmail, role = viewModel::role, remove = viewModel::remove,
-    create = viewModel::create, close = viewModel::close,
+    create = viewModel::create, close = viewModel::close, withLibrary = viewModel::withLibrary,
 )
 
 /**
@@ -229,8 +237,41 @@ private fun ColumnScope.Fields(state: NewPackUi, actions: NewPackActions, tablet
     if (state.audience == Audience.TEAM) state.team?.let { team -> TeamRow(team, state, actions) }
     if (state.audience != Audience.JUST_ME) People(state, actions, tablet)
     if (!tablet && state.audience == Audience.JUST_ME) JustMe()
+    // The Library opens on the pack once it is made, adding to it: the phone's design draws a switch after a rule, the tablet's a checkbox row.
+    if (tablet) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = Tokens.Spacing.lg.dp).heightIn(min = 48.dp)
+                .toggleable(value = state.withLibrary, enabled = !state.busy, role = Role.Checkbox, onValueChange = actions.withLibrary),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+        ) {
+            Checkbox(checked = state.withLibrary, onCheckedChange = null, enabled = !state.busy)
+            Text(
+                buildAnnotatedString {
+                    append(LIBRARY_FIRST)
+                    withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) { append(" · choose after creating") }
+                },
+                style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
+            )
+        }
+    } else {
+        HorizontalDivider(Modifier.padding(top = Tokens.Spacing.xl.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 72.dp)
+                .toggleable(value = state.withLibrary, enabled = !state.busy, role = Role.Switch, onValueChange = actions.withLibrary).padding(vertical = Tokens.Spacing.sm.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.lg.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(LIBRARY_FIRST, style = MaterialTheme.typography.bodyLarge)
+                Text("Choose them after creating. Each goes in as a copy.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(
+                checked = state.withLibrary, onCheckedChange = null, enabled = !state.busy,
+                thumbContent = if (state.withLibrary) ({ Icon(painterResource(EzpzIcons.check), contentDescription = null, modifier = Modifier.size(SwitchDefaults.IconSize)) }) else null,
+            )
+        }
+    }
     Row(
-        Modifier.fillMaxWidth().padding(top = Tokens.Spacing.xl.dp)
+        Modifier.fillMaxWidth().padding(top = Tokens.Spacing.sm.dp)
             .then(if (tablet) Modifier else Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(Tokens.Radius.lg.dp)).padding(Tokens.Spacing.lg.dp)),
         horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
     ) {
@@ -513,3 +554,6 @@ internal const val NEW_PACK_TITLE = "New Mission Pack"
 internal const val INTRO = "A shared space for one operation. Everyone in it edits the same LZ/PZs, routes and point sets live."
 internal const val PEOPLE_HINT = "Type a name or an email address. Names are found among your teammates."
 internal const val INFO = "While a pack is open, everything you create goes into it and its members can see it. Threats are never added: they stay on this device only."
+
+/** New pack's option (the design's words): the Library opens on the pack once it is made. */
+internal const val LIBRARY_FIRST = "Start with items from my Library"

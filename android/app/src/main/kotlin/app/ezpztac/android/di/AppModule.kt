@@ -32,6 +32,7 @@ import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.android.packs.SessionParking
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
+import app.ezpztac.data.LibraryUpload
 import app.ezpztac.android.sync.WorkManagerSyncScheduler
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.ApiClientMasterProfileSource
@@ -238,6 +239,10 @@ interface AppBindings {
 
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner
+
+    /** A copy into a mission pack uploads the Library's waiting changes first, through the same checks as a sync. */
+    @Binds
+    fun libraryUpload(impl: EngineSyncRunner): LibraryUpload
 
     @Binds
     fun packRuntime(impl: EnginePackRuntime): PackRuntime

@@ -104,6 +104,10 @@ class LibraryActions(
     val duplicate: (LibraryRowUi) -> Unit = {},
     val delete: (LibraryRowUi) -> Unit = {},
     val resolve: (LibraryRowUi, SyncEngine.Resolution) -> Unit = { _, _ -> },
+    /** Asks which Mission Pack a copy of the item goes into (outside a pack); none: not offered. */
+    val addToPack: ((LibraryRowUi) -> Unit)? = null,
+    /** Adds a copy of the item to the pack open now: the Library's *Add to pack*, in place of *Open*, while one is open that this person can change. */
+    val addToOpenPack: (LibraryRowUi) -> Unit = {},
 )
 
 /**
@@ -120,6 +124,10 @@ fun LibraryHost(
     snackbars: SnackbarHostState? = null,
     /** A tablet's: a large dialog over the frame ([LargeDialog]), not a page that covers it. */
     large: Boolean = false,
+    /** The pack a copy of an item goes into, while one is open that this person can change: each item is added to it rather than opened. */
+    addingTo: String? = null,
+    /** The item being added to it now, if one is. */
+    adding: String? = null,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -143,11 +151,8 @@ fun LibraryHost(
     val page: @Composable (Modifier) -> Unit = { pageModifier ->
         LibraryPage(
             state.copy(tabs = tabs),
-            LibraryActions(
-                close = actions.close, showTab = viewModel::showTab, search = viewModel::search, sortBy = viewModel::sortBy, open = actions.open,
-                rename = actions.rename, duplicate = viewModel::duplicate, delete = actions.delete, resolve = actions.resolve,
-            ),
-            pageModifier, snackbars, renaming = renaming, onRenaming = { renaming = it },
+            pageActions(actions, viewModel::showTab, viewModel::search, viewModel::sortBy, viewModel::duplicate),
+            pageModifier, snackbars, renaming = renaming, onRenaming = { renaming = it }, addingTo = addingTo, adding = adding,
         )
     }
     // A tablet's is a dialog of its own window, so the keyboard's focus and a screen reader stay in it, as the import review's do; the window dims the frame.
@@ -201,6 +206,21 @@ private val LibraryTab.icon: Int
 /** What an item already shown says (`Open in session`), and what a set of points says, since opening one is showing it on the map. */
 private fun inSessionWords(tab: LibraryTab) = if (tab == LibraryTab.POINTS) "On the map" else "Open in session"
 
+/**
+ * The page's actions: what the host was given (opening, renaming, deleting and settling an item are its panels'; adding one to a pack is the frame's), with the
+ * Library's own (its tabs, search, order and *Duplicate*). Every one the host was given is passed on: a field left out would take a feature away unnoticed.
+ */
+internal fun pageActions(
+    given: LibraryActions,
+    showTab: (LibraryTab) -> Unit,
+    search: (String) -> Unit,
+    sortBy: (LibrarySort) -> Unit,
+    duplicate: (LibraryRowUi) -> Unit,
+) = LibraryActions(
+    close = given.close, showTab = showTab, search = search, sortBy = sortBy, open = given.open, rename = given.rename, duplicate = duplicate,
+    delete = given.delete, resolve = given.resolve, addToPack = given.addToPack, addToOpenPack = given.addToOpenPack,
+)
+
 /** The page itself: its bar, the tabs with their counts, the search and the sort, the items, and how many there are. */
 @Composable
 fun LibraryPage(
@@ -211,6 +231,10 @@ fun LibraryPage(
     /** The item being renamed (its dialog is up), held by the host. */
     renaming: String? = null,
     onRenaming: (String?) -> Unit = {},
+    /** The pack each item is added to, rather than opened (the web's Library in a pack). */
+    addingTo: String? = null,
+    /** The item being added to it now: its *Add to pack* says so, and none other can be pressed meanwhile. */
+    adding: String? = null,
 ) {
     var deleting by rememberSaveable { mutableStateOf<String?>(null) }
     Surface(modifier.fillMaxSize().semantics { paneTitle = "Library" }, color = MaterialTheme.colorScheme.background) {
@@ -221,7 +245,8 @@ fun LibraryPage(
                     Text("Library", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = Tokens.Spacing.xs.dp).semantics { heading() })
                 }
                 Text(
-                    "Everything you have saved. Opening one adds it to this session.", style = MaterialTheme.typography.bodyMedium,
+                    addingTo?.let { "Everything you have saved. Adding one puts a copy of it in $it." } ?: "Everything you have saved. Opening one adds it to this session.",
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp, bottom = Tokens.Spacing.md.dp),
                 )
                 if (state.tabs.size > 1) Tabs(state, actions)
@@ -229,7 +254,7 @@ fun LibraryPage(
                 SortChooser(state.sort, actions.sortBy)
                 LazyColumn(Modifier.weight(1f).fillMaxWidth().imePadding()) {
                     items(state.rows, key = { it.uuid }) { row ->
-                        LibraryRow(row, actions, busy = state.busy, onRename = { onRenaming(row.uuid) }, onDelete = { deleting = row.uuid })
+                        LibraryRow(row, actions, busy = state.busy, addingTo, adding, onRename = { onRenaming(row.uuid) }, onDelete = { deleting = row.uuid })
                     }
                     if (state.rows.isEmpty()) item { Empty(state) }
                 }
@@ -263,7 +288,7 @@ fun LibraryPage(
             deleting = null
         } else {
             ConfirmDialog(
-                title = "Delete “${row.name}”?", text = "This removes it from your Library on every device you use.", confirm = "Delete",
+                title = "Delete “${row.name}”?", text = DELETE_WORDS, confirm = "Delete",
                 onConfirm = { deleting = null; actions.delete(row) }, onCancel = { deleting = null },
             )
         }
@@ -355,9 +380,12 @@ private fun SortChooser(sort: LibrarySort, onSort: (LibrarySort) -> Unit) {
     }
 }
 
-/** One item: its badge, name, what it is, when it changed, whether it is open, then *Open* and its other actions; a conflict copy's three choices under it. */
+/**
+ * One item: its badge, name, what it is, when it changed, whether it is open, then *Open* (*Add to pack* while one is open: [addingTo]) and its other actions; a
+ * conflict copy's three choices under it.
+ */
 @Composable
-private fun LibraryRow(row: LibraryRowUi, actions: LibraryActions, busy: Boolean, onRename: () -> Unit, onDelete: () -> Unit) {
+private fun LibraryRow(row: LibraryRowUi, actions: LibraryActions, busy: Boolean, addingTo: String?, adding: String?, onRename: () -> Unit, onDelete: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         // The words and the actions side by side, the actions under the words on a narrow phone at large text: a grid is never split over two lines.
         SideBySide(
@@ -365,13 +393,24 @@ private fun LibraryRow(row: LibraryRowUi, actions: LibraryActions, busy: Boolean
             modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp).padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.md.dp, end = Tokens.Spacing.xs.dp, bottom = Tokens.Spacing.md.dp),
             fixed = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
-                        onClick = { actions.open(row) }, enabled = !row.inSession && row.conflictOf == null,
-                        modifier = Modifier.heightIn(min = 48.dp).semantics {
-                            contentDescription = if (row.inSession) "Open ${row.name}, already ${inSessionWords(row.tab).lowercase()}" else "Open ${row.name}"
-                        },
-                    ) { Text("Open") }
-                    RowMenu(row, busy, onRename, onDelete, actions)
+                    if (addingTo != null) {
+                        // An imported mission cannot go in a pack yet, nor a conflict copy before it is settled.
+                        val busyHere = adding == row.uuid
+                        TextButton(
+                            onClick = { actions.addToOpenPack(row) }, enabled = adding == null && !row.isMission && row.conflictOf == null,
+                            modifier = Modifier.heightIn(min = 48.dp).semantics {
+                                contentDescription = if (busyHere) "Adding a copy of ${row.name} to $addingTo" else "Add a copy of ${row.name} to $addingTo"
+                            },
+                        ) { Text(if (busyHere) "Adding…" else "Add to pack") }
+                    } else {
+                        TextButton(
+                            onClick = { actions.open(row) }, enabled = !row.inSession && row.conflictOf == null,
+                            modifier = Modifier.heightIn(min = 48.dp).semantics {
+                                contentDescription = if (row.inSession) "Open ${row.name}, already ${inSessionWords(row.tab).lowercase()}" else "Open ${row.name}"
+                            },
+                        ) { Text("Open") }
+                    }
+                    RowMenu(row, busy, onRename, onDelete, actions, offerPack = addingTo == null)
                 }
             },
         ) {
@@ -391,7 +430,10 @@ private fun LibraryRow(row: LibraryRowUi, actions: LibraryActions, busy: Boolean
                     row.updated?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     when {
                         row.conflictOf != null -> StateChip("Conflict copy", StatusTone.Error, Modifier.padding(top = 6.dp))
-                        row.inSession -> InSessionTag(inSessionWords(row.tab))
+                        addingTo != null && row.isMission -> Text(
+                            MISSION_NOT_IN_PACKS, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        addingTo == null && row.inSession -> InSessionTag(inSessionWords(row.tab))
                     }
                 }
             }
@@ -425,9 +467,12 @@ private fun InSessionTag(words: String) {
     }
 }
 
-/** An item's other actions: rename, duplicate, delete (asked about first). *Add to Mission Pack…* joins them with the pack dialogs (P4). */
+/**
+ * An item's other actions: rename, duplicate, *Add to Mission Pack…* (outside a pack, [offerPack]; never an imported mission, which a pack cannot hold yet, nor a
+ * conflict copy before it is settled) and delete, after a divider (asked about first).
+ */
 @Composable
-private fun RowMenu(row: LibraryRowUi, busy: Boolean, onRename: () -> Unit, onDelete: () -> Unit, actions: LibraryActions) {
+private fun RowMenu(row: LibraryRowUi, busy: Boolean, onRename: () -> Unit, onDelete: () -> Unit, actions: LibraryActions, offerPack: Boolean) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }, modifier = Modifier.size(48.dp)) {
@@ -439,6 +484,14 @@ private fun RowMenu(row: LibraryRowUi, busy: Boolean, onRename: () -> Unit, onDe
                 text = { Text("Duplicate") }, onClick = { open = false; actions.duplicate(row) }, enabled = !busy,
                 leadingIcon = { Icon(painterResource(EzpzIcons.contentCopy), contentDescription = null) },
             )
+            val addToPack = actions.addToPack
+            if (offerPack && addToPack != null && !row.isMission && row.conflictOf == null) {
+                DropdownMenuItem(
+                    text = { Text("Add to Mission Pack…") }, onClick = { open = false; addToPack(row) },
+                    leadingIcon = { Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             DropdownMenuItem(
                 text = { Text("Delete", color = MaterialTheme.colorScheme.error) }, onClick = { open = false; onDelete() },
                 leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null, tint = MaterialTheme.colorScheme.error) },
@@ -571,3 +624,9 @@ private fun a(noun: String) = if (noun.startsWith("LZ") || noun.first().lowercas
 
 /** Names are kept to what the server stores, as the web's field is (`maxLength={100}`). */
 private const val MAX_NAME = 100
+
+/** What an imported mission says in the Library while a pack is open (the web's words): it cannot be added to one yet. */
+internal const val MISSION_NOT_IN_PACKS = "AMPS mission files cannot go into a pack yet"
+
+/** Deleting an item from the Library (the design's Confirm): what it does, and what it does not touch. */
+internal const val DELETE_WORDS = "This removes it from your Library on every device you use. Copies you added to a Mission Pack are not affected."

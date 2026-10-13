@@ -163,7 +163,7 @@ private fun eventsQuery(since: Long, limit: Int) = mapOf("since" to since.toStri
 /**
  * Copies a record from the caller's library into the pack as [item], which remembers where it came from. Naming the [item] is what
  * makes a retry after a lost response safe: it returns the first copy ([Saved.created] false). An imported AMPS mission is refused
- * (`mission_not_supported`).
+ * (`mission_not_supported`). For [asUser] when given.
  */
 public suspend fun ApiClient.copyIntoPack(
     uuid: String,
@@ -171,6 +171,7 @@ public suspend fun ApiClient.copyIntoPack(
     item: String,
     name: String? = null,
     summary: String? = null,
+    asUser: Int? = null,
 ): Saved<PackItemReply> {
     val response = execute(
         call(
@@ -190,25 +191,28 @@ public suspend fun ApiClient.copyIntoPack(
                 if (name != null) put("name", name)
                 if (summary != null) put("summary", summary)
             },
+            asUser = asUser,
         ),
     )
     return Saved(decode(response), created = response.status == 201)
 }
 
 /** One item, whole. */
-public suspend fun ApiClient.packItem(uuid: String, item: String): PackItemDto =
-    decode<ItemBody>(execute(call("GET", PackPaths.item(uuid, item)))).item
+public suspend fun ApiClient.packItem(uuid: String, item: String, asUser: Int? = null): PackItemDto =
+    decode<ItemBody>(execute(call("GET", PackPaths.item(uuid, item), asUser = asUser))).item
 
 /** Replaces a copied item's content with its library original as it is now. Only whoever copied it in may (`not_your_original`). */
-public suspend fun ApiClient.updateFromOriginal(uuid: String, item: String, summary: String? = null): PackItemReply = decode(
+public suspend fun ApiClient.updateFromOriginal(uuid: String, item: String, summary: String? = null, asUser: Int? = null): PackItemReply = decode(
     execute(
-        call("POST", "${PackPaths.item(uuid, item)}/update-from-original", body = buildJsonObject { if (summary != null) put("summary", summary) }),
+        call(
+            "POST", "${PackPaths.item(uuid, item)}/update-from-original", body = buildJsonObject { if (summary != null) put("summary", summary) }, asUser = asUser,
+        ),
     ),
 )
 
 /** Saves a copy of the item to the caller's own library, where it syncs like any record. Needs the `cloud_save` entitlement too. */
-public suspend fun ApiClient.savePackItemToLibrary(uuid: String, item: String, name: String? = null): LibraryCopy = decode(
-    execute(call("POST", "${PackPaths.item(uuid, item)}/library", body = buildJsonObject { if (name != null) put("name", name) })),
+public suspend fun ApiClient.savePackItemToLibrary(uuid: String, item: String, name: String? = null, asUser: Int? = null): LibraryCopy = decode(
+    execute(call("POST", "${PackPaths.item(uuid, item)}/library", body = buildJsonObject { if (name != null) put("name", name) }, asUser = asUser)),
 )
 
 // -- Members ------------------------------------------------------------------------

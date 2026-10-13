@@ -143,6 +143,14 @@ class RoutesViewModelTest {
 
     private fun TestScope.rig(resolver: ConflictResolver? = null) = Rig(this, resolver).also { advanceUntilIdle() }
 
+    @Test
+    fun `the panel's actions pass on the frame's way to add a copy to a pack, and offer none without it`() = runTest {
+        val r = rig()
+        val add: (String, String) -> Unit = { _, _ -> }
+        assertSame(add, actionsOf(r.model, addToPack = add).addToPack)
+        assertNull(actionsOf(r.model).addToPack)
+    }
+
     // -- In a Mission Pack (P2b) ------------------------------------------------------------------------------------------------
 
     @Test

@@ -19,6 +19,7 @@ import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -105,7 +106,7 @@ class LibraryPageTest {
         compose.onNodeWithContentDescription("More actions for LZ HAWK (SHOPE)").performClick()
         compose.onNodeWithText("Delete").performClick()
         compose.onNodeWithText("Delete “LZ HAWK (SHOPE)”?").assertIsDisplayed()
-        compose.onNodeWithText("This removes it from your Library on every device you use.").assertIsDisplayed()
+        compose.onNodeWithText(DELETE_WORDS).assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         assertEquals(listOf("duplicate:lz-2"), log)
         compose.onNodeWithContentDescription("More actions for LZ HAWK (SHOPE)").performClick()
@@ -191,6 +192,85 @@ class LibraryPageTest {
         compose.onNodeWithContentDescription("Open LZ HAWK (from this device, 14:32)").assertIsNotEnabled()
         compose.onNodeWithText("Keep both").performClick()
         assertEquals(listOf("resolve:c1:${SyncEngine.Resolution.KEEP_BOTH}"), log)
+    }
+
+    // -- Mission packs -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `outside a pack an item's menu adds a copy to a Mission Pack, never a mission's or a conflict copy's, and Delete says copies in packs stay`() {
+        val mission = LibraryRowUi("m1", LibraryTab.ROUTES, "GOAT SUCKER", isMission = true)
+        val copy = LibraryRowUi("c1", LibraryTab.LZ, "LZ HAWK (from this device, 14:32)", sync = SyncStatus.CONFLICT, conflictOf = "lz-1")
+        val withPacks = LibraryActions(addToPack = { log += "pack:${it.uuid}" }, delete = { log += "delete:${it.uuid}" })
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { LibraryPage(LibraryUiState(rows = listOf(shope, mission, copy)), withPacks) } }
+        compose.onNodeWithContentDescription("More actions for GOAT SUCKER").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").assertDoesNotExist()
+        compose.onNodeWithText("Rename").performClick()                                           // closes the menu
+        compose.onNodeWithContentDescription("More actions for LZ HAWK (from this device, 14:32)").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").assertDoesNotExist()
+        compose.onNodeWithText("Rename").performClick()
+        compose.onNodeWithContentDescription("More actions for LZ HAWK (SHOPE)").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").performClick()
+        compose.onNodeWithContentDescription("More actions for LZ HAWK (SHOPE)").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.onNodeWithText(DELETE_WORDS).assertIsDisplayed()
+        assertEquals(listOf("pack:lz-2"), log)
+    }
+
+    @Test
+    fun `an account without packs is not offered one`() {
+        show(lzState)
+        compose.onNodeWithContentDescription("More actions for LZ HAWK (SHOPE)").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").assertDoesNotExist()
+    }
+
+    @Test
+    fun `while a pack is open each item is added to it rather than opened, and a mission says it cannot go`() {
+        val mission = LibraryRowUi("m1", LibraryTab.ROUTES, "GOAT SUCKER", isMission = true)
+        val inPack = LibraryActions(addToPack = { log += "pack:${it.uuid}" }, addToOpenPack = { log += "add:${it.uuid}" }, open = { log += "open:${it.uuid}" })
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { LibraryPage(LibraryUiState(rows = listOf(hawk, shope, mission)), inPack, addingTo = "OP DK") } }
+        compose.onNodeWithText("Everything you have saved. Adding one puts a copy of it in OP DK.").assertIsDisplayed()
+        assertEquals(0, count("Open in session"))                                                   // the person's own are set aside in a pack
+        compose.onNodeWithContentDescription("Add a copy of LZ HAWK (ROCK) to OP DK").assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Add a copy of GOAT SUCKER to OP DK").assertIsNotEnabled()
+        compose.onNodeWithText(MISSION_NOT_IN_PACKS).assertIsDisplayed()
+        compose.onNodeWithContentDescription("More actions for LZ HAWK (SHOPE)").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").assertDoesNotExist()                        // the open pack is where it goes
+        assertEquals(listOf("add:lz-1"), log)
+    }
+
+    @Test
+    fun `while an item is added to the pack its row says so, and nothing else can be added meanwhile, nor a conflict copy at all`() {
+        val copy = LibraryRowUi("c1", LibraryTab.LZ, "LZ HAWK (from this device, 14:32)", sync = SyncStatus.CONFLICT, conflictOf = "lz-1")
+        val inPack = LibraryActions(addToOpenPack = { log += "add:${it.uuid}" })
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { LibraryPage(LibraryUiState(rows = listOf(hawk, shope, copy)), inPack, addingTo = "OP DK", adding = "lz-1") } }
+        compose.onNodeWithContentDescription("Adding a copy of LZ HAWK (ROCK) to OP DK").assertIsNotEnabled()
+        compose.onNodeWithText("Adding…").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add a copy of LZ HAWK (SHOPE) to OP DK").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Add a copy of LZ HAWK (from this device, 14:32) to OP DK").assertIsNotEnabled()
+        assertEquals(emptyList<String>(), log)
+    }
+
+    @Test
+    fun `the host passes on every action it was given, the pack's two among them`() {
+        val given = LibraryActions(
+            close = {}, open = {}, rename = { _, _, _ -> }, delete = {}, resolve = { _, _ -> }, addToPack = {}, addToOpenPack = {},
+        )
+        val showTab: (LibraryTab) -> Unit = {}
+        val search: (String) -> Unit = {}
+        val sortBy: (LibrarySort) -> Unit = {}
+        val duplicate: (LibraryRowUi) -> Unit = {}
+        val page = pageActions(given, showTab, search, sortBy, duplicate)
+        assertSame(given.close, page.close)
+        assertSame(given.open, page.open)
+        assertSame(given.rename, page.rename)
+        assertSame(given.delete, page.delete)
+        assertSame(given.resolve, page.resolve)
+        assertSame(given.addToPack, page.addToPack)
+        assertSame(given.addToOpenPack, page.addToOpenPack)
+        assertSame(showTab, page.showTab)
+        assertSame(search, page.search)
+        assertSame(sortBy, page.sortBy)
+        assertSame(duplicate, page.duplicate)
     }
 
     @Test

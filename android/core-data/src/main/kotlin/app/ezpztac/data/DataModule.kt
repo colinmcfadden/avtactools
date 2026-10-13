@@ -9,6 +9,7 @@ import app.ezpztac.missionpacks.PackStore
 import app.ezpztac.missionpacks.RoutePackKind
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.RouteSet
+import app.ezpztac.network.ApiClient
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.SyncScheduler
@@ -112,6 +113,15 @@ internal object DataModule {
     @Singleton
     fun packEngine(api: PackApi, store: PackStore, keeper: PackKeeper, scheduler: SyncScheduler): PackEngine =
         PackEngine(api, store, keeper, CoroutineScope(SupervisorJob() + Dispatchers.Default), requestBackgroundDrain = scheduler::requestSync)
+
+    /**
+     * One of the person's own Library records copied into a mission pack: what is open written, and what is waiting uploaded, first ([LibraryToPack]), the copy
+     * asked for as the account it is for.
+     */
+    @Provides
+    @Singleton
+    fun libraryCopier(repository: SyncRepository, diagrams: DiagramSession, routes: RouteSession, upload: LibraryUpload, api: ApiClient): LibraryCopier =
+        LibraryToPack(repository, SessionWrites(diagrams, routes), upload, copyCall(api))
 
     /** An analysis outlives the screen that asked for it (the person may leave while the server works), and applies its result on the main thread, where edits are made. */
     @Provides

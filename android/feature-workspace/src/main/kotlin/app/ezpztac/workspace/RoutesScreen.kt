@@ -93,9 +93,18 @@ class RoutesActions(
     val includeThreats: (Boolean) -> Unit = {},
     /** The local point a name typed on a route point would put it on, or null when it names none. */
     val localPointNamed: (typed: String) -> LocalPointMatch? = { null },
+    /** Asks which Mission Pack a copy of the open set ([uuid], [name]) goes into; none: not offered (no packs here, or one is open). */
+    val addToPack: ((uuid: String, name: String) -> Unit)? = null,
 )
 
-internal fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null, importMission: () -> Unit = {}, save: () -> Unit = {}, browse: () -> Unit = {}) = RoutesActions(
+internal fun actionsOf(
+    viewModel: RoutesViewModel,
+    crosshair: LatLon? = null,
+    importMission: () -> Unit = {},
+    save: () -> Unit = {},
+    browse: () -> Unit = {},
+    addToPack: ((uuid: String, name: String) -> Unit)? = null,
+) = RoutesActions(
     importMission = importMission, showPage = viewModel::showPage, browse = browse, openSet = viewModel::openSet, close = viewModel::close, renameSet = viewModel::renameSet,
     deleteSet = viewModel::deleteSet, save = save, resolve = viewModel::resolve, dismissError = viewModel::dismissError, openPlan = viewModel::openPlan,
     closePlan = viewModel::closePlan, toggleVisible = viewModel::toggleVisible, renameRoute = viewModel::renameRoute, deleteRoute = viewModel::deleteRoute,
@@ -107,6 +116,7 @@ internal fun actionsOf(viewModel: RoutesViewModel, crosshair: LatLon? = null, im
     addShapingPoint = { routeId -> viewModel.addShapingPoint(routeId, crosshair) }, fetchWinds = viewModel::fetchWinds, fetchElevations = viewModel::fetchElevations,
     dismissNote = viewModel::dismissNote, exportSet = { viewModel.exportSet(it) }, exportRoute = viewModel::exportRoute, shareRoute = viewModel::shareRoute,
     dismissExportWarning = viewModel::dismissExportWarning, includeThreats = viewModel::includeThreats, localPointNamed = viewModel::localPointNamed,
+    addToPack = addToPack,
 )
 
 /**
@@ -121,11 +131,13 @@ fun RoutesHost(
     threatCount: Int = 0,
     /** Opens the Library on its Routes tab. */
     onBrowseLibrary: () -> Unit = {},
+    /** Asks which Mission Pack a copy of the open set goes into: given while packs run here and none is open. */
+    onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
     viewModel: RoutesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var naming by rememberSaveable { mutableStateOf(false) }
-    val actions = actionsOf(viewModel, crosshair, save = { naming = true }, browse = onBrowseLibrary)
+    val actions = actionsOf(viewModel, crosshair, save = { naming = true }, browse = onBrowseLibrary, addToPack = onAddToPack)
     when (state.page) {
         RoutesPage.HOME -> RoutesHomeContent(state, actions, modifier, threatCount)
     }

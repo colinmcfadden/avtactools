@@ -116,12 +116,14 @@ class NewPackViewModelTest {
             m.newUuid = { "uuid-${++n}" }
         }
         val made = mutableListOf<String>()
+        val withLibrary = mutableListOf<String>()
         val notices = mutableListOf<String>()
 
         init {
             // Listening at once: advanceUntilIdle never runs the background scope's own work, and a pack made with nobody listening is not kept.
             val now = UnconfinedTestDispatcher(scope.testScheduler)
             scope.backgroundScope.launch(now) { model.made.collect { made += it } }
+            scope.backgroundScope.launch(now) { model.withLibrary.collect { withLibrary += it } }
             scope.backgroundScope.launch(now) { model.notices.collect { notices += it } }
         }
     }
@@ -131,6 +133,30 @@ class NewPackViewModelTest {
     private fun TestScope.opened(user: Int? = me) = rig(user).also { it.model.start(); advanceUntilIdle() }
 
     // -- The form ---------------------------------------------------------------------------------
+
+    @Test
+    fun `a pack made to start with items from the Library says so after it is made, and one not does not`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.name("OP DK")
+        r.model.withLibrary(true)
+        assertTrue(r.model.state.value.withLibrary)
+        r.model.create()
+        assertTrue(r.model.state.value.busy)
+        r.model.withLibrary(false)                                                                  // not while it is made
+        assertTrue(r.model.state.value.withLibrary)
+        advanceUntilIdle()
+        assertEquals(listOf("uuid-1"), r.made)
+        assertEquals(listOf("uuid-1"), r.withLibrary)
+
+        val o = opened()
+        o.model.name("OP EAGLE")
+        o.model.create()
+        advanceUntilIdle()
+        assertEquals(listOf("uuid-1"), o.made)
+        assertTrue(o.withLibrary.isEmpty())
+        o.model.withLibrary(true)                                                                   // nothing to set with the form put away
+        assertFalse(o.model.state.value.withLibrary)
+    }
 
     @Test
     fun `the form opens empty, and someone in a team shares with their first team, as an editor, by default`() = runTest(dispatcher) {

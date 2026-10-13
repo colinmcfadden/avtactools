@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -178,6 +181,22 @@ class LzPanelScreenTest {
         compose.onNodeWithText("Delete \"LZ/PZ 1\"?", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Keep it").performClick()
         assertEquals(listOf("close lz-1"), log)
+    }
+
+    @Test
+    fun `the person's own LZ is added to a Mission Pack from its menu, analysed or not, as the Library's are`() {
+        val withPacks = LzPanelActions(addToPack = { uuid, name -> log += "pack $uuid $name" })
+        show { LzHomeContent(homeState(activeLz(status = DiagramStatus.TARGETED)), withPacks, GRID) }
+        compose.onNodeWithContentDescription("More actions for LZ/PZ 1").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").performClick()
+        assertEquals(listOf("pack lz-1 LZ/PZ 1"), log)
+    }
+
+    @Test
+    fun `without packs here none is offered`() {
+        show { LzHomeContent(homeState(), actions, GRID) }
+        compose.onNodeWithContentDescription("More actions for LZ/PZ 1").performClick()
+        compose.onNodeWithText("Add to Mission Pack…").assertDoesNotExist()
     }
 
     @Test

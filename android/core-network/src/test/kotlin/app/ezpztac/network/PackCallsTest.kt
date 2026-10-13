@@ -290,6 +290,10 @@ class PackCallsTest {
             assertThrows<OtherAccountException> { rig.client.teamInvites(3, asUser = other) }
             assertThrows<OtherAccountException> { rig.client.inviteToTeam(3, "a@b.co", asUser = other) }
             assertThrows<OtherAccountException> { rig.client.revokeTeamInvite(3, 5, asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.copyIntoPack(pack, PackSource.ClientUuid("lz", "0c4f8e2b"), item = "lz-2", asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.packItem(pack, "lz-2", asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.updateFromOriginal(pack, "lz-2", asUser = other) }
+            assertThrows<OtherAccountException> { rig.client.savePackItemToLibrary(pack, "lz-2", asUser = other) }
             assertEquals(1, rig.requests.size)                                                          // only the first went
             val sent = json(rig.requests.single().body.readUtf8())
             assertEquals(json("""{"name": "OP DK", "description": "", "team_id": 3, "team_role": "viewer", "uuid": "0f0e0d0c-0b0a-4908-8706-050403020100"}"""), sent)

@@ -6,6 +6,8 @@ import app.ezpztac.android.packs.MISSION_PACKS
 import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.LibraryUpload
+import app.ezpztac.data.Uploaded
 import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteSession
 import app.ezpztac.missionpacks.DrainOutcome
@@ -15,6 +17,9 @@ import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AuthState
 import app.ezpztac.network.isBelowMinimum
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import app.ezpztac.sync.StopReason
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncReport
@@ -54,7 +59,7 @@ class EngineSyncRunner @Inject constructor(
     private val routes: RouteSession,
     private val minimum: MinimumVersion,
     @Named("appVersion") private val version: String,
-) : SyncRunner {
+) : SyncRunner, LibraryUpload {
     override suspend fun runOnce(): SyncOutcome {
         if (auth.state.value is AuthState.Unknown) {
             // WorkManager can start the process for this alone, with no shell to have read the stored session: this is the process's launch, so do
@@ -85,6 +90,36 @@ class EngineSyncRunner @Inject constructor(
         return if (drained == DrainOutcome.RETRY) SyncOutcome.Retry else outcomeOf(report)
     }
 
+    /**
+     * Uploads what the Library has waiting for [user] now (a copy into a mission pack needs the server to have the record's last change), under the rules a sync
+     * keeps, looked at again before every try: signed in as them, the device's plans theirs, the app not too old. It only sends ([SyncEngine.send]: nothing
+     * pulled stands in the copy's way), off the main thread, and drains no pack. A sync already running is waited for and then this one sends, so a change
+     * written before it was asked is in it; one that does not get its turn within [UPLOAD_WAIT_MILLIS] did not run.
+     */
+    override suspend fun upload(user: Int): Uploaded {
+        repeat(UPLOAD_TRIES) {
+            if (!mayUpload(user)) return Uploaded(ran = false)
+            val report = withContext(Dispatchers.Default) { engine.send() }
+            if (!report.skipped) {
+                report.recreated.forEach { (old, new) ->
+                    diagrams.follow(old, new)
+                    routes.follow(old, new)
+                }
+                return Uploaded(
+                    ran = true, stopped = report.stopped, recreated = report.recreated, conflicts = report.conflicts.map { it.original }.toSet(),
+                    blocked = report.blocked.map { it.uuid }.toSet(),
+                )
+            }
+            delay(UPLOAD_WAIT_MILLIS / UPLOAD_TRIES)
+        }
+        return Uploaded(ran = false)
+    }
+
+    private suspend fun mayUpload(user: Int): Boolean {
+        val signedIn = (auth.state.value as? AuthState.SignedIn)?.user ?: return false
+        return signedIn.id == user && accounts.ownership(user) == Ownership.Yours && !tooOld()
+    }
+
     private suspend fun lookAtMinimum() {
         try {
             minimum.remember(auth.config().minAppVersion.android)
@@ -110,3 +145,7 @@ class EngineSyncRunner @Inject constructor(
         }
     }
 }
+
+/** How long an upload waits for a sync already running to finish before it gives up its turn, and how often it looks. */
+internal const val UPLOAD_WAIT_MILLIS = 20_000L
+private const val UPLOAD_TRIES = 80

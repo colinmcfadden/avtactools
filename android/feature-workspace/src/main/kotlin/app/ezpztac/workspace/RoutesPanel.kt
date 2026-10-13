@@ -258,7 +258,10 @@ private fun ThreatsBox(count: Int, checked: Boolean, onChange: (Boolean) -> Unit
     }
 }
 
-/** The open set's other actions: undo and redo its last change, close (it stays in the Library), and delete (asked about first, where it is asked). */
+/**
+ * The open set's other actions: undo and redo its last change, close (it stays in the Library), *Add to Mission Pack…* (one of the person's own sets of sketched
+ * routes, as the Library's: an imported mission cannot go in a pack yet) and delete (asked about first, where it is asked).
+ */
 @Composable
 private fun SetMoreMenu(open: OpenSetUi, actions: RoutesActions, onDelete: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
@@ -281,6 +284,13 @@ private fun SetMoreMenu(open: OpenSetUi, actions: RoutesActions, onDelete: () ->
                 onClick = { expanded = false; actions.close(open.uuid) },
                 leadingIcon = { Icon(painterResource(EzpzIcons.close), contentDescription = null) },
             )
+            val addToPack = actions.addToPack
+            if (open.inPack == null && addToPack != null && !open.isMission) {
+                DropdownMenuItem(
+                    text = { Text("Add to Mission Pack…") }, onClick = { expanded = false; addToPack(open.uuid, open.name) },
+                    leadingIcon = { Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
+                )
+            }
             // A pack's set is removed for everyone from the Pack panel, never deleted from here.
             if (open.inPack == null) {
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { expanded = false; onDelete() }, leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null) })

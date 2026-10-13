@@ -70,6 +70,8 @@ data class NewPackUi(
     val error: String? = null,
     /** The pack is being made: the form stays, and cannot be put away. */
     val busy: Boolean = false,
+    /** *Start with items from my Library*: once made and open, the Library opens on it, adding to it (the design's switch). */
+    val withLibrary: Boolean = false,
 ) {
     /** The team chosen, while *A team* is. */
     val team: TeamOption? get() = teams.firstOrNull { it.id == teamId }
@@ -111,6 +113,11 @@ class NewPackViewModel @Inject constructor(private val api: PeopleApi, private v
 
     /** A pack made: its uuid, to be opened. */
     val made: SharedFlow<String> = _made.asSharedFlow()
+
+    private val _withLibrary = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    /** A pack made that starts with items from the person's Library (said after [made]): the Library opens on it once it is open, adding to it. */
+    val withLibrary: SharedFlow<String> = _withLibrary.asSharedFlow()
 
     /** What making it came to, in words. */
     val notices: SharedFlow<String> = _notices.asSharedFlow()
@@ -170,6 +177,11 @@ class NewPackViewModel @Inject constructor(private val api: PeopleApi, private v
         teamsAsked?.cancel()
         formUser = null
         _state.value = NewPackUi()
+    }
+
+    /** *Start with items from my Library*, on or off; not while the pack is being made. */
+    fun withLibrary(on: Boolean) {
+        _state.update { if (it.open && !it.busy) it.copy(withLibrary = on) else it }
     }
 
     /** The name as typed, in capitals as the web types it, never past the server's limit (one too long can always be made shorter). */
@@ -330,6 +342,7 @@ class NewPackViewModel @Inject constructor(private val api: PeopleApi, private v
             _state.value = NewPackUi()
             if (door.user.value != user) return@launch                                             // made, but neither opened nor said for another account
             _made.tryEmit(made.uuid)
+            if (asked.withLibrary) _withLibrary.tryEmit(made.uuid)                                // as it was when Create was pressed (it cannot change while made)
             _notices.tryEmit("Made ${change?.name?.takeIf { !made.created } ?: made.name}. You are its owner.")
             failedWords(failed)?.let { _notices.tryEmit(it) }
             notEmailedWords(notEmailed)?.let { _notices.tryEmit(it) }

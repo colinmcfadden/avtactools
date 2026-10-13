@@ -100,6 +100,19 @@ public class SyncEngine(
         }
     }
 
+    /**
+     * Sends the outbox and learns nothing new: what a copy into a mission pack needs (the server must have the record's last change), without a pull of
+     * everything that changed elsewhere standing in its way. One sync at a time, as [sync]: [SyncReport.skipped] when one is running.
+     */
+    public suspend fun send(): SyncReport {
+        if (!running.tryLock()) return SyncReport(skipped = true)
+        try {
+            return push()
+        } finally {
+            running.unlock()
+        }
+    }
+
     // -- Push ----------------------------------------------------------------------------
 
     private suspend fun push(): SyncReport {

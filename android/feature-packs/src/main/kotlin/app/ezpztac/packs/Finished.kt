@@ -28,6 +28,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -243,32 +244,49 @@ private fun FinishedButton(text: String, icon: Int?, outlined: Boolean, onClick:
 }
 
 /**
- * The Pack panel's foot for the owner of a pack not finished: *Finish pack*, asked about first. On a phone the design's PackItems text button with a flag (16 sp);
- * on a [tablet] its PackLive outlined button with a task mark (14 sp).
+ * The Pack panel's foot while the pack is not finished: *Add from Library* for anyone who can change it ([onAddFromLibrary]: the Library, adding to the pack), on
+ * the left, and *Finish pack* for its owner ([onFinish], asked about first), on the right; under one another when both do not fit. On a phone the design's
+ * PackItems buttons (tonal, and text with a flag, 16 sp); on a [tablet] its PackLive ones (tonal, and outlined with a task mark, 14 sp).
  */
 @Composable
-fun PackPanelFoot(onFinish: () -> Unit, modifier: Modifier = Modifier, tablet: Boolean = false) {
+fun PackPanelFoot(onFinish: (() -> Unit)?, modifier: Modifier = Modifier, tablet: Boolean = false, onAddFromLibrary: (() -> Unit)? = null) {
     Column(modifier.fillMaxWidth()) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Row(
+        FlowRow(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = if (tablet) 16.dp else 12.dp),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            val described = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Finish pack, makes it read-only for everyone" }
-            if (tablet) {
-                OutlinedButton(
-                    onClick = onFinish, modifier = described, shape = RoundedCornerShape(50), contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = EzpzTheme.status.accent), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            // Add from Library starts the row; Finish keeps to its end, alone or after it.
+            if (onAddFromLibrary == null) Spacer(Modifier.weight(1f))
+            onAddFromLibrary?.let { add ->
+                FilledTonalButton(
+                    onClick = add, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Add from Library, copies of your own items" },
+                    contentPadding = PaddingValues(start = 16.dp, end = 20.dp),
                 ) {
-                    Icon(painterResource(EzpzIcons.taskAlt), contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(painterResource(EzpzIcons.libraryAdd), contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(Tokens.Spacing.sm.dp))
-                    Text("Finish pack", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium))
+                    Text("Add from Library", style = if (tablet) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleMedium)
                 }
-            } else {
-                TextButton(onClick = onFinish, modifier = described, colors = ButtonDefaults.textButtonColors(contentColor = EzpzTheme.status.accent)) {
-                    Icon(painterResource(EzpzIcons.flag), contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(Tokens.Spacing.sm.dp))
-                    Text("Finish pack", style = MaterialTheme.typography.titleMedium)
+                if (onFinish != null) Spacer(Modifier.weight(1f))
+            }
+            onFinish?.let { finish ->
+                val described = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Finish pack, makes it read-only for everyone" }
+                if (tablet) {
+                    OutlinedButton(
+                        onClick = finish, modifier = described, shape = RoundedCornerShape(50), contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = EzpzTheme.status.accent), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    ) {
+                        Icon(painterResource(EzpzIcons.taskAlt), contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(Tokens.Spacing.sm.dp))
+                        Text("Finish pack", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium))
+                    }
+                } else {
+                    TextButton(onClick = finish, modifier = described, colors = ButtonDefaults.textButtonColors(contentColor = EzpzTheme.status.accent)) {
+                        Icon(painterResource(EzpzIcons.flag), contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(Tokens.Spacing.sm.dp))
+                        Text("Finish pack", style = MaterialTheme.typography.titleMedium)
+                    }
                 }
             }
         }
