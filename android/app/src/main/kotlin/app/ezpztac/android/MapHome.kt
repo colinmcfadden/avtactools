@@ -81,6 +81,8 @@ import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.GraphicLabelsLayer
+import app.ezpztac.map.MapChromeBoxes
+import app.ezpztac.map.MgrsGridLayer
 import app.ezpztac.map.MapChip
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
@@ -205,6 +207,8 @@ fun MapHome(
     val drawingWhat by home.drawingWhat.collectAsStateWithLifecycle()
     val slopeToggle by home.slopeToggle.collectAsStateWithLifecycle()
     val host = rememberMapHost()
+    // What floats over the map, where the map's screen lays it out: the MGRS grid's labels keep off it.
+    val chrome = remember { MapChromeBoxes() }
     val density = LocalDensity.current
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
@@ -510,6 +514,7 @@ fun MapHome(
                     onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
                     onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                     onFaceNorth = viewModel::faceNorth,
+                    onToggleGrid = viewModel::toggleGrid, chrome = chrome,
                     slope = slopeToggle, onToggleSlope = home::toggleSlope,
                     onCopyReadout = copyGrid,
                     padding = frame.padding,
@@ -600,6 +605,7 @@ fun MapHome(
                             place != null
                         },
                     )
+                    MgrsGridLayer(host, state.grid, chrome = chrome)        // its lines under everything planned, its labels under every other label
                     DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
                     PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's
                     RouteLayer(host, routeScene)

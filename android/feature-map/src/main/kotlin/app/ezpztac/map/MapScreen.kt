@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -29,10 +30,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,8 +55,12 @@ import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -138,6 +145,10 @@ fun MapScreen(
     buttonsAtFoot: Boolean = false,
     /** Under the chips: how an open Mission Pack stands (the design's "Live · all changes synced"). */
     belowChips: @Composable () -> Unit = {},
+    /** Turns the MGRS grid on or off, from the Layers menu; null: not offered. */
+    onToggleGrid: (() -> Unit)? = null,
+    /** Where what floats over the map is told, so the grid's labels keep off it ([MgrsGridLayer]). */
+    chrome: MapChromeBoxes? = null,
     map: @Composable () -> Unit,
 ) {
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
@@ -155,8 +166,8 @@ fun MapScreen(
         } else {
             Modifier.align(Alignment.TopEnd).windowInsetsPadding(top).padding(top = MapChrome.SHEET_TOP_LIMIT - MapChrome.CHIPS_GAP + MapChrome.BUTTONS_GAP, end = Tokens.Spacing.lg.dp)
         }
-        Column(buttons, verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
-            LayersButton(state, onSelectStyle)
+        Column(buttons.chromeBox(chrome, "buttons"), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+            LayersButton(state, onSelectStyle, onToggleGrid)
             GpsButton(gps, onToggleGps, onGpsPermissionResult, onLocateMe)
             slope?.let {
                 MapButton(
@@ -174,13 +185,17 @@ fun MapScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(MapChrome.PILL_GAP),
         ) {
-            overlay()
-            state.readout?.let { ReadoutPill(it, onCopyReadout) }
+            Box(Modifier.chromeBox(chrome, "overlay")) { overlay() }
+            state.readout?.let { Box(Modifier.chromeBox(chrome, "readout")) { ReadoutPill(it, onCopyReadout) } }
         }
 
         sheet()
 
-        Column(Modifier.fillMaxWidth().windowInsetsPadding(top).padding(top = MapChrome.SEARCH_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp)) {
+        // The navigation bar at the map's foot covers it too (a tablet's, where no sheet rises): only told, never drawn.
+        if (chrome != null) Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().windowInsetsBottomHeight(WindowInsets.safeDrawing).chromeBox(chrome, "navigation"))
+
+        // Reported from the top of the window: the status bar over the map is as covered as the search bar (the map is drawn edge to edge).
+        Column(Modifier.fillMaxWidth().chromeBox(chrome, "search").windowInsetsPadding(top).padding(top = MapChrome.SEARCH_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp)) {
             SearchBar(state.searchError, onSearch, onClearSearchError, account)
             // On its own surface: red text straight on imagery cannot be read.
             state.searchError?.let { Banner(it, BannerKind.Error, Modifier.padding(top = Tokens.Spacing.sm.dp)) }
@@ -390,16 +405,34 @@ private fun MapButton(icon: Int, description: String, modifier: Modifier = Modif
     }
 }
 
+/**
+ * The map's layers: the base maps, and below them the MGRS grid's switch (the web's Layers control), which goes over any of them. The button
+ * says the grid is on while it is, as the web's says *MGRS* on its collapsed control.
+ */
 @Composable
-private fun LayersButton(state: MapUiState, onSelect: (String) -> Unit) {
+private fun LayersButton(state: MapUiState, onSelect: (String) -> Unit, onToggleGrid: (() -> Unit)?) {
     var open by remember { mutableStateOf(false) }
     Box {
-        MapButton(EzpzIcons.layers, "Base map: ${state.style.label}") { open = true }
+        val described = "Base map: ${state.style.label}" + if (onToggleGrid != null && state.grid) ". MGRS grid on" else ""
+        MapButton(EzpzIcons.layers, described, active = onToggleGrid != null && state.grid) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             for (style in state.styles) {
                 DropdownMenuItem(
                     text = { Text(if (style.id == state.style.id) "${style.label}  ✓" else style.label) },
                     onClick = { open = false; onSelect(style.id) },
+                )
+            }
+            onToggleGrid?.let { toggle ->
+                HorizontalDivider()
+                // The menu stays open: turning the grid on is looked at with the menu, and turned off again from it.
+                DropdownMenuItem(
+                    text = { Text("MGRS grid") },
+                    trailingIcon = { Switch(checked = state.grid, onCheckedChange = null) },
+                    onClick = toggle,
+                    modifier = Modifier.semantics(mergeDescendants = true) {
+                        role = Role.Switch
+                        toggleableState = if (state.grid) ToggleableState.On else ToggleableState.Off
+                    },
                 )
             }
         }

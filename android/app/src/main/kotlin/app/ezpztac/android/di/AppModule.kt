@@ -58,6 +58,7 @@ import app.ezpztac.data.WeatherService
 import app.ezpztac.data.session.EncryptedSessionStore
 import app.ezpztac.data.session.KeystoreSecretBox
 import app.ezpztac.map.CameraMemory
+import app.ezpztac.map.GridMemory
 import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
@@ -279,4 +280,7 @@ interface AppBindings {
 
     @Binds
     fun cameraMemory(impl: MapPreferences): CameraMemory
+
+    @Binds
+    fun gridMemory(impl: MapPreferences): GridMemory
 }

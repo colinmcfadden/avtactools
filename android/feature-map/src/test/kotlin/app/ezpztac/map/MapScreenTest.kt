@@ -1,21 +1,25 @@
 package app.ezpztac.map
 
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.test.onRoot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.LatLon
@@ -46,6 +50,8 @@ class MapScreenTest {
         state: MapUiState, gps: GpsState = GpsState.Off, camera: CameraState? = CameraState(LatLon(34.78, -84.08), 16.0, 30.0), mode: ThemeMode = ThemeMode.Dark,
         padding: MapPadding = MapPadding(),
         buttonsAtFoot: Boolean = false,
+        grid: Boolean? = null,
+        chrome: MapChromeBoxes? = null,
     ) {
         compose.setContent {
             EzpzTheme(mode) {
@@ -54,6 +60,7 @@ class MapScreenTest {
                     onSearch = { log += "search $it" }, onClearSearchError = { log += "clearError" }, onSelectStyle = { log += "style $it" },
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
                     onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding, buttonsAtFoot = buttonsAtFoot,
+                    onToggleGrid = grid?.let { { log += "grid" } }, chrome = chrome,
                     map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40))) },          // stands in for the GPU-drawn map
                 )
             }
@@ -150,6 +157,44 @@ class MapScreenTest {
         compose.onNodeWithText("Satellite  ✓").assertIsDisplayed()                      // the one in use is marked
         compose.onNodeWithText("Topo").performClick()
         assertEquals(listOf("style topo"), log)
+    }
+
+    @Test
+    fun `the Layers menu has the MGRS grid's switch under the base maps, and the button says when it is on`() {
+        show(state().copy(grid = true), grid = true)
+        compose.onNodeWithContentDescription("Base map: Satellite. MGRS grid on").performClick()
+        compose.onNode(hasText("MGRS grid") and isToggleable()).assertIsOn().performClick()
+        assertEquals(listOf("grid"), log)
+        compose.onNodeWithText("Topo").assertIsDisplayed()                              // the menu stays open to see it turn off
+    }
+
+    @Test
+    fun `the grid's switch is off while the grid is`() {
+        show(state(), grid = false)
+        compose.onNodeWithContentDescription("Base map: Satellite").performClick()
+        compose.onNode(hasText("MGRS grid") and isToggleable()).assertIsOff()
+    }
+
+    @Test
+    fun `with nothing to turn it, the grid's switch is not offered`() {
+        show(state())
+        compose.onNodeWithContentDescription("Base map: Satellite").performClick()
+        compose.onNodeWithText("MGRS grid").assertDoesNotExist()
+    }
+
+    @Test
+    fun `what floats over the map is reported where it is, for the grid's labels to keep off`() {
+        val chrome = MapChromeBoxes()
+        show(state(), chrome = chrome)
+        compose.waitForIdle()
+        val boxes = chrome.shown()
+        assertTrue("the search bar, the buttons and the readout: $boxes", boxes.size >= 3)
+        val search = compose.onNode(hasSetTextAction()).fetchSemanticsNode().boundsInRoot
+        assertTrue(boxes.any { it.top <= search.top && it.bottom >= search.bottom && it.left <= search.left })
+        // From the window's top, status bar and all: the map is drawn under it.
+        assertTrue("the search bar's box starts at the window's top", boxes.any { it.top == 0f && it.bottom >= search.bottom })
+        val pill = compose.onNodeWithText("16S", substring = true).fetchSemanticsNode().boundsInRoot
+        assertTrue(boxes.any { it.contains(pill.center) })
     }
 
     @Test

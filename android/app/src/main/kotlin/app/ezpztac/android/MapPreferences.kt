@@ -3,6 +3,7 @@ package app.ezpztac.android
 import android.content.Context
 import androidx.core.content.edit
 import app.ezpztac.map.CameraMemory
+import app.ezpztac.map.GridMemory
 import app.ezpztac.map.CameraState
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.model.LatLon
@@ -24,7 +25,7 @@ interface MapTokenSink {
  * area the person was looking at, which nothing sends anywhere. Excluded from backup with the rest of the app's data.
  */
 @Singleton
-class MapPreferences @Inject constructor(@ApplicationContext context: Context) : MapTokenSource, MapTokenSink, CameraMemory {
+class MapPreferences @Inject constructor(@ApplicationContext context: Context) : MapTokenSource, MapTokenSink, CameraMemory, GridMemory {
     private val prefs = context.getSharedPreferences("map", Context.MODE_PRIVATE)
     private val _token = MutableStateFlow(prefs.getString(TOKEN, null)?.takeIf { it.startsWith("pk.") })
 
@@ -55,7 +56,15 @@ class MapPreferences @Inject constructor(@ApplicationContext context: Context) :
         }
     }
 
+    // Whether the MGRS grid is over the map: this person's way of looking at it, on this device only.
+    override fun gridShown(): Boolean = prefs.getBoolean(GRID, false)
+
+    override fun setGridShown(shown: Boolean) {
+        prefs.edit { putBoolean(GRID, shown) }
+    }
+
     companion object {
+        private const val GRID = "mgrsGrid"
         private const val TOKEN = "mapboxToken"
         private const val LAT = "lat"
         private const val LON = "lon"

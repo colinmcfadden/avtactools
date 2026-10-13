@@ -31,6 +31,15 @@ interface CameraMemory {
     fun save(camera: CameraState)
 }
 
+/**
+ * Whether the map shows the MGRS grid: off until the person turns it on, then remembered on this device (the web remembers it per browser,
+ * `ezpz.mgrsGrid`). How this person likes to look at the map, not part of any plan: never saved with an LZ/PZ or synced.
+ */
+interface GridMemory {
+    fun gridShown(): Boolean
+    fun setGridShown(shown: Boolean)
+}
+
 /** What the GPS button shows, and what is going on behind it. */
 sealed interface GpsState {
     data object Off : GpsState
@@ -55,6 +64,8 @@ data class MapUiState(
     val gps: GpsState = GpsState.Off,
     /** What the crosshair is over, as a position: where a graphic is placed. Null until the map has reported where it is looking. */
     val center: LatLon? = null,
+    /** The MGRS grid is over the map (Layers, *MGRS grid*). */
+    val grid: Boolean = false,
 )
 
 /** Things the map has to do that are not state: look somewhere, turn north. */
@@ -72,8 +83,9 @@ class MapViewModel @Inject constructor(
     private val tokens: MapTokenSource,
     private val location: LocationSource,
     private val memory: CameraMemory,
+    private val gridMemory: GridMemory,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(stylesState(tokens.token.value, null))
+    private val _state = MutableStateFlow(stylesState(tokens.token.value, null).copy(grid = gridMemory.gridShown()))
     val state: StateFlow<MapUiState> = _state.asStateFlow()
 
     private val _commands = MutableSharedFlow<MapCommand>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -147,6 +159,13 @@ class MapViewModel @Inject constructor(
     /** Takes the map to [at] at [zoom]: somewhere the person has just brought in (a mission's routes), not a diagram, so no base map changes. */
     fun showArea(at: LatLon, zoom: Double) {
         _commands.tryEmit(MapCommand.FlyTo(at, zoom))
+    }
+
+    /** Turns the MGRS grid on or off, and remembers which on this device. */
+    fun toggleGrid() {
+        val shown = !_state.value.grid
+        _state.update { it.copy(grid = shown) }
+        gridMemory.setGridShown(shown)
     }
 
     fun selectStyle(id: String) {
