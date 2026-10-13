@@ -11,7 +11,7 @@ contracts/
 ├─ openapi.yaml     the API routes the apps call (checked against the backend's responses)
 ├─ tokens/          design tokens (colours for dark, light and night, spacing, type) — tokens.json
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
-│  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy
+│  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy; grid.json: the web
 │  ├─ coords/       parse.json                      reference: the web app
 │  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
@@ -34,6 +34,7 @@ contracts/
 | Fixture | Reference | Why |
 |---|---|---|
 | `mgrs/*` | **PyGeodesy**, as the backend calls it (`routes/location_routes.py`) | The server's answer is the one crews have been given. The web's `utils/mgrs.js` matches it at every point here (checked in Jest). |
+| `mgrs/grid.json` | **The web app** (`feature/mgrsGrid/mgrsGrid.js`) | The map's MGRS grid has no server side: the web's is the one drawn. |
 | `coords/*`, `planning/*` | **The web app** | The web is the reference implementation; a change to a formula lands there first (or in the same PR). |
 
 If a fixture and a client disagree, the client is wrong until someone decides the
@@ -45,6 +46,7 @@ reference is.
 |---|---|---|---|
 | `mgrs/forward.json` | `frontend/src/contracts/mgrsFixtures.test.js` | `backend/tests/test_contract_fixtures.py` | `core-geo` |
 | `mgrs/inverse.json` | — (the web asks the server) | same | `core-geo` |
+| `mgrs/grid.json` | `frontend/src/contracts/mgrsGridFixtures.test.js` | — | `core-geo` (`MgrsGrid`) |
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
