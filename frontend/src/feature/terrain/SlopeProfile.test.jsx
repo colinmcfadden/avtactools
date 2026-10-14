@@ -92,6 +92,39 @@ describe("the slope profile tile", () => {
     expect(high - low).toBe(30);
   });
 
+  it("flies a helicopter in from the approach, nose to the LZ, and faces one away from you over the LZ", () => {
+    const container = tile(slopeProfileFor(profiles(), 270));
+    const side = container.querySelector(".slope-profile--along .slope-profile__heli--side");
+    const rear = container.querySelector(".slope-profile--across .slope-profile__heli--rear");
+    expect(side).not.toBeNull();
+    expect(rear).not.toBeNull();
+    expect(container.querySelectorAll(".slope-profile__heli")).toHaveLength(2);
+    // The approach is the line's left end; the LZ, a 200 m square round the middle, is the middle of the line across it.
+    expect(side.style.left).toBe("2px");
+    expect(rear.style.left).toBe("calc(50.00% - 16.25px)");             // half of 26 units, drawn a quarter larger
+    expect(side.getAttribute("width")).toBe("35");
+    expect(side.getAttribute("height")).toBe("20");
+  });
+
+  it("keeps each helicopter just clear of the highest ground under it, and inside the graph", () => {
+    // Down the slope (270°): the approach is the high end, so its helicopter sits at the top of the plot, over the ground.
+    const down = tile(slopeProfileFor(profiles(), 270));
+    const top = (el) => Number.parseFloat(el.style.top);
+    const groundYs = (container, cls) => container.querySelector(`.${cls} .slope-profile__line`).getAttribute("points").split(" ")
+      .map((p) => p.split(",").map(Number));
+    const sideDown = down.querySelector(".slope-profile__heli--side");
+    const approachGround = Math.min(...groundYs(down, "slope-profile--along").slice(0, 3).map(([, y]) => y));
+    expect(top(sideDown)).toBeGreaterThanOrEqual(0);
+    expect(top(sideDown) + 20).toBeLessThanOrEqual(approachGround);                 // its foot above the ground
+    expect(approachGround - (top(sideDown) + 20)).toBeLessThanOrEqual(2);          // and just above it, not floating
+    // Up the slope (090°): the approach is low ground, so the helicopter sits low too, over it.
+    const up = tile(slopeProfileFor(profiles(), 90));
+    const sideUp = up.querySelector(".slope-profile__heli--side");
+    expect(top(sideUp)).toBeGreaterThan(top(sideDown) + 20);
+    const upGround = Math.min(...groundYs(up, "slope-profile--along").slice(0, 3).map(([, y]) => y));
+    expect(top(sideUp) + 20).toBeLessThanOrEqual(upGround);
+  });
+
   it("is not drawn without a profile", () => {
     expect(tile(null).innerHTML).toBe("");
   });

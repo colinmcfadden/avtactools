@@ -620,7 +620,12 @@ through the LZ's area centroid every 2° of heading (a line serves its opposite 
 each way, heights read between cells (null where there is none, never made up) and where each crosses the boundary; the clients pick the
 line nearest the heading (halves up), so turning the doghouse redraws with no request. It is loaded wider than the slope's grid, and a
 local DEM must cover it whole (else, in `auto`, Terrarium answers it; with `TERRAIN_SOURCE=local`, there is no profile). About 70 KB an
-analysis. The height axis spans at least 30 ft, so gentle ground is not drawn as steep. **Not on the map**: it is a picture beside the tile.
+analysis. The height axis spans at least 30 ft, so gentle ground is not drawn as steep, and its top and bottom heights sit in a gutter
+beside the plot. **A helicopter says which way the aircraft comes and faces** (the owner's sketch, 2026-10-14): a UH-60 outline in side view
+on the approach end of the line along the heading, nose to the LZ, and from behind over the middle of the LZ on the line across it, each
+just clear of the highest ground under it in room kept above the plot. The outlines are the web's (`HELI_SIDE`, `HELI_REAR`), drawn on
+Android from the same path strings (`HeliOutlines`, held to the web's file by `SlopeProfileHeliTest`). **Not on the map**: it is a picture
+beside the tile.
 It opens and closes (open until closed) from a button drawn as each app's dropdowns are, not as a tile (the owner, 2026-10-14: a tile's
 label did not read as something to press): on the web the top bar's dropdown buttons (bordered, the redesign's `chevronDown`/`chevronUp`),
 on Android `Choice`'s outlined button with the expand chevron at its end. Remembered in the browser on the web (`ezpz.slopeProfile`), and

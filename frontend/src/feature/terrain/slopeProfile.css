@@ -54,12 +54,26 @@
   margin-bottom: 2px;
 }
 
-.slope-profile__plot { position: relative; }
+/* The chart: a gutter of heights on the left, the plot beside it (so no label sits on the ground or under the helicopter). */
+.slope-profile__chart { display: flex; gap: 4px; }
+.slope-profile__gutter { position: relative; flex: 0 0 30px; height: 86px; }
+.slope-profile__plot { position: relative; flex: 1; min-width: 0; }
 
 .slope-profile__graph {
   display: block;
   width: 100%;
-  height: 70px;
+  height: 86px;
+}
+
+/* The helicopter: the app's accent with a dark edge, so it reads over the ground's fill and the LZ's band alike. */
+.slope-profile__heli {
+  position: absolute;
+  display: block;
+  fill: var(--ff-accent, #5aa7d4);
+  stroke: rgba(10, 12, 16, 0.75);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .slope-profile__lz { fill: rgba(255, 176, 32, 0.18); stroke: rgba(255, 176, 32, 0.7); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
@@ -67,19 +81,18 @@
 .slope-profile__line { fill: none; stroke: var(--ff-text-main, #f3f4f6); stroke-width: 1.75; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .slope-profile--across .slope-profile__line { stroke-width: 1.25; stroke-dasharray: 4 2; }
 
-/* The height axis: the top and bottom of what the graph spans, over its left edge. */
+/* The height axis: the top and bottom of what the graph spans, in the gutter, level with the lines they name. */
 .slope-profile__axis {
   position: absolute;
-  left: 2px;
+  right: 0;
   font-size: 9px;
-  line-height: 1;
+  line-height: 10px;
   color: var(--ff-text-muted, #9ca3af);
   pointer-events: none;
 }
-.slope-profile__axis--high { top: 1px; }
-.slope-profile__axis--low { bottom: 1px; }
 
 .slope-profile__ends {
+  margin-left: 34px;
   display: flex;
   justify-content: space-between;
   font-size: 9px;
