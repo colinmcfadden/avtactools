@@ -474,6 +474,30 @@ class WorkspaceViewModelTest {
     }
 
     @Test
+    fun `the open pack's row says how it stands, in the chip's shape and its words, one tap from the chip, unless it is finished`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.api.packs = listOf(razor, dk, ex)
+        r.door.user.value = 7
+        advanceUntilIdle()
+        r.door.open.value = PackState("p-dk", PackStatus.LIVE, null, emptyList(), emptyList(), null)
+        advanceUntilIdle()
+        var s = r.model.switcher.value
+        assertEquals(listOf(PackStanding.SYNCED, null, null), s.packs.map { it.standing })
+        assertEquals(listOf("Live · all changes synced", null, null), s.packs.map { it.status })
+        r.door.open.value = PackState("p-dk", PackStatus.OFFLINE, null, emptyList(), emptyList(), null)
+        advanceUntilIdle()
+        s = r.model.switcher.value
+        assertEquals(PackStanding.OFFLINE, s.packs[0].standing)
+        assertEquals("Offline", s.packs[0].status)
+        r.door.open.value = PackState("p-rz", PackStatus.LIVE, null, emptyList(), emptyList(), null)       // a finished pack: its line says so
+        advanceUntilIdle()
+        s = r.model.switcher.value
+        assertTrue(s.packs.single { it.current }.finished)
+        assertNull(s.packs.single { it.current }.standing)
+        assertTrue(s.packs.none { it.standing != null })
+    }
+
+    @Test
     fun `the pack open has its row before any list has come`() = runTest(dispatcher) {
         val r = Rig(this)
         r.api.fail = ApiException(500, null, "boom")                                               // offline, say

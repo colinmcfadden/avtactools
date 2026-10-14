@@ -17,6 +17,8 @@ check
 chevron_right
 close
 cloud_done
+cloud_off
+cloud_upload
 collections_bookmark
 content_copy
 crisis_alert
@@ -47,6 +49,7 @@ group_add
 groups
 hexagon
 history
+hourglass_top
 image
 info
 input
@@ -115,5 +118,6 @@ inventory_2 fill
 location_on fill
 lock fill
 move_to_inbox fill
+pause fill
 person fill
 route fill

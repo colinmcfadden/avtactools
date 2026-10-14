@@ -33,6 +33,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -109,14 +110,18 @@ class SwitcherTest {
         assertEquals("Opening…", PackWords.status(dk.copy(status = PackStatus.LOADING)))
         assertEquals("Cannot reach the pack", PackWords.status(dk.copy(status = PackStatus.ERROR)))
         assertEquals("Read-only for everyone", PackWords.status(dk.copy(finished = true)))
+        // How it stands is said on the chip too, as its icon shows it (the owner's decision of 2026-10-13: PackStatusTest).
         assertEquals(
-            "Workspace: Mission Pack OP DK. 4 people here now: Colin McFadden, Sam B., Jess R. and 1 more. Change workspace",
+            "Workspace: Mission Pack OP DK, live, all changes synced. 4 people here now: Colin McFadden, Sam B., Jess R. and 1 more. Change workspace",
             PackWords.chipDescription(dk),
         )
-        assertEquals("Workspace: Mission Pack OP DK. 1 person here now: Sam B.. Change workspace", PackWords.chipDescription(dk.copy(people = people.subList(1, 2))))
+        assertEquals(
+            "Workspace: Mission Pack OP DK, live, all changes synced. 1 person here now: Sam B.. Change workspace",
+            PackWords.chipDescription(dk.copy(people = people.subList(1, 2))),
+        )
         assertEquals("Workspace: Personal. Change workspace", PackWords.chipDescription(null))
         assertEquals(
-            "Workspace: Mission Pack OP DK. 3 people here now: Colin McFadden, Sam B. and Jess R.. Change workspace",
+            "Workspace: Mission Pack OP DK, live, all changes synced. 3 people here now: Colin McFadden, Sam B. and Jess R.. Change workspace",
             PackWords.chipDescription(dk.copy(people = people.take(3))),
         )
         assertEquals(3, dk.others)
@@ -127,7 +132,10 @@ class SwitcherTest {
         current = "p-dk",
         library = "Personal · 12 LZ/PZs, 4 route sets, 3 point sets",
         packs = listOf(
-            PackRowUi("p-dk", "OP DK", "4 members · you are Owner", listOf("2 here now", "3 LZ/PZ · 2 route sets"), finished = false, current = true),
+            PackRowUi(
+                "p-dk", "OP DK", "4 members · you are Owner", listOf("2 here now", "3 LZ/PZ · 2 route sets"), finished = false, current = true,
+                standing = PackStanding.OFFLINE, status = "Offline · changes will send when back",
+            ),
             PackRowUi("p-ex", "B CO FIELD EX", "18 members · you are Editor", emptyList(), finished = false, current = false),
             PackRowUi("p-rz", "OP RAZORBILL", "Finished Sep 22 · read-only", emptyList(), finished = true, current = false),
         ),
@@ -155,6 +163,17 @@ class SwitcherTest {
         compose.onNodeWithContentDescription("Decline the invitation to OP IBIS").performClick()
         compose.onNodeWithContentDescription("Close workspace switcher").performClick()
         assertEquals(listOf("pick p-ex", "pick null", "answer 5 true", "answer 5 false", "close"), log)
+    }
+
+    @Test
+    fun `the open pack's row says how it stands in words, one tap from the chip`() {
+        show(state)
+        compose.onNodeWithText("Offline · changes will send when back").assertIsDisplayed()
+        // The rows merge their words: each line asked for itself.
+        val open = compose.onNodeWithText("Offline · changes will send when back", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val dk = compose.onNodeWithText("OP DK", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val ex = compose.onNodeWithText("B CO FIELD EX", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("on its own row: $dk, $open, $ex", open.top > dk.top && open.bottom < ex.top)
     }
 
     @Test

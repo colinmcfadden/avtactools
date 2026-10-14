@@ -3,6 +3,9 @@ package app.ezpztac.android.frame
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
@@ -21,7 +24,7 @@ import app.ezpztac.map.MapStyles
 import app.ezpztac.map.MapUiState
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.packs.OpenPackUi
-import app.ezpztac.packs.PackStatusLine
+import app.ezpztac.packs.ATTENTION_AFTER_MS
 import app.ezpztac.packs.PackWords
 import app.ezpztac.packs.PersonUi
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -49,8 +52,8 @@ class WorkspaceChipsTest {
     private val people = listOf(PersonUi(7, "Colin McFadden", "CM", me = true), PersonUi(9, "Sam B.", "SB", false), PersonUi(11, "Jess R.", "JR", false), PersonUi(12, "Kim L.", "KL", false))
     private val long = OpenPackUi("p-ex", "B CO FIELD EXERCISE NORTH GEORGIA", people, PackStatus.OFFLINE, finished = false, readOnly = false, pending = 2)
 
-    /** The real row over a stand-in map: the folded search, the chips and the account, and the pack's line under them. */
-    private fun show(pack: OpenPackUi?) = compose.setContent {
+    /** The real row over a stand-in map: the folded search, the chips and the account, and the pack's line under them (a tablet's with [tabletLine]). */
+    private fun show(pack: OpenPackUi?, tabletLine: Boolean = false) = compose.setContent {
         EzpzTheme(ThemeMode.Dark) {
             val styles = MapStyles.available("pk.t")
             MapScreen(
@@ -59,7 +62,7 @@ class WorkspaceChipsTest {
                 // Not the first face's initials, so a face drawn is the chip's.
                 account = { AccountButton("Pat Doe", "pilot@example.com", "Version 1.9.0 (1)", night = false, onNight = {}, onSignOut = {}, notice = "", floating = true) },
                 chips = { WorkspaceChips(pack, packsHere = true, onSwitcher = {}, onImport = {}, onLibrary = {}) },
-                belowChips = { pack?.let { PackStatusLine(it) } },
+                belowChips = { WorkspaceLine(pack, tablet = tabletLine, underFullSheet = false) },
                 map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A4A3A))) },
             )
         }
@@ -132,12 +135,61 @@ class WorkspaceChipsTest {
     }
 
     @Test
+    fun `on a phone a pack all synced says nothing under the row, and one offline says so once it has lasted two seconds`() {
+        val live = long.copy(status = PackStatus.LIVE, pending = 0)
+        var shown by mutableStateOf(live)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { WorkspaceLine(shown, tablet = false, underFullSheet = false) }
+        }
+        compose.mainClock.advanceTimeBy(10_000)
+        compose.onNodeWithText(PackWords.status(live)).assertDoesNotExist()
+        shown = long
+        compose.waitForIdle()
+        compose.onNodeWithText(PackWords.status(long)).assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(ATTENTION_AFTER_MS + 100)
+        compose.onNodeWithText(PackWords.status(long)).assertIsDisplayed()
+    }
+
+    @Test
+    fun `a tablet's line says how the pack stands at once, in every state, as it always did`() {
+        val live = long.copy(status = PackStatus.LIVE, pending = 0)
+        var shown by mutableStateOf(live)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { WorkspaceLine(shown, tablet = true, underFullSheet = false) }
+        }
+        compose.onNodeWithText("Live · all changes synced").assertIsDisplayed()
+        shown = long
+        compose.waitForIdle()
+        compose.onNodeWithText(PackWords.status(long)).assertIsDisplayed()
+        shown = live.copy(pending = 1)
+        compose.waitForIdle()
+        compose.onNodeWithText("Saving changes…").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the phone's line is not drawn under a sheet at full height, and is there again, said, when the sheet comes down`() {
+        var full by mutableStateOf(false)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { WorkspaceLine(long, tablet = false, underFullSheet = full) }
+        }
+        compose.mainClock.advanceTimeBy(ATTENTION_AFTER_MS + 100)
+        compose.onNodeWithText(PackWords.status(long)).assertIsDisplayed()
+        full = true
+        compose.waitForIdle()
+        compose.onNodeWithText(PackWords.status(long)).assertDoesNotExist()
+        full = false
+        compose.waitForIdle()
+        compose.onNodeWithText(PackWords.status(long)).assertIsDisplayed()                         // no new wait: it was said already
+    }
+
+    @Test
     @Config(fontScale = 2.0f)
     fun `at the largest text nothing leaves the screen`() {
         show(long)
         onScreen("Library: everything you have saved")
         onScreen(PackWords.chipDescription(long))
         onScreen("Account, Pat Doe")
+        compose.mainClock.advanceTimeBy(ATTENTION_AFTER_MS + 100)                                   // offline, changes waiting: said once it has lasted
         compose.onNodeWithText(PackWords.status(long)).assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/screenshots/workspace-chips-largest.png")
     }

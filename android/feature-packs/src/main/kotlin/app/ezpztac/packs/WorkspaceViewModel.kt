@@ -104,17 +104,25 @@ class WorkspaceViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val switcher: StateFlow<SwitcherUi> = combine(lists, library.counts, open, busy, answerError) { l, counts, current, working, answered ->
+        // How the open pack stands, on its row (the chip's icon and words), unless it is finished, which its line says.
+        val standing = current?.let(PackStanding::of)?.takeIf { it != PackStanding.FINISHED }
+        val status = current?.takeIf { standing != null }?.let(PackWords::status)
         val rows = (l.packs.filter { it.status != "finished" } + l.packs.filter { it.status == "finished" }).map { pack ->
-            val here = current?.takeIf { it.uuid == pack.uuid }?.others ?: 0
+            val open = pack.uuid == current?.uuid
+            val here = current?.takeIf { open }?.others ?: 0
             PackRowUi(
                 pack.uuid, pack.name, PackWords.packMeta(pack, zone()),
                 chips = if (pack.status == "finished") emptyList() else listOfNotNull(here.takeIf { it > 0 }?.let { "$it here now" }, PackWords.counts(pack.itemCounts).ifEmpty { null }),
-                finished = pack.status == "finished", current = pack.uuid == current?.uuid,
+                finished = pack.status == "finished", current = open,
+                standing = standing?.takeIf { open }, status = status?.takeIf { open },
             )
         }
         // The open pack always has its row: an offline launch has no list yet, and a pack just joined may not be in the last one.
         val openRow = current?.takeIf { c -> rows.none { it.uuid == c.uuid } }?.let { c ->
-            PackRowUi(c.uuid, c.name, if (c.finished) "Finished · read-only" else "Open now", listOfNotNull(c.others.takeIf { it > 0 }?.let { "$it here now" }), c.finished, current = true)
+            PackRowUi(
+                c.uuid, c.name, if (c.finished) "Finished · read-only" else "Open now", listOfNotNull(c.others.takeIf { it > 0 }?.let { "$it here now" }), c.finished,
+                current = true, standing = standing, status = status,
+            )
         }
         SwitcherUi(
             invites = l.invites.filter { it.status == "pending" }.map { PackWords.inviteUi(it) },

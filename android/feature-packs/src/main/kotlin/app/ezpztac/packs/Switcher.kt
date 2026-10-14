@@ -228,6 +228,13 @@ private fun PackRow(pack: PackRowUi, enabled: Boolean, actions: SwitcherActions)
                 Text(pack.meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (pack.finished) Icon(painterResource(EzpzIcons.lock), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
             }
+            // The open pack: how it stands, in the chip's shape and in words, one tap from the chip (the chip shows the shape alone).
+            pack.standing?.let { standing ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+                    Icon(painterResource(standing.icon), contentDescription = null, tint = toneColor(standing.tone), modifier = Modifier.size(16.dp))
+                    Text(pack.status.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
             if (pack.chips.isNotEmpty()) {
                 FlowRow(verticalArrangement = Arrangement.Center, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     pack.chips.forEachIndexed { i, chip ->

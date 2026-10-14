@@ -34,7 +34,7 @@ import app.ezpztac.map.Readout
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.LatLon
 import app.ezpztac.packs.OpenPackUi
-import app.ezpztac.packs.PackStatusLine
+import app.ezpztac.packs.ATTENTION_AFTER_MS
 import app.ezpztac.packs.PersonUi
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -88,13 +88,15 @@ class FrameScreenshotTest {
                             AccountButton("Colin McFadden", "pilot@example.com", "Version 1.9.0 (1)", night = mode == ThemeMode.Night, onNight = {}, onSignOut = {}, notice = "", floating = true)
                         },
                         chips = { WorkspaceChips(pack, packsHere = true, onSwitcher = {}, onImport = {}, onLibrary = {}) },
-                        belowChips = { pack?.let { PackStatusLine(it) } },
+                        belowChips = { WorkspaceLine(pack, tablet = false, underFullSheet = detent == SheetDetent.Full) },
                         map = { Box(Modifier.fillMaxSize().background(Color(0xFF55703F))) },
                     )
                 }
             }
         }
         compose.waitForIdle()
+        // What the pack says under the row waits until its state has lasted (ATTENTION_AFTER_MS).
+        compose.mainClock.advanceTimeBy(ATTENTION_AFTER_MS + 100)
         compose.onRoot().captureRoboImage("build/screenshots/frame-$name.png")
     }
 
@@ -104,6 +106,13 @@ class FrameScreenshotTest {
     @Test fun night() = shot("night", SheetDetent.Half, ThemeMode.Night, Panel.Threats)
 
     @Test fun pack412() = shot("pack-412", SheetDetent.Lowered, pack = longPack, panel = Panel.Pack)
+
+    // Offline long enough for the words under the row (the chip shows the shape from the first moment).
+    @Test fun packOffline412() = shot("pack-offline-412", SheetDetent.Lowered, pack = longPack.copy(status = PackStatus.OFFLINE, pending = 2), panel = Panel.Pack)
+
+    @Test
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi")
+    fun packOffline360Night() = shot("pack-offline-360-night", SheetDetent.Half, ThemeMode.Night, pack = longPack.copy(status = PackStatus.OFFLINE), panel = Panel.Pack)
     @Test fun searchOpen412() = shot("search-open-412", SheetDetent.Lowered, search = MapSearchState(expanded = true, text = "16S GD 66993 52949"))
     @Test fun packNight412() = shot("pack-night-412", SheetDetent.Half, ThemeMode.Night, pack = longPack, panel = Panel.Pack)
 

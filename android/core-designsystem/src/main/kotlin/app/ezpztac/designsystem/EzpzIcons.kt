@@ -25,6 +25,8 @@ object EzpzIcons {
     @DrawableRes val chevronRight: Int = R.drawable.ic_chevron_right
     @DrawableRes val close: Int = R.drawable.ic_close
     @DrawableRes val cloudDone: Int = R.drawable.ic_cloud_done
+    @DrawableRes val cloudOff: Int = R.drawable.ic_cloud_off
+    @DrawableRes val cloudUpload: Int = R.drawable.ic_cloud_upload
     @DrawableRes val collectionsBookmark: Int = R.drawable.ic_collections_bookmark
     @DrawableRes val contentCopy: Int = R.drawable.ic_content_copy
     @DrawableRes val crisisAlert: Int = R.drawable.ic_crisis_alert
@@ -55,6 +57,7 @@ object EzpzIcons {
     @DrawableRes val groups: Int = R.drawable.ic_groups
     @DrawableRes val hexagon: Int = R.drawable.ic_hexagon
     @DrawableRes val history: Int = R.drawable.ic_history
+    @DrawableRes val hourglassTop: Int = R.drawable.ic_hourglass_top
     @DrawableRes val image: Int = R.drawable.ic_image
     @DrawableRes val info: Int = R.drawable.ic_info
     @DrawableRes val input: Int = R.drawable.ic_input
@@ -123,6 +126,7 @@ object EzpzIcons {
     @DrawableRes val locationOnFill: Int = R.drawable.ic_location_on_fill
     @DrawableRes val lockFill: Int = R.drawable.ic_lock_fill
     @DrawableRes val moveToInboxFill: Int = R.drawable.ic_move_to_inbox_fill
+    @DrawableRes val pauseFill: Int = R.drawable.ic_pause_fill
     @DrawableRes val personFill: Int = R.drawable.ic_person_fill
     @DrawableRes val routeFill: Int = R.drawable.ic_route_fill
 }

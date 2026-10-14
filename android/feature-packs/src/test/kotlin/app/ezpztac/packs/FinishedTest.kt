@@ -207,7 +207,11 @@ class FinishedTest {
         compose.onNodeWithText("· Finished", useUnmergedTree = true).assertExists()
         assertEquals("Read-only for everyone", PackWords.status(finished))
         assertEquals("Workspace: Mission Pack OP DK, finished. Change workspace", PackWords.railDescription(finished))   // the tablet design's rail tile
-        assertEquals(PackWords.chipDescription(finished.copy(finished = false)), PackWords.railDescription(finished.copy(finished = false)))
+        // The rail tile says who is here; how the pack stands is the tablet's line's to say, and the phone's chip's.
+        assertEquals(
+            PackWords.chipDescription(finished.copy(finished = false)).replace(", live, all changes synced", ""),
+            PackWords.railDescription(finished.copy(finished = false)),
+        )
         assertEquals("Cannot reach the pack", PackWords.status(finished.copy(status = PackStatus.ERROR)))
     }
 

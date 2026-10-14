@@ -7,8 +7,11 @@ import app.ezpztac.map.ChipAction
 import app.ezpztac.map.ChipsThatFit
 import app.ezpztac.map.MapChip
 import app.ezpztac.packs.OpenPackUi
+import app.ezpztac.packs.PackAttentionLine
 import app.ezpztac.packs.PackChip
+import app.ezpztac.packs.PackStatusLine
 import app.ezpztac.packs.PackWords
+import app.ezpztac.packs.rememberPackAttention
 
 /**
  * The chips on the phone's row, between the folded search and the account: the workspace (the person's own, or the open [pack]'s in its colour; it opens the
@@ -40,4 +43,20 @@ fun WorkspaceChips(
         ),
         modifier = modifier,
     )
+}
+
+/**
+ * How the open [pack] stands, in words under the top of the map. A tablet's line says it always, under its search bar, as it did. A phone's chip shows it, so
+ * its line says it only while it wants the person's attention, once that has lasted two seconds (the owner's decision of 2026-10-13: [rememberPackAttention]),
+ * and never under a sheet at full height ([underFullSheet]), which would leave a sliver of it showing above its edge.
+ */
+@Composable
+fun WorkspaceLine(pack: OpenPackUi?, tablet: Boolean, underFullSheet: Boolean) {
+    if (tablet) {
+        pack?.let { PackStatusLine(it) }
+    } else {
+        // Timed whatever the sheet does, so a line said stays said when the sheet comes down again.
+        val attention = rememberPackAttention(pack)
+        PackAttentionLine(pack?.takeIf { attention && !underFullSheet })
+    }
 }

@@ -178,8 +178,20 @@ data class InviteUi(val id: Int, val who: String, val what: String, val team: Bo
     val words: String get() = "$who invited you to ${if (team) "the team " else ""}$what${role?.let { " as $it" }.orEmpty()}"
 }
 
-/** A pack in the switcher's list. */
-data class PackRowUi(val uuid: String, val name: String, val meta: String, val chips: List<String>, val finished: Boolean, val current: Boolean)
+/**
+ * A pack in the switcher's list. The one open says how it stands ([standing] and [status]: the chip's icon and its words, one tap from the chip), unless it is
+ * finished, which its line says already.
+ */
+data class PackRowUi(
+    val uuid: String,
+    val name: String,
+    val meta: String,
+    val chips: List<String>,
+    val finished: Boolean,
+    val current: Boolean,
+    val standing: PackStanding? = null,
+    val status: String? = null,
+)
 
 data class SwitcherUi(
     val invites: List<InviteUi> = emptyList(),
@@ -271,8 +283,9 @@ object PackWords {
     }
 
     /**
-     * How the open pack stands, said under the chips (the web's top bar): opening, cannot be reached, read-only, changes going or waiting for a
-     * connection, or everything synced, live or not.
+     * How the open pack stands (the web's top bar): opening, cannot be reached, read-only, changes going or waiting for a connection, or everything synced, live
+     * or not. Said under a tablet's search bar, and on a phone on the pack's chip (to a screen reader: [spokenStatus]), on the switcher's row, and under the row
+     * only when it wants attention ([PackStanding.attention]).
      */
     fun status(pack: OpenPackUi): String = when {
         pack.status == PackStatus.LOADING -> "Opening…"
@@ -297,10 +310,35 @@ object PackWords {
         return "${pack.name} was finished by $by$at." to "It is read-only for everyone."
     }
 
-    /** What the workspace chip says to a screen reader: the design's "Workspace: Mission Pack OP DK. 4 people here now: …. Change workspace". */
+    /** How the open pack stands, as the chip says it to a screen reader: [status] in a sentence's words ("live, all changes synced", "offline"). */
+    fun spokenStatus(pack: OpenPackUi): String = status(pack).removeSuffix("…").replace(" · ", ", ").replaceFirstChar { it.lowercase() }
+
+    /**
+     * What the workspace chip says to a screen reader: "Workspace: Mission Pack OP DK, all changes synced. 4 people here now: …. Change workspace", how the pack
+     * stands said as the chip's icon shows it (the owner's decision of 2026-10-13). A finished pack is "finished and read-only", and how it stands besides when
+     * that is not the finished pack's own (it cannot be reached, it is paused).
+     */
     fun chipDescription(pack: OpenPackUi?): String {
         if (pack == null) return "Workspace: Personal. Change workspace"
-        if (pack.finished) return "Workspace: Mission Pack ${pack.name}, finished and read-only. Change workspace"
+        val standing = PackStanding.of(pack)
+        if (pack.finished) {
+            val besides = if (standing == PackStanding.FINISHED) "" else ", ${spokenStatus(pack)}"
+            return "Workspace: Mission Pack ${pack.name}, finished and read-only$besides. Change workspace"
+        }
+        return describe(pack, ", ${spokenStatus(pack)}")
+    }
+
+    /**
+     * What the tablet rail's workspace tile says (the design's AT screens): who is here, but not how the pack stands, which the tablet's line under its search bar
+     * says; a finished pack is "finished" alone.
+     */
+    fun railDescription(pack: OpenPackUi?): String = when {
+        pack == null -> chipDescription(null)
+        pack.finished -> "Workspace: Mission Pack ${pack.name}, finished. Change workspace"
+        else -> describe(pack, "")
+    }
+
+    private fun describe(pack: OpenPackUi, standing: String): String {
         val names = pack.people.map { it.name }
         val here = when {
             names.isEmpty() -> ""
@@ -308,12 +346,8 @@ object PackWords {
             names.size <= 3 -> " ${names.size} people here now: ${names.dropLast(1).joinToString(", ")} and ${names.last()}."
             else -> " ${names.size} people here now: ${names.take(3).joinToString(", ")} and ${names.size - 3} more."
         }
-        return "Workspace: Mission Pack ${pack.name}.$here Change workspace"
+        return "Workspace: Mission Pack ${pack.name}$standing.$here Change workspace"
     }
-
-    /** What the tablet rail's workspace tile says (the design's AT screens): the chip's words, but a finished pack is "finished" alone. */
-    fun railDescription(pack: OpenPackUi?): String =
-        if (pack?.finished == true) "Workspace: Mission Pack ${pack.name}, finished. Change workspace" else chipDescription(pack)
 
     /** A person's initials, for their face in the chip: the account button's rule ([initialsOf]): "Colin McFadden" is CM, "Sam B." is SB. */
     fun initials(name: String): String = initialsOf(name)

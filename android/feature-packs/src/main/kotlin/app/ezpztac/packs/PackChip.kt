@@ -15,6 +15,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -36,11 +41,14 @@ import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.missionpacks.PackStatus
+import kotlinx.coroutines.delay
 
 /**
- * The workspace chip in a pack (the design's PackLive): the pack's name in its colour, the faces of who has it open (three, then "+N"; one at large text),
- * and the switcher's arrow. One button for a screen reader, which says the pack and who is here ([PackWords.chipDescription]). [onClick] opens the
- * switcher. As tall as the other controls on the phone's row (40 dp, the map's `MapChrome.CHIPS_HEIGHT`), a 48 dp touch target.
+ * The workspace chip in a pack (the design's PackLive): how the pack stands ([PackStanding]: a shape of its own for each state, in its tone, where the group
+ * icon was; the owner's decision of 2026-10-13), the pack's name in its colour, the faces of who has it open (three, then "+N"; one at large text), and the
+ * switcher's arrow. A finished pack keeps the outlined group icon and says "· Finished". One button for a screen reader, which says the pack, how it stands and
+ * who is here ([PackWords.chipDescription]). [onClick] opens the switcher. As tall as the other controls on the phone's row (40 dp, the map's
+ * `MapChrome.CHIPS_HEIGHT`), a 48 dp touch target.
  *
  * Given less room than it would take (the phone's row holds the search and the account beside it), what only adds gives way first, then the name is cut
  * (with an ellipsis): the faces (three, then one, then none), then the arrow, and for a finished pack "· Finished" gives way to its lock, then its group icon
@@ -50,6 +58,7 @@ import app.ezpztac.missionpacks.PackStatus
 fun PackChip(pack: OpenPackUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val large = LocalDensity.current.fontScale > LARGE_TEXT
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val standing = PackStanding.of(pack)
     Surface(
         onClick = onClick, shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = MaterialTheme.colorScheme.onSurface, shadowElevation = 2.dp,
@@ -64,9 +73,7 @@ fun PackChip(pack: OpenPackUi, onClick: () -> Unit, modifier: Modifier = Modifie
             else -> listOf({ Faces(pack.people, shown = 1) })
         }
         ChipLine(
-            lead = {
-                Icon(painterResource(if (pack.finished) EzpzIcons.groups else EzpzIcons.groupsFill), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(18.dp))
-            },
+            lead = { Icon(painterResource(standing.icon), contentDescription = null, tint = toneColor(standing.tone), modifier = Modifier.size(18.dp)) },
             name = {
                 Text(
                     pack.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
@@ -76,14 +83,58 @@ fun PackChip(pack: OpenPackUi, onClick: () -> Unit, modifier: Modifier = Modifie
             },
             extras = extras,
             arrow = { Icon(painterResource(EzpzIcons.arrowDropDown), contentDescription = null, tint = muted, modifier = Modifier.size(18.dp)) },
-            // A finished pack's last mark (its lock) stays, and its group icon may go, the lock saying what it is; the faces may all go.
+            // A finished pack's last mark (its lock) stays, and its group icon may go, the lock saying what it is; the faces may all go. How the pack stands
+            // never goes.
             extrasMayGo = !pack.finished,
-            leadMayGo = pack.finished,
+            leadMayGo = standing == PackStanding.FINISHED,
             modifier = Modifier.padding(start = Tokens.Spacing.sm.dp, end = 6.dp),
         )
     }
 }
 
+/** The colour a [PackTone] is drawn in: the status colours, and the pack's own (violet) for a finished pack's group icon. */
+@Composable
+internal fun toneColor(tone: PackTone): Color = when (tone) {
+    PackTone.SUCCESS -> EzpzTheme.status.success
+    PackTone.WARNING -> EzpzTheme.status.warning
+    PackTone.ERROR -> MaterialTheme.colorScheme.error
+    PackTone.PACK -> MaterialTheme.colorScheme.tertiary
+}
+
+/** How long a state that wants attention must last before a phone says it in words under the row: a launch's moment on the device's copy, or a reconnect blip, says nothing. */
+const val ATTENTION_AFTER_MS: Long = 2_000
+
+/**
+ * Whether the phone says how the open [pack] stands in words under its row (the owner's decision of 2026-10-13): only while it wants the person's attention
+ * ([PackStanding.attention]: offline, paused, cannot reach, no longer available), once that state has lasted [ATTENTION_AFTER_MS]. Never while it is synced or
+ * saving (saving changes with every edit, and a line coming and going would move what is under it), opening (the panels say so) or finished (the chip and every
+ * panel's banner say so). A line already said stays as the pack goes from one such state to another, in the new state's words; another pack starts again.
+ */
+@Composable
+fun rememberPackAttention(pack: OpenPackUi?): Boolean {
+    val wanted = pack?.let(PackStanding::of)?.takeIf { it.attention }
+    var said by remember(pack?.uuid) { mutableStateOf(false) }
+    LaunchedEffect(pack?.uuid, wanted) {
+        if (wanted == null) {
+            said = false
+        } else {
+            delay(ATTENTION_AFTER_MS)
+            said = true
+        }
+    }
+    return said && wanted != null
+}
+
+/**
+ * The phone's line under the row: [pack]'s [PackStatusLine] (its tone and its icon) when there is one to say, else nothing, in a polite live region that stays
+ * either way, so a screen reader hears the line when it appears in it.
+ */
+@Composable
+fun PackAttentionLine(pack: OpenPackUi?, modifier: Modifier = Modifier) {
+    Box(modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+        if (pack != null) PackStatusLine(pack, live = false)
+    }
+}
 
 /**
  * Who has the pack open, or who is in it: [shown] faces, side by side, then "+N" for the rest. Nothing when there is nobody. [size] is the faces'
@@ -139,10 +190,11 @@ internal fun faceColours(person: PersonUi): Pair<Color, Color> {
 
 /**
  * How the open pack stands (the design's "Live · all changes synced"), a status a screen reader is told of when it changes: a tick when everything has
- * reached everyone, a dot in the warning colour while changes are on their way or waiting, the error colour when the pack cannot be reached.
+ * reached everyone, a dot in the warning colour while changes are on their way or waiting, the error colour when the pack cannot be reached. A tablet's,
+ * under its search bar, always; a phone's only in [PackAttentionLine], whose own live region it then speaks in ([live] false).
  */
 @Composable
-fun PackStatusLine(pack: OpenPackUi, modifier: Modifier = Modifier) {
+fun PackStatusLine(pack: OpenPackUi, modifier: Modifier = Modifier, live: Boolean = true) {
     val words = PackWords.status(pack)
     val troubled = pack.status == PackStatus.ERROR || pack.status == PackStatus.GONE
     val waiting = pack.status == PackStatus.LOADING || pack.status == PackStatus.PAUSED
@@ -156,7 +208,7 @@ fun PackStatusLine(pack: OpenPackUi, modifier: Modifier = Modifier) {
     }
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, shadowElevation = 2.dp,
-        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        modifier = if (live) modifier.semantics { liveRegion = LiveRegionMode.Polite } else modifier,
     ) {
         Row(
             Modifier.heightIn(min = 28.dp).padding(horizontal = Tokens.Spacing.sm.dp, vertical = 4.dp),

@@ -62,6 +62,7 @@ import app.ezpztac.android.frame.SupportingPane
 import app.ezpztac.android.frame.TabletFrame
 import app.ezpztac.android.frame.TabletRail
 import app.ezpztac.android.frame.WorkspaceChips
+import app.ezpztac.android.frame.WorkspaceLine
 import app.ezpztac.android.frame.rememberFrameState
 import app.ezpztac.android.frame.rememberTouchExploration
 import app.ezpztac.android.frame.lookingAtPack
@@ -117,7 +118,6 @@ import app.ezpztac.packs.PackHeaderMenu
 import app.ezpztac.packs.PackPanelFoot
 import app.ezpztac.packs.PackPanelHost
 import app.ezpztac.packs.PackPanelViewModel
-import app.ezpztac.packs.PackStatusLine
 import app.ezpztac.packs.PackWords
 import app.ezpztac.packs.SwitcherContent
 import app.ezpztac.packs.SwitcherSheet
@@ -531,8 +531,8 @@ fun MapHome(
                     controlsBottom = frame.controlsBottom,
                     // On a tablet the account, the workspace, Import and the Library are the rail's.
                     account = { if (!tablet) account(true) },
-                    // Not under a sheet at full height, which would leave a sliver of it showing above its edge.
-                    belowChips = { if (tablet || sheet.heading != SheetDetent.Full) openPack?.let { PackStatusLine(it) } },
+                    // How the open pack stands: a tablet's line always, a phone's only when it wants attention (its chip shows it), not under a full sheet.
+                    belowChips = { WorkspaceLine(openPack, tablet, underFullSheet = !tablet && sheet.heading == SheetDetent.Full) },
                     chips = {
                         if (!tablet) {
                             // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
