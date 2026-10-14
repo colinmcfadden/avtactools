@@ -329,8 +329,15 @@ function App() {
       pzMarker: activeGraphics.pzMarkers ?? [],
       setPzMarkers,
     });
-  const { winds, activeNotams, setActiveNotams, loadingWeather, fetchWeather } =
+  const { winds, activeNotams, setActiveNotams, loadingWeather, fetchWeather, ensureWeather } =
     useWeather();
+  // The weather tiles, and the wind the slope tile reduces its limits for, are the analysed LZ/PZ on the map's: opening another (or the page
+  // loading with one) fetches its own. Analysing fetches it too, and a request already made for the place is not made again.
+  const weatherLat = diagramStatus === "analyzed" ? activeDiagram?.target?.lat : undefined;
+  const weatherLon = diagramStatus === "analyzed" ? activeDiagram?.target?.lon : undefined;
+  useEffect(() => {
+    if (Number.isFinite(weatherLat) && Number.isFinite(weatherLon)) ensureWeather(weatherLat, weatherLon);
+  }, [weatherLat, weatherLon, ensureWeather]);
   // Aircraft profiles drive map icons, separation alerts, LZ capacity, and
   // route-planning defaults. Declared before the consumers below.
   const {
@@ -1310,6 +1317,7 @@ function App() {
           setActiveNotams={setActiveNotams}
           winds={winds}
           loadingWeather={loadingWeather}
+          landingHdg={flightData.landing_hdg}
           canAnalyze={canAnalyze && editable}
           canDrawBoundary={hasActiveTarget && editable}
           canUseDiagramTools={canEditGraphics && editable}

@@ -6,6 +6,8 @@ import {
   centerSpacingM,
   tipClearanceM,
 } from "../feature/aircraft/aircraftProfiles";
+import { slopeCallFor } from "../feature/terrain/slopeCall";
+import { slopeWindFor } from "../feature/weather/useWeather";
 
 /**
  * Area (square feet, rounded) and how many aircraft fit in a landing zone. Capacity is a conservative square-grid estimate using the
@@ -24,38 +26,17 @@ export const lzAreaAndCapacity = (detectedLZ, profile = FALLBACK_PROFILE) => {
   };
 };
 
-/**
- * The call the slope tile makes. The UH-60 limits are directional, so a limit is only called with a landing heading; a general slope
- * magnitude is context, and 15 degrees or more without a heading asks for one.
- */
-export const slopeStatusFor = (terrainData) => {
-  if (!terrainData?.stats) return { className: "status-safe", label: "NO DATA", max: 0 };
-
-  const maxSlope = terrainData.stats.maxDeg;
-  const directional = terrainData.directional;
-
-  if (directional) {
-    const exceedsUh60Limit =
-      directional.noseHighMaxDeg >= 6 ||
-      directional.noseLowMaxDeg >= 15 ||
-      directional.crossSlopeMaxDeg >= 15;
-    if (exceedsUh60Limit) return { className: "status-danger", label: "LIMIT EXCEEDED", max: maxSlope };
-  }
-
-  if (!directional && maxSlope >= 15) return { className: "status-warning", label: "HEADING REQUIRED", max: maxSlope };
-  if (maxSlope > 10) return { className: "status-warning", label: "CAUTION", max: maxSlope };
-
-  return { className: "status-safe", label: "LANDING", max: maxSlope };
-};
-
-const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather, aircraftProfile }) => {
+const MissionSummary = ({
+  detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather, aircraftProfile, landingHdg,
+}) => {
   const profile = aircraftProfile || FALLBACK_PROFILE;
 
   // 1. CALCULATE AREA & CAPACITY
   const stats = useMemo(() => lzAreaAndCapacity(detectedLZ, profile), [detectedLZ, profile]);
 
-  // 2. SLOPES
-  const slopeStatus = useMemo(() => slopeStatusFor(terrainData), [terrainData]);
+  // 2. SLOPES: judged at the landing doghouse's heading, with the limits reduced for this LZ/PZ's steady wind (the report the tiles below show)
+  const wind = slopeWindFor(winds, targetLocation);
+  const slopeStatus = useMemo(() => slopeCallFor(terrainData, { landingHdg, wind }), [terrainData, landingHdg, wind]);
 
   if (!detectedLZ) return null;
 
@@ -92,6 +73,9 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
             <span>MAX TERRAIN SLOPE</span>
         </div>
         <div className="slope-main-text">{slopeStatus.max.toFixed(1)}°</div>
+        {slopeStatus.lines.map((line) => (
+          <div key={line} className="slope-advice">{line}</div>
+        ))}
       </div>
 
       {/* --- ROW 3: WEATHER TRIO (Span 2 each) --- */}

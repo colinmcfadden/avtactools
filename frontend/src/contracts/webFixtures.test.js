@@ -6,7 +6,8 @@ import {
 } from "../utils/coordParse";
 import { calculateUH60Capacity } from "../utils/helicopterCapacity";
 import { convertToLatLongString } from "../utils/Helpers";
-import { lzAreaAndCapacity, slopeStatusFor } from "../components/MissionSummary";
+import { lzAreaAndCapacity } from "../components/MissionSummary";
+import { landingHeadingOf, slopeCallFor, slopeLimitsFor } from "../feature/terrain/slopeCall";
 import {
   FALLBACK_PROFILE,
   capacityForArea,
@@ -767,36 +768,148 @@ const SUMMARY_POLYGONS = [
   ["nothing", null],
 ];
 
-const TERRAIN_DATA = [
-  ["nothing measured", null],
-  ["no statistics", {}],
-  ["flat ground", { stats: { maxDeg: 0 } }],
-  ["a gentle slope", { stats: { maxDeg: 4.2 } }],
-  ["exactly ten degrees is not yet a caution", { stats: { maxDeg: 10 } }],
-  ["just over ten", { stats: { maxDeg: 10.1 } }],
-  ["just under fifteen", { stats: { maxDeg: 14.9 } }],
-  ["fifteen with no heading asks for one", { stats: { maxDeg: 15 } }],
-  ["steep with no heading asks for one", { stats: { maxDeg: 32 } }],
-  ["a landing heading with everything inside the limits", { stats: { maxDeg: 4 }, directional: { noseHighMaxDeg: 3, noseLowMaxDeg: 2, crossSlopeMaxDeg: 1 } }],
-  ["a heading, nose high just inside the limit", { stats: { maxDeg: 6 }, directional: { noseHighMaxDeg: 5.9, noseLowMaxDeg: 0, crossSlopeMaxDeg: 0 } }],
-  ["a heading, nose high at the limit", { stats: { maxDeg: 6 }, directional: { noseHighMaxDeg: 6, noseLowMaxDeg: 0, crossSlopeMaxDeg: 0 } }],
-  ["a heading, nose low at the limit", { stats: { maxDeg: 15 }, directional: { noseHighMaxDeg: 0, noseLowMaxDeg: 15, crossSlopeMaxDeg: 0 } }],
-  ["a heading, nose low just inside", { stats: { maxDeg: 14 }, directional: { noseHighMaxDeg: 0, noseLowMaxDeg: 14.9, crossSlopeMaxDeg: 0 } }],
-  ["a heading, cross slope at the limit", { stats: { maxDeg: 15 }, directional: { noseHighMaxDeg: 0, noseLowMaxDeg: 0, crossSlopeMaxDeg: 15 } }],
-  ["a heading, steep but inside the directional limits, is still a caution", { stats: { maxDeg: 20 }, directional: { noseHighMaxDeg: 5, noseLowMaxDeg: 5, crossSlopeMaxDeg: 5 } }],
+// Ground as the server measures it for the slope tile (byHeading of /api/terrain-analysis): the steepest nose up, nose down and cross slope
+// for each whole heading, to 0.1°. A plane tilted `deg` and rising toward `toward` has, at heading h, the ground ahead rising
+// atan(tan deg · cos(h - toward)) and across it atan(tan deg · sin(h - toward)); ground of several planes takes the steepest of them. Kept
+// as [heading, nose up, nose down, cross] to keep the file small; a case's terrainData is {stats: {maxDeg}, byHeading} in the server's shape.
+const RAD = Math.PI / 180;
+const tenth = (value) => Math.round(value * 10) / 10 + 0;
+const planesTable = (planes) => Array.from({ length: 360 }, (_, heading) => {
+  let up = 0;
+  let down = 0;
+  let cross = 0;
+  planes.forEach(([deg, toward]) => {
+    const rise = Math.tan(deg * RAD);
+    const along = Math.atan(rise * Math.cos((heading - toward) * RAD)) / RAD;
+    up = Math.max(up, along);
+    down = Math.max(down, -along);
+    cross = Math.max(cross, Math.abs(Math.atan(rise * Math.sin((heading - toward) * RAD)) / RAD));
+  });
+  return [heading, tenth(up), tenth(down), tenth(cross)];
+});
+const EAST8_TABLE = planesTable([[8, 90]]);
+const GROUND = [
+  ["level ground", 0, planesTable([])],
+  ["a plane of 8° rising east", 8, EAST8_TABLE],
+  ["a plane of 8° rising toward 220°", 8, planesTable([[8, 220]])],
+  ["a plane of 20° rising east", 20, planesTable([[20, 90]])],
+  ["a plane of 0.1° rising east", 0.1, planesTable([[0.1, 90]])],
+  ["a ridge of 7°, falling away north and south", 7, planesTable([[7, 0], [7, 180]])],
+  // Tables that are not whole, which judge nothing, and one with a heading again (its first counts).
+  ["the 8° plane without heading 359", 8, EAST8_TABLE.filter(([heading]) => heading !== 359)],
+  ["the 8° plane with heading 10's cross slope as text", 8, EAST8_TABLE.map((row) => (row[0] === 10 ? [10, row[1], row[2], "8.0"] : row))],
+  ["the 8° plane with heading 270 given again, level", 8, [...EAST8_TABLE, [270, 0, 0, 0]]],
+].map(([name, maxDeg, byHeading]) => ({ name, maxDeg, byHeading }));
+const groundData = (name) => {
+  const ground = GROUND.find((g) => g.name === name);
+  return {
+    stats: { maxDeg: ground.maxDeg },
+    byHeading: ground.byHeading.map(([heading, up, down, cross]) => ({ heading, noseHighMaxDeg: up, noseLowMaxDeg: down, crossSlopeMaxDeg: cross })),
+  };
+};
+
+// The wind as slopeWindOf gives it: the steady speed in knots, the direction it blows from (0..359, true) or null, and whether it is variable.
+const W = (speedKts, fromDeg = null, variable = false) => ({ speedKts, fromDeg, variable });
+const LEVEL = "level ground";
+const EAST8 = "a plane of 8° rising east";
+const SW8 = "a plane of 8° rising toward 220°";
+const EAST20 = "a plane of 20° rising east";
+const EAST01 = "a plane of 0.1° rising east";
+const RIDGE = "a ridge of 7°, falling away north and south";
+
+const WIND_LIMITS = [null, W(0, 0), W(4, 90), W(4.9, 90), W(5, 90), W(9, 90), W(10, 90), W(14, 90), W(15, 90), W(15.5, 90), W(16, 90),
+  W(19, 90), W(20, 90), W(24, 90), W(25, 90), W(35, 90), W(38, 90), W(40, 90), W(100, 90), W(7, null, true)];
+
+// What the flight data's landing_hdg can hold; a case without `landingHdg` is one whose flight data has none.
+const LANDING_HEADINGS = [
+  ["000°"], ["045°"], ["090°"], ["270°"], ["359°"], ["360°"], ["400°"], ["-90°"], ["-400°"], [" 090°"], [" 090°"], ["+90"], ["90.7°"],
+  ["0x5A"], ["abc"], [""], ["°"], [null], [], [270], [270.9], [-90], [true],
+];
+
+const SLOPE_CASES = [
+  // Nothing measured, and an older server's analysis with no byHeading: the slope alone, as before, and HEADING REQUIRED only here.
+  { name: "nothing measured", terrainData: null },
+  { name: "no statistics", terrainData: {} },
+  { name: "an older server, gentle ground", terrainData: { stats: { maxDeg: 4.2 } }, landingHdg: "270°", wind: W(12, 270) },
+  { name: "an older server, exactly ten degrees is not yet a caution", terrainData: { stats: { maxDeg: 10 } } },
+  { name: "an older server, just over ten", terrainData: { stats: { maxDeg: 10.1 } } },
+  { name: "an older server, just under fifteen", terrainData: { stats: { maxDeg: 14.9 } } },
+  { name: "an older server, fifteen asks for a heading", terrainData: { stats: { maxDeg: 15 } } },
+  { name: "an older server, steep", terrainData: { stats: { maxDeg: 32 } }, landingHdg: "090°" },
+  // A table that is not whole judges nothing.
+  { name: "a table missing a heading is not used", ground: "the 8° plane without heading 359", landingHdg: "270°" },
+  { name: "a table with a slope that is not a number is not used", ground: "the 8° plane with heading 10's cross slope as text", landingHdg: "270°" },
+  { name: "a heading given twice counts once, the first", ground: "the 8° plane with heading 270 given again, level", landingHdg: "270°" },
+  // The limits the right way round: 15° nose up, 6° nose down, 15° across.
+  { name: "8° nose up, facing up the slope, is within the 15° nose-up limit", ground: EAST8, landingHdg: "090°" },
+  { name: "8° nose down, facing down the slope, is over the 6° nose-down limit", ground: EAST8, landingHdg: "270°" },
+  { name: "8° of cross slope, facing across it, is within the 15° limit", ground: EAST8, landingHdg: "000°" },
+  // The wind at each boundary of a full five knots, landing into it up the 8° slope: 2° off every limit for each, nose down none above 15 kt.
+  ...[4, 5, 9, 10, 14, 15, 16, 19, 20].map((kt) => ({ name: `${kt} kt, landing into it up the 8° slope`, ground: EAST8, landingHdg: "090°", wind: W(kt, 90) })),
+  { name: "every limit at 0 in a 40 kt wind", ground: EAST8, landingHdg: "090°", wind: W(40, 90) },
+  { name: "40 kt over level ground still lands", ground: LEVEL, landingHdg: "090°", wind: W(40, 90) },
+  // 0.0 is never over a limit, even nose down where nose down is prohibited; 0.1 is.
+  { name: "level ground with nose down prohibited is within limits", ground: LEVEL, landingHdg: "000°", wind: W(16, 200) },
+  { name: "0.1° nose down is over when nose down is prohibited", ground: EAST01, landingHdg: "270°", wind: W(16, 270) },
+  { name: "0.1° nose down is within 6° in a calm", ground: EAST01, landingHdg: "270°", wind: W(0, 0) },
+  // Which heading is recommended.
+  { name: "into the wind before the landing heading", ground: EAST8, landingHdg: "000°", wind: W(10, 180) },
+  { name: "into the wind the short way round past north", ground: SW8, landingHdg: "220°", wind: W(4, 10) },
+  { name: "a calm is not landed into: closest to the landing heading", ground: EAST8, landingHdg: "047°", wind: W(0, 0) },
+  { name: "a variable wind: closest to the landing heading, the limits still reduced", ground: EAST8, landingHdg: "270°", wind: W(7, null, true) },
+  { name: "a wind with no direction: closest to the landing heading", ground: EAST8, landingHdg: "270°", wind: W(12, null) },
+  { name: "no wind report: closest to the landing heading, the limits not reduced", ground: EAST8, landingHdg: "270°", wind: null },
+  { name: "no landing heading: into the wind, and judged there", ground: EAST8, wind: W(9, 300) },
+  { name: "a landing heading that cannot be read is no landing heading", ground: EAST8, landingHdg: "RWY", wind: W(9, 300) },
+  { name: "no landing heading and no wind report: the most margin, and judged there", ground: EAST8, wind: null },
+  { name: "two headings as far from the wind: the smaller", ground: EAST20, landingHdg: "000°", wind: W(3, 270) },
+  { name: "two headings as far from the landing heading: the smaller", ground: RIDGE, landingHdg: "000°" },
+  { name: "a ridge in a north wind: into it is nose down, so off it", ground: RIDGE, landingHdg: "000°", wind: W(8, 0) },
+  // None within limits: the least over, by how much and which limit.
+  { name: "no heading within limits: the least over", ground: EAST20, landingHdg: "090°", wind: W(10, 270) },
+  { name: "no heading within limits and no landing heading: the least over is judged", ground: EAST20, wind: W(10, 270) },
+  // Steep but within limits at the landing heading is still a caution.
+  { name: "steep but within limits at the landing heading is a caution", ground: EAST20, landingHdg: "045°", wind: W(3, 45) },
 ];
 
 const summaryFixture = () => ({
   description: "What the mission summary says about a landing zone, as frontend/src/components/MissionSummary.jsx computes it: area "
-    + "(square feet, rounded) and capacity for an aircraft, and the call the slope tile makes. `profile` is a key into "
-    + "planning/aircraft.json's `profiles`, or null for the default UH-60L.",
+    + "(square feet, rounded) and capacity for an aircraft, and the call the slope tile makes (frontend/src/feature/terrain/slopeCall.js). "
+    + "`profile` is a key into planning/aircraft.json's `profiles`, or null for the default UH-60L. "
+    + "`windLimits`: slopeLimitsFor(wind), the UH-60 slope limits (15° nose up, 6° nose down, 15° cross slope) less 2° for every full 5 knots "
+    + "of steady wind, never below 0, and nose down 0 above 15 knots; a wind of null is no report, the limits not reduced. A wind is "
+    + "{speedKts, fromDeg (the direction it blows from, 0..359 true, or null), variable}. "
+    + "`landingHeading`: landingHeadingOf(flight data's landing_hdg), its leading integer as JavaScript's parseInt reads it (no radix, so 0x "
+    + "is hexadecimal; String(value) first, so a number is its digits and true is no number), as 0..359, or null when there is none (a case "
+    + "without landingHdg has no such key; null is not 000). "
+    + "`ground`: tables of byHeading, each entry [heading, noseHighMaxDeg, noseLowMaxDeg, crossSlopeMaxDeg]; a `slope` case names one "
+    + "(terrainData is then {stats: {maxDeg}, byHeading: [{heading, noseHighMaxDeg, noseLowMaxDeg, crossSlopeMaxDeg}...]}) or gives "
+    + "terrainData itself. `slope`: slopeCallFor(terrainData, {landingHdg, wind}). A slope is over its limit only when greater than it, "
+    + "compared in tenths of a degree; LIMIT EXCEEDED when one is at the landing heading (the recommended one with no landing heading), "
+    + "else CAUTION above 10° of stats.maxDeg, else LANDING. The recommended heading is a multiple of 5: of those within limits, the "
+    + "closest to the wind's direction when its speed is above 0 and it is not variable and has a direction, else the closest to the "
+    + "landing heading, else the one whose worst excess is least (offDeg: how far it is from the wind's direction or the landing heading, "
+    + "null with neither); with none within, the one whose worst excess is least, then the closest as before (overDeg: by how much, limit: "
+    + "which). Closeness is the short way round; every tie goes to the smaller heading; a tie between limits names the first of "
+    + "nose up, nose down, cross. byHeading counts only when it has every heading 0..359 with three numbers of 0 or more (the first "
+    + "of a heading given twice); without it (an older server) nothing is judged by heading: HEADING REQUIRED at 15° or more.",
   generatedBy: GENERATED_BY,
   area: SUMMARY_POLYGONS.flatMap(([name, polygon]) => [null, "ch47f", "oh6"].map((key) => ({
     name, polygon, profile: key,
     expected: clean(lzAreaAndCapacity(polygon, key ? PROFILES[key] : undefined)),
   }))),
-  slope: TERRAIN_DATA.map(([name, terrainData]) => ({
-    name, terrainData, expected: clean(slopeStatusFor(terrainData)),
+  windLimits: WIND_LIMITS.map((wind) => ({ wind, expected: clean(slopeLimitsFor(wind)) })),
+  landingHeading: LANDING_HEADINGS.map((entry) => ({
+    ...(entry.length > 0 ? { landingHdg: entry[0] } : {}),
+    expected: landingHeadingOf(entry[0]),
+  })),
+  ground: GROUND,
+  slope: SLOPE_CASES.map(({ name, ground, terrainData, landingHdg, wind = null }) => ({
+    name,
+    ...(ground ? { ground } : { terrainData }),
+    ...(landingHdg !== undefined ? { landingHdg } : {}),
+    wind,
+    expected: clean(slopeCallFor(ground ? groundData(ground) : terrainData, { landingHdg, wind })),
   })),
 });
 
@@ -817,6 +930,26 @@ describe("fixture sanity", () => {
     expect(f.parse.filter((c) => c.expected !== null).length).toBeGreaterThanOrEqual(40);
     expect(f.looksLikeMgrs.some((c) => c.expected)).toBe(true);
     expect(f.looksLikeMgrs.some((c) => !c.expected)).toBe(true);
+  });
+
+  it("makes every call the slope tile can, and recommends every way", () => {
+    const f = summaryFixture();
+    const calls = f.slope.map((c) => c.expected);
+    expect(new Set(calls.map((c) => c.label))).toEqual(new Set(["NO DATA", "LANDING", "CAUTION", "LIMIT EXCEEDED", "HEADING REQUIRED"]));
+    const recommended = calls.map((c) => c.recommendation).filter(Boolean);
+    expect(new Set(recommended.filter((r) => r.within).map((r) => r.reason))).toEqual(new Set(["wind", "landing", "margin"]));
+    expect(new Set(recommended.filter((r) => !r.within).map((r) => r.limit)).size).toBeGreaterThanOrEqual(1);
+    // HEADING REQUIRED is left only for an analysis with no byHeading (an older server).
+    const headingRequired = f.slope.filter((c) => c.expected.label === "HEADING REQUIRED");
+    expect(headingRequired.length).toBeGreaterThan(0);
+    headingRequired.forEach((c) => expect(c.ground === undefined && c.terrainData?.byHeading === undefined).toBe(true));
+    // 8° nose up is within its limit and 8° nose down over its own: the limits are the right way round.
+    expect(f.slope.find((c) => c.name.startsWith("8° nose up")).expected.label).toBe("LANDING");
+    expect(f.slope.find((c) => c.name.startsWith("8° nose down")).expected.label).toBe("LIMIT EXCEEDED");
+    // Every boundary of a full five knots, and nose down prohibited only above 15.
+    const limits = (kt) => f.windLimits.find((c) => c.wind?.speedKts === kt && !c.wind.variable).expected;
+    expect([4, 5, 9, 10, 14, 15, 16].map((kt) => limits(kt).noseUp)).toEqual([15, 13, 13, 11, 11, 9, 9]);
+    expect([15, 15.5, 16].map((kt) => limits(kt).noseDownProhibited)).toEqual([false, true, true]);
   });
 
   it("exercises the cases route planning is fragile about", () => {
