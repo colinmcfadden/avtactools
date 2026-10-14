@@ -590,6 +590,20 @@ pyproj's default grid location.
 unverified in the UI. Tip clearances are seeded at 60 m pending the owner's
 doctrinal values — don't invent separation distances.
 
+**Slope landing limits** (the owner's, a UH-60 pilot, 2026-10-13). **6° nose down, 15° nose up, 15° cross slope**
+("nose high" is the ground rising ahead, the nose up; every client and the server once had the first two the wrong way round).
+Each is reduced by **2° for every full 5 knots** of the **steady** wind (gusts ignored), never below 0, and **no nose-down landing
+above 15 kt**. The wind is the weather fetch's report for that LZ/PZ, the one its weather tiles show; with none the limits are not
+reduced, and the slope tile says so in words. `/api/terrain-analysis` sends `byHeading`, the steepest nose-high, nose-low and cross
+slope at every whole heading; the clients judge from it (`feature/terrain/slopeCall.js`, Android's `LzSummary.slopeCall`, both held
+to `contracts/fixtures/planning/summary.json`), so turning the landing doghouse or a new weather report judges again with no request.
+A slope is over its limit only when greater than it at 0.1°. The tile is LIMIT EXCEEDED at the landing heading (the flight data's
+`landing_hdg`, read by its leading integer; an unreadable one is no heading, not 000; with none the recommended heading is judged),
+else CAUTION above 10°, else LANDING, and under it in smaller text a recommended heading (a multiple of 5° within limits: closest to
+into the wind, else to the landing heading, else the most margin; with none within, the least over, named with its limit) and the
+wind the limits were cut for. HEADING REQUIRED is left only for a server that sends no `byHeading`, which says "Heading limits not
+checked (server not updated)". **Headings are true** (METAR winds are true; the doghouse box is turned from true north); see §15.
+
 **Threat masking.** Radial line-of-sight viewshed over Terrarium tiles with
 earth curvature and refraction, one mask per altitude band. The DEM is
 smoothed and the observer height taken over a 3×3 footprint, because a single
@@ -862,6 +876,12 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - On Android the go-around arrows and a PZ marker's arrow head (`GraphicsImages`) are bitmaps of so many pixels handed to MapLibre with the screen's density
   (§14), so they are drawn smaller on a denser screen (on a 3.5-density phone, four-sevenths of their size on a 2-density tablet). Give them a size in points (`IconRaster`) once
   someone has judged on a device how big they should be. The aircraft are not affected (§17, *An aircraft is drawn to scale*).
+- **True or magnetic** (the heading-aware slope, §13): every heading the slope tile uses is true. A crew that types a *magnetic* heading
+  into the landing doghouse gets a box drawn, and a slope judged, off by the declination (about 5° in north Georgia); and `byHeading`'s
+  (and `directional`'s) headings are the terrain grid's, true north over Terrarium but the **UTM grid's north over a local DEM**, turned
+  from true by the grid convergence (about 1.7° at a zone's edge in north Georgia). Nothing corrects either (owner to decide).
+- Until the server with `byHeading` reaches staging and production, every analysis there has no table: the apps say HEADING REQUIRED at
+  15° and "Heading limits not checked (server not updated)".
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -1280,15 +1300,19 @@ client is built around not losing one:
     one if it still is, else its stored record, else dropped if it was deleted — never to whichever is open on arrival. `update` takes the
     same lock as `open`/`close`, so a switch cannot see an analysis half applied. It is **quiet** (not an undo step, and applied to the
     history too) and runs on the thread that edits. Only an area the model could not find fails it; a slope that cannot be measured
-    leaves the analysis standing (`SlopeState.Unavailable`). **Not like the web:** nothing; like the web: no landing heading is sent to
-    `/api/terrain-analysis` (the web never does), so `directional` is null and a slope of 15° or more reads "heading required". The slope
+    leaves the analysis standing (`SlopeState.Unavailable`). Like the web, no landing heading is sent to `/api/terrain-analysis` (so
+    `directional` is null): the answer's `byHeading` (every whole heading) is what the tile judges, with the landing heading and wind it
+    has now (§13, *Slope landing limits*), and it rides with `SlopeState.Ready`, never in the document. The slope
     raster (`terrainData`) is **runtime only**, kept in the service by diagram id, never in the document. A hand-drawn boundary of three
     points or more is promoted to the analysis boundary and the drawn one cleared, as the web does. Error text shown to a person is the
     app's own words: the server's internals (a Python exception on a 500) are never shown.
   - **`advanceUntilIdle` does not run a test's `backgroundScope`.** A service launched in one never moves; give it a scope on the
     test's scheduler (see `AnalysisServiceTest`).
   - **The summary tiles are the web's `MissionSummary`**, whose maths was extracted there into pure exported helpers
-    (`lzAreaAndCapacity`, `slopeStatusFor`; no behaviour change) so the fixture could pin them. Capacity is for the mission aircraft
+    (`lzAreaAndCapacity`; the slope tile's call is `slopeCallFor` in `feature/terrain/slopeCall.js`) so the fixture could pin them. The
+    slope tile (`LzSummary.slopeCall`, from `DiagramsViewModel.summaryOf`) takes the landing heading from the flight data (`Doghouses.landingHeading`)
+    and the wind from the weather report the open LZ/PZ's tiles show (`LzSummary.slopeWindOf`), and shows its two lines under the value and
+    in its spoken description (`slopeSpoken`: the degree and minus signs in words). Capacity is for the mission aircraft
     (*Aircraft profiles*, below). The weather tiles are *Weather*, below. The area formula does not unwrap the antimeridian, on purpose.
   - **Numbers shown to a person are formatted by hand** (`withCommas`, `oneDecimal`: `toFixed`'s rounding, no locale), as §17's rule says.
   - **Planning graphics** (`core-model`: `GraphicRef`, `DiagramOps` graphic ops; `core-planning`: `PlanningGraphics`, `GraphicEdits`;
@@ -1362,7 +1386,7 @@ client is built around not losing one:
     is listening to `opened` (a `SharedFlow` with no replay: an event nobody hears is lost, and it is what takes the map to the diagram and restores its base
     map), does nothing if the person has already opened something, and treats a diagram that is gone (deleted, another account's) or will not open as
     "start from the list". It comes back only if it is still among the open LZ/PZs (`OpenDiagrams`): the last one closed stays closed.
-  - **Not done:** moving a corner of a boundary once drawn (draw it again); the heading-aware slope. **Deleting a corner is built** (`BoundaryCorners`, `CornerHitTest`): a tap holds a corner of the analysis or the drawn boundary (after graphics, routes and their points, before local points), the held-object bar offers *Delete corner*, it is one undo step, and a boundary keeps three corners (the button is disabled and says so). Deleting from the analysis boundary makes the slope be measured again. **The slope heat map has a button** (`SlopeVisibility`, `SlopeToggleUi`): it only hides the raster, the slope is still measured and the tiles still say it; it is a view choice, on at each launch and not saved with the diagram. Neither is seen on a device yet. (Dragging and turning on the map are *Dragging and
+  - **Not done:** moving a corner of a boundary once drawn (draw it again). **Deleting a corner is built** (`BoundaryCorners`, `CornerHitTest`): a tap holds a corner of the analysis or the drawn boundary (after graphics, routes and their points, before local points), the held-object bar offers *Delete corner*, it is one undo step, and a boundary keeps three corners (the button is disabled and says so). Deleting from the analysis boundary makes the slope be measured again. **The slope heat map has a button** (`SlopeVisibility`, `SlopeToggleUi`): it only hides the raster, the slope is still measured and the tiles still say it; it is a view choice, on at each launch and not saved with the diagram. Neither is seen on a device yet. (Dragging and turning on the map are *Dragging and
     turning on the map*, below; the inspector still does all of it and works with gloves and a screen reader.)
 - **The LZ/PZ panel** (S3; `feature-workspace`: `LzPanel.kt`, `SaveLzSheet`, `PlacementToolbar`, `LzNames`; `core-data`: `OpenDiagrams`,
   `GraphicPlacement`; the steps and their amendments in `docs/ANDROID_SCREENS_PLAN.md`). Things to keep true:
