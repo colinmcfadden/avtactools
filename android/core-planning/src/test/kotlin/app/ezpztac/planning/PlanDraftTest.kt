@@ -119,4 +119,49 @@ class PlanDraftTest {
         val plan = RoutePlan(perPoint = mapOf("p2" to PointOverride(altitude = AltitudeSetting(999.0, AltitudeSetting.REF_MSL))))
         assertEquals(PlanDraft.of(RoutePlan()), PlanDraft.of(plan))
     }
+
+    // -- Only what was changed ----------------------------------------------------------------------------------------------------
+
+    private fun changed(typed: PlanDraft, before: PlanDraft) = (typed.check(before) as PlanDraft.Checked.Valid).patch
+
+    @Test
+    fun `nothing typed is nothing to apply`() {
+        val before = PlanDraft.of(RoutePlan())
+        assertEquals(PlanPatch(), changed(before, before))
+    }
+
+    @Test
+    fun `a temperature typed changes the temperature alone, so a plan with no wind does not gain one`() {
+        val before = PlanDraft.of(RoutePlan(wind = null))
+        assertEquals(PlanPatch(tempC = -4.0), changed(before.copy(tempC = "-4"), before))
+    }
+
+    @Test
+    fun `the fuel flow and the date are each their own field`() {
+        val before = PlanDraft.of(RoutePlan())
+        assertEquals(PlanPatch(fuelFlowLbHr = 1200.0), changed(before.copy(fuelFlowLbHr = "1200"), before))
+        assertEquals(PlanPatch(date = "2026-10-12"), changed(before.copy(date = " 2026-10-12 "), before))
+        // Blank is today: a date taken away is a change too.
+        assertEquals(PlanPatch(date = ""), changed(PlanDraft.of(RoutePlan(date = "2026-10-12")).copy(date = ""), PlanDraft.of(RoutePlan(date = "2026-10-12"))))
+    }
+
+    @Test
+    fun `the airspeed, altitude and wind go with their references, as the web writes them`() {
+        val before = PlanDraft.of(RoutePlan())
+        assertEquals(PlanPatch(airspeed = Airspeed(100.0, Airspeed.TYPE_TRUE)), changed(before.copy(airspeedType = Airspeed.TYPE_TRUE), before))
+        assertEquals(PlanPatch(altitude = AltitudeSetting(50.0, AltitudeSetting.REF_MSL)), changed(before.copy(altitudeRef = AltitudeSetting.REF_MSL), before))
+        assertEquals(PlanPatch(wind = Wind(0.0, 12.0)), changed(before.copy(windSpeed = "12"), before))
+    }
+
+    @Test
+    fun `what is refused is named, and a field that was not touched is never checked`() {
+        val before = PlanDraft.of(RoutePlan()).copy(windDir = "not a number")                     // a value the form could never send, left alone
+        assertEquals("Temperature is not a number.", (before.copy(tempC = "warm").check(before) as PlanDraft.Checked.Refused).message)
+        assertEquals("Fuel flow must be between 0 and 20000.", (before.copy(fuelFlowLbHr = "-1").check(before) as PlanDraft.Checked.Refused).message)
+        assertEquals(
+            "The date must be written year-month-day, like 2026-10-03.",
+            (before.copy(date = "10/12/2026").check(before) as PlanDraft.Checked.Refused).message,
+        )
+        assertEquals(PlanPatch(tempC = 20.0), changed(before.copy(tempC = "20"), before))
+    }
 }

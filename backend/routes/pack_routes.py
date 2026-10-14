@@ -2,8 +2,9 @@
 
 Every write takes the pack's row first (pack_support.lock), so changes are numbered
 in one order per pack and a reader of ``GET /api/packs/<uuid>`` sees the items as
-of one ``head_seq``. A pack the caller is not in is a 404: its existence is not
-revealed. Everything needs the ``mission_packs`` entitlement. See docs/MISSION_PACKS.md.
+of one ``head_seq``. A write decides by the pack as it is once it holds that lock
+(``_lock``), not as it was before. A pack the caller is not in is a 404: its existence
+is not revealed. Everything needs the ``mission_packs`` entitlement. See docs/MISSION_PACKS.md.
 """
 
 import copy
@@ -75,25 +76,56 @@ def clean_name(value):
     return name
 
 
+def _refusal(role, need):
+    """The answer to a caller with ``role`` (None: not in the pack, or it is gone) asking for what needs ``need``, or None."""
+    if role is None:
+        return _error('Not found', 404, 'pack_not_found')
+    if need == 'edit' and role not in packs.EDIT_ROLES:
+        return _read_only()
+    if need == 'owner' and role != 'owner':
+        return _error("Only the pack's owner can do that.", 403, 'owner_only')
+    return None
+
+
 def _load(pack_uuid, user_id, need=None):
     """``(pack, role, None)``, or ``(None, None, response)`` when the caller may not do this."""
     pack = packs.live_pack(pack_uuid)
     role = packs.role_of(pack, user_id) if pack is not None else None
-    if role is None:
-        return None, None, _error('Not found', 404, 'pack_not_found')
-    if need == 'edit' and role not in packs.EDIT_ROLES:
-        return None, None, _error('You can view this pack but not change it.', 403, 'pack_read_only')
-    if need == 'owner' and role != 'owner':
-        return None, None, _error("Only the pack's owner can do that.", 403, 'owner_only')
+    refused = _refusal(role, need)
+    if refused:
+        return None, None, refused
     return pack, role, None
 
 
-def _finished(pack):
+def _lock(pack, user_id, need=None, touch=True):
+    """Take the pack's lock, then decide again whether the caller may do this: ``(role, None)`` or ``(None, response)``.
+
+    Every write calls this before it changes anything. What ``_load`` read may be out of date by then: whoever held
+    the lock meanwhile may have deleted the pack, removed the caller, made them a viewer or handed the pack to
+    someone else, and each of those holds the lock while it works. So the write is answered as the pack is now,
+    with the refusal ``_load`` would give now (a bare 404 for a pack gone or someone no longer in it). Anything else
+    the write decides by it reads after this too. A role that comes through a team is best effort: a change to a
+    team's members does not take the lock of the packs shared with it (docs/MISSION_PACKS.md §7). ``touch=False``
+    leaves the pack's ``updated_at`` as it was (``pack_support.lock``).
+    """
+    role = packs.role_of(pack, user_id) if packs.lock(pack, touch=touch) is not None else None
+    refused = _refusal(role, need)
+    if refused:
+        return None, refused
+    return role, None
+
+
+def _read_only(**extra):
+    return _error('You can view this pack but not change it.', 403, 'pack_read_only', **extra)
+
+
+def _finished(pack, **extra):
     who = packs.names([pack.finished_by]).get(pack.finished_by) or 'its owner'
     return _error(
         f"This pack was finished by {who}. It is read-only for everyone until the owner reopens it.",
         423, 'pack_finished',
         finished_at=packs.iso(pack.finished_at), finished_by=packs.person(pack.finished_by, packs.names([pack.finished_by])),
+        **extra,
     )
 
 
@@ -237,7 +269,8 @@ def update_pack(pack_uuid):
     body = _body()
     sharing = 'team_id' in body or 'team_role' in body
     editing = 'name' in body or 'description' in body
-    pack, role, refused = _load(pack_uuid, me.id, need='owner' if sharing else 'edit')
+    need = 'owner' if sharing else 'edit'
+    pack, _role, refused = _load(pack_uuid, me.id, need=need)
     if refused:
         return refused
 
@@ -251,8 +284,13 @@ def update_pack(pack_uuid):
         if not isinstance(body['description'], str) or len(body['description']) > packs.MAX_DESCRIPTION:
             return _error('The description must be text of 2,000 characters at most.', 400, 'invalid_description')
         changes['description'] = body['description'].strip()
+
+    _role, refused = _lock(pack, me.id, need)
+    if refused:
+        return refused
     share = {}
     if sharing:
+        # What is left out stays as it is now, under the lock: the pack may have been shared elsewhere meanwhile.
         team_id = body.get('team_id', pack.team_id)
         team_role = body.get('team_role', pack.team_role)
         if team_id is not None and (not isinstance(team_id, int) or isinstance(team_id, bool)
@@ -261,8 +299,6 @@ def update_pack(pack_uuid):
         if team_role not in packs.GRANTABLE_ROLES:
             return _error('team_role must be editor or viewer.', 400, 'invalid_role')
         share = {'team_id': team_id, 'team_role': team_role}
-
-    packs.lock(pack)
     if editing and pack.status == 'finished':
         return _finished(pack)
     who = packs.actor_name(me)
@@ -291,7 +327,9 @@ def delete_pack(pack_uuid):
     pack, _role, refused = _load(pack_uuid, me.id, need='owner')
     if refused:
         return refused
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'owner')
+    if refused:
+        return refused
     # A tombstone, so a device that asks learns it was deleted; everything in it is gone.
     for model in packs.PACK_CONTENT:
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
@@ -310,7 +348,9 @@ def finish_pack(pack_uuid):
     pack, _role, refused = _load(pack_uuid, me.id, need='owner')
     if refused:
         return refused
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'owner')
+    if refused:
+        return refused
     if pack.status != 'finished':
         pack.status, pack.finished_at, pack.finished_by = 'finished', packs.now(), me.id
         packs.append(pack, me, {'type': 'pack.finish'},
@@ -327,7 +367,9 @@ def reopen_pack(pack_uuid):
     pack, _role, refused = _load(pack_uuid, me.id, need='owner')
     if refused:
         return refused
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'owner')
+    if refused:
+        return refused
     if pack.status == 'finished':
         pack.status, pack.finished_at, pack.finished_by = 'active', None, None
         packs.append(pack, me, {'type': 'pack.reopen'}, f'{packs.actor_name(me)} reopened the pack.')
@@ -390,6 +432,20 @@ def apply_ops(pack_uuid):
     again. A malformed operation refuses the whole batch (400) before anything is
     applied. With ``base_seq``, the answer also carries every event after it, so
     the client can rebase its unconfirmed edits in one round trip.
+
+    A resend can be refused although the pack took the batch the first time: the
+    pack was finished (423), the caller made a viewer (403 ``pack_read_only``), or
+    the batch grew by an edit that is too large (413). Those three refusals always
+    carry ``taken``: the operations of this batch the log already has, the caller's
+    own, in log order, each as its result would have been (possibly none). So the
+    client keeps them as the pack's and offers back only the rest. Nothing is said
+    to someone not in the pack (a bare 404), and a 400 says nothing either: it is
+    decided from the operations alone, before the pack is looked at, and a batch the
+    pack took is well formed when it is sent again as it was.
+
+    Whether the caller is in the pack, as what, and whether the pack is still there are
+    read again under the pack's lock (``_lock``), as every write does: a batch that
+    waited for the lock is answered as the pack is now, not as it was when it arrived.
     """
     me = _me()
     body = request.get_json(silent=True)
@@ -418,15 +474,22 @@ def apply_ops(pack_uuid):
         if 'summary' in op and not isinstance(op['summary'], str):
             return malformed('bad_summary')
 
-    pack, _role, refused = _load(pack_uuid, me.id, need='edit')
+    pack, _role, refused = _load(pack_uuid, me.id)
     if refused:
         return refused
-    packs.lock(pack)
-    if pack.status == 'finished':
-        return _finished(pack)
-
+    # Under the lock even for a viewer, so ``taken`` cannot miss a first send of this batch that is still being applied.
+    role, refused = _lock(pack, me.id)
+    if refused:
+        return refused
     done = {e.client_op_id: e for e in MissionPackEvent.query.filter(
         MissionPackEvent.pack_id == pack.id, MissionPackEvent.client_op_id.in_(seen)).all()}
+    # Plain values, made before a 413 below rolls the session back.
+    taken = [_result(e) for e in sorted(done.values(), key=lambda e: e.seq) if e.user_id == me.id]
+    if role not in packs.EDIT_ROLES:
+        return _read_only(taken=taken)
+    if pack.status == 'finished':
+        return _finished(pack, taken=taken)
+
     # Deleted items too: a uuid is never reused.
     rows = {i.uuid: i for i in MissionPackItem.query.filter(
         MissionPackItem.pack_id == pack.id, MissionPackItem.uuid.in_({op['item'] for op in ops})).all()}
@@ -455,7 +518,7 @@ def apply_ops(pack_uuid):
         after = state[item_uuid]
         if not after['deleted'] and _too_large(after['data']):
             db.session.rollback()
-            return _error('That would make the item larger than 5 MB.', 413, 'item_too_large', item=item_uuid)
+            return _error('That would make the item larger than 5 MB.', 413, 'item_too_large', item=item_uuid, taken=taken)
         row = rows[item_uuid]
         if row is None:
             row = MissionPackItem(pack_id=pack.id, uuid=item_uuid, kind=after['kind'], revision=0, created_by=me.id)
@@ -603,7 +666,9 @@ def copy_in(pack_uuid):
         # match whichever of the person's unnamed records came first.
         sync.give_identity(record)
 
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'edit')
+    if refused:
+        return refused
     if pack.status == 'finished':
         return _finished(pack)
     existing = MissionPackItem.query.filter_by(pack_id=pack.id, uuid=item_uuid).first()
@@ -650,7 +715,9 @@ def update_from_original(pack_uuid, item_uuid):
     pack, _role, refused = _load(pack_uuid, me.id, need='edit')
     if refused:
         return refused
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'edit')
+    if refused:
+        return refused
     if pack.status == 'finished':
         return _finished(pack)
     item = _live_item(pack, item_uuid)
@@ -755,7 +822,9 @@ def add_member(pack_uuid):
         return _error('Only people in a team with you can be added by name. Invite anyone else by email.',
                       400, 'not_a_teammate')
 
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'owner')
+    if refused:
+        return refused
     if MissionPackMember.query.filter_by(pack_id=pack.id, user_id=target.id).first():
         return _error('They are already in this pack.', 409, 'already_member')
     db.session.add(MissionPackMember(pack_id=pack.id, user_id=target.id, role=role, added_by=me.id))
@@ -781,7 +850,9 @@ def change_member(pack_uuid, user_id):
     role = _body().get('role')
     if role not in packs.ROLES:
         return _error('role must be owner, editor or viewer.', 400, 'invalid_role')
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'owner')
+    if refused:
+        return refused
     member = MissionPackMember.query.filter_by(pack_id=pack.id, user_id=user_id).first()
     if member is None:
         return _error('They are not a member of this pack.', 404, 'member_not_found')
@@ -813,10 +884,13 @@ def change_member(pack_uuid, user_id):
 def remove_member(pack_uuid, user_id):
     """The owner removes someone, or a member leaves. The owner leaves only after handing the pack over."""
     me = _me()
-    pack, _role, refused = _load(pack_uuid, me.id, need=None if user_id == me.id else 'owner')
+    need = None if user_id == me.id else 'owner'
+    pack, _role, refused = _load(pack_uuid, me.id, need=need)
     if refused:
         return refused
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, need)
+    if refused:
+        return refused
     member = MissionPackMember.query.filter_by(pack_id=pack.id, user_id=user_id).first()
     if member is None:
         return _error('They are not a member of this pack (someone in a shared team is removed by unsharing it).',
@@ -874,7 +948,9 @@ def invite_to_pack(pack_uuid):
     if limited:
         return limited
 
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'owner')
+    if refused:
+        return refused
     member_ids = select(MissionPackMember.user_id).where(MissionPackMember.pack_id == pack.id)
     if User.query.filter(func.lower(User.email) == email, User.id.in_(member_ids)).first():
         return _error('They are already in this pack.', 409, 'already_member')
@@ -901,6 +977,11 @@ def resend_pack_invite(pack_uuid, invite_id):
     pack, _role, refused = _load(pack_uuid, me.id, need='owner')
     if refused:
         return refused
+    # Under the lock, as any write to the pack: a withdrawal, a hand-over or a deletion that came first is seen. Nothing
+    # in the pack changes and nothing is logged, so it keeps its updated_at and its place in everyone's list.
+    _role, refused = _lock(pack, me.id, 'owner', touch=False)
+    if refused:
+        return refused
     invite = MissionPackInvite.query.filter_by(id=invite_id, pack_id=pack.id, status='pending').first()
     if invite is None:
         return _error('Not found', 404, 'invite_not_found')
@@ -922,7 +1003,9 @@ def revoke_pack_invite(pack_uuid, invite_id):
     pack, _role, refused = _load(pack_uuid, me.id, need='owner')
     if refused:
         return refused
-    packs.lock(pack)
+    _role, refused = _lock(pack, me.id, 'owner')
+    if refused:
+        return refused
     invite = MissionPackInvite.query.filter_by(id=invite_id, pack_id=pack.id, status='pending').first()
     if invite is None:
         return _error('Not found', 404, 'invite_not_found')

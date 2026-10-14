@@ -32,6 +32,8 @@ internal data class RecordEntity(
     /** The file the record carries (a mission's `.msnx`): its hash, which names its bytes in [BlobEntity], and the name it is sent under. */
     val fileId: String? = null,
     val fileName: String? = null,
+    /** When it last changed, an ISO instant ([app.ezpztac.sync.LocalRecord.updatedAt]); null for a record kept before version 4 noted it. */
+    val updatedAt: String? = null,
 )
 
 /**

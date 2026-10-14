@@ -18,18 +18,18 @@ data class ScreenPoint(val x: Double, val y: Double)
  * test for which graphic a tap was on, and the maths of dragging one are all tried without a GPU. (The map itself draws with its own
  * projection; this agrees with it for the flat, untilted camera the app uses.)
  *
- * [density] is physical pixels per point (the screen's density): a view's size is in pixels, the world's in points. [bottomInsetPx] is the
- * strip at the bottom the map reserves for the sheet (`MapHost.setBottomPadding`): the camera's centre is the middle of what is above it.
+ * [density] is physical pixels per point (the screen's density): a view's size is in pixels, the world's in points. The camera's padding
+ * ([CameraState.paddingTopPx], [CameraState.paddingBottomPx]: the strips the search bar and the sheet cover, `MapHost.setPadding`) moves its
+ * centre to the middle of what is between them, as the map draws it.
  */
 class MapProjection(
     private val camera: CameraState,
     val widthPx: Double,
     val heightPx: Double,
     private val density: Double = 1.0,
-    private val bottomInsetPx: Double = 0.0,
 ) {
     private val middleX = widthPx / 2
-    private val middleY = (heightPx - bottomInsetPx) / 2
+    private val middleY = camera.paddingTopPx + (heightPx - camera.paddingTopPx - camera.paddingBottomPx) / 2
 
     private val worldPx = TILE_POINTS * Math.pow(2.0, camera.zoom) * density
     private val centerX = mercatorX(camera.center.lon)

@@ -237,6 +237,94 @@ class RoutePlanningTest {
         assertFalse(r.session.active.value!!.route("r1")!!.elevations.isNotEmpty())
     }
 
+    // -- What was fetched for a place lands only on a point still there --------------------------------------------------------------
+
+    // The route as the session shows it.
+    private fun Rig.shown() = session.active.value!!.route("r1")!!
+
+    // As the Routes panel moves a point (its nudge, the crosshair, a typed grid) or a drag does.
+    private fun Rig.move(pointId: String, to: LatLon) = session.edit("Move point") { it.withPointMoved("r1", pointId) { to } }
+
+    @Test
+    fun `ground fetched for a point that moved while it was asked about is not kept for its new place`() = runTest {
+        val r = Rig(this)
+        val set = r.open()
+        val held = CompletableDeferred<List<Double?>>()
+        r.api.elevationsAnswer = { held.await() }
+        val fetch = async { r.planning.fetchElevations(set, "r1") }
+        advanceUntilIdle()
+        r.move("p2", LatLon(34.712, -84.105))
+        held.complete(listOf(1100.0, 1200.0, 1300.0, 1400.0))
+        assertEquals(
+            PlanningOutcome.Done("Ground elevations for 3 of 4 points. One point moved or went while they were fetched, so it has none from this fetch."),
+            fetch.await(),
+        )
+        assertEquals(mapOf("p1" to 1100.0, "p3" to 1300.0, "p4" to 1400.0), r.shown().elevations)
+    }
+
+    @Test
+    fun `a point taken away while it was fetched for gets nothing, and nothing is kept under its id`() = runTest {
+        val r = Rig(this)
+        val set = r.open()
+        val held = CompletableDeferred<List<Double?>>()
+        r.api.elevationsAnswer = { held.await() }
+        val fetch = async { r.planning.fetchElevations(set, "r1") }
+        advanceUntilIdle()
+        r.session.edit("Remove point") { s -> s.mapRoute("r1") { it.copy(points = it.points.filterNot { p -> p.id == "p3" }) } }
+        held.complete(listOf(1100.0, 1200.0, 1300.0, 1400.0))
+        fetch.await()
+        assertEquals(setOf("p1", "p2", "p4"), r.shown().elevations.keys)
+    }
+
+    @Test
+    fun `when every point moved while they were fetched nothing is kept, and it says so`() = runTest {
+        val r = Rig(this)
+        val set = r.open()
+        val held = CompletableDeferred<List<Double?>>()
+        r.api.elevationsAnswer = { held.await() }
+        val fetch = async { r.planning.fetchElevations(set, "r1") }
+        advanceUntilIdle()
+        r.session.edit("Move route") { s -> s.mapRoute("r1") { it.copy(points = it.points.map { p -> p.copy(lat = p.lat + 0.01) }) } }
+        held.complete(listOf(1100.0, 1200.0, 1300.0, 1400.0))
+        assertEquals(PlanningOutcome.Failed("Every point moved or went while the ground elevations were fetched, so none were kept. Fetch them again."), fetch.await())
+        assertEquals(emptyMap<String, Double>(), r.shown().elevations)
+    }
+
+    @Test
+    fun `an undo step from before a point moved keeps what it had, not the ground fetched for the point's new place`() = runTest {
+        val r = Rig(this)
+        val set = r.open()
+        r.move("p2", LatLon(34.712, -84.105))
+        r.api.elevationsAnswer = { listOf(1100.0, 1250.0, 1300.0, 1400.0) }
+        r.planning.fetchElevations(set, "r1")
+        assertEquals(1250.0, r.shown().elevations["p2"])
+        assertEquals("Move point", r.session.undo())
+        assertEquals(34.71, r.shown().points.single { it.id == "p2" }.lat, 0.0)
+        assertEquals("the ground of the place it went to is not the ground here", null, r.shown().elevations["p2"])
+        assertEquals(1100.0, r.shown().elevations["p1"])
+    }
+
+    @Test
+    fun `a wind fetched for a point that moved meanwhile is not put on its new place`() = runTest {
+        val r = Rig(this)
+        val set = r.open()
+        val held = CompletableDeferred<Map<String, PointWindDto>>()
+        r.api.winds = { held.await() }
+        val fetch = async { r.planning.fetchWinds(set, "r1") }
+        advanceUntilIdle()
+        r.move("p2", LatLon(34.712, -84.105))
+        held.complete(mapOf("p1" to wind(270, 12.0, "METAR", temp = 18.0), "p2" to wind(280, 14.0, "METAR", temp = 17.0), "p4" to wind(300, 20.0, "TAF")))
+        assertEquals(
+            PlanningOutcome.Done("2 points · 1 METAR, 1 TAF. One point moved or went while they were fetched, so it has none from this fetch."),
+            fetch.await(),
+        )
+        val plan = r.shown().plan
+        assertEquals(270.0, plan.perPoint.getValue("p1").wind!!.dirTrue, 0.0)
+        assertEquals(null, plan.perPoint["p2"])
+        assertEquals(300.0, plan.perPoint.getValue("p4").wind!!.dirTrue, 0.0)
+        assertEquals(18.0, plan.tempC)
+    }
+
     @Test
     fun `elevations land in the route they were asked for when another set is open by then`() = runTest {
         val r = Rig(this)

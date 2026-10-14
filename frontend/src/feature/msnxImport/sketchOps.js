@@ -160,13 +160,15 @@ export const withPointOverride = (route, pointId, patch) => {
 /**
  * Sets (or clears, with an empty clock) a point's clock/TOT time. Only one point
  * anchors the clock at a time, so setting one clears the others; their other
- * overrides stay, and a point left with nothing is dropped.
+ * overrides stay, and a point left with nothing is dropped. A point whose
+ * overrides went is null in a mission pack's route (no operation deletes a key,
+ * so one that went is sent as null): it has none, and is dropped too.
  */
 export const withPointClock = (route, pointId, clock) => {
   const plan = { ...defaultRoutePlan(), ...route.plan };
   const perPoint = {};
   for (const [id, over] of Object.entries(plan.perPoint || {})) {
-    const { clock: _clock, ...rest } = over;
+    const { clock: _clock, ...rest } = over ?? {};
     if (Object.keys(rest).length) perPoint[id] = rest;
   }
   if (clock) {

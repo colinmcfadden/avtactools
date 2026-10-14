@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { createLzDiagramFromTarget } from "../lzWorkspace/useLzWorkspace";
 import { describeLzChange, lzDiagramFromItem, lzItemData, packDiagramId, packDiagramRef, sharedLzData } from "./packLz";
+import { newItemOp, packItemId } from "./packSentences";
 import { usePackItemSync } from "./usePackItemSync";
 
 /*
@@ -112,19 +113,16 @@ export const usePackLz = ({
    */
   const createItem = useCallback(
     (target, { name, mgrs = "" } = {}) => {
-      const uuid = `lz-${newId()}`;
+      const uuid = packItemId("lz", newId());
       const diagram = createLzDiagramFromTarget({ target, mgrs, id: packDiagramId(packUuid, uuid) });
       if (!diagram) return null;
-      const label = (name ?? "").trim() || `LZ/PZ ${sync.items.size + 1}`;
-      const refused = edit([{
-        type: "item.create", item: uuid, kind: "lz", name: label, data: lzItemData(diagram),
-        summary: `${actor || "Someone"} added the LZ/PZ "${label}".`,
-      }]);
+      const op = newItemOp({ kind: "lz", item: uuid, name, count: sync.items.size, data: lzItemData(diagram), actor });
+      const refused = edit([op]);
       if (refused) {
         onRefused?.(refused, null);
         return null;
       }
-      importDiagram({ ...diagram, name: label }, { activate: true });
+      importDiagram({ ...diagram, name: op.name }, { activate: true });
       return diagram.id;
     },
     [packUuid, sync.items, edit, actor, importDiagram, onRefused, newId],

@@ -21,7 +21,7 @@ public data class ThreatPicture(val savedAtMillis: Long, val entries: List<Threa
 
 /**
  * Where the threat picture is kept so that an app the system ended mid-plan does not lose it (`docs/NATIVE_APPS_PLAN.md`, "Threats on the device"). One
- * sealed file on the device, never backed up, never sent anywhere; [ThreatStore] decides what is in it and for how long.
+ * sealed file on the device, never backed up, never sent anywhere; [ThreatStore] decides what is in it, and wipes it at sign-out.
  */
 public interface ThreatVault {
     /** What is kept, or null for nothing, or for what cannot be read (which is then removed). */
@@ -35,13 +35,12 @@ public interface ThreatVault {
 }
 
 /**
- * The threats a crew is planning against. **Threats are never persisted** (`AGENTS.md` §2), so this is memory first: a list that screens and the map read.
- * The one exception the owner approved is that the list is also kept in one sealed file, so that a phone that ends a backgrounded app does not lose a
- * threat picture mid-planning; the file is never backed up, is wiped at sign-out ([wipe]) and is gone [RETAIN_MS] after the picture was last changed.
+ * The threats a crew is planning against: a list in memory that screens and the map read, kept in one sealed file on the device so that it outlives a
+ * launch (a phone that ends a backgrounded app does not lose a picture mid-planning). The file is never backed up and is wiped at sign-out ([wipe]). Since
+ * the owner's decision of 2026-10-12 (`AGENTS.md` §2) it no longer expires: threats are to be saved and shared like other plans (step *T*), and until that is
+ * built this file is where they live.
  *
  * Things that are easy to get wrong:
- * - **The 48 hours run from the last change**, not from the first threat: a picture someone is working in stays, a forgotten one goes. It is checked when
- *   the store is made (a launch) and whenever [expireIfOld] is called (the app coming to the front), because nothing runs while the app is not.
  * - **A write that is still queued must not bring back what was wiped.** A queued write saves what the picture is *when it runs*, under the lock a wipe
  *   takes, so a sign-out cannot be undone by a save that was already on its way; and an empty picture is removed, not saved.
  * - **A file that cannot be written costs the next launch its picture, not this session its threats**: it is caught, never thrown at whoever edited.
@@ -61,6 +60,11 @@ public class ThreatStore(
     /** The threats, in the order they were made. */
     public val entries: StateFlow<List<ThreatEntry>> = _entries.asStateFlow()
 
+    private val _wipes = MutableStateFlow(0)
+
+    /** How many times the picture has been wiped ([wipe]: a sign-out, *Remove all*): what was being done to it (a form, a held threat) is to be let go. */
+    public val wipes: StateFlow<Int> = _wipes.asStateFlow()
+
     init {
         val kept = try {
             vault.load()
@@ -68,12 +72,8 @@ public class ThreatStore(
             null
         }
         if (kept != null) {
-            if (expired(kept.savedAtMillis)) {
-                wipe()
-            } else {
-                lastChangeAt = kept.savedAtMillis
-                _entries.value = kept.entries
-            }
+            lastChangeAt = kept.savedAtMillis
+            _entries.value = kept.entries
         }
     }
 
@@ -109,7 +109,7 @@ public class ThreatStore(
         return true
     }
 
-    /** Writes the picture as it is now, after a drag ([previewMove]); the 48 hours run from here, as for any change. */
+    /** Writes the picture as it is now, after a drag ([previewMove]). */
     public fun settle() {
         lock.withLock { lastChangeAt = clock() }
         scope.launch(io) { write() }
@@ -135,17 +135,9 @@ public class ThreatStore(
             } catch (_: Exception) {
                 // The vault's contract is that it does not throw; a vault that does is not allowed to stop the memory having been cleared.
             }
+            _wipes.value += 1
         }
     }
-
-    /** Forgets the picture if it is [RETAIN_MS] old. True if it did. Call when the app comes to the front. */
-    public fun expireIfOld(): Boolean {
-        val stale = lock.withLock { _entries.value.isNotEmpty() && expired(lastChangeAt) }
-        if (stale) wipe()
-        return stale
-    }
-
-    private fun expired(changedAt: Long): Boolean = clock() - changedAt > RETAIN_MS
 
     private fun edit(id: String, how: (ThreatEntry) -> ThreatEntry): Boolean {
         if (_entries.value.none { it.id == id }) return false
@@ -170,10 +162,5 @@ public class ThreatStore(
                 // See the class: a file that cannot be written costs the next launch its picture.
             }
         }
-    }
-
-    public companion object {
-        /** How long a picture is kept after it was last changed. */
-        public const val RETAIN_MS: Long = 48 * 60 * 60 * 1000L
     }
 }

@@ -33,31 +33,17 @@ internal object JsValue {
         }
     }
 
-    private val DECIMAL = Regex("""[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?""")
-    private val SPACE = Regex("^[\\s\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+|[\\s\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+$")
+    /**
+     * `Number(value)`, exactly as JavaScript reads it ([JsNumber.of]): hexadecimal text, a one-element list and text padded with a
+     * byte order mark are numbers there, so they are here.
+     */
+    fun number(value: JsonElement?): Double = JsNumber.of(value)
 
     /**
-     * `Number(value)` for the shapes a saved target can hold: a number, a numeric
-     * string (empty text is 0, as in JavaScript), a boolean, or null (0). Anything
-     * else, objects and arrays included, is NaN.
+     * `text.trim()` as JavaScript trims: the no-break spaces and the byte order mark are taken, U+001C to U+001F are not (Kotlin's
+     * `trim` does both the other way).
      */
-    fun number(value: JsonElement?): Double = when (value) {
-        null -> Double.NaN                                  // undefined
-        is JsonNull -> 0.0                                  // Number(null) is 0
-        is JsonObject, is JsonArray -> Double.NaN
-        is JsonPrimitive -> when {
-            value.isString -> {
-                val text = value.content.replace(SPACE, "")
-                when {
-                    text.isEmpty() -> 0.0
-                    DECIMAL.matches(text) -> text.toDouble()
-                    else -> Double.NaN
-                }
-            }
-            value.booleanOrNull != null -> if (value.booleanOrNull == true) 1.0 else 0.0
-            else -> value.doubleOrNull ?: Double.NaN
-        }
-    }
+    fun trim(text: String): String = JsNumber.trimJs(text)
 
     /** `String(value)` for a primitive: 12 and 12.0 are both "12", as JavaScript prints them. */
     fun string(value: JsonElement?): String? = when (value) {

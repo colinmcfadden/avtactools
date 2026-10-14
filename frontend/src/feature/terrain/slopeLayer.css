@@ -1,0 +1,36 @@
+/* The slope map's contour lines (SlopeLayer). They lie over the banded slope colours and the imagery, topo or VFR chart under
+   them, and beside the MGRS grid, which is white over a dark halo: so contours are the other way about, near-black over a light
+   halo, and never read as grid lines. Every fifth is heavier, as on a topographic map; the ring outside the LZ is faded. */
+.map-slope {
+  --slope-contour-line: rgba(18, 18, 18, 0.9);
+  --slope-contour-halo: rgba(255, 255, 255, 0.55);
+}
+
+.slope-contour__halo { stroke: var(--slope-contour-halo); fill: none; }
+.slope-contour__halo--minor { stroke-width: 3px; }
+.slope-contour__halo--major { stroke-width: 4.5px; }
+
+.slope-contour__line { stroke: var(--slope-contour-line); fill: none; }
+.slope-contour__line--minor { stroke-width: 1px; }
+.slope-contour__line--major { stroke-width: 2px; }
+
+.slope-contour__halo--outside,
+.slope-contour__line--outside { stroke-opacity: 0.4; }
+
+/* A height's number: an 11 px pill, light on the dark line it labels, centred on its point. */
+.slope-contour-label { pointer-events: none; }
+.slope-contour-label > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  padding: 1px 4px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #121212;
+  font-family: var(--mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 13px;
+  white-space: nowrap;
+}

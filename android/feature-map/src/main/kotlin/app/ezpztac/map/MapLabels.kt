@@ -1,5 +1,6 @@
 package app.ezpztac.map
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -14,11 +15,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -67,6 +72,14 @@ object MapLabels {
     /** How far off the screen a label may be and still be kept, so one that is sliding in is not missing for a frame. */
     private const val MARGIN_PX = 48.0
 
+    /** The heights of the slope map's contour lines, where the server put each, kept while they may be on the screen. */
+    fun contours(slope: SlopeImage?, view: MapProjection): List<MapLabel> = slope?.contours.orEmpty().mapNotNull { piece ->
+        val at = view.toScreen(piece.label ?: return@mapNotNull null)
+        if (!at.x.isFinite() || !at.y.isFinite()) return@mapNotNull null
+        if (at.x < -MARGIN_PX || at.x > view.widthPx + MARGIN_PX || at.y < -MARGIN_PX || at.y > view.heightPx + MARGIN_PX) return@mapNotNull null
+        MapLabel(text = piece.elevationFt.toString(), at = at, violating = false, description = "Contour ${piece.elevationFt} feet")
+    }
+
     /** The feet between each pair of aircraft's rotor edges, at the middle of the line between them. */
     fun separations(graphics: GraphicsScene, view: MapProjection): List<MapLabel> = graphics.separations.mapNotNull { line ->
         if (view.pixelsBetween(line.from, line.to) < MIN_LINE_PX) return@mapNotNull null
@@ -87,7 +100,7 @@ fun GraphicLabelsLayer(host: MapHost, graphics: GraphicsScene, modifier: Modifie
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
         if (camera == null || size == IntSize.Zero || (graphics.separations.isEmpty() && graphics.doghouses.isEmpty() && graphics.units.isEmpty())) return@Box
-        val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density, host.bottomPaddingPx.toDouble())
+        val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density)
         MapLabels.units(graphics, view).forEach { placed -> UnitMarker(placed, footprints) }
         MapLabels.doghouses(graphics, view).forEach { placed -> PlacedDoghouse(placed, camera.bearingDegrees) }
         MapLabels.separations(graphics, view).forEach { label -> SeparationBadge(label) }
@@ -127,3 +140,46 @@ private fun SeparationBadge(label: MapLabel) {
         Text(label.text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(horizontal = Tokens.Spacing.sm.dp, vertical = Tokens.Spacing.xs.dp))
     }
 }
+
+/**
+ * The heights of the slope map's contour lines, over the map where [slope] says ([MapLabels.contours]): 11 dp pills, dark on light, the other way
+ * about from the lines they label. Hidden from a screen reader, as the lines are a picture of the ground; it takes no touches.
+ */
+@Composable
+fun ContourLabelsLayer(host: MapHost, slope: SlopeImage?, modifier: Modifier = Modifier) = ContourLabels({ host.camera }, slope, modifier)
+
+/** [ContourLabelsLayer] for the [camera] the map has now (a test hands it one). */
+@Composable
+internal fun ContourLabels(camera: () -> CameraState?, slope: SlopeImage?, modifier: Modifier = Modifier) {
+    val camera = camera()
+    val density = LocalDensity.current
+    // Not `size`: the pills' graphicsLayer reads its own `size`, which a local of that name would hide.
+    var area by remember { mutableStateOf(IntSize.Zero) }
+    Box(modifier.fillMaxSize().onSizeChanged { area = it }.clearAndSetSemantics {}) {
+        if (camera == null || area == IntSize.Zero || slope == null || slope.contours.none { it.label != null }) return@Box
+        val view = MapProjection(camera, area.width.toDouble(), area.height.toDouble(), density.density.toDouble())
+        // The pill keeps its size whatever the person's text size, as the grid's do: it labels a line a few metres from the next.
+        val fontSize = with(density) { 11.dp.toSp() }
+        MapLabels.contours(slope, view).forEach { label ->
+            Box(
+                Modifier
+                    .offset { IntOffset(label.at.x.roundToInt(), label.at.y.roundToInt()) }
+                    .graphicsLayer {
+                        translationX = -size.width / 2f
+                        translationY = -size.height / 2f
+                    }
+                    .background(CONTOUR_PILL, RoundedCornerShape(7.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            ) {
+                Text(
+                    label.text,
+                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = fontSize, lineHeight = fontSize, fontWeight = FontWeight.SemiBold),
+                    color = CONTOUR_TEXT, maxLines = 1, softWrap = false,
+                )
+            }
+        }
+    }
+}
+
+private val CONTOUR_PILL = Color(red = 255, green = 255, blue = 255, alpha = (0.82f * 255).roundToInt())
+private val CONTOUR_TEXT = Color(0xFF121212)

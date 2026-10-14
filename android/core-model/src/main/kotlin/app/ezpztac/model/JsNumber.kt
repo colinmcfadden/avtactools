@@ -1,6 +1,9 @@
 package app.ezpztac.model
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.math.BigDecimal
 import java.math.MathContext
@@ -71,6 +74,84 @@ public object JsNumber {
             }
         }
         return if (value < 0) "-$body" else body
+    }
+
+    /**
+     * JavaScript's `Number(value)` for a JSON value, exactly (ECMAScript ToNumber). Kotlin's null is `undefined`, which is NaN; JSON null
+     * and false are 0 and true is 1; a list is read by its text, the elements joined by commas (so `[]` is 0, `[90]` is 90 and `[1, 2]`
+     * is NaN), and an object is NaN. Text is trimmed of what JavaScript counts as white space (the no-break spaces and the byte order mark
+     * too, not U+001C or a zero-width space), and then blank text is 0, decimal text its number, `Infinity` with or without a sign
+     * infinity, and `0x`, `0o` and `0b` text (no sign) a whole number in that base; anything else, `1_000` and `-0x5A` among it, is NaN.
+     *
+     * A saved document's numbers are read with it where the web reads them with `Number()`, so hexadecimal text in a target is 34 here as
+     * it is there, not "not a position".
+     */
+    public fun of(value: JsonElement?): Double = when (value) {
+        null -> Double.NaN
+        is JsonNull -> 0.0
+        is JsonObject -> Double.NaN
+        is JsonArray -> parse(joined(value))
+        is JsonPrimitive -> when {
+            value.isString -> parse(value.content)
+            value.content == "true" -> 1.0
+            value.content == "false" -> 0.0
+            else -> value.content.toDoubleOrNull() ?: Double.NaN
+        }
+    }
+
+    // `String(list)`: the elements joined by commas, null as nothing and a list within by its own text.
+    private fun joined(list: JsonArray): String = list.joinToString(",") { element ->
+        when (element) {
+            is JsonNull -> ""
+            is JsonArray -> joined(element)
+            is JsonObject -> "[object Object]"
+            is JsonPrimitive -> if (element.isString || element.content == "true" || element.content == "false") {
+                element.content
+            } else {
+                element.content.toDoubleOrNull()?.let(::toText) ?: element.content
+            }
+        }
+    }
+
+    private val DECIMAL_TEXT = Regex("""[+-]?(?:Infinity|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)""")
+    private val BASE_TEXT = Regex("""0([xXoObB])([0-9A-Za-z]+)""")
+
+    /** ECMAScript StringToNumber: [text] trimmed as JavaScript trims, then read whole or not at all. */
+    private fun parse(text: String): Double {
+        val trimmed = trimJs(text)
+        if (trimmed.isEmpty()) return 0.0
+        if (DECIMAL_TEXT.matches(trimmed)) {
+            return when (trimmed) {
+                "Infinity", "+Infinity" -> Double.POSITIVE_INFINITY
+                "-Infinity" -> Double.NEGATIVE_INFINITY
+                else -> trimmed.toDouble()
+            }
+        }
+        val based = BASE_TEXT.matchEntire(trimmed) ?: return Double.NaN
+        val radix = when (based.groupValues[1].lowercase()) {
+            "x" -> 16
+            "o" -> 8
+            else -> 2
+        }
+        val digits = based.groupValues[2]
+        if (digits.any { Character.digit(it, radix) < 0 }) return Double.NaN
+        // BigInteger rounds a value past 2^53 to the nearest double, as JavaScript's reading of the digits does.
+        return java.math.BigInteger(digits, radix).toDouble()
+    }
+
+    /** What `String.prototype.trim` takes from each end: JavaScript's white space and line terminators. */
+    internal fun isJsSpace(c: Char): Boolean = when (c) {
+        '\t', '\n', '\u000B', '\u000C', '\r', ' ', '\u00A0', '\u1680', '\u2028', '\u2029', '\u202F', '\u205F', '\u3000', '\uFEFF' -> true
+        else -> c in '\u2000'..'\u200A'
+    }
+
+    /** `text.trim()` as JavaScript does it, which is not Kotlin's: it takes the byte order mark, and leaves U+001C to U+001F. */
+    internal fun trimJs(text: String): String {
+        var start = 0
+        var end = text.length
+        while (start < end && isJsSpace(text[start])) start++
+        while (end > start && isJsSpace(text[end - 1])) end--
+        return text.substring(start, end)
     }
 
     public fun finiteOr(value: JsonElement?, fallback: Double): Double {

@@ -50,8 +50,9 @@ MAX_QUEUE = 1000
 # Events after which someone may have lost (or gained) the right to see a pack.
 MEMBERSHIP_EVENTS = frozenset({'member.add', 'member.join', 'member.role', 'member.remove', 'pack.share', 'pack.transfer'})
 
-# Close codes a client acts on: 4401 sign in again; 4403 and 4404 the pack is not yours to see; 4410 it was
-# deleted; 4400 and 4408 a client bug; 1013 the service is busy or cannot reach the API, so try again later.
+# Close codes a client acts on: 4401 sign in again; 4403 the account may not open packs now (the API's /access
+# answers 403 only for feature_disabled or affiliation_required, never for the pack); 4404 the pack is not yours to
+# see; 4410 it was deleted; 4400 and 4408 a client bug; 1013 the service is busy or cannot reach the API, so try again later.
 CLOSE_CODES = {
     'bad_hello': 4400, 'unauthorized': 4401, 'forbidden': 4403, 'not_in_pack': 4404,
     'hello_timeout': 4408, 'pack_gone': 4410, 'unavailable': 1013, 'too_slow': 1013,

@@ -60,12 +60,12 @@ def kotlin(tokens):
     out += [f"        const val {k}: Int = {v}" for k, v in tokens["radius"].items()]
     out += ["    }", "", "    /** In dp. The touch target is above the 48 dp platform minimum, for gloves and vibration. */", "    object Size {"]
     out += [f"        const val {k}: Int = {v}" for k, v in tokens["size"].items()]
-    out += ["    }", "", "    /** Size in sp; `mono` is a monospaced face, for grids and key numbers. */", "    object Type {"]
-    out.append("        data class Style(val size: Int, val weight: Int, val mono: Boolean)")
+    out += ["    }", "", "    /** Size and line height in sp; `mono` is a monospaced face, for grids and key numbers. */", "    object Type {"]
+    out.append("        data class Style(val size: Int, val lineHeight: Int, val weight: Int, val mono: Boolean)")
     out.append("")
     for name, style in tokens["type"].items():
         mono = "true" if style["mono"] else "false"
-        out.append(f"        val {name} = Style({style['size']}, {style['weight']}, {mono})")
+        out.append(f"        val {name} = Style({style['size']}, {style['lineHeight']}, {style['weight']}, {mono})")
     out += ["    }", "}", ""]
     return "\n".join(out)
 

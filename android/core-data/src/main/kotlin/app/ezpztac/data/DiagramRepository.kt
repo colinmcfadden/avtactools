@@ -1,6 +1,7 @@
 package app.ezpztac.data
 
 import app.ezpztac.model.Diagram
+import app.ezpztac.model.DiagramJson
 import app.ezpztac.model.DiagramNormalizer
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
@@ -12,11 +13,9 @@ import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.sync.SyncStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.encodeToJsonElement
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,7 +47,6 @@ class DiagramRepository @Inject constructor(
     private val feed: RecordFeed,
     private val scheduler: SyncScheduler,
 ) {
-    private val json = Json { encodeDefaults = true; explicitNulls = true }
     private val env = DiagramNormalizer.Environment()
 
     /** The diagrams, as a list that updates itself (a sync that brings one in, an edit, a delete). */
@@ -62,7 +60,7 @@ class DiagramRepository @Inject constructor(
         val uuid = java.util.UUID.randomUUID().toString()
         val diagram = checkNotNull(
             DiagramNormalizer.fromTarget(
-                target = json.encodeToJsonElement(DiagramTarget.serializer(), target), mgrs = target.mgrs, id = uuid, name = name, env = env,
+                target = DiagramJson.encode(target), mgrs = target.mgrs, id = uuid, name = name, env = env,
             ),
         ) { "the target is not a position" }
         sync.create(RecordKind.LZ, name, serialize(diagram), uuid = uuid)
@@ -106,6 +104,18 @@ class DiagramRepository @Inject constructor(
         scheduler.requestSync()
     }
 
+    /**
+     * A copy of [uuid] named [name], under an identity of its own: everything in it, its analysis and graphics too, as the web's *Duplicate* copies a record.
+     * Its id, or null when there is nothing to copy (it was deleted).
+     */
+    suspend fun duplicate(uuid: String, name: String): String? {
+        val diagram = open(uuid) ?: return null
+        val copy = java.util.UUID.randomUUID().toString()
+        sync.create(RecordKind.LZ, name, serialize(diagram.copy(id = copy, savedId = JsonNull, name = name, updatedAt = env.now())), uuid = copy)
+        scheduler.requestSync()
+        return copy
+    }
+
     private fun toDiagram(record: LocalRecord): Diagram = DiagramNormalizer.normalize(
         record.data,
         DiagramNormalizer.Options(
@@ -121,10 +131,16 @@ class DiagramRepository @Inject constructor(
         val diagram = toDiagram(record)
         return DiagramSummary(
             uuid = record.uuid, name = record.name, status = diagram.status, target = diagram.target, sync = record.status,
-            conflictOf = record.conflictOf, updatedAt = diagram.updatedAt,
+            conflictOf = record.conflictOf, updatedAt = record.updatedAt ?: documentTime(record.data),
         )
     }
 
-    private fun serialize(diagram: Diagram): JsonObject =
-        json.encodeToJsonElement(Diagram.serializer(), DiagramNormalizer.serialize(diagram)) as JsonObject
+    private fun serialize(diagram: Diagram): JsonObject = DiagramJson.encode(DiagramNormalizer.serialize(diagram))
+
+    /**
+     * When the document itself says it last changed (for a record kept before the database noted it), read from the JSON and not from the normalised
+     * diagram, which gives a document with no time of its own the current one: a time made up.
+     */
+    private fun documentTime(data: JsonObject): String? = listOf("updatedAt", "updated_at")
+        .firstNotNullOfOrNull { (data[it] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { p -> p.isString }?.content?.takeIf { t -> t.isNotBlank() } }
 }

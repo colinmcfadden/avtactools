@@ -78,6 +78,58 @@ class DtoFixtureTest {
         "route-winds: no station answers" to WindsResponse.serializer(),
         "sync: changes" to ChangeFeed.serializer(),
         "sync: nothing new" to ChangeFeed.serializer(),
+        // Mission packs, teams, invitations and finding people
+        "packs" to PacksBody.serializer(),
+        "pack: create" to Pack.serializer(),
+        "pack: create again with the same uuid" to Pack.serializer(),
+        "pack: get" to Pack.serializer(),
+        "pack: get, where the live service runs" to Pack.serializer(),
+        "pack: access" to PackAccess.serializer(),
+        "pack: rename and describe" to Pack.serializer(),
+        "pack: share with a team" to Pack.serializer(),
+        "pack: finish" to Pack.serializer(),
+        "pack: reopen" to Pack.serializer(),
+        "pack: duplicate" to Pack.serializer(),
+        "pack: delete" to StatusReply.serializer(),
+        "ops: make an LZ, a route set and a point set" to PackOpsResult.serializer(),
+        "ops: edits, one skipped, with the events after base_seq" to PackOpsResult.serializer(),
+        "ops: the same batch again, answered from the log" to PackOpsResult.serializer(),
+        "events: a page" to PackEventPage.serializer(),
+        "events: the rest" to PackEventPage.serializer(),
+        "seen" to PackSeenDto.serializer(),
+        "item: copy in from the library" to PackItemReply.serializer(),
+        "item: copy in again with the same item" to PackItemReply.serializer(),
+        "item: get" to ItemBody.serializer(),
+        "item: get, after the original and the copy both changed" to ItemBody.serializer(),
+        "item: update from the original" to PackItemReply.serializer(),
+        "item: save to the library" to LibraryCopy.serializer(),
+        "member: add a teammate" to MemberBody.serializer(),
+        "member: change a role" to MemberBody.serializer(),
+        "member: hand the pack over" to MemberBody.serializer(),
+        "member: remove" to StatusReply.serializer(),
+        "pack invite: by email" to InviteReply.serializer(),
+        "pack invite: the same address again" to InviteReply.serializer(),
+        "pack invite: send again" to InviteReply.serializer(),
+        "pack invite: withdraw" to InviteBody.serializer(),
+        "pack invites" to InvitesBody.serializer(),
+        "invites: mine, to a team" to InvitesBody.serializer(),
+        "invites: mine, to a pack" to InvitesBody.serializer(),
+        "invite: accept" to InviteAccepted.serializer(),
+        "invite: accept from a link" to InviteAccepted.serializer(),
+        "invite: decline" to InviteBody.serializer(),
+        "teams" to TeamsBody.serializer(),
+        "team: create" to Team.serializer(),
+        "team: get" to Team.serializer(),
+        "team: rename" to Team.serializer(),
+        "team: delete" to StatusReply.serializer(),
+        "team member: change a role" to Team.serializer(),
+        "team member: remove" to StatusReply.serializer(),
+        "team invite: a link" to InviteReply.serializer(),
+        "team invite: by email" to InviteReply.serializer(),
+        "team invite: withdraw" to InviteBody.serializer(),
+        "team invites" to InvitesBody.serializer(),
+        "users: search" to UsersBody.serializer(),
+        "users: search finds only teammates" to UsersBody.serializer(),
     )
 
     @TestFactory
@@ -121,6 +173,16 @@ class DtoFixtureTest {
     fun `an own profile carries its identity and the master list does not`() {
         val own = strict.decodeFromString(AircraftProfileDto.serializer(), Recorded.text("aircraft: create"))
         assertTrue(own.clientUuid != null && own.revision == 1 && !own.isSystem)
+    }
+
+    @Test
+    fun `a pack's operations keep the nulls they were sent with`() {
+        // `value: null` clears a field and `after: null` puts an element first: dropping either would change what an edit does.
+        val answer = ApiClient.JSON.decodeFromString(PackOpsResult.serializer(), Recorded.text("ops: edits, one skipped, with the events after base_seq"))
+        val ops = answer.events.associate { it.clientOpId to it.op }
+        assertEquals(JsonNull, ops.getValue("op-5")["value"])
+        assertEquals(JsonNull, ops.getValue("op-6")["after"])
+        assertEquals(listOf("applied", "applied", "applied", "skipped", "applied"), answer.results.map { it.status })
     }
 
     /** Everything in [sent] is in [kept], with the same value. [kept] may hold more: a default the server left out. */

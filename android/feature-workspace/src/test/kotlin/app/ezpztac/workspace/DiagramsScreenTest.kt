@@ -20,6 +20,7 @@ import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.planning.LzSummary
+import app.ezpztac.planning.SlopeProfile
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import org.junit.Assert.assertEquals
@@ -287,6 +288,45 @@ class DiagramsScreenTest {
     fun `the slope call is spoken as well as coloured`() {
         show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles(SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.DANGER, "LIMIT EXCEEDED", 16.04), "terrarium", 19.0)))))
         compose.onNode(androidx.compose.ui.test.hasContentDescription("Maximum terrain slope 16.0 degrees. LIMIT EXCEEDED.")).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `the slope profile is shown under the slope tile, and its two sentences spoken`() {
+        val line = SlopeProfile.Line(90, listOf(-300.0, 0.0, 300.0), listOf(1200.0, 1210.0, 1220.0), listOf(-100.0, 100.0), 6.7, 1.9, "Along 090°: rises 7 ft through the LZ, 1.9° on average")
+        val across = line.copy(heading = 180, words = "Across, left to right: level through the LZ")
+        show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles().copy(profile = SlopeProfile.Profile(line, across)))))
+        compose.onNode(
+            androidx.compose.ui.test.hasContentDescription("Slope profile, heights in feet. Along 090°: rises 7 ft through the LZ, 1.9° on average. Across, left to right: level through the LZ."),
+        ).performScrollTo().assertIsDisplayed()
+        assertEquals(0, compose.onAllNodesWithText("Slope profile").fetchSemanticsNodes().size)               // one description, not each word again
+    }
+
+    @Test
+    fun `the slope profile closes and opens from its header`() {
+        val line = SlopeProfile.Line(90, listOf(-300.0, 0.0, 300.0), listOf(1200.0, 1210.0, 1220.0), listOf(-100.0, 100.0), 6.7, 1.9, "Along 090°: rises 7 ft through the LZ, 1.9° on average")
+        show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles().copy(profile = SlopeProfile.Profile(line, line.copy(words = "Across"))))))
+        val opened = androidx.compose.ui.test.hasStateDescription("Open")
+        compose.onNode(opened and androidx.compose.ui.test.hasContentDescription("Slope profile", substring = true)).performScrollTo().performClick()
+        val closed = compose.onNode(androidx.compose.ui.test.hasContentDescription("Slope profile, heights in feet") and androidx.compose.ui.test.hasStateDescription("Closed"))
+        closed.assertIsDisplayed()
+        assertEquals(0, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Along 090°", substring = true)).fetchSemanticsNodes().size)
+        closed.performClick()
+        compose.onNode(opened and androidx.compose.ui.test.hasContentDescription("Along 090°", substring = true)).assertIsDisplayed()
+    }
+
+    @Test
+    fun `the landing heading's call and the wind are shown under the slope, and spoken with it`() {
+        val lines = listOf("Landing 090°: nose up 16.0°, limit 9°", "Wind 16 kt: limits \u22126°, nose down prohibited above 15 kt")
+        val call = LzSummary.SlopeCall(LzSummary.SlopeLevel.DANGER, "LIMIT EXCEEDED", 20.0, heading = 90, lines = lines)
+        show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles(SlopeTileUi.Measured(call, "terrarium", 19.0)))))
+        val spoken = "Maximum terrain slope 20.0 degrees. LIMIT EXCEEDED. Landing 090 degrees: nose up 16.0 degrees, limit 9 degrees. " +
+            "Wind 16 knots: limits minus 6 degrees, nose down prohibited above 15 knots."
+        compose.onNode(androidx.compose.ui.test.hasContentDescription(spoken)).performScrollTo().assertIsDisplayed()
+        lines.forEach { compose.onNodeWithText(it, useUnmergedTree = true).assertExists() }
+        assertEquals(
+            "Maximum terrain slope 4.2 degrees. LANDING. Landing 270 degrees: within limits. Wind 12 knots: limits minus 4 degrees.",
+            slopeSpoken(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2, lines = listOf("Landing 270°: within limits", "Wind 12 kt: limits \u22124°"))),
+        )
     }
 
     // -- Numbers ------------------------------------------------------------------------------------------------------------

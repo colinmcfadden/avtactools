@@ -1,5 +1,10 @@
 package app.ezpztac.workspace
 
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.CancellationException
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,7 +57,7 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.model.UnitDraft
 
 /** A draft in what survives the screen being turned: its five parts as text. */
-private val UnitDraftSaver = listSaver<UnitDraft, String>(
+internal val UnitDraftSaver = listSaver<UnitDraft, String>(
     save = { listOf(it.affiliation, it.functionId, it.echelon, it.uniqueDesignation, it.higherFormation) },
     restore = { UnitDraft(it[0], it[1], it[2], it[3], it[4]) },
 )
@@ -70,9 +75,9 @@ class GraphicsActions(
     val changeReach: (Double) -> Unit = {},
     val tipToCrosshair: () -> Unit = {},
     val setDirection: (String) -> Unit = {},
-    /** Adds a unit made in the unit builder at the crosshair; applies the builder to the held unit. */
+    /** Adds a unit made in the unit builder at the crosshair; applies the builder to the held unit (what it holds, and the unit as it showed it). */
     val addUnit: (UnitDraft) -> Unit = {},
-    val updateUnit: (UnitDraft) -> Unit = {},
+    val updateUnit: (draft: UnitDraft, from: UnitDraft) -> Unit = { _, _ -> },
     /** A doghouse's fields: each takes what was typed and answers with what is wrong with it, or null when it was taken. */
     val setDoghouseLabel: (String) -> String? = { null },
     val setDoghouseTime: (String) -> String? = { null },
@@ -105,32 +110,39 @@ fun GraphicsHost(crosshair: LatLon?, crosshairGrid: String?, modifier: Modifier 
     )
 }
 
+/**
+ * The list of the open diagram's graphics, the inspector for the one held, undo and redo, and the separation alerts. [placeButtons] adds the buttons that put
+ * one at the crosshair and the unit builder; the LZ/PZ plan has its own tools for those, as modes (`LzPlanContent`), and leaves them out.
+ */
 @Composable
-fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: GraphicsActions, modifier: Modifier = Modifier) {
+fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: GraphicsActions, modifier: Modifier = Modifier, placeButtons: Boolean = true) {
     var addingUnit by rememberSaveable { mutableStateOf(false) }
     var newUnit by rememberSaveable(stateSaver = UnitDraftSaver) { mutableStateOf(UnitDraft()) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Planning graphics", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            if (state.canEdit || state.undoDepth > 0 || state.redoDepth > 0) {
+            // Not in a read-only pack: a step taken back there would be a change the pack refuses.
+            if (state.locked == null && (state.canEdit || state.undoDepth > 0 || state.redoDepth > 0)) {
                 Row {
                     TextAction("Undo", onClick = actions.undo, enabled = state.undoDepth > 0)
                     TextAction("Redo", onClick = actions.redo, enabled = state.redoDepth > 0)
                 }
             }
         }
-        if (!state.canEdit) {
+        // Said before anything else, whether or not it is analysed: a refusal of Undo on an LZ/PZ not analysed is said too.
+        state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
+        if (!state.listed) {
             Text(
-                "Analyze the landing zone first: aircraft, PZ markers, sectors and go-arounds are placed in it.",
+                // Not advice the pack would refuse: in a read-only pack it cannot be analysed here (the analysis section says why).
+                if (state.locked != null) "This LZ/PZ was not analysed, so its graphics are not listed." else "Analyze the landing zone first: aircraft, PZ markers, sectors and go-arounds are placed in it.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             return@Column
         }
         state.alerts.forEach { Banner(it, BannerKind.Warning) }
-        state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
 
-        PlaceButtons(crosshairGrid, actions.place, onUnit = { addingUnit = !addingUnit })
-        if (addingUnit) {
+        if (placeButtons && state.canEdit) PlaceButtons(crosshairGrid, actions.place, onUnit = { addingUnit = !addingUnit })
+        if (placeButtons && state.canEdit && addingUnit) {
             Surface(shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
                     Text("New unit", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
@@ -139,10 +151,31 @@ fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: Gra
             }
         }
         if (state.rows.isEmpty()) {
-            Text("Nothing placed yet. Move the map, then tap what to put at the crosshair.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                when {
+                    state.locked != null -> "Nothing is placed on this LZ/PZ."
+                    placeButtons -> "Nothing placed yet. Move the map, then tap what to put at the crosshair."
+                    else -> "Nothing placed yet. Pick a tool, then tap the map or add at the crosshair."
+                },
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         state.rows.forEach { row -> GraphicRow(row, actions.select) }
-        state.inspector?.let { Inspector(it, actions) }
+        // The held graphic's controls are brought into view once it is held (from the list, or the map's held bar), however far down the panel they are.
+        val inspectorView = remember { BringIntoViewRequester() }
+        val held = state.inspector?.ref
+        LaunchedEffect(held) {
+            if (held == null) return@LaunchedEffect
+            withFrameNanos { }                                                                  // laid out first
+            try {
+                inspectorView.bringIntoView()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // A panel that is not showing has nothing to scroll: the controls are where they are when it opens.
+            }
+        }
+        state.inspector?.let { Box(Modifier.bringIntoViewRequester(inspectorView)) { Inspector(it, actions, state.locked) } }
     }
 }
 
@@ -200,8 +233,11 @@ private fun GraphicRow(row: GraphicRowUi, select: (GraphicRef) -> Unit) {
 /** How far a nudge goes, in feet: a rotor-disc's worth of change, a fine one, and a coarse one. */
 internal val NUDGE_STEPS_FT = listOf(10, 50, 200)
 
+/**
+ * The held graphic, with the controls its kind has; in a read-only pack ([locked], why) what it is and how it stands, in words, and nothing to change it with.
+ */
 @Composable
-private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
+private fun Inspector(inspector: InspectorUi, actions: GraphicsActions, locked: String? = null) {
     var step by rememberSaveable { mutableIntStateOf(1) }
     val feet = NUDGE_STEPS_FT[step.coerceIn(NUDGE_STEPS_FT.indices)].toDouble()
     Surface(
@@ -217,6 +253,10 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
                     inspector.latLon?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 TextAction("Done", onClick = actions.deselect)
+            }
+            if (locked != null) {
+                ReadOnlyValues(inspector, locked)
+                return@Column
             }
 
             // Move: a pad of four arrows and a step, because dragging a symbol with gloves on a bouncing phone is not a plan.
@@ -234,6 +274,20 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions) {
 
             SecondaryButton("Delete this ${inspector.kind.label.lowercase()}", onClick = actions.delete)
         }
+    }
+}
+
+/** A held graphic of a read-only pack: why it cannot be changed, then what the controls would have shown, as words. */
+@Composable
+private fun ReadOnlyValues(inspector: InspectorUi, locked: String) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Text(locked, style = MaterialTheme.typography.bodyMedium, color = muted)
+    inspector.rotation?.let { Text("Heading ${it.toLong()}°", style = MaterialTheme.typography.labelLarge, color = muted) }
+    inspector.reachFt?.let { Text("Reach ${withCommas(it)} ft", style = MaterialTheme.typography.labelLarge, color = muted) }
+    inspector.direction?.let { Text("Pattern: ${if (it == "right") "Right" else "Left"}", style = MaterialTheme.typography.labelLarge, color = muted) }
+    inspector.doghouse?.let { d ->
+        d.feeds?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = muted) }
+        Text("Label ${d.label} · Time ${d.time} · ${d.distanceKm} km · ${d.airspeedKts} kts", style = MaterialTheme.typography.labelLarge, color = muted)
     }
 }
 
@@ -288,13 +342,22 @@ private fun HeadingControls(heading: Double, actions: GraphicsActions) {
     }
 }
 
-/** The held unit in the unit builder: nothing changes until Apply, and Apply is there only when something differs. */
+/**
+ * The held unit in the unit builder: nothing changes until Apply, and Apply is there only when something differs. A part changed under it (someone else's
+ * change in a mission pack, an undo) is shown, and what the person made of another part is kept ([UnitDraft.following]); Apply changes only what differs.
+ */
 @Composable
 private fun UnitControls(ref: GraphicRef, held: UnitDraft, actions: GraphicsActions) {
-    var draft by remember(ref, held) { mutableStateOf(held) }
+    // The unit as it was when the person began, part by part, and what they have made of it.
+    var start by remember(ref) { mutableStateOf(held) }
+    var draft by remember(ref) { mutableStateOf(held) }
+    LaunchedEffect(held) {
+        draft = draft.following(start, held)
+        start = held
+    }
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         Text("Unit", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        UnitBuilder(draft, { draft = it }, "Apply", onConfirm = { actions.updateUnit(draft) }, confirmEnabled = draft != held)
+        UnitBuilder(draft, { draft = it }, "Apply", onConfirm = { actions.updateUnit(draft, start) }, confirmEnabled = draft != held)
     }
 }
 

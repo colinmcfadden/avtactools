@@ -25,6 +25,11 @@ public data class StoredSession(
     val verifiedAtEpochSeconds: Long? = null,
 )
 
+/** An access token and the account it is for, so it is never passed on for anyone else ([ApiClient.accessTokens]). */
+internal data class AccessToken(val userId: Int, val token: String) {
+    override fun toString(): String = "AccessToken(user $userId)"                      // never the token itself, in a log or a failed test
+}
+
 /**
  * How long a device may go without the server confirming the account before it must sign in again: 14 days, as the owner decided
  * (docs/NATIVE_APPS_PLAN.md, "Risks and decisions"). It is the one place access that was withdrawn is noticed by a device that never
@@ -43,22 +48,42 @@ public object OfflineGrace {
     }
 }
 
+/**
+ * Kept in place of a session the server ended (or [OfflineGrace] did), with the [code] it gave, so that a launch in a later process can
+ * still say why the person has to sign in again: the session may be ended by a sync WorkManager ran with the app closed.
+ */
+@Serializable
+public data class EndedSession(val code: String? = null)
+
 /** Where the session is kept. Calls are made one at a time by the client, never concurrently. */
 public interface SessionStore {
     public suspend fun read(): StoredSession?
+
+    /** Keeps [session] in place of whatever was kept, a note of an ended session included. */
     public suspend fun write(session: StoredSession)
+
+    /** Forgets the session and any note: the person signed out, and there is nothing to tell them at the next launch. */
     public suspend fun clear()
+
+    /** Forgets the session and keeps [ended] in its place. */
+    public suspend fun end(ended: EndedSession)
+
+    /** The note [end] kept, until a session is written or the store is cleared. */
+    public suspend fun ended(): EndedSession?
 }
 
 /** A store that lives only as long as the process: for tests and previews. */
 public class InMemorySessionStore(initial: StoredSession? = null) : SessionStore {
     private var session: StoredSession? = initial
+    private var note: EndedSession? = null
     public var writes: Int = 0
         private set
 
     override suspend fun read(): StoredSession? = session
-    override suspend fun write(session: StoredSession) { this.session = session; writes++ }
-    override suspend fun clear() { session = null }
+    override suspend fun write(session: StoredSession) { this.session = session; note = null; writes++ }
+    override suspend fun clear() { session = null; note = null }
+    override suspend fun end(ended: EndedSession) { session = null; note = ended }
+    override suspend fun ended(): EndedSession? = note
 }
 
 /** Why there is no session. */
@@ -84,4 +109,7 @@ internal class AuthStateHolder {
     private val flow = MutableStateFlow<AuthState>(AuthState.Unknown)
     val state: StateFlow<AuthState> = flow.asStateFlow()
     fun set(state: AuthState) { flow.value = state }
+
+    /** Sets [state] only if nothing has been set yet, and returns what is set now. */
+    fun setIfUnknown(state: AuthState): AuthState = if (flow.compareAndSet(AuthState.Unknown, state)) state else flow.value
 }

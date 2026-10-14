@@ -70,6 +70,9 @@ class RouteSketching @Inject constructor(
         return null
     }
 
+    /** Why a route could not be drawn now (something else has the map's taps), or null when it could: asked before a set is made to draw it in. */
+    fun refusal(): String? = mode.refusal(DrawingMode.Kind.ROUTE)
+
     /** Puts a point down at [at]. False when nothing is being drawn on the open set, or [at] is not a position. */
     fun addPoint(at: LatLon, designation: Designation? = null): Boolean {
         val current = _draft.value ?: return false

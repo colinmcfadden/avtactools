@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useDoghouses } from "../doghouses/useDoghouses";
 import { useLzWorkspace } from "../lzWorkspace/useLzWorkspace";
 import { useFakePack } from "./fakePack";
 import { lzItemData, packDiagramId } from "./packLz";
@@ -207,5 +208,118 @@ describe("usePackLz", () => {
     // Every operation applied to the old shape (applyOps insists); the item is in the current shape now.
     expect(result.current.items[0].data.graphics.helicopters[0].lat).toBe(34.6);
     expect(result.current.sent.current).toHaveLength(1);
+  });
+});
+
+describe("usePackLz with the flight data following the doghouses, as App.js wires them", () => {
+  const RP = "dh-rp";
+  const WITH_DOGHOUSES = {
+    ...LZ_DATA,
+    flightData: { landing_hdg: "090°", takeoff_hdg: "270°" },
+    graphics: {
+      ...LZ_DATA.graphics,
+      doghouses: [
+        { id: "dh-sp", role: "takeoff", lat: 34.5, lon: -84.103, id_val: "[SP1]", heading: "270°", time: "01+57", dist: "3.13km", airspeed: "60 KIAS" },
+        { id: RP, role: "landing", lat: 34.4985, lon: -84.103, id_val: "[RP1]", heading: "090°", time: "02+10", dist: "5.20km", airspeed: "40 KIAS" },
+      ],
+    },
+  };
+
+  // App.js's wiring: the doghouses of the diagram on the map, set through the workspace, with the flight data following them.
+  const useWired = ({ data = WITH_DOGHOUSES, readOnly = false } = {}) => {
+    const ws = useLzWorkspace();
+    const { items, edit, remote, sent } = useFakePack([{ ...ITEM, data }]);
+    const bridge = usePackLz({
+      packUuid: "p-1", items, edit, readOnly, workspace: ws.workspace, importDiagram: ws.importDiagram,
+      applyRemoteDiagram: ws.applyRemoteDiagram, removeDiagram: ws.removeDiagram, setActiveDiagram: ws.setActiveDiagram,
+      actor: "Sam B.", newId: () => "new",
+    });
+    const latest = useRef(ws.workspace);
+    latest.current = ws.workspace;
+    const { setFlightData: setDiagramFlightData, setGraphicCollection } = ws;
+    const setFlightData = useCallback((next) => {
+      const d = latest.current.diagramsById[latest.current.activeDiagramId];
+      if (d) setDiagramFlightData(typeof next === "function" ? next(d.flightData ?? {}) : next, d.id);
+    }, [setDiagramFlightData]);
+    const setDoghouses = useCallback((next) => {
+      const d = latest.current.diagramsById[latest.current.activeDiagramId];
+      if (d) setGraphicCollection("doghouses", typeof next === "function" ? next(d.graphics?.doghouses ?? []) : next, d.id);
+    }, [setGraphicCollection]);
+    const active = ws.workspace.diagramsById[ws.workspace.activeDiagramId];
+    const { updateDoghouse } = useDoghouses(active?.target ? [active.target.lat, active.target.lon] : null, setFlightData, {
+      doghouses: active?.graphics?.doghouses ?? [], setDoghouses, diagramId: ws.workspace.activeDiagramId,
+    });
+    return { ws, items, sent, remote, bridge, updateDoghouse };
+  };
+
+  const openedWired = (options) => {
+    const view = renderHook(() => useWired(options));
+    act(() => { view.result.current.bridge.openItem("lz-1"); });
+    settleTimers();
+    return view;
+  };
+
+  const SUMMARY = "Colin M. turned doghouse RP1 to 105° on LZ HAWK.";
+  // What a doghouse turned elsewhere goes to the pack as: the landing heading it gives, then its own heading.
+  const TURN = [
+    { type: "patch", item: "lz-1", path: ["flightData"], value: { landing_hdg: "105°" }, summary: SUMMARY },
+    { type: "patch", item: "lz-1", path: ["graphics", "doghouses", { id: RP }], value: { heading: "105°" }, summary: SUMMARY },
+  ];
+  const landing = (result) => [diagramOf(result).graphics.doghouses[1].heading, diagramOf(result).flightData.landing_hdg];
+
+  it("sends a doghouse turned here as one change, with the landing heading it gives", () => {
+    const { result } = openedWired();
+    expect(result.current.sent.current).toEqual([]);
+    act(() => { result.current.updateDoghouse(RP, { heading: "105°" }); });
+    settleTimers();
+    expect(result.current.sent.current).toEqual([[
+      { type: "patch", item: "lz-1", path: ["flightData"], value: { landing_hdg: "105°" }, summary: "Sam B. turned doghouse RP1 to 105° on LZ HAWK." },
+      { type: "patch", item: "lz-1", path: ["graphics", "doghouses", { id: RP }], value: { heading: "105°" }, summary: "Sam B. turned doghouse RP1 to 105° on LZ HAWK." },
+    ]]);
+    settleTimers();
+    expect(result.current.sent.current).toHaveLength(1);
+  });
+
+  it("takes a doghouse turned elsewhere as it came, heard at once or a part at a time, and sends nothing of its own", () => {
+    for (const parts of [[TURN], [[TURN[0]], [TURN[1]]]]) {
+      const { result, unmount } = openedWired();
+      parts.forEach((ops) => {
+        act(() => { result.current.remote(ops); });
+        act(() => { jest.advanceTimersByTime(5); });
+      });
+      settleTimers();
+      // Heard a part at a time, as the live stream gives it, the landing heading comes before the doghouse: following the doghouse then
+      // put its old heading back and sent it, then sent the new one: two lines of the history in Sam's name for Colin's turn.
+      expect(result.current.sent.current).toEqual([]);
+      expect(landing(result)).toEqual(["105°", "105°"]);
+      expect(result.current.items[0].data.flightData.landing_hdg).toBe("105°");
+      unmount();
+    }
+  });
+
+  it("keeps a landing heading typed elsewhere, and does not put the doghouse's back over it", () => {
+    const { result } = openedWired();
+    act(() => { result.current.remote([{ type: "patch", item: "lz-1", path: ["flightData"], value: { landing_hdg: "123°" } }]); });
+    settleTimers();
+    expect(result.current.sent.current).toEqual([]);
+    expect(landing(result)).toEqual(["090°", "123°"]);
+    expect(result.current.items[0].data.flightData.landing_hdg).toBe("123°");
+  });
+
+  it("sends the headings an item lacks once, when it is opened", () => {
+    const { result } = openedWired({ data: { ...WITH_DOGHOUSES, flightData: {} } });
+    expect(result.current.sent.current).toEqual([[{
+      type: "patch", item: "lz-1", path: ["flightData"], value: { landing_hdg: "090°", takeoff_hdg: "270°" },
+      summary: "Sam B. changed the landing heading to 090° on LZ HAWK.",
+    }]]);
+    settleTimers();
+    expect(result.current.sent.current).toHaveLength(1);
+  });
+
+  it("in a pack that takes nothing, opens an item without the headings once, and does not put them back and forth", () => {
+    const { result } = openedWired({ data: { ...WITH_DOGHOUSES, flightData: {} }, readOnly: true });
+    settleTimers();
+    expect(result.current.sent.current).toEqual([]);
+    expect(diagramOf(result).flightData).toEqual({});
   });
 });

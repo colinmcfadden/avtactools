@@ -43,6 +43,11 @@ public data class LocalRecord(
     val conflictOf: String? = null,
     /** The file the record carries ([RecordKind.MISSION] only). */
     val file: FileRef? = null,
+    /**
+     * When it last changed, an ISO instant: this device's clock for a change made here, the server's `updated_at` for one a pull brought. What the
+     * Library sorts by. Null for a record kept before the app noted it (it sorts last, and says no time rather than a made-up one).
+     */
+    val updatedAt: String? = null,
 ) {
     /** What to show beside the record. */
     val status: SyncStatus

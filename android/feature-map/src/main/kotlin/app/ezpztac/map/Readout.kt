@@ -5,8 +5,20 @@ import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.model.LatLon
 import kotlin.math.abs
 
-/** Where the map is looking. [zoom] is MapLibre's (512-point tiles): one less than the same view in the web's Leaflet. */
-data class CameraState(val center: LatLon, val zoom: Double, val bearingDegrees: Double = 0.0)
+/**
+ * Where the map is looking. [zoom] is MapLibre's (512-point tiles): one less than the same view in the web's Leaflet. [paddingTopPx] and
+ * [paddingBottomPx] are the camera's padding as the map has it now (moving with it while it animates): the strips the app's controls cover,
+ * so [center] is the middle of the rest, where the crosshair is.
+ */
+data class CameraState(
+    val center: LatLon,
+    val zoom: Double,
+    val bearingDegrees: Double = 0.0,
+    val paddingTopPx: Double = 0.0,
+    val paddingBottomPx: Double = 0.0,
+    /** The move that brought it here began with the person's own gesture, not the app's. */
+    val byHand: Boolean = false,
+)
 
 /**
  * What the pill under the crosshair says: the grid first, because crews work in MGRS, then the position in degrees.

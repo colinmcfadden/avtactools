@@ -103,7 +103,7 @@ fun PinLabelsLayer(host: MapHost, routes: RouteScene, points: PointScene, modifi
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
         if (camera == null || size == IntSize.Zero || (routes.isEmpty && points.isEmpty)) return@Box
-        val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density, host.bottomPaddingPx.toDouble())
+        val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density)
         (PinLabels.routes(routes, view) + PinLabels.points(points, view, camera.zoom, density)).forEach { PinChip(it) }
     }
 }

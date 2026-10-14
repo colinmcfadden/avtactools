@@ -61,6 +61,8 @@ const Controls = ({
   setActiveNotams,
   winds,
   loadingWeather,
+  // The flight data's landing heading (the landing doghouse's), which the slope tile judges.
+  landingHdg,
   // Diagram lifecycle controls. They intentionally default to the legacy
   // behavior so Controls can still be used outside the diagram workspace.
   canAnalyze: canAnalyzeProp,
@@ -323,6 +325,7 @@ const Controls = ({
               setActiveNotams={setActiveNotams}
               winds={winds}
               loadingWeather={loadingWeather}
+              landingHdg={landingHdg}
             />
           </div>
 

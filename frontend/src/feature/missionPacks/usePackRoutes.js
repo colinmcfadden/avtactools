@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { describeRouteChange, routeSetData, routesFromItem, sharedRouteData } from "./packRoutes";
 import { packLocalId } from "./packRef";
+import { newItemOp, packItemId } from "./packSentences";
 import { usePackItemSync } from "./usePackItemSync";
 
 /*
@@ -109,17 +110,14 @@ export const usePackRoutes = ({
   /** A new, empty route set in the pack, opened here. Returns its uuid, or null if refused. */
   const createItem = useCallback(
     (name) => {
-      const uuid = `rt-${newId()}`;
-      const label = (name ?? "").trim() || `ROUTES ${sync.items.size + 1}`;
-      const refused = edit([{
-        type: "item.create", item: uuid, kind: "route", name: label, data: { version: 1, routes: [] },
-        summary: `${actor || "Someone"} added the route set "${label}".`,
-      }]);
+      const uuid = packItemId("route", newId());
+      const op = newItemOp({ kind: "route", item: uuid, name, count: sync.items.size, data: { version: 1, routes: [] }, actor });
+      const refused = edit([op]);
       if (refused) {
         onRefused?.(refused, null);
         return null;
       }
-      setNames((n) => ({ ...n, [uuid]: label }));
+      setNames((n) => ({ ...n, [uuid]: op.name }));
       setOpen((list) => [...list, uuid]);
       return uuid;
     },

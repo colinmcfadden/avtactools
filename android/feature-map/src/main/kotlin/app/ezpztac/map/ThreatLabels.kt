@@ -57,7 +57,7 @@ fun ThreatLabelsLayer(host: MapHost, scene: ThreatScene, modifier: Modifier = Mo
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
         if (camera == null || size == IntSize.Zero || scene.isEmpty) return@Box
-        val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density, host.bottomPaddingPx.toDouble())
+        val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density)
         ThreatLabels.placed(scene, view).forEach { ThreatMarker(it) }
     }
 }

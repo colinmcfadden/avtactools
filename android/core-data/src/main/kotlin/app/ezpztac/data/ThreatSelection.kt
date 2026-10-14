@@ -8,7 +8,7 @@ import javax.inject.Singleton
 
 /**
  * The threat a crew is holding on the map and in the sheet. It is deliberately separate from [ThreatStore]: selection is a view choice,
- * so it is neither sealed into the short-lived threat file nor exported to AMPS.
+ * so it is neither sealed into the threat file nor exported to AMPS. A hidden threat is never held (the map does not draw it).
  */
 @Singleton
 public class ThreatSelection @Inject constructor() {

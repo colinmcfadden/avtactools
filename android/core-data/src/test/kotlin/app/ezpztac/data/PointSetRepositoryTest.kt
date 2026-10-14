@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -164,7 +165,9 @@ class PointSetRepositoryTest {
         repository.observe().test {
             assertEquals(emptyList<PointSetRow>(), awaitItem())
             val made = imported()
-            assertEquals(PointSetRow(made.id, "NORTH GA", 9, SyncStatus.PENDING, null), awaitItem().single())
+            val row = awaitItem().single()
+            assertNotNull(row.updatedAt)                                                          // when it was made here, for the Library's order
+            assertEquals(PointSetRow(made.id, "NORTH GA", 9, SyncStatus.PENDING, null), row.copy(updatedAt = null))
             repository.rename(made.id, "NIGHT")
             assertEquals("NIGHT", awaitItem().single().name)
             repository.delete(made.id)

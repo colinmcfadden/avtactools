@@ -228,12 +228,13 @@ class ApiClientAuthTest {
                 assertEquals(code, e.code)
                 assertEquals(SignedOutReason.SESSION_ENDED, e.reason)
                 assertEquals("This session has expired. Sign in again.", e.message)
-                assertEquals(listOf("clear"), rig.store.events)
+                assertEquals(listOf("end $code"), rig.store.events)                      // the session goes, and why it went is kept
                 assertEquals(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, code), rig.client.state.value)
                 assertEquals(1, rig.requestsTo("/api/lz").size)                         // not repeated
-                // The next call does not even try the network.
-                assertThrows<SessionEndedException> { rig.client.listLzs() }
+                // The next call does not even try the network, and does not turn "your session ended" into "not signed in".
+                assertEquals(code, assertThrows<SessionEndedException> { rig.client.listLzs() }.code)
                 assertEquals(1, rig.requestsTo("/api/lz").size)
+                assertEquals(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, code), rig.client.state.value)
             }
         }
     }

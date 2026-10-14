@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import { diffItem, sameData } from "./packDiff";
+import { sameData } from "./packDiff";
+import { composeEdit } from "./packEdit";
 
 /*
  * Keeps the items of one kind (LZ/PZs, route sets or point sets) that are open in an editor in step
@@ -78,22 +79,17 @@ export const usePackItemSync = ({
       takeTheirs(uuid, item);
       return;
     }
-    const name = (mine.name ?? "").trim();
-    const renamed = Boolean(name) && name !== base.name;
-    const changes = diffItem(uuid, base.doc, mine.doc);
-    if (!renamed && changes.length === 0) return;
-    const reshape = changes.length > 0 ? diffItem(uuid, now.shared(item.data), now.currentShape(item)) : [];
-    const ops = [...(renamed ? [{ type: "item.rename", item: uuid, name }] : []), ...reshape, ...changes];
-    const summary = changes.length > 0
-      ? now.describe(base.doc, mine.doc, { name: name || item.name, actor: now.actor })
-      : `${now.actor || "Someone"} renamed "${base.name}" to "${name}".`;
-    const refused = now.edit(ops.map((op) => ({ ...op, summary })));
+    const sent = composeEdit({
+      uuid, base, mine, item, shared: now.shared, currentShape: now.currentShape, describe: now.describe, actor: now.actor,
+    });
+    if (!sent) return;
+    const refused = now.edit(sent.ops);
     if (refused) {
       takeTheirs(uuid, item);
       now.onRefused?.(refused, uuid);
       return;
     }
-    baselines.current.set(uuid, { data: JUST_SENT, name: renamed ? name : base.name, doc: mine.doc });
+    baselines.current.set(uuid, { data: JUST_SENT, name: sent.name, doc: mine.doc });
     wake();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

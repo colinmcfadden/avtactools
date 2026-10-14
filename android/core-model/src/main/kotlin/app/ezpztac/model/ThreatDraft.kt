@@ -9,7 +9,8 @@ package app.ezpztac.model
  * what is saved inside what an AMPS `.ths` can hold and what a viewshed can be asked for. Band altitudes are whole feet because a `.ths` stores
  * them as integers: a fraction would be cut off in the file without a word.
  *
- * A threat's position is not in the form: a new one is put where the crosshair is, and a held one is moved by the sheet's position controls.
+ * A threat's position is not in the draft: the form holds it beside the draft (`ThreatEditUi.at`, moved by its own controls) and applies it with the
+ * rest on Save; a new threat starts where the crosshair is.
  */
 public data class ThreatDraft(
     val name: String = Radars.DEFAULT_NAME,

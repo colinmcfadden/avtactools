@@ -3,7 +3,11 @@ package app.ezpztac.workspace
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -11,20 +15,17 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
+import androidx.test.core.app.ApplicationProvider
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.UnitDraft
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.test.core.app.ApplicationProvider
 import app.ezpztac.symbols.DefaultSymbolRenderer
 import app.ezpztac.symbols.LocalSymbolRenderer
 import app.ezpztac.symbols.PresetSymbols
@@ -34,6 +35,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /** The planning-graphics panel as a person meets it: what is offered, what a tap asks for, and what a tap must not ask for. */
 @RunWith(RobolectricTestRunner::class)
@@ -61,7 +63,7 @@ class GraphicsScreenTest {
             tipToCrosshair = { log += "tip" },
             setDirection = { log += "direction $it" },
             addUnit = { log += "add unit ${it.sidc} [${it.uniqueDesignation}] [${it.higherFormation}]" },
-            updateUnit = { log += "update unit ${it.sidc} [${it.uniqueDesignation}] [${it.higherFormation}]" },
+            updateUnit = { draft, _ -> log += "update unit ${draft.sidc} [${draft.uniqueDesignation}] [${draft.higherFormation}]" },
             setDoghouseLabel = { log += "label [$it]"; problem(it) },
             setDoghouseTime = { log += "time [$it]"; problem(it) },
             setDoghouseDistance = { log += "distance [$it]"; problem(it) },
@@ -98,7 +100,7 @@ class GraphicsScreenTest {
     private fun tapDescribed(description: String) = compose.onNodeWithContentDescription(description).performScrollTo().performClick()
 
     private fun editable(vararg rows: GraphicRowUi, inspector: InspectorUi? = null, alerts: List<String> = emptyList(), undo: Int = 0, redo: Int = 0, error: String? = null) =
-        GraphicsUiState(canEdit = true, rows = rows.toList(), inspector = inspector, alerts = alerts, undoDepth = undo, redoDepth = redo, error = error)
+        GraphicsUiState(listed = true, canEdit = true, rows = rows.toList(), inspector = inspector, alerts = alerts, undoDepth = undo, redoDepth = redo, error = error)
 
     // -- Before there is anything to place -----------------------------------------------------------------------------------
 
@@ -474,6 +476,23 @@ class GraphicsScreenTest {
     }
 
     @Test
+    fun `a part of the held unit changed under the builder is shown, and what was typed into another is kept`() {
+        val r = Recorder()
+        val state = mutableStateOf(unitHeld())
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { GraphicsContent(state.value, "16S GD 66993 52949", r.actions) } }
+        }
+        compose.onNode(hasSetTextAction() and hasText("Designation")).performScrollTo().performTextInput("9")
+        // Someone else made it a company while the designation was being typed (or an undo did).
+        state.value = unitHeld(UnitDraft("H", "UCA---", "E", "A/1-171", ""))
+        compose.waitForIdle()
+        compose.onNodeWithText("SIDC SHGPUCA---E----").performScrollTo().assertIsDisplayed()
+        tap("Apply")
+        // The company, and the designation as typed: nothing typed was lost, and nothing of theirs put back.
+        assertEquals(listOf("update unit SHGPUCA---E---- [9A/1-171] []"), r.log)
+    }
+
+    @Test
     fun `a function the builder has no name for is shown as it is`() {
         show(unitHeld(UnitDraft(functionId = "UXXXXX")))
         compose.onNodeWithContentDescription("Function: Other (UXXXXX)").performScrollTo().assertIsDisplayed()
@@ -508,7 +527,61 @@ class GraphicsScreenTest {
     fun `a unit is listed with what it is, and is not offered a heading`() {
         show(unitHeld())
         compose.onNodeWithText("Heading", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Hostile · Armor", substring = true).assertIsDisplayed()
+        // The held unit's controls are brought into view, so its row in the list is scrolled to, as a person would.
+        compose.onNodeWithText("Hostile · Armor", substring = true).performScrollTo().assertIsDisplayed()
+    }
+}
+
+/** The graphics of a finished pack's LZ/PZ (P2c): listed and held, said in words, and nothing to change them with. */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+class LockedGraphicsTest {
+    @get:Rule
+    val compose = createComposeRule()
+
+    @Test
+    fun `a held graphic of a finished pack says why it cannot be changed, and how it stands, with nothing to change it`() {
+        val ref = GraphicRef("helicopters", "1")
+        val reason = "OP DK is finished: nothing in it can be changed."
+        val state = GraphicsUiState(
+            listed = true, canEdit = false, locked = reason, undoDepth = 3,
+            rows = listOf(GraphicRowUi(ref, GraphicKind.HELICOPTER, "Helicopter · UH-60L", "16S GD 66993 52949", "heading 90°", warning = false, selected = true)),
+            inspector = InspectorUi(ref, GraphicKind.HELICOPTER, "Helicopter · UH-60L", "16S GD 66993 52949", "34.78382, -84.08219", 90.0, null, null),
+        )
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { GraphicsContent(state, "16S GD 66993 52949", GraphicsActions(), placeButtons = false) } } }
+        compose.onNodeWithText(reason).assertExists()
+        compose.onNodeWithText("Heading 90°").assertExists()
+        compose.onNodeWithText("Undo").assertDoesNotExist()
+        compose.onNodeWithText("Move").assertDoesNotExist()
+        compose.onNodeWithText("Delete this helicopter").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Turn left 15 degrees").assertDoesNotExist()
+        assertEquals("still listed, and held", 2, compose.onAllNodesWithText("Helicopter · UH-60L", useUnmergedTree = true).fetchSemanticsNodes().size)
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+class LockedUnanalysedGraphicsTest {
+    @get:Rule
+    val compose = createComposeRule()
+
+    @Test
+    fun `an LZ-PZ of a finished pack that is not analysed offers no undo and does not say to analyse it, and a refusal is said`() {
+        val reason = "OP DK is finished: nothing in it can be changed."
+        val state = mutableStateOf(GraphicsUiState(undoDepth = 1, redoDepth = 1, locked = reason))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { GraphicsContent(state.value, null, GraphicsActions(), placeButtons = false) } }
+        compose.onNodeWithText("Undo").assertDoesNotExist()
+        compose.onNodeWithText("Redo").assertDoesNotExist()
+        compose.onNodeWithText("This LZ/PZ was not analysed, so its graphics are not listed.").assertExists()
+        compose.onNodeWithText("Analyze the landing zone first", substring = true).assertDoesNotExist()
+        state.value = state.value.copy(error = reason)
+        compose.onNodeWithText(reason).assertExists()
+        // Not locked: as it was, undo offered and the advice given.
+        state.value = GraphicsUiState(undoDepth = 1)
+        compose.onNodeWithText("Undo").assertIsEnabled()
+        compose.onNodeWithText("Analyze the landing zone first", substring = true).assertExists()
     }
 }
 

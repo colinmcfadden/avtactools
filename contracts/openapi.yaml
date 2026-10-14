@@ -1127,9 +1127,10 @@ paths:
       description: |
         Slope from the best terrain source that covers the polygon, clipped to it: a transparent
         banded raster (`overlay`, a PNG data URI) placed at `bounds`, statistics over the polygon,
-        and, when a `landingHeading` is given, the nose-high, nose-low and cross-slope summary for
-        that heading against the UH-60 limits in `thresholds`. `directional` is null without a
-        heading. Errors are `{error}`.
+        the steepest nose-high, nose-low and cross slope for every whole heading (`byHeading`), and,
+        when a `landingHeading` is given, the nose-high, nose-low and cross-slope summary for that
+        heading against the UH-60 limits in `thresholds`. `directional` is null without a heading.
+        Errors are `{error}`.
       security:
         - bearer: []
       parameters:
@@ -1543,6 +1544,17 @@ paths:
         more), so the client can rebase its unconfirmed edits; without it, just this batch's.
         Viewers get 403 `pack_read_only`; a finished pack 423 `pack_finished`; an item that
         would pass 5 MB 413 `item_too_large`.
+
+        Those three refusals always carry `taken` (a server from before it sent none: read that
+        as none): the operations of this batch the pack's log already has, the caller's own, in
+        log order, each as its result in a 200 would be; empty when there are none. A batch
+        whose answer was lost and that is refused when it is sent again (the pack finished, the
+        caller made a viewer, or the batch grew by an edit that is too large) may have been
+        taken the first time: what `taken` lists is the pack's and is not to be offered back
+        as the person's own; the rest of the batch was not taken. A 400 carries no `taken`: it
+        is decided from the operations alone, before the pack is looked at, and a batch the
+        pack took is well formed when it is sent again as it was. Someone not in the pack gets
+        a bare 404.
       security:
         - bearer: []
       requestBody:
@@ -2960,7 +2972,7 @@ components:
               png: { type: string, description: "A `data:image/png;base64,` raster over `bounds`, one colour per altitude band, the lowest band on top." }
     TerrainAnalysis:
       type: object
-      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, thresholds]
+      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, byHeading, contours, profiles, thresholds]
       properties:
         status: { type: string, enum: [success] }
         overlay:
@@ -2994,6 +3006,100 @@ components:
             noseHighOverLimitPct: { type: number }
             noseLowOverLimitPct: { type: number }
             crossSlopeOverLimitPct: { type: number }
+        byHeading:
+          type: array
+          description: |
+            The steepest slope over the polygon for each whole heading, 0 to 359 in order (360
+            entries), worked out as `directional` is and rounded to 0.1°: nose high is the ground
+            rising ahead (the nose up), nose low the ground falling away (the nose down), and the
+            cross slope is either side. A client judges any landing heading from this without asking
+            again (it applies the wind to the limits itself). Headings are the
+            terrain grid's: true north over the Terrarium tiles, the UTM grid's north over a local
+            DEM. A server from before this field sends none, and a client must keep working without it.
+          items:
+            type: object
+            additionalProperties: false
+            required: [heading, noseHighMaxDeg, noseLowMaxDeg, crossSlopeMaxDeg]
+            properties:
+              heading: { type: integer, minimum: 0, maximum: 359 }
+              noseHighMaxDeg: { type: number, minimum: 0 }
+              noseLowMaxDeg: { type: number, minimum: 0 }
+              crossSlopeMaxDeg: { type: number, minimum: 0 }
+        contours:
+          type: object
+          description: |
+            Contour lines of the ground in the polygon and a 40 m ring round it, so a crew can read its
+            shape: in feet, at `intervalFt` (the finest of 1, 2, 5, 10, 20, 25, 50 and 100 that keeps
+            the ground to about a dozen lines), from the same grid as the slope, lightly smoothed. Each
+            entry of `lines` is one piece of a contour: wholly `inside` the polygon or wholly in the ring
+            outside it (pieces that meet share their joining point), every fifth interval `major`, and
+            the longest inside piece of a height carries a `label` point for its number, placed at least
+            40 m from every other (major heights first), so some minor heights have none. Heights are
+            the source's own (`verticalDatum`). A server from before this field sends none, and a client
+            must keep working without it.
+          additionalProperties: false
+          required: [intervalFt, lines]
+          properties:
+            intervalFt: { type: integer, minimum: 1 }
+            lines:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [elevationFt, major, inside, points, label]
+                properties:
+                  elevationFt: { type: integer }
+                  major: { type: boolean }
+                  inside: { type: boolean }
+                  points:
+                    type: array
+                    description: "`[lat, lon]` pairs, two or more; a ring's last is its first."
+                    items:
+                      type: array
+                      items: { type: number }
+                  label:
+                    type: array
+                    nullable: true
+                    description: "`[lat, lon]` where the height's number goes, on this piece; null on every other piece."
+                    items: { type: number }
+        profiles:
+          type: object
+          nullable: true
+          description: |
+            The ground along straight lines through the polygon's middle (`center`, its area centroid), for
+            the slope profile a client draws along and across the landing heading: one line for each
+            heading 0, 2, … 178 (`headingStepDeg`), reaching `halfLengthM` each way (300 m past the
+            polygon's farthest corner), its heights in feet every `stepM` from `halfLengthM` behind the
+            middle (the way the heading points from) to `halfLengthM` ahead, null where the terrain has
+            none; and `lz`, where the line crosses the boundary, in metres from the middle (behind
+            negative), or null. A heading of 180 or more is the opposite line read backwards. Headings
+            are true. Null when no terrain covers the ground round the polygon (a local source must
+            cover it whole). A server from before this field sends none, and a client must keep working
+            without it.
+          additionalProperties: false
+          required: [center, stepM, halfLengthM, headingStepDeg, lines]
+          properties:
+            center:
+              type: array
+              items: { type: number }
+            stepM: { type: number }
+            halfLengthM: { type: number }
+            headingStepDeg: { type: integer }
+            lines:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [heading, elevationsFt, lz]
+                properties:
+                  heading: { type: integer, minimum: 0, maximum: 179 }
+                  elevationsFt:
+                    type: array
+                    items: { type: number, nullable: true }
+                  lz:
+                    type: array
+                    nullable: true
+                    items: { type: number }
         thresholds:
           type: object
           required: [bands, uh60]
@@ -3005,7 +3111,9 @@ components:
             uh60:
               type: object
               required: [noseHigh, noseLow, crossSlope]
-              description: The UH-60 landing limits in degrees.
+              description: |
+                The UH-60 slope landing limits in degrees with no wind: 15 nose high (nose up), 6
+                nose low (nose down), 15 cross slope. A client reduces them for the wind.
               properties:
                 noseHigh: { type: number }
                 noseLow: { type: number }
@@ -3053,6 +3161,14 @@ components:
         finished_by:
           nullable: true
           allOf: [{ $ref: "#/components/schemas/Person" }]
+        taken:
+          type: array
+          description: |
+            On `POST /api/packs/{uuid}/ops` only, and always on its 403 `pack_read_only`, 413
+            `item_too_large` and 423 `pack_finished`: the operations of the refused batch the pack
+            already has (the caller's own, in log order, possibly none). They were taken by an
+            earlier send of the batch whose answer was lost; the rest of the batch was not taken.
+          items: { $ref: "#/components/schemas/PackOpResult" }
 
     PackTeam:
       type: object
@@ -3283,19 +3399,22 @@ components:
         results:
           type: array
           description: One per operation sent, in order.
-          items:
-            type: object
-            additionalProperties: false
-            required: [client_op_id, seq, status, reason]
-            properties:
-              client_op_id: { type: string }
-              seq: { type: integer, minimum: 1 }
-              status: { type: string, enum: [applied, skipped] }
-              reason: { type: string, nullable: true }
+          items: { $ref: "#/components/schemas/PackOpResult" }
         events:
           type: array
           items: { $ref: "#/components/schemas/PackEvent" }
         has_more: { type: boolean }
+
+    PackOpResult:
+      type: object
+      additionalProperties: false
+      required: [client_op_id, seq, status, reason]
+      description: How one operation went, as the pack's log has it.
+      properties:
+        client_op_id: { type: string }
+        seq: { type: integer, minimum: 1 }
+        status: { type: string, enum: [applied, skipped] }
+        reason: { type: string, nullable: true, description: "Why it was skipped (contracts/fixtures/packs/ops.json); null when applied." }
 
     PackEventPage:
       type: object

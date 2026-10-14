@@ -9,6 +9,9 @@ The rules (docs/MISSION_PACKS.md has the reasons):
   number in the pack's ``head_seq`` while holding the pack's row, so a lower
   number never commits after a higher one. ``lock`` takes the row with an UPDATE
   first, as ``sync_support.next_seq`` does, which also serialises SQLite writers.
+  A write decides by the pack as it is once it holds the row: whatever it read
+  before (who the caller is, who owns the pack, whether it is still there) it
+  reads again, because whoever held the row meanwhile may have changed it.
 * **Finished means read-only for everyone**, the owner included, until the owner
   reopens it. Reading, exporting and copying out still work.
 * **Nothing reaches back into the library.** Items are copies; a pack never edits
@@ -69,8 +72,12 @@ def live_pack(pack_uuid):
 
 
 def role_of(pack, user_id):
-    """The caller's role in the pack, or None. Their own membership wins over the team's."""
-    member = MissionPackMember.query.filter_by(pack_id=pack.id, user_id=user_id).first()
+    """The caller's role in the pack, or None. Their own membership wins over the team's.
+
+    The role is read as a column, not through a membership object: a membership the session already holds keeps
+    the role it was read with, and a write reads this again under the pack's lock to see a change made meanwhile.
+    """
+    member = db.session.query(MissionPackMember.role).filter_by(pack_id=pack.id, user_id=user_id).first()
     if member:
         return member.role
     if pack.team_id and TeamMember.query.filter_by(team_id=pack.team_id, user_id=user_id).first():
@@ -100,14 +107,28 @@ def share_a_team(user_id, other_id):
 
 # -- The pack's change order ----------------------------------------------------
 
-def lock(pack):
-    """Hold the pack's row until commit and read it fresh. Every write to a pack starts here."""
-    db.session.execute(
-        update(MissionPack).where(MissionPack.id == pack.id).values(head_seq=MissionPack.head_seq)
+def lock(pack, touch=True):
+    """Hold the pack's row until commit and read it fresh. Every write to a pack starts here.
+
+    Returns the pack, or None when it was deleted while this waited for the row (a tombstone, or the row gone
+    with its owner's account): a write that gets None writes nothing to the pack. Whatever else the write read
+    before this, it reads again now (``pack_routes._lock`` does the caller's role).
+
+    The UPDATE moves the pack's ``updated_at`` (the column's ``onupdate``), which lists of packs are sorted by.
+    ``touch=False`` keeps it, as ``sync_support.give_identity`` does, for a write that changes nothing in the
+    pack (sending an invitation again): the pack must not jump to the top of everyone's list for it.
+    """
+    values = {'head_seq': MissionPack.head_seq}
+    if not touch:
+        values['updated_at'] = MissionPack.updated_at
+    held = db.session.execute(
+        update(MissionPack).where(MissionPack.id == pack.id).values(**values)
         .execution_options(synchronize_session=False)
-    )
+    ).rowcount
+    if not held:
+        return None
     db.session.refresh(pack)
-    return pack
+    return pack if pack.deleted_at is None else None
 
 
 def actor_name(user):
@@ -500,6 +521,20 @@ def _heir(pack, user_id):
     return None
 
 
+def _hand_on(pack, user_id):
+    """Pass a locked pack the account owns to its heir, or delete it when nobody else is in it. True when deleted."""
+    heir = _heir(pack, user_id)
+    if heir is None:
+        _purge_pack(pack)
+        return True
+    heir.role = 'owner'
+    pack.owner_id = heir.user_id
+    heir_name = names([heir.user_id]).get(heir.user_id, '')
+    append(pack, None, {'type': 'pack.transfer', 'user_id': heir.user_id, 'name': heir_name},
+           f"{heir_name} owns the pack now: its owner's account was deleted.")
+    return False
+
+
 def release_account(user_id):
     """Hand on or delete what an account leaves in packs and teams, before the account itself goes.
 
@@ -507,18 +542,13 @@ def release_account(user_id):
     in the team it is shared with) and is deleted only when nobody else is in it.
     Its other memberships end, each logged. Its name stays in the log as written;
     every other reference to it is cleared. The caller deletes the user and commits.
+    Who owns a pack is read again under its lock: a pack can be handed to this account,
+    or away from it, while this waits.
     """
     for pack in MissionPack.query.filter_by(owner_id=user_id, deleted_at=None).all():
-        lock(pack)
-        heir = _heir(pack, user_id)
-        if heir is None:
-            _purge_pack(pack)
-            continue
-        heir.role = 'owner'
-        pack.owner_id = heir.user_id
-        heir_name = names([heir.user_id]).get(heir.user_id, '')
-        append(pack, None, {'type': 'pack.transfer', 'user_id': heir.user_id, 'name': heir_name},
-               f"{heir_name} owns the pack now: its owner's account was deleted.")
+        # Deleted while this waited (a tombstone goes with the ones below), or handed over: then it is a pack they are in.
+        if lock(pack) is not None and pack.owner_id == user_id:
+            _hand_on(pack, user_id)
     # Deleted packs keep a tombstone row, which still names its owner.
     for pack in MissionPack.query.filter(MissionPack.owner_id == user_id, MissionPack.deleted_at.isnot(None)).all():
         _purge_pack(pack)
@@ -527,8 +557,11 @@ def release_account(user_id):
     leaving = names([user_id]).get(user_id, '')
     for membership in MissionPackMember.query.filter_by(user_id=user_id).all():
         pack = db.session.get(MissionPack, membership.pack_id)
-        if pack is not None and pack.deleted_at is None:
-            lock(pack)
+        if pack is not None and pack.deleted_at is None and lock(pack) is not None:
+            # Handed to this account after the packs it owns were read above: handed on the same way, or deleted with
+            # this membership in it when nobody else is left.
+            if pack.owner_id == user_id and _hand_on(pack, user_id):
+                continue
             append(pack, None, {'type': 'member.remove', 'user_id': user_id, 'name': leaving},
                    f"{leaving} left: their account was deleted.")
         db.session.delete(membership)
@@ -562,7 +595,9 @@ def delete_team(team, actor):
     if team is None:
         return
     for pack in MissionPack.query.filter_by(team_id=team.id, deleted_at=None).all():
-        lock(pack)
+        # Deleted, or shared with another team, while this waited: not this team's to unshare.
+        if lock(pack) is None or pack.team_id != team.id:
+            continue
         pack.team_id = None
         append(pack, actor, {'type': 'pack.share', 'team_id': None},
                f'The team "{team.name}" was deleted, so its members no longer see this pack through it.')

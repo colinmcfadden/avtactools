@@ -321,6 +321,38 @@ public data class DirectionalSlope(
     val crossSlopeOverLimitPct: Double,
 )
 
+/**
+ * The steepest slope over the landing zone for one whole [heading] (0..359), in degrees to 0.1: nose high is the ground rising ahead (the nose
+ * up), nose low the ground falling away (the nose down), and the cross slope is either side. The app judges a landing heading from these.
+ */
+@Serializable
+public data class HeadingSlope(val heading: Int, val noseHighMaxDeg: Double, val noseLowMaxDeg: Double, val crossSlopeMaxDeg: Double)
+
+/**
+ * One piece of a contour line of the ground in or round the landing zone: its height in feet ([elevationFt], the source's datum), whether it
+ * is a [major] (every fifth) line, whether it lies [inside] the boundary or in the 40 m ring outside it, its [points] as `[lat, lon]` (a ring's
+ * last is its first), and where the height's number goes ([label], `[lat, lon]`), on at most one piece of a height.
+ */
+@Serializable
+public data class ContourLine(val elevationFt: Int, val major: Boolean, val inside: Boolean, val points: List<List<Double>>, val label: List<Double>? = null)
+
+/** The contour lines of the ground in and round the landing zone, every [intervalFt] feet. */
+@Serializable
+public data class SlopeContours(val intervalFt: Int, val lines: List<ContourLine>)
+
+/**
+ * The ground along one straight line through the landing zone's middle at [heading] (0..179, true): its heights in feet ([elevationsFt], null
+ * where the terrain has none) every `stepM` from `halfLengthM` behind the middle to `halfLengthM` ahead, and where the line crosses the
+ * boundary ([lz], metres from the middle, behind negative), or null. A heading of 180 or more is this line read backwards.
+ */
+@Serializable
+public data class ProfileLine(val heading: Int, val elevationsFt: List<Double?>, val lz: List<Double>? = null)
+
+/** The ground along lines through the landing zone's middle ([center], `[lat, lon]`), one every [headingStepDeg], for the slope profile. */
+@Serializable
+public data class SlopeProfiles(val center: List<Double>, val stepM: Double, val halfLengthM: Double, val headingStepDeg: Int, val lines: List<ProfileLine>)
+
+/** The UH-60's slope landing limits with no wind, degrees: 15 nose high (nose up), 6 nose low (nose down), 15 cross slope. */
 @Serializable
 public data class Uh60Limits(val noseHigh: Double, val noseLow: Double, val crossSlope: Double)
 
@@ -346,6 +378,12 @@ public data class TerrainAnalysis(
     val stats: SlopeStats,
     /** Null when no landing heading was sent. */
     val directional: DirectionalSlope? = null,
+    /** The steepest slope for every whole heading, 0 to 359 in order. Null from a server older than the field, which judges no heading. */
+    val byHeading: List<HeadingSlope>? = null,
+    /** The contour lines of the ground in and round the polygon. Null from a server older than the field, which draws the raster alone. */
+    val contours: SlopeContours? = null,
+    /** The ground along lines through the polygon, for the slope profile. Null from a server older than the field, or with no ground round the polygon. */
+    val profiles: SlopeProfiles? = null,
     val thresholds: SlopeThresholds,
 )
 

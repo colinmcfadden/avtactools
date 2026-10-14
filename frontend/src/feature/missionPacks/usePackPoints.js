@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { nextRouteColor } from "../msnxImport/colorPalette";
 import { sameData } from "./packDiff";
 import { packLocalId, packLocalRef } from "./packRef";
+import { newItemOp, packItemId } from "./packSentences";
 import { usePackItemSync } from "./usePackItemSync";
 
 /*
@@ -50,6 +51,18 @@ export const pointsForPack = (points) => {
     seen.add(`${typeof id}:${id}`);
     return { ...point, id };
   });
+};
+
+/**
+ * The operation that puts `points` in the pack as a new set (pointsForPack's list, named as
+ * newItemName says), its uuid "ps-" and newId(). A set that comes to no points is refused, as
+ * `empty_point_set`, before an id is taken: the pack's server would take it, but a library copy of
+ * it could never be saved. { refused: null, op } or { refused: "empty_point_set" }.
+ */
+export const newPointSetOp = ({ name, points, actor, newId }) => {
+  const list = pointsForPack(points);
+  if (list.length === 0) return { refused: "empty_point_set" };
+  return { refused: null, op: newItemOp({ kind: "pointset", item: packItemId("pointset", newId()), name, count: 0, data: list, actor }) };
 };
 
 export const usePackPoints = ({
@@ -136,23 +149,19 @@ export const usePackPoints = ({
    */
   const createItem = useCallback(
     (name, points) => {
-      const list = pointsForPack(points);
-      if (list.length === 0) {
-        onRefused?.("empty_point_set", null);
+      const made = newPointSetOp({ name, points, actor, newId });
+      if (made.refused) {
+        onRefused?.(made.refused, null);
         return null;
       }
-      const uuid = `ps-${newId()}`;
-      const label = (name ?? "").trim() || "LOCAL POINTS";
-      const refused = edit([{
-        type: "item.create", item: uuid, kind: "pointset", name: label, data: list,
-        summary: `${actor || "Someone"} added the point set "${label}" (${list.length.toLocaleString("en-US")} point${list.length === 1 ? "" : "s"}).`,
-      }]);
+      const { op } = made;
+      const refused = edit([op]);
       if (refused) {
         onRefused?.(refused, null);
         return null;
       }
-      setPointSets((sets) => [...sets, ownSet(packUuid, { uuid, name: label, data: list })]);
-      return uuid;
+      setPointSets((sets) => [...sets, ownSet(packUuid, { uuid: op.item, name: op.name, data: op.data })]);
+      return op.item;
     },
     [edit, actor, setPointSets, packUuid, onRefused, newId],
   );

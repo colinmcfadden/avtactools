@@ -327,6 +327,27 @@ describe("edits made here", () => {
     expect(client.edit(setHeading(95))).toBe("read_only");
   });
 
+  it("sent again after a lost answer and refused keep what the refusal says the pack took, and fetch its events", async () => {
+    const socket = await start();
+    await welcome(socket);
+    api.sendOps.mockRejectedValueOnce(fail(0)).mockRejectedValueOnce(fail(423, { code: "pack_finished", finished_by: COLIN,
+      finished_at: T, taken: [{ client_op_id: "op-1", seq: 4, status: "applied", reason: null }] }));
+    api.getEvents.mockResolvedValue({ events: [ev(4, setHeading(90), { actor: SAM, client_op_id: "op-1" }), ev(5, { type: "pack.finish" })],
+      has_more: false, cursor: 5, head_seq: 5 });
+    client.edit(setHeading(90));
+    await settle();
+    client.edit(setHeading(91)); // made while the first send's answer was lost
+    clock.advance(1000);
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(2);
+    expect(api.sendOps.mock.calls[1][1].ops.map((op) => op.client_op_id)).toEqual(["op-1", "op-2"]);
+    expect(api.getEvents).toHaveBeenCalledWith("p-1", 3);
+    const { session } = client.getState();
+    expect(session.pending).toEqual([]);
+    expect(session.dropped.map((d) => [d.op.client_op_id, d.reason])).toEqual([["op-2", "pack_finished"]]);
+    expect(heading()).toBe(90);
+  });
+
   it("whose events did not all come with the answer are fetched", async () => {
     const socket = await start();
     await welcome(socket);

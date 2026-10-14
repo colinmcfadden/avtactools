@@ -40,6 +40,8 @@ public data class ServerCopy(
     val data: JsonObject,
     val hasFile: Boolean = false,
     val fileName: String? = null,
+    /** When the server's copy last changed (`updated_at`), if it says. */
+    val updatedAt: String? = null,
 )
 
 /** The server's answer to saving a record. [created] is false when it already had one with this identity. */
@@ -148,7 +150,9 @@ public fun serverCopyOf(kind: RecordKind, server: JsonObject): ServerCopy? {
         RecordKind.MISSION -> server["route_data"] as? JsonObject ?: return null
     }
     val hasFile = (server["has_file"] as? JsonPrimitive)?.booleanOrNull == true
-    return ServerCopy(id, revision, name, data, hasFile, (server["file_name"] as? JsonPrimitive)?.contentOrNull)
+    return ServerCopy(
+        id, revision, name, data, hasFile, (server["file_name"] as? JsonPrimitive)?.contentOrNull, (server["updated_at"] as? JsonPrimitive)?.contentOrNull,
+    )
 }
 
 /** A point set's document from the server's list of points: the list in an object, so it is held like every other record's document. */

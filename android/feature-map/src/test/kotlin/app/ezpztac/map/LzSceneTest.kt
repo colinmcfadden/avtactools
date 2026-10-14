@@ -10,6 +10,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -136,5 +139,34 @@ class LzSceneTest {
         val scene = LzScene.of(diagram(), slope)
         assertEquals(slope, scene.slope)
         assertTrue(!scene.geoJson().contains("base64"))
+    }
+
+    @Test
+    fun `the slope map's contours are GeoJSON lines carrying whether they are major and inside, longitude first`() {
+        val a = LatLon(34.78, -84.08)
+        val b = LatLon(34.79, -84.07)
+        val slope = SlopeImage(
+            34.7, -84.1, 34.8, -84.0, "data:image/png;base64,AA==",
+            contours = listOf(
+                ContourPiece(1520, major = false, inside = true, points = listOf(a, b), label = a),
+                ContourPiece(1525, major = true, inside = false, points = listOf(b, a)),
+                ContourPiece(1530, major = false, inside = true, points = listOf(a)),                        // one point is no line
+            ),
+        )
+        val features = Json.parseToJsonElement(slope.contourGeoJson()).jsonObject.getValue("features").jsonArray
+        assertEquals(2, features.size)
+        val first = features[0].jsonObject
+        assertEquals("LineString", first.getValue("geometry").jsonObject.getValue("type").jsonPrimitive.content)
+        assertEquals(
+            listOf(listOf(-84.08, 34.78), listOf(-84.07, 34.79)),
+            first.getValue("geometry").jsonObject.getValue("coordinates").jsonArray.map { p -> p.jsonArray.map { it.jsonPrimitive.double } },
+        )
+        val props = features.map { it.jsonObject.getValue("properties").jsonObject }
+        assertEquals(listOf(false, true), props.map { it.getValue("major").jsonPrimitive.boolean })
+        assertEquals(listOf(true, false), props.map { it.getValue("inside").jsonPrimitive.boolean })
+        assertEquals(listOf(1520, 1525), props.map { it.getValue("elevationFt").jsonPrimitive.int })
+        val none = Json.parseToJsonElement(SlopeImage.NO_CONTOURS).jsonObject.getValue("features").jsonArray
+        assertEquals(0, none.size)
+        assertEquals(none, Json.parseToJsonElement(slope.copy(contours = emptyList()).contourGeoJson()).jsonObject.getValue("features").jsonArray)
     }
 }

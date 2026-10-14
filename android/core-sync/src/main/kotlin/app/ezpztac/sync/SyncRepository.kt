@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonObject
 public class SyncRepository(
     private val store: SyncStore,
     private val ids: IdSource = IdSource.Random,
+    /** The time a change made here is noted at ([LocalRecord.updatedAt]). */
+    private val clock: () -> String = { java.time.Instant.now().toString() },
 ) {
     /** The records of a kind that are not deleted, in the order the store holds them. */
     public suspend fun records(kind: RecordKind): List<LocalRecord> =
@@ -26,7 +28,9 @@ public class SyncRepository(
     public suspend fun create(kind: RecordKind, name: String, data: JsonObject, uuid: String = ids.newUuid(), file: FilePart? = null): LocalRecord =
         store.transaction {
             val ref = file?.let { keep(it) }
-            val record = LocalRecord(kind, uuid, serverId = null, baseRevision = null, name = name, data = data, dirty = true, localVersion = 1, file = ref)
+            val record = LocalRecord(
+                kind, uuid, serverId = null, baseRevision = null, name = name, data = data, dirty = true, localVersion = 1, file = ref, updatedAt = clock(),
+            )
             put(record)
             enqueue(OutboxEntry(0, kind, uuid, Operation.CREATE))
             record
@@ -42,6 +46,7 @@ public class SyncRepository(
                 file = file?.let { keep(it) } ?: current.file,
                 dirty = true,
                 localVersion = current.localVersion + 1,
+                updatedAt = clock(),
             )
             put(edited)
             // A record the server has never heard of is carried by its CREATE, which reads the record as it is when it is sent.

@@ -31,6 +31,33 @@ public data class UnitDraft(
             mapOf("sidc" to JsonPrimitive(sidc), "uniqueDesignation" to JsonPrimitive(uniqueDesignation), "higherFormation" to JsonPrimitive(higherFormation)),
         )
 
+    /**
+     * What applying this draft changes on a unit, the draft having been made from [before] (the unit as the builder showed it): only what the person
+     * changed, its symbol code when one of the symbol's three parts differs, and each label that does. A part they did not change stays as the unit has it,
+     * whatever changed it meanwhile (someone else, in a mission pack), and so does what the builder cannot hold of it: a symbol of another dimension keeps
+     * its code when only a label changes. A unit with no symbol code ([hasCode] false, an older image) takes this draft's. **Not like the web**, whose
+     * builder writes all three.
+     */
+    public fun patchOver(before: UnitDraft, hasCode: Boolean = true): JsonObject {
+        val fields = LinkedHashMap<String, JsonElement>()
+        if (!hasCode || affiliation != before.affiliation || functionId != before.functionId || echelon != before.echelon) fields["sidc"] = JsonPrimitive(sidc)
+        if (uniqueDesignation != before.uniqueDesignation) fields["uniqueDesignation"] = JsonPrimitive(uniqueDesignation)
+        if (higherFormation != before.higherFormation) fields["higherFormation"] = JsonPrimitive(higherFormation)
+        return JsonObject(fields)
+    }
+
+    /**
+     * This draft, being made by a person from the unit as it was when they began ([start]), with each part they have not changed taking the unit's as it is
+     * [now]: a part changed under the builder (someone else's change, an undo) is shown, and what the person made of a part is kept.
+     */
+    public fun following(start: UnitDraft, now: UnitDraft): UnitDraft = UnitDraft(
+        affiliation = if (affiliation == start.affiliation) now.affiliation else affiliation,
+        functionId = if (functionId == start.functionId) now.functionId else functionId,
+        echelon = if (echelon == start.echelon) now.echelon else echelon,
+        uniqueDesignation = if (uniqueDesignation == start.uniqueDesignation) now.uniqueDesignation else uniqueDesignation,
+        higherFormation = if (higherFormation == start.higherFormation) now.higherFormation else higherFormation,
+    )
+
     /** The affiliation's name (`Friendly`), or null if it is not one of the four. */
     public val affiliationLabel: String? get() = SymbolPresets.affiliations.firstOrNull { it.id == affiliation }?.label
 
@@ -57,6 +84,9 @@ public data class UnitDraft(
                 higherFormation = text(unit?.get("higherFormation")),
             )
         }
+
+        /** Whether [unit] has a symbol code the builder can read its parts from; an older unit that is an image has none. */
+        public fun hasCode(unit: JsonObject?): Boolean = Sidc.parse(text(unit?.get("sidc"))) != null
 
         /** A label as the web reads it: what is written, as text (a designation of 5 is "5"), and nothing for null or absent. */
         private fun text(value: JsonElement?): String = (value as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content.orEmpty()

@@ -30,6 +30,22 @@ object AuthLinks {
     val SITE_HOSTS: Set<String> = setOf("ezpztac.app", "www.ezpztac.app")
 
     fun parse(link: String?, hosts: Set<String> = SITE_HOSTS): AuthRoute? {
+        // The first of each name, as the web's `searchParams.get` reads it.
+        val params = siteQuery(link, hosts)?.distinctBy { it.first }?.toMap() ?: return null
+        val token = params["token"]?.trim().orEmpty()
+        return when (params["auth"]) {
+            "verify" -> AuthRoute.Verify(token)
+            "reset" -> AuthRoute.Reset(token)
+            else -> null
+        }
+    }
+
+    /**
+     * The decoded query parameters of [link], in order, when it is an `https` link to one of [hosts]; null for anything else. Every link
+     * the app takes from outside goes through this ([InviteLinks] too), so only the site's own links are read. That does not say who sent
+     * one: any app can start the activity with such an address, as any page can open one on the web.
+     */
+    internal fun siteQuery(link: String?, hosts: Set<String>): List<Pair<String, String>>? {
         val uri = try {
             URI(link ?: return null)
         } catch (_: java.net.URISyntaxException) {
@@ -37,15 +53,14 @@ object AuthLinks {
         }
         if (!"https".equals(uri.scheme, ignoreCase = true) || uri.host?.lowercase() !in hosts) return null
         val query = uri.rawQuery ?: return null
-        val params = query.split('&').mapNotNull { pair ->
+        // As the web's URLSearchParams reads a query: a name with no "=" has an empty value, and an empty piece is nothing.
+        return query.split('&').mapNotNull { pair ->
             val i = pair.indexOf('=')
-            if (i <= 0) null else decode(pair.substring(0, i)) to decode(pair.substring(i + 1))
-        }.toMap()
-        val token = params["token"]?.trim().orEmpty()
-        return when (params["auth"]) {
-            "verify" -> AuthRoute.Verify(token)
-            "reset" -> AuthRoute.Reset(token)
-            else -> null
+            when {
+                pair.isEmpty() -> null
+                i < 0 -> decode(pair) to ""
+                else -> decode(pair.substring(0, i)) to decode(pair.substring(i + 1))
+            }
         }
     }
 

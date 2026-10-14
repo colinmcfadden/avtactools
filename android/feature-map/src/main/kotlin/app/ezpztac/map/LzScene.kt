@@ -17,8 +17,50 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlin.math.cos
 
-/** A slope raster to lay over the ground: a PNG as a data URI, and the box it covers. */
-data class SlopeImage(val south: Double, val west: Double, val north: Double, val east: Double, val dataUri: String)
+/**
+ * One piece of a contour line of the ground: its height in feet, whether it is a [major] (every fifth) line, whether it lies [inside] the LZ
+ * (the ring outside it is drawn faded), its [points], and where its height's number goes ([label]), on at most one piece of a height.
+ */
+data class ContourPiece(val elevationFt: Int, val major: Boolean, val inside: Boolean, val points: List<LatLon>, val label: LatLon? = null)
+
+/**
+ * The slope map: a raster to lay over the ground (a PNG as a data URI, and the box it covers) and the [contours] of the ground in and round the
+ * LZ, drawn over it, so its shape can be read as on a topographic map. Shown and hidden together.
+ */
+data class SlopeImage(
+    val south: Double,
+    val west: Double,
+    val north: Double,
+    val east: Double,
+    val dataUri: String,
+    val contours: List<ContourPiece> = emptyList(),
+) {
+    /** The contours as GeoJSON for the map's source, `[longitude, latitude]`, each line carrying whether it is `major` and `inside`. */
+    fun contourGeoJson(): String = buildJsonObject {
+        put("type", "FeatureCollection")
+        putJsonArray("features") {
+            contours.filter { it.points.size >= 2 }.forEach { piece ->
+                add(buildJsonObject {
+                    put("type", "Feature")
+                    putJsonObject("properties") {
+                        put("major", piece.major)
+                        put("inside", piece.inside)
+                        put("elevationFt", piece.elevationFt)
+                    }
+                    putJsonObject("geometry") {
+                        put("type", "LineString")
+                        putJsonArray("coordinates") { piece.points.forEach { p -> add(buildJsonArray { add(JsonPrimitive(p.lon)); add(JsonPrimitive(p.lat)) }) } }
+                    }
+                })
+            }
+        }
+    }.toString()
+
+    companion object {
+        /** No contours, as GeoJSON: what the map's contour source holds with the slope map off. */
+        const val NO_CONTOURS: String = """{"type":"FeatureCollection","features":[]}"""
+    }
+}
 
 /**
  * What the map draws for the open diagram, as plain data, so *what* is drawn is tested without a GPU (the MapLibre glue that draws it is
@@ -38,6 +80,8 @@ data class LzScene(
      * point is seen too. Not the diagram's: it is kept only while the person is drawing, and becomes [drawn] when they finish.
      */
     val draft: List<LatLon> = emptyList(),
+    /** A read-only pack's LZ/PZ: drawn as it is, with nothing that invites a drag (a PZ marker's tip has no handle). */
+    val locked: Boolean = false,
     /** The corner of the boundary the person is holding (to delete it), if one is: drawn larger, in amber. */
     val heldCorner: BoundaryCornerRef? = null,
 ) {
@@ -69,13 +113,15 @@ data class LzScene(
             graphics.pzMarkers.forEach { pz ->
                 add(feature("pz", line(listOf(pz.anchor, pz.tip)), "selected" to JsonPrimitive(pz.selected)))
                 add(feature("pz-anchor", point(pz.anchor)))
-                add(feature("pz-tip", point(pz.tip), "bearing" to JsonPrimitive(GraphicsScene.bearing(pz.anchor, pz.tip))))
+                add(feature("pz-tip", point(pz.tip), "bearing" to JsonPrimitive(GraphicsScene.bearing(pz.anchor, pz.tip)), "handle" to JsonPrimitive(!locked)))
             }
             graphics.goArounds.forEach { ga ->
                 add(feature("ga", point(ga.at), "icon" to JsonPrimitive(if (ga.direction == "right") "ga-right" else "ga-left"), "rotation" to JsonPrimitive(ga.rotationDeg)))
             }
             graphics.aircraft.forEach { a ->
-                val k0 = a.diameterM / (METERS_PER_POINT_AT_ZOOM_0 * cos(Math.toRadians(a.at.lat))) / AIRCRAFT_ICON_PX
+                // The rotor is what is to scale, and the picture is wider than it (the tail, and room round the mast): this many metres across on the ground.
+                val pictureM = a.diameterM * AircraftIcons.frame(a.iconKey).widthPerRotorDiameter
+                val k0 = pictureM / (METERS_PER_POINT_AT_ZOOM_0 * cos(Math.toRadians(a.at.lat))) / AIRCRAFT_ICON_PT
                 add(
                     feature(
                         "heli", point(a.at),
@@ -117,8 +163,11 @@ data class LzScene(
     companion object {
         val EMPTY = LzScene(null, emptyList(), emptyList(), null)
 
-        /** The aircraft bitmaps are this many points across, so the icon's size at a zoom is the aircraft's size on the ground over this. */
-        const val AIRCRAFT_ICON_PX = 192
+        /**
+         * The aircraft pictures are this many points across (points, not pixels: each bitmap's density says how many pixels that is,
+         * [AircraftIconRenderer.forMap]), so the icon's size at a zoom is the picture's width on the ground, in points at that zoom, over this.
+         */
+        const val AIRCRAFT_ICON_PT = 192
 
         /** Metres one point covers at the equator on zoom 0 of MapLibre's 512-point tiles. */
         const val METERS_PER_POINT_AT_ZOOM_0 = 78_271.516964
@@ -138,6 +187,7 @@ data class LzScene(
             selected: GraphicRef? = null,
             draft: List<LatLon> = emptyList(),
             heldCorner: BoundaryCornerRef? = null,
+            locked: Boolean = false,
         ): LzScene {
             if (diagram == null) return EMPTY
             return LzScene(
@@ -148,6 +198,7 @@ data class LzScene(
                 graphics = GraphicsScene.of(diagram, profiles, active, selected),
                 draft = draft,
                 heldCorner = heldCorner,
+                locked = locked,
             )
         }
     }

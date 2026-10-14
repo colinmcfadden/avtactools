@@ -72,7 +72,7 @@ class AnalysisServiceTest {
         )
         // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and the service's work is what a test waits for.
         val service = AnalysisService(
-            api, session, repository, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler),
+            api, session, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler),
         )
 
         suspend fun targeted(name: String = "LZ HAWK"): String = repository.create(target, name).id

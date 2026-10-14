@@ -1,42 +1,41 @@
 package app.ezpztac.workspace
 
-import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.ActiveAircraftChoice
-import app.ezpztac.data.MasterProfileStore
+import app.ezpztac.data.AircraftProfiles
+import app.ezpztac.data.DrawingMode
+import app.ezpztac.data.HandoffFormat
+import app.ezpztac.data.InMemoryOpenRouteSetStore
 import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.MasterProfileStore
 import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.PackFacts
+import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetView
 import app.ezpztac.data.PointSetViewStore
 import app.ezpztac.data.PointSetViews
-import app.ezpztac.data.PlanningApi
-import app.ezpztac.data.HandoffFormat
 import app.ezpztac.data.RouteExport
 import app.ezpztac.data.RouteHandoffExport
-import app.ezpztac.testing.Fixtures
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.launch
 import app.ezpztac.data.RouteHeld
 import app.ezpztac.data.RoutePlanning
-import app.ezpztac.network.NetworkException
-import app.ezpztac.network.PointWindDto
-import app.ezpztac.network.WindQuestion
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.first
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.model.AircraftProfile
-import app.ezpztac.model.LatLon
-import app.ezpztac.model.SetPoint
-import app.ezpztac.model.PointSets
-import app.ezpztac.model.PointSet
-import app.ezpztac.model.RoutePoint
-import app.ezpztac.planning.GraphicEdits
-import app.ezpztac.model.AltitudeSetting
 import app.ezpztac.model.Airspeed
+import app.ezpztac.model.AltitudeSetting
+import app.ezpztac.model.LatLon
+import app.ezpztac.model.PointSet
+import app.ezpztac.model.PointSets
+import app.ezpztac.model.RoutePoint
+import app.ezpztac.model.SetPoint
 import app.ezpztac.model.Wind
+import app.ezpztac.network.NetworkException
+import app.ezpztac.network.PointWindDto
+import app.ezpztac.network.WindQuestion
+import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.planning.PlanDraft
 import app.ezpztac.planning.PointDraft
 import app.ezpztac.sync.ConflictResolver
@@ -47,12 +46,17 @@ import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.RecordingScheduler
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
+import app.ezpztac.testing.Fixtures
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -62,6 +66,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -98,18 +103,21 @@ class RoutesViewModelTest {
         override suspend fun routeWinds(points: List<WindQuestion>) = windsAnswer(points)
     }
 
-    private class Rig(scope: TestScope, resolver: ConflictResolver?) {
+    private class Rig(scope: TestScope, resolver: ConflictResolver?, val pack: FakeOpenPack = FakeOpenPack()) {
         val resolutions = mutableListOf<Triple<RecordKind, String, SyncEngine.Resolution>>()
         val server = FakeServer()
         val device = Device("A", server)
         val repository = RouteRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler(), StandardTestDispatcher(scope.testScheduler))
-        val session = RouteSession(repository, scope.backgroundScope)
+        val session = RouteSession(repository, scope.backgroundScope, pack.routeStore)
         val selection = RouteSelection()
         val profiles = AircraftProfiles(
             device.store as InMemorySyncStore, Store(), { emptyList() }, Choice(),
             CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), device.repository, RecordingScheduler(),
         )
-        val sketching = RouteSketching(session, profiles)
+        val mode = DrawingMode()
+        val sketching = RouteSketching(session, profiles, mode)
+        val openStore = InMemoryOpenRouteSetStore()
+        val openSets = OpenRouteSets(openStore)
         val api = FakeApi()
         val pointSets = PointSetRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler())
         val pointViews = PointSetViews(object : PointSetViewStore {
@@ -120,14 +128,313 @@ class RoutesViewModelTest {
         var template: () -> ByteArray = { Fixtures.repoBytes("frontend/public/msnx_template.msnx") }
         val model = RoutesViewModel(
             repository, session, selection, sketching, resolver ?: ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            RoutePlanning(api, session), RouteExport { template() }, RouteHandoffExport(), LocalPoints(pointSets, pointViews),
+            RoutePlanning(api, session), RouteExport { template() }, RouteHandoffExport(), LocalPoints(pointSets, pointViews), openSets, pack,
         ).also { it.worker = StandardTestDispatcher(scope.testScheduler) }
         val shared = mutableListOf<ExportFile>()
-        init { scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.exports.collect { shared += it } } }
+        val notices = mutableListOf<String>()
+        init {
+            pack.opener = { session.open(it) }
+            pack.closer = { session.closeIfOpen(it) }
+            scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.exports.collect { shared += it } }
+            scope.backgroundScope.launch(UnconfinedTestDispatcher(scope.testScheduler)) { model.notices.collect { notices += it } }
+        }
         val state get() = model.state.value
     }
 
     private fun TestScope.rig(resolver: ConflictResolver? = null) = Rig(this, resolver).also { advanceUntilIdle() }
+
+    @Test
+    fun `the panel's actions pass on the frame's way to add a copy to a pack, and offer none without it`() = runTest {
+        val r = rig()
+        val add: (String, String) -> Unit = { _, _ -> }
+        assertSame(add, actionsOf(r.model, addToPack = add).addToPack)
+        assertNull(actionsOf(r.model).addToPack)
+    }
+
+    // -- In a Mission Pack (P2b) ------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `in a pack the panel is the pack's route sets, and the person's own are set aside`() = runTest {
+        val r = rig()
+        val own = r.repository.create("NIGHT INFIL")
+        r.model.openSet(own.id)
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(
+            listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 2), FakeOpenPack.routes("rt-2", "OP DK EGRESS", routes = 1)),
+            people = listOf(FakeOpenPack.here(2, "Sam Bell", "rt-2")),
+        )
+        advanceUntilIdle()
+        val s = r.model.state.value
+        assertEquals("OP DK · 2 route sets · live", s.pack!!.head)
+        assertEquals(listOf("OP DK INGRESS" to "2 routes · 6 points", "OP DK EGRESS" to "1 route · 3 points"), s.pack.rows.map { it.name to it.summary })
+        assertEquals("Sam B. has it open", s.pack.rows[1].presence)
+        assertTrue("Synced is what most rows would say: left unsaid", s.pack.rows[0].chips.isEmpty())
+        assertTrue(s.alsoOpen.isEmpty())
+    }
+
+    @Test
+    fun `in an empty pack a sketch makes the pack a set, taken out of it again if the sketch ends with no route`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet"), r.pack.log)
+        assertEquals("pack:p:rt-new", r.session.active.value?.id)
+        assertNotNull(r.state.drawing)
+        assertTrue("nothing made in the Library", r.model.state.value.sets.isEmpty())
+        r.model.cancelDrawing()
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet", "remove rt-new"), r.pack.log)
+    }
+
+    @Test
+    fun `a set a sketch made in a pack stays once it has a route, and one someone renamed stays too`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        r.model.addAtCrosshair(LatLon(34.0, -84.0))
+        r.model.addAtCrosshair(LatLon(34.01, -84.01))
+        r.model.finishDrawing("RED 1")
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet"), r.pack.log)
+        // A second empty pack, a sketch, and the set renamed meanwhile (by whoever): it is not taken away.
+        val s = rig()
+        s.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        s.model.startSketch()
+        advanceUntilIdle()
+        s.session.edit("Rename set") { it.copy(name = "OP DK INGRESS") }
+        s.model.cancelDrawing()
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet"), s.pack.log)
+    }
+
+    @Test
+    fun `in a pack with sets a sketch with none open is drawn into the set last on the map, else the first, and makes none`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1), FakeOpenPack.routes("rt-2", "OP DK EGRESS", routes = 1)))
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals(listOf("open rt-1"), r.pack.log)
+        assertEquals("pack:p:rt-1", r.session.active.value?.id)
+        assertNotNull(r.state.drawing)
+        r.model.cancelDrawing()
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-2")
+        advanceUntilIdle()
+        r.model.close("pack:p:rt-2")
+        advanceUntilIdle()
+        r.pack.log.clear()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals("the one last on the map", listOf("open rt-2"), r.pack.log)
+    }
+
+    @Test
+    fun `a set made for a sketch in a pack that something else took the map's taps from meanwhile is taken out again`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        r.pack.whileMaking = { r.mode.begin(app.ezpztac.data.DrawingMode.Kind.BOUNDARY) }
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals("Finish or cancel the boundary first.", r.state.error)
+        assertEquals(listOf("createRouteSet", "remove rt-new"), r.pack.log)
+    }
+
+    @Test
+    fun `a set the pack would not make is said once, by the pack, never as the panel's banner too`() = runTest {
+        val r = rig()
+        r.pack.madeSet = null
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        r.model.createSet("")
+        advanceUntilIdle()
+        assertEquals(listOf("createRouteSet", "createRouteSet"), r.pack.log)
+        assertNull(r.state.error)
+        assertNull(r.state.drawing)
+    }
+
+    @Test
+    fun `in a pack the person's own sets are not opened, and closing one of theirs opens nothing else of theirs`() = runTest {
+        val r = rig()
+        val a = r.repository.create("NIGHT INFIL")
+        val b = r.repository.create("DAY EXFIL")
+        r.model.openSet(a.id)
+        advanceUntilIdle()
+        r.model.openSet(b.id)
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.close(b.id)
+        advanceUntilIdle()
+        assertNull("NIGHT INFIL is not brought into the pack", r.session.active.value)
+        r.model.openSet(a.id)
+        advanceUntilIdle()
+        assertEquals(RoutesViewModel.OWN_SETS_IN_PACK, r.state.error)
+        assertNull(r.session.active.value)
+    }
+
+    @Test
+    fun `an open pack set is the pack's on its card, never named into the Library, takes any name, and stays the pack's when unlisted`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), people = listOf(FakeOpenPack.here(2, "Sam Bell", "rt-1")))
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        val open = checkNotNull(r.state.open)
+        assertEquals(InPackUi("OP DK", "Saved to OP DK as you work. 4 members can see it.", "Sam B. is also here", false), open.inPack)
+        assertFalse(open.canSave)
+        assertEquals(listOf("Synced"), open.chips.map { it.text })
+        assertEquals(1, r.state.pack!!.count)
+        assertTrue(r.state.pack!!.rows.isEmpty())
+        r.model.saveAs("NIGHT INFIL")
+        advanceUntilIdle()
+        assertEquals(RoutesViewModel.SET_SAVED_TO_PACK, r.state.error)
+        r.model.renameSet("pack:p:rt-1", "SKETCHED ROUTES")
+        advanceUntilIdle()
+        assertEquals("SKETCHED ROUTES", r.session.active.value?.name)
+        assertTrue("nothing named into the Library", r.state.sets.isEmpty())
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        assertNotNull(r.state.open?.inPack)
+        assertFalse(r.state.open!!.canSave)
+    }
+
+    @Test
+    fun `in a finished pack nothing is drawn or added, and its set is looked at, shared and hidden but never changed`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        r.model.startSketch()
+        advanceUntilIdle()
+        assertEquals(PackFacts.NOTHING_NEW, r.state.error)
+        assertTrue("nothing opened or made for the sketch", r.pack.log.isEmpty())
+        r.model.createSet("")
+        advanceUntilIdle()
+        assertTrue(r.pack.log.isEmpty())
+        assertEquals(MapPointAction.Locked("Off in a finished pack"), r.model.pointAction())
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        val open = checkNotNull(r.state.open)
+        val locked = "OP DK is finished: nothing in it can be changed."
+        assertEquals(locked, open.locked)
+        assertTrue(open.inPack!!.savedLine.startsWith("Finished by Sam B. on Oct "))
+        assertTrue(r.state.pack!!.readOnly)
+        assertEquals("This pack is finished: you can look at everything in it and export its routes, but nothing can be changed.", r.state.pack!!.hint)
+        val routeId = open.routes.single().id
+        r.model.selectRoute(routeId)
+        advanceUntilIdle()
+        val before = r.session.active.value
+        r.model.renameSet("pack:p:rt-1", "OP DK EGRESS")
+        r.model.renameRoute(routeId, "BLUE 1")
+        r.model.addShapingPoint(routeId, LatLon(34.0, -84.0))
+        r.model.addPointAt(LatLon(34.0, -84.0))
+        r.model.deleteRoute(routeId)
+        advanceUntilIdle()
+        assertEquals("nothing changed", before, r.session.active.value)
+        assertEquals(locked, r.state.error)
+        assertEquals(routeId, r.selection.held.value?.routeId)
+        var asked = 0
+        r.api.windsAnswer = { asked++; emptyMap() }
+        r.model.fetchWinds()
+        advanceUntilIdle()
+        assertNull("asked of nobody", r.state.fetching)
+        assertEquals(0, asked)
+        assertFalse(r.state.open!!.canUndo)
+        // A route hidden is the person's own: it stays theirs to do.
+        r.model.toggleVisible(routeId)
+        advanceUntilIdle()
+        assertFalse(r.session.active.value!!.routes.single().visible)
+    }
+
+    @Test
+    fun `in a finished pack a typed change to a route's plan is refused at its field, and one that changes nothing says nothing`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        val routeId = r.state.open!!.routes.single().id
+        r.model.selectRoute(routeId)
+        advanceUntilIdle()
+        val plan = checkNotNull(r.state.detail).plan
+        assertNull("the same values again: no change, no words", r.model.applyPlan(routeId, plan, plan))
+        assertEquals("OP DK is finished: nothing in it can be changed.", r.model.applyPlan(routeId, plan.copy(tempC = "22"), plan))
+    }
+
+    @Test
+    fun `in a finished pack a point is not moved, a step is not undone, and a route being drawn takes no more points`() = runTest {
+        val r = rig()
+        val route = app.ezpztac.model.SketchRoute(
+            id = "r1", name = "RED 1", color = "#FF453A", plan = app.ezpztac.model.RoutePlan(),
+            points = listOf(
+                app.ezpztac.model.RoutePoint(id = "a", lat = 34.7, lon = -84.1, kind = app.ezpztac.model.RoutePoint.KIND_AMPS, ptType = "turn", name = ".SP"),
+                app.ezpztac.model.RoutePoint(id = "b", lat = 34.8, lon = -84.1, kind = app.ezpztac.model.RoutePoint.KIND_AMPS, ptType = "turn", name = ".RP"),
+            ),
+        )
+        val item = FakeOpenPack.routesOf("rt-1", app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = listOf(route)))
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        r.model.renameRoute("r1", "BLUE 1")                                                     // while it took changes: a step undo could take back
+        r.model.startSketch()
+        r.model.addAtCrosshair(LatLon(34.0, -84.0))
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        val locked = "OP DK is finished: nothing in it can be changed."
+        val before = r.session.active.value
+        r.model.nudgePoint("r1", "a", 100.0, 0.0)
+        r.model.pointToCrosshair("r1", "a", LatLon(34.5, -84.5))
+        assertEquals(locked, r.model.pointToText("r1", "a", "16S GC 28864 55349"))
+        r.model.renamePoint("r1", "a", ".TGT")
+        r.model.undo()
+        r.model.redo()
+        advanceUntilIdle()
+        assertEquals(before, r.session.active.value)
+        assertEquals("BLUE 1", r.session.active.value!!.routes.single().name)
+        assertEquals(locked, r.state.error)
+        r.model.addAtCrosshair(LatLon(34.1, -84.1))
+        r.model.finishDrawing("RED 2")
+        advanceUntilIdle()
+        assertEquals("the draft took no more", 1, r.sketching.draft.value?.points?.size)
+        assertEquals(1, r.session.active.value!!.routes.size)
+    }
+
+    @Test
+    fun `a pack opening says so in place of its route sets`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = null, status = app.ezpztac.missionpacks.PackStatus.LOADING)
+        advanceUntilIdle()
+        assertEquals("Opening…", r.state.pack!!.head)
+        assertEquals("Opening the pack…", r.state.pack!!.opening)
+    }
+
+    @Test
+    fun `a pack's set is opened and closed in the pack, and is removed from the Pack panel, never deleted here`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)))
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        r.model.close("pack:p:rt-1")
+        advanceUntilIdle()
+        assertEquals(listOf("open rt-1", "close rt-1"), r.pack.log)
+        r.model.deleteSet("pack:p:rt-1")
+        advanceUntilIdle()
+        assertEquals("This set is the pack's: Remove from pack, in the Pack panel, takes it out for everyone.", r.model.state.value.error)
+        r.pack.opens = false
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        assertEquals("That set is no longer in the pack.", r.model.state.value.error)
+    }
 
     private fun TestScope.settle() = advanceUntilIdle()
 
@@ -151,25 +458,18 @@ class RoutesViewModelTest {
     }
 
     @Test
-    fun `a new set is named MISSION and a number, or what the person typed in capitals, and is opened`() = runTest(dispatcher) {
+    fun `a new set with no name takes the made-up one, or what the person typed in capitals, and is opened`() = runTest(dispatcher) {
         val r = rig()
-        r.model.startCreating(); settle()
-        assertTrue(r.state.creating)
         r.model.createSet(""); settle()
-        assertFalse(r.state.creating)
-        assertEquals("MISSION 1", r.state.open!!.name)
+        assertEquals("SKETCHED ROUTES", r.state.open!!.name)
+        assertTrue(r.state.open!!.madeUpName)
         r.model.createSet("  night run "); settle()
         assertEquals("NIGHT RUN", r.state.open!!.name)
-        assertEquals(listOf("MISSION 1", "NIGHT RUN"), r.state.sets.map { it.name }.sorted())
-        assertEquals(listOf(false, true), r.state.sets.sortedBy { it.name }.map { it.isOpen })                // MISSION 1 is put away, NIGHT RUN is open
-    }
-
-    @Test
-    fun `cancelling the form closes it`() = runTest(dispatcher) {
-        val r = rig()
-        r.model.startCreating(); settle()
-        r.model.cancelCreating(); settle()
-        assertFalse(r.state.creating)
+        assertFalse(r.state.open!!.madeUpName)
+        assertEquals(listOf("NIGHT RUN", "SKETCHED ROUTES"), r.state.sets.map { it.name }.sorted())
+        assertEquals(listOf(true, false), r.state.sets.sortedBy { it.name }.map { it.isOpen })                // NIGHT RUN is on the map, the other is also open
+        r.model.createSet(""); settle()
+        assertEquals("SKETCHED ROUTES 2", r.state.open!!.name)                                     // the first free made-up name
     }
 
     @Test
@@ -460,7 +760,8 @@ class RoutesViewModelTest {
         for (at in listOf(a, b, c, LatLon(34.73, -84.07))) r.model.addAtCrosshair(at)
         r.model.finishDrawing(); settle()
         val id = r.state.open!!.routes.single().id
-        r.model.applyPlan(id, PlanDraft.of(r.session.active.value!!.route(id)!!.plan).copy(date = "2026-10-03")); settle()
+        val plan = PlanDraft.of(r.session.active.value!!.route(id)!!.plan)
+        r.model.applyPlan(id, plan.copy(date = "2026-10-03"), plan); settle()
         return id
     }
 
@@ -490,7 +791,7 @@ class RoutesViewModelTest {
         assertTrue(detail.points[1].facts, detail.points[1].facts.matches(Regex("""\d+\.\d nm · \d{3}°T · \d+ kt.*""")))
         assertEquals("0:00", detail.points[0].elapsed)
         assertEquals(detail.points.map { it.clock }, List(4) { "--:--:--" })                  // no clock set anywhere
-        assertTrue(detail.totals!!.startsWith("Total "))
+        assertFalse(detail.totals!!.startsWith("Total"))                                      // the page says "Total" itself
         assertTrue(detail.totals.contains(" nm · "))
         assertTrue(detail.totals.endsWith(" lb"))
         assertEquals(0, detail.shapingPoints)
@@ -516,7 +817,7 @@ class RoutesViewModelTest {
         val id = openWithPlannedRoute(r)
         val before = r.state.open!!.canUndo
         val draft = r.state.detail!!.plan.copy(airspeedValue = "120", airspeedType = "true", altitudeValue = "300", altitudeRef = "msl", windDir = "270", windSpeed = "15", tempC = "5", fuelFlowLbHr = "2000")
-        assertNull(r.model.applyPlan(id, draft)); settle()
+        assertNull(r.model.applyPlan(id, draft, r.state.detail!!.plan)); settle()
         val plan = r.route(id).plan
         assertEquals(Airspeed(120.0, "true"), plan.airspeed)
         assertEquals(AltitudeSetting(300.0, "msl"), plan.altitude)
@@ -534,10 +835,10 @@ class RoutesViewModelTest {
         val r = rig()
         val id = openWithPlannedRoute(r)
         val plan = r.route(id).plan
-        assertEquals("Wind speed is not a number.", r.model.applyPlan(id, r.state.detail!!.plan.copy(windSpeed = "gale"))); settle()
+        assertEquals("Wind speed is not a number.", r.model.applyPlan(id, r.state.detail!!.plan.copy(windSpeed = "gale"), r.state.detail!!.plan)); settle()
         assertEquals(plan, r.route(id).plan)
         assertNull(r.state.error)                                                             // the words go to the form, not to the banner
-        assertEquals("That route is no longer here.", r.model.applyPlan("nope", r.state.detail!!.plan))
+        assertEquals("That route is no longer here.", r.model.applyPlan("nope", r.state.detail!!.plan, r.state.detail!!.plan))
     }
 
     @Test
@@ -985,12 +1286,60 @@ class RoutesViewModelTest {
     }
 
     @Test
+    fun `winds or elevations on their way to a set whose pack is finished meanwhile are not applied, and the note says why`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val planned = r.session.active.value!!.copy(id = "pack:p:rt-1", name = "OP DK INGRESS")
+        val item = FakeOpenPack.routesOf("rt-1", planned)
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.model.openSet("pack:p:rt-1"); settle()
+        r.selection.select(id); settle()                                                        // held, as it was in the Library's copy
+        val ids = r.state.detail!!.points.map { it.id }
+        val winds = CompletableDeferred<Map<String, PointWindDto>>()
+        r.api.windsAnswer = { winds.await() }
+        r.model.fetchWinds(); settle()
+        assertEquals(PlanningKind.WINDS, r.state.fetching)
+        val before = r.session.active.value
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished()); settle()
+        assertNull(r.state.fetching)
+        assertEquals(PlanningNote("OP DK is finished: nothing in it can be changed.", failed = true, PlanningKind.WINDS), r.state.note)
+        winds.complete(mapOf(ids[0] to wind(270, 12.0, "METAR"))); settle()
+        assertSame("nothing applied", before, r.session.active.value)
+        assertEquals(PlanningNote("OP DK is finished: nothing in it can be changed.", failed = true, PlanningKind.WINDS), r.state.note)
+        // Elevations, as a viewer.
+        r.pack.state.value = FakeOpenPack.open(listOf(item)); settle()
+        val ground = CompletableDeferred<List<Double?>>()
+        r.api.elevationsAnswer = { ground.await() }
+        r.model.fetchElevations(); settle()
+        assertEquals(PlanningKind.ELEVATIONS, r.state.fetching)
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.viewing()); settle()
+        ground.complete(List(4) { 1000.0 }); settle()
+        assertNull(r.state.fetching)
+        assertEquals(PlanningNote("You can view OP DK but not change it.", failed = true, PlanningKind.ELEVATIONS), r.state.note)
+        assertFalse(r.state.detail!!.hasElevations)
+    }
+
+    @Test
+    fun `a fetch for the person's own set is not ended by a pack being finished`() = runTest(dispatcher) {
+        val r = rig()
+        openWithPlannedRoute(r)
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)))
+        val ground = CompletableDeferred<List<Double?>>()
+        r.api.elevationsAnswer = { ground.await() }
+        r.model.fetchElevations(); settle()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), session = FakeOpenPack.finished()); settle()
+        assertEquals(PlanningKind.ELEVATIONS, r.state.fetching)
+        ground.complete(List(4) { 1000.0 }); settle()
+        assertEquals(PlanningNote("Ground elevations for 4 points.", failed = false, PlanningKind.ELEVATIONS), r.state.note)
+    }
+
+    @Test
     fun `fetching elevations marks the route as having them`() = runTest(dispatcher) {
         val r = rig()
         openWithPlannedRoute(r)
         assertFalse(r.state.detail!!.hasElevations)
         r.model.fetchElevations(); settle()
-        assertEquals(PlanningNote("Ground elevations for 4 points.", failed = false), r.state.note)
+        assertEquals(PlanningNote("Ground elevations for 4 points.", failed = false, PlanningKind.ELEVATIONS), r.state.note)
         assertTrue(r.state.detail!!.hasElevations)
     }
 
@@ -1371,4 +1720,559 @@ class RoutesViewModelTest {
         assertEquals("GOAT RUN", r.state.open!!.name)
         assertTrue(r.repository.missionFile(id)!!.contentEquals(missionBytes))
     }
+
+    // -- The session: the sets open now --------------------------------------------------------------------------------
+
+    @Test
+    fun `every set opened joins the session, and the others are also open in the order they were opened`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        r.model.createSet("TWO"); settle()
+        r.model.createSet("THREE"); settle()
+        assertEquals("THREE", r.state.open!!.name)
+        assertEquals(listOf("ONE", "TWO"), r.state.alsoOpen.map { it.name })
+        assertEquals(3, r.state.openCount)
+        assertEquals(r.state.sets.map { it.uuid }.toSet(), r.openStore.kept.toSet())                // kept on the device
+        val one = r.state.alsoOpen.first().uuid
+        r.model.openSet(one); settle()
+        assertEquals("ONE", r.state.open!!.name)
+        assertEquals(listOf("TWO", "THREE"), r.state.alsoOpen.map { it.name })                     // its place in the session is kept
+    }
+
+    @Test
+    fun `closing the set on the map takes it out of the session, keeps it in the Library, and opens the one before`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        r.model.createSet("TWO"); settle()
+        val two = r.state.open!!.uuid
+        r.model.close(two); settle()
+        assertEquals("ONE", r.state.open!!.name)
+        assertEquals(emptyList<RouteSetRow>(), r.state.alsoOpen)
+        assertTrue(r.state.sets.any { it.uuid == two })                                          // nothing is deleted
+        assertFalse(two in r.openSets.ids.value)
+        r.model.closeSet(); settle()
+        assertNull(r.state.open)
+        assertEquals(0, r.state.openCount)
+        assertEquals(2, r.state.sets.size)
+    }
+
+    @Test
+    fun `closing a set that is only also open leaves the map alone`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        val one = r.state.open!!.uuid
+        r.model.createSet("TWO"); settle()
+        r.model.close(one); settle()
+        assertEquals("TWO", r.state.open!!.name)
+        assertEquals(emptyList<RouteSetRow>(), r.state.alsoOpen)
+    }
+
+    @Test
+    fun `deleting the set on the map opens the one before, and it leaves the session`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        r.model.createSet("TWO"); settle()
+        val two = r.state.open!!.uuid
+        r.model.deleteSet(two); settle()
+        assertEquals("ONE", r.state.open!!.name)
+        assertFalse(two in r.openSets.ids.value)
+        assertEquals(listOf("ONE"), r.state.sets.map { it.name })
+    }
+
+    @Test
+    fun `a set in the session that has gone is let go when the next one is looked for`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        val one = r.state.open!!.uuid
+        r.model.createSet("TWO"); settle()
+        r.repository.delete(one); settle()                                                       // deleted on another device, say
+        r.model.closeSet(); settle()
+        assertNull(r.state.open)
+        assertEquals(emptyList<String>(), r.openSets.ids.value)
+    }
+
+    @Test
+    fun `every set is listed, and one closed is put back on the map when it is opened again`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        val one = r.state.open!!.uuid
+        r.model.close(one); settle()
+        assertEquals(listOf("ONE"), r.state.sets.map { it.name })
+        r.model.openSet(one); settle()
+        assertEquals(RoutesPage.HOME, r.state.page)
+        assertEquals("ONE", r.state.open!!.name)
+        assertTrue(one in r.openSets.ids.value)                                                  // back in the session
+    }
+
+    @Test
+    fun `a set's chips say whether the server has it, and an imported mission says so too`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        assertEquals(listOf(LzChip("Waiting to sync", ChipTone.WARNING)), r.state.open!!.chips)
+        assertEquals(listOf(LzChip("Imported", ChipTone.INFO, app.ezpztac.designsystem.EzpzIcons.download), LzChip("Synced", ChipTone.SUCCESS)), routeSetChips(SyncStatus.SYNCED, null, isMission = true))
+        assertEquals(listOf(LzChip("Conflict copy", ChipTone.ERROR)), routeSetChips(SyncStatus.PENDING, "other", isMission = false))
+        assertEquals(listOf(LzChip("Waiting to sync", ChipTone.WARNING)), routeSetChips(null, null, isMission = false))
+    }
+
+    @Test
+    fun `a set's line counts its routes and points, and a route's line has its fuel`() = runTest(dispatcher) {
+        val r = rig()
+        openWithRoutes(r, "ONE")
+        assertEquals("2 routes · 4 points", r.state.open!!.summary)
+        r.session.flush(); settle()                                                              // the list is the stored record's, written after a pause
+        assertEquals("2 routes · 4 points", r.state.sets.single().summary)
+        val route = r.state.open!!.routes.first()
+        assertEquals(route.summary, route.meta)
+        assertTrue(route.summary!!.endsWith(" lb"))                                              // the fuel, as the web's row says it
+        r.model.createSet("TWO"); settle()
+        assertEquals("0 routes · 0 points", r.state.open!!.summary)
+    }
+
+    // -- The map menu's Add route point here -------------------------------------------------------------------------------
+
+    @Test
+    fun `add route point here with nothing open starts a route there, in a new set, with that point down`() = runTest(dispatcher) {
+        val r = rig()
+        assertEquals(MapPointAction.StartRoute, r.model.pointAction())
+        r.model.addPointAt(a); settle()
+        assertEquals("SKETCHED ROUTES", r.state.open!!.name)
+        assertEquals(listOf(a), r.sketching.draft.value!!.points.map { LatLon(it.lat, it.lon) })
+        r.model.addAtCrosshair(b)
+        r.model.finishDrawing(); settle()
+        assertEquals(listOf(a, b), r.session.active.value!!.routes.single().points.map { LatLon(it.lat, it.lon) })
+    }
+
+    @Test
+    fun `add route point here in an empty set of sketched routes starts a route in it`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        assertEquals(MapPointAction.StartRoute, r.model.pointAction())
+        r.model.addPointAt(a); settle()
+        assertEquals("ONE", r.state.open!!.name)
+        assertEquals(1, r.state.sets.size)
+        assertEquals(1, r.sketching.draft.value!!.points.size)
+    }
+
+    @Test
+    fun `add route point here puts a named turn point at the end of the only route, or the one held, and holds it, as one step`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        r.model.startDrawing(); r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        r.selection.clear()
+        val only = r.session.active.value!!.routes.single()
+        assertEquals(MapPointAction.AddTo(only.name), r.model.pointAction())
+        val depth = r.session.undoDepth.value
+        r.model.newPointId = { "end-1" }
+        val far = LatLon(34.80, -84.00)
+        r.model.addPointAt(far); settle()
+        val last = r.session.active.value!!.routes.single().points.last()
+        assertEquals("end-1", last.id)
+        assertEquals(far, LatLon(last.lat, last.lon))
+        assertEquals(app.ezpztac.model.RoutePoint.KIND_AMPS, last.kind)
+        assertEquals("turn", last.ptType)
+        assertEquals(".CP", last.name)
+        assertEquals(app.ezpztac.data.RouteHeld(only.id, "end-1"), r.selection.held.value)
+        assertEquals(depth + 1, r.session.undoDepth.value)
+        assertEquals("Added a point to the end of ${only.name}.", r.notices.last())
+
+        // Two routes: the one held takes it; none held, the person is asked to choose.
+        r.model.startDrawing(); r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        val second = r.session.active.value!!.routes.last()
+        r.selection.select(second.id)
+        assertEquals(MapPointAction.AddTo(second.name), r.model.pointAction())
+        r.selection.clear()
+        assertEquals(MapPointAction.ChooseRoute, r.model.pointAction())
+        val before = r.session.active.value
+        r.model.addPointAt(far); settle()
+        assertEquals(before, r.session.active.value)
+        assertNotNull(r.state.error)
+    }
+
+    @Test
+    fun `add route point here is refused in an imported mission, whose routes are its file's`() = runTest(dispatcher) {
+        val r = rig()
+        openWithMission(r)
+        assertEquals(MapPointAction.Mission, r.model.pointAction())
+        val before = r.session.active.value
+        r.model.addPointAt(a); settle()
+        assertEquals(before, r.session.active.value)
+        assertNull(r.sketching.draft.value)
+        assertNotNull(r.state.error)
+    }
+
+    // -- Sketching from the panel ---------------------------------------------------------------------------------------
+
+    @Test
+    fun `sketching with nothing open makes a set with the made-up name, in the session, and drawing starts`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.startSketch(); settle()
+        assertEquals("SKETCHED ROUTES", r.state.open!!.name)
+        assertNotNull(r.state.drawing)
+        assertTrue(r.state.open!!.uuid in r.openSets.ids.value)
+        r.model.addAtCrosshair(a); r.model.addAtCrosshair(b)
+        r.model.finishDrawing(); settle()
+        assertEquals(1, r.state.open!!.routes.size)
+        assertTrue(r.state.open!!.canSave)
+    }
+
+    @Test
+    fun `cancelling the first sketch in a set made for it takes the empty set away, and the set before comes back`() = runTest(dispatcher) {
+        val r = rig()
+        openWithMission(r)
+        val mission = r.state.open!!.uuid
+        r.model.startSketch(); settle()                                                         // a mission's routes are its file's: a new set
+        val made = r.state.open!!.uuid
+        assertFalse(made == mission)
+        r.model.addAtCrosshair(a)
+        r.model.cancelDrawing(); settle()
+        assertEquals(mission, r.state.open!!.uuid)
+        assertFalse(r.state.sets.any { it.uuid == made })
+        assertFalse(made in r.openSets.ids.value)
+        assertNull(r.state.drawing)
+    }
+
+    @Test
+    fun `a set made for a sketch is kept once a route is finished in it, even if the next sketch is cancelled`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.startSketch(); settle()
+        r.model.addAtCrosshair(a); r.model.addAtCrosshair(b)
+        r.model.finishDrawing(); settle()
+        val made = r.state.open!!.uuid
+        r.model.startSketch(); settle()
+        assertEquals(made, r.state.open!!.uuid)                                                 // into the set on the map
+        r.model.cancelDrawing(); settle()
+        assertEquals(made, r.state.open!!.uuid)
+        assertEquals(1, r.state.open!!.routes.size)
+    }
+
+    @Test
+    fun `sketching with a set of sketched routes open draws into it`() = runTest(dispatcher) {
+        val r = rig()
+        openWithRoutes(r, "ONE")
+        r.model.startSketch(); settle()
+        assertEquals("ONE", r.state.open!!.name)
+        assertEquals(1, r.state.sets.size)
+        assertNotNull(r.state.drawing)
+        r.model.cancelDrawing(); settle()
+        assertEquals(1, r.state.sets.size)                                                        // a set the person made is never taken away
+    }
+
+    @Test
+    fun `a sketch refused because a boundary is being drawn makes no set`() = runTest(dispatcher) {
+        val r = rig()
+        assertNull(r.mode.begin(DrawingMode.Kind.BOUNDARY))
+        r.model.startSketch(); settle()
+        assertEquals("Finish or cancel the boundary first.", r.state.error)
+        assertNull(r.state.open)
+        assertEquals(emptyList<RouteSetRow>(), r.state.sets)
+    }
+
+    private suspend fun TestScope.openWithMission(r: Rig) = openMission(r)
+
+    // -- Naming --------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `saving names the set in capitals, tells the person, and it is saved from then on`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.startSketch(); settle()
+        r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        val uuid = r.state.open!!.uuid
+        r.model.saveAs("  night infil "); settle()
+        assertEquals("NIGHT INFIL", r.state.open!!.name)
+        assertEquals("NIGHT INFIL", r.repository.open(uuid)!!.name)
+        assertEquals(listOf("Saved “NIGHT INFIL” to your Library"), r.notices)
+        assertFalse(r.state.open!!.madeUpName)
+        assertFalse(r.state.open!!.canSave)
+        r.model.undo(); settle()
+        assertEquals("SKETCHED ROUTES", r.state.open!!.name)                                     // naming is a step of the set's own undo
+    }
+
+    @Test
+    fun `a name another set has is kept apart, and the toast says the name it got`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("NIGHT INFIL"); settle()
+        r.model.createSet(""); settle()
+        r.model.saveAs("night infil"); settle()
+        assertEquals("NIGHT INFIL 2", r.state.open!!.name)
+        assertEquals("Saved “NIGHT INFIL 2” to your Library", r.notices.last())
+    }
+
+    @Test
+    fun `replacing the set that has the name deletes it, and this one takes the name`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("NIGHT INFIL"); settle()
+        val other = r.state.open!!.uuid
+        r.model.createSet(""); settle()
+        val mine = r.state.open!!.uuid
+        r.model.saveAs("night infil", replacing = other); settle()
+        assertEquals("NIGHT INFIL", r.state.open!!.name)
+        assertEquals(listOf(mine), r.state.sets.map { it.uuid })
+        assertFalse(other in r.state.alsoOpen.map { it.uuid })
+        assertEquals("Saved \u201cNIGHT INFIL\u201d to your Library, in place of the one there before", r.notices.last())
+    }
+
+    @Test
+    fun `a rename from the Library can replace the set that has the name, the one on the map included`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE"); settle()
+        val one = r.state.open!!.uuid
+        r.model.createSet("TWO"); settle()
+        val two = r.state.open!!.uuid                                                               // on the map
+        r.model.renameSet(one, "two", replacing = two); settle()
+        assertEquals(listOf(one to "TWO"), r.state.sets.map { it.uuid to it.name })
+        assertFalse(r.state.open?.uuid == two)                                                     // closed before it was deleted, so it cannot be saved back
+    }
+
+    @Test
+    fun `an action asked for while the last one runs is said not to be done, rather than dropped`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("ONE")
+        r.model.createSet("TWO")                                                                    // before the first is made
+        settle()
+        assertEquals(STILL_WORKING, r.state.error)
+        assertEquals(listOf("ONE"), r.state.sets.map { it.name })
+    }
+
+    @Test
+    fun `a mission is named for its file, so no name of its own is refused as made up`() = runTest(dispatcher) {
+        val r = rig()
+        r.device.repository.create(RecordKind.MISSION, "GOAT", app.ezpztac.model.RouteSets.missionSummary(emptyList()), uuid = "m1", file = app.ezpztac.sync.FilePart("GOAT.msnx", byteArrayOf(1)))
+        settle()
+        r.model.renameSet("m1", "sketched routes"); settle()
+        assertNull(r.state.error)
+        assertEquals("SKETCHED ROUTES", r.state.sets.single { it.uuid == "m1" }.name)
+    }
+
+    @Test
+    fun `a made-up or blank name is refused in words, and nothing is named`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet(""); settle()
+        r.model.saveAs("sketched routes 4"); settle()
+        assertEquals(RouteSetNames.MADE_UP_REFUSED, r.state.error)
+        r.model.saveAs("   "); settle()
+        assertEquals("Give the routes a name.", r.state.error)
+        assertEquals("SKETCHED ROUTES", r.state.open!!.name)
+        assertEquals(emptyList<String>(), r.notices)
+        val uuid = r.state.open!!.uuid
+        r.model.renameSet(uuid, "Sketched Routes"); settle()
+        assertEquals(RouteSetNames.MADE_UP_REFUSED, r.state.error)
+    }
+
+    @Test
+    fun `Save is offered only for a set of sketched routes with its made-up name and a route to save`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet(""); settle()
+        assertTrue(r.state.open!!.madeUpName)
+        assertFalse(r.state.open!!.canSave)                                                     // nothing to save yet
+        openMission(r)
+        assertFalse(r.state.open!!.madeUpName)
+        assertFalse(r.state.open!!.canSave)                                                     // a mission is named for its file
+    }
+
+    @Test
+    fun `what saving keeps is counted in the sheet's words`() = runTest(dispatcher) {
+        val r = rig()
+        openWithRoutes(r)
+        val lines = r.state.open!!.saveContents
+        assertTrue(lines[0], lines[0].startsWith("2 routes, 4 points, ") && lines[0].endsWith(" nm"))
+        assertEquals("Speeds, altitudes, winds, fuel flow and the start time", lines[1])
+    }
+
+    // -- The plan page ------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `opening a route's plan holds it, and Back leaves it held`() = runTest(dispatcher) {
+        val r = rig()
+        openWithRoutes(r)
+        val route = r.state.open!!.routes[1].id
+        r.model.openPlan(route); settle()
+        assertTrue(r.state.planOpen)
+        assertEquals(route, r.state.detail!!.routeId)
+        r.model.closePlan(); settle()
+        assertFalse(r.state.planOpen)
+        assertEquals(route, r.selection.held.value!!.routeId)
+        r.model.openPlan("nope"); settle()
+        assertFalse(r.state.planOpen)
+    }
+
+    @Test
+    fun `a point held on the map stays held when its route's plan opens from the held bar`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val point = r.state.detail!!.points[2].id
+        r.selection.select(id, point); settle()
+        r.model.openHeldPlan(); settle()
+        assertTrue(r.state.planOpen)
+        assertTrue(r.state.detail!!.points.single { it.id == point }.held)
+    }
+
+    @Test
+    fun `the plan page goes with its route, undone out of existence or its set closed`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet(""); settle()
+        r.model.startDrawing(); r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        r.model.openPlan(r.state.open!!.routes.single().id); settle()
+        r.model.undo(); settle()                                                                // the route was drawn in that step
+        assertFalse(r.state.planOpen)
+        r.model.redo(); settle()
+        r.model.openPlan(r.state.open!!.routes.single().id); settle()
+        assertTrue(r.state.planOpen)
+        r.model.closeSet(); settle()
+        assertFalse(r.state.planOpen)
+    }
+
+    @Test
+    fun `what is typed into one field in a row is one step to undo`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val point = r.state.detail!!.points[1]
+        for (typed in listOf("3", "30", "300")) {
+            val before = r.state.detail!!.points[1].values
+            assertNull(r.model.applyPoint(id, point.id, before.copy(altitudeValue = typed), before, first = false, coalesce = "alt#1")); settle()
+        }
+        assertEquals(300.0, r.route(id).plan.perPoint.getValue(point.id).altitude!!.value, 0.0)
+        r.model.undo(); settle()
+        assertNull(r.route(id).plan.perPoint[point.id]?.altitude)                                // all of it, in one step
+        val temp = r.state.detail!!.plan
+        for (typed in listOf("2", "25")) {
+            val before = r.state.detail!!.plan
+            assertNull(r.model.applyPlan(id, before.copy(tempC = typed), before, coalesce = "temp#1")); settle()
+        }
+        assertEquals(25.0, r.route(id).plan.tempC)
+        r.model.undo(); settle()
+        assertEquals(temp, r.state.detail!!.plan)
+    }
+
+    @Test
+    fun `a field of the plan changes that field alone`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val plan = r.route(id).plan
+        val before = r.state.detail!!.plan
+        assertNull(r.model.applyPlan(id, before.copy(fuelFlowLbHr = "1200"), before)); settle()
+        assertEquals(plan.copy(fuelFlowLbHr = 1200.0), r.route(id).plan)
+        val now = r.state.detail!!.plan
+        assertNull(r.model.applyPlan(id, now, now)); settle()                                     // nothing typed, nothing changed
+        assertEquals(plan.copy(fuelFlowLbHr = 1200.0), r.route(id).plan)
+    }
+
+    // -- Export with the threats ------------------------------------------------------------------------------------------
+
+    @Test
+    fun `an AMPS export carries whether the threats go with it, and a GPX never does`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        assertTrue(r.state.includeThreats)                                                      // on until the person says otherwise
+        r.model.exportSet(withThreats = true); settle()
+        assertTrue(r.shared.last().withThreats)
+        r.model.exportRoute(id, withThreats = false); settle()
+        assertFalse(r.shared.last().withThreats)
+        r.model.shareRoute(id, HandoffFormat.GPX); settle()
+        assertFalse(r.shared.last().withThreats)
+        r.model.includeThreats(false); settle()
+        assertFalse(r.state.includeThreats)
+    }
+
+    // -- What the review found ---------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `a page that closed by itself does not open again when its route is held later`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet(""); settle()
+        r.model.startDrawing(); r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        val route = r.state.open!!.routes.single().id
+        r.model.openPlan(route); settle()
+        r.model.undo(); settle()                                                                // the route goes, and the page with it
+        assertFalse(r.state.planOpen)
+        r.model.redo(); settle()
+        r.selection.select(route); settle()                                                     // held on the map: the panel, not the page
+        assertFalse(r.state.planOpen)
+    }
+
+    @Test
+    fun `holding another route closes the page of the first`() = runTest(dispatcher) {
+        val r = rig()
+        openWithRoutes(r)
+        val (one, two) = r.state.open!!.routes.map { it.id }
+        r.model.openPlan(one); settle()
+        r.selection.select(two); settle()
+        assertFalse(r.state.planOpen)
+        r.selection.select(one); settle()
+        assertFalse(r.state.planOpen)                                                           // and holding the first again does not bring it back
+    }
+
+    @Test
+    fun `two visits to one field are two steps to undo`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val start = r.state.detail!!.plan
+        r.model.applyPlan(id, start.copy(tempC = "25"), start, coalesce = "temp:$id#a"); settle()
+        val second = r.state.detail!!.plan
+        r.model.applyPlan(id, second.copy(tempC = "30"), second, coalesce = "temp:$id#b"); settle()
+        r.model.undo(); settle()
+        assertEquals("25", r.state.detail!!.plan.tempC)
+    }
+
+    @Test
+    fun `a second tap on Sketch a route while the first is making its set makes no second set`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.startSketch()
+        r.model.startSketch()
+        settle()
+        assertEquals(1, r.state.sets.size)
+        assertEquals(1, r.openSets.ids.value.size)
+        assertNotNull(r.state.drawing)
+    }
+
+    @Test
+    fun `a cancelled sketch puts back the set that was on the map, wherever it is in the session`() = runTest(dispatcher) {
+        val r = rig()
+        val mission = openMission(r)
+        r.model.startSketch(); settle()                                                         // S1, made for this sketch
+        r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        r.model.openSet(mission); settle()                                                      // the mission again; the session is [M, S1]
+        r.model.startSketch(); settle()                                                         // S2
+        r.model.cancelDrawing(); settle()
+        assertEquals(mission, r.state.open!!.uuid)
+        assertEquals(2, r.state.sets.size)
+    }
+
+    @Test
+    fun `a set made for a sketch and named meanwhile is kept when the sketch is cancelled`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.startSketch(); settle()
+        val made = r.state.open!!.uuid
+        r.model.renameSet(made, "night infil"); settle()
+        r.model.cancelDrawing(); settle()
+        assertEquals(made, r.state.open!!.uuid)
+        assertEquals("NIGHT INFIL", r.state.open!!.name)
+    }
+
+    @Test
+    fun `a sketch dropped because another set was opened takes its empty set away, and leaves the other on the map`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.createSet("OTHER"); settle()
+        val other = r.state.open!!.uuid
+        r.model.close(other); settle()
+        r.model.startSketch(); settle()
+        val made = r.state.open!!.uuid
+        r.model.openSet(other); settle()
+        r.sketching.dropDraftNotOn(other); settle()                                            // what the app does when another set opens
+        assertEquals(other, r.state.open!!.uuid)
+        assertFalse(r.state.sets.any { it.uuid == made })
+        assertFalse(made in r.openSets.ids.value)
+    }
+
+    @Test
+    fun `the marker goes with its sketch, so a later cancel in that set deletes nothing`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.startSketch(); settle()
+        val made = r.state.open!!.uuid
+        r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.finishDrawing(); settle()
+        r.model.deleteRoute(r.state.open!!.routes.single().id); settle()                       // empty again, made-up name still
+        r.model.startSketch(); settle()
+        r.model.cancelDrawing(); settle()
+        assertEquals(made, r.state.open!!.uuid)                                                // the person's set: never taken away
+    }
+
 }

@@ -1,10 +1,13 @@
 package app.ezpztac.network
 
 import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -26,6 +29,8 @@ import okhttp3.Request
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.io.IOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -70,7 +75,8 @@ public class ApiResponse internal constructor(
  *   it, a refresh is never abandoned half-way when the caller goes away, and a refresh whose answer
  *   may have been lost is repeated with the same token for a short while, which the server accepts
  *   as a lost response (`refresh_reuse_detected` otherwise: a copy of a token).
- * - A session the server ended is cleared, announced on [state], and raised as [SessionEndedException].
+ * - A session the server ended is replaced by a note of why ([EndedSession]), announced on [state], and raised as
+ *   [SessionEndedException].
  * - Errors become typed exceptions ([ApiException] and its subclasses); a body the server did not
  *   write (a proxy's error page) is still an [ApiException] with the status.
  */
@@ -88,16 +94,43 @@ public class ApiClient(
     private val holder = AuthStateHolder()
     private val refreshLock = Mutex()
 
+    // The last announcement is replayed: a stream reads its hello's token and only then starts listening, so a refresh landing
+    // in between would otherwise go unheard, and the service would go on checking a token that lapses.
+    private val token = MutableSharedFlow<AccessToken?>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
     /** Who is signed in. [AuthState.Unknown] until [restore] has read the store. */
     public val state: StateFlow<AuthState> get() = holder.state
 
-    /** Reads the stored session at launch. */
+    /**
+     * An announcement each time the session's token changes: the one just stored (a sign-in, a refresh) with whose it is, or null when the
+     * session was cleared or ended. A live stream listens so it can pass a new token on ([openPackLive]), because the service checks access
+     * again with the last one it was given. It reports changes, not the state: a process that has changed nothing has announced nothing, so
+     * the token in use is read from the store ([storedAccessToken]). Not a StateFlow, which would swallow a sign-out in a process that never
+     * announced a token (null, then null).
+     */
+    internal val accessTokens: SharedFlow<AccessToken?> = token.asSharedFlow()
+
+    internal suspend fun storedAccessToken(): AccessToken? = sessions.read()?.let { AccessToken(it.user.id, it.accessToken) }
+
+    /**
+     * Reads the stored session, once in the life of the process; after that it returns the state as it is. The shell asks at launch, and so
+     * does a sync WorkManager runs, in either order or at once: a second read would put back what the first found over what has happened
+     * since (a session the server or the offline rule ended, a refresh's newer user).
+     *
+     * What it read is set only if nothing else has set the state meanwhile. Everything else writes the store before it sets the state, so a
+     * read that was overtaken loses to what overtook it. No lock is taken: a launch must not wait behind a refresh another call has in
+     * flight, which can take 20 s on a poor signal.
+     */
     public suspend fun restore(): AuthState {
+        val current = holder.state.value
+        if (current != AuthState.Unknown) return current
         val stored = sessions.read()
-        val restored = if (stored != null) AuthState.SignedIn(stored.user)
-        else AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN)
-        holder.set(restored)
-        return restored
+        val restored = when {
+            stored != null -> AuthState.SignedIn(stored.user)
+            else -> sessions.ended()?.let { AuthState.SignedOut(SignedOutReason.SESSION_ENDED, it.code) }
+                ?: AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN)
+        }
+        return holder.setIfUnknown(restored)
     }
 
     /**
@@ -119,7 +152,8 @@ public class ApiClient(
     public suspend fun endSessionIfOfflineTooLong(): Boolean = refreshLock.withLock {
         val stored = sessions.read() ?: return@withLock false
         if (!OfflineGrace.expired(stored, nowSeconds())) return@withLock false
-        sessions.clear()
+        sessions.end(EndedSession("offline_too_long"))
+        token.tryEmit(null)
         holder.set(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"))
         true
     }
@@ -158,6 +192,7 @@ public class ApiClient(
             false
         }
         sessions.clear()
+        token.tryEmit(null)
         holder.set(AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN))
         return acknowledged
     }
@@ -168,9 +203,9 @@ public class ApiClient(
      * result is used.
      */
     private suspend fun refreshAfterRefusal(failedAccessToken: String): StoredSession = refreshLock.withLock {
-        val current = sessions.read() ?: throw endedWithoutStoring(SignedOutReason.NOT_SIGNED_IN, null, "You are signed out.")
+        val current = sessions.read() ?: throw noSession()
         if (current.accessToken != failedAccessToken) return@withLock current
-        val refreshToken = current.refreshToken ?: throw end(SignedOutReason.SESSION_ENDED, "no_refresh_token", "This session has expired. Sign in again.")
+        val refreshToken = current.refreshToken ?: throw end("no_refresh_token", "This session has expired. Sign in again.")
         // Once the request is on its way it is carried through to the end, even if whoever asked has
         // gone away: a response that arrives with nowhere to be stored would spend the token for nothing.
         withContext(NonCancellable) { rotate(current, refreshToken) }
@@ -195,7 +230,7 @@ public class ApiClient(
                     }
                     response.status == 401 || response.status == 403 -> {
                         val error = parseError(response)
-                        throw end(SignedOutReason.SESSION_ENDED, error.code, error.message)
+                        throw end(error.code, error.message)
                     }
                     else -> throw map(response)                                       // a 5xx is repeated below: it may have rotated first
                 }
@@ -222,7 +257,7 @@ public class ApiClient(
         val refresh = tokens.refreshToken
         if (previousRefresh != null && refresh == null) {
             // A refresh that returns no refresh token cannot be carried on: the old one is spent.
-            throw end(SignedOutReason.SESSION_ENDED, "no_refresh_token", "This session has expired. Sign in again.")
+            throw end("no_refresh_token", "This session has expired. Sign in again.")
         }
         val session = StoredSession(
             accessToken = tokens.accessToken,
@@ -232,16 +267,28 @@ public class ApiClient(
             verifiedAtEpochSeconds = nowSeconds(),
         )
         sessions.write(session)                                                         // before anything relies on it
+        token.tryEmit(AccessToken(session.user.id, session.accessToken))
         holder.set(AuthState.SignedIn(tokens.user))
         return session
     }
 
-    private suspend fun end(reason: SignedOutReason, code: String?, message: String): SessionEndedException {
-        sessions.clear()
-        return endedWithoutStoring(reason, code, message)
+    /** The server ended the session. The note left in its place is what lets a later launch say so ([restore]). */
+    private suspend fun end(code: String?, message: String): SessionEndedException {
+        sessions.end(EndedSession(code))
+        return endedWithoutStoring(SignedOutReason.SESSION_ENDED, code, message)
+    }
+
+    /**
+     * A call that finds no session. If the server ended it, it says so again: calls refused together find the session gone once the first
+     * of them has had the refresh refused, and saying "not signed in" would wipe the reason the person is about to be shown.
+     */
+    private suspend fun noSession(): SessionEndedException {
+        val ended = sessions.ended() ?: return endedWithoutStoring(SignedOutReason.NOT_SIGNED_IN, null, "You are signed out.")
+        return endedWithoutStoring(SignedOutReason.SESSION_ENDED, ended.code, "This session has expired. Sign in again.")
     }
 
     private fun endedWithoutStoring(reason: SignedOutReason, code: String?, message: String): SessionEndedException {
+        token.tryEmit(null)
         holder.set(AuthState.SignedOut(reason, code))
         return SessionEndedException(reason, code, message)
     }
@@ -269,6 +316,8 @@ public class ApiClient(
         val callPriority: CallPriority = CallPriority.NORMAL,
         /** A different read timeout from the client's. Heavy work gets a long one on its own. */
         val readTimeoutSeconds: Long? = null,
+        /** The account this call is for. Under any other session it is refused before it is sent ([OtherAccountException]). */
+        val asUser: Int? = null,
     )
 
     internal suspend fun execute(call: Call): ApiResponse {
@@ -284,17 +333,26 @@ public class ApiClient(
     }
 
     private suspend fun executeSigned(call: Call): Raw {
-        val session = sessions.read() ?: throw endedWithoutStoring(SignedOutReason.NOT_SIGNED_IN, null, "You are signed out.")
+        val session = sessions.read() ?: throw noSession()
+        checkAccount(call, session)
         val first = send(call, session.accessToken)
         if (!isAuthRefusal(first)) return first
 
+        // The session found after a refusal may not be the one the call was sent with: someone else can have signed in meanwhile.
         val renewed = refreshAfterRefusal(session.accessToken)
+        checkAccount(call, renewed)
         val second = send(call, renewed.accessToken)
         if (isAuthRefusal(second)) {
             // A token the server has just issued is refused: there is nothing more to try.
-            throw end(SignedOutReason.SESSION_ENDED, "unauthorized_after_refresh", "This session has expired. Sign in again.")
+            throw end("unauthorized_after_refresh", "This session has expired. Sign in again.")
         }
         return second
+    }
+
+    private fun checkAccount(call: Call, session: StoredSession) {
+        if (call.asUser != null && session.user.id != call.asUser) {
+            throw OtherAccountException("This was waiting to be sent for another account, which is no longer signed in here.")
+        }
     }
 
     /**
@@ -336,23 +394,35 @@ public class ApiClient(
             .build()
         val timeout = call.readTimeoutSeconds ?: if (PriorityPaths.isHeavy(call.path)) HEAVY_READ_TIMEOUT_SECONDS else null
         val client = timeout?.let { http.newBuilder().readTimeout(it, TimeUnit.SECONDS).build() } ?: http
-        // Reading the body is blocking network work, and the call resumes on whatever thread asked: from a screen, that is the main thread, where Android refuses it
-        // (NetworkOnMainThreadException). So the whole exchange is on the I/O threads, whoever is asking.
-        return withContext(Dispatchers.IO) {
-            try {
-                client.newCall(request).await().use { response ->
-                    if (!call.binary) return@use Raw(response.code, response.headers, response.body?.string().orEmpty())
-                    // A file is read as bytes; an error's body is still text, which is what the error mapping reads.
-                    val bytes = response.body?.bytes() ?: ByteArray(0)
-                    if (response.code in 200..299) Raw(response.code, response.headers, "", bytes) else Raw(response.code, response.headers, String(bytes, Charsets.UTF_8))
-                }
-            } catch (e: IOException) {
-                throw networkFailure(e)
+        // The answer is read whole inside the call, on OkHttp's own threads. Not on the thread that asked: from a screen that is the main thread, where Android
+        // refuses it (NetworkOnMainThreadException). And not after the call has handed the response over: a read blocks without looking at the coroutine, so a call
+        // cancelled then read on until the whole answer had come or a read timed out (190 s for heavy work), holding the priority gate for work nobody wanted.
+        return try {
+            client.newCall(request).exchange { response ->
+                if (!call.binary) return@exchange Raw(response.code, response.headers, response.body?.string().orEmpty())
+                // A file is read as bytes; an error's body is still text, which is what the error mapping reads.
+                val bytes = response.body?.bytes() ?: ByteArray(0)
+                if (response.code in 200..299) Raw(response.code, response.headers, "", bytes) else Raw(response.code, response.headers, String(bytes, Charsets.UTF_8))
             }
+        } catch (e: IOException) {
+            throw networkFailure(e)
         }
     }
 
     private fun networkFailure(e: IOException): NetworkException = classify(e)
+
+    // -- Live streams ------------------------------------------------------------------
+
+    /**
+     * What a live stream connects with: every call's connections and settings, plus a ping. A pong that does not come back in time
+     * fails the socket, so a connection that died without a word is noticed, and the traffic keeps a quiet one open behind
+     * Cloudflare, which drops a connection idle for 100 s. Built on first use, once.
+     */
+    internal val liveHttp: OkHttpClient by lazy { http.newBuilder().pingInterval(LIVE_PING_SECONDS, TimeUnit.SECONDS).build() }
+
+    /** Opens a WebSocket, saying which app it is as every call does. Its token goes in its first message ([openPackLive]), not in a header. */
+    internal fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket =
+        liveHttp.newWebSocket(request.newBuilder().header(ClientInfo.HEADER, clientInfo.header).build(), listener)
 
     // -- Reading answers ---------------------------------------------------------------
 
@@ -383,7 +453,7 @@ public class ApiClient(
             raw.status == 409 && error.code == "revision_conflict" ->
                 RevisionConflictException(error.message, (error.json?.get("server") as? JsonObject) ?: JsonObject(emptyMap()))
             raw.status == 429 -> RateLimitedException(error.message, raw.headers["Retry-After"]?.trim()?.toLongOrNull())
-            else -> ApiException(raw.status, error.code, error.message)
+            else -> ApiException(raw.status, error.code, error.message, body = error.json)
         }
     }
 
@@ -423,19 +493,27 @@ public class ApiClient(
 
         /** An analysis, viewshed or export can take the server a long while; its own timeout is 180 s. */
         const val HEAVY_READ_TIMEOUT_SECONDS: Long = 190
+
+        /** A live stream's ping: a little more often than the service's own (30 s), and well inside Cloudflare's 100 s idle timeout. */
+        const val LIVE_PING_SECONDS: Long = 25
     }
 }
 
-/** Waits for a call to finish, and cancels it if the coroutine is cancelled. */
-private suspend fun okhttp3.Call.await(): Response = suspendCancellableCoroutine { continuation: CancellableContinuation<Response> ->
+/**
+ * Sends the call and reads its answer with [read] on OkHttp's thread, as one wait: a coroutine cancelled at any point, before the answer or while it
+ * arrives, cancels the call, which fails the read at once. A cancelled wait ignores whatever the call does after.
+ */
+private suspend fun <T> okhttp3.Call.exchange(read: (Response) -> T): T = suspendCancellableCoroutine { continuation: CancellableContinuation<T> ->
     continuation.invokeOnCancellation { cancel() }
     enqueue(object : Callback {
         override fun onFailure(call: okhttp3.Call, e: IOException) {
-            if (!continuation.isCancelled) continuation.resumeWith(Result.failure(e))
+            continuation.resumeWith(Result.failure(e))
         }
 
         override fun onResponse(call: okhttp3.Call, response: Response) {
-            continuation.resume(response) { _, value, _ -> value.close() }
+            // Whatever the reading throws goes to the caller. OkHttp swallows an IOException thrown here (it logs it and calls nothing else), which would leave the
+            // call waiting for ever, and a heavy one holding the priority gate; anything else would end OkHttp's thread, and on Android the app.
+            continuation.resumeWith(runCatching { response.use(read) })
         }
     })
 }

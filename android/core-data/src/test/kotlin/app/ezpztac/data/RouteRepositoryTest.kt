@@ -21,6 +21,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -161,7 +162,8 @@ class RouteRepositoryTest {
             assertEquals(emptyList<RouteSetSummary>(), awaitItem())
             val made = repository.create("MISSION 1", listOf(route("a"), route("b")))
             val first = awaitItem().single()
-            assertEquals(RouteSetSummary(made.id, "MISSION 1", 2, SyncStatus.PENDING, null), first)
+            assertNotNull(first.updatedAt)                                                        // when it was made here, for the Library's order
+            assertEquals(RouteSetSummary(made.id, "MISSION 1", 2, SyncStatus.PENDING, null, pointCount = 4), first.copy(updatedAt = null))
             repository.rename(made.id, "NIGHT")
             assertEquals("NIGHT", awaitItem().single().name)
             repository.delete(made.id)

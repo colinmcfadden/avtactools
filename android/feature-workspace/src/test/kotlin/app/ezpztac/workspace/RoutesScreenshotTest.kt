@@ -2,9 +2,13 @@ package app.ezpztac.workspace
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
@@ -22,68 +26,78 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** The routes tab drawn, for someone to look at: `-Pezpz.screenshots` writes them to build/screenshots. */
+/** The Routes panel, its foot, the route's plan and the naming sheet, beside the design's AP-Routes, AP-RoutePlan and AP-SaveRoutes. `-Pezpz.screenshots`. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [36], qualifiers = "w411dp-h2000dp-xxhdpi")
+@Config(sdk = [36], qualifiers = "w412dp-h915dp-xxhdpi")
 class RoutesScreenshotTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun shot(name: String, mode: ThemeMode = ThemeMode.Dark, content: @androidx.compose.runtime.Composable () -> Unit) {
+    private fun shot(name: String, mode: ThemeMode = ThemeMode.Dark, scroll: Boolean = true, content: @Composable () -> Unit) {
         compose.setContent {
-            EzpzTheme(mode) { Surface(color = MaterialTheme.colorScheme.background) { Box(Modifier.padding(vertical = 12.dp)) { Column(Modifier.padding(horizontal = 12.dp)) { content() } } } }
+            EzpzTheme(mode) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Box(if (scroll) Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp) else Modifier) { content() }
+                }
+            }
         }
         compose.onRoot().captureRoboImage("build/screenshots/routes-$name.png")
     }
 
-    private val one = RouteRowUi("r1", "ROUTE 1", "#FF453A", visible = true, pointCount = 5, routePointCount = 4, summary = "12.3 nm · 8:15", selected = false)
-    private val two = RouteRowUi("r2", "INGRESS", "#0A84FF", visible = false, pointCount = 2, routePointCount = 2, summary = "3.1 nm · 1:52", selected = true)
-    private val three = RouteRowUi("r3", "EGRESS", "#32D74B", visible = true, pointCount = 7, routePointCount = 3, summary = null, selected = false)
-    private val night = RouteSetRow("s2", "NIGHT RUN", 3, SyncStatus.SYNCED, null, isOpen = false)
+    private val one = RouteRowUi("r1", "ROUTE 1", "#E5533D", visible = true, pointCount = 4, routePointCount = 4, summary = "4.2 nm · 2:30 · 40 lb", selected = false)
+    private val egress = RouteRowUi("r2", "EGRESS", "#0A84FF", visible = false, pointCount = 3, routePointCount = 1, summary = null, selected = false)
 
-    private fun open(vararg routes: RouteRowUi, conflictOf: String? = null) = OpenSetUi("s1", "MISSION 1", routes.toList(), canUndo = true, canRedo = false, SyncStatus.PENDING, conflictOf)
-
-    @Test fun empty() = shot("empty") { RoutesContent(RoutesUiState(), RoutesActions()) }
-
-    @Test fun openSet() = shot("open") {
-        RoutesContent(RoutesUiState(sets = listOf(RouteSetRow("s1", "MISSION 1", 3, SyncStatus.PENDING, null, true), night), open = open(one, two, three)), RoutesActions())
-    }
-
-    @Test fun drawing() = shot("drawing", ThemeMode.Light) {
-        RoutesContent(RoutesUiState(open = open(one), drawing = RouteDrawingUi(3, true)), RoutesActions())
-    }
-
-    @Test fun conflict() = shot("conflict", ThemeMode.Night) {
-        RoutesContent(RoutesUiState(sets = listOf(night.copy(sync = SyncStatus.CONFLICT, conflictOf = "s9")), open = null), RoutesActions())
-    }
-
-    @Test fun toolbar() = shot("toolbar") { RouteToolbar(RouteDrawingUi(2, true), null, RoutesActions()) }
-
-    private fun values() = PointDraft("50", "agl", "100", "ground", "0", "0")
-
-    private fun point(id: String, name: String, type: String?, first: Boolean = false, held: Boolean = false, hasClock: Boolean = false, clock: String = "--:--:--", facts: String = "3.1 nm · 045°T · 98 kt · 1320' MSL", elapsed: String = "1:52", grid: String = "16S GD 66993 52949") =
-        PlanPointUi(id, name, type, first, values(), clock, hasClock, if (first) "START" else facts, if (first) "0:00" else elapsed, held, grid)
-
-    private val log = listOf(
-        point("p1", ".TGT", "target", first = true, clock = "12:21:40"),
-        point("p2", ".SP", "ip", clock = "12:24:10", elapsed = "2:30"),
-        point("p3", ".RP", "ip", held = true, clock = "12:27:55", facts = "4.4 nm · 078°T · 101 kt · 1480' MSL", elapsed = "6:15"),
-        point("p4", ".TGT", "target", hasClock = true, clock = "12:30:00", facts = "2.2 nm · 112°T · 99 kt · 1390' MSL", elapsed = "8:20"),
+    private fun open(vararg routes: RouteRowUi, name: String = "SKETCHED ROUTES", madeUp: Boolean = true, sync: SyncStatus = SyncStatus.PENDING, mission: Boolean = false) = OpenSetUi(
+        "s1", name, routes.toList(), canUndo = true, canRedo = false, sync, null, isMission = mission, madeUpName = madeUp, chips = routeSetChips(sync, null, mission),
+        saveContents = listOf("1 route, 4 points, 4.2 nm", "Speeds, altitudes, winds, fuel flow and the start time"),
     )
 
-    private fun detail(warnings: List<String> = emptyList()) = RouteDetailUi(
-        "r1", "ROUTE 1", "UH-60L Black Hawk", PlanDraft(date = "2026-10-03", airspeedType = "indicated", altitudeRef = "msl", windDir = "270", windSpeed = "15"), log,
-        shapingPoints = 2, heldShaping = null, totals = "Total 12.3 nm · 8:20 · 640 lb", warnings = warnings, hasElevations = true,
+    private val goat = RouteSetRow("s2", "GOAT SUCKER", 2, SyncStatus.SYNCED, null, false, isMission = true, chips = routeSetChips(SyncStatus.SYNCED, null, true))
+
+    private fun homeState() = RoutesUiState(open = open(one), alsoOpen = listOf(goat), openCount = 2, sets = listOf(goat, RouteSetRow("s1", "SKETCHED ROUTES", 1, SyncStatus.PENDING, null, true)))
+
+    /** The panel with its foot pinned under it, as the sheet draws them. */
+    @Composable
+    private fun PanelWithFoot(state: RoutesUiState, threats: Int = 1) {
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp)) { RoutesHomeContent(state, RoutesActions(), threatCount = threats) }
+            RoutesFooter(state, RoutesActions())
+        }
+    }
+
+    @Test fun home() = shot("home", scroll = false) { PanelWithFoot(homeState()) }
+    @Test fun homeNight() = shot("home-night", ThemeMode.Night, scroll = false) { PanelWithFoot(homeState()) }
+    @Test fun mission() = shot("mission", scroll = false) { PanelWithFoot(RoutesUiState(open = open(one, egress, name = "GOAT SUCKER", madeUp = false, sync = SyncStatus.SYNCED, mission = true))) }
+    @Test fun empty() = shot("empty", scroll = false) { PanelWithFoot(RoutesUiState(), threats = 0) }
+    @Test fun drawing() = shot("drawing", scroll = false) { PanelWithFoot(RoutesUiState(open = open(one), drawing = RouteDrawingUi(1, false))) }
+    @Test fun save() = shot("save", scroll = false) { SaveRoutesContent(open(one), listOf("s9" to "NIGHT INFIL"), onSave = { _, _ -> }, onCancel = {}) }
+    @Test fun saveNight() = shot("save-night", ThemeMode.Night, scroll = false) { SaveRoutesContent(open(one), emptyList(), onSave = { _, _ -> }, onCancel = {}) }
+
+    private val values = PointDraft("50", "agl", "100", "ground", "0", "0")
+
+    private fun point(id: String, name: String, type: String, first: Boolean = false, held: Boolean = false, facts: String, elapsed: String) =
+        PlanPointUi(id, name, type, first, values, "--:--:--", false, facts, elapsed, held, "16S GC 28864 55349")
+
+    private fun plan(held: String = "p2") = RoutesUiState(
+        open = open(one.copy(selected = true)), planOpen = true,
+        detail = RouteDetailUi(
+            "r1", "ROUTE 1", "UH-60L Black Hawk", PlanDraft(), listOf(
+                point("p1", ".TGT", "target", first = true, held = held == "p1", facts = "START", elapsed = "0:00"),
+                point("p2", ".SP", "ip", held = held == "p2", facts = "0.8 nm · 096°T · 100 kt", elapsed = "0:30"),
+                point("p3", ".RP", "ip", held = held == "p3", facts = "2.8 nm · 251°T · 100 kt", elapsed = "2:10"),
+                point("p4", ".TGT", "target", held = held == "p4", facts = "0.6 nm · 327°T · 100 kt", elapsed = "2:30"),
+            ),
+            0, null, "4.2 nm · 2:30 · 40 lb", emptyList(), hasElevations = false, color = "#E5533D",
+        ),
     )
 
-    @Test fun plan() = shot("plan") { RoutesContent(RoutesUiState(open = open(one), detail = detail(listOf("Route needs at least two route points."))), RoutesActions()) }
+    @Test fun routePlan() = shot("plan", scroll = false) { RoutePlanPage(plan(), RoutesActions(), "16S GC 28936 55287", 1) }
+    @Test fun routePlanNight() = shot("plan-night", ThemeMode.Night, scroll = false) { RoutePlanPage(plan(), RoutesActions(), "16S GC 28936 55287", 1) }
+    @Test fun routePlanFirst() = shot("plan-first", scroll = false) { RoutePlanPage(plan(held = "p1"), RoutesActions(), "16S GC 28936 55287", 1) }
 
-    @Test fun planLight() = shot("plan-light", ThemeMode.Light) { RoutesContent(RoutesUiState(open = open(one), detail = detail()), RoutesActions()) }
-
-    private fun withShaping() = detail().copy(points = log.map { it.copy(held = false) }.take(2), shapingPoints = 3, heldShaping = ShapingPointUi("s1", held = true, grid = "16S GD 66993 52949"))
-
-    @Test fun shapingPointHeld() = shot("shaping-held") {
-        RoutesContent(RoutesUiState(open = open(one), detail = withShaping()), RoutesActions(), crosshairGrid = "16S GD 66100 52100")
+    @Test
+    fun toolbar() = shot("toolbar", scroll = false) {
+        Box(Modifier.padding(top = 200.dp)) { RouteToolbar(RouteDrawingUi(3, true), null, RoutesActions()) }
     }
 }

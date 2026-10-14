@@ -2,25 +2,29 @@ package app.ezpztac.workspace
 
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.DiagramRepository
+import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.DrawingMode
+import app.ezpztac.data.GraphicPlacement
+import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.InMemoryAircraftChoice
 import app.ezpztac.data.InMemoryMasterProfileStore
-import app.ezpztac.data.DiagramSession
-import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.PlaceTool
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.GraphicRef
-import app.ezpztac.model.UnitDraft
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.UnitDraft
 import app.ezpztac.planning.GraphicEdits
 import app.ezpztac.sync.Device
 import app.ezpztac.sync.FakeServer
 import app.ezpztac.sync.InMemorySyncStore
 import app.ezpztac.sync.RecordingScheduler
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -37,7 +41,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import kotlin.math.abs
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class GraphicsViewModelTest {
@@ -52,15 +55,17 @@ class GraphicsViewModelTest {
     private val grid = "16S GD 66993 52949"
     private val crosshair = LatLon(34.78382, -84.08219)
 
-    private class Rig(scope: TestScope, masterList: List<app.ezpztac.model.AircraftProfile> = emptyList()) {
+    private class Rig(scope: TestScope, masterList: List<app.ezpztac.model.AircraftProfile> = emptyList(), val pack: FakeOpenPack = FakeOpenPack()) {
         val device = Device("A", FakeServer())
         val repository = DiagramRepository(device.repository, device.store as InMemorySyncStore, RecordingScheduler())
-        val session = DiagramSession(repository, scope.backgroundScope)
+        val session = DiagramSession(repository, scope.backgroundScope, pack.lzStore)
         val selection = GraphicSelection()
         val choice = InMemoryAircraftChoice()
         val master = InMemoryMasterProfileStore(masterList)
         val aircraft = AircraftProfiles(device.store as InMemorySyncStore, master, { emptyList() }, choice, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), device.repository, RecordingScheduler())
-        val model = GraphicsViewModel(session, selection, aircraft)
+        val mode = DrawingMode()
+        val placement = GraphicPlacement(session, aircraft, mode)
+        val model = GraphicsViewModel(session, selection, aircraft, placement, pack)
         val state get() = model.state.value
         val diagram: Diagram get() = checkNotNull(session.active.value)
 
@@ -94,6 +99,82 @@ class GraphicsViewModelTest {
         assertEquals(0, r.state.undoDepth)
         assertTrue(r.diagram.graphics.helicopters.isEmpty())
         assertNull("nothing was made, so nothing is held", r.selection.selected.value)     // the diagram refuses it too; this is the guard's own say
+    }
+
+    /** The analysed LZ/PZ [r] has open, with a helicopter on it, moved into pack p as item lz-1 under [session], and opened there. */
+    private suspend fun TestScope.inPack(r: Rig, session: app.ezpztac.missionpacks.PackSession) {
+        val item = FakeOpenPack.lzOf("lz-1", r.diagram.copy(id = "pack:p:lz-1"))
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.session.open("pack:p:lz-1")
+        advanceUntilIdle()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)                                       // placed while the pack took changes: a step undo could take back
+        advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = session)
+        r.selection.clear()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `in a finished pack the graphics are listed and held, and nothing changes them`() = runTest(dispatcher) {
+        val r = opened()
+        inPack(r, FakeOpenPack.finished())
+        val locked = "OP DK is finished: nothing in it can be changed."
+        assertTrue(r.state.listed)
+        assertFalse(r.state.canEdit)
+        assertEquals(locked, r.state.locked)
+        val row = r.state.rows.single()
+        r.model.select(row.ref)
+        advanceUntilIdle()
+        assertNotNull("held, to be looked at", r.state.inspector)
+        val before = r.diagram
+        r.model.nudge(10.0, 0.0)
+        r.model.rotateBy(15.0)
+        r.model.setRotation(90.0)
+        r.model.moveToCrosshair(crosshair)
+        r.model.place(GraphicKind.PZ_MARKER, crosshair)
+        r.model.addUnit(UnitDraft(), crosshair)
+        r.model.delete()
+        r.model.undo()
+        r.model.redo()
+        advanceUntilIdle()
+        assertEquals("nothing changed", before, r.diagram)
+        assertEquals(locked, r.state.error)
+        assertEquals("still held: a delete refused keeps it", row.ref, r.selection.selected.value)
+        assertEquals(locked, r.model.beginPlacing(PlaceTool.HELICOPTER))
+        assertNull(r.placement.placing.value)
+        assertEquals(locked, r.model.setDoghouseLabel("[SP1]"))
+    }
+
+    @Test
+    fun `in a finished pack an LZ-PZ that is not analysed is locked too, so the steps it has are not offered to undo`() = runTest(dispatcher) {
+        val r = opened(analysed = false)
+        val item = FakeOpenPack.lzOf("lz-1", r.diagram.copy(id = "pack:p:lz-1"))
+        r.pack.state.value = FakeOpenPack.open(listOf(item))
+        r.session.open("pack:p:lz-1")
+        r.session.edit("Rename") { it.copy(name = "LZ IBIS") }                                    // a step made while the pack took changes
+        advanceUntilIdle()
+        assertEquals(1, r.state.undoDepth)
+        assertNull(r.state.locked)
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        val locked = "OP DK is finished: nothing in it can be changed."
+        assertFalse(r.state.listed)
+        assertEquals(locked, r.state.locked)
+        r.model.undo()
+        advanceUntilIdle()
+        assertEquals("LZ IBIS", r.diagram.name)
+        assertEquals("and the refusal is said", locked, r.state.error)
+    }
+
+    @Test
+    fun `a pack that is reopened can be changed again`() = runTest(dispatcher) {
+        val r = opened()
+        inPack(r, FakeOpenPack.finished())
+        r.pack.state.value = FakeOpenPack.open(r.pack.state.value!!.items)
+        advanceUntilIdle()
+        assertTrue(r.state.canEdit)
+        assertNull(r.state.locked)
+        assertNull(r.model.beginPlacing(PlaceTool.HELICOPTER))
     }
 
     @Test
@@ -842,7 +923,7 @@ class GraphicsViewModelTest {
         r.session.setQuietly { DiagramOps.patchGraphic(it, "units", r.graphic(ref)["id"], JsonObject(mapOf("callsign" to JsonPrimitive("DOG 6")))) }
         val before = r.graphic(ref)
 
-        r.model.updateUnit(hostileArmor)
+        r.model.updateUnit(hostileArmor, from = UnitDraft())
         advanceUntilIdle()
         val saved = r.graphic(ref)
         assertEquals("SHGPUCA---D----", text(saved, "sidc"))
@@ -857,11 +938,38 @@ class GraphicsViewModelTest {
     }
 
     @Test
+    fun `applying the builder changes only what differs from the unit as it is now`() = runTest(dispatcher) {
+        val r = opened()
+        val air = JsonObject(
+            mapOf(
+                "id" to JsonPrimitive("u-air"), "sidc" to JsonPrimitive("SFAPMFF--------"), "uniqueDesignation" to JsonPrimitive("DUSTOFF"),
+                "higherFormation" to JsonPrimitive(""), "lat" to JsonPrimitive(34.78), "lon" to JsonPrimitive(-84.08),
+            ),
+        )
+        r.session.setQuietly { DiagramOps.upsertGraphic(it, "units", air) }
+        advanceUntilIdle()
+        val ref = r.state.rows.single().ref
+        r.model.select(ref)
+        advanceUntilIdle()
+        val shown = r.state.inspector!!.unit!!
+        // Someone else gives it a higher formation while the builder is open; the person changes its designation only.
+        r.session.setQuietly { DiagramOps.patchGraphic(it, "units", JsonPrimitive("u-air"), JsonObject(mapOf("higherFormation" to JsonPrimitive("1-10")))) }
+        advanceUntilIdle()
+        r.model.updateUnit(shown.copy(uniqueDesignation = "DUSTOFF 2"), from = shown)
+        advanceUntilIdle()
+        val saved = r.graphic(ref)
+        assertEquals("DUSTOFF 2", text(saved, "uniqueDesignation"))
+        assertEquals("theirs, not the builder's empty one", "1-10", text(saved, "higherFormation"))
+        assertEquals("an air unit keeps its code when only a label changes", "SFAPMFF--------", text(saved, "sidc"))
+        assertEquals(1, r.state.undoDepth)
+    }
+
+    @Test
     fun `the builder cannot be applied to what is not a unit`() = runTest(dispatcher) {
         val r = opened()
         r.model.place(GraphicKind.PZ_MARKER, crosshair)
         advanceUntilIdle()
-        r.model.updateUnit(UnitDraft())
+        r.model.updateUnit(UnitDraft(), from = UnitDraft())
         advanceUntilIdle()
         assertEquals("That cannot be done to this graphic.", r.state.error)
         assertEquals(1, r.state.undoDepth)
@@ -903,7 +1011,7 @@ class GraphicsViewModelTest {
         advanceUntilIdle()
         assertEquals(UnitDraft(), r.state.inspector!!.unit)                                 // the builder starts from its defaults
 
-        r.model.updateUnit(UnitDraft("F", "UCA---", "-", "TANK", ""))
+        r.model.updateUnit(UnitDraft("F", "UCA---", "-", "TANK", ""), from = r.state.inspector!!.unit!!)
         advanceUntilIdle()
         val saved = r.graphic(row.ref)
         assertEquals("SFGPUCA--------", text(saved, "sidc"))
@@ -982,5 +1090,155 @@ class GraphicsViewModelTest {
         r.session.setQuietly { DiagramOps.patchGraphic(it, "helicopters", r.graphic(ref)["id"], JsonObject(mapOf("profileId" to JsonPrimitive("gone-from-the-list")))) }
         advanceUntilIdle()
         assertEquals("Helicopter · UH-60L", r.state.rows.single().title)
+    }
+
+    // -- The tools as modes (S3) ---------------------------------------------------------------------------------------------
+
+    private val elsewhere = LatLon(34.7841, -84.0815)
+
+    @Test
+    fun `a tool's mode places where the map is tapped, as one step to undo`() = runTest(dispatcher) {
+        val r = opened()
+        assertNull(r.model.beginPlacing(PlaceTool.HELICOPTER))
+        advanceUntilIdle()
+        assertEquals(PlacementUi(PlaceTool.HELICOPTER, 0, null), r.model.placing.value)
+        r.model.placeAt(crosshair)
+        r.model.placeAt(elsewhere)
+        advanceUntilIdle()
+        assertEquals(2, r.diagram.graphics.helicopters.size)
+        assertEquals(2, r.model.placing.value?.placed)
+        assertEquals(1, r.state.undoDepth)                                                         // both placements are one step
+        assertNull("a mode holds nothing: the map's taps are its", r.selection.selected.value)
+        r.model.donePlacing()
+        advanceUntilIdle()
+        assertNull(r.model.placing.value)
+        assertEquals(2, r.diagram.graphics.helicopters.size)                                      // Done keeps them
+    }
+
+    @Test
+    fun `cancel takes back everything the mode placed and leaves nothing to redo`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.beginPlacing(PlaceTool.PZ_MARKER)
+        r.model.placeAt(crosshair)
+        r.model.placeAt(elsewhere)
+        advanceUntilIdle()
+        r.model.cancelPlacing()
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.pzMarkers.isEmpty())
+        assertEquals(0, r.state.undoDepth)
+        assertEquals(0, r.state.redoDepth)
+        assertNull(r.model.placing.value)
+    }
+
+    @Test
+    fun `cancel after something else was done removes only what the mode placed`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.SECTOR_OF_FIRE, crosshair)                                     // there before the mode
+        advanceUntilIdle()
+        r.model.beginPlacing(PlaceTool.HELICOPTER)
+        r.model.placeAt(crosshair)
+        advanceUntilIdle()
+        val sector = GraphicRef("sectorsOfFire", DiagramOps.idText((r.diagram.graphics.sectorsOfFire.single() as JsonObject)["id"]))
+        r.model.select(sector)
+        r.model.nudge(100.0, 0.0)                                                                  // an edit in between, while the mode is on
+        advanceUntilIdle()
+        r.model.cancelPlacing()
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.helicopters.isEmpty())
+        assertEquals(1, r.diagram.graphics.sectorsOfFire.size)                                   // the sector and its move stay
+    }
+
+    @Test
+    fun `cancel takes back every placement even when an edit came between two of them, and undo never brings one back`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.SECTOR_OF_FIRE, crosshair)                                     // there before the mode
+        advanceUntilIdle()
+        val sector = GraphicRef("sectorsOfFire", DiagramOps.idText((r.diagram.graphics.sectorsOfFire.single() as JsonObject)["id"]))
+        r.model.beginPlacing(PlaceTool.HELICOPTER)
+        r.model.placeAt(crosshair)
+        advanceUntilIdle()
+        r.model.select(GraphicRef("helicopters", DiagramOps.idText((r.diagram.graphics.helicopters.single() as JsonObject)["id"])))
+        r.model.nudge(0.0, 50.0)                                                                   // an edit of what the mode placed: nothing once it is gone
+        r.model.select(sector)
+        r.model.nudge(100.0, 0.0)                                                                  // splits the mode's placements into two steps
+        r.model.placeAt(elsewhere)
+        advanceUntilIdle()
+        assertEquals(2, r.diagram.graphics.helicopters.size)
+        val moved = r.diagram.graphics.sectorsOfFire.single()
+        r.model.cancelPlacing()
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.helicopters.isEmpty())
+        assertEquals(moved, r.diagram.graphics.sectorsOfFire.single())                           // the edit in between stays
+        assertEquals("placing the sector and moving it", 2, r.state.undoDepth)
+        repeat(5) { r.model.undo() }
+        advanceUntilIdle()
+        assertTrue("no version left in the history has the mode's helicopters", r.diagram.graphics.helicopters.isEmpty())
+        repeat(5) { r.model.redo() }
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.helicopters.isEmpty())
+        assertEquals(moved, r.diagram.graphics.sectorsOfFire.single())                           // and redo still brings the edit back
+    }
+
+    @Test
+    fun `placements undone while the mode is on are not left for redo once it is cancelled`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.beginPlacing(PlaceTool.PZ_MARKER)
+        r.model.placeAt(crosshair)
+        r.model.placeAt(elsewhere)
+        advanceUntilIdle()
+        r.model.undo()
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.pzMarkers.isEmpty())
+        r.model.cancelPlacing()
+        advanceUntilIdle()
+        assertEquals(0, r.state.redoDepth)
+        r.model.redo()
+        advanceUntilIdle()
+        assertTrue(r.diagram.graphics.pzMarkers.isEmpty())
+    }
+
+    @Test
+    fun `go-arounds are placed turning the way their tool says`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.beginPlacing(PlaceTool.GO_AROUND_RIGHT)
+        r.model.placeAt(crosshair)
+        advanceUntilIdle()
+        assertEquals("right", text(r.diagram.graphics.goArounds.single() as JsonObject, "direction"))
+    }
+
+    @Test
+    fun `no tool before the diagram is analysed, or while a boundary is being drawn`() = runTest(dispatcher) {
+        val r = opened(analysed = false)
+        assertEquals("Analyze the LZ/PZ first: its graphics are placed in its landing zone.", r.model.beginPlacing(PlaceTool.HELICOPTER))
+        assertNull(r.model.placing.value)
+        val s = opened()
+        s.mode.begin(DrawingMode.Kind.BOUNDARY)
+        assertEquals("Finish or cancel the boundary first.", s.model.beginPlacing(PlaceTool.HELICOPTER))
+        assertNull(s.model.placing.value)
+    }
+
+    @Test
+    fun `another tool finishes the first, keeping what it placed`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.beginPlacing(PlaceTool.HELICOPTER)
+        r.model.placeAt(crosshair)
+        r.model.beginPlacing(PlaceTool.SECTOR_OF_FIRE)
+        r.model.placeAt(elsewhere)
+        advanceUntilIdle()
+        assertEquals(1, r.diagram.graphics.helicopters.size)
+        assertEquals(1, r.diagram.graphics.sectorsOfFire.size)
+        r.model.cancelPlacing()                                                                   // cancels only the sector's mode
+        advanceUntilIdle()
+        assertEquals(1, r.diagram.graphics.helicopters.size)
+        assertTrue(r.diagram.graphics.sectorsOfFire.isEmpty())
+    }
+
+    @Test
+    fun `a mode's place at the crosshair with no crosshair says why`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.beginPlacing(PlaceTool.HELICOPTER)
+        r.model.placeAt(null)
+        advanceUntilIdle()
+        assertEquals("Move the map to where it should go first.", r.model.placing.value?.error)
     }
 }

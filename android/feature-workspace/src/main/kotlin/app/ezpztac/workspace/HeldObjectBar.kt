@@ -38,6 +38,8 @@ data class HeldObjectUi(
     /** Whether that button can be pressed, and why not when it cannot ([deleteNote]). */
     val deleteEnabled: Boolean = true,
     val deleteNote: String? = null,
+    /** Why it cannot be moved, turned or deleted: a read-only pack's. Said in place of the invitation to move it; a threat, the person's own, never has one. */
+    val locked: String? = null,
 )
 
 /**
@@ -45,15 +47,16 @@ data class HeldObjectUi(
  * takes. Null when nothing is held.
  */
 fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: RoutesUiState, corner: HeldCornerUi? = null): HeldObjectUi? {
-    graphics.inspector?.let { return HeldObjectUi(it.title, it.grid, it.rotation) }
+    graphics.inspector?.let { return HeldObjectUi(it.title, it.grid, it.rotation, locked = graphics.locked) }
     threats.held?.let { return HeldObjectUi(it.name.ifBlank { "Threat" }, it.grid, heading = null) }
     val detail = routes.detail
-    detail?.points?.firstOrNull { it.held }?.let { return HeldObjectUi(it.name.ifBlank { "Route point" }, "${detail.name} · ${it.grid}", heading = null) }
-    detail?.heldShaping?.let { return HeldObjectUi("Shaping point", "${detail.name} · ${it.grid}", heading = null) }
+    val routeLocked = routes.open?.inPack?.reason
+    detail?.points?.firstOrNull { it.held }?.let { return HeldObjectUi(it.name.ifBlank { "Route point" }, "${detail.name} · ${it.grid}", heading = null, locked = routeLocked) }
+    detail?.heldShaping?.let { return HeldObjectUi("Shaping point", "${detail.name} · ${it.grid}", heading = null, locked = routeLocked) }
     corner?.let {
         return HeldObjectUi(
-            it.title, it.grid, heading = null, deleteLabel = "Delete corner", deleteEnabled = it.canDelete,
-            deleteNote = if (it.canDelete) null else "A boundary needs at least 3 corners.",
+            it.title, it.grid, heading = null, deleteLabel = "Delete corner", deleteEnabled = it.canDelete && it.locked == null,
+            deleteNote = if (it.canDelete || it.locked != null) null else "A boundary needs at least 3 corners.", locked = it.locked,
         )
     }
     return null
@@ -106,7 +109,8 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
             }
             held.heading?.let { heading ->
                 Text("Heading ${heading.toLong()}°", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                // Nothing to turn it with in a read-only pack: the heading is still said.
+                if (held.locked == null) Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                     listOf(-15.0 to "−15°", -1.0 to "−1°", 1.0 to "+1°", 15.0 to "+15°").forEach { (delta, label) ->
                         PadButton(label, "Turn ${if (delta < 0) "left" else "right"} ${kotlin.math.abs(delta).toLong()} degrees", Modifier.weight(1f)) { actions.rotateBy(delta) }
                     }
@@ -119,7 +123,7 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
             // A boundary corner has no options of its own to open in the sheet.
             if (held.deleteLabel == null) SecondaryButton("More options", onClick = actions.options)
             Text(
-                "Press and hold to move it.",
+                held.locked ?: "Press and hold to move it.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

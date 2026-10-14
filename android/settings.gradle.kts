@@ -49,6 +49,9 @@ include(":core-network")
 // side by side. Pure logic over a store interface (Room implements it in the app), so it is tested here.
 include(":core-sync")
 
+// Mission packs (docs/MISSION_PACKS.md): pure, held to contracts/fixtures/packs; not map packs.
+include(":core-missionpacks")
+
 // Android Gradle Plugin modules. The domain stays in the core modules above; these hold what needs the Android
 // framework (UI, the database, the app itself). Feature modules never depend on each other, `app` wires them.
 include(":core-designsystem")
@@ -61,6 +64,7 @@ include(":core-symbols")
 include(":feature-auth")
 include(":feature-map")
 include(":feature-workspace")
+include(":feature-packs")                                     // the mission-pack screens (P1-P4)
 
 // Test support: reads ../contracts/fixtures. Not part of the shipped app.
 include(":core-testing")

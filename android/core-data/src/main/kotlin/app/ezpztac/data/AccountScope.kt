@@ -27,17 +27,22 @@ public interface AccountScope {
     /** Records [userId] as the owner. Only for data that is unclaimed or already theirs; wipe first otherwise. */
     public suspend fun claim(userId: Int)
 
-    /** Removes every saved plan, every queued change and the sync cursor, and the claim. Irreversible. */
+    /**
+     * Removes every saved plan, every queued change and the sync cursor, and the claim; and every mission pack held here, with every edit
+     * to one not yet taken or kept. Irreversible.
+     */
     public suspend fun wipe()
 }
 
 internal class RoomAccountScope(private val database: EzpzDatabase) : AccountScope {
     private val dao get() = database.syncDao()
+    private val packs get() = database.packDao()
 
     override suspend fun ownership(userId: Int): Ownership = when (dao.state(OWNER)) {
         null -> Ownership.Unclaimed
         userId -> Ownership.Yours
-        else -> Ownership.SomeoneElses(unsyncedChanges = dao.outboxSize())
+        // Edits to mission packs count too: those not taken by their pack, and those a pack refused and not yet kept in the library.
+        else -> Ownership.SomeoneElses(unsyncedChanges = dao.outboxSize() + packs.unsentOrDropped())
     }
 
     override suspend fun claim(userId: Int) {
@@ -52,6 +57,10 @@ internal class RoomAccountScope(private val database: EzpzDatabase) : AccountSco
             dao.wipeOutbox()
             dao.wipeBlobs()
             dao.wipeState()
+            packs.wipePacks()
+            packs.wipeItems()
+            packs.wipeOps()
+            packs.wipeOwn()
         }
     }
 

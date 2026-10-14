@@ -20,7 +20,7 @@ import java.util.Collections
 
 /**
  * A call started from a screen is started on the main thread, and a call resumes on the thread that made it. Android forbids reading a response on the main thread
- * (`NetworkOnMainThreadException`), which refused every threat terrain mask on a device while every JVM test passed. The whole exchange is on the I/O threads, whoever asks.
+ * (`NetworkOnMainThreadException`), which refused every threat terrain mask on a device while every JVM test passed. The whole exchange is on OkHttp's own threads, whoever asks.
  */
 @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
 class ApiClientThreadTest {

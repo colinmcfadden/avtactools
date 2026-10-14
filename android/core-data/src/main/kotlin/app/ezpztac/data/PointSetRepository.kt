@@ -27,10 +27,18 @@ data class PointSetRow(
     val sync: SyncStatus,
     /** The record this is a conflict copy of, if it is one. */
     val conflictOf: String?,
+    /** When it last changed, an ISO instant, or null when that was never noted. */
+    val updatedAt: String? = null,
 )
 
 /** A saved set with how it stands: synced or not, or the copy kept beside a conflict. */
-data class StoredPointSet(val set: PointSet, val sync: SyncStatus, val conflictOf: String?)
+data class StoredPointSet(
+    val set: PointSet,
+    val sync: SyncStatus,
+    val conflictOf: String?,
+    /** When it last changed, an ISO instant, or null when that was never noted ([app.ezpztac.sync.LocalRecord.updatedAt]). */
+    val updatedAt: String? = null,
+)
 
 /** What came of importing a file. */
 sealed interface ImportOutcome {
@@ -56,33 +64,47 @@ class PointSetRepository @Inject constructor(
 ) {
     /** The sets, as a list that updates itself (an import, a sync that brings one in, a delete). */
     fun observe(): Flow<List<PointSetRow>> = observeSets().map { stored ->
-        stored.map { PointSetRow(it.set.id, it.set.name, it.set.pointCount, it.sync, it.conflictOf) }
+        stored.map { PointSetRow(it.set.id, it.set.name, it.set.pointCount, it.sync, it.conflictOf, it.updatedAt) }
     }
 
     /** The sets with their points, as they change. A record is parsed once for as long as its document does not change, not for every change to the list. */
     fun observeSets(): Flow<List<StoredPointSet>> = feed.observe(RecordKind.POINT_SET).map { records ->
-        val stored = records.map { StoredPointSet(toSet(it), it.status, it.conflictOf) }
+        val stored = records.map { StoredPointSet(toSet(it), it.status, it.conflictOf, it.updatedAt) }
         synchronized(parsed) { parsed.keys.retainAll(records.mapTo(HashSet()) { it.uuid }) }                   // what is gone is not kept
         stored
     }
 
     /**
-     * Reads [bytes], the `.LPS` file called [fileName], and saves what it holds as a new set named for the file. A file that is not local points is
-     * refused with words for the person, and nothing is saved.
+     * Reads [bytes], the `.LPS` file called [fileName], and saves what it holds as a new set named [name] (blank: named for the file). A file that is not
+     * local points is refused with words for the person, and nothing is saved.
      */
-    suspend fun import(bytes: ByteArray, fileName: String): ImportOutcome {
+    suspend fun import(bytes: ByteArray, fileName: String, name: String = ""): ImportOutcome = when (val read = read(bytes, fileName, name)) {
+        is ImportOutcome.Imported -> ImportOutcome.Imported(save(read.set))
+        is ImportOutcome.Refused -> read
+    }
+
+    /**
+     * Reads [bytes], the `.LPS` file called [fileName], into a set named [name] (blank: named for the file), **without saving it**: what the import review's
+     * *This session* holds. [ImportOutcome.Imported] here means read. A file that is not local points is refused with words for the person.
+     */
+    fun read(bytes: ByteArray, fileName: String, name: String = ""): ImportOutcome {
         val parsed = try {
             LpsReader.read(bytes, fileName)
         } catch (e: FormatException) {
             return ImportOutcome.Refused(e.message ?: "This doesn't look like an .LPS local points file.")
         }
         // The server refuses a set with no name; a file called ".lps" has none.
-        val named = parsed.copy(name = parsed.name.trim().ifEmpty { DEFAULT_NAME })
+        val named = parsed.copy(name = name.trim().ifEmpty { parsed.name.trim() }.ifEmpty { DEFAULT_NAME })
         val uuid = java.util.UUID.randomUUID().toString()
-        val set = PointSets.fromLps(uuid, named) { index -> "lps-$index-${randomSuffix()}" }
-        sync.create(RecordKind.POINT_SET, set.name, PointSets.serialize(set), uuid = uuid)
+        return ImportOutcome.Imported(PointSets.fromLps(uuid, named) { index -> "lps-$index-${randomSuffix()}" })
+    }
+
+    /** Saves [set] (read, or held for a session) as a set of the Library, synced like any, under its own id, and says what was saved. */
+    suspend fun save(set: PointSet): PointSet {
+        val named = set.copy(name = set.name.trim().ifEmpty { DEFAULT_NAME })
+        sync.create(RecordKind.POINT_SET, named.name, PointSets.serialize(named), uuid = named.id)
         scheduler.requestSync()
-        return ImportOutcome.Imported(set)
+        return named
     }
 
     /** The set, or null if there is none (deleted, or never here). */
@@ -100,6 +122,15 @@ class PointSetRepository @Inject constructor(
     suspend fun delete(uuid: String) {
         sync.delete(RecordKind.POINT_SET, uuid)
         scheduler.requestSync()
+    }
+
+    /** A copy of the set [uuid] named [name], under an identity of its own, with every point as it is. Its id, or null when it was deleted. */
+    suspend fun duplicate(uuid: String, name: String): String? {
+        val record = sync.record(RecordKind.POINT_SET, uuid) ?: return null
+        val copy = java.util.UUID.randomUUID().toString()
+        sync.create(RecordKind.POINT_SET, name.trim().ifEmpty { DEFAULT_NAME }, record.data, uuid = copy)
+        scheduler.requestSync()
+        return copy
     }
 
     private class Parsed(val data: JsonObject, val set: PointSet)

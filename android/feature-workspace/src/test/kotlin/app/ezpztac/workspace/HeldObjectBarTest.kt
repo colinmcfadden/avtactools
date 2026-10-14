@@ -2,8 +2,8 @@ package app.ezpztac.workspace
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -12,6 +12,7 @@ import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.planning.PlanDraft
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -51,6 +52,24 @@ class HeldObjectBarTest {
         id = "p1", name = name, ptType = "target", first = false, values = app.ezpztac.planning.PointDraft.of(app.ezpztac.model.RoutePlan(), "p1"), clock = "--:--:--", hasClock = false,
         facts = "", elapsed = "", held = held, grid = "16S GD 66900 52900",
     )
+
+    @Test
+    fun `something held of a finished pack can be looked at, not turned, moved or deleted, and the bar says why`() {
+        val reason = "OP DK is finished: nothing in it can be changed."
+        val graphic = heldObjectOf(GraphicsUiState(locked = reason, inspector = inspector), ThreatsUiState(), RoutesUiState())!!
+        assertEquals(reason, graphic.locked)
+        show(graphic)
+        assertTrue(present("Heading 270°"))
+        assertTrue(present(reason))
+        assertFalse(present("Press and hold to move it."))
+        compose.onNodeWithContentDescription("Turn left 15 degrees").assertDoesNotExist()
+        val corner = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(), HeldCornerUi("Boundary corner 2 of 4", "16S GD 66000 52000", canDelete = true, locked = reason))!!
+        assertFalse(corner.deleteEnabled)
+        assertNull("the bar says why once, in place of the invitation to move it", corner.deleteNote)
+        assertEquals(reason, corner.locked)
+        // A threat is the person's own: never locked.
+        assertNull(heldObjectOf(GraphicsUiState(locked = reason), ThreatsUiState(held = threat), RoutesUiState())!!.locked)
+    }
 
     @Test
     fun `a held boundary corner offers delete, and says why when it cannot`() {

@@ -2,79 +2,99 @@ package app.ezpztac.android.di
 
 import android.content.Context
 import android.os.Build
+import app.ezpztac.android.AircraftChoicePreferences
 import app.ezpztac.android.ApiClientBackend
 import app.ezpztac.android.AuthBackend
 import app.ezpztac.android.BuildConfig
-import app.ezpztac.android.MapPreferences
-import app.ezpztac.android.MapTokenSink
-import app.ezpztac.android.sync.EngineSyncRunner
-import app.ezpztac.android.sync.SyncRunner
-import app.ezpztac.sync.SyncRepository
-import app.ezpztac.sync.SyncScheduler
-import app.ezpztac.android.sync.WorkManagerSyncScheduler
-import app.ezpztac.data.session.EncryptedSessionStore
-import app.ezpztac.data.session.KeystoreSecretBox
-import app.ezpztac.map.CameraMemory
-import app.ezpztac.map.LocationSource
-import app.ezpztac.map.MapTokenSource
-import app.ezpztac.map.PlatformLocationSource
-import app.ezpztac.android.export.AssetMissionTemplate
-import app.ezpztac.android.export.AssetThsTemplate
-import app.ezpztac.android.export.ExportCleaner
-import app.ezpztac.android.export.ShareExport
-import app.ezpztac.data.ApiClientPlanningApi
-import app.ezpztac.data.ApiClientThreatMaskApi
-import app.ezpztac.data.ApiClientWeatherApi
-import app.ezpztac.data.WeatherApi
-import app.ezpztac.data.WeatherCache
-import app.ezpztac.data.WeatherService
-import app.ezpztac.data.EncryptedThreatVault
-import app.ezpztac.data.ThreatStore
-import app.ezpztac.data.ThreatVault
-import app.ezpztac.android.WeatherFileCache
-import app.ezpztac.data.MissionTemplate
-import app.ezpztac.data.ThsTemplate
-import app.ezpztac.data.ApiClientTerrainApi
-import app.ezpztac.data.PlanningApi
-import app.ezpztac.data.ThreatMaskApi
-import app.ezpztac.data.TerrainApi
-import app.ezpztac.network.ApiClient
-import app.ezpztac.network.ClientInfo
-import app.ezpztac.network.SessionStore
-import app.ezpztac.sync.ApiSyncApi
-import app.ezpztac.sync.ConflictResolver
-import app.ezpztac.sync.SyncApi
-import app.ezpztac.sync.SyncEngine
-import app.ezpztac.sync.SyncStore
-import dagger.Binds
-import dagger.Module
-import app.ezpztac.data.AircraftProfiles
-import app.ezpztac.data.ApiClientMasterProfileSource
-import app.ezpztac.data.FileMasterProfileStore
-import app.ezpztac.android.AircraftChoicePreferences
+import app.ezpztac.android.DisplayPreferences
+import app.ezpztac.android.DisplaySettings
 import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastDiagramPreferences
 import app.ezpztac.android.LastRouteSet
 import app.ezpztac.android.LastRouteSetPreferences
+import app.ezpztac.android.MapPreferences
+import app.ezpztac.android.MapTokenSink
+import app.ezpztac.android.MinimumVersion
+import app.ezpztac.android.MinimumVersionPreferences
+import app.ezpztac.android.OpenDiagramPreferences
+import app.ezpztac.android.OpenRouteSetPreferences
 import app.ezpztac.android.PointSetViewPreferences
+import app.ezpztac.android.WeatherFileCache
+import app.ezpztac.android.export.AssetMissionTemplate
+import app.ezpztac.android.export.AssetThsTemplate
+import app.ezpztac.android.export.ExportCleaner
+import app.ezpztac.android.export.ShareExport
+import app.ezpztac.android.packs.ApiPackInvites
+import app.ezpztac.android.packs.EnginePackRuntime
+import app.ezpztac.android.packs.LastPackPreferences
+import app.ezpztac.android.packs.PackInvites
+import app.ezpztac.android.packs.PackRuntime
+import app.ezpztac.android.packs.SessionParking
+import app.ezpztac.android.sync.EngineSyncRunner
+import app.ezpztac.android.sync.SyncRunner
+import app.ezpztac.data.LibraryUpload
+import app.ezpztac.android.sync.WorkManagerSyncScheduler
+import app.ezpztac.data.AircraftProfiles
+import app.ezpztac.data.ApiClientMasterProfileSource
+import app.ezpztac.data.ApiClientPlanningApi
+import app.ezpztac.data.ApiClientTerrainApi
+import app.ezpztac.data.ApiClientThreatMaskApi
+import app.ezpztac.data.ApiClientWeatherApi
+import app.ezpztac.data.EncryptedThreatVault
+import app.ezpztac.data.FileMasterProfileStore
+import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.OpenDiagramStore
+import app.ezpztac.data.OpenRouteSetStore
+import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetViewStore
-import app.ezpztac.sync.RecordFeed
+import app.ezpztac.data.TerrainApi
+import app.ezpztac.data.ThreatMaskApi
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
+import app.ezpztac.data.ThsTemplate
+import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.WeatherCache
+import app.ezpztac.data.WeatherService
+import app.ezpztac.data.session.EncryptedSessionStore
+import app.ezpztac.data.session.KeystoreSecretBox
+import app.ezpztac.map.CameraMemory
+import app.ezpztac.map.GridMemory
+import app.ezpztac.map.LocationSource
+import app.ezpztac.map.MapTokenSource
+import app.ezpztac.map.PlatformLocationSource
+import app.ezpztac.missionpacks.ApiPackApi
+import app.ezpztac.missionpacks.PackApi
+import app.ezpztac.network.ApiClient
+import app.ezpztac.network.ClientInfo
+import app.ezpztac.network.SessionStore
+import app.ezpztac.packs.LastPack
+import app.ezpztac.packs.Parking
 import app.ezpztac.symbols.DefaultSymbolRenderer
 import app.ezpztac.symbols.JavaScriptSymbolSource
 import app.ezpztac.symbols.PresetSymbols
 import app.ezpztac.symbols.SymbolRenderer
+import app.ezpztac.sync.ApiSyncApi
+import app.ezpztac.sync.ConflictResolver
+import app.ezpztac.sync.RecordFeed
+import app.ezpztac.sync.SyncApi
+import app.ezpztac.sync.SyncEngine
+import app.ezpztac.sync.SyncRepository
+import app.ezpztac.sync.SyncScheduler
+import app.ezpztac.sync.SyncStore
+import dagger.Binds
+import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import okhttp3.OkHttpClient
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -119,6 +139,11 @@ object AppModule {
     @Singleton
     fun syncApi(client: ApiClient): SyncApi = ApiSyncApi(client)
 
+    /** What the mission-pack engine asks the server: a pack, its log, and a batch of edits. */
+    @Provides
+    @Singleton
+    fun packApi(client: ApiClient): PackApi = ApiPackApi(client)
+
     @Provides
     @Singleton
     fun terrainApi(client: ApiClient): TerrainApi = ApiClientTerrainApi(client)
@@ -142,8 +167,8 @@ object AppModule {
         WeatherService(api, cache, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default))
 
     /**
-     * The threat picture, sealed by its own Keystore key and kept where backups do not reach. Threats are sensitive and never persisted in the
-     * usual sense (`AGENTS.md` §2): this is the one short-lived file the owner approved, wiped at sign-out and 48 hours after the last change.
+     * The threat picture, sealed by its own Keystore key and kept where backups do not reach, and wiped at sign-out: where threats live on the device
+     * until they are saved and shared like other plans (`AGENTS.md` §2, step *T*).
      */
     @Provides
     @Singleton
@@ -216,6 +241,34 @@ interface AppBindings {
     @Binds
     fun syncRunner(impl: EngineSyncRunner): SyncRunner
 
+    /** A copy into a mission pack uploads the Library's waiting changes first, through the same checks as a sync. */
+    @Binds
+    fun libraryUpload(impl: EngineSyncRunner): LibraryUpload
+
+    @Binds
+    fun packRuntime(impl: EnginePackRuntime): PackRuntime
+
+    @Binds
+    fun lastPack(impl: LastPackPreferences): LastPack
+
+    @Binds
+    fun parking(impl: SessionParking): Parking
+
+    @Binds
+    fun packInvites(impl: ApiPackInvites): PackInvites
+
+    @Binds
+    fun minimumVersion(impl: MinimumVersionPreferences): MinimumVersion
+
+    @Binds
+    fun displaySettings(impl: DisplayPreferences): DisplaySettings
+
+    @Binds
+    fun openDiagrams(impl: OpenDiagramPreferences): OpenDiagramStore
+
+    @Binds
+    fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore
+
     @Binds
     fun conflictResolver(impl: SyncEngine): ConflictResolver
 
@@ -227,4 +280,7 @@ interface AppBindings {
 
     @Binds
     fun cameraMemory(impl: MapPreferences): CameraMemory
+
+    @Binds
+    fun gridMemory(impl: MapPreferences): GridMemory
 }

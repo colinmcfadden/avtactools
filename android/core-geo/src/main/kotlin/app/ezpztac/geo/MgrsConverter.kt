@@ -91,8 +91,17 @@ public object MgrsConverter {
     /** A UTM position. [northing] includes the 10,000 km false northing in the southern hemisphere. */
     public data class Utm(val zone: Int, val band: Char, val easting: Double, val northing: Double)
 
-    /** The UTM zone, including the Norway and Svalbard exceptions. */
-    private fun zoneFor(lat: Double, lon: Double): Int {
+    /** A zone's central meridian, in degrees. */
+    public fun centralMeridian(zone: Int): Double = ((zone - 1) * 6 - 180 + 3).toDouble()
+
+    /**
+     * The latitude band letter for a latitude in 80 S to 84 N (band X runs to 84). Past either end it is the end's band, never an index off the
+     * list: the map's grid asks for a label's text before it knows the label is on the grid (the web gets `undefined` there, and that label is not placed).
+     */
+    public fun bandFor(lat: Double): Char = BANDS[floor((lat + 80) / 8).toInt().coerceIn(0, BANDS.length - 1)]
+
+    /** The UTM zone, including the Norway and Svalbard exceptions. The longitude is not wrapped: -180 to 180. */
+    public fun zoneFor(lat: Double, lon: Double): Int {
         var zone = floor((lon + 180) / 6).toInt() + 1
         if (zone > 60) zone = 60                                  // lon == 180
         if (lat >= 56 && lat < 64 && lon >= 3 && lon < 12) zone = 32
@@ -112,11 +121,28 @@ public object MgrsConverter {
         val wrapped = ((((lon + 180) % 360) + 360) % 360) - 180
 
         val zone = zoneFor(lat, wrapped)
-        val centralMeridian = ((zone - 1) * 6 - 180 + 3).toDouble()
-        val phi = toRad(lat)
-        val lambda = toRad(wrapped - centralMeridian)
+        return transverseMercator(zone, lat, wrapped - centralMeridian(zone))
+    }
 
-        // Conformal latitude, then the transverse Mercator series.
+    /**
+     * Latitude/longitude projected into [zone], which need not be the zone the point is in: a grid line near a zone's edge, or in the
+     * Norway and Svalbard exceptions, belongs to its own zone and is computed there (the web's `toUtmInZone`, which the map's grid
+     * uses). Null outside 80 S to 84 N (84 itself included, as the top of band X), for a zone outside 1 to 60, or for a non-finite input.
+     */
+    public fun toUtmInZone(lat: Double, lon: Double, zone: Int): Utm? {
+        if (!lat.isFinite() || !lon.isFinite()) return null
+        if (zone !in 1..60) return null
+        if (lat < -80 || lat > 84) return null
+        var fromMeridian = ((((lon + 180) % 360) + 360) % 360) - 180 - centralMeridian(zone)
+        // Zone 60's east edge is +180, which wraps to -180: measure it from the near side.
+        if (fromMeridian < -180) fromMeridian += 360 else if (fromMeridian >= 180) fromMeridian -= 360
+        return transverseMercator(zone, lat, fromMeridian)
+    }
+
+    // The forward series: a latitude and a longitude from the central meridian to metres. Conformal latitude, then the transverse Mercator series.
+    private fun transverseMercator(zone: Int, lat: Double, fromMeridian: Double): Utm {
+        val phi = toRad(lat)
+        val lambda = toRad(fromMeridian)
         val t = sinh(atanh(sin(phi)) - E * atanh(E * sin(phi)))
         val xiPrime = atan2(t, cos(lambda))
         val etaPrime = atanh(sin(lambda) / sqrt(1 + t * t))
@@ -131,9 +157,17 @@ public object MgrsConverter {
         val easting = FALSE_EASTING + K0 * RECTIFYING * eta
         var northing = K0 * RECTIFYING * xi
         if (lat < 0) northing += FALSE_NORTHING_SOUTH
+        return Utm(zone, bandFor(lat), easting, northing)
+    }
 
-        val band = BANDS[minOf(floor((lat + 80) / 8).toInt(), BANDS.length - 1)]
-        return Utm(zone, band, easting, northing)
+    /**
+     * The 100 km square's two letters: column letters cycle every three zones, rows every two million metres, with even zones' rows
+     * offset by five letters. A column a zone does not have is `?`.
+     */
+    public fun squareLetters(zone: Int, easting: Double, northing: Double): String {
+        val column = COLUMN_SETS[(zone - 1) % 3].getOrNull(floor(easting / SQUARE_M).toInt() - 1) ?: '?'
+        val rowIndex = (floor(northing / SQUARE_M).toInt() + (if (zone % 2 == 0) 5 else 0)) % 20
+        return "$column${ROW_LETTERS[rowIndex]}"
     }
 
     /**
@@ -209,7 +243,7 @@ public object MgrsConverter {
             cornerNorthing += minOf(blocks.toInt() + 1, if (grid.band == 'W') 3 else 4) * ROW_CYCLE_M
         }
 
-        return fromUtm(
+        return inverse(
             zone,
             southern = grid.band < 'N',
             easting = cornerEasting + resolution / 2,
@@ -217,7 +251,16 @@ public object MgrsConverter {
         )
     }
 
-    private fun fromUtm(zone: Int, southern: Boolean, easting: Double, northing: Double): LatLon {
+    /**
+     * UTM to latitude/longitude (the web's `fromUtm`); a [southern] northing carries the 10,000 km false northing, as [toUtm] gives it.
+     * Null for a zone outside 1 to 60 or a non-finite coordinate.
+     */
+    public fun fromUtm(zone: Int, southern: Boolean, easting: Double, northing: Double): LatLon? {
+        if (zone !in 1..60 || !easting.isFinite() || !northing.isFinite()) return null
+        return inverse(zone, southern, easting, northing)
+    }
+
+    private fun inverse(zone: Int, southern: Boolean, easting: Double, northing: Double): LatLon {
         val xi0 = (northing - if (southern) FALSE_NORTHING_SOUTH else 0.0) / (K0 * RECTIFYING)
         val eta0 = (easting - FALSE_EASTING) / (K0 * RECTIFYING)
         var xi = xi0
@@ -231,8 +274,7 @@ public object MgrsConverter {
         var phi = chi
         for (i in DELTA.indices) phi += DELTA[i] * sin(2 * (i + 1) * chi)
         val lambda = atan2(sinh(eta), cos(xi))
-        val centralMeridian = ((zone - 1) * 6 - 180 + 3).toDouble()
-        return LatLon(toDeg(phi), wrap180(toDeg(lambda) + centralMeridian))
+        return LatLon(toDeg(phi), wrap180(toDeg(lambda) + centralMeridian(zone)))
     }
 
     /**

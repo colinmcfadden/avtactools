@@ -33,20 +33,40 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MissionImporterTest {
-    private class Rig(scope: TestScope) {
+    private class Rig(scope: TestScope, pack: OpenPack = OpenPack.None) {
         val server = FakeServer()
         val device = Device("A", server)
         val scheduler = RecordingScheduler()
         val repository = RouteRepository(device.repository, device.store as InMemorySyncStore, scheduler)
         val session = RouteSession(repository, scope.backgroundScope)
         val focus = MapFocus()
-        val importer = MissionImporter(repository, session, focus)
+        val importer = MissionImporter(repository, session, focus, pack)
     }
 
     private val templateBytes = Fixtures.bytes("msnx/template.msnx")
     private val template = MsnxReader.read(templateBytes)
     private val twoBytes = Fixtures.bytes("msnx/sketch-two-routes.msnx")
     private val two = MsnxReader.read(twoBytes)
+
+    @Test
+    fun `while a pack is open the mission is kept in the Library and not opened, nor the map taken to it`() = runTest {
+        val pack = object : OpenPack {
+            override val state = kotlinx.coroutines.flow.MutableStateFlow<app.ezpztac.missionpacks.PackState?>(
+                app.ezpztac.missionpacks.PackState("p", app.ezpztac.missionpacks.PackStatus.LIVE, null, emptyList(), emptyList(), null),
+            )
+            override suspend fun createLz(target: app.ezpztac.model.DiagramTarget, name: String?): String? = null
+            override suspend fun createRouteSet(name: String?): String? = null
+            override suspend fun openItem(itemUuid: String) = false
+            override suspend fun closeItem(itemUuid: String) = Unit
+            override suspend fun removeItem(itemUuid: String): String? = null
+        }
+        val r = Rig(this, pack)
+        val outcome = r.importer.import(templateBytes, template, "Neptune Run.msnx") as MissionImportOutcome.Imported
+        assertTrue(outcome.inPack)
+        assertEquals(false, outcome.opened)
+        assertNull(r.session.active.value)
+        assertNotNull(r.device.record(RecordKind.MISSION, outcome.set.id))                         // kept, for when the pack is left
+    }
 
     @Test
     fun `the file is kept as the saved document, named for the file, with a summary for lists`() = runTest {

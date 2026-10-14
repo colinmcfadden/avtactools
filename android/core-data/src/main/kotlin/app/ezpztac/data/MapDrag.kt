@@ -7,7 +7,6 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.RouteSet
 import app.ezpztac.planning.GraphicEdits
-import app.ezpztac.planning.SketchOps
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -105,9 +104,7 @@ class MapDrag @Inject constructor(
             is Origin.OfPoint -> routeSession.edit("Move point", d.key) { set ->
                 origin.moves.fold(set) { acc, (routeId, point) ->
                     val moved = GraphicEdits.offset(point.at, northM, eastM)
-                    acc.mapRoute(routeId) { r ->
-                        SketchOps.move(r, point.pointId, moved.lat, moved.lon, null).let { m -> if (point.pointId in m.elevations) m.copy(elevations = m.elevations - point.pointId) else m }
-                    }
+                    acc.withPointMoved(routeId, point.pointId) { moved }
                 }
             }
             is Origin.OfThreat -> {
@@ -129,6 +126,16 @@ class MapDrag @Inject constructor(
     fun cancel() {
         val d = drag ?: return
         move(d.start)
+        if (d.origin is Origin.OfThreat) threats.settle()
+        finish()
+    }
+
+    /**
+     * The drag ends where the thing is, with no edit of its own: what can no longer be changed (its pack turned read-only) is not moved back either, since moving it back
+     * would itself be a change. What the pack already took stays; what it did not is put back to the pack's version by the pack's own rule.
+     */
+    fun abandon() {
+        val d = drag ?: return
         if (d.origin is Origin.OfThreat) threats.settle()
         finish()
     }

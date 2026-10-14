@@ -9,7 +9,7 @@ import org.junit.Test
 
 class MapLabelsTest {
     private val here = LatLon(34.78, -84.08)
-    private fun view(zoom: Double = 18.0, inset: Double = 0.0) = MapProjection(CameraState(here, zoom), 1000.0, 2000.0, 1.0, inset)
+    private fun view(zoom: Double = 18.0, inset: Double = 0.0) = MapProjection(CameraState(here, zoom, paddingBottomPx = inset), 1000.0, 2000.0, 1.0)
 
     /** Two points [metres] apart east to west, centred on [at], and the line between them. */
     private fun line(metres: Double, at: LatLon = here, gapFt: Double = 120.0, violating: Boolean = false): SceneSeparation {
@@ -135,5 +135,24 @@ class MapLabelsTest {
     @Test
     fun `units are placed for the view above the sheet`() {
         assertEquals(800.0, MapLabels.units(GraphicsScene(units = listOf(unit("a", here))), view(inset = 400.0)).single().at.y, 0.5)
+    }
+
+    @Test
+    fun `a contour's height goes where the server put it, and only the labelled pieces have one`() {
+        val east = LatLon(here.lat, here.lon + 0.0005)
+        val slope = SlopeImage(
+            34.7, -84.1, 34.8, -84.0, "data:image/png;base64,AA==",
+            contours = listOf(
+                ContourPiece(1520, major = false, inside = true, points = listOf(here, east), label = here),
+                ContourPiece(1520, major = false, inside = false, points = listOf(east, here)),
+                ContourPiece(1525, major = true, inside = true, points = listOf(here, east), label = LatLon(here.lat, here.lon + 1.0)),   // far off the screen
+            ),
+        )
+        val label = MapLabels.contours(slope, view()).single()
+        assertEquals("1520", label.text)
+        assertEquals(500.0, label.at.x, 0.5)
+        assertEquals(1000.0, label.at.y, 0.5)
+        assertEquals("Contour 1520 feet", label.description)
+        assertEquals(emptyList<MapLabel>(), MapLabels.contours(null, view()))
     }
 }

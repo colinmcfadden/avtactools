@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -53,10 +54,29 @@ class MapViewModelTest {
         override fun save(camera: CameraState) { saved = camera; writes += camera }
     }
 
+    private class Grid(var shown: Boolean = false) : GridMemory {
+        val writes = mutableListOf<Boolean>()
+        override fun gridShown() = shown
+        override fun setGridShown(shown: Boolean) { this.shown = shown; writes += shown }
+    }
+
     private fun fix(lat: Double = 34.78, lon: Double = -84.08, accuracy: Float? = 5f) = UserLocation(LatLon(lat, lon), accuracy, null, null, 0L)
 
+    @Test
+    fun `the MGRS grid is off until turned on, then remembered on the device both ways`() = runTest(dispatcher) {
+        val grid = Grid()
+        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), grid)
+        assertFalse(vm.state.value.grid)
+        vm.toggleGrid()
+        assertTrue(vm.state.value.grid)
+        vm.toggleGrid()
+        assertFalse(vm.state.value.grid)
+        assertEquals(listOf(true, false), grid.writes)
+        assertTrue(MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(shown = true)).state.value.grid)   // as it was left
+    }
+
     private fun TestScope.model(token: String? = "pk.t", location: FakeLocation = FakeLocation(), memory: Memory = Memory()) =
-        MapViewModel(Tokens(token), location, memory).also { advanceUntilIdle() } to location
+        MapViewModel(Tokens(token), location, memory, Grid()).also { advanceUntilIdle() } to location
 
     private fun TestScope.commandsOf(vm: MapViewModel): MutableList<MapCommand> {
         val seen = mutableListOf<MapCommand>()
@@ -113,7 +133,7 @@ class MapViewModelTest {
     @Test
     fun `a token that arrives later brings satellite back without the person doing anything`() = runTest(dispatcher) {
         val tokens = Tokens(null)
-        val vm = MapViewModel(tokens, FakeLocation(), Memory())
+        val vm = MapViewModel(tokens, FakeLocation(), Memory(), Grid())
         advanceUntilIdle()
         assertEquals("vfr-sectional", vm.state.value.style.id)
         tokens.token.value = "pk.arrived"

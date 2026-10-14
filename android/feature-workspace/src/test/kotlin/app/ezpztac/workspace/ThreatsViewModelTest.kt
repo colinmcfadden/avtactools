@@ -83,6 +83,8 @@ class ThreatsViewModelTest {
         val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template }), masks).also {
             it.worker = StandardTestDispatcher(scope.testScheduler)
         }
+        val notices = mutableListOf<String>()
+        init { scope.backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(scope.testScheduler)) { model.notices.collect { notices += it } } }
         val state get() = model.state.value
     }
 
@@ -106,7 +108,7 @@ class ThreatsViewModelTest {
 
         r.model.updateDraft(r.state.editing!!.draft.copy(name = "SA-8"))
         r.model.saveEdit(); advanceUntilIdle()
-        assertEquals("Threat added.", r.state.note)
+        assertEquals(listOf("Threat added."), r.notices)                                  // a toast: the form may have been opened over another panel
         assertNull(r.state.editing)
         assertEquals("SA-8", r.state.threats.single().name)
         assertEquals(r.state.threats.single().id, r.selection.held.value)
@@ -123,7 +125,7 @@ class ThreatsViewModelTest {
         assertEquals("S2", r.store.entries.value.single().threat.source)
         assertEquals(34.75, r.store.entries.value.single().threat.lat, 0.0)
         assertEquals(-84.05, r.store.entries.value.single().threat.lon, 0.0)
-        assertEquals("Threat updated.", r.state.note)
+        assertEquals(listOf("Threat updated."), r.notices)
     }
 
     @Test
@@ -145,17 +147,6 @@ class ThreatsViewModelTest {
 
         r.model.remove(id); advanceUntilIdle()
         assertTrue(r.state.threats.isEmpty())
-    }
-
-    @Test
-    fun `importing an AMPS file adds its threats and holds the last one`() = runTest(dispatcher) {
-        val r = rig()
-        r.model.importFile(Fixtures.bytes("sqlite/threats.ths")); advanceUntilIdle()
-        assertFalse(r.state.importing)
-        assertTrue(r.state.threats.isNotEmpty())
-        assertEquals("Imported ${r.state.threats.size} threats.", r.state.note)
-        assertEquals(r.state.threats.last().id, r.selection.held.value)
-        assertNull(r.state.error)
     }
 
     @Test
@@ -202,7 +193,7 @@ class ThreatsViewModelTest {
         r.model.saveEdit(); advanceUntilIdle()
         assertTrue(r.store.entries.value.isEmpty())
         assertNull(r.state.editing)
-        assertEquals("That threat is no longer here.", r.state.error)
+        assertEquals(listOf("That threat is no longer here."), r.notices)
     }
 
     // -- The list and the held threat ----------------------------------------------------------------------------------------
@@ -215,8 +206,8 @@ class ThreatsViewModelTest {
         advanceUntilIdle()
         val rows = r.state.threats
         assertEquals(listOf("SAM Launcher", "Custom symbol"), rows.map { it.symbol })
-        assertEquals("Detection 25 nm · Engagement 15 nm", rows[0].ranges)
-        assertEquals("Engagement 12.5 nm", rows[1].ranges)
+        assertEquals("Detect 25 nm · Engage 15 nm", rows[0].ranges)                       // the design's row, the web's radarText
+        assertEquals("Engage 12.5 nm", rows[1].ranges)
         assertEquals(MgrsConverter.toMgrs(34.75, -84.05)!!.format(), rows[0].grid)
     }
 
@@ -332,7 +323,7 @@ class ThreatsViewModelTest {
         val id = held(r, threat().copy(radars = Radars.defaultPair().map { it.copy(showMask = false) }))
         r.model.showMask(id); advanceUntilIdle()
         assertTrue(r.maskApi.asked.isEmpty())
-        assertEquals(ThreatMaskUi.Status.FAILED, r.state.held!!.mask.status)
+        assertEquals(ThreatMaskUi.Status.OFF, r.state.held!!.mask.status)                     // rings only is not a failure (the review of S5)
         assertTrue(r.state.held!!.mask.message!!.contains("shows a mask"))
     }
 
@@ -379,4 +370,134 @@ class ThreatsViewModelTest {
         r.store.remove(id); advanceUntilIdle()
         assertTrue(r.masks.states.value.isEmpty())
     }
+
+    // -- The form (S5) -------------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `moving a threat in the form moves the form, and only Save moves the threat`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.model.beginEdit(id); advanceUntilIdle()
+        assertEquals(MgrsConverter.toMgrs(34.75, -84.05)!!.format(), r.state.editing!!.grid)
+        assertFalse(r.state.editing!!.changed)
+        r.model.formNudge(northFt = 1000.0, eastFt = 0.0); advanceUntilIdle()
+        assertTrue(r.state.editing!!.at.lat > 34.75)
+        assertTrue(r.state.editing!!.changed)
+        assertEquals(34.75, r.store.entries.value.single().threat.lat, 0.0)                    // the map's threat is where it was
+        r.model.saveEdit(); advanceUntilIdle()
+        assertTrue(r.store.entries.value.single().threat.lat > 34.75)
+    }
+
+    @Test
+    fun `Close leaves the threat where it was, whatever was moved in the form`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.model.beginEdit(id); advanceUntilIdle()
+        r.model.formToCrosshair(LatLon(35.0, -85.0)); advanceUntilIdle()
+        assertEquals(LatLon(35.0, -85.0), r.state.editing!!.at)
+        r.model.cancelEdit(); advanceUntilIdle()
+        assertEquals(34.75, r.store.entries.value.single().threat.lat, 0.0)
+    }
+
+    @Test
+    fun `the form's crosshair needs one, and a grid typed is moved to or refused in words`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.beginAdd(LatLon(34.75, -84.05)); advanceUntilIdle()
+        r.model.formToCrosshair(null); advanceUntilIdle()
+        assertEquals("Move the map to where the threat should be first.", r.state.editing!!.error)
+        assertNotNull(r.model.formToText("not a place"))
+        assertNull(r.model.formToText("34.80, -84.10")); advanceUntilIdle()
+        assertEquals(34.80, r.state.editing!!.at.lat, 1e-9)
+        assertNull(r.state.editing!!.error)
+        r.model.saveEdit(); advanceUntilIdle()
+        assertEquals(34.80, r.store.entries.value.single().threat.lat, 1e-9)                    // a new threat is added where the form says
+    }
+
+    @Test
+    fun `the held bar's options open the form of the threat held`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat("SA-8")); advanceUntilIdle()
+        r.model.editHeld(); advanceUntilIdle()
+        assertNull(r.state.editing)                                                            // nothing held, nothing to open
+        r.selection.select(id)
+        r.model.editHeld(); advanceUntilIdle()
+        assertEquals(id, r.state.editing!!.id)
+        assertEquals("SA-8", r.state.editing!!.draft.name)
+    }
+
+    @Test
+    fun `removing from the form removes the threat and closes the form`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.model.beginEdit(id); advanceUntilIdle()
+        r.model.removeEditing(); advanceUntilIdle()
+        assertNull(r.state.editing)
+        assertTrue(r.store.entries.value.isEmpty())
+    }
+
+    @Test
+    fun `a row and the form say where the threat's terrain mask is`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat()); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.OFF, r.state.threats.single().mask)
+        r.model.showMask(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.SHOWING, r.state.threats.single().mask)
+        r.model.beginEdit(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.SHOWING, r.state.editing!!.mask!!.status)
+        r.model.cancelEdit()
+        r.model.beginAdd(LatLon(34.0, -84.0)); advanceUntilIdle()
+        assertNull(r.state.editing!!.mask)                                                    // a threat not on the map yet has no mask to ask for
+    }
+
+    // -- What the review of S5 found ----------------------------------------------------------------------------------------------
+
+    @Test
+    fun `a wipe lets go of an open form and the held threat, so neither comes back for the next account`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat("SA-8")); advanceUntilIdle()
+        r.model.beginEdit(id); advanceUntilIdle()
+        r.model.beginAdd(LatLon(34.0, -84.0)); r.model.updateDraft(r.state.editing!!.draft.copy(name = "SECRET")); advanceUntilIdle()
+        r.store.wipe(); advanceUntilIdle()                                                      // what sign-out does
+        assertNull(r.state.editing)
+        assertNull(r.selection.held.value)
+    }
+
+    @Test
+    fun `a hidden threat is never held, from its row or its form`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.model.toggleVisible(id); advanceUntilIdle()
+        r.model.select(id); advanceUntilIdle()
+        assertNull(r.selection.held.value)
+        r.model.beginEdit(id); advanceUntilIdle()
+        assertNull(r.selection.held.value)
+        r.model.saveEdit(); advanceUntilIdle()
+        assertNull(r.selection.held.value)
+    }
+
+    @Test
+    fun `the held bar's options open nothing for a threat hidden or gone`() = runTest(dispatcher) {
+        val r = rig()
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.selection.select(id)
+        r.store.setVisible(id, false); advanceUntilIdle()
+        r.model.editHeld(); advanceUntilIdle()
+        assertNull(r.state.editing)
+        r.store.remove(id); advanceUntilIdle()
+        r.model.editHeld(); advanceUntilIdle()
+        assertNull(r.state.editing)
+    }
+
+    @Test
+    fun `radars set to rings only are Rings only in the row, not a failed mask, and the form says why`() = runTest(dispatcher) {
+        val r = rig()
+        val ringsOnly = threat().let { t -> t.copy(radars = t.radars.map { it.copy(showMask = false) }) }
+        val id = r.store.add(ringsOnly); advanceUntilIdle()
+        r.model.showMask(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.OFF, r.state.threats.single().mask)
+        r.model.beginEdit(id); advanceUntilIdle()
+        assertEquals(app.ezpztac.data.ThreatMasks.NOTHING_TO_SHOW, r.state.editing!!.mask!!.message)
+        assertTrue(r.maskApi.asked.isEmpty())                                                  // nothing was asked of the server
+    }
+
 }

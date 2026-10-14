@@ -45,7 +45,9 @@ WEB_MERCATOR_HALF_WORLD_M = 20037508.342789244
 # General map-band thresholds.  Directional UH-60 checks are calculated only
 # when the caller supplies a landing heading.
 SLOPE_BANDS_DEG = (3.0, 6.0, 10.0, 15.0)
-UH60_LIMITS_DEG = {"noseHigh": 6.0, "noseLow": 15.0, "crossSlope": 15.0}
+# The UH-60's slope landing limits, as the owner gives them (2026-10-13): 15° nose up (the ground rising ahead, "nose high"),
+# 6° nose down ("nose low"), 15° of cross slope. Calm-wind limits: the clients reduce them for the wind (AGENTS.md §13).
+UH60_LIMITS_DEG = {"noseHigh": 15.0, "noseLow": 6.0, "crossSlope": 15.0}
 
 
 @dataclass(frozen=True)
@@ -446,23 +448,108 @@ def _pct(values: np.ndarray, condition: np.ndarray) -> float:
     return round(float(condition.sum()) / len(values) * 100.0, 1) if len(values) else 0.0
 
 
-def _directional_summary(mask, grad_east, grad_north, heading_deg: float):
+def _along_and_across(grad_east, grad_north, heading_deg: float):
+    """Each cell's slope along [heading_deg] (positive where the ground rises ahead: nose high) and across it, in degrees."""
     heading_rad = math.radians(heading_deg % 360.0)
     forward = grad_east * math.sin(heading_rad) + grad_north * math.cos(heading_rad)
     right = grad_east * math.cos(heading_rad) - grad_north * math.sin(heading_rad)
-    along_deg = np.degrees(np.arctan(forward))[mask]
-    cross_deg = np.abs(np.degrees(np.arctan(right))[mask])
+    return np.degrees(np.arctan(forward)), np.abs(np.degrees(np.arctan(right)))
+
+
+def _steepest(along_deg, cross_deg):
+    """The steepest nose high, nose low and cross slope among these cells, in degrees to 0.1 (a zero is 0.0, never -0.0)."""
     nose_high = np.maximum(along_deg, 0.0)
     nose_low = np.maximum(-along_deg, 0.0)
+    return tuple(round(float(values.max()), 1) + 0.0 for values in (nose_high, nose_low, cross_deg))
+
+
+def _directional_summary(mask, grad_east, grad_north, heading_deg: float):
+    along, across = _along_and_across(grad_east, grad_north, heading_deg)
+    along_deg = along[mask]
+    cross_deg = across[mask]
+    nose_high = np.maximum(along_deg, 0.0)
+    nose_low = np.maximum(-along_deg, 0.0)
+    high, low, cross = _steepest(along_deg, cross_deg)
     return {
         "headingDeg": round(heading_deg % 360.0, 1),
-        "noseHighMaxDeg": round(float(nose_high.max()), 1),
-        "noseLowMaxDeg": round(float(nose_low.max()), 1),
-        "crossSlopeMaxDeg": round(float(cross_deg.max()), 1),
+        "noseHighMaxDeg": high,
+        "noseLowMaxDeg": low,
+        "crossSlopeMaxDeg": cross,
         "noseHighOverLimitPct": _pct(nose_high, nose_high > UH60_LIMITS_DEG["noseHigh"]),
         "noseLowOverLimitPct": _pct(nose_low, nose_low > UH60_LIMITS_DEG["noseLow"]),
         "crossSlopeOverLimitPct": _pct(cross_deg, cross_deg > UH60_LIMITS_DEG["crossSlope"]),
     }
+
+
+# Up to this many cells, the table by heading looks at every one; past it, only at those that can be the steepest (below).
+_EVERY_CELL_UP_TO = 256
+
+
+def _depth_inside(xs, ys, corner_xs, corner_ys):
+    """How far inside the convex polygon of the given corners each cell (xs, ys) is (negative outside), or None when it has no inside."""
+    if len(corner_xs) < 3:
+        return None
+    next_xs, next_ys = np.roll(corner_xs, -1), np.roll(corner_ys, -1)
+    dxs, dys = next_xs - corner_xs, next_ys - corner_ys
+    lengths = np.hypot(dxs, dys)
+    twice_area = float(np.sum(corner_xs * next_ys - next_xs * corner_ys))
+    if twice_area == 0.0 or not np.all(lengths > 0.0):
+        return None
+    inward = math.copysign(1.0, twice_area)                                # the inside is left of each edge when the corners turn anticlockwise
+    depth = np.full(len(xs), np.inf)
+    for x0, y0, dx, dy, length in zip(corner_xs, corner_ys, dxs, dys, lengths):
+        nx, ny = -dy * inward / length, dx * inward / length               # the edge's unit normal, pointing inside
+        np.minimum(depth, nx * xs + ny * ys - (nx * x0 + ny * y0), out=depth)
+    return depth
+
+
+def _hull(xs, ys):
+    """The convex hull's corners, as indices into the cells."""
+    return cv2.convexHull(np.column_stack((xs, ys)).astype(np.float32), returnPoints=False).ravel()
+
+
+def _steepest_candidates(east, north):
+    """The cells, by their gradients, that can be the steepest in some direction: all of them that matter to the table by heading.
+
+    A slope along (or across) a heading is a linear function of a cell's gradient, and a linear function over a set of points is greatest
+    at a corner of their convex hull. So only cells on the hull's edge, or within a float's rounding of it, can be a heading's steepest, and
+    360 headings are worked out over a few dozen cells instead of every cell of a large LZ, with the same answer: each cell's numbers are
+    the same whichever others are beside it, and the one that is greatest is always kept."""
+    if len(east) <= _EVERY_CELL_UP_TO:
+        return east, north
+    xs, ys = east.astype(np.float64), north.astype(np.float64)            # float32 values, exact in float64
+    # How far inside the hull a cell may be and still tie with its edge once the float32 products, sums and arctangents have rounded:
+    # about 1e-7 of the steepest gradient. A hundred times that costs nothing (a few more cells) and leaves no doubt.
+    margin = 1e-5 * float(np.max(np.hypot(xs, ys)))
+    # First a polygon of the cells furthest out in sixteen directions. It lies inside the hull, so a cell deeper inside it than the margin is
+    # deeper inside the hull too and goes now; the hull's own corners are never among those, so the hull is then found among what is left.
+    furthest = np.unique([int(np.argmax(math.cos(a) * xs + math.sin(a) * ys)) for a in np.arange(16) * (math.pi / 8.0)])
+    inner = _hull(xs[furthest], ys[furthest])
+    depth = _depth_inside(xs, ys, xs[furthest][inner], ys[furthest][inner])
+    if depth is not None:
+        near = depth <= margin
+        xs, ys, east, north = xs[near], ys[near], east[near], north[near]
+    corners = _hull(xs, ys)
+    depth = _depth_inside(xs, ys, xs[corners], ys[corners])
+    if depth is None:
+        # Every gradient on one line (a plane, or ground that tilts one way only): there is no inside to leave out, but cells with the same
+        # gradient have the same numbers, so one of each is enough.
+        unique = np.unique(np.column_stack((east, north)), axis=0)
+        return unique[:, 0], unique[:, 1]
+    keep = depth <= margin
+    return east[keep], north[keep]
+
+
+def _slope_by_heading(mask, grad_east, grad_north):
+    """The steepest nose high, nose low and cross slope over the LZ for every whole heading 0..359, by _directional_summary's arithmetic,
+    so a client can judge any landing heading, and recommend one, without asking again. The headings are the grid's: true north for the
+    Terrarium tiles (Web Mercator), the UTM grid's north for a local DEM."""
+    east, north = _steepest_candidates(grad_east[mask], grad_north[mask])
+    table = []
+    for heading in range(360):
+        high, low, cross = _steepest(*_along_and_across(east, north, heading))
+        table.append({"heading": heading, "noseHighMaxDeg": high, "noseLowMaxDeg": low, "crossSlopeMaxDeg": cross})
+    return table
 
 
 def _render_slope_png(slope_deg: np.ndarray, display_mask: np.ndarray) -> str:
@@ -482,6 +569,262 @@ def _render_slope_png(slope_deg: np.ndarray, display_mask: np.ndarray) -> str:
     if not ok:
         raise RuntimeError("Could not encode the slope overlay")
     return "data:image/png;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
+
+
+FEET_PER_METRE = 3.28084
+# Contour intervals in feet, finest first: the finest that keeps the ground round an LZ to about a dozen lines is used.
+CONTOUR_INTERVALS_FT = (1, 2, 5, 10, 20, 25, 50, 100)
+CONTOUR_MAX_LINES = 12
+# Every fifth line is a major (index) one, as on a topographic map.
+CONTOUR_MAJOR_EVERY = 5
+# Contours run this far past the LZ's boundary, so the ground just beyond its edge shows (faded on the clients).
+CONTOUR_RING_M = 40.0
+# The ground is smoothed over about this much before it is contoured, so a DEM's noise does not draw specks and wiggles: the lines are
+# for reading the shape of the ground, and the slope itself is measured from the unsmoothed grid.
+CONTOUR_SMOOTHING_M = 2.0
+# A line is simplified to within this much of itself (a fraction of a cell), and a closed ring shorter than this many cells round is left out.
+CONTOUR_SIMPLIFY_CELLS = 0.35
+CONTOUR_MIN_RING_CELLS = 12.0
+# Labels keep this far apart (a label is about 40 px across, and an LZ is looked at near a metre a pixel). Each height's goes on its
+# longest piece inside the LZ, halfway along if there is room there, else further along it, else none; major lines are placed first.
+CONTOUR_LABEL_SPACING_M = 40.0
+CONTOUR_LABEL_ALONG = (0.5, 0.35, 0.65, 0.2, 0.8)
+
+
+def _contour_interval_ft(relief_ft: float) -> int:
+    for interval in CONTOUR_INTERVALS_FT:
+        if relief_ft / interval <= CONTOUR_MAX_LINES:
+            return interval
+    return CONTOUR_INTERVALS_FT[-1]
+
+
+def _inside_ring(xs: np.ndarray, ys: np.ndarray, ring_x: np.ndarray, ring_y: np.ndarray) -> np.ndarray:
+    """Whether each point is inside a closed ring (even-odd ray casting, vectorised over the points)."""
+    inside = np.zeros(len(xs), dtype=bool)
+    x0s, y0s = ring_x, ring_y
+    x1s, y1s = np.roll(ring_x, -1), np.roll(ring_y, -1)
+    for x0, y0, x1, y1 in zip(x0s, y0s, x1s, y1s):
+        if y0 == y1:
+            continue
+        crosses = (y0 > ys) != (y1 > ys)
+        at_x = x0 + (ys - y0) * (x1 - x0) / (y1 - y0)
+        inside ^= crosses & (xs < at_x)
+    return inside
+
+
+def _split_by(flags: np.ndarray):
+    """Runs of equal flags as (start, end, flag), end exclusive; neighbouring runs share their joining vertex, so they meet."""
+    runs = []
+    start = 0
+    for i in range(1, len(flags) + 1):
+        if i == len(flags) or flags[i] != flags[start]:
+            runs.append((start, min(i + 1, len(flags)), bool(flags[start])))
+            start = i
+    return runs
+
+
+def _slope_contours(grid: TerrainGrid, polygon, polygon_mask: np.ndarray) -> dict:
+    """
+    Contour lines of the ground in and just round the LZ, in feet: `intervalFt`, and `lines`, each a piece of one contour with its
+    `elevationFt`, whether it is a `major` (every fifth) line, whether it lies `inside` the boundary (the clients fade the ring outside it),
+    its `points` as [lat, lon], and, on the longest inside piece of each elevation, a `label` point for its number. The heights are the
+    source's own (NAVD88 for the local DEMs), as the slope is.
+    """
+    from contourpy import LineType, contour_generator
+
+    cell_m = max(min(grid.xres_m, grid.yres_m), 0.01)
+    reach = max(1, int(math.ceil(CONTOUR_RING_M / cell_m)))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1))
+    zone = cv2.dilate(polygon_mask.astype(np.uint8), kernel).astype(bool) & np.isfinite(grid.elevation_m)
+    if not zone.any():
+        return {"intervalFt": CONTOUR_INTERVALS_FT[0], "lines": []}
+
+    elevation_ft = grid.elevation_m.astype(np.float64) * FEET_PER_METRE
+    sigma = CONTOUR_SMOOTHING_M / cell_m
+    if sigma >= 0.3:
+        # Smoothed where there is ground only: the gaps (NaN) are weighted out rather than spread into their neighbours.
+        known = np.isfinite(elevation_ft)
+        weights = cv2.GaussianBlur(known.astype(np.float64), (0, 0), sigma)
+        blurred = cv2.GaussianBlur(np.where(known, elevation_ft, 0.0), (0, 0), sigma)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            elevation_ft = np.where(known, blurred / weights, np.nan)
+    inside_values = elevation_ft[polygon_mask & np.isfinite(elevation_ft)]
+    relief = elevation_ft[zone]
+    interval = _contour_interval_ft(float(relief.max() - relief.min()))
+    if inside_values.size == 0:
+        return {"intervalFt": interval, "lines": []}
+    first = math.ceil(float(relief.min()) / interval) * interval
+    last = math.floor(float(relief.max()) / interval) * interval
+
+    masked = np.ma.masked_array(elevation_ft, mask=~zone)
+    generator = contour_generator(z=masked, line_type=LineType.Separate)
+
+    lats = [float(point[0]) for point in polygon]
+    lons = [float(point[1]) for point in polygon]
+    ring_x, ring_y = (np.asarray(v, dtype=np.float64) for v in transform("EPSG:4326", grid.crs, lons, lats))
+
+    def to_metres(path):
+        # Pixel centres to the grid's metres: column, row (from the top) through its affine transform.
+        cols, rows = path[:, 0] + 0.5, path[:, 1] + 0.5
+        t = grid.transform
+        return t.c + cols * t.a + rows * t.b, t.f + cols * t.d + rows * t.e
+
+    def to_latlon(xs, ys):
+        lon_deg, lat_deg = transform(grid.crs, "EPSG:4326", list(map(float, xs)), list(map(float, ys)))
+        return [[round(lat, 6), round(lon, 6)] for lat, lon in zip(lat_deg, lon_deg)]
+
+    lines = []
+    longest = []
+    level = first
+    while level <= last:
+        best = None  # (length, index of the line, the piece's dense xs and ys)
+        for path in generator.lines(level):
+            if len(path) < 2:
+                continue
+            if np.allclose(path[0], path[-1]) and float(np.hypot(*np.diff(path, axis=0).T).sum()) < CONTOUR_MIN_RING_CELLS:
+                continue                                                               # a speck: a ring a few cells round
+            xs, ys = to_metres(path)
+            inside = _inside_ring(xs, ys, ring_x, ring_y)
+            # Split where the line crosses the boundary first, on every vertex, then simplify each piece: simplified first, a straight
+            # line across the LZ would keep only its two ends, both outside it.
+            for start, end, is_inside in _split_by(inside):
+                if end - start < 2:
+                    continue
+                piece = path[start:end]
+                kept = cv2.approxPolyDP(piece.astype(np.float32).reshape(-1, 1, 2), CONTOUR_SIMPLIFY_CELLS, False).reshape(-1, 2)
+                if np.array_equal(piece[0], piece[-1]) and not np.array_equal(kept[0], kept[-1]):
+                    kept = np.vstack([kept, kept[:1]])                                  # a ring stays closed
+                lines.append({
+                    "elevationFt": int(level),
+                    "major": int(level) % (interval * CONTOUR_MAJOR_EVERY) == 0,
+                    "inside": is_inside,
+                    "points": to_latlon(*to_metres(kept.astype(np.float64))),
+                    "label": None,
+                })
+                if is_inside:
+                    steps = np.hypot(np.diff(xs[start:end]), np.diff(ys[start:end]))
+                    length = float(steps.sum())
+                    if best is None or length > best[0]:
+                        best = (length, len(lines) - 1, xs[start:end], ys[start:end])
+        if best is not None:
+            longest.append(best)
+        level += interval
+
+    placed = []
+    for length, index, xs, ys in sorted(longest, key=lambda b: (not lines[b[1]]["major"], -b[0])):
+        along = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(xs), np.diff(ys)))])
+        for fraction in CONTOUR_LABEL_ALONG:
+            i = min(int(np.searchsorted(along, length * fraction)), len(xs) - 1)
+            if all(math.hypot(xs[i] - px, ys[i] - py) >= CONTOUR_LABEL_SPACING_M for px, py in placed):
+                placed.append((xs[i], ys[i]))
+                lines[index]["label"] = to_latlon(np.array([xs[i]]), np.array([ys[i]]))[0]
+                break
+    return {"intervalFt": interval, "lines": lines}
+
+
+# The slope profiles: lines through the LZ's middle reaching this far past its farthest corner, so the ground of the approach and the
+# departure shows; one every PROFILE_HEADING_STEP_DEG of heading (a line serves its heading and the opposite one, read backwards), with at
+# most PROFILE_MAX_SAMPLES heights along each, no closer than the terrain's own cells.
+PROFILE_BEYOND_M = 300.0
+PROFILE_HEADING_STEP_DEG = 2
+PROFILE_MAX_SAMPLES = 121
+METRES_PER_DEGREE = 111320.0
+
+
+def _local_frame(polygon):
+    """The LZ's middle (its area centroid) and a flat east-north frame round it in metres, good to a metre or so over a few kilometres."""
+    lats = np.array([float(p[0]) for p in polygon])
+    lons = np.array([float(p[1]) for p in polygon])
+    lat0, lon0 = float(lats.mean()), float(lons.mean())
+    east_per_deg = METRES_PER_DEGREE * math.cos(math.radians(lat0))
+    xs, ys = (lons - lon0) * east_per_deg, (lats - lat0) * METRES_PER_DEGREE
+    x1, y1 = np.roll(xs, -1), np.roll(ys, -1)
+    cross = xs * y1 - x1 * ys
+    area = cross.sum() / 2.0
+    if abs(area) > 1e-6:
+        cx, cy = ((xs + x1) * cross).sum() / (6 * area), ((ys + y1) * cross).sum() / (6 * area)
+    else:
+        cx, cy = float(xs.mean()), float(ys.mean())
+    centre_lat, centre_lon = lat0 + cy / METRES_PER_DEGREE, lon0 + cx / east_per_deg
+    return (centre_lat, centre_lon), xs - cx, ys - cy, east_per_deg
+
+
+def _lz_span(xs, ys, heading_deg):
+    """Where a line through the middle at [heading_deg] crosses the boundary: the nearest and farthest crossings, in metres along it."""
+    ux, uy = math.sin(math.radians(heading_deg)), math.cos(math.radians(heading_deg))
+    found = []
+    for i in range(len(xs)):
+        ax, ay, bx, by = xs[i], ys[i], xs[(i + 1) % len(xs)], ys[(i + 1) % len(xs)]
+        ex, ey = bx - ax, by - ay
+        denom = ux * ey - uy * ex
+        if abs(denom) < 1e-12:
+            continue
+        t = (ax * ey - ay * ex) / denom        # along the line
+        s = (ax * uy - ay * ux) / denom        # along the edge, 0..1
+        if -1e-9 <= s <= 1 + 1e-9:
+            found.append(t)
+    return [round(float(min(found)), 1), round(float(max(found)), 1)] if len(found) >= 2 else None
+
+
+def _sample(grid: TerrainGrid, lats, lons):
+    """The grid's heights at the points, bilinearly; None where any cell it needs has no data or the point is off the grid."""
+    xs, ys = transform("EPSG:4326", grid.crs, list(lons), list(lats))
+    inverse = ~grid.transform
+    out = []
+    rows, cols = grid.elevation_m.shape
+    for x, y in zip(xs, ys):
+        col, row = inverse * (x, y)
+        col, row = col - 0.5, row - 0.5                # from the grid's corner to its cells' centres
+        c0, r0 = int(math.floor(col)), int(math.floor(row))
+        if c0 < 0 or r0 < 0 or c0 + 1 >= cols or r0 + 1 >= rows:
+            out.append(None)
+            continue
+        fc, fr = col - c0, row - r0
+        cell = grid.elevation_m[r0:r0 + 2, c0:c0 + 2].astype(np.float64)
+        if not np.isfinite(cell).all():
+            out.append(None)
+            continue
+        top = cell[0, 0] * (1 - fc) + cell[0, 1] * fc
+        bottom = cell[1, 0] * (1 - fc) + cell[1, 1] * fc
+        out.append(float(top * (1 - fr) + bottom * fr))
+    return out
+
+
+def _slope_profiles(polygon) -> dict | None:
+    """
+    The ground along lines through the LZ's middle, for the slope profile the clients draw along and across the landing heading: `center`
+    ([lat, lon]), `stepM` between heights, `halfLengthM` each way, `headingStepDeg`, and `lines`, one for each heading 0, 2, … 178, each with its
+    `elevationsFt` (from `halfLengthM` behind the middle, the way the heading points from, to `halfLengthM` ahead; null where there is no data)
+    and `lz`, where the boundary is along it in metres from the middle (behind negative), or null. A heading of 180 or more is the line of the
+    opposite one, read backwards. Null when no terrain covers the ground round the LZ.
+    """
+    centre, xs, ys, east_per_deg = _local_frame(polygon)
+    reach = float(np.hypot(xs, ys).max()) + PROFILE_BEYOND_M
+    grid = load_best_terrain(bounds_for_polygon(polygon, padding_m=reach + 60.0))
+    if grid is None:
+        return None
+    step = max(grid.resolution_m, 2 * reach / (PROFILE_MAX_SAMPLES - 1))
+    count = int(math.ceil(2 * reach / step)) + 1
+    half = step * (count - 1) / 2.0
+    distances = np.linspace(-half, half, count)
+    lines = []
+    for heading in range(0, 180, PROFILE_HEADING_STEP_DEG):
+        ux, uy = math.sin(math.radians(heading)), math.cos(math.radians(heading))
+        lats = centre[0] + distances * uy / METRES_PER_DEGREE
+        lons = centre[1] + distances * ux / east_per_deg
+        heights = _sample(grid, lats, lons)
+        lines.append({
+            "heading": heading,
+            "elevationsFt": [None if h is None else round(h * FEET_PER_METRE, 1) for h in heights],
+            "lz": _lz_span(xs, ys, heading),
+        })
+    return {
+        "center": [round(centre[0], 7), round(centre[1], 7)],
+        "stepM": round(step, 3),
+        "halfLengthM": round(half, 3),
+        "headingStepDeg": PROFILE_HEADING_STEP_DEG,
+        "lines": lines,
+    }
 
 
 def build_slope_analysis(polygon, landing_heading_deg: float | None = None) -> dict:
@@ -522,5 +865,8 @@ def build_slope_analysis(polygon, landing_heading_deg: float | None = None) -> d
         "verticalDatum": grid.vertical_datum,
         "stats": stats,
         "directional": directional,
+        "byHeading": _slope_by_heading(display_mask, grad_east, grad_north),
+        "contours": _slope_contours(grid, polygon, polygon_mask),
+        "profiles": _slope_profiles(polygon),
         "thresholds": {"bands": SLOPE_BANDS_DEG, "uh60": UH60_LIMITS_DEG},
     }

@@ -207,12 +207,13 @@ class GraphicsSceneTest {
     }
 
     @Test
-    fun `a violating aircraft uses the red picture, and the size factor is the rotor over the ground's width at zoom zero`() {
+    fun `a violating aircraft uses the red picture, and the size factor is the picture's width on the ground over the ground's width at zoom zero`() {
         val scene = LzScene.of(diagram(DiagramGraphics(helicopters = listOf(helo(1, 34.5, -84.1), helo(2, 34.5, -84.0995)))), null, profiles, uh60)
         val helos = features(scene).filter { role(it) == "heli" }
         assertEquals("ac-uh60-violation", prop(helos[0], "icon").jsonPrimitive.content)
         val k0 = prop(helos[0], "k0").jsonPrimitive.doubleOrNull!!
-        assertEquals(16.357 / (78_271.516964 * cos(Math.toRadians(34.5))) / LzScene.AIRCRAFT_ICON_PX, k0, 1e-12)
+        val pictureM = 16.357 * AircraftIcons.frame("uh60").widthPerRotorDiameter                     // the rotor, and the picture round it
+        assertEquals(pictureM / (78_271.516964 * cos(Math.toRadians(34.5))) / LzScene.AIRCRAFT_ICON_PT, k0, 1e-12)
         val calm = LzScene.of(diagram(DiagramGraphics(helicopters = listOf(helo(1, 34.5, -84.1)))), null, profiles, uh60)
         assertEquals("ac-uh60-normal", prop(features(calm).first { role(it) == "heli" }, "icon").jsonPrimitive.content)
     }
