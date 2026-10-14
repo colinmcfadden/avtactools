@@ -30,6 +30,7 @@ import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramGeometry
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
+import app.ezpztac.model.Doghouses
 import app.ezpztac.model.JsNumber
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.Notams
@@ -689,7 +690,7 @@ class DiagramsViewModel @Inject constructor(
             status is AnalysisStatus.Failed && status.diagramId == diagram.id -> AnalysisUi.Failed(status.message)
             else -> AnalysisUi.Idle
         },
-        summary = summaryOf(diagram, slopes[diagram.id], chosen),
+        summary = summaryOf(diagram, slopes[diagram.id], chosen, weatherState),
         weather = if (diagram.canEditGraphics) weatherOf(weatherState) else null,           // the web shows the weather once there is an analysis
         aircraft = airframes,
         sync = listed?.sync,
@@ -717,16 +718,22 @@ class DiagramsViewModel @Inject constructor(
         return listOf(if (grid != null) "Boundary, target $grid and slope analysis" else "Boundary, target and slope analysis", graphics)
     }
 
-    /** The tiles for an analysed diagram, for the mission aircraft ([aircraft]): how many of them fit is what the capacity tile says. */
-    private fun summaryOf(diagram: Diagram, slope: SlopeState?, aircraft: AircraftProfile): SummaryUi? {
+    /**
+     * The tiles for an analysed diagram, for the mission aircraft ([aircraft]): how many of them fit is what the capacity tile says. The slope
+     * is judged at the flight data's landing heading, in the steady wind of the report the weather tiles show for this LZ/PZ ([weather]).
+     */
+    private fun summaryOf(diagram: Diagram, slope: SlopeState?, aircraft: AircraftProfile, weather: WeatherState): SummaryUi? {
         val boundary = DiagramGeometry.boundary(diagram)
         if (diagram.status != DiagramStatus.ANALYZED || boundary.isEmpty()) return null
         val fit = LzSummary.areaAndCapacity(boundary, aircraft)
         val key = analysis.boundaryKey(diagram)
         val tile = when {
             slope is SlopeState.Ready && slope.boundaryKey == key -> {
-                val directional = slope.analysis.directional?.let { LzSummary.Directional(it.noseHighMaxDeg, it.noseLowMaxDeg, it.crossSlopeMaxDeg) }
-                SlopeTileUi.Measured(LzSummary.slopeCall(slope.analysis.stats.maxDeg, directional), slope.analysis.source, slope.analysis.resolutionM)
+                val byHeading = slope.analysis.byHeading?.map { LzSummary.HeadingSlope(it.heading, it.noseHighMaxDeg, it.noseLowMaxDeg, it.crossSlopeMaxDeg) }
+                val call = LzSummary.slopeCall(
+                    slope.analysis.stats.maxDeg, byHeading, Doghouses.landingHeading(diagram.flightData), LzSummary.slopeWindOf(weather.snapshot?.observation),
+                )
+                SlopeTileUi.Measured(call, slope.analysis.source, slope.analysis.resolutionM)
             }
             slope is SlopeState.Unavailable -> SlopeTileUi.Unavailable(slope.message)
             else -> SlopeTileUi.Measuring                               // not asked for yet, in flight, or measured for a boundary that has since moved

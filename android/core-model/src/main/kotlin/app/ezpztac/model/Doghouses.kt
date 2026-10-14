@@ -30,6 +30,19 @@ public object Doghouses {
     /** How the box is turned: the leading integer of the stored heading (`"270°"` is 270), or 0. Not wrapped, so `"-90°"` is -90. */
     public fun rotation(doghouse: JsonObject): Double = orZero(JsValue.parseInt(jsString(doghouse["heading"])))
 
+    /**
+     * The landing heading a flight data's `landing_hdg` gives ([value], as stored: the landing doghouse writes it), read as the box reads its
+     * text, by its leading integer (`"270°"` is 270, `"-90°"` is 270), as 0..359: the web's `landingHeadingOf` (`feature/terrain/slopeCall.js`).
+     * Null when there is none: unlike the box, which draws an unreadable heading as north, a heading that cannot be read is not taken as 000.
+     */
+    public fun landingHeadingOf(value: JsonElement?): Int? {
+        val degrees = JsValue.parseInt(jsString(value))
+        return if (degrees.isFinite()) (((degrees % 360) + 360) % 360).toInt() else null
+    }
+
+    /** The landing heading of [flightData] ([landingHeadingOf] its `landing_hdg`), the one the slope tile judges. */
+    public fun landingHeading(flightData: JsonObject): Int? = landingHeadingOf(flightData["landing_hdg"])
+
     /** What the label and the four rows of a doghouse show. [id] is null when the doghouse has no label. */
     public data class Display(val id: String?, val heading: String, val minutes: String, val seconds: String, val distance: Double, val airspeed: Double) {
         /** The distance as the box prints it: 3.13 is "3.13", 5.0 is "5". */

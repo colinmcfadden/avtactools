@@ -222,7 +222,7 @@ private fun SlopeTile(slope: SlopeTileUi) {
                 LzSummary.SlopeLevel.DANGER -> MaterialTheme.colorScheme.error
             }
             Surface(
-                modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Maximum terrain slope ${oneDecimal(slope.call.maxDeg)} degrees. ${slope.call.label}." },
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = slopeSpoken(slope.call) },
                 shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant, border = BorderStroke(2.dp, color),
             ) {
                 Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
@@ -230,6 +230,10 @@ private fun SlopeTile(slope: SlopeTileUi) {
                     Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("${oneDecimal(slope.call.maxDeg)}°", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
                         Text(slope.call.label, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = color)
+                    }
+                    // The heading recommended and the wind the limits are for (the web's smaller lines under the slope).
+                    slope.call.lines.forEach { line ->
+                        Text(line, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
                     }
                     Text(
                         "${slope.source} · ${oneDecimal(slope.resolutionM)} m cells",
@@ -239,6 +243,16 @@ private fun SlopeTile(slope: SlopeTileUi) {
             }
         }
     }
+}
+
+/**
+ * What a screen reader hears for the slope tile: the slope, its call and the lines under it, with the degree and minus signs in words
+ * ("Recommended 270 degrees, into wind. Wind 12 knots: limits minus 4 degrees.").
+ */
+internal fun slopeSpoken(call: LzSummary.SlopeCall): String {
+    fun spoken(line: String) = line.replace(" · ", ", ").replace("\u2212", "minus ").replace(" kt", " knots").replace("°", " degrees")
+    val lines = call.lines.joinToString("") { " ${spoken(it)}." }
+    return "Maximum terrain slope ${oneDecimal(call.maxDeg)} degrees. ${call.label}.$lines"
 }
 
 /** 4050 as "4,050", written here rather than by the platform's formatter, which can emit another locale's digits. */

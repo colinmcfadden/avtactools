@@ -24,6 +24,7 @@ import app.ezpztac.model.WeatherSnapshot
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.DirectionalSlope
 import app.ezpztac.network.FieldAnalysis
+import app.ezpztac.network.HeadingSlope
 import app.ezpztac.network.SlopeStats
 import app.ezpztac.network.SlopeThresholds
 import app.ezpztac.network.TerrainAnalysis
@@ -78,10 +79,17 @@ class DiagramsViewModelTest {
     private val grid = "16S GD 66993 52949"
 
     private companion object {
-        fun slope(maxDeg: Double, directional: DirectionalSlope? = null) = TerrainAnalysis(
+        /** The table by heading of a plane of [deg] rising toward [toward], as the server rounds it. */
+        fun plane(deg: Double, toward: Int): List<HeadingSlope> = (0 until 360).map { h ->
+            val along = deg * Math.cos(Math.toRadians((h - toward).toDouble()))
+            fun tenth(v: Double) = Math.round(v * 10) / 10.0
+            HeadingSlope(h, tenth(maxOf(along, 0.0)), tenth(maxOf(-along, 0.0)), tenth(Math.abs(deg * Math.sin(Math.toRadians((h - toward).toDouble())))))
+        }
+
+        fun slope(maxDeg: Double, directional: DirectionalSlope? = null, byHeading: List<HeadingSlope>? = null) = TerrainAnalysis(
             status = "success", overlay = "data:image/png;base64,AA==", bounds = listOf(listOf(34.7, -84.1), listOf(34.8, -84.0)),
             source = "local_highres_cog", resolutionM = 10.2, verticalDatum = "NAVD88",
-            stats = SlopeStats(maxDeg, maxDeg - 1, 0.0, 0.0, 0.0, 900, 94_000.0), directional = directional,
+            stats = SlopeStats(maxDeg, maxDeg - 1, 0.0, 0.0, 0.0, 900, 94_000.0), directional = directional, byHeading = byHeading,
             thresholds = SlopeThresholds(listOf(3.0, 6.0, 10.0, 15.0), Uh60Limits(6.0, 15.0, 15.0)),
         )
     }
@@ -90,8 +98,12 @@ class DiagramsViewModelTest {
     private class Terrain : TerrainApi {
         var find: suspend (LatLon) -> FieldAnalysis = { FieldAnalysis("success", listOf(listOf(34.71, -84.09), listOf(34.71, -84.01), listOf(34.79, -84.01), listOf(34.79, -84.09)), "4050", "Field detected") }
         var measure: suspend (List<LatLon>) -> TerrainAnalysis = { slope(4.2) }
+        var measured = 0
         override suspend fun analyzeField(at: LatLon): FieldAnalysis = find(at)
-        override suspend fun terrainAnalysis(polygon: List<LatLon>, landingHeadingDeg: Double?): TerrainAnalysis = measure(polygon)
+        override suspend fun terrainAnalysis(polygon: List<LatLon>, landingHeadingDeg: Double?): TerrainAnalysis {
+            measured++
+            return measure(polygon)
+        }
     }
 
     /** A weather service whose answers a test chooses; `answer` throws to make a failure. */
@@ -502,11 +514,12 @@ class DiagramsViewModelTest {
         advanceUntilIdle()
         val done = r.model.state.value.current!!
         assertEquals(AnalysisUi.Idle, done.analysis)
-        assertEquals(SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2), "local_highres_cog", 10.2), done.summary!!.slope)
+        val heading = "Heading limits not checked (server not updated)"                       // slope(4.2) is an older server's: no table by heading
+        assertEquals(SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2, lines = listOf(heading)), "local_highres_cog", 10.2), done.summary!!.slope)
     }
 
     @Test
-    fun `a steep slope with no landing heading asks for one, and with a heading over the limit says so`() = runTest(dispatcher) {
+    fun `an older server's steep slope asks for a heading, and says no heading was judged`() = runTest(dispatcher) {
         val r = rig()
         r.terrain.measure = { slope(16.0) }
         r.model.create("LZ HAWK", grid)
@@ -516,14 +529,39 @@ class DiagramsViewModelTest {
         val call = (r.model.state.value.current!!.summary!!.slope as SlopeTileUi.Measured).call
         assertEquals("HEADING REQUIRED", call.label)
         assertEquals(LzSummary.SlopeLevel.WARNING, call.level)
+        assertEquals(listOf(LzSummary.HEADINGS_NOT_CHECKED), call.lines)
+    }
 
-        r.terrain.measure = { slope(8.0, DirectionalSlope(270.0, 7.0, 1.0, 1.0, 5.0, 0.0, 0.0)) }
+    @Test
+    fun `the slope is judged at the landing heading in the wind the weather tiles show, again as either changes`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.measure = { slope(8.0, byHeading = plane(8.0, toward = 90)) }
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
         r.model.analyze()
         advanceUntilIdle()
-        // Analysing again measures again, so the new numbers replace the old.
-        val limited = (r.model.state.value.current!!.summary!!.slope as SlopeTileUi.Measured).call
-        assertEquals("LIMIT EXCEEDED", limited.label)
-        assertEquals(LzSummary.SlopeLevel.DANGER, limited.level)
+        fun call() = (r.model.state.value.current!!.summary!!.slope as SlopeTileUi.Measured).call
+        // The analysis makes the standard doghouses, landing at 000°: across an 8° slope, within 15°. No report yet, so no wind is counted.
+        assertEquals("LANDING", call().label)
+        assertEquals(0, call().heading)
+        assertEquals(listOf("Recommended 000° · landing heading", "No wind report: limits not reduced for wind"), call().lines)
+
+        // Turned to land down the slope: 8° nose down is over the 6° limit. Judged at once, with no request.
+        val asked = r.terrain.measured
+        r.session.edit("Heading") { it.copy(flightData = JsonObject(it.flightData + ("landing_hdg" to JsonPrimitive("270°")))) }
+        advanceUntilIdle()
+        assertEquals("LIMIT EXCEEDED", call().label)
+        assertEquals(LzSummary.SlopeLevel.DANGER, call().level)
+        assertEquals(270, call().heading)
+        assertEquals("Recommended 225° · 45° off landing heading", call().lines.first())
+        assertEquals(asked, r.terrain.measured)
+
+        // A report comes: 12 kt from 310 takes 4° off each limit (2° nose down), and the recommendation turns as near into it as that allows.
+        r.model.refreshWeather()
+        advanceUntilIdle()
+        assertEquals(listOf("Recommended 350° · 40° off the wind", "Wind 12 kt: limits \u22124°"), call().lines)
+        assertEquals(LzSummary.SlopeLimits(11, 2, 11, 4, false), call().limits)
+        assertEquals(asked, r.terrain.measured)
     }
 
     @Test

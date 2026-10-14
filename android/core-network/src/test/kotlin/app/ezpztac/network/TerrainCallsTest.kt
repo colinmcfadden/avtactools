@@ -113,6 +113,22 @@ class TerrainCallsTest {
     }
 
     @Test
+    fun `the analysis carries the steepest slope for every whole heading, whatever heading was sent`() = runBlocking<Unit> {
+        for (name in listOf("terrain-analysis", "terrain-analysis: no landing heading")) {
+            Rig().use { rig ->
+                rig.serve { Recorded.mock(name) }
+                val table = rig.client.terrainAnalysis(polygon).byHeading!!
+                assertEquals((0 until 360).toList(), table.map { it.heading }, name)                 // one entry a heading, in order
+                // The recorded ground (the synthetic ramp) rises east, 3.3° at its steepest: up it facing east, down it facing west, across it facing north or south.
+                assertEquals(HeadingSlope(90, 3.3, 0.0, 0.0), table[90], name)
+                assertEquals(HeadingSlope(270, 0.0, 3.3, 0.0), table[270], name)
+                assertEquals(HeadingSlope(0, 0.0, 0.0, 3.3), table[0], name)
+                assertEquals(HeadingSlope(180, 0.0, 0.0, 3.3), table[180], name)
+            }
+        }
+    }
+
+    @Test
     fun `the server's refusals of a slope request come through with their status`() = runBlocking<Unit> {
         Rig().use { rig ->
             val cases = listOf(

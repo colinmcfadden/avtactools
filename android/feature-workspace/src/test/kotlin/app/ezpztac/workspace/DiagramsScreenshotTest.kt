@@ -60,8 +60,13 @@ class DiagramsScreenshotTest {
     private fun open(status: DiagramStatus, analysis: AnalysisUi = AnalysisUi.Idle, summary: SummaryUi? = null) =
         ActiveDiagramUi("a", "LZ HAWK", status, "16S GD 66993 52949", canAnalyze = true, analysis = analysis, summary = summary, sync = SyncStatus.SYNCED, conflictOf = null)
 
-    private fun measured(maxDeg: Double, label: String, level: LzSummary.SlopeLevel) =
-        SummaryUi("UH-60L", 13, 854_831, "4050", SlopeTileUi.Measured(LzSummary.SlopeCall(level, label, maxDeg), "local_highres_cog", 10.2))
+    private fun measured(maxDeg: Double, label: String, level: LzSummary.SlopeLevel, lines: List<String> = LANDING_LINES) =
+        SummaryUi("UH-60L", 13, 854_831, "4050", SlopeTileUi.Measured(LzSummary.SlopeCall(level, label, maxDeg, lines = lines), "local_highres_cog", 10.2))
+
+    private companion object {
+        val LANDING_LINES = listOf("Recommended 270° · into wind", "Wind 12 kt: limits \u22124°")
+        val LIMIT_LINES = listOf("No heading keeps the whole LZ within limits: best 045°, nose up 3.4° over", "Wind 16 kt: limits \u22126°, nose down prohibited above 15 kt")
+    }
 
     @Test fun cardToAnalyze() = shot("card-analyze", DiagramsUiState(current = open(DiagramStatus.TARGETED), rows = rows))
     @Test fun cardFindingArea() = shot("card-finding", DiagramsUiState(current = open(DiagramStatus.TARGETED, AnalysisUi.Running(AnalysisStatus.Running.Stage.FINDING_AREA)), rows = rows))
@@ -74,10 +79,19 @@ class DiagramsScreenshotTest {
     @Test fun cardLanding() = shot("card-landing", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(4.2, "LANDING", LzSummary.SlopeLevel.SAFE)), rows = rows))
     @Test fun cardCaution() = shot("card-caution", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(12.4, "CAUTION", LzSummary.SlopeLevel.WARNING)), rows = rows))
     @Test fun cardLimitNight() = shot(
-        "card-limit-night", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(16.0, "LIMIT EXCEEDED", LzSummary.SlopeLevel.DANGER)), rows = rows), mode = ThemeMode.Night,
+        "card-limit-night", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(16.0, "LIMIT EXCEEDED", LzSummary.SlopeLevel.DANGER, LIMIT_LINES)), rows = rows), mode = ThemeMode.Night,
     )
     @Test fun cardLimitLight() = shot(
-        "card-limit-light", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(16.0, "LIMIT EXCEEDED", LzSummary.SlopeLevel.DANGER)), rows = rows), mode = ThemeMode.Light,
+        "card-limit-light", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(16.0, "LIMIT EXCEEDED", LzSummary.SlopeLevel.DANGER, LIMIT_LINES)), rows = rows), mode = ThemeMode.Light,
+    )
+    @Test fun cardOlderServer() = shot("card-older-server", DiagramsUiState(
+        current = open(DiagramStatus.ANALYZED, summary = measured(16.0, "HEADING REQUIRED", LzSummary.SlopeLevel.WARNING, listOf(LzSummary.HEADINGS_NOT_CHECKED))), rows = rows,
+    ))
+    @Test @Config(qualifiers = "w411dp-h2400dp-xxhdpi", fontScale = 2.0f) fun cardLimitLarge() = shot(
+        "card-limit-large", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(16.0, "LIMIT EXCEEDED", LzSummary.SlopeLevel.DANGER, LIMIT_LINES)), rows = rows),
+    )
+    @Test @Config(qualifiers = "w411dp-h2400dp-xxhdpi", fontScale = 2.0f) fun cardLandingLargeNight() = shot(
+        "card-landing-large-night", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(4.2, "LANDING", LzSummary.SlopeLevel.SAFE)), rows = rows), mode = ThemeMode.Night,
     )
     @Test fun cardNoSlope() = shot("card-no-slope", DiagramsUiState(
         current = open(DiagramStatus.ANALYZED, summary = SummaryUi("UH-60L", 13, 854_831, "TBD", SlopeTileUi.Unavailable("No terrain data covers this landing zone."))), rows = rows,
