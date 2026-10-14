@@ -560,7 +560,7 @@ body.export-mode-active .leaflet-control-container {
   line-height: 1;
 }
 
-/* The recommended heading and the wind's limits, under the slope */
+/* What was judged at the landing heading and the wind's limits, under the slope */
 .slope-advice {
   font-size: 10px;
   font-weight: 600;

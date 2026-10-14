@@ -6,7 +6,9 @@ import {
   centerSpacingM,
   tipClearanceM,
 } from "../feature/aircraft/aircraftProfiles";
-import { slopeCallFor } from "../feature/terrain/slopeCall";
+import { landingHeadingOf, slopeCallFor } from "../feature/terrain/slopeCall";
+import { slopeProfileFor } from "../feature/terrain/groundProfile";
+import SlopeProfile from "../feature/terrain/SlopeProfile";
 import { slopeWindFor } from "../feature/weather/useWeather";
 
 /**
@@ -37,6 +39,8 @@ const MissionSummary = ({
   // 2. SLOPES: judged at the landing doghouse's heading, with the limits reduced for this LZ/PZ's steady wind (the report the tiles below show)
   const wind = slopeWindFor(winds, targetLocation);
   const slopeStatus = useMemo(() => slopeCallFor(terrainData, { landingHdg, wind }), [terrainData, landingHdg, wind]);
+  // The ground along and across the same landing heading: the approach, the LZ and the departure.
+  const groundProfile = useMemo(() => slopeProfileFor(terrainData?.profiles, landingHeadingOf(landingHdg)), [terrainData, landingHdg]);
 
   if (!detectedLZ) return null;
 
@@ -77,6 +81,8 @@ const MissionSummary = ({
           <div key={line} className="slope-advice">{line}</div>
         ))}
       </div>
+
+      <SlopeProfile profile={groundProfile} />
 
       {/* --- ROW 3: WEATHER TRIO (Span 2 each) --- */}
       

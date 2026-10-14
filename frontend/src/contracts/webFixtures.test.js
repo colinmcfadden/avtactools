@@ -8,6 +8,7 @@ import { calculateUH60Capacity } from "../utils/helicopterCapacity";
 import { convertToLatLongString } from "../utils/Helpers";
 import { lzAreaAndCapacity } from "../components/MissionSummary";
 import { landingHeadingOf, slopeCallFor, slopeLimitsFor } from "../feature/terrain/slopeCall";
+import { profileLine, slopeProfileFor } from "../feature/terrain/groundProfile";
 import {
   FALLBACK_PROFILE,
   capacityForArea,
@@ -909,6 +910,89 @@ const summaryFixture = () => ({
   })),
 });
 
+// Ground for the slope profile as the server measures it (`profiles` of /api/terrain-analysis): a line through the LZ's middle every 2°,
+// heights every 30 m from 300 m behind the middle to 300 m ahead. A plane rising `deg` toward `toward` has, `d` metres along heading h, the
+// height d · cos(h - toward) · tan(deg); an LZ that is a square 200 m across (its sides north-south and east-west) is crossed `lz` metres
+// out, at its sides or its corners.
+const PROFILE_STEP_M = 30;
+const PROFILE_HALF_M = 300;
+const squareSpan = (heading) => {
+  const r = 100 / Math.max(Math.abs(Math.cos(heading * RAD)), Math.abs(Math.sin(heading * RAD)));
+  return [-Math.round(r * 10) / 10, Math.round(r * 10) / 10];
+};
+const planeProfiles = (deg, toward, base = 1200) => ({
+  center: [34.7, -84.1],
+  stepM: PROFILE_STEP_M,
+  halfLengthM: PROFILE_HALF_M,
+  headingStepDeg: 2,
+  lines: Array.from({ length: 90 }, (_, k) => {
+    const heading = 2 * k;
+    const count = (2 * PROFILE_HALF_M) / PROFILE_STEP_M + 1;
+    return {
+      heading,
+      elevationsFt: Array.from({ length: count }, (__, i) => {
+        const d = i * PROFILE_STEP_M - PROFILE_HALF_M;
+        return Math.round((base + d * Math.cos((heading - toward) * RAD) * Math.tan(deg * RAD)) * 3.28084 * 10) / 10;
+      }),
+      lz: squareSpan(heading),
+    };
+  }),
+});
+const EAST5 = planeProfiles(5, 90);
+const PROFILE_GROUND = {
+  "a plane of 5° rising east": EAST5,
+  "level ground": planeProfiles(0, 0),
+  "a plane of 0.02° rising east": planeProfiles(0.02, 90),
+  "the 5° plane with no ground behind the middle at 090": {
+    ...EAST5, lines: EAST5.lines.map((l) => (l.heading === 90 ? { ...l, elevationsFt: l.elevationsFt.map((h, i) => (i < 5 ? null : h)) } : l)),
+  },
+  "the 5° plane with no ground at the LZ's edge at 090": {
+    ...EAST5, lines: EAST5.lines.map((l) => (l.heading === 90 ? { ...l, elevationsFt: l.elevationsFt.map((h, i) => (i === 7 ? null : h)) } : l)),
+  },
+  "the 5° plane without its line at 090": { ...EAST5, lines: EAST5.lines.filter((l) => l.heading !== 90) },
+  "the 5° plane with no LZ crossing at 000": { ...EAST5, lines: EAST5.lines.map((l) => (l.heading === 0 ? { ...l, lz: null } : l)) },
+  "the 5° plane with a step of 0": { ...EAST5, stepM: 0 },
+  "the 5° plane with 4° between lines": { ...EAST5, headingStepDeg: 4, lines: EAST5.lines.filter((l) => l.heading % 4 === 0) },
+};
+
+const PROFILE_CASES = [
+  // Which line, and which way round.
+  ["up the slope, level across it", "a plane of 5° rising east", 90],
+  ["down the slope", "a plane of 5° rising east", 270],
+  ["across the slope", "a plane of 5° rising east", 0],
+  ["across the other way", "a plane of 5° rising east", 180],
+  ["an odd heading takes the line above it", "a plane of 5° rising east", 271],
+  ["359 is north", "a plane of 5° rising east", 359],
+  ["to a corner of the square LZ", "a plane of 5° rising east", 45],
+  ["level ground", "level ground", 120],
+  ["under a foot through the LZ is level", "a plane of 0.02° rising east", 90],
+  // Gaps and what is missing.
+  ["a gap in the ground behind the middle, not in the LZ", "the 5° plane with no ground behind the middle at 090", 90],
+  ["no ground at an edge of the LZ: no change through it", "the 5° plane with no ground at the LZ's edge at 090", 90],
+  ["no line at the heading: no profile", "the 5° plane without its line at 090", 90],
+  ["the across line missing: no profile", "the 5° plane without its line at 090", 0],
+  ["an across line that misses the LZ", "the 5° plane with no LZ crossing at 000", 90],
+  ["a step of 0 is not read", "the 5° plane with a step of 0", 90],
+  ["lines 4° apart: the nearest, halves up", "the 5° plane with 4° between lines", 98],
+  ["no landing heading: no profile", "a plane of 5° rising east", null],
+];
+
+const profileFixture = () => ({
+  description: "The slope profile, as frontend/src/feature/terrain/groundProfile.js reads the `profiles` of /api/terrain-analysis for a "
+    + "landing heading: `ground` names each `profiles` (a line through the LZ's middle every headingStepDeg, heights in feet every stepM "
+    + "from halfLengthM behind the middle to halfLengthM ahead, null where there is none, and `lz`, where the boundary is, metres from the "
+    + "middle). `cases`: slopeProfileFor(ground, heading). `along` is the line nearest the heading (Math.round of heading / step, halves "
+    + "up; 180 or more is the opposite line read backwards), `across` the one 90° to its right (left to right); each with `heading` "
+    + "(0..359), `distancesFt` (behind negative), `elevationsFt`, `lz` (feet) or null, `changeFt` (the rise through the LZ, from where the "
+    + "line enters it to where it leaves, its heights there read between samples; null when either has none) and `averageDeg` "
+    + "(atan of the change over the LZ's length), and `words`. Null when there is no heading, either line is missing, or `profiles` "
+    + "cannot be read (stepM or headingStepDeg not above 0). `line` cases are profileLine alone for headings past 359.",
+  generatedBy: GENERATED_BY,
+  ground: PROFILE_GROUND,
+  cases: PROFILE_CASES.map(([name, ground, heading]) => ({ name, ground, heading, expected: clean(slopeProfileFor(PROFILE_GROUND[ground], heading)) })),
+  line: [449, 540, 719].map((heading) => ({ ground: "a plane of 5° rising east", heading, expected: clean(profileLine(EAST5, heading)) })),
+});
+
 /* ---------------------------------------------------------------------- */
 
 describe("web reference fixtures", () => {
@@ -917,9 +1001,29 @@ describe("web reference fixtures", () => {
   it("planning/route.json", () => settle("planning/route.json", routeFixture()));
   it("workspace/diagram.json", () => settle("workspace/diagram.json", diagramFixture()));
   it("planning/summary.json", () => settle("planning/summary.json", summaryFixture()));
+  it("planning/profile.json", () => settle("planning/profile.json", profileFixture()));
 });
 
 describe("fixture sanity", () => {
+  it("draws every kind of slope profile", () => {
+    const f = profileFixture();
+    const got = Object.fromEntries(f.cases.map((c) => [c.name, c.expected]));
+    expect(got["up the slope, level across it"].along.words).toBe("Along 090°: rises 57 ft through the LZ, 5.0° on average");
+    expect(got["down the slope"].along.words).toBe("Along 270°: falls 57 ft through the LZ, 5.0° on average");
+    expect(got["up the slope, level across it"].across.words).toBe("Across, left to right: level through the LZ");
+    expect(got["across the slope"].across.words).toBe("Across, left to right: rises 57 ft through the LZ, 5.0° on average");   // facing north, east on the right
+    expect(got["level ground"].along.words).toBe("Along 120°: level through the LZ");
+    expect(got["under a foot through the LZ is level"].along.words).toBe("Along 090°: level through the LZ");
+    expect(got["an across line that misses the LZ"].across.words).toBe("Across, left to right: the line misses the LZ");
+    expect(got["an odd heading takes the line above it"].along.heading).toBe(272);
+    expect(got["359 is north"].along.heading).toBe(0);
+    expect(got["no ground at an edge of the LZ: no change through it"].along.changeFt).toBeNull();
+    expect(got["a gap in the ground behind the middle, not in the LZ"].along.changeFt).not.toBeNull();
+    ["no line at the heading: no profile", "the across line missing: no profile", "a step of 0 is not read", "no landing heading: no profile"]
+      .forEach((name) => expect(got[name]).toBeNull());
+    expect(got["lines 4° apart: the nearest, halves up"].along.heading).toBe(100);
+  });
+
   it("covers both outcomes of every coordinate-text function", () => {
     const f = coordinateFixture();
     expect(f.parse.some((c) => c.expected === null)).toBe(true);
