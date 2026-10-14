@@ -53,13 +53,14 @@ jobs:
 
       # The pinned versions from requirements.txt, for just what these tests import. (GET /api/config reads the
       # Mapbox token from export_service, which pulls in rasterio, numpy and mercantile; the recorded terrain and
-      # threat responses need OpenCV, headless. Not torch, which the SAM, terrain and LiDAR tests need and these
-      # do not.) The live service's websockets and the Postgres driver for the live chain come from their own pins.
+      # threat responses need OpenCV, headless, and a slope analysis's contour lines contourpy. Not torch, which the
+      # SAM, terrain and LiDAR tests need and these do not.) The live service's websockets and the Postgres driver
+      # for the live chain come from their own pins.
       - name: Install
         run: |
           { for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
                      python-dotenv PyYAML openpyxl pillow pygeodesy rasterio numpy mercantile affine \
-                     opencv-python-headless psycopg2-binary; do
+                     opencv-python-headless contourpy psycopg2-binary; do
               grep -i "^$p==" backend/requirements.txt
             done
             grep -i "^websockets==" backend/realtime/requirements.txt

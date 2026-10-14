@@ -491,6 +491,10 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
   `backend.yaml` (the backend's contract tests: a named list of pytest files that
   need no SAM weights, terrain data or GPU), each only when its paths change. The
   rest of backend pytest and of the web's Jest suite runs nowhere but on your machine.
+  `backend.yaml` installs only the packages those files import, named in its Install
+  step and pinned from `requirements.txt`: a new import in code they reach goes on that
+  list too, or CI fails with `ModuleNotFoundError` while every local run passes (OpenCV
+  once, contourpy for the slope contours since). To check, run the list in a clean venv.
 - **On a Windows checkout** (`core.autocrlf=true`), a text file compared byte for
   byte needs an `eol=lf` rule in `.gitattributes`, or the checkout's CRLF fails
   the comparison while CI passes. And Windows and Linux maths libraries can differ
