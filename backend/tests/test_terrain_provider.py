@@ -19,6 +19,10 @@ from terrain_provider import (
     LocalRasterCatalog,
     TerrainGrid,
     _contour_interval_ft,
+    _local_frame,
+    _lz_span,
+    _sample,
+    _slope_profiles,
     _polygon_mask,
     _slope_contours,
     _directional_summary,
@@ -375,6 +379,97 @@ class ContourTests(unittest.TestCase):
         self.assertIn(contours["intervalFt"], (1, 2, 5, 10, 20, 25, 50, 100))
         self.assertTrue(contours["lines"])
         self.assertTrue(any(line["label"] for line in contours["lines"]))
+
+
+
+class ProfileTests(unittest.TestCase):
+    """The ground along lines through the LZ (`profiles` of the analysis), for the slope profile the clients draw."""
+
+    # A square LZ about 370 m across, on the ramp HornSlopeTests writes: the ground rises a metre every 0.0001° east, level north and south.
+    POLYGON = [[34.098, -117.097], [34.098, -117.093], [34.094, -117.093], [34.094, -117.097]]
+
+    @staticmethod
+    def _write_wide_ramp(directory):
+        """The ramp, 4 km across: wide enough for the lines through the LZ to reach 300 m past it on ground the DEM covers."""
+        elevation = np.tile(np.arange(400, dtype=np.float32), (400, 1))
+        with rasterio.open(
+            Path(directory) / "wide-ramp.tif", "w", driver="GTiff", height=400, width=400, count=1, dtype=elevation.dtype,
+            crs="EPSG:4326", transform=from_origin(-117.115, 34.115, 0.0001, 0.0001), nodata=-9999,
+        ) as dataset:
+            dataset.write(elevation, 1)
+
+    def _profiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self._write_wide_ramp(directory)
+            env = {"TERRAIN_DATA_DIR": directory, "TERRAIN_SOURCE": "local"}
+            with patch.dict("os.environ", env, clear=False), patch("terrain_provider.LOCAL_CATALOG", LocalRasterCatalog()):
+                return _slope_profiles(self.POLYGON)
+
+    def test_the_middle_is_the_area_centroid(self):
+        # A triangle's centroid is the mean of its corners; a square's is its middle.
+        (lat, lon), xs, ys, _ = _local_frame([[0.0, 0.0], [0.0, 0.003], [0.003, 0.0]])
+        self.assertAlmostEqual(lat, 0.001, places=6)
+        self.assertAlmostEqual(lon, 0.001, places=6)
+        (lat, lon), _, _, _ = _local_frame(self.POLYGON)
+        self.assertAlmostEqual(lat, 34.096, places=6)
+        self.assertAlmostEqual(lon, -117.095, places=6)
+
+    def test_the_lz_is_where_a_line_through_its_middle_crosses_the_boundary(self):
+        xs, ys = np.array([-100.0, 100.0, 100.0, -100.0]), np.array([50.0, 50.0, -50.0, -50.0])     # 200 m east-west, 100 m north-south
+        self.assertEqual(_lz_span(xs, ys, 90), [-100.0, 100.0])
+        self.assertEqual(_lz_span(xs, ys, 0), [-50.0, 50.0])
+        span = _lz_span(xs, ys, 45)                                                                   # to the corner of the shorter side
+        self.assertAlmostEqual(span[0], -70.7, places=1)
+        self.assertAlmostEqual(span[1], 70.7, places=1)
+        self.assertIsNone(_lz_span(np.array([1.0, 2.0, 3.0]), np.array([1.0, 1.0, 2.0]), 270))     # a line that misses it
+
+    def test_heights_are_read_between_cells_and_none_where_there_is_no_ground(self):
+        dem = np.array([[0.0, 10.0, 20.0, 30.0], [0.0, 10.0, 20.0, np.nan], [0.0, 10.0, 20.0, 30.0], [0.0, 10.0, 20.0, 30.0]], dtype=np.float32)
+        grid = TerrainGrid(dem, from_origin(500000.0, 3770000.0, 10.0, 10.0), CRS.from_epsg(32611), (0, 0, 0, 0), "t", 10.0, 10.0, 10.0, "t")
+        def at(east, south):
+            lons, lats = warp(CRS.from_epsg(32611), "EPSG:4326", [500000.0 + east], [3770000.0 - south])
+            return _sample(grid, lats, lons)[0]
+        self.assertAlmostEqual(at(10.0, 10.0), 5.0, places=3)          # halfway between the first two columns' centres
+        self.assertAlmostEqual(at(15.0, 5.0), 10.0, places=3)          # on the middle column's centre
+        self.assertIsNone(at(32.0, 12.0))                              # it needs the cell with no ground
+        self.assertIsNone(at(-50.0, 10.0))                             # off the grid
+
+    def test_a_line_every_two_degrees_reaching_past_the_lz_on_the_ground_s_own_heights(self):
+        profiles = self._profiles()
+        self.assertEqual([line["heading"] for line in profiles["lines"]], list(range(0, 180, 2)))
+        self.assertEqual(profiles["headingStepDeg"], 2)
+        self.assertEqual(profiles["center"], [34.096, -117.095])
+        count = len(profiles["lines"][0]["elevationsFt"])
+        self.assertLessEqual(count, 121)
+        self.assertAlmostEqual(profiles["stepM"] * (count - 1) / 2, profiles["halfLengthM"], places=2)
+        # The farthest corner is about 230 m from the middle: the line reaches 300 m past that.
+        self.assertGreater(profiles["halfLengthM"], 520.0)
+        east = next(line for line in profiles["lines"] if line["heading"] == 90)
+        north = next(line for line in profiles["lines"] if line["heading"] == 0)
+        # Facing north the ramp is level; facing east it rises a metre every 0.0001° of longitude, about 9.2 m here.
+        known_north = [h for h in north["elevationsFt"] if h is not None]
+        self.assertLess(max(known_north) - min(known_north), 0.5)
+        middle = count // 2
+        rise_ft_per_m = (east["elevationsFt"][middle + 10] - east["elevationsFt"][middle - 10]) / (20 * profiles["stepM"])
+        metres_per_cell = 0.0001 * 111320.0 * math.cos(math.radians(34.096))
+        self.assertAlmostEqual(rise_ft_per_m, FEET_PER_METRE / metres_per_cell, delta=0.01)
+        self.assertTrue(all(h is not None for line in profiles["lines"] for h in line["elevationsFt"]))   # the ramp covers every line
+        # The LZ is about 370 m east to west and 445 m north to south.
+        self.assertAlmostEqual(east["lz"][0], -184.0, delta=2.0)
+        self.assertAlmostEqual(east["lz"][1], 184.0, delta=2.0)
+        self.assertAlmostEqual(north["lz"][1] - north["lz"][0], 445.3, delta=2.0)
+
+    def test_the_analysis_carries_its_profiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self._write_wide_ramp(directory)
+            env = {"TERRAIN_DATA_DIR": directory, "TERRAIN_SOURCE": "local"}
+            with patch.dict("os.environ", env, clear=False), patch("terrain_provider.LOCAL_CATALOG", LocalRasterCatalog()):
+                analysis = build_slope_analysis(self.POLYGON)
+        self.assertEqual(len(analysis["profiles"]["lines"]), 90)
+
+    def test_no_ground_round_the_lz_is_no_profiles(self):
+        with patch("terrain_provider.load_best_terrain", return_value=None):
+            self.assertIsNone(_slope_profiles(self.POLYGON))
 
 
 if __name__ == "__main__":

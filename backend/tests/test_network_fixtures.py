@@ -362,13 +362,15 @@ class NetworkFixtureTests(NativeAuthCase):
             self.rec("analyze-field: the map tile is unavailable", self.client.post("/api/analyze-field", headers=head, json=target))
         self.rec("analyze-field: not coordinates", self.client.post("/api/analyze-field", headers=head, json={"lat": "x", "lon": 1}))
 
-        # Slope over a real GeoTIFF: ~11 m cells rising east, with a hill in one corner, so every statistic has something to say.
-        rows, cols = np.mgrid[0:120, 0:120]
+        # Slope over a real GeoTIFF: ~11 m cells rising east, with a hill in one corner, so every statistic has something to say. It
+        # reaches 1.5 km past the LZ each way, so the lines of its slope profile do too (a local source must cover them whole); the 120
+        # cells round the LZ are the heights they always were (the ramp and the hill counted from 150 cells in).
+        rows, cols = np.mgrid[0:400, 0:400] - 150
         dem = (300.0 + 0.5 * cols + 6.0 * np.exp(-(((rows - 90) ** 2) + ((cols - 90) ** 2)) / 200.0)).astype(np.float32)
         polygon = [[34.098, -117.097], [34.098, -117.093], [34.094, -117.093], [34.094, -117.097]]
         with tempfile.TemporaryDirectory() as directory:
-            with rasterio.open(Path(directory) / "lz.tif", "w", driver="GTiff", height=120, width=120, count=1, dtype="float32",
-                               crs="EPSG:4326", transform=from_origin(-117.10, 34.10, 0.0001, 0.0001), nodata=-9999) as out:
+            with rasterio.open(Path(directory) / "lz.tif", "w", driver="GTiff", height=400, width=400, count=1, dtype="float32",
+                               crs="EPSG:4326", transform=from_origin(-117.115, 34.115, 0.0001, 0.0001), nodata=-9999) as out:
                 out.write(dem, 1)
             env = {"TERRAIN_DATA_DIR": directory, "TERRAIN_SOURCE": "local"}
             with patch.dict(os.environ, env, clear=False), patch("terrain_provider.LOCAL_CATALOG", LocalRasterCatalog()):

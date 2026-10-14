@@ -2972,7 +2972,7 @@ components:
               png: { type: string, description: "A `data:image/png;base64,` raster over `bounds`, one colour per altitude band, the lowest band on top." }
     TerrainAnalysis:
       type: object
-      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, byHeading, contours, thresholds]
+      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, byHeading, contours, profiles, thresholds]
       properties:
         status: { type: string, enum: [success] }
         overlay:
@@ -3061,6 +3061,44 @@ components:
                     type: array
                     nullable: true
                     description: "`[lat, lon]` where the height's number goes, on this piece; null on every other piece."
+                    items: { type: number }
+        profiles:
+          type: object
+          nullable: true
+          description: |
+            The ground along straight lines through the polygon's middle (`center`, its area centroid), for
+            the slope profile a client draws along and across the landing heading: one line for each
+            heading 0, 2, … 178 (`headingStepDeg`), reaching `halfLengthM` each way (300 m past the
+            polygon's farthest corner), its heights in feet every `stepM` from `halfLengthM` behind the
+            middle (the way the heading points from) to `halfLengthM` ahead, null where the terrain has
+            none; and `lz`, where the line crosses the boundary, in metres from the middle (behind
+            negative), or null. A heading of 180 or more is the opposite line read backwards. Headings
+            are true. Null when no terrain covers the ground round the polygon (a local source must
+            cover it whole). A server from before this field sends none, and a client must keep working
+            without it.
+          additionalProperties: false
+          required: [center, stepM, halfLengthM, headingStepDeg, lines]
+          properties:
+            center:
+              type: array
+              items: { type: number }
+            stepM: { type: number }
+            halfLengthM: { type: number }
+            headingStepDeg: { type: integer }
+            lines:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [heading, elevationsFt, lz]
+                properties:
+                  heading: { type: integer, minimum: 0, maximum: 179 }
+                  elevationsFt:
+                    type: array
+                    items: { type: number, nullable: true }
+                  lz:
+                    type: array
+                    nullable: true
                     items: { type: number }
         thresholds:
           type: object

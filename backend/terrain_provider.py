@@ -722,6 +722,111 @@ def _slope_contours(grid: TerrainGrid, polygon, polygon_mask: np.ndarray) -> dic
     return {"intervalFt": interval, "lines": lines}
 
 
+# The slope profiles: lines through the LZ's middle reaching this far past its farthest corner, so the ground of the approach and the
+# departure shows; one every PROFILE_HEADING_STEP_DEG of heading (a line serves its heading and the opposite one, read backwards), with at
+# most PROFILE_MAX_SAMPLES heights along each, no closer than the terrain's own cells.
+PROFILE_BEYOND_M = 300.0
+PROFILE_HEADING_STEP_DEG = 2
+PROFILE_MAX_SAMPLES = 121
+METRES_PER_DEGREE = 111320.0
+
+
+def _local_frame(polygon):
+    """The LZ's middle (its area centroid) and a flat east-north frame round it in metres, good to a metre or so over a few kilometres."""
+    lats = np.array([float(p[0]) for p in polygon])
+    lons = np.array([float(p[1]) for p in polygon])
+    lat0, lon0 = float(lats.mean()), float(lons.mean())
+    east_per_deg = METRES_PER_DEGREE * math.cos(math.radians(lat0))
+    xs, ys = (lons - lon0) * east_per_deg, (lats - lat0) * METRES_PER_DEGREE
+    x1, y1 = np.roll(xs, -1), np.roll(ys, -1)
+    cross = xs * y1 - x1 * ys
+    area = cross.sum() / 2.0
+    if abs(area) > 1e-6:
+        cx, cy = ((xs + x1) * cross).sum() / (6 * area), ((ys + y1) * cross).sum() / (6 * area)
+    else:
+        cx, cy = float(xs.mean()), float(ys.mean())
+    centre_lat, centre_lon = lat0 + cy / METRES_PER_DEGREE, lon0 + cx / east_per_deg
+    return (centre_lat, centre_lon), xs - cx, ys - cy, east_per_deg
+
+
+def _lz_span(xs, ys, heading_deg):
+    """Where a line through the middle at [heading_deg] crosses the boundary: the nearest and farthest crossings, in metres along it."""
+    ux, uy = math.sin(math.radians(heading_deg)), math.cos(math.radians(heading_deg))
+    found = []
+    for i in range(len(xs)):
+        ax, ay, bx, by = xs[i], ys[i], xs[(i + 1) % len(xs)], ys[(i + 1) % len(xs)]
+        ex, ey = bx - ax, by - ay
+        denom = ux * ey - uy * ex
+        if abs(denom) < 1e-12:
+            continue
+        t = (ax * ey - ay * ex) / denom        # along the line
+        s = (ax * uy - ay * ux) / denom        # along the edge, 0..1
+        if -1e-9 <= s <= 1 + 1e-9:
+            found.append(t)
+    return [round(float(min(found)), 1), round(float(max(found)), 1)] if len(found) >= 2 else None
+
+
+def _sample(grid: TerrainGrid, lats, lons):
+    """The grid's heights at the points, bilinearly; None where any cell it needs has no data or the point is off the grid."""
+    xs, ys = transform("EPSG:4326", grid.crs, list(lons), list(lats))
+    inverse = ~grid.transform
+    out = []
+    rows, cols = grid.elevation_m.shape
+    for x, y in zip(xs, ys):
+        col, row = inverse * (x, y)
+        col, row = col - 0.5, row - 0.5                # from the grid's corner to its cells' centres
+        c0, r0 = int(math.floor(col)), int(math.floor(row))
+        if c0 < 0 or r0 < 0 or c0 + 1 >= cols or r0 + 1 >= rows:
+            out.append(None)
+            continue
+        fc, fr = col - c0, row - r0
+        cell = grid.elevation_m[r0:r0 + 2, c0:c0 + 2].astype(np.float64)
+        if not np.isfinite(cell).all():
+            out.append(None)
+            continue
+        top = cell[0, 0] * (1 - fc) + cell[0, 1] * fc
+        bottom = cell[1, 0] * (1 - fc) + cell[1, 1] * fc
+        out.append(float(top * (1 - fr) + bottom * fr))
+    return out
+
+
+def _slope_profiles(polygon) -> dict | None:
+    """
+    The ground along lines through the LZ's middle, for the slope profile the clients draw along and across the landing heading: `center`
+    ([lat, lon]), `stepM` between heights, `halfLengthM` each way, `headingStepDeg`, and `lines`, one for each heading 0, 2, … 178, each with its
+    `elevationsFt` (from `halfLengthM` behind the middle, the way the heading points from, to `halfLengthM` ahead; null where there is no data)
+    and `lz`, where the boundary is along it in metres from the middle (behind negative), or null. A heading of 180 or more is the line of the
+    opposite one, read backwards. Null when no terrain covers the ground round the LZ.
+    """
+    centre, xs, ys, east_per_deg = _local_frame(polygon)
+    reach = float(np.hypot(xs, ys).max()) + PROFILE_BEYOND_M
+    grid = load_best_terrain(bounds_for_polygon(polygon, padding_m=reach + 60.0))
+    if grid is None:
+        return None
+    step = max(grid.resolution_m, 2 * reach / (PROFILE_MAX_SAMPLES - 1))
+    count = int(math.ceil(2 * reach / step)) + 1
+    half = step * (count - 1) / 2.0
+    distances = np.linspace(-half, half, count)
+    lines = []
+    for heading in range(0, 180, PROFILE_HEADING_STEP_DEG):
+        ux, uy = math.sin(math.radians(heading)), math.cos(math.radians(heading))
+        lats = centre[0] + distances * uy / METRES_PER_DEGREE
+        lons = centre[1] + distances * ux / east_per_deg
+        heights = _sample(grid, lats, lons)
+        lines.append({
+            "heading": heading,
+            "elevationsFt": [None if h is None else round(h * FEET_PER_METRE, 1) for h in heights],
+            "lz": _lz_span(xs, ys, heading),
+        })
+    return {
+        "center": [round(centre[0], 7), round(centre[1], 7)],
+        "stepM": round(step, 3),
+        "halfLengthM": round(half, 3),
+        "headingStepDeg": PROFILE_HEADING_STEP_DEG,
+        "lines": lines,
+    }
+
+
 def build_slope_analysis(polygon, landing_heading_deg: float | None = None) -> dict:
     """Build a clipped continuous slope-overlay response for the frontend."""
     requested = bounds_for_polygon(polygon)
@@ -762,5 +867,6 @@ def build_slope_analysis(polygon, landing_heading_deg: float | None = None) -> d
         "directional": directional,
         "byHeading": _slope_by_heading(display_mask, grad_east, grad_north),
         "contours": _slope_contours(grid, polygon, polygon_mask),
+        "profiles": _slope_profiles(polygon),
         "thresholds": {"bands": SLOPE_BANDS_DEG, "uh60": UH60_LIMITS_DEG},
     }
