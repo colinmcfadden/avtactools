@@ -45,7 +45,9 @@ WEB_MERCATOR_HALF_WORLD_M = 20037508.342789244
 # General map-band thresholds.  Directional UH-60 checks are calculated only
 # when the caller supplies a landing heading.
 SLOPE_BANDS_DEG = (3.0, 6.0, 10.0, 15.0)
-UH60_LIMITS_DEG = {"noseHigh": 6.0, "noseLow": 15.0, "crossSlope": 15.0}
+# The UH-60's slope landing limits, as the owner gives them (2026-10-13): 15° nose up (the ground rising ahead, "nose high"),
+# 6° nose down ("nose low"), 15° of cross slope. Calm-wind limits: the clients reduce them for the wind (AGENTS.md §13).
+UH60_LIMITS_DEG = {"noseHigh": 15.0, "noseLow": 6.0, "crossSlope": 15.0}
 
 
 @dataclass(frozen=True)

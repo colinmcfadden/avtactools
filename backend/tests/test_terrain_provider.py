@@ -9,7 +9,32 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from terrain_provider import LocalRasterCatalog, _directional_summary, _horn_gradients
+from terrain_provider import UH60_LIMITS_DEG, LocalRasterCatalog, _directional_summary, _horn_gradients
+
+
+def _ramp(degrees, size=9):
+    """A plane rising east at [degrees], on 1 m cells, with its gradients and the cells that have them."""
+    dem = np.tile(np.arange(size, dtype=np.float32) * np.float32(np.tan(np.radians(degrees))), (size, 1))
+    _, grad_east, grad_north = _horn_gradients(dem, 1.0, 1.0)
+    return np.isfinite(grad_east) & np.isfinite(grad_north), grad_east, grad_north
+
+
+class Uh60LimitTests(unittest.TestCase):
+    def test_the_uh60_lands_15_degrees_nose_up_and_6_nose_down(self):
+        # The owner's limits (a UH-60 pilot, 2026-10-13): nose up 15°, nose down 6°, cross slope 15°. Nose high is the ground rising
+        # ahead, the nose up; the two were once the other way round here.
+        self.assertEqual(UH60_LIMITS_DEG, {"noseHigh": 15.0, "noseLow": 6.0, "crossSlope": 15.0})
+
+    def test_eight_degrees_nose_up_is_inside_its_limit_and_eight_nose_down_is_over(self):
+        mask, grad_east, grad_north = _ramp(8.0)
+
+        uphill = _directional_summary(mask, grad_east, grad_north, 90.0)
+        downhill = _directional_summary(mask, grad_east, grad_north, 270.0)
+
+        self.assertAlmostEqual(uphill["noseHighMaxDeg"], 8.0, places=1)
+        self.assertEqual(uphill["noseHighOverLimitPct"], 0.0)
+        self.assertAlmostEqual(downhill["noseLowMaxDeg"], 8.0, places=1)
+        self.assertEqual(downhill["noseLowOverLimitPct"], 100.0)
 
 
 class HornSlopeTests(unittest.TestCase):

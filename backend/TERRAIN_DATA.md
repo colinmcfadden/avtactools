@@ -41,4 +41,4 @@ The API sends the browser a clipped PNG overlay, bounds, source name, resolution
 - Do not commit approved NGA, DTED, 3DEP, or other source data to Git.
 - Keep controlled data outside the Docker build context and mount it read-only at runtime.
 - Verify source provenance, edition/date, horizontal reference, and vertical datum before operational use. Vertical-datum differences do not change slope, but they do affect displayed MSL elevations and exports.
-- The terrain API retains optional support for 6° nose-high and 15° nose-low/cross-slope checks when a future aircraft-profile workflow supplies a landing heading. The current UI intentionally displays general terrain-slope bands only.
+- The UH-60 slope landing limits are 15° nose high (nose up), 6° nose low (nose down) and 15° cross slope with no wind (the owner's, 2026-10-13; `UH60_LIMITS_DEG`). With a `landingHeading` the API checks them for that heading (`directional`).

@@ -107,7 +107,7 @@ class TerrainCallsTest {
             assertEquals("local_highres_cog", result.source)
             assertEquals("270.0", result.directional!!.headingDeg.toString())
             assertEquals(listOf(3.0, 6.0, 10.0, 15.0), result.thresholds.bands)
-            assertEquals(Uh60Limits(noseHigh = 6.0, noseLow = 15.0, crossSlope = 15.0), result.thresholds.uh60)
+            assertEquals(Uh60Limits(noseHigh = 15.0, noseLow = 6.0, crossSlope = 15.0), result.thresholds.uh60)    // nose up 15°, nose down 6°
             assertTrue(result.stats.sampleCount > 0)
         }
     }

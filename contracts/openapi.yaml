@@ -3016,7 +3016,9 @@ components:
             uh60:
               type: object
               required: [noseHigh, noseLow, crossSlope]
-              description: The UH-60 landing limits in degrees.
+              description: |
+                The UH-60 slope landing limits in degrees with no wind: 15 nose high (nose up), 6
+                nose low (nose down), 15 cross slope. A client reduces them for the wind.
               properties:
                 noseHigh: { type: number }
                 noseLow: { type: number }
