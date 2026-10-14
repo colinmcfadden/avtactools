@@ -17,10 +17,10 @@ stands said on its chip.
 
 ---
 
-## 0. The heading-aware slope tile (2026-10-13/14): built everywhere, waiting on the server
+## 0. The heading-aware slope tile (2026-10-13/14): judged at the landing heading; contours and a profile next
 
 Branch `feat/slope-landing-heading` (on `feat/android-screens`). The owner's rules (UH-60 limits 6° nose down, 15° nose up, 15° across, less
-2° per full 5 kt of steady wind, no nose down above 15 kt) and how the tile judges and recommends are in AGENTS.md §13, *Slope landing
+2° per full 5 kt of steady wind, no nose down above 15 kt) and how the tile judges are in AGENTS.md §13, *Slope landing
 limits*; the open questions (true or magnetic, a server without `byHeading`) in §15.
 
 **Done:** the server sends `byHeading` (`backend/terrain_provider.py`, `contracts/openapi.yaml`, the recorded responses); the web's
@@ -33,9 +33,13 @@ LZ/PZ's weather report (`LzSummary.slopeWindOf`), the tile's lines under the val
 timeouts while the web's Jest ran beside it, and `:core-missionpacks:test :core-network:test :core-sync:test` then passed alone); the web's
 whole Jest suite (909 passed) and `npm run build`; the backend list of `.github/workflows/backend.yaml` (442 passed, 2 skipped: the live service needs a local Postgres).
 
-**Next:** the server must reach staging (`develop`) before a device shows any of it: until then every analysis has no `byHeading`, and the
-apps say HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)". Then try it on the tablet: an analysed LZ/PZ, the
-landing doghouse turned, and a weather refresh, each judging again with no new analysis.
+**Changed 2026-10-14 (the owner):** the recommended heading went (web, Android, the fixture): a rule cannot see the terrain round an LZ.
+The tile says what was judged at the landing heading instead. **Next, in order:** contour lines over the LZ/PZ and a little past its edge,
+from the server's terrain analysis, drawn on the web and Android; then a slope profile along (and across) the landing doghouse's heading,
+extended past the LZ for the approach and departure.
+
+The server must reach staging (`develop`) before a device shows any of it: until then every analysis has no `byHeading`, and the apps say
+HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".
 
 ---
 

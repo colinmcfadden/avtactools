@@ -7,7 +7,6 @@ import app.ezpztac.model.WeatherObservation
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.sin
 
 /**
@@ -84,26 +83,10 @@ public object LzSummary {
         }
     }
 
-    /** Why a heading within limits is the one recommended: the closest to into the wind, to the landing heading, or the one with most margin. */
-    public enum class HeadingReason { WIND, LANDING, MARGIN }
-
-    /**
-     * The heading recommended. Within limits: [reason] and [offDeg], how far it is from the wind's direction or the landing heading (null for
-     * the most margin). With none within ([within] false): the [limit] it is most over and by how much, in tenths of a degree ([overTenths]).
-     */
-    public data class Recommendation(
-        val heading: Int,
-        val within: Boolean,
-        val reason: HeadingReason? = null,
-        val offDeg: Int? = null,
-        val limit: SlopeLimit? = null,
-        val overTenths: Int? = null,
-    )
-
     /**
      * What the slope tile says: [label] is its own word and [maxDeg] the steepest slope (0 when nothing was measured); [heading] is the heading
-     * judged, null when none was; [limits] are those for the wind; [recommendation] is the heading recommended; [lines] are what it says under
-     * the slope, in smaller text.
+     * judged, null when none was; [limits] are those for the wind; [lines] are what it says under the slope, in smaller text: what was
+     * judged at the landing heading, and the wind the limits are for.
      */
     public data class SlopeCall(
         val level: SlopeLevel,
@@ -111,7 +94,6 @@ public object LzSummary {
         val maxDeg: Double,
         val heading: Int? = null,
         val limits: SlopeLimits = SlopeLimits.CALM,
-        val recommendation: Recommendation? = null,
         val lines: List<String> = emptyList(),
     )
 
@@ -122,11 +104,11 @@ public object LzSummary {
     /** Above this steady wind, in knots, a UH-60 may not land nose down at all. */
     public const val NOSE_DOWN_PROHIBITED_ABOVE_KT: Int = 15
 
-    /** Recommended headings are these apart. */
-    private const val STEP_DEG = 5
-
     /** What an older server's analysis (no `byHeading`) says under the slope: no heading was judged. */
     public const val HEADINGS_NOT_CHECKED: String = "Heading limits not checked (server not updated)"
+
+    /** What an analysis with no landing heading says under the slope: there is no heading to judge. */
+    public const val NO_LANDING_HEADING: String = "No landing heading: limits not checked"
 
     /**
      * The wind for the limits from a weather report ([observation], the one the weather tiles show for this LZ/PZ): null when there is nothing
@@ -184,67 +166,22 @@ public object LzSummary {
     /** A slope is outside its limit only when it is greater than it, at the 0.1° the server reports: level ground (0.0) is never nose down. */
     private fun withinLimits(slopes: IntArray, limits: SlopeLimits) = worstOf(slopes, limits).tenths <= 0
 
-    /** Degrees between two headings, the short way round. */
-    private fun apart(a: Int, b: Int): Int {
-        val d = abs(a - b) % 360
-        return min(d, 360 - d)
-    }
-
-    /** The heading that sorts first by [keys], each a number to keep small, the smaller heading winning a tie. */
-    private fun firstBy(headings: List<Int>, keys: List<(Int) -> Int>): Int = headings.reduce { best, h ->
-        for (key in keys) {
-            val d = key(h) - key(best)
-            if (d != 0) return@reduce if (d < 0) h else best
-        }
-        if (h < best) h else best
-    }
-
-    /**
-     * The heading to recommend among the multiples of 5°, from [table] ([tableOf]'s). Of those within [limits]: the closest to into the wind
-     * ([windFromDeg], where it blows from) when there is a wind to land into; else the closest to [landingHeading]; else the one with the most
-     * margin. If none is within limits, the one whose worst excess is smallest (then the closest, as before). Ties go to the smaller heading.
-     */
-    private fun recommend(table: List<IntArray>, limits: SlopeLimits, windFromDeg: Int?, landingHeading: Int?): Recommendation {
-        val candidates = (0 until 360 step STEP_DEG).toList()
-        val toward = windFromDeg ?: landingHeading
-        val closeness: List<(Int) -> Int> = if (toward == null) emptyList() else listOf { h -> apart(h, toward) }
-        val excess: (Int) -> Int = { h -> worstOf(table[h], limits).tenths }
-        val inside = candidates.filter { withinLimits(table[it], limits) }
-        if (inside.isNotEmpty()) {
-            val heading = firstBy(inside, if (toward == null) listOf(excess) else closeness)
-            val reason = when {
-                windFromDeg != null -> HeadingReason.WIND
-                landingHeading != null -> HeadingReason.LANDING
-                else -> HeadingReason.MARGIN
-            }
-            return Recommendation(heading, within = true, reason = reason, offDeg = toward?.let { apart(heading, it) })
-        }
-        val heading = firstBy(candidates, listOf(excess) + closeness)
-        val worst = worstOf(table[heading], limits)
-        return Recommendation(heading, within = false, limit = worst.limit, overTenths = worst.tenths)
-    }
-
     private fun onCompass(degrees: Int) = ((degrees % 360) + 360) % 360
 
     private fun headingText(heading: Int) = "${heading.toString().padStart(3, '0')}°"
 
-    /** Tenths of a degree as the web's `toFixed(1)` writes them (only ever above 0 here). */
+    /** Tenths of a degree as the web's `toFixed(1)` writes them (never below 0 here). */
     private fun tenthsText(tenths: Int) = "${tenths / 10}.${tenths % 10}"
 
     /** A wind speed as a station gives it: whole knots without a decimal point, anything else to one place. */
     private fun knots(speed: Double) =
         if (speed == floor(speed) && speed < 1e15) speed.toLong().toString() else JsNumber.toFixed(speed, 1)
 
-    private fun recommendationWords(r: Recommendation): String {
-        if (!r.within) {
-            return "No heading keeps the whole LZ within limits: best ${headingText(r.heading)}, ${r.limit?.words} ${tenthsText(r.overTenths ?: 0)}° over"
-        }
-        val why = when (r.reason) {
-            HeadingReason.WIND -> if (r.offDeg == 0) "into wind" else "${r.offDeg}° off the wind"
-            HeadingReason.LANDING -> if (r.offDeg == 0) "landing heading" else "${r.offDeg}° off landing heading"
-            else -> "most margin"
-        }
-        return "Recommended ${headingText(r.heading)} · $why"
+    /** What was judged at the landing heading: within limits, or the limit it is most over, with the slope there. */
+    private fun landingWords(heading: Int, slopes: IntArray, limits: SlopeLimits): String {
+        val worst = worstOf(slopes, limits)
+        if (worst.tenths <= 0) return "Landing ${headingText(heading)}: within limits"
+        return "Landing ${headingText(heading)}: ${worst.limit.words} ${tenthsText(slopes[worst.limit.ordinal])}°, limit ${limits.of(worst.limit)}°"
     }
 
     private fun windWords(wind: SlopeWind?, limits: SlopeLimits): String {
@@ -256,37 +193,41 @@ public object LzSummary {
         return if (limits.noseDownProhibited) "$reduced, nose down prohibited above $NOSE_DOWN_PROHIBITED_ABOVE_KT kt" else reduced
     }
 
+    /** The call from the steepest slope alone, when no heading can be judged: HEADING REQUIRED at 15° or more. */
+    private fun byMaxOnly(maxDeg: Double): Pair<SlopeLevel, String> = when {
+        maxDeg >= 15 -> SlopeLevel.WARNING to "HEADING REQUIRED"
+        maxDeg > 10 -> SlopeLevel.WARNING to "CAUTION"
+        else -> SlopeLevel.SAFE to "LANDING"
+    }
+
     /**
      * The call the slope tile makes, the web's `slopeCallFor` (`feature/terrain/slopeCall.js`), from the analysis's steepest slope ([maxDeg],
      * null when nothing was measured) and its table by heading ([byHeading], null from a server before it), the flight data's landing heading
      * ([landingHeading], `Doghouses.landingHeading`) and the wind ([wind], [slopeWindOf]'s, null for no report):
      *
      * NO DATA with nothing measured; LIMIT EXCEEDED when a slope at the landing heading is over its limit for the wind; else CAUTION above 10°
-     * of slope anywhere, and LANDING. With no landing heading the recommended one is judged. HEADING REQUIRED (15° or more) is left only for a
-     * server that sends no table, which judges no heading and says so. Everything is worked out from the table, so a turned doghouse or a new
-     * weather report judges again with no request.
+     * of slope anywhere, and LANDING. With no heading to judge (a server that sends no table, or no landing heading) the steepest slope alone,
+     * HEADING REQUIRED at 15° or more, and a line that says why. Everything is worked out from the table, so a turned doghouse or a new weather
+     * report judges again with no request.
      */
     public fun slopeCall(maxDeg: Double?, byHeading: List<HeadingSlope>?, landingHeading: Int?, wind: SlopeWind?): SlopeCall {
         val limits = limitsFor(wind)
         if (maxDeg == null) return SlopeCall(SlopeLevel.SAFE, "NO DATA", 0.0, limits = limits)
         val table = tableOf(byHeading)
         if (table == null) {
-            val (level, label) = when {
-                maxDeg >= 15 -> SlopeLevel.WARNING to "HEADING REQUIRED"
-                maxDeg > 10 -> SlopeLevel.WARNING to "CAUTION"
-                else -> SlopeLevel.SAFE to "LANDING"
-            }
+            val (level, label) = byMaxOnly(maxDeg)
             return SlopeCall(level, label, maxDeg, limits = limits, lines = listOf(HEADINGS_NOT_CHECKED))
         }
-        val intoWind = wind?.takeIf { it.speedKts > 0 && !it.variable }?.fromDeg?.let(::onCompass)
-        val landing = landingHeading?.let(::onCompass)
-        val recommendation = recommend(table, limits, intoWind, landing)
-        val heading = landing ?: recommendation.heading
+        val heading = landingHeading?.let(::onCompass)
+        if (heading == null) {
+            val (level, label) = byMaxOnly(maxDeg)
+            return SlopeCall(level, label, maxDeg, limits = limits, lines = listOf(NO_LANDING_HEADING))
+        }
         val (level, label) = when {
             !withinLimits(table[heading], limits) -> SlopeLevel.DANGER to "LIMIT EXCEEDED"
             maxDeg > 10 -> SlopeLevel.WARNING to "CAUTION"
             else -> SlopeLevel.SAFE to "LANDING"
         }
-        return SlopeCall(level, label, maxDeg, heading, limits, recommendation, listOf(recommendationWords(recommendation), windWords(wind, limits)))
+        return SlopeCall(level, label, maxDeg, heading, limits, listOf(landingWords(heading, table[heading], limits), windWords(wind, limits)))
     }
 }

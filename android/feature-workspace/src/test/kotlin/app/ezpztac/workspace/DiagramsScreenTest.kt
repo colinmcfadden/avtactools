@@ -290,17 +290,17 @@ class DiagramsScreenTest {
     }
 
     @Test
-    fun `the heading recommended and the wind are shown under the slope, and spoken with it`() {
-        val lines = listOf("No heading keeps the whole LZ within limits: best 045°, nose up 3.4° over", "Wind 16 kt: limits \u22126°, nose down prohibited above 15 kt")
+    fun `the landing heading's call and the wind are shown under the slope, and spoken with it`() {
+        val lines = listOf("Landing 090°: nose up 16.0°, limit 9°", "Wind 16 kt: limits \u22126°, nose down prohibited above 15 kt")
         val call = LzSummary.SlopeCall(LzSummary.SlopeLevel.DANGER, "LIMIT EXCEEDED", 20.0, heading = 90, lines = lines)
         show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles(SlopeTileUi.Measured(call, "terrarium", 19.0)))))
-        val spoken = "Maximum terrain slope 20.0 degrees. LIMIT EXCEEDED. No heading keeps the whole LZ within limits: best 045 degrees, nose up 3.4 degrees over. " +
+        val spoken = "Maximum terrain slope 20.0 degrees. LIMIT EXCEEDED. Landing 090 degrees: nose up 16.0 degrees, limit 9 degrees. " +
             "Wind 16 knots: limits minus 6 degrees, nose down prohibited above 15 knots."
         compose.onNode(androidx.compose.ui.test.hasContentDescription(spoken)).performScrollTo().assertIsDisplayed()
         lines.forEach { compose.onNodeWithText(it, useUnmergedTree = true).assertExists() }
         assertEquals(
-            "Maximum terrain slope 4.2 degrees. LANDING. Recommended 270 degrees, into wind. Wind 12 knots: limits minus 4 degrees.",
-            slopeSpoken(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2, lines = listOf("Recommended 270° · into wind", "Wind 12 kt: limits \u22124°"))),
+            "Maximum terrain slope 4.2 degrees. LANDING. Landing 270 degrees: within limits. Wind 12 knots: limits minus 4 degrees.",
+            slopeSpoken(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2, lines = listOf("Landing 270°: within limits", "Wind 12 kt: limits \u22124°"))),
         )
     }
 

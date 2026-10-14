@@ -118,21 +118,6 @@ class LzSummaryFixtureTest {
             assertEquals(expected.getValue("heading").jsonPrimitive.intOrNull, call.heading, label)
             assertEquals(limits(expected.getValue("limits").jsonObject), call.limits, label)
             assertEquals(expected.getValue("lines").jsonArray.map { it.jsonPrimitive.content }, call.lines, label)
-            val r = expected["recommendation"] as? JsonObject
-            if (r == null) {
-                assertEquals(null, call.recommendation, label)
-                continue
-            }
-            val made = call.recommendation ?: error("$label: no recommendation")
-            assertEquals(r.getValue("heading").jsonPrimitive.int, made.heading, label)
-            assertEquals(r.getValue("within").jsonPrimitive.boolean, made.within, label)
-            if (made.within) {
-                assertEquals(r.getValue("reason").jsonPrimitive.content, made.reason?.name?.lowercase(), label)
-                assertEquals(r.getValue("offDeg").jsonPrimitive.intOrNull, made.offDeg, label)
-            } else {
-                assertEquals(r.getValue("limit").jsonPrimitive.content, made.limit?.let { WEB_LIMIT.getValue(it) }, label)
-                assertEquals(r.getValue("overDeg").jsonPrimitive.double, (made.overTenths ?: 0) / 10.0, 1e-9, label)
-            }
         }
     }
 
@@ -175,9 +160,5 @@ class LzSummaryFixtureTest {
         // Rounded up, the shown area reaches k spots but the real one falls just short of them; rounded down, the real one holds k and the shown one does not.
         val expected = if (shown > exact) k - 1 else k
         assertEquals(expected, LzSummary.areaAndCapacity(polygon, aircraft).capacity, "from the unrounded area, ${if (shown > exact) "just short of" else "just over"} $k spots")
-    }
-
-    private companion object {
-        val WEB_LIMIT = mapOf(LzSummary.SlopeLimit.NOSE_UP to "noseUp", LzSummary.SlopeLimit.NOSE_DOWN to "noseDown", LzSummary.SlopeLimit.CROSS to "cross")
     }
 }

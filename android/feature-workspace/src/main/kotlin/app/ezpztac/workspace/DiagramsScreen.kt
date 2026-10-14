@@ -231,7 +231,7 @@ private fun SlopeTile(slope: SlopeTileUi) {
                         Text("${oneDecimal(slope.call.maxDeg)}°", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
                         Text(slope.call.label, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = color)
                     }
-                    // The heading recommended and the wind the limits are for (the web's smaller lines under the slope).
+                    // What was judged at the landing heading and the wind the limits are for (the web's smaller lines under the slope).
                     slope.call.lines.forEach { line ->
                         Text(line, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
                     }
@@ -247,10 +247,10 @@ private fun SlopeTile(slope: SlopeTileUi) {
 
 /**
  * What a screen reader hears for the slope tile: the slope, its call and the lines under it, with the degree and minus signs in words
- * ("Recommended 270 degrees, into wind. Wind 12 knots: limits minus 4 degrees.").
+ * ("Landing 270 degrees: nose down 8.0 degrees, limit 6 degrees. Wind 12 knots: limits minus 4 degrees.").
  */
 internal fun slopeSpoken(call: LzSummary.SlopeCall): String {
-    fun spoken(line: String) = line.replace(" · ", ", ").replace("\u2212", "minus ").replace(" kt", " knots").replace("°", " degrees")
+    fun spoken(line: String) = line.replace("\u2212", "minus ").replace(" kt", " knots").replace("°", " degrees")
     val lines = call.lines.joinToString("") { " ${spoken(it)}." }
     return "Maximum terrain slope ${oneDecimal(call.maxDeg)} degrees. ${call.label}.$lines"
 }

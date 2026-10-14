@@ -82,9 +82,15 @@ describe("the call", () => {
     expect(calls).toEqual(["LIMIT EXCEEDED", "LIMIT EXCEEDED", "LANDING", "LANDING"]);
   });
 
-  it("says under the slope where to land and what the wind did to the limits", () => {
+  it("says under the slope what was judged at the landing heading and what the wind did to the limits", () => {
     const call = slopeCallFor(EAST8, { landingHdg: "270°", wind: { speedKts: 12, fromDeg: 270, variable: false } });
-    expect(call.lines).toEqual(["Recommended 190° · 80° off the wind", "Wind 12 kt: limits −4°"]);
+    expect(call.lines).toEqual(["Landing 270°: nose down 8.0°, limit 2°", "Wind 12 kt: limits −4°"]);
+    expect(slopeCallFor(EAST8, { landingHdg: "090°" }).lines[0]).toBe("Landing 090°: within limits");
+  });
+
+  it("judges nothing by heading with no landing heading", () => {
+    expect(slopeCallFor(EAST8, {})).toMatchObject({ label: "LANDING", heading: null, lines: ["No landing heading: limits not checked"] });
+    expect(slopeCallFor(plane(16, 90), { landingHdg: "RWY" }).label).toBe("HEADING REQUIRED");
   });
 
   it("asks for a heading only of an older server, which sends no table", () => {

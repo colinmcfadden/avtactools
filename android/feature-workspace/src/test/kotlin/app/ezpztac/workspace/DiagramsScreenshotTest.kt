@@ -64,8 +64,8 @@ class DiagramsScreenshotTest {
         SummaryUi("UH-60L", 13, 854_831, "4050", SlopeTileUi.Measured(LzSummary.SlopeCall(level, label, maxDeg, lines = lines), "local_highres_cog", 10.2))
 
     private companion object {
-        val LANDING_LINES = listOf("Recommended 270° · into wind", "Wind 12 kt: limits \u22124°")
-        val LIMIT_LINES = listOf("No heading keeps the whole LZ within limits: best 045°, nose up 3.4° over", "Wind 16 kt: limits \u22126°, nose down prohibited above 15 kt")
+        val LANDING_LINES = listOf("Landing 270°: within limits", "Wind 12 kt: limits \u22124°")
+        val LIMIT_LINES = listOf("Landing 090°: nose up 16.0°, limit 9°", "Wind 16 kt: limits \u22126°, nose down prohibited above 15 kt")
     }
 
     @Test fun cardToAnalyze() = shot("card-analyze", DiagramsUiState(current = open(DiagramStatus.TARGETED), rows = rows))

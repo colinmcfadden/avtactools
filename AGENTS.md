@@ -598,11 +598,11 @@ reduced, and the slope tile says so in words. `/api/terrain-analysis` sends `byH
 slope at every whole heading; the clients judge from it (`feature/terrain/slopeCall.js`, Android's `LzSummary.slopeCall`, both held
 to `contracts/fixtures/planning/summary.json`), so turning the landing doghouse or a new weather report judges again with no request.
 A slope is over its limit only when greater than it at 0.1°. The tile is LIMIT EXCEEDED at the landing heading (the flight data's
-`landing_hdg`, read by its leading integer; an unreadable one is no heading, not 000; with none the recommended heading is judged),
-else CAUTION above 10°, else LANDING, and under it in smaller text a recommended heading (a multiple of 5° within limits: closest to
-into the wind, else to the landing heading, else the most margin; with none within, the least over, named with its limit) and the
-wind the limits were cut for. HEADING REQUIRED is left only for a server that sends no `byHeading`, which says "Heading limits not
-checked (server not updated)". **Headings are true** (METAR winds are true; the doghouse box is turned from true north); see §15.
+`landing_hdg`, read by its leading integer; an unreadable one is no heading, not 000), else CAUTION above 10°, else LANDING, and under it
+in smaller text what was judged there (`Landing 270°: nose down 8.0°, limit 6°`, or `within limits`) and the wind the limits were cut for.
+With no heading to judge (no landing heading, or a server that sends no `byHeading`) it calls the steepest slope alone, HEADING REQUIRED
+at 15° or more, and says why. **No heading is recommended** (the owner, 2026-10-14: a rule cannot see the terrain round an LZ or what
+crews know of it); the crew reads the ground from the slope map, and contour lines and a slope profile are next. **Headings are true** (METAR winds are true; the doghouse box is turned from true north); see §15.
 
 **Threat masking.** Radial line-of-sight viewshed over Terrarium tiles with
 earth curvature and refraction, one mask per altitude band. The DEM is

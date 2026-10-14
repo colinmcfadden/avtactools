@@ -40,17 +40,17 @@ describe("the slope tile", () => {
     expect(slopeTile({ terrainData: EAST8, landingHdg: "090°" })).toHaveClass("status-safe");
   });
 
-  it("recommends a heading under the slope, and says the limits were not reduced with no wind report", () => {
+  it("says under the slope which limit the landing heading is over, and that the limits were not reduced with no wind report", () => {
     expect(advice(slopeTile({ terrainData: EAST8, landingHdg: "270°" }))).toEqual([
-      "Recommended 225° · 45° off landing heading",
+      "Landing 270°: nose down 8.0°, limit 6°",
       "No wind report: limits not reduced for wind",
     ]);
   });
 
-  it("reduces the limits for this LZ/PZ's wind, and lands into it", () => {
+  it("reduces the limits for this LZ/PZ's wind", () => {
     const tile = slopeTile({ terrainData: EAST8, landingHdg: "090°", winds: weatherAt(TARGET, 20, 90) });
     expect(tile).toHaveClass("status-danger");                                       // 8° nose up is over 15° less 8° for 20 kt
-    expect(advice(tile)).toEqual(["Recommended 060° · 30° off the wind", "Wind 20 kt: limits −8°, nose down prohibited above 15 kt"]);
+    expect(advice(tile)).toEqual(["Landing 090°: nose up 8.0°, limit 7°", "Wind 20 kt: limits −8°, nose down prohibited above 15 kt"]);
   });
 
   it("does not take another LZ/PZ's weather for this one's", () => {

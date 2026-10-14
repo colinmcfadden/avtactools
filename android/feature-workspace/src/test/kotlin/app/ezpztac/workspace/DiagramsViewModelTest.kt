@@ -544,7 +544,7 @@ class DiagramsViewModelTest {
         // The analysis makes the standard doghouses, landing at 000°: across an 8° slope, within 15°. No report yet, so no wind is counted.
         assertEquals("LANDING", call().label)
         assertEquals(0, call().heading)
-        assertEquals(listOf("Recommended 000° · landing heading", "No wind report: limits not reduced for wind"), call().lines)
+        assertEquals(listOf("Landing 000°: within limits", "No wind report: limits not reduced for wind"), call().lines)
 
         // Turned to land down the slope: 8° nose down is over the 6° limit. Judged at once, with no request.
         val asked = r.terrain.measured
@@ -553,13 +553,13 @@ class DiagramsViewModelTest {
         assertEquals("LIMIT EXCEEDED", call().label)
         assertEquals(LzSummary.SlopeLevel.DANGER, call().level)
         assertEquals(270, call().heading)
-        assertEquals("Recommended 225° · 45° off landing heading", call().lines.first())
+        assertEquals("Landing 270°: nose down 8.0°, limit 6°", call().lines.first())
         assertEquals(asked, r.terrain.measured)
 
-        // A report comes: 12 kt from 310 takes 4° off each limit (2° nose down), and the recommendation turns as near into it as that allows.
+        // A report comes: 12 kt from 310 takes 4° off each limit, 2° left nose down.
         r.model.refreshWeather()
         advanceUntilIdle()
-        assertEquals(listOf("Recommended 350° · 40° off the wind", "Wind 12 kt: limits \u22124°"), call().lines)
+        assertEquals(listOf("Landing 270°: nose down 8.0°, limit 2°", "Wind 12 kt: limits \u22124°"), call().lines)
         assertEquals(LzSummary.SlopeLimits(11, 2, 11, 4, false), call().limits)
         assertEquals(asked, r.terrain.measured)
     }
