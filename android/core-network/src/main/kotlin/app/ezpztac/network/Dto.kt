@@ -321,6 +321,14 @@ public data class DirectionalSlope(
     val crossSlopeOverLimitPct: Double,
 )
 
+/**
+ * The steepest slope over the landing zone for one whole [heading] (0..359), in degrees to 0.1: nose high is the ground rising ahead (the nose
+ * up), nose low the ground falling away (the nose down), and the cross slope is either side. The app judges a landing heading from these.
+ */
+@Serializable
+public data class HeadingSlope(val heading: Int, val noseHighMaxDeg: Double, val noseLowMaxDeg: Double, val crossSlopeMaxDeg: Double)
+
+/** The UH-60's slope landing limits with no wind, degrees: 15 nose high (nose up), 6 nose low (nose down), 15 cross slope. */
 @Serializable
 public data class Uh60Limits(val noseHigh: Double, val noseLow: Double, val crossSlope: Double)
 
@@ -346,6 +354,8 @@ public data class TerrainAnalysis(
     val stats: SlopeStats,
     /** Null when no landing heading was sent. */
     val directional: DirectionalSlope? = null,
+    /** The steepest slope for every whole heading, 0 to 359 in order. Null from a server older than the field, which judges no heading. */
+    val byHeading: List<HeadingSlope>? = null,
     val thresholds: SlopeThresholds,
 )
 
