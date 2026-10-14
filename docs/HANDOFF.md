@@ -17,6 +17,89 @@ stands said on its chip.
 
 ---
 
+## 0. Handed over part way: the heading-aware slope tile (2026-10-13)
+
+Stopped on the owner's word part way through, to be finished on another PC. **Branch `worktree-agent-abeb769fa4f7bc5a6`** (the worktree
+`.claude/worktrees/agent-abeb769fa4f7bc5a6`), on `feat/android-screens` at `c949890`; not pushed. Its commits, in order: `291ed2a` the server's limits,
+`11f3cdf` the Android type for the new field, `1f0685c` the server's table by heading, `cb8a356` the web's tile and its fixture, then this note.
+
+**The owner's rules** (a UH-60 pilot, 2026-10-13; to go into AGENTS.md §13 as his):
+- Slope landing limits: **6° nose down, 15° nose up, 15° cross slope.** (The server, the web and Android all had nose high 6° and nose low 15°, the wrong
+  way round; "nose high" is the ground rising ahead, the nose up.)
+- The limits are reduced by **2° for every full 5 knots** of wind (0–4 kt none, 5–9 kt −2°, 10–14 kt −4°, 15–19 kt −6° …), never below 0°.
+- **No nose-down landing when the wind is above 15 kt** (nose-down limit 0 then).
+- The wind is the **steady** wind of the app's weather fetch for that LZ (the report the weather tiles show); **gusts are ignored**. With no report (no
+  station, not fetched, offline with nothing kept) the limits are not reduced, **and the tile says so in words**.
+- The tile shows the slope and its status as before and, under it in smaller text, a recommended heading that keeps the aircraft within limits.
+
+**The design.** `/api/terrain-analysis` sends `byHeading`: the steepest nose-high, nose-low and cross slope for each whole heading 0–359 (360 entries, the
+arithmetic of `directional`, to 0.1°). The clients do the rest, so turning the landing doghouse or a new weather report judges again with no request: the
+limits for the wind; the status at the flight data's `landing_hdg` (the landing doghouse's heading, read by its leading integer as the box reads it, but an
+unreadable one is *no* heading, not 000): a slope is over its limit only when **greater** than it at 0.1° (0.0 is never nose down; a nose-down limit of 0 allows
+none), any one over is LIMIT EXCEEDED, else CAUTION above 10° and LANDING; with no landing heading the recommended heading is judged. The recommended heading is a
+multiple of 5°: of those within limits, the closest to **into the wind** (speed above 0, not variable, with a direction), else the closest to the **landing
+heading**, else the one with the **most margin**; with none within, the one whose worst excess is least, named with its limit and by how much. Closeness is the
+short way round, ties go to the smaller heading. **HEADING REQUIRED only when the server sent no `byHeading`** (a server from before it: staging and
+production until this is deployed), with the line "Heading limits not checked (server not updated)".
+
+**What the tile says under the slope** (the web's words, pinned in `contracts/fixtures/planning/summary.json`): first line `Recommended 270° · into wind`,
+`Recommended 190° · 80° off the wind`, `Recommended 090° · landing heading`, `Recommended 225° · 45° off landing heading`, `Recommended 000° · most margin`, or
+`No heading keeps the whole LZ within limits: best 045°, nose up 3.4° over`; second line `No wind report: limits not reduced for wind`, `Wind calm: limits not
+reduced`, `Wind 4 kt: limits not reduced`, `Wind 12 kt: limits −4°` (U+2212), `Wind variable 7 kt: limits −2°`, `Wind 16 kt: limits −6°, nose down prohibited above 15 kt`.
+
+**Done:**
+- Server (`291ed2a`, `1f0685c`): `UH60_LIMITS_DEG` fixed (`backend/terrain_provider.py`); `byHeading` from `_slope_by_heading`, which runs
+  `_directional_summary`'s own arithmetic (`_along_and_across`, `_steepest`) over only the cells on the edge of the gradients' convex hull
+  (`_steepest_candidates`: a linear function is greatest at a hull corner; a margin keeps cells that tie to rounding), so 360 headings cost a few dozen cells;
+  tests in `backend/tests/test_terrain_provider.py` (the limits, which failed before the fix; the table equal to `_directional_summary` at every heading on rough,
+  hilly and whole-metre ground; a tilted plane's components; level ground with no -0.0; the analysis end to end); `contracts/openapi.yaml`; the recorded
+  responses re-recorded (`contracts/fixtures/network/responses.json`: only the two terrain-analysis lines changed); `backend/TERRAIN_DATA.md`.
+- Android (`11f3cdf`, `291ed2a`): `HeadingSlope` and `TerrainAnalysis.byHeading` (null from an older server) in `android/core-network/.../Dto.kt`;
+  `TerrainCallsTest` expects the corrected limits. The analysis already keeps the whole `TerrainAnalysis` in memory (`AnalysisService`'s `SlopeState.Ready`), so
+  the table rides with the slope state, never in the document.
+- Web (the last commit): `frontend/src/feature/terrain/slopeCall.js` (the pure helpers: `slopeWindOf`, `slopeLimitsFor`, `landingHeadingOf`,
+  `recommendHeading`, `slopeCallFor`; `slopeStatusFor` is gone from `MissionSummary.jsx`); the tile's lines (`MissionSummary.jsx`, `.slope-advice` in `App.css`);
+  the landing heading passed down (`App.js` → `Controls.jsx` → `MissionSummary`); the weather (`feature/weather/useWeather.js`): each report keeps where it is
+  for and its steady wind, an answer that comes after a later request is dropped, and `App.js` fetches the weather of the analysed LZ/PZ on the map when it
+  changes (`ensureWeather`: once per place), so the tiles and the slope's wind are that LZ/PZ's, never another's (`slopeWindFor`). Tests:
+  `slopeCall.test.js`, `MissionSummary.test.jsx` (all six failed against the old tile: 8° nose down was LANDING), `useWeather.test.js`; the fixture
+  `contracts/fixtures/planning/summary.json` regenerated from `frontend/src/contracts/webFixtures.test.js` (sections `windLimits`, `landingHeading`, `ground`, `slope`).
+
+**Left, in order:**
+1. **Android** (the fixture is ahead of it): **`:core-planning:test` fails** (`LzSummaryFixtureTest`, the slope test: the cases now name a `ground` and carry
+   `landingHdg` and `wind`) until the port. Port `slopeCall.js` into `LzSummary` (core-planning; the limits, the judging, the recommendation and the words), held to
+   every section of `summary.json`; the landing heading read in core-model's `Doghouses` (it can use the internal `JsValue.parseInt`; core-planning cannot), the
+   wind from `WeatherObservation` (`windSpeedKt`, `windFromDegrees` normalised 360 → 0, `windVariable`; no observation or no speed is no report); then
+   `DiagramsViewModel.summaryOf` passes `slope.analysis.byHeading`, `diagram.flightData` and the open diagram's `WeatherState` observation; `SlopeTileUi.Measured`
+   carries the lines and `DiagramsScreen.kt`'s `SlopeTile` shows them under the value (smaller, `bodySmall`), with them in the tile's content description. Update
+   `DiagramsScreenTest`, `DiagramsViewModelTest` and `DiagramsScreenshotTest` (it builds `LzSummary.SlopeCall` directly), add `TerrainCallsTest` assertions on
+   the recorded `byHeading`, and take the Roborazzi pictures (dark and night, font scale 1.0 and 2.0).
+2. **Docs:** AGENTS.md §13 (the owner's limits and wind rule, as his), §17 (*The diagrams*: the summary tiles, whose `slopeStatusFor` is now `slopeCallFor` in
+   `feature/terrain/slopeCall.js`; take "the heading-aware slope" out of *Not done*), and §15 (the two notes under *True or magnetic*, below).
+3. **Checks still to run:** the full Android build (`./gradlew test testDebugUnitTest lintDebug assembleDebug --continue`), `npm run build` (not run: the
+   owner's call to stop), the whole web Jest suite, and the backend contract list in `.github/workflows/backend.yaml` (only part of it ran, below).
+4. **The server must reach staging (`develop`) before a device shows any of it**: until then every analysis has no `byHeading`, and the apps say HEADING
+   REQUIRED at 15° and "Heading limits not checked".
+
+**True or magnetic.** Both are **true** as the app models them, so no conversion was added: METAR wind directions from aviationweather.gov are degrees true
+(`WeatherObservation.windFromDegrees` says so too), and the doghouse box is turned from true north on a north-up map, as `landingHeading` is documented
+("Degrees true", `contracts/openapi.yaml`). Two notes for the owner (§15): a crew that types a *magnetic* heading into the landing doghouse gets a box drawn, and
+a slope judged, off by the declination (about 5° in north Georgia); and the table's headings are the terrain grid's, true north over Terrarium but the **UTM
+grid's north over a local DEM**, turned from true by the grid convergence (about 1.7° at the edge of a zone in north Georgia). `directional` has always been so;
+nothing corrects either.
+
+**Checks that ran:** backend `tests/test_terrain_provider.py` (15 passed), `test_network_fixtures.py`, `test_openapi_contract.py` and
+`test_contract_fixtures.py` (46 passed together), each with the venv Python on this machine; a mutation of the hull's selection and of its first cut each failed
+the table tests; the web's `webFixtures.test.js` (8), `MissionSummary.test.jsx`, `slopeCall.test.js`, `useWeather.test.js` and `Controls.test.jsx` (29 passed);
+ESLint on the changed web files (no errors in the app's code; `MissionSummary.test.jsx` uses `container.querySelector`, as `Controls.test.jsx` and
+`shell.test.jsx` do, which the testing-library rules flag; `npm run build` does not lint tests). Android, `./gradlew :core-network:test :core-planning:test`
+on JDK 21 with `EZPZ_LIVE_PYTHON` set: core-network 362 passed (`DtoFixtureTest` decodes the new `byHeading` strictly; the live-server tests ran);
+core-planning 101 run, **1 failed as expected**: `LzSummaryFixtureTest` > *the slope tile makes the same call as the web* ("Key terrainData is missing in the
+map": the fixture's new cases, item 1 above). **Not run:** `npm run build`, the full Jest suite, the full Android build and lint, the rest of the backend list,
+and nothing was tried on a device or in a browser.
+
+---
+
 ## 1. Where things stand
 
 - **Branch:** `feat/android-screens`, on `feat/android-mission-packs` (pushed; the engine is done, so a PR to `develop` is the owner's call, now or with the screens), which is
