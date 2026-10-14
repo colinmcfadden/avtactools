@@ -287,15 +287,32 @@ class ContourTests(unittest.TestCase):
         # Each elevation inside the LZ is one line across it, outside it runs on north and south in the ring.
         self.assertEqual(sorted(line["elevationFt"] for line in inside), sorted({line["elevationFt"] for line in inside}))
 
-    def test_every_elevation_inside_is_labelled_once_on_its_longest_inside_piece(self):
-        contours = self._contours(self.RAMP)
+    def test_labels_keep_apart_on_their_own_lines_every_major_first(self):
+        # An LZ 80 m wide and 160 m from north to south on the ramp lifted 2.5 m: the 20, 25 and 30 ft lines cross it, 30 m apart, the
+        # major 25 ft line between the others. It takes the middle; each of the others then fits only a fifth of the way along.
+        x0, x1 = self.ORIGIN[0] + 60, self.ORIGIN[0] + 140
+        y0, y1 = self.ORIGIN[1] - 20, self.ORIGIN[1] - 180
+        contours = self._contours(self.RAMP + 2.5, self._latlon([x0, x1, x1, x0], [y0, y0, y1, y1]))
         labelled = [line for line in contours["lines"] if line["label"] is not None]
-        self.assertEqual(sorted(line["elevationFt"] for line in labelled), sorted({line["elevationFt"] for line in contours["lines"] if line["inside"]}))
+        heights = [line["elevationFt"] for line in labelled]
+        self.assertEqual(len(heights), len(set(heights)), "one label a height")
+        majors = {line["elevationFt"] for line in contours["lines"] if line["inside"] and line["major"]}
+        self.assertTrue(majors)
+        self.assertTrue(majors <= set(heights), "every major height inside is labelled")
+        self.assertEqual(sorted(heights), [20, 25, 30], "and the minor ones where there is room")
+        spots = []
         for line in labelled:
             self.assertTrue(line["inside"])
             east, south = self._metres([line["label"]])
-            self.assertAlmostEqual(float((east[0] - 0.5) * 0.05 * FEET_PER_METRE), line["elevationFt"], delta=0.05)   # on its line
-            self.assertAlmostEqual(float(south[0]), 100.0, delta=2.0)                       # halfway along a line from row 60 to row 140
+            self.assertAlmostEqual(float(((east[0] - 0.5) * 0.05 + 2.5) * FEET_PER_METRE), line["elevationFt"], delta=0.05)   # on its line
+            self.assertTrue(19 < south[0] < 181)                                                                     # inside the LZ
+            spots.append((east[0], south[0]))
+        for i, (x0, y0) in enumerate(spots):
+            for x1, y1 in spots[i + 1:]:
+                self.assertGreaterEqual(math.hypot(x1 - x0, y1 - y0), 39.9)
+        # A major line, placed first, takes the middle of its line.
+        major = next(line for line in labelled if line["major"])
+        self.assertAlmostEqual(float(self._metres([major["label"]])[1][0]), 100.0, delta=2.0)
 
     def test_a_dem_s_noise_draws_no_specks_and_no_wiggles(self):
         # A centimetre or two of noise on the ramp, as a real DEM has: still one straight line across the LZ for each height, and no rings.

@@ -3033,7 +3033,8 @@ components:
             the ground to about a dozen lines), from the same grid as the slope, lightly smoothed. Each
             entry of `lines` is one piece of a contour: wholly `inside` the polygon or wholly in the ring
             outside it (pieces that meet share their joining point), every fifth interval `major`, and
-            the longest inside piece of each height carries a `label` point for its number. Heights are
+            the longest inside piece of a height carries a `label` point for its number, placed at least
+            40 m from every other (major heights first), so some minor heights have none. Heights are
             the source's own (`verticalDatum`). A server from before this field sends none, and a client
             must keep working without it.
           additionalProperties: false

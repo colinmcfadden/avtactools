@@ -585,6 +585,10 @@ CONTOUR_SMOOTHING_M = 2.0
 # A line is simplified to within this much of itself (a fraction of a cell), and a closed ring shorter than this many cells round is left out.
 CONTOUR_SIMPLIFY_CELLS = 0.35
 CONTOUR_MIN_RING_CELLS = 12.0
+# Labels keep this far apart (a label is about 40 px across, and an LZ is looked at near a metre a pixel). Each height's goes on its
+# longest piece inside the LZ, halfway along if there is room there, else further along it, else none; major lines are placed first.
+CONTOUR_LABEL_SPACING_M = 40.0
+CONTOUR_LABEL_ALONG = (0.5, 0.35, 0.65, 0.2, 0.8)
 
 
 def _contour_interval_ft(relief_ft: float) -> int:
@@ -670,9 +674,10 @@ def _slope_contours(grid: TerrainGrid, polygon, polygon_mask: np.ndarray) -> dic
         return [[round(lat, 6), round(lon, 6)] for lat, lon in zip(lat_deg, lon_deg)]
 
     lines = []
+    longest = []
     level = first
     while level <= last:
-        best = None  # (length, index of the line, index of the label vertex)
+        best = None  # (length, index of the line, the piece's dense xs and ys)
         for path in generator.lines(level):
             if len(path) < 2:
                 continue
@@ -700,11 +705,20 @@ def _slope_contours(grid: TerrainGrid, polygon, polygon_mask: np.ndarray) -> dic
                     steps = np.hypot(np.diff(xs[start:end]), np.diff(ys[start:end]))
                     length = float(steps.sum())
                     if best is None or length > best[0]:
-                        halfway = min(int(np.searchsorted(np.cumsum(steps), length / 2.0)) + 1, end - start - 1)
-                        best = (length, len(lines) - 1, (xs[start + halfway], ys[start + halfway]))
+                        best = (length, len(lines) - 1, xs[start:end], ys[start:end])
         if best is not None:
-            lines[best[1]]["label"] = to_latlon(np.array([best[2][0]]), np.array([best[2][1]]))[0]
+            longest.append(best)
         level += interval
+
+    placed = []
+    for length, index, xs, ys in sorted(longest, key=lambda b: (not lines[b[1]]["major"], -b[0])):
+        along = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(xs), np.diff(ys)))])
+        for fraction in CONTOUR_LABEL_ALONG:
+            i = min(int(np.searchsorted(along, length * fraction)), len(xs) - 1)
+            if all(math.hypot(xs[i] - px, ys[i] - py) >= CONTOUR_LABEL_SPACING_M for px, py in placed):
+                placed.append((xs[i], ys[i]))
+                lines[index]["label"] = to_latlon(np.array([xs[i]]), np.array([ys[i]]))[0]
+                break
     return {"intervalFt": interval, "lines": lines}
 
 
