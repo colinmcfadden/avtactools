@@ -854,11 +854,8 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **An aircraft placed as a person's own airframe carries only its slug** (`profileId`, the web's and Android's alike), and own airframes are per account: on every other
   member's device it is drawn and its separation measured as that device's mission aircraft (else the UH-60L), not as the airframe it was placed as. Carrying the airframe's
   geometry with the aircraft (rotor diameter, tip clearance, picture) would change the shared shape: owner to decide, web first.
-- **A doghouse turned reads "Sam B. turned a doghouse on LZ HAWK."** in the history: `describeLzChange` names a doghouse by `label` (a doghouse's label is `id_val`) and
-  finds no heading in its text (`"105°"` is not a number), so the history never says which doghouse or to what, and turns made one after another read alike (one line,
-  §17, *The Pack panel*). `packs/describe.json` pins both (`a doghouse's heading carries a degree sign, so its turn has no heading`); saying "doghouse [RP1] to 105°" is the
-  web's to change first. And two devices that open at once an LZ/PZ an older client wrote without the headings its doghouses give each send them (`LzPackSettingsTest`): two
-  lines, in two names, for one heading.
+- **Two devices that open at once an LZ/PZ an older client wrote without the headings its doghouses give each send them** (`LzPackSettingsTest`): two lines of the
+  history, in two names, for one heading.
 - The Android manifest's verified link filter names only `ezpztac.app`, while `AuthLinks.SITE_HOSTS` also takes `www.ezpztac.app`: a `www.`
   link opens the browser, not the app. Left so (the owner's call, 2026-10-10); add the host to the filter (and to the site's
   `assetlinks.json`) if emails or shared links ever use it.
@@ -1343,6 +1340,7 @@ client is built around not losing one:
         2026-10-13 (`useDoghouses` follows what the doghouses hold and which diagram is on the map, `diagramId`, never a new list of the same ones: §14).
         **In a mission pack the turn and the heading it gives are one change**, sent by the device that turned it as two operations; a device that takes
         someone else's turn sends nothing back, open, closed, polling or on the live stream an event at a time (`LzPackTwoDevicesTest`, *A doghouse turned*).
+        Its sentence names the doghouse and the heading it was turned to, so turns made a second apart are separate lines of the history (*The Pack panel*).
       - A heading is stored `"090°"` and wrapped **once**: `-90` is `270°` but `-400` stays `-40°`, as JavaScript's `%` does; the box is turned by
         the leading integer of the stored text, unwrapped. A small negative pads in front of its sign (`0-5`). All kept, and in the fixture.
       - **The web stores whatever is typed** (`3.5` is `"3.5km"` even for "far"); a phone asks what the field is for, so `labelPatch`, `timePatch`,
@@ -2063,7 +2061,9 @@ client is built around not losing one:
     gives, then its own heading) read twice, and an analysis five times (the owner, 2026-10-13: "duplicate history entries"). Events one after another in the log (no number
     missing), by one person, on one item, with one sentence and outcome, are one line, as the server counts a copy's changes (`pack_changes`); a line never holds events either
     side of where new starts, is dated by its newest event, keyed by its first, and named, for an item since removed, by the last name an operation of it gave the item. So the same
-    sentence made again straight after is the same line (three turns of a doghouse a second apart are one), and "New since you looked · N" counts lines.
+    sentence made again straight after is the same line (three moves of a doghouse a second apart are one), and "New since you looked · N" counts lines. **A doghouse's turn
+    names it and its heading as its box shows them** ("Colin M. turned doghouse RP1 to 105° on LZ HAWK.": its `label`, else `id_val` less its brackets; `PackLz`, the web's
+    `packLz.js`, held to `packs/describe.json`), so turns a second apart are a line each, and one turn, two events, is one.
   - **The pack's notices are said** (`PackWorkspace.notices`, which nothing showed before): the web's words for a change refused and edits lost, Android's for what it keeps
     (`NAME (my edits)`); an item that left the editor because its pack went or closed is not said to be removed, only what was kept of it. One action at a time: another asked meanwhile
     is said not to be done, and an open that cannot first save what is open says so (it never takes the app down).

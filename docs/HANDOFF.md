@@ -116,7 +116,8 @@ stands said on its chip.
   now show a run of one person's events on one item with one sentence as one line (`packHistory.js` / `PackHistory`, held to `contracts/fixtures/packs/history.json`).
   And the web, taking someone else's change, no longer follows a fresh list of the same doghouses: it had put the doghouse's heading back over a landing heading typed
   elsewhere, on the live stream sent every turn back as two changes of its own, and looped for ever on a read-only pack's LZ/PZ without the headings. Android sent
-  nothing extra (tried on two accounts and one, open, closed and live).
+  nothing extra (tried on two accounts and one, open, closed and live). Then the owner's wording, on the web and Android: a turn names the doghouse and its heading
+  as the box shows them ("Colin M. turned doghouse RP1 to 105° on LZ HAWK.", not "turned a doghouse"), so turns a second apart are a line each; one turn is one line.
 - **Everything else is still compiled and unit-tested on a JVM only.** The map layers (MapLibre),
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output
   and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged
