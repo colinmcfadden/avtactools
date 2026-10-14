@@ -328,6 +328,18 @@ public data class DirectionalSlope(
 @Serializable
 public data class HeadingSlope(val heading: Int, val noseHighMaxDeg: Double, val noseLowMaxDeg: Double, val crossSlopeMaxDeg: Double)
 
+/**
+ * One piece of a contour line of the ground in or round the landing zone: its height in feet ([elevationFt], the source's datum), whether it
+ * is a [major] (every fifth) line, whether it lies [inside] the boundary or in the 40 m ring outside it, its [points] as `[lat, lon]` (a ring's
+ * last is its first), and where the height's number goes ([label], `[lat, lon]`), on at most one piece of a height.
+ */
+@Serializable
+public data class ContourLine(val elevationFt: Int, val major: Boolean, val inside: Boolean, val points: List<List<Double>>, val label: List<Double>? = null)
+
+/** The contour lines of the ground in and round the landing zone, every [intervalFt] feet. */
+@Serializable
+public data class SlopeContours(val intervalFt: Int, val lines: List<ContourLine>)
+
 /** The UH-60's slope landing limits with no wind, degrees: 15 nose high (nose up), 6 nose low (nose down), 15 cross slope. */
 @Serializable
 public data class Uh60Limits(val noseHigh: Double, val noseLow: Double, val crossSlope: Double)
@@ -356,6 +368,8 @@ public data class TerrainAnalysis(
     val directional: DirectionalSlope? = null,
     /** The steepest slope for every whole heading, 0 to 359 in order. Null from a server older than the field, which judges no heading. */
     val byHeading: List<HeadingSlope>? = null,
+    /** The contour lines of the ground in and round the polygon. Null from a server older than the field, which draws the raster alone. */
+    val contours: SlopeContours? = null,
     val thresholds: SlopeThresholds,
 )
 

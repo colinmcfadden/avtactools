@@ -47,6 +47,7 @@ import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.map.CameraState
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapProjection
+import app.ezpztac.map.ContourPiece
 import app.ezpztac.map.SlopeImage
 import app.ezpztac.map.SlopeToggleUi
 import app.ezpztac.missionpacks.PackState
@@ -61,8 +62,10 @@ import app.ezpztac.model.Radar
 import app.ezpztac.model.Radars
 import app.ezpztac.model.Threat
 import app.ezpztac.model.WeatherSnapshot
+import app.ezpztac.network.ContourLine
 import app.ezpztac.network.FieldAnalysis
 import app.ezpztac.network.NetworkException
+import app.ezpztac.network.SlopeContours
 import app.ezpztac.network.SlopeStats
 import app.ezpztac.network.SlopeThresholds
 import app.ezpztac.network.TerrainAnalysis
@@ -680,6 +683,30 @@ class HomeViewModelTest {
         val scene = r.model.scene.value
         assertEquals(LatLon(34.783817, -84.08219), scene.target)
         assertEquals(4, scene.boundary.size)
+    }
+
+    @Test
+    fun `the slope map carries the analysis's contour lines, leaving out a point that is not one`() {
+        fun analysis(contours: SlopeContours?) = TerrainAnalysis(
+            status = "success", overlay = "data:image/png;base64,AA==", bounds = listOf(listOf(34.70, -84.10), listOf(34.80, -84.00)),
+            source = "local_highres_cog", resolutionM = 10.0, verticalDatum = "NAVD88", stats = SlopeStats(4.0, 3.0, 0.0, 0.0, 0.0, 100, 9_000.0),
+            contours = contours, thresholds = SlopeThresholds(listOf(3.0, 6.0, 10.0, 15.0), Uh60Limits(6.0, 15.0, 15.0)),
+        )
+        val lines = listOf(
+            ContourLine(1520, major = false, inside = true, points = listOf(listOf(34.75, -84.05), listOf(34.76, -84.05)), label = listOf(34.755, -84.05)),
+            ContourLine(1525, major = true, inside = false, points = listOf(listOf(34.75, -84.04), listOf(Double.NaN, -84.04), listOf(34.76, -84.04), listOf(1.0))),
+            ContourLine(1530, major = false, inside = true, points = listOf(listOf(34.75, -84.03), listOf(34.76))),           // one good point: no line
+            ContourLine(1535, major = false, inside = true, points = listOf(listOf(34.75, -84.02), listOf(34.76, -84.02)), label = listOf(34.75)),
+        )
+        assertEquals(
+            listOf(
+                ContourPiece(1520, false, true, listOf(LatLon(34.75, -84.05), LatLon(34.76, -84.05)), LatLon(34.755, -84.05)),
+                ContourPiece(1525, true, false, listOf(LatLon(34.75, -84.04), LatLon(34.76, -84.04)), null),
+                ContourPiece(1535, false, true, listOf(LatLon(34.75, -84.02), LatLon(34.76, -84.02)), null),
+            ),
+            analysis(SlopeContours(5, lines)).contourPieces(),
+        )
+        assertEquals(emptyList<ContourPiece>(), analysis(null).contourPieces())                   // a server from before contours
     }
 
     @Test

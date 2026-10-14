@@ -113,6 +113,22 @@ class TerrainCallsTest {
     }
 
     @Test
+    fun `the analysis carries the contour lines of the ground, labelled`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("terrain-analysis") }
+            val contours = rig.client.terrainAnalysis(polygon).contours!!
+            assertEquals(10, contours.intervalFt)
+            assertTrue(contours.lines.isNotEmpty())
+            assertTrue(contours.lines.all { it.elevationFt % contours.intervalFt == 0 && it.points.size >= 2 && it.points.all { p -> p.size == 2 } })
+            assertTrue(contours.lines.any { it.inside } && contours.lines.any { !it.inside })
+            assertTrue(contours.lines.filter { it.major }.all { it.elevationFt % 50 == 0 })
+            val labelled = contours.lines.filter { it.label != null }
+            assertTrue(labelled.isNotEmpty() && labelled.all { it.inside })
+            assertEquals(labelled.map { it.elevationFt }.distinct(), labelled.map { it.elevationFt })        // one label a height
+        }
+    }
+
+    @Test
     fun `the analysis carries the steepest slope for every whole heading, whatever heading was sent`() = runBlocking<Unit> {
         for (name in listOf("terrain-analysis", "terrain-analysis: no landing heading")) {
             Rig().use { rig ->

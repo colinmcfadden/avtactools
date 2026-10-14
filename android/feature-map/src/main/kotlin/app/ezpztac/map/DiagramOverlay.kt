@@ -20,13 +20,15 @@ import org.maplibre.android.style.sources.ImageSource
 
 /**
  * Draws an [LzScene] on the map: the analysis boundary (a pale fill and an amber outline), a boundary being drawn (dashed), the target,
- * and the slope raster under all of them. Thin on purpose: *what* is drawn is the scene, which is tested; this only hands it to MapLibre,
+ * and the slope map under all of them (its raster, and its contour lines over the raster: near-black over a light halo, every fifth heavier,
+ * the ring outside the LZ faded; their numbers are Compose labels, [ContourLabelsLayer]). Thin on purpose: *what* is drawn is the scene, which is tested; this only hands it to MapLibre,
  * which needs a GPU and cannot be tried here. The aircraft pictures are drawn for a screen of [screenDensity] pixels to the point, the UH-60's from
  * [assets].
  */
 class DiagramOverlay(private val assets: AssetManager, private val screenDensity: Float) {
     private var style: Style? = null
     private var vector: GeoJsonSource? = null
+    private var contours: GeoJsonSource? = null
     private var latest: LzScene = LzScene.EMPTY
     private var drawnSlope: SlopeImage? = null
 
@@ -43,6 +45,7 @@ class DiagramOverlay(private val assets: AssetManager, private val screenDensity
                 PropertyFactory.fillColor(BOUNDARY_COLOR), PropertyFactory.fillOpacity(0.12f),
             ),
         )
+        installContours(style)
         style.addLayer(
             LineLayer(OUTLINE_LAYER, SOURCE).withFilter(role("boundary")).withProperties(
                 PropertyFactory.lineColor(BOUNDARY_COLOR), PropertyFactory.lineWidth(3f), PropertyFactory.lineJoin("round"),
@@ -79,6 +82,33 @@ class DiagramOverlay(private val assets: AssetManager, private val screenDensity
             ),
         )
         show(latest)
+    }
+
+    /** The slope map's contour lines, under the boundary's fill and over the raster (which [showSlope] puts under them). */
+    private fun installContours(style: Style) {
+        val source = GeoJsonSource(CONTOUR_SOURCE, SlopeImage.NO_CONTOURS)
+        contours = source
+        style.addSource(source)
+        val major = Expression.eq(Expression.get("major"), Expression.literal(true))
+        val opacity = Expression.switchCase(
+            Expression.eq(Expression.get("inside"), Expression.literal(true)), Expression.literal(1f), Expression.literal(0.4f),
+        )
+        style.addLayerBelow(
+            LineLayer(CONTOUR_HALO_LAYER, CONTOUR_SOURCE).withProperties(
+                PropertyFactory.lineColor(CONTOUR_HALO_COLOR), PropertyFactory.lineOpacity(Expression.product(opacity, Expression.literal(0.55f))),
+                PropertyFactory.lineWidth(Expression.switchCase(major, Expression.literal(4.5f), Expression.literal(3f))),
+                PropertyFactory.lineJoin("round"),
+            ),
+            FILL_LAYER,
+        )
+        style.addLayerBelow(
+            LineLayer(CONTOUR_LINE_LAYER, CONTOUR_SOURCE).withProperties(
+                PropertyFactory.lineColor(CONTOUR_COLOR), PropertyFactory.lineOpacity(Expression.product(opacity, Expression.literal(0.9f))),
+                PropertyFactory.lineWidth(Expression.switchCase(major, Expression.literal(2f), Expression.literal(1f))),
+                PropertyFactory.lineJoin("round"),
+            ),
+            FILL_LAYER,
+        )
     }
 
     /** The planning graphics, under the target and over the boundary: sectors, the keep-out ring, separation lines, PZ arrows, go-arounds, aircraft and the halo. */
@@ -191,13 +221,14 @@ class DiagramOverlay(private val assets: AssetManager, private val screenDensity
         current.removeLayer(SLOPE_LAYER)
         current.removeSource(SLOPE_SOURCE)
         drawnSlope = null
+        contours?.setGeoJson(slope?.contourGeoJson() ?: SlopeImage.NO_CONTOURS)
         if (slope == null) return
         val bitmap = decode(slope.dataUri) ?: return                   // a raster that will not decode is left off, not drawn wrong
         val corners = LatLngQuad(LatLng(slope.north, slope.west), LatLng(slope.north, slope.east), LatLng(slope.south, slope.east), LatLng(slope.south, slope.west))
         current.addSource(ImageSource(SLOPE_SOURCE, corners, bitmap))
         current.addLayerBelow(
             RasterLayer(SLOPE_LAYER, SLOPE_SOURCE).withProperties(PropertyFactory.rasterOpacity(0.85f), PropertyFactory.rasterFadeDuration(0f)),
-            FILL_LAYER,
+            CONTOUR_HALO_LAYER,
         )
         drawnSlope = slope
     }
@@ -234,6 +265,11 @@ class DiagramOverlay(private val assets: AssetManager, private val screenDensity
         const val SEPARATION_BAD_COLOR = "#DC2626"
         const val SLOPE_SOURCE = "lz-slope"
         const val SLOPE_LAYER = "lz-slope-layer"
+        const val CONTOUR_SOURCE = "lz-contours"
+        const val CONTOUR_HALO_LAYER = "lz-contour-halo"
+        const val CONTOUR_LINE_LAYER = "lz-contour-line"
+        const val CONTOUR_COLOR = "#121212"
+        const val CONTOUR_HALO_COLOR = "#FFFFFF"
         const val BOUNDARY_COLOR = "#FFB020"
         const val DRAWN_COLOR = "#FFFFFF"
         const val TARGET_COLOR = "#EB5757"

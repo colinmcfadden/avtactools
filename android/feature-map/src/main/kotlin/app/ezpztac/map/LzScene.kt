@@ -17,8 +17,50 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlin.math.cos
 
-/** A slope raster to lay over the ground: a PNG as a data URI, and the box it covers. */
-data class SlopeImage(val south: Double, val west: Double, val north: Double, val east: Double, val dataUri: String)
+/**
+ * One piece of a contour line of the ground: its height in feet, whether it is a [major] (every fifth) line, whether it lies [inside] the LZ
+ * (the ring outside it is drawn faded), its [points], and where its height's number goes ([label]), on at most one piece of a height.
+ */
+data class ContourPiece(val elevationFt: Int, val major: Boolean, val inside: Boolean, val points: List<LatLon>, val label: LatLon? = null)
+
+/**
+ * The slope map: a raster to lay over the ground (a PNG as a data URI, and the box it covers) and the [contours] of the ground in and round the
+ * LZ, drawn over it, so its shape can be read as on a topographic map. Shown and hidden together.
+ */
+data class SlopeImage(
+    val south: Double,
+    val west: Double,
+    val north: Double,
+    val east: Double,
+    val dataUri: String,
+    val contours: List<ContourPiece> = emptyList(),
+) {
+    /** The contours as GeoJSON for the map's source, `[longitude, latitude]`, each line carrying whether it is `major` and `inside`. */
+    fun contourGeoJson(): String = buildJsonObject {
+        put("type", "FeatureCollection")
+        putJsonArray("features") {
+            contours.filter { it.points.size >= 2 }.forEach { piece ->
+                add(buildJsonObject {
+                    put("type", "Feature")
+                    putJsonObject("properties") {
+                        put("major", piece.major)
+                        put("inside", piece.inside)
+                        put("elevationFt", piece.elevationFt)
+                    }
+                    putJsonObject("geometry") {
+                        put("type", "LineString")
+                        putJsonArray("coordinates") { piece.points.forEach { p -> add(buildJsonArray { add(JsonPrimitive(p.lon)); add(JsonPrimitive(p.lat)) }) } }
+                    }
+                })
+            }
+        }
+    }.toString()
+
+    companion object {
+        /** No contours, as GeoJSON: what the map's contour source holds with the slope map off. */
+        const val NO_CONTOURS: String = """{"type":"FeatureCollection","features":[]}"""
+    }
+}
 
 /**
  * What the map draws for the open diagram, as plain data, so *what* is drawn is tested without a GPU (the MapLibre glue that draws it is

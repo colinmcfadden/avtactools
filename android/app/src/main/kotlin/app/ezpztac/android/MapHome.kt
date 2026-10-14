@@ -82,6 +82,7 @@ import app.ezpztac.designsystem.rememberPanelSheetState
 import app.ezpztac.map.DiagramLayer
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
+import app.ezpztac.map.ContourLabelsLayer
 import app.ezpztac.map.GraphicLabelsLayer
 import app.ezpztac.map.MapChromeBoxes
 import app.ezpztac.map.MgrsGridLayer
@@ -617,6 +618,7 @@ fun MapHome(
                     RouteLayer(host, routeScene)
                     ThreatLayer(host, threatScene)                  // range rings; symbols and names are Compose below
                     GpsLayer(host, state.gps)
+                    ContourLabelsLayer(host, scene.slope)          // the slope map's heights, under every other label
                     GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
                     PinLabelsLayer(host, routeScene, pointScene)
                     ThreatLabelsLayer(host, threatScene)

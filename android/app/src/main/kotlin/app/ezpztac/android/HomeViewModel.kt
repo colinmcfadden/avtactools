@@ -45,6 +45,7 @@ import app.ezpztac.map.PointHitTest
 import app.ezpztac.map.PointScene
 import app.ezpztac.map.RouteHitTest
 import app.ezpztac.map.RouteScene
+import app.ezpztac.map.ContourPiece
 import app.ezpztac.map.SlopeImage
 import app.ezpztac.map.SlopeToggleUi
 import app.ezpztac.map.ThreatHitTest
@@ -597,7 +598,14 @@ private fun TerrainAnalysis.toSlopeImage(): SlopeImage? {
     val southWest = bounds.getOrNull(0) ?: return null
     val northEast = bounds.getOrNull(1) ?: return null
     if (southWest.size < 2 || northEast.size < 2) return null
-    return SlopeImage(south = southWest[0], west = southWest[1], north = northEast[0], east = northEast[1], dataUri = overlay)
+    return SlopeImage(south = southWest[0], west = southWest[1], north = northEast[0], east = northEast[1], dataUri = overlay, contours = contourPieces())
+}
+
+/** The analysis's contour lines as the map draws them; a point that is not two finite numbers is left out, and a piece left with fewer than two. */
+internal fun TerrainAnalysis.contourPieces(): List<ContourPiece> = contours?.lines.orEmpty().mapNotNull { line ->
+    fun place(pair: List<Double>?) = pair?.takeIf { it.size == 2 && it.all(Double::isFinite) }?.let { LatLon(it[0], it[1]) }
+    val points = line.points.mapNotNull(::place)
+    if (points.size < 2) null else ContourPiece(line.elevationFt, line.major, line.inside, points, place(line.label))
 }
 
 /**
