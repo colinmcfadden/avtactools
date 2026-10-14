@@ -2972,7 +2972,7 @@ components:
               png: { type: string, description: "A `data:image/png;base64,` raster over `bounds`, one colour per altitude band, the lowest band on top." }
     TerrainAnalysis:
       type: object
-      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, byHeading, thresholds]
+      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, byHeading, contours, thresholds]
       properties:
         status: { type: string, enum: [success] }
         overlay:
@@ -3012,8 +3012,8 @@ components:
             The steepest slope over the polygon for each whole heading, 0 to 359 in order (360
             entries), worked out as `directional` is and rounded to 0.1°: nose high is the ground
             rising ahead (the nose up), nose low the ground falling away (the nose down), and the
-            cross slope is either side. A client judges any landing heading, and recommends one, from
-            this without asking again (it applies the wind to the limits itself). Headings are the
+            cross slope is either side. A client judges any landing heading from this without asking
+            again (it applies the wind to the limits itself). Headings are the
             terrain grid's: true north over the Terrarium tiles, the UTM grid's north over a local
             DEM. A server from before this field sends none, and a client must keep working without it.
           items:
@@ -3025,6 +3025,42 @@ components:
               noseHighMaxDeg: { type: number, minimum: 0 }
               noseLowMaxDeg: { type: number, minimum: 0 }
               crossSlopeMaxDeg: { type: number, minimum: 0 }
+        contours:
+          type: object
+          description: |
+            Contour lines of the ground in the polygon and a 40 m ring round it, so a crew can read its
+            shape: in feet, at `intervalFt` (the finest of 1, 2, 5, 10, 20, 25, 50 and 100 that keeps
+            the ground to about a dozen lines), from the same grid as the slope, lightly smoothed. Each
+            entry of `lines` is one piece of a contour: wholly `inside` the polygon or wholly in the ring
+            outside it (pieces that meet share their joining point), every fifth interval `major`, and
+            the longest inside piece of each height carries a `label` point for its number. Heights are
+            the source's own (`verticalDatum`). A server from before this field sends none, and a client
+            must keep working without it.
+          additionalProperties: false
+          required: [intervalFt, lines]
+          properties:
+            intervalFt: { type: integer, minimum: 1 }
+            lines:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [elevationFt, major, inside, points, label]
+                properties:
+                  elevationFt: { type: integer }
+                  major: { type: boolean }
+                  inside: { type: boolean }
+                  points:
+                    type: array
+                    description: "`[lat, lon]` pairs, two or more; a ring's last is its first."
+                    items:
+                      type: array
+                      items: { type: number }
+                  label:
+                    type: array
+                    nullable: true
+                    description: "`[lat, lon]` where the height's number goes, on this piece; null on every other piece."
+                    items: { type: number }
         thresholds:
           type: object
           required: [bands, uh60]

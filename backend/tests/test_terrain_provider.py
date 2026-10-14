@@ -10,9 +10,17 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
+from rasterio.crs import CRS
+from rasterio.warp import transform as warp
+
 from terrain_provider import (
+    FEET_PER_METRE,
     UH60_LIMITS_DEG,
     LocalRasterCatalog,
+    TerrainGrid,
+    _contour_interval_ft,
+    _polygon_mask,
+    _slope_contours,
     _directional_summary,
     _horn_gradients,
     _slope_by_heading,
@@ -204,6 +212,152 @@ class SlopeByHeadingTests(unittest.TestCase):
                     row = analysis["byHeading"][heading]
                     self.assertEqual([row[f] for f in self.FIELDS], [analysis["directional"][f] for f in self.FIELDS], f"heading {heading}")
                 self.assertEqual(len(build_slope_analysis(polygon)["byHeading"]), 360)    # with no landing heading too
+
+
+
+class ContourTests(unittest.TestCase):
+    """The contour lines of the ground in and round an LZ (`contours` of the analysis)."""
+
+    UTM = CRS.from_epsg(32611)
+    ORIGIN = (500000.0, 3770000.0)    # the top-left corner of the grid, in metres
+
+    def _grid(self, elevation_m):
+        return TerrainGrid(
+            elevation_m=np.asarray(elevation_m, dtype=np.float32), transform=from_origin(*self.ORIGIN, 1.0, 1.0), crs=self.UTM,
+            bounds_latlon=(0, 0, 0, 0), source="test", resolution_m=1.0, xres_m=1.0, yres_m=1.0, vertical_datum="test",
+        )
+
+    def _latlon(self, xs, ys):
+        lons, lats = warp(self.UTM, "EPSG:4326", list(xs), list(ys))
+        return [[lat, lon] for lat, lon in zip(lats, lons)]
+
+    def _metres(self, points):
+        xs, ys = warp("EPSG:4326", self.UTM, [p[1] for p in points], [p[0] for p in points])
+        return np.asarray(xs) - self.ORIGIN[0], self.ORIGIN[1] - np.asarray(ys)    # metres east of the corner, and south of it
+
+    def _square(self, first=60, last=140):
+        """The LZ: a square of cells [first, last] each way, as [lat, lon] corners."""
+        x0, x1 = self.ORIGIN[0] + first, self.ORIGIN[0] + last
+        y0, y1 = self.ORIGIN[1] - first, self.ORIGIN[1] - last
+        return self._latlon([x0, x1, x1, x0], [y0, y0, y1, y1])
+
+    def _contours(self, elevation_m, polygon=None):
+        grid = self._grid(elevation_m)
+        polygon = polygon or self._square()
+        return _slope_contours(grid, polygon, _polygon_mask(grid, polygon))
+
+    # A plane rising east, 5 cm a metre (about 2.9°).
+    RAMP = np.tile(np.arange(200, dtype=np.float64) * 0.05, (200, 1))
+
+    def test_the_interval_is_the_finest_that_keeps_about_a_dozen_lines(self):
+        self.assertEqual(_contour_interval_ft(0.0), 1)
+        self.assertEqual(_contour_interval_ft(12.0), 1)
+        self.assertEqual(_contour_interval_ft(12.1), 2)
+        self.assertEqual(_contour_interval_ft(24.0), 2)
+        self.assertEqual(_contour_interval_ft(60.0), 5)
+        self.assertEqual(_contour_interval_ft(1300.0), 100)
+        self.assertEqual(_contour_interval_ft(5000.0), 100)
+
+    def test_a_plane_s_contours_run_across_its_slope_at_their_own_height(self):
+        contours = self._contours(self.RAMP)
+        # The LZ and its 40 m ring span about 160 m of the ramp: 8 m, 26 ft, so 5 ft lines.
+        self.assertEqual(contours["intervalFt"], 5)
+        levels = sorted({line["elevationFt"] for line in contours["lines"]})
+        self.assertGreaterEqual(len(levels), 4)
+        self.assertTrue(all(level % 5 == 0 for level in levels))
+        for line in contours["lines"]:
+            east, south = self._metres(line["points"])
+            # On the plane, height is 0.05 m for each metre east of the first cell's centre: every point is at its line's height.
+            heights_ft = (east - 0.5) * 0.05 * FEET_PER_METRE
+            np.testing.assert_allclose(heights_ft, line["elevationFt"], atol=0.05)
+            self.assertGreater(np.ptp(south), 1.0)                 # and the line runs north and south, across the slope
+
+    def test_lines_are_split_at_the_boundary_and_stop_a_ring_beyond_it(self):
+        contours = self._contours(self.RAMP)
+        inside = [line for line in contours["lines"] if line["inside"]]
+        outside = [line for line in contours["lines"] if not line["inside"]]
+        self.assertTrue(inside and outside)
+        for line in inside:
+            east, south = self._metres(line["points"])
+            # The pieces share the vertex where they join, which can be up to a cell outside.
+            self.assertTrue(np.all((east > 59) & (east < 141) & (south > 59) & (south < 141)), line["elevationFt"])
+        for line in contours["lines"]:
+            east, south = self._metres(line["points"])
+            self.assertTrue(np.all((east > 18) & (east < 182) & (south > 18) & (south < 182)), "no further than the ring")
+        # Each elevation inside the LZ is one line across it, outside it runs on north and south in the ring.
+        self.assertEqual(sorted(line["elevationFt"] for line in inside), sorted({line["elevationFt"] for line in inside}))
+
+    def test_every_elevation_inside_is_labelled_once_on_its_longest_inside_piece(self):
+        contours = self._contours(self.RAMP)
+        labelled = [line for line in contours["lines"] if line["label"] is not None]
+        self.assertEqual(sorted(line["elevationFt"] for line in labelled), sorted({line["elevationFt"] for line in contours["lines"] if line["inside"]}))
+        for line in labelled:
+            self.assertTrue(line["inside"])
+            east, south = self._metres([line["label"]])
+            self.assertAlmostEqual(float((east[0] - 0.5) * 0.05 * FEET_PER_METRE), line["elevationFt"], delta=0.05)   # on its line
+            self.assertAlmostEqual(float(south[0]), 100.0, delta=2.0)                       # halfway along a line from row 60 to row 140
+
+    def test_a_dem_s_noise_draws_no_specks_and_no_wiggles(self):
+        # A centimetre or two of noise on the ramp, as a real DEM has: still one straight line across the LZ for each height, and no rings.
+        noisy = self.RAMP + np.random.default_rng(7).normal(0.0, 0.02, self.RAMP.shape)
+        contours = self._contours(noisy)
+        inside = [line for line in contours["lines"] if line["inside"]]
+        self.assertEqual(sorted(line["elevationFt"] for line in inside), sorted({line["elevationFt"] for line in inside}))
+        self.assertFalse([line for line in contours["lines"] if line["points"][0] == line["points"][-1]])
+        self.assertLess(max(len(line["points"]) for line in inside), 12)                   # a straight line needs few points
+
+    def test_a_ring_a_few_metres_round_is_a_speck_and_left_out(self):
+        rows, cols = np.mgrid[0:200, 0:200]
+        mound = 300.0 + 1.0 * np.exp(-(((cols - 100) ** 2 + (rows - 100) ** 2) / (2 * 2.5 ** 2)))    # a metre high, a few metres across
+        rings = [line for line in self._contours(mound)["lines"] if line["points"][0] == line["points"][-1]]
+        self.assertTrue(rings, "the mound's lower contour is drawn")
+        for ring in rings:
+            east, south = self._metres(ring["points"])
+            self.assertGreaterEqual(float(np.hypot(np.diff(east), np.diff(south)).sum()), 11.0, ring["elevationFt"])  # 12 cells, less the simplifying
+
+    def test_the_label_goes_on_the_longest_piece_of_its_height(self):
+        rows, cols = np.mgrid[0:200, 0:200]
+        def hill(c, r, sigma):
+            return 6.0 * np.exp(-(((cols - c) ** 2 + (rows - r) ** 2) / (2 * sigma ** 2)))
+        two = 300.0 + np.maximum(hill(80, 80, 12.0), hill(122, 122, 5.0))         # a broad hill and a small one, as high
+        for line in self._contours(two)["lines"]:
+            if line["label"] is None:
+                continue
+            east, south = self._metres([line["label"]])
+            to_broad = math.hypot(east[0] - 80.5, south[0] - 80.5)
+            to_small = math.hypot(east[0] - 122.5, south[0] - 122.5)
+            self.assertLess(to_broad, to_small, line["elevationFt"])                  # the broad hill's ring is the longer at every height
+
+    def test_every_fifth_line_is_major(self):
+        steep = np.tile(np.arange(200, dtype=np.float64) * 0.5, (200, 1))      # about 80 m over the zone: 25 ft lines, majors at 125 ft
+        contours = self._contours(steep)
+        self.assertEqual(contours["intervalFt"], 25)
+        for line in contours["lines"]:
+            self.assertEqual(line["major"], line["elevationFt"] % 125 == 0, line["elevationFt"])
+        self.assertTrue(any(line["major"] for line in contours["lines"]))
+
+    def test_level_ground_has_no_lines(self):
+        contours = self._contours(np.full((200, 200), 312.4))
+        self.assertEqual(contours, {"intervalFt": 1, "lines": []})
+
+    def test_a_hill_in_the_lz_closes_on_itself_inside_it(self):
+        rows, cols = np.mgrid[0:200, 0:200]
+        hill = 300.0 + 6.0 * np.exp(-(((cols - 100) ** 2 + (rows - 100) ** 2) / (2 * 15.0 ** 2)))
+        contours = self._contours(hill)
+        rings = [line for line in contours["lines"] if line["inside"] and line["points"][0] == line["points"][-1]]
+        self.assertTrue(rings, "a hilltop's contours are closed rings")
+        self.assertTrue(all(line["inside"] for line in contours["lines"] if line["elevationFt"] > 985))
+
+    def test_the_analysis_carries_its_contours(self):
+        polygon = [[34.098, -117.097], [34.098, -117.093], [34.094, -117.093], [34.094, -117.097]]
+        with tempfile.TemporaryDirectory() as directory:
+            HornSlopeTests._write_ramp(directory)
+            env = {"TERRAIN_DATA_DIR": directory, "TERRAIN_SOURCE": "local"}
+            with patch.dict("os.environ", env, clear=False), patch("terrain_provider.LOCAL_CATALOG", LocalRasterCatalog()):
+                contours = build_slope_analysis(polygon)["contours"]
+        self.assertIn(contours["intervalFt"], (1, 2, 5, 10, 20, 25, 50, 100))
+        self.assertTrue(contours["lines"])
+        self.assertTrue(any(line["label"] for line in contours["lines"]))
 
 
 if __name__ == "__main__":

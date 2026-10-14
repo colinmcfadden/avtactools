@@ -571,6 +571,143 @@ def _render_slope_png(slope_deg: np.ndarray, display_mask: np.ndarray) -> str:
     return "data:image/png;base64," + base64.b64encode(encoded.tobytes()).decode("ascii")
 
 
+FEET_PER_METRE = 3.28084
+# Contour intervals in feet, finest first: the finest that keeps the ground round an LZ to about a dozen lines is used.
+CONTOUR_INTERVALS_FT = (1, 2, 5, 10, 20, 25, 50, 100)
+CONTOUR_MAX_LINES = 12
+# Every fifth line is a major (index) one, as on a topographic map.
+CONTOUR_MAJOR_EVERY = 5
+# Contours run this far past the LZ's boundary, so the ground just beyond its edge shows (faded on the clients).
+CONTOUR_RING_M = 40.0
+# The ground is smoothed over about this much before it is contoured, so a DEM's noise does not draw specks and wiggles: the lines are
+# for reading the shape of the ground, and the slope itself is measured from the unsmoothed grid.
+CONTOUR_SMOOTHING_M = 2.0
+# A line is simplified to within this much of itself (a fraction of a cell), and a closed ring shorter than this many cells round is left out.
+CONTOUR_SIMPLIFY_CELLS = 0.35
+CONTOUR_MIN_RING_CELLS = 12.0
+
+
+def _contour_interval_ft(relief_ft: float) -> int:
+    for interval in CONTOUR_INTERVALS_FT:
+        if relief_ft / interval <= CONTOUR_MAX_LINES:
+            return interval
+    return CONTOUR_INTERVALS_FT[-1]
+
+
+def _inside_ring(xs: np.ndarray, ys: np.ndarray, ring_x: np.ndarray, ring_y: np.ndarray) -> np.ndarray:
+    """Whether each point is inside a closed ring (even-odd ray casting, vectorised over the points)."""
+    inside = np.zeros(len(xs), dtype=bool)
+    x0s, y0s = ring_x, ring_y
+    x1s, y1s = np.roll(ring_x, -1), np.roll(ring_y, -1)
+    for x0, y0, x1, y1 in zip(x0s, y0s, x1s, y1s):
+        if y0 == y1:
+            continue
+        crosses = (y0 > ys) != (y1 > ys)
+        at_x = x0 + (ys - y0) * (x1 - x0) / (y1 - y0)
+        inside ^= crosses & (xs < at_x)
+    return inside
+
+
+def _split_by(flags: np.ndarray):
+    """Runs of equal flags as (start, end, flag), end exclusive; neighbouring runs share their joining vertex, so they meet."""
+    runs = []
+    start = 0
+    for i in range(1, len(flags) + 1):
+        if i == len(flags) or flags[i] != flags[start]:
+            runs.append((start, min(i + 1, len(flags)), bool(flags[start])))
+            start = i
+    return runs
+
+
+def _slope_contours(grid: TerrainGrid, polygon, polygon_mask: np.ndarray) -> dict:
+    """
+    Contour lines of the ground in and just round the LZ, in feet: `intervalFt`, and `lines`, each a piece of one contour with its
+    `elevationFt`, whether it is a `major` (every fifth) line, whether it lies `inside` the boundary (the clients fade the ring outside it),
+    its `points` as [lat, lon], and, on the longest inside piece of each elevation, a `label` point for its number. The heights are the
+    source's own (NAVD88 for the local DEMs), as the slope is.
+    """
+    from contourpy import LineType, contour_generator
+
+    cell_m = max(min(grid.xres_m, grid.yres_m), 0.01)
+    reach = max(1, int(math.ceil(CONTOUR_RING_M / cell_m)))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1))
+    zone = cv2.dilate(polygon_mask.astype(np.uint8), kernel).astype(bool) & np.isfinite(grid.elevation_m)
+    if not zone.any():
+        return {"intervalFt": CONTOUR_INTERVALS_FT[0], "lines": []}
+
+    elevation_ft = grid.elevation_m.astype(np.float64) * FEET_PER_METRE
+    sigma = CONTOUR_SMOOTHING_M / cell_m
+    if sigma >= 0.3:
+        # Smoothed where there is ground only: the gaps (NaN) are weighted out rather than spread into their neighbours.
+        known = np.isfinite(elevation_ft)
+        weights = cv2.GaussianBlur(known.astype(np.float64), (0, 0), sigma)
+        blurred = cv2.GaussianBlur(np.where(known, elevation_ft, 0.0), (0, 0), sigma)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            elevation_ft = np.where(known, blurred / weights, np.nan)
+    inside_values = elevation_ft[polygon_mask & np.isfinite(elevation_ft)]
+    relief = elevation_ft[zone]
+    interval = _contour_interval_ft(float(relief.max() - relief.min()))
+    if inside_values.size == 0:
+        return {"intervalFt": interval, "lines": []}
+    first = math.ceil(float(relief.min()) / interval) * interval
+    last = math.floor(float(relief.max()) / interval) * interval
+
+    masked = np.ma.masked_array(elevation_ft, mask=~zone)
+    generator = contour_generator(z=masked, line_type=LineType.Separate)
+
+    lats = [float(point[0]) for point in polygon]
+    lons = [float(point[1]) for point in polygon]
+    ring_x, ring_y = (np.asarray(v, dtype=np.float64) for v in transform("EPSG:4326", grid.crs, lons, lats))
+
+    def to_metres(path):
+        # Pixel centres to the grid's metres: column, row (from the top) through its affine transform.
+        cols, rows = path[:, 0] + 0.5, path[:, 1] + 0.5
+        t = grid.transform
+        return t.c + cols * t.a + rows * t.b, t.f + cols * t.d + rows * t.e
+
+    def to_latlon(xs, ys):
+        lon_deg, lat_deg = transform(grid.crs, "EPSG:4326", list(map(float, xs)), list(map(float, ys)))
+        return [[round(lat, 6), round(lon, 6)] for lat, lon in zip(lat_deg, lon_deg)]
+
+    lines = []
+    level = first
+    while level <= last:
+        best = None  # (length, index of the line, index of the label vertex)
+        for path in generator.lines(level):
+            if len(path) < 2:
+                continue
+            if np.allclose(path[0], path[-1]) and float(np.hypot(*np.diff(path, axis=0).T).sum()) < CONTOUR_MIN_RING_CELLS:
+                continue                                                               # a speck: a ring a few cells round
+            xs, ys = to_metres(path)
+            inside = _inside_ring(xs, ys, ring_x, ring_y)
+            # Split where the line crosses the boundary first, on every vertex, then simplify each piece: simplified first, a straight
+            # line across the LZ would keep only its two ends, both outside it.
+            for start, end, is_inside in _split_by(inside):
+                if end - start < 2:
+                    continue
+                piece = path[start:end]
+                kept = cv2.approxPolyDP(piece.astype(np.float32).reshape(-1, 1, 2), CONTOUR_SIMPLIFY_CELLS, False).reshape(-1, 2)
+                if np.array_equal(piece[0], piece[-1]) and not np.array_equal(kept[0], kept[-1]):
+                    kept = np.vstack([kept, kept[:1]])                                  # a ring stays closed
+                lines.append({
+                    "elevationFt": int(level),
+                    "major": int(level) % (interval * CONTOUR_MAJOR_EVERY) == 0,
+                    "inside": is_inside,
+                    "points": to_latlon(*to_metres(kept.astype(np.float64))),
+                    "label": None,
+                })
+                if is_inside:
+                    steps = np.hypot(np.diff(xs[start:end]), np.diff(ys[start:end]))
+                    length = float(steps.sum())
+                    if best is None or length > best[0]:
+                        halfway = min(int(np.searchsorted(np.cumsum(steps), length / 2.0)) + 1, end - start - 1)
+                        best = (length, len(lines) - 1, (xs[start + halfway], ys[start + halfway]))
+        if best is not None:
+            lines[best[1]]["label"] = to_latlon(np.array([best[2][0]]), np.array([best[2][1]]))[0]
+        level += interval
+    return {"intervalFt": interval, "lines": lines}
+
+
 def build_slope_analysis(polygon, landing_heading_deg: float | None = None) -> dict:
     """Build a clipped continuous slope-overlay response for the frontend."""
     requested = bounds_for_polygon(polygon)
@@ -610,5 +747,6 @@ def build_slope_analysis(polygon, landing_heading_deg: float | None = None) -> d
         "stats": stats,
         "directional": directional,
         "byHeading": _slope_by_heading(display_mask, grad_east, grad_north),
+        "contours": _slope_contours(grid, polygon, polygon_mask),
         "thresholds": {"bands": SLOPE_BANDS_DEG, "uh60": UH60_LIMITS_DEG},
     }
