@@ -1,4 +1,5 @@
 import React, { useId, useState } from "react";
+import Icon from "../ui/Icon";
 import "./slopeProfile.css";
 
 // The graph's own units: it is drawn in a 300 by 70 box and stretched to the tile's width (so its words are HTML, which is not stretched).
@@ -98,9 +99,10 @@ const storeOpen = (open) => {
 };
 
 /**
- * The slope profile tile: the ground along the landing heading (approach to departure, the LZ shaded) and across it (left to right), from
- * slopeProfileFor. Heights in feet; the height axis spans at least 30 ft, so gentle ground is not drawn as steep. Its header opens and
- * closes it.
+ * The slope profile: the ground along the landing heading (approach to departure, the LZ shaded) and across it (left to right), from
+ * slopeProfileFor. Heights in feet; the height axis spans at least 30 ft, so gentle ground is not drawn as steep. It opens and closes from
+ * a button drawn as the redesign's dropdowns are (the top bar's Import and workspace menus): bordered, with a chevron on its right that
+ * points down while closed and up while open; open, the graphs sit in a box under it.
  */
 const SlopeProfile = ({ profile }) => {
   const [open, setOpen] = useState(readOpen);
@@ -111,13 +113,21 @@ const SlopeProfile = ({ profile }) => {
     storeOpen(!open);
   };
   return (
-    <div className={`ms-tile span-6 slope-profile-tile${open ? "" : " slope-profile-tile--closed"}`}>
-      <button type="button" className="slope-profile__toggle" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
-        <span className="ms-label">Slope profile (ft)</span>
-        <span className="slope-profile__chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+    <div className={`span-6 slope-profile-block${open ? " slope-profile-block--open" : ""}`}>
+      <button
+        type="button"
+        className="slope-profile__toggle"
+        aria-label="Slope profile, heights in feet"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={toggle}
+      >
+        <span className="slope-profile__toggle-label">Slope profile</span>
+        <span className="slope-profile__toggle-unit">ft</span>
+        <Icon name={open ? "chevronUp" : "chevronDown"} size={14} />
       </button>
       {open && (
-        <div id={bodyId} className="slope-profile__body">
+        <div id={bodyId} className="ms-tile slope-profile__body">
           <ProfileGraph line={profile.along} startLabel="Approach" endLabel="Departure" className="slope-profile--along" />
           <ProfileGraph line={profile.across} startLabel="Left" endLabel="Right" className="slope-profile--across" />
         </div>

@@ -296,9 +296,9 @@ class DiagramsScreenTest {
         val across = line.copy(heading = 180, words = "Across, left to right: level through the LZ")
         show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles().copy(profile = SlopeProfile.Profile(line, across)))))
         compose.onNode(
-            androidx.compose.ui.test.hasContentDescription("Slope profile. Along 090°: rises 7 ft through the LZ, 1.9° on average. Across, left to right: level through the LZ."),
+            androidx.compose.ui.test.hasContentDescription("Slope profile, heights in feet. Along 090°: rises 7 ft through the LZ, 1.9° on average. Across, left to right: level through the LZ."),
         ).performScrollTo().assertIsDisplayed()
-        assertEquals(0, compose.onAllNodesWithText("Slope profile (ft)").fetchSemanticsNodes().size)          // one description, not each word again
+        assertEquals(0, compose.onAllNodesWithText("Slope profile").fetchSemanticsNodes().size)               // one description, not each word again
     }
 
     @Test
@@ -307,7 +307,7 @@ class DiagramsScreenTest {
         show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles().copy(profile = SlopeProfile.Profile(line, line.copy(words = "Across"))))))
         val opened = androidx.compose.ui.test.hasStateDescription("Open")
         compose.onNode(opened and androidx.compose.ui.test.hasContentDescription("Slope profile", substring = true)).performScrollTo().performClick()
-        val closed = compose.onNode(androidx.compose.ui.test.hasContentDescription("Slope profile") and androidx.compose.ui.test.hasStateDescription("Closed"))
+        val closed = compose.onNode(androidx.compose.ui.test.hasContentDescription("Slope profile, heights in feet") and androidx.compose.ui.test.hasStateDescription("Closed"))
         closed.assertIsDisplayed()
         assertEquals(0, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Along 090°", substring = true)).fetchSemanticsNodes().size)
         closed.performClick()

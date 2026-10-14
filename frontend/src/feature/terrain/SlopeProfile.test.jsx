@@ -33,8 +33,9 @@ beforeEach(() => window.localStorage.clear());
 describe("the slope profile tile", () => {
   it("opens and closes from its header, and remembers which in this browser", () => {
     const { container, unmount } = render(<SlopeProfile profile={slopeProfileFor(profiles(), 90)} />);
-    const header = screen.getByRole("button", { name: /slope profile/i });
+    const header = screen.getByRole("button", { name: "Slope profile, heights in feet" });
     expect(header).toHaveAttribute("aria-expanded", "true");
+    expect(header).toHaveAttribute("aria-controls", container.querySelector(".slope-profile__body").id);
     expect(container.querySelectorAll(".slope-profile__graph")).toHaveLength(2);
     fireEvent.click(header);
     expect(header).toHaveAttribute("aria-expanded", "false");
@@ -106,8 +107,8 @@ describe("the slope profile tile", () => {
     rerender(<MissionSummary {...props} landingHdg="270°" />);
     expect(container.querySelector(".slope-profile__words").textContent).toBe("Along 270°: falls 57 ft through the LZ, 5.0° on average");
     rerender(<MissionSummary {...props} landingHdg="RWY" />);
-    expect(container.querySelector(".slope-profile-tile")).toBeNull();                // no landing heading, no profile
+    expect(container.querySelector(".slope-profile-block")).toBeNull();                // no landing heading, no profile
     rerender(<MissionSummary {...props} terrainData={{ stats: { maxDeg: 5 } }} landingHdg="090°" />);
-    expect(container.querySelector(".slope-profile-tile")).toBeNull();                // a server from before profiles
+    expect(container.querySelector(".slope-profile-block")).toBeNull();                // a server from before profiles
   });
 });

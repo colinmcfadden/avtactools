@@ -1,18 +1,21 @@
 package app.ezpztac.workspace
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -71,39 +74,39 @@ internal fun profileRuns(line: SlopeProfile.Line): List<List<Pair<Double, Double
 }
 
 /**
- * The slope profile tile, under the slope tile: the ground along the landing heading (approach to departure, the LZ shaded) and across it
- * (left to right), each with its sentence. Its header opens and closes it ([open], [onOpenChange]); open, a screen reader hears the two
- * sentences with it, the graphs being pictures of them.
+ * The slope profile, under the slope tile: the ground along the landing heading (approach to departure, the LZ shaded) and across it
+ * (left to right), each with its sentence. It opens and closes ([open], [onOpenChange]) from a button drawn as the app's dropdowns are
+ * (`Choice`: an outlined button across the panel, a chevron at its end that points down while closed and up while open); open, the graphs
+ * sit in a box under it, and a screen reader hears the two sentences with the button, the graphs being pictures of them.
  */
 @Composable
 internal fun SlopeProfileTile(profile: SlopeProfile.Profile, open: Boolean, onOpenChange: (Boolean) -> Unit) {
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-        Column(Modifier.padding(horizontal = Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .clickable(role = Role.Button, onClickLabel = if (open) "Close" else "Open") { onOpenChange(!open) }
-                    .clearAndSetSemantics {
-                        role = Role.Button
-                        contentDescription = if (open) "Slope profile. ${profile.along.words}. ${profile.across.words}." else "Slope profile"
-                        stateDescription = if (open) "Open" else "Closed"
-                        onClick(label = if (open) "Close" else "Open") { onOpenChange(!open); true }
-                    },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+        OutlinedButton(
+            onClick = { onOpenChange(!open) },
+            shape = RoundedCornerShape(Tokens.Radius.md.dp),
+            contentPadding = PaddingValues(start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.md.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = Tokens.Size.touchTarget.dp)
+                .clearAndSetSemantics {
+                    role = Role.Button
+                    contentDescription = if (open) "Slope profile, heights in feet. ${profile.along.words}. ${profile.across.words}." else "Slope profile, heights in feet"
+                    stateDescription = if (open) "Open" else "Closed"
+                    onClick(label = if (open) "Close" else "Open") { onOpenChange(!open); true }
+                },
+        ) {
+            Text("Slope profile", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            Text("ft", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(Tokens.Spacing.sm.dp))
+            Icon(painterResource(if (open) EzpzIcons.expandLess else EzpzIcons.expandMore), contentDescription = null)
+        }
+        if (open) {
+            Surface(
+                Modifier.fillMaxWidth().clearAndSetSemantics {},
+                shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
-                Text("Slope profile (ft)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Icon(
-                    painterResource(if (open) EzpzIcons.expandLess else EzpzIcons.expandMore), contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (open) {
-                Column(
-                    Modifier.padding(bottom = Tokens.Spacing.md.dp).clearAndSetSemantics {},
-                    verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
-                ) {
+                Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                     ProfileGraph(profile.along, "Approach", "Departure", dashed = false)
                     ProfileGraph(profile.across, "Left", "Right", dashed = true)
                 }

@@ -7,6 +7,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
@@ -31,7 +32,7 @@ class DiagramsScreenshotTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun shot(name: String, state: DiagramsUiState, suggested: String? = null, mode: ThemeMode = ThemeMode.Dark) {
+    private fun shot(name: String, state: DiagramsUiState, suggested: String? = null, mode: ThemeMode = ThemeMode.Dark, before: () -> Unit = {}) {
         compose.setContent {
             EzpzTheme(mode) {
                 // On the sheet's surface, as it is in the app, which also sets the colour of text that names none.
@@ -40,6 +41,7 @@ class DiagramsScreenshotTest {
                 }
             }
         }
+        before()
         compose.onRoot().captureRoboImage("build/screenshots/diagrams-$name.png")
     }
 
@@ -118,6 +120,13 @@ class DiagramsScreenshotTest {
     @Test fun cardProfile() = shot(
         "card-profile", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(4.2, "LANDING", LzSummary.SlopeLevel.SAFE).copy(profile = PROFILE)), rows = rows),
     )
+    @Test fun cardProfileClosed() = shot(
+        "card-profile-closed",
+        DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(4.2, "LANDING", LzSummary.SlopeLevel.SAFE).copy(profile = PROFILE)), rows = rows),
+    ) {
+        compose.onNode(androidx.compose.ui.test.hasStateDescription("Open")).performClick()
+        compose.waitForIdle()
+    }
     @Test @Config(qualifiers = "w411dp-h2400dp-xxhdpi", fontScale = 2.0f) fun cardProfileLargeNight() = shot(
         "card-profile-large-night",
         DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(4.2, "LANDING", LzSummary.SlopeLevel.SAFE).copy(profile = PROFILE)), rows = rows),
