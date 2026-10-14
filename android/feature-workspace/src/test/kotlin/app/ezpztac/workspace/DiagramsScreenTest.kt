@@ -302,6 +302,19 @@ class DiagramsScreenTest {
     }
 
     @Test
+    fun `the slope profile closes and opens from its header`() {
+        val line = SlopeProfile.Line(90, listOf(-300.0, 0.0, 300.0), listOf(1200.0, 1210.0, 1220.0), listOf(-100.0, 100.0), 6.7, 1.9, "Along 090°: rises 7 ft through the LZ, 1.9° on average")
+        show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles().copy(profile = SlopeProfile.Profile(line, line.copy(words = "Across"))))))
+        val opened = androidx.compose.ui.test.hasStateDescription("Open")
+        compose.onNode(opened and androidx.compose.ui.test.hasContentDescription("Slope profile", substring = true)).performScrollTo().performClick()
+        val closed = compose.onNode(androidx.compose.ui.test.hasContentDescription("Slope profile") and androidx.compose.ui.test.hasStateDescription("Closed"))
+        closed.assertIsDisplayed()
+        assertEquals(0, compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Along 090°", substring = true)).fetchSemanticsNodes().size)
+        closed.performClick()
+        compose.onNode(opened and androidx.compose.ui.test.hasContentDescription("Along 090°", substring = true)).assertIsDisplayed()
+    }
+
+    @Test
     fun `the landing heading's call and the wind are shown under the slope, and spoken with it`() {
         val lines = listOf("Landing 090°: nose up 16.0°, limit 9°", "Wind 16 kt: limits \u22126°, nose down prohibited above 15 kt")
         val call = LzSummary.SlopeCall(LzSummary.SlopeLevel.DANGER, "LIMIT EXCEEDED", 20.0, heading = 90, lines = lines)

@@ -1,6 +1,6 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
-import SlopeProfile from "./SlopeProfile";
+import SlopeProfile, { SLOPE_PROFILE_STORAGE_KEY } from "./SlopeProfile";
 import { slopeProfileFor } from "./groundProfile";
 import MissionSummary from "../../components/MissionSummary";
 
@@ -28,7 +28,38 @@ const profiles = (gapAt90 = false) => ({
 
 const tile = (profile) => render(<SlopeProfile profile={profile} />).container;
 
+beforeEach(() => window.localStorage.clear());
+
 describe("the slope profile tile", () => {
+  it("opens and closes from its header, and remembers which in this browser", () => {
+    const { container, unmount } = render(<SlopeProfile profile={slopeProfileFor(profiles(), 90)} />);
+    const header = screen.getByRole("button", { name: /slope profile/i });
+    expect(header).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelectorAll(".slope-profile__graph")).toHaveLength(2);
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "false");
+    expect(container.querySelectorAll(".slope-profile__graph")).toHaveLength(0);
+    expect(window.localStorage.getItem(SLOPE_PROFILE_STORAGE_KEY)).toBe("closed");
+    unmount();
+    // Another LZ/PZ, or a reload: still closed.
+    const view = render(<SlopeProfile profile={slopeProfileFor(profiles(), 270)} />);
+    expect(view.container.querySelectorAll(".slope-profile__graph")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: /slope profile/i }));
+    expect(view.container.querySelectorAll(".slope-profile__graph")).toHaveLength(2);
+    expect(window.localStorage.getItem(SLOPE_PROFILE_STORAGE_KEY)).toBeNull();
+  });
+
+  it("still opens and closes where storage is refused", () => {
+    const get = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    const set = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    const { container } = render(<SlopeProfile profile={slopeProfileFor(profiles(), 90)} />);
+    expect(container.querySelectorAll(".slope-profile__graph")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: /slope profile/i }));
+    expect(container.querySelectorAll(".slope-profile__graph")).toHaveLength(0);
+    get.mockRestore();
+    set.mockRestore();
+  });
+
   it("draws the ground along and across the landing heading, each with its words and its ends named", () => {
     const container = tile(slopeProfileFor(profiles(), 270));
     const words = [...container.querySelectorAll(".slope-profile__words")].map((w) => w.textContent);

@@ -189,7 +189,9 @@ internal fun SummaryTiles(summary: SummaryUi) {
         }
         Tile("Elevation (MSL)", summary.elevation?.let { if (it.all(Char::isDigit) || it.startsWith("-")) "$it ft" else it } ?: "—", Modifier.fillMaxWidth())
         SlopeTile(summary.slope)
-        summary.profile?.let { SlopeProfileTile(it) }
+        // Open until closed, and kept so while the app runs (a turn of the phone included); how this person likes the card, not part of the plan.
+        var profileOpen by rememberSaveable { mutableStateOf(true) }
+        summary.profile?.let { SlopeProfileTile(it, profileOpen) { open -> profileOpen = open } }
     }
 }
 

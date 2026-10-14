@@ -1,14 +1,17 @@
 package app.ezpztac.workspace
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,10 +25,16 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.planning.SlopeProfile
@@ -63,18 +72,42 @@ internal fun profileRuns(line: SlopeProfile.Line): List<List<Pair<Double, Double
 
 /**
  * The slope profile tile, under the slope tile: the ground along the landing heading (approach to departure, the LZ shaded) and across it
- * (left to right), each with its sentence. A screen reader hears the two sentences; the graphs are pictures of them.
+ * (left to right), each with its sentence. Its header opens and closes it ([open], [onOpenChange]); open, a screen reader hears the two
+ * sentences with it, the graphs being pictures of them.
  */
 @Composable
-internal fun SlopeProfileTile(profile: SlopeProfile.Profile) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "Slope profile. ${profile.along.words}. ${profile.across.words}." },
-        shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            Text("Slope profile (ft)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            ProfileGraph(profile.along, "Approach", "Departure", dashed = false)
-            ProfileGraph(profile.across, "Left", "Right", dashed = true)
+internal fun SlopeProfileTile(profile: SlopeProfile.Profile, open: Boolean, onOpenChange: (Boolean) -> Unit) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.padding(horizontal = Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable(role = Role.Button, onClickLabel = if (open) "Close" else "Open") { onOpenChange(!open) }
+                    .clearAndSetSemantics {
+                        role = Role.Button
+                        contentDescription = if (open) "Slope profile. ${profile.along.words}. ${profile.across.words}." else "Slope profile"
+                        stateDescription = if (open) "Open" else "Closed"
+                        onClick(label = if (open) "Close" else "Open") { onOpenChange(!open); true }
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Slope profile (ft)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(
+                    painterResource(if (open) EzpzIcons.expandLess else EzpzIcons.expandMore), contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (open) {
+                Column(
+                    Modifier.padding(bottom = Tokens.Spacing.md.dp).clearAndSetSemantics {},
+                    verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+                ) {
+                    ProfileGraph(profile.along, "Approach", "Departure", dashed = false)
+                    ProfileGraph(profile.across, "Left", "Right", dashed = true)
+                }
+            }
         }
     }
 }

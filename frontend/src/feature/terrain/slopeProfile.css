@@ -5,6 +5,28 @@
   gap: 4px;
 }
 
+.slope-profile-tile--closed { gap: 0; }
+
+/* The header: the whole row opens and closes the tile, a finger's height tall. */
+.slope-profile__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.slope-profile__toggle .ms-label { width: auto; margin: 0; text-align: left; }
+.slope-profile__toggle:focus-visible { outline: 2px solid var(--ff-accent, #00b5e2); outline-offset: 2px; border-radius: 4px; }
+.slope-profile__chevron { font-size: 12px; color: var(--ff-text-muted, #9ca3af); }
+
+.slope-profile__body { display: flex; flex-direction: column; gap: 4px; }
+
 .slope-profile {
   margin: 0;
 }

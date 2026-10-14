@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useId, useState } from "react";
 import "./slopeProfile.css";
 
 // The graph's own units: it is drawn in a 300 by 70 box and stretched to the tile's width (so its words are HTML, which is not stretched).
@@ -77,17 +77,51 @@ export const ProfileGraph = ({ line, startLabel, endLabel, className }) => {
   );
 };
 
+/** Whether the tile is open is remembered in this browser (how this person likes the panel, not part of any plan); open until closed. */
+export const SLOPE_PROFILE_STORAGE_KEY = "ezpz.slopeProfile";
+
+const readOpen = () => {
+  try {
+    return window.localStorage.getItem(SLOPE_PROFILE_STORAGE_KEY) !== "closed";
+  } catch {
+    return true;
+  }
+};
+
+const storeOpen = (open) => {
+  try {
+    if (open) window.localStorage.removeItem(SLOPE_PROFILE_STORAGE_KEY);
+    else window.localStorage.setItem(SLOPE_PROFILE_STORAGE_KEY, "closed");
+  } catch {
+    // Not remembered across reloads; the button still works.
+  }
+};
+
 /**
  * The slope profile tile: the ground along the landing heading (approach to departure, the LZ shaded) and across it (left to right), from
- * slopeProfileFor. Heights in feet; the height axis spans at least 30 ft, so gentle ground is not drawn as steep.
+ * slopeProfileFor. Heights in feet; the height axis spans at least 30 ft, so gentle ground is not drawn as steep. Its header opens and
+ * closes it.
  */
 const SlopeProfile = ({ profile }) => {
+  const [open, setOpen] = useState(readOpen);
+  const bodyId = useId();
   if (!profile) return null;
+  const toggle = () => {
+    setOpen(!open);
+    storeOpen(!open);
+  };
   return (
-    <div className="ms-tile span-6 slope-profile-tile">
-      <div className="ms-label">Slope profile (ft)</div>
-      <ProfileGraph line={profile.along} startLabel="Approach" endLabel="Departure" className="slope-profile--along" />
-      <ProfileGraph line={profile.across} startLabel="Left" endLabel="Right" className="slope-profile--across" />
+    <div className={`ms-tile span-6 slope-profile-tile${open ? "" : " slope-profile-tile--closed"}`}>
+      <button type="button" className="slope-profile__toggle" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+        <span className="ms-label">Slope profile (ft)</span>
+        <span className="slope-profile__chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div id={bodyId} className="slope-profile__body">
+          <ProfileGraph line={profile.along} startLabel="Approach" endLabel="Departure" className="slope-profile--along" />
+          <ProfileGraph line={profile.across} startLabel="Left" endLabel="Right" className="slope-profile--across" />
+        </div>
+      )}
     </div>
   );
 };

@@ -620,7 +620,9 @@ through the LZ's area centroid every 2° of heading (a line serves its opposite 
 each way, heights read between cells (null where there is none, never made up) and where each crosses the boundary; the clients pick the
 line nearest the heading (halves up), so turning the doghouse redraws with no request. It is loaded wider than the slope's grid, and a
 local DEM must cover it whole (else, in `auto`, Terrarium answers it; with `TERRAIN_SOURCE=local`, there is no profile). About 70 KB an
-analysis. The height axis spans at least 30 ft, so gentle ground is not drawn as steep. **Not on the map**: it is a picture beside the tile.**Headings are true** (METAR winds are true; the doghouse box is turned from true north); see §15.
+analysis. The height axis spans at least 30 ft, so gentle ground is not drawn as steep. **Not on the map**: it is a picture beside the tile.
+Its header closes and opens it (open until closed): remembered in the browser on the web (`ezpz.slopeProfile`), and while the app runs on
+Android (`rememberSaveable`); how the person likes the card, never saved with a plan.**Headings are true** (METAR winds are true; the doghouse box is turned from true north); see §15.
 
 **Threat masking.** Radial line-of-sight viewshed over Terrarium tiles with
 earth curvature and refraction, one mask per altitude band. The DEM is
