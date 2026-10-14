@@ -340,6 +340,18 @@ public data class ContourLine(val elevationFt: Int, val major: Boolean, val insi
 @Serializable
 public data class SlopeContours(val intervalFt: Int, val lines: List<ContourLine>)
 
+/**
+ * The ground along one straight line through the landing zone's middle at [heading] (0..179, true): its heights in feet ([elevationsFt], null
+ * where the terrain has none) every `stepM` from `halfLengthM` behind the middle to `halfLengthM` ahead, and where the line crosses the
+ * boundary ([lz], metres from the middle, behind negative), or null. A heading of 180 or more is this line read backwards.
+ */
+@Serializable
+public data class ProfileLine(val heading: Int, val elevationsFt: List<Double?>, val lz: List<Double>? = null)
+
+/** The ground along lines through the landing zone's middle ([center], `[lat, lon]`), one every [headingStepDeg], for the slope profile. */
+@Serializable
+public data class SlopeProfiles(val center: List<Double>, val stepM: Double, val halfLengthM: Double, val headingStepDeg: Int, val lines: List<ProfileLine>)
+
 /** The UH-60's slope landing limits with no wind, degrees: 15 nose high (nose up), 6 nose low (nose down), 15 cross slope. */
 @Serializable
 public data class Uh60Limits(val noseHigh: Double, val noseLow: Double, val crossSlope: Double)
@@ -370,6 +382,8 @@ public data class TerrainAnalysis(
     val byHeading: List<HeadingSlope>? = null,
     /** The contour lines of the ground in and round the polygon. Null from a server older than the field, which draws the raster alone. */
     val contours: SlopeContours? = null,
+    /** The ground along lines through the polygon, for the slope profile. Null from a server older than the field, or with no ground round the polygon. */
+    val profiles: SlopeProfiles? = null,
     val thresholds: SlopeThresholds,
 )
 

@@ -37,6 +37,7 @@ import app.ezpztac.model.Notams
 import app.ezpztac.planning.AircraftGeometry
 import app.ezpztac.planning.LzSummary
 import app.ezpztac.planning.RouteCalc
+import app.ezpztac.planning.SlopeProfile
 import app.ezpztac.sync.ConflictResolver
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.SyncEngine
@@ -209,6 +210,8 @@ data class SummaryUi(
     /** Feet MSL as the server wrote it (`TBD` when it could not say), or null when there is none. */
     val elevation: String?,
     val slope: SlopeTileUi,
+    /** The ground along and across the landing heading, when the slope was measured by a server that sends it and there is a landing heading. */
+    val profile: SlopeProfile.Profile? = null,
 )
 
 /**
@@ -727,6 +730,10 @@ class DiagramsViewModel @Inject constructor(
         if (diagram.status != DiagramStatus.ANALYZED || boundary.isEmpty()) return null
         val fit = LzSummary.areaAndCapacity(boundary, aircraft)
         val key = analysis.boundaryKey(diagram)
+        val measured = (slope as? SlopeState.Ready)?.takeIf { it.boundaryKey == key }
+        val profile = measured?.analysis?.profiles?.let { p ->
+            SlopeProfile.Ground(p.stepM, p.halfLengthM, p.headingStepDeg, p.lines.map { SlopeProfile.GroundLine(it.heading, it.elevationsFt, it.lz) })
+        }.let { SlopeProfile.slopeProfileFor(it, Doghouses.landingHeading(diagram.flightData)) }
         val tile = when {
             slope is SlopeState.Ready && slope.boundaryKey == key -> {
                 val byHeading = slope.analysis.byHeading?.map { LzSummary.HeadingSlope(it.heading, it.noseHighMaxDeg, it.noseLowMaxDeg, it.crossSlopeMaxDeg) }
@@ -739,7 +746,7 @@ class DiagramsViewModel @Inject constructor(
             else -> SlopeTileUi.Measuring                               // not asked for yet, in flight, or measured for a boundary that has since moved
         }
         val elevation = (diagram.analysis.gridElevation as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
-        return SummaryUi(aircraft = aircraft.designation, capacity = fit.capacity, areaSqFt = fit.areaSqFt, elevation = elevation, slope = tile)
+        return SummaryUi(aircraft = aircraft.designation, capacity = fit.capacity, areaSqFt = fit.areaSqFt, elevation = elevation, slope = tile, profile = profile)
     }
 
     private fun weatherOf(state: WeatherState): WeatherUi {

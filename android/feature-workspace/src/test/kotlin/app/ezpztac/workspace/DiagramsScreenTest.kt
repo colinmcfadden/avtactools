@@ -20,6 +20,7 @@ import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.planning.LzSummary
+import app.ezpztac.planning.SlopeProfile
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncStatus
 import org.junit.Assert.assertEquals
@@ -287,6 +288,17 @@ class DiagramsScreenTest {
     fun `the slope call is spoken as well as coloured`() {
         show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles(SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.DANGER, "LIMIT EXCEEDED", 16.04), "terrarium", 19.0)))))
         compose.onNode(androidx.compose.ui.test.hasContentDescription("Maximum terrain slope 16.0 degrees. LIMIT EXCEEDED.")).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `the slope profile is shown under the slope tile, and its two sentences spoken`() {
+        val line = SlopeProfile.Line(90, listOf(-300.0, 0.0, 300.0), listOf(1200.0, 1210.0, 1220.0), listOf(-100.0, 100.0), 6.7, 1.9, "Along 090°: rises 7 ft through the LZ, 1.9° on average")
+        val across = line.copy(heading = 180, words = "Across, left to right: level through the LZ")
+        show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles().copy(profile = SlopeProfile.Profile(line, across)))))
+        compose.onNode(
+            androidx.compose.ui.test.hasContentDescription("Slope profile. Along 090°: rises 7 ft through the LZ, 1.9° on average. Across, left to right: level through the LZ."),
+        ).performScrollTo().assertIsDisplayed()
+        assertEquals(0, compose.onAllNodesWithText("Slope profile (ft)").fetchSemanticsNodes().size)          // one description, not each word again
     }
 
     @Test

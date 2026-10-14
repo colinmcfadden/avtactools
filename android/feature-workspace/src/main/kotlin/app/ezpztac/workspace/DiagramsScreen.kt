@@ -189,6 +189,7 @@ internal fun SummaryTiles(summary: SummaryUi) {
         }
         Tile("Elevation (MSL)", summary.elevation?.let { if (it.all(Char::isDigit) || it.startsWith("-")) "$it ft" else it } ?: "—", Modifier.fillMaxWidth())
         SlopeTile(summary.slope)
+        summary.profile?.let { SlopeProfileTile(it) }
     }
 }
 

@@ -113,6 +113,24 @@ class TerrainCallsTest {
     }
 
     @Test
+    fun `the analysis carries the ground along a line every two degrees through the lz, reaching past it`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("terrain-analysis") }
+            val profiles = rig.client.terrainAnalysis(polygon).profiles!!
+            assertEquals(2, profiles.headingStepDeg)
+            assertEquals((0 until 180 step 2).toList(), profiles.lines.map { it.heading })
+            val count = profiles.lines.first().elevationsFt.size
+            assertTrue(profiles.lines.all { it.elevationsFt.size == count })
+            assertEquals(profiles.halfLengthM, profiles.stepM * (count - 1) / 2, 0.01)
+            // The recorded ground rises east: the line at 090 climbs from behind the middle to ahead of it, the one at 000 is level.
+            val east = profiles.lines.single { it.heading == 90 }.elevationsFt.filterNotNull()
+            assertTrue(east.last() > east.first())
+            val lz = profiles.lines.single { it.heading == 90 }.lz!!
+            assertTrue(lz[0] < 0 && lz[1] > 0 && lz[1] < profiles.halfLengthM)
+        }
+    }
+
+    @Test
     fun `the analysis carries the contour lines of the ground, labelled`() = runBlocking<Unit> {
         Rig().use { rig ->
             rig.serve { Recorded.mock("terrain-analysis") }
@@ -135,11 +153,11 @@ class TerrainCallsTest {
                 rig.serve { Recorded.mock(name) }
                 val table = rig.client.terrainAnalysis(polygon).byHeading!!
                 assertEquals((0 until 360).toList(), table.map { it.heading }, name)                 // one entry a heading, in order
-                // The recorded ground (the synthetic ramp) rises east, 3.3° at its steepest: up it facing east, down it facing west, across it facing north or south.
-                assertEquals(HeadingSlope(90, 3.3, 0.0, 0.0), table[90], name)
-                assertEquals(HeadingSlope(270, 0.0, 3.3, 0.0), table[270], name)
-                assertEquals(HeadingSlope(0, 0.0, 0.0, 3.3), table[0], name)
-                assertEquals(HeadingSlope(180, 0.0, 0.0, 3.3), table[180], name)
+                // The recorded ground (the synthetic ramp) rises east, 3.4° at its steepest: up it facing east, down it facing west, across it facing north or south.
+                assertEquals(HeadingSlope(90, 3.4, 0.0, 0.0), table[90], name)
+                assertEquals(HeadingSlope(270, 0.0, 3.4, 0.0), table[270], name)
+                assertEquals(HeadingSlope(0, 0.0, 0.0, 3.4), table[0], name)
+                assertEquals(HeadingSlope(180, 0.0, 0.0, 3.4), table[180], name)
             }
         }
     }

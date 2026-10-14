@@ -25,6 +25,8 @@ import app.ezpztac.network.ApiException
 import app.ezpztac.network.DirectionalSlope
 import app.ezpztac.network.FieldAnalysis
 import app.ezpztac.network.HeadingSlope
+import app.ezpztac.network.ProfileLine
+import app.ezpztac.network.SlopeProfiles
 import app.ezpztac.network.SlopeStats
 import app.ezpztac.network.SlopeThresholds
 import app.ezpztac.network.TerrainAnalysis
@@ -86,10 +88,23 @@ class DiagramsViewModelTest {
             HeadingSlope(h, tenth(maxOf(along, 0.0)), tenth(maxOf(-along, 0.0)), tenth(Math.abs(deg * Math.sin(Math.toRadians((h - toward).toDouble())))))
         }
 
-        fun slope(maxDeg: Double, directional: DirectionalSlope? = null, byHeading: List<HeadingSlope>? = null) = TerrainAnalysis(
+        /** The ground along a line every 2° through the LZ's middle, as the server sends it: a plane of [deg] rising toward [toward], a 200 m square LZ. */
+        fun profiles(deg: Double, toward: Int) = SlopeProfiles(
+            center = listOf(34.7, -84.1), stepM = 30.0, halfLengthM = 300.0, headingStepDeg = 2,
+            lines = (0 until 180 step 2).map { h ->
+                val r = 100 / maxOf(Math.abs(Math.cos(Math.toRadians(h.toDouble()))), Math.abs(Math.sin(Math.toRadians(h.toDouble()))))
+                ProfileLine(
+                    h,
+                    (0..20).map { i -> (1200 + (i * 30 - 300) * Math.cos(Math.toRadians((h - toward).toDouble())) * Math.tan(Math.toRadians(deg))) * 3.28084 },
+                    listOf(-r, r),
+                )
+            },
+        )
+
+        fun slope(maxDeg: Double, directional: DirectionalSlope? = null, byHeading: List<HeadingSlope>? = null, profiles: SlopeProfiles? = null) = TerrainAnalysis(
             status = "success", overlay = "data:image/png;base64,AA==", bounds = listOf(listOf(34.7, -84.1), listOf(34.8, -84.0)),
             source = "local_highres_cog", resolutionM = 10.2, verticalDatum = "NAVD88",
-            stats = SlopeStats(maxDeg, maxDeg - 1, 0.0, 0.0, 0.0, 900, 94_000.0), directional = directional, byHeading = byHeading,
+            stats = SlopeStats(maxDeg, maxDeg - 1, 0.0, 0.0, 0.0, 900, 94_000.0), directional = directional, byHeading = byHeading, profiles = profiles,
             thresholds = SlopeThresholds(listOf(3.0, 6.0, 10.0, 15.0), Uh60Limits(6.0, 15.0, 15.0)),
         )
     }
@@ -516,6 +531,39 @@ class DiagramsViewModelTest {
         assertEquals(AnalysisUi.Idle, done.analysis)
         val heading = "Heading limits not checked (server not updated)"                       // slope(4.2) is an older server's: no table by heading
         assertEquals(SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2, lines = listOf(heading)), "local_highres_cog", 10.2), done.summary!!.slope)
+    }
+
+    @Test
+    fun `the slope profile follows the landing heading, along and across it`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.measure = { slope(5.0, byHeading = plane(5.0, toward = 90), profiles = profiles(5.0, toward = 90)) }
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        fun profile() = r.model.state.value.current!!.summary!!.profile
+        // Landing at 000°, the standard doghouse's: across the slope, which rises to the right (east).
+        assertEquals("Along 000°: level through the LZ", profile()!!.along.words)
+        assertEquals("Across, left to right: rises 57 ft through the LZ, 5.0° on average", profile()!!.across.words)
+        val asked = r.terrain.measured
+        r.session.edit("Heading") { it.copy(flightData = JsonObject(it.flightData + ("landing_hdg" to JsonPrimitive("270°")))) }
+        advanceUntilIdle()
+        assertEquals("Along 270°: falls 57 ft through the LZ, 5.0° on average", profile()!!.along.words)
+        assertEquals(asked, r.terrain.measured)                                                 // no new request
+        r.session.edit("Heading") { it.copy(flightData = JsonObject(it.flightData + ("landing_hdg" to JsonPrimitive("RWY")))) }
+        advanceUntilIdle()
+        assertNull(profile())                                                                   // no landing heading, no profile
+    }
+
+    @Test
+    fun `a server that sends no profile shows none`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.measure = { slope(5.0, byHeading = plane(5.0, toward = 90)) }
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        assertNull(r.model.state.value.current!!.summary!!.profile)
     }
 
     @Test

@@ -13,6 +13,7 @@ import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.planning.LzSummary
+import app.ezpztac.planning.SlopeProfile
 import app.ezpztac.sync.SyncStatus
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -64,6 +65,27 @@ class DiagramsScreenshotTest {
         SummaryUi("UH-60L", 13, 854_831, "4050", SlopeTileUi.Measured(LzSummary.SlopeCall(level, label, maxDeg, lines = lines), "local_highres_cog", 10.2))
 
     private companion object {
+        /** A spur falling away to the west of a 200 m LZ, with a knoll ahead of it to the east and a dip to the south: real-looking ground. */
+        val SPUR: SlopeProfile.Ground = SlopeProfile.Ground(
+            stepM = 10.0, halfLengthM = 400.0, headingStepDeg = 2,
+            lines = (0 until 180 step 2).map { h ->
+                val rad = Math.toRadians(h.toDouble())
+                val r = 100 / maxOf(Math.abs(Math.cos(rad)), Math.abs(Math.sin(rad)))
+                SlopeProfile.GroundLine(
+                    h,
+                    (0..80).map { i ->
+                        val d = i * 10.0 - 400
+                        val east = d * Math.sin(rad)
+                        val north = d * Math.cos(rad)
+                        val metres = 400 + 0.06 * east + 14 * Math.exp(-((east - 260) * (east - 260) + north * north) / 9000.0) -
+                            9 * Math.exp(-(east * east + (north + 230) * (north + 230)) / 12000.0)
+                        if (i < 6 && h == 90) null else metres * 3.28084                       // no ground on the far west edge of the 090 line
+                    },
+                    listOf(-r, r),
+                )
+            },
+        )
+        val PROFILE: SlopeProfile.Profile = SlopeProfile.slopeProfileFor(SPUR, 90)!!
         val LANDING_LINES = listOf("Landing 270°: within limits", "Wind 12 kt: limits \u22124°")
         val LIMIT_LINES = listOf("Landing 090°: nose up 16.0°, limit 9°", "Wind 16 kt: limits \u22126°, nose down prohibited above 15 kt")
     }
@@ -92,6 +114,14 @@ class DiagramsScreenshotTest {
     )
     @Test @Config(qualifiers = "w411dp-h2400dp-xxhdpi", fontScale = 2.0f) fun cardLandingLargeNight() = shot(
         "card-landing-large-night", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(4.2, "LANDING", LzSummary.SlopeLevel.SAFE)), rows = rows), mode = ThemeMode.Night,
+    )
+    @Test fun cardProfile() = shot(
+        "card-profile", DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(4.2, "LANDING", LzSummary.SlopeLevel.SAFE).copy(profile = PROFILE)), rows = rows),
+    )
+    @Test @Config(qualifiers = "w411dp-h2400dp-xxhdpi", fontScale = 2.0f) fun cardProfileLargeNight() = shot(
+        "card-profile-large-night",
+        DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = measured(4.2, "LANDING", LzSummary.SlopeLevel.SAFE).copy(profile = PROFILE)), rows = rows),
+        mode = ThemeMode.Night,
     )
     @Test fun cardNoSlope() = shot("card-no-slope", DiagramsUiState(
         current = open(DiagramStatus.ANALYZED, summary = SummaryUi("UH-60L", 13, 854_831, "TBD", SlopeTileUi.Unavailable("No terrain data covers this landing zone."))), rows = rows,
