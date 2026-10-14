@@ -111,6 +111,12 @@ stands said on its chip.
   says it in words, and the tablet's line is unchanged (AGENTS.md §17, *The workspace switcher*). **To try on a device:** the keyboard
   coming up as the search opens, the row over real imagery, the frame sliding away over the real map with the crosshair gliding to the middle, that a double tap or a quick
   zoom never hides it, the chip's icons over imagery in sunlight, and TalkBack (the frame never hides while it explores by touch; the line under the row is announced).
+- **Duplicate history lines for a doghouse turned, 2026-10-13** (the owner's report). A turn is one change sent as two operations (the landing heading it gives and its
+  own heading), and the pack logs each operation as an event with the change's sentence, so every history showed it twice (an analysis five times). The web and Android
+  now show a run of one person's events on one item with one sentence as one line (`packHistory.js` / `PackHistory`, held to `contracts/fixtures/packs/history.json`).
+  And the web, taking someone else's change, no longer follows a fresh list of the same doghouses: it had put the doghouse's heading back over a landing heading typed
+  elsewhere, on the live stream sent every turn back as two changes of its own, and looped for ever on a read-only pack's LZ/PZ without the headings. Android sent
+  nothing extra (tried on two accounts and one, open, closed and live).
 - **Everything else is still compiled and unit-tested on a JVM only.** The map layers (MapLibre),
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output
   and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged

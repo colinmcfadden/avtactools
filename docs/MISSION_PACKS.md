@@ -62,7 +62,7 @@ No existing table is altered.
 | `mission_pack_member` | Who is in it and as what (owner, editor, viewer) |
 | `mission_pack_invite` | Invitations to a pack or a team: an email address (or, for a team, none: a single-use link), a SHA-256 token, role, status, expiry |
 | `mission_pack_item` | An item: `kind` (`lz`, `route`, `pointset`), `name`, and `data`, **exactly the JSON the library keeps** (`lz_data`, `route_data`, `points_data`), so every editor, exporter and native normalizer works on it unchanged. `source_*` records where a copy came from |
-| `mission_pack_event` | The log: one row per change, numbered by `seq` within the pack, with who, a sentence, the operation, and whether it was applied or skipped (and why) |
+| `mission_pack_event` | The log: one row per operation, numbered by `seq` within the pack, with who, a sentence, the operation, and whether it was applied or skipped (and why). A change sent as several operations is several rows with its one sentence; the history shows them as one line |
 | `mission_pack_seen` | How far each person has looked in a pack (`seen_seq`, `seen_at`): what "changed since you looked" is measured from on every device, and a member's "Seen" time. Not part of the log |
 
 Why a separate item table rather than a `pack_id` on `SavedLZ`: those tables
@@ -273,6 +273,18 @@ to the app by `usePackWorkspace`. Things worth keeping true:
 - **History follows the pack while it is open.** `session.pack.head_seq` moves with every event
   applied, one's own included, and the tab fetches only what is newer than what it holds; with more
   than 500 events it shows the newest 500.
+- **A line of the history is a change, not an event** (`packHistory.js`, `packs/history.json`). A change
+  goes as one operation or several, each with its sentence, and the log keeps each: a doghouse turned is
+  the landing or takeoff heading it gives and its own heading, an analysis five operations, which read
+  as two and five identical lines until 2026-10-13. Events one after another in the log, by one person,
+  on one item, with one sentence and outcome, are one line (the server's `pack_changes` counts them the
+  same way); a line never spans where "new since you looked" starts.
+- **The flight data follows the doghouses' content, not their list** (`useDoghouses`, keyed on what the
+  doghouses hold and the diagram on the map). Applying someone else's change makes every list anew, and
+  following the doghouses then put their headings back over the flight data that change brought, and
+  sent it as this person's: a landing heading typed elsewhere was undone, with the live stream a turn,
+  whose landing heading arrives a moment before its doghouse, came back as two changes in the receiver's name,
+  and a read-only pack's LZ/PZ without those headings had them followed and put back for ever.
 - After *Update from original*, the copier's item reads unchanged again at once (an `item.replace`
   made by `me` sets `source.original` to `same`, and its `pack_changes` and `last_pack_change` to null,
   as the server then says), without waiting for the pack to be reloaded. The event does not say when the
