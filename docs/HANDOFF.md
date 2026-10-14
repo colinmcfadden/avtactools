@@ -17,7 +17,7 @@ stands said on its chip.
 
 ---
 
-## 0. The heading-aware slope tile (2026-10-13/14): judged at the landing heading; contours and a profile next
+## 0. The slope tile and contour lines (2026-10-13/14): judged at the landing heading, contours built, a profile next
 
 Branch `feat/slope-landing-heading` (on `feat/android-screens`). The owner's rules (UH-60 limits 6° nose down, 15° nose up, 15° across, less
 2° per full 5 kt of steady wind, no nose down above 15 kt) and how the tile judges are in AGENTS.md §13, *Slope landing
@@ -34,9 +34,9 @@ timeouts while the web's Jest ran beside it, and `:core-missionpacks:test :core-
 whole Jest suite (909 passed) and `npm run build`; the backend list of `.github/workflows/backend.yaml` (442 passed, 2 skipped: the live service needs a local Postgres).
 
 **Changed 2026-10-14 (the owner):** the recommended heading went (web, Android, the fixture): a rule cannot see the terrain round an LZ.
-The tile says what was judged at the landing heading instead. **Next, in order:** contour lines over the LZ/PZ and a little past its edge,
-from the server's terrain analysis, drawn on the web and Android; then a slope profile along (and across) the landing doghouse's heading,
-extended past the LZ for the approach and departure.
+The tile says what was judged at the landing heading instead. **Contour lines are built** (server, web, Android; AGENTS.md §13, *Contour
+lines*): seen in the browser against the local DEMs, and as Roborazzi pictures on Android; not seen on a device. **Next:** a slope profile
+along (and across) the landing doghouse's heading, extended past the LZ for the approach and departure.
 
 The server must reach staging (`develop`) before a device shows any of it: until then every analysis has no `byHeading`, and the apps say
 HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".

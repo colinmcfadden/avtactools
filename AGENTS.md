@@ -88,7 +88,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Admin dashboard** | Users, roles, entitlements, access approval, password resets, master aircraft list | — (Jinja) | `routes/admin_routes.py`, `templates/admin/` |
 | **App frame** (menu redesign, `docs/MENU_REDESIGN.md`) | Top bar (workspace, Import, Library, account); a right dock of panels (LZ/PZ, Routes, Threats, Imports) picked from an icon rail, a bottom sheet below 1100 px; the shared dialogs, menus and toasts. No browser `prompt`/`confirm`/`alert` on these paths | `feature/shell/`, `feature/ui/` | — |
 | **LZ/PZ workspace** | Several LZ diagrams per session; target by MGRS; switch between them in the LZ/PZ panel | `feature/lzWorkspace/`, `feature/shell/LzPanel.jsx`, `components/MapView.jsx`, `App.js` | — |
-| **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
+| **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM, with contour lines of the ground in and round the LZ | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
 | **Planning graphics** | Helicopters, PZ markers, sectors of fire, go-arounds, doghouses, units, LZ box | `feature/{helicopters,pzMarker,sectorsOfFire,goAround,doghouses,unit}/` | — |
 | **MIL-STD symbology** | MIL-STD-2525C symbols for units and threats (milsymbol) | `feature/symbols/` | — |
 | **LZ card export** | Card image and Excel card | `feature/export/` | `routes/export_routes.py`, `export_service.py`, `lz_template.xlsx` |
@@ -602,7 +602,15 @@ A slope is over its limit only when greater than it at 0.1°. The tile is LIMIT 
 in smaller text what was judged there (`Landing 270°: nose down 8.0°, limit 6°`, or `within limits`) and the wind the limits were cut for.
 With no heading to judge (no landing heading, or a server that sends no `byHeading`) it calls the steepest slope alone, HEADING REQUIRED
 at 15° or more, and says why. **No heading is recommended** (the owner, 2026-10-14: a rule cannot see the terrain round an LZ or what
-crews know of it); the crew reads the ground from the slope map, and contour lines and a slope profile are next. **Headings are true** (METAR winds are true; the doghouse box is turned from true north); see §15.
+crews know of it); the crew reads the ground from the slope map and its contour lines, and a slope profile is next.
+
+**Contour lines** (`contours` of `/api/terrain-analysis`, `terrain_provider._slope_contours`; drawn by the web's `feature/terrain/SlopeLayer.jsx` and
+Android's `DiagramOverlay` and `ContourLabelsLayer`). Lines of equal height in feet over the LZ and a 40 m ring round it, from the slope's own
+grid, lightly smoothed (2 m) so a DEM's noise draws no specks, at the finest of 1, 2, 5, 10, 20, 25, 50 or 100 ft that keeps the ground to
+about a dozen lines; every fifth is major, specks a few metres round are left out, each piece is simplified (a real LZ is tens of KB), and
+each height's label goes on its longest piece inside the LZ where it keeps 40 m from the others, majors first. They show and hide with the
+slope map. They are drawn near-black over a light halo, the other way about from the MGRS grid, and the ring outside the LZ faded. A
+server from before them sends none, and the slope map is the raster alone. **Headings are true** (METAR winds are true; the doghouse box is turned from true north); see §15.
 
 **Threat masking.** Radial line-of-sight viewshed over Terrarium tiles with
 earth curvature and refraction, one mask per altitude band. The DEM is
