@@ -3,7 +3,6 @@ import {
   MapContainer,
   TileLayer,
   Marker,
-  ImageOverlay,
   Popup,
   Polygon,
   useMap,
@@ -29,13 +28,8 @@ import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
 import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
 import MgrsGridLayer from "../feature/mgrsGrid/MgrsGridLayer";
+import SlopeLayer from "../feature/terrain/SlopeLayer";
 import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
-
-// The slope PNG already carries its own per-band alpha (145-185 of 255, rising
-// with steepness so hazardous ground stands out), and this multiplies it. 0.55
-// lands the middle band near 36% and the full range at roughly 31-40%, light
-// enough to read the imagery through while keeping the steep-ground emphasis.
-const SLOPE_OVERLAY_OPACITY = 0.55;
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -370,15 +364,7 @@ const MapView = ({
         />
       )}
 
-      {showHeatmap && terrainData?.overlay && terrainData?.bounds && (
-        <ImageOverlay
-          url={terrainData.overlay}
-          bounds={terrainData.bounds}
-          opacity={SLOPE_OVERLAY_OPACITY}
-          interactive={false}
-          zIndex={250}
-        />
-      )}
+      <SlopeLayer terrainData={terrainData} shown={showHeatmap} />
 
       {doghouses.map((dh) => (
         <Doghouse
