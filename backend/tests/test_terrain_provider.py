@@ -413,6 +413,10 @@ class ProfileTests(unittest.TestCase):
         (lat, lon), _, _, _ = _local_frame(self.POLYGON)
         self.assertAlmostEqual(lat, 34.096, places=6)
         self.assertAlmostEqual(lon, -117.095, places=6)
+        # A square with a fifth corner halfway along one side: still the square's middle, not the corners' mean (which the extra one pulls).
+        (lat, lon), _, _, _ = _local_frame([[0.0, 0.0], [0.0, 0.002], [0.002, 0.002], [0.002, 0.001], [0.002, 0.0]])
+        self.assertAlmostEqual(lat, 0.001, places=7)
+        self.assertAlmostEqual(lon, 0.001, places=7)
 
     def test_the_lz_is_where_a_line_through_its_middle_crosses_the_boundary(self):
         xs, ys = np.array([-100.0, 100.0, 100.0, -100.0]), np.array([50.0, 50.0, -50.0, -50.0])     # 200 m east-west, 100 m north-south
@@ -458,6 +462,12 @@ class ProfileTests(unittest.TestCase):
         self.assertAlmostEqual(east["lz"][0], -184.0, delta=2.0)
         self.assertAlmostEqual(east["lz"][1], 184.0, delta=2.0)
         self.assertAlmostEqual(north["lz"][1] - north["lz"][0], 445.3, delta=2.0)
+
+    def test_a_line_has_at_most_so_many_heights(self):
+        with patch("terrain_provider.PROFILE_MAX_SAMPLES", 31):
+            profiles = self._profiles()
+        self.assertEqual(len(profiles["lines"][0]["elevationsFt"]), 31)
+        self.assertAlmostEqual(profiles["stepM"] * 30 / 2, profiles["halfLengthM"], places=2)
 
     def test_the_analysis_carries_its_profiles(self):
         with tempfile.TemporaryDirectory() as directory:
