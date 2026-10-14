@@ -45,7 +45,12 @@ const COLLECTIONS = {
   sectorsOfFire: (element, index) => `sector ${element?.name || index + 1}`,
   goArounds: () => "a go-around",
   units: (element) => (element?.uniqueDesignation ? `unit ${element.uniqueDesignation}` : "a unit"),
-  doghouses: (element) => (element?.label ? `doghouse ${element.label}` : "a doghouse"),
+  // By its label, else by what its box shows (id_val, "[RP1]", less its brackets).
+  doghouses: (element) => {
+    if (element?.label) return `doghouse ${element.label}`;
+    const box = typeof element?.id_val === "string" ? element.id_val.replace(/^\[/, "").replace(/\]$/, "") : "";
+    return box ? `doghouse ${box}` : "a doghouse";
+  },
   measurements: () => "a measurement",
 };
 
@@ -74,8 +79,13 @@ const graphicPhrases = (before, after, name) => {
       const what = noun(element, index);
       if (keys.some((key) => POSITION_KEYS.includes(key))) phrases.push(`moved ${what} on ${name}`);
       else if (keys.some((key) => TURN_KEYS.includes(key))) {
+        // A doghouse keeps its heading as the text its box shows ("105°"), and is said to be turned to it as the box shows it.
+        const shown = collection === "doghouses" && typeof element.heading === "string" && element.heading !== ""
+          ? (element.heading.endsWith("°") ? element.heading : `${element.heading}°`)
+          : null;
         const heading = TURN_KEYS.map((key) => element[key]).find((value) => Number.isFinite(Number(value)) && value !== null && value !== "");
-        phrases.push(heading !== undefined ? `turned ${what} to ${Math.round(Number(heading))}° on ${name}` : `turned ${what} on ${name}`);
+        if (shown !== null) phrases.push(`turned ${what} to ${shown} on ${name}`);
+        else phrases.push(heading !== undefined ? `turned ${what} to ${Math.round(Number(heading))}° on ${name}` : `turned ${what} on ${name}`);
       } else phrases.push(`changed ${what} on ${name}`);
     });
     was.forEach(({ element, index }, id) => {

@@ -70,11 +70,13 @@ const analysed = (diagram) => {
   return following(made);
 };
 
-// A doghouse turned to [heading] (Doghouse.jsx's rotate, through updateDoghouse), the flight data following it.
-const turned = (diagram, role, heading) => {
-  const items = diagram.graphics.doghouses.map((dh) => (dh.role === role ? { ...dh, heading } : dh));
+// A doghouse changed (Doghouse.jsx's rotate or drag, through updateDoghouse), the flight data following it.
+const updated = (diagram, role, changes) => {
+  const items = diagram.graphics.doghouses.map((dh) => (dh.role === role ? { ...dh, ...changes } : dh));
   return following(reduce(diagram, { type: LZ_WORKSPACE_ACTIONS.SET_GRAPHIC_COLLECTION, collection: "doghouses", items }));
 };
+const turned = (diagram, role, heading) => updated(diagram, role, { heading });
+const moved = (diagram, role, lat, lon) => updated(diagram, role, { lat, lon });
 
 const renamed = (diagram, name) => reduce(diagram, { type: LZ_WORKSPACE_ACTIONS.SET_DIAGRAM_NAME, name });
 
@@ -140,6 +142,14 @@ const cases = () => {
     batch(sent(turned272, turned273, "Colin M."), COLIN),
     batch(sent(turned273, turned274, "Colin M."), COLIN),
   );
+  const moved1 = moved(hawk, "landing", 34.7824, -84.0852);
+  const moved2 = moved(moved1, "landing", 34.7825, -84.0853);
+  const moved3 = moved(moved2, "landing", 34.7826, -84.0854);
+  const threeMoves = log(
+    batch(sent(hawk, moved1, "Colin M."), COLIN),
+    batch(sent(moved1, moved2, "Colin M."), COLIN),
+    batch(sent(moved2, moved3, "Colin M."), COLIN),
+  );
   return [
     {
       name: "a doghouse turned: the landing heading it gives and its own heading, one change sent as two operations, is one line",
@@ -154,13 +164,17 @@ const cases = () => {
       events: log(batch(sent(hawk, renamed(turned272, "LZ EAGLE"), "Colin M."), COLIN)),
     },
     {
-      name: "a doghouse turned three times a moment apart: three changes with one sentence, one after another, are one line",
+      name: "a doghouse turned three times a moment apart: each turn names the heading it turned to, so three changes are three lines",
       events: threeTurns,
+    },
+    {
+      name: "a doghouse moved three times a moment apart: three changes with one sentence, one after another, are one line",
+      events: threeMoves,
     },
     {
       name: "where new starts between them: a line each side of it, never what is new folded into what was seen",
       since: 2,
-      events: threeTurns,
+      events: threeMoves,
     },
     {
       name: "someone else's change between two of one person's: a line each",
@@ -209,6 +223,11 @@ test("packs/history.json: a pack's log read as the history's lines", () => {
   all.forEach(({ events, lines }) => expect(lines.flat()).toEqual(events.map((e) => e.seq)));
   expect(all[0].events.map((e) => e.op.path)).toEqual([["flightData"], ["graphics", "doghouses", { id: expect.stringMatching(/-rp1$/) }]]);
   expect(all[0].lines).toEqual([[1, 2]]);
+  // A turn's sentence names the doghouse and the heading it was turned to, so turns one after another are a line each; moves read alike, and are one.
+  const linesOf = (start) => all.find(({ name }) => name.startsWith(start)).lines;
+  expect(all[0].events[0].summary).toBe("Colin M. turned doghouse RP1 to 272° on LZ HAWK.");
+  expect(linesOf("a doghouse turned three times")).toEqual([[1, 2], [3, 4], [5, 6]]);
+  expect(linesOf("a doghouse moved three times")).toEqual([[1, 2, 3]]);
   settle("packs/history.json", {
     description:
       "A mission pack's log read as its history's lines (frontend/src/feature/missionPacks/packHistory.js, historyLines). One change goes to " +

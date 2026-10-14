@@ -259,7 +259,7 @@ describe("usePackLz with the flight data following the doghouses, as App.js wire
     return view;
   };
 
-  const SUMMARY = "Colin M. turned a doghouse on LZ HAWK.";
+  const SUMMARY = "Colin M. turned doghouse RP1 to 105° on LZ HAWK.";
   // What a doghouse turned elsewhere goes to the pack as: the landing heading it gives, then its own heading.
   const TURN = [
     { type: "patch", item: "lz-1", path: ["flightData"], value: { landing_hdg: "105°" }, summary: SUMMARY },
@@ -273,8 +273,8 @@ describe("usePackLz with the flight data following the doghouses, as App.js wire
     act(() => { result.current.updateDoghouse(RP, { heading: "105°" }); });
     settleTimers();
     expect(result.current.sent.current).toEqual([[
-      { type: "patch", item: "lz-1", path: ["flightData"], value: { landing_hdg: "105°" }, summary: "Sam B. turned a doghouse on LZ HAWK." },
-      { type: "patch", item: "lz-1", path: ["graphics", "doghouses", { id: RP }], value: { heading: "105°" }, summary: "Sam B. turned a doghouse on LZ HAWK." },
+      { type: "patch", item: "lz-1", path: ["flightData"], value: { landing_hdg: "105°" }, summary: "Sam B. turned doghouse RP1 to 105° on LZ HAWK." },
+      { type: "patch", item: "lz-1", path: ["graphics", "doghouses", { id: RP }], value: { heading: "105°" }, summary: "Sam B. turned doghouse RP1 to 105° on LZ HAWK." },
     ]]);
     settleTimers();
     expect(result.current.sent.current).toHaveLength(1);

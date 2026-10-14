@@ -858,18 +858,27 @@ const LZ_CASES = [
   lz("a unit with a designation removed", (d) => { units(d).splice(0, 1); }),
   lz("a unit with none removed", (d) => { units(d).splice(1, 1); }),
 
-  // -- Doghouses: by `label`, else "a doghouse" (the box's own text is id_val, which is not read) ------------------
+  // -- Doghouses: by `label`, else by the box's text (id_val less its brackets), else "a doghouse" ----------------
   lz("a doghouse added with a label is named by it", (d) => { dogs(d).push({ id: "dh-3", label: "SP2", lat: 34.784, lon: -84.0852, heading: "000°" }); }),
-  lz("a doghouse added with none is a doghouse, whatever its id_val", (d) => { dogs(d).push({ id: "dh-3", id_val: "[SP2]", lat: 34.784, lon: -84.0852, heading: "000°" }); }),
+  lz("a doghouse added with only its box text is named by it, brackets dropped", (d) => { dogs(d).push({ id: "dh-3", id_val: "[SP2]", lat: 34.784, lon: -84.0852, heading: "000°" }); }),
+  lz("a doghouse added with a label and box text is named by its label", (d) => { dogs(d).push({ id: "dh-3", label: "SP2", id_val: "[RP2]", lat: 34.784, lon: -84.0852, heading: "000°" }); }),
+  lz("a doghouse added whose box text is only brackets is a doghouse", (d) => { dogs(d).push({ id: "dh-3", id_val: "[]", lat: 34.784, lon: -84.0852, heading: "000°" }); }),
+  lz("a doghouse added whose box text is not text is a doghouse", (d) => { dogs(d).push({ id: "dh-3", id_val: 2, lat: 34.784, lon: -84.0852, heading: "000°" }); }),
+  lz("a doghouse added with neither label nor box text is a doghouse", (d) => { dogs(d).push({ id: "dh-3", lat: 34.784, lon: -84.0852, heading: "000°" }); }),
   lz("a doghouse moved by its lat", (d) => { dogs(d)[0].lat = 34.7841; }),
   lz("a doghouse kept with a position moves by it", (d) => { dogs(d)[1].position = [34.7825, -84.0852]; }, {
     before: changed(LZ, (d) => { dogs(d)[1].position = [34.782317, -84.08519]; }),
   }),
-  lz("a doghouse's heading carries a degree sign, so its turn has no heading", (d) => { dogs(d)[0].heading = "120°"; }),
+  lz("a doghouse is turned to its heading as its box shows it", (d) => { dogs(d)[0].heading = "120°"; }),
+  lz("a doghouse's heading as text without a degree sign is said with one", (d) => { dogs(d)[0].heading = "105"; }),
   lz("a doghouse whose heading is a plain number is turned to it", (d) => { dogs(d)[1].heading = 275.5; }),
+  lz("a doghouse whose heading was cleared is turned with no heading", (d) => { dogs(d)[0].heading = ""; }),
   lz("a doghouse changed in another field", (d) => { dogs(d)[0].time = "02+05"; }),
   lz("a doghouse with a label removed", (d) => { dogs(d).splice(1, 1); }),
-  lz("a doghouse with none removed", (d) => { dogs(d).splice(0, 1); }),
+  lz("a doghouse with only its box text removed is named by it", (d) => { dogs(d).splice(0, 1); }),
+  lz("a doghouse with neither removed is a doghouse", (d) => { dogs(d).splice(0, 1); }, {
+    before: changed(LZ, (d) => { delete dogs(d)[0].id_val; }),
+  }),
 
   // -- Measurements -----------------------------------------------------------------------------------------------
   lz("a measurement added", (d) => { tape(d).push({ id: "m-1759900000015", start: [34.7837, -84.0823], end: [34.79, -84.08] }); }),
@@ -1208,13 +1217,16 @@ const describeFixture = () => withoutClockOrRandomness(() => ({
     + "analysis.customLZ differs, else \"changed the boundary of X\" if analysis.detectedLZ differs. (4) The graphics, one collection "
     + "at a time in this order: helicopters (\"Chalk n\"), pzMarkers (\"a PZ marker\"), sectorsOfFire (\"sector NAME\", or \"sector n\" "
     + "when name is missing or empty), goArounds (\"a go-around\"), units (\"unit D\" from a non-empty uniqueDesignation, else \"a unit\"), "
-    + "doghouses (\"doghouse L\" from a non-empty `label`, else \"a doghouse\"; id_val is not read), measurements (\"a measurement\"). The "
+    + "doghouses (\"doghouse L\" from a non-empty `label`, else \"doghouse B\" when id_val is text, B being id_val less one \"[\" at its "
+    + "start and one \"]\" at its end, when that leaves any, else \"a doghouse\"), measurements (\"a measurement\"). The "
     + "noun is taken from the element after the change, or before it for one removed. Only elements that are truthy and whose `id` is "
     + "not undefined are followed (an id of null is followed; a missing one is not), matched by id as above; n is the element's "
     + "place among those followed, from 1, in the list after the change, or before it for one removed. For each followed element "
     + "after the change, in list order: not there before -> \"added N to X\"; else the "
     + "keys that differ: any of lat, lon, lng, position, points, center, start, end, tip, anchor -> \"moved N on X\"; else any of "
-    + "heading, rotation, direction, bearing -> \"turned N to D° on X\", where D is String(Math.round(Number(v))) for the first of "
+    + "heading, rotation, direction, bearing -> for a doghouse whose heading is text and not \"\", \"turned N to H on X\", H being the "
+    + "heading as its box shows it, with \"°\" after it unless it ends with one (\"105\" and \"105°\" are both \"105°\"); otherwise "
+    + "\"turned N to D° on X\", where D is String(Math.round(Number(v))) for the first of "
     + "heading, rotation, direction, bearing (in that order, whether it changed or not) whose v is not null, not \"\" and has a "
     + "finite Number(v), or \"turned N on X\" when none has; else \"changed N on X\". Number(v) is JavaScript's: text is trimmed as "
     + "String.prototype.trim trims (a no-break space and a byte order mark too, a zero-width space not), \" \" is 0, \"+90\" is 90, "
