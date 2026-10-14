@@ -1127,9 +1127,10 @@ paths:
       description: |
         Slope from the best terrain source that covers the polygon, clipped to it: a transparent
         banded raster (`overlay`, a PNG data URI) placed at `bounds`, statistics over the polygon,
-        and, when a `landingHeading` is given, the nose-high, nose-low and cross-slope summary for
-        that heading against the UH-60 limits in `thresholds`. `directional` is null without a
-        heading. Errors are `{error}`.
+        the steepest nose-high, nose-low and cross slope for every whole heading (`byHeading`), and,
+        when a `landingHeading` is given, the nose-high, nose-low and cross-slope summary for that
+        heading against the UH-60 limits in `thresholds`. `directional` is null without a heading.
+        Errors are `{error}`.
       security:
         - bearer: []
       parameters:
@@ -2971,7 +2972,7 @@ components:
               png: { type: string, description: "A `data:image/png;base64,` raster over `bounds`, one colour per altitude band, the lowest band on top." }
     TerrainAnalysis:
       type: object
-      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, thresholds]
+      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, byHeading, thresholds]
       properties:
         status: { type: string, enum: [success] }
         overlay:
@@ -3005,6 +3006,25 @@ components:
             noseHighOverLimitPct: { type: number }
             noseLowOverLimitPct: { type: number }
             crossSlopeOverLimitPct: { type: number }
+        byHeading:
+          type: array
+          description: |
+            The steepest slope over the polygon for each whole heading, 0 to 359 in order (360
+            entries), worked out as `directional` is and rounded to 0.1°: nose high is the ground
+            rising ahead (the nose up), nose low the ground falling away (the nose down), and the
+            cross slope is either side. A client judges any landing heading, and recommends one, from
+            this without asking again (it applies the wind to the limits itself). Headings are the
+            terrain grid's: true north over the Terrarium tiles, the UTM grid's north over a local
+            DEM. A server from before this field sends none, and a client must keep working without it.
+          items:
+            type: object
+            additionalProperties: false
+            required: [heading, noseHighMaxDeg, noseLowMaxDeg, crossSlopeMaxDeg]
+            properties:
+              heading: { type: integer, minimum: 0, maximum: 359 }
+              noseHighMaxDeg: { type: number, minimum: 0 }
+              noseLowMaxDeg: { type: number, minimum: 0 }
+              crossSlopeMaxDeg: { type: number, minimum: 0 }
         thresholds:
           type: object
           required: [bands, uh60]

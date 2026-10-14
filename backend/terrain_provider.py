@@ -448,23 +448,108 @@ def _pct(values: np.ndarray, condition: np.ndarray) -> float:
     return round(float(condition.sum()) / len(values) * 100.0, 1) if len(values) else 0.0
 
 
-def _directional_summary(mask, grad_east, grad_north, heading_deg: float):
+def _along_and_across(grad_east, grad_north, heading_deg: float):
+    """Each cell's slope along [heading_deg] (positive where the ground rises ahead: nose high) and across it, in degrees."""
     heading_rad = math.radians(heading_deg % 360.0)
     forward = grad_east * math.sin(heading_rad) + grad_north * math.cos(heading_rad)
     right = grad_east * math.cos(heading_rad) - grad_north * math.sin(heading_rad)
-    along_deg = np.degrees(np.arctan(forward))[mask]
-    cross_deg = np.abs(np.degrees(np.arctan(right))[mask])
+    return np.degrees(np.arctan(forward)), np.abs(np.degrees(np.arctan(right)))
+
+
+def _steepest(along_deg, cross_deg):
+    """The steepest nose high, nose low and cross slope among these cells, in degrees to 0.1 (a zero is 0.0, never -0.0)."""
     nose_high = np.maximum(along_deg, 0.0)
     nose_low = np.maximum(-along_deg, 0.0)
+    return tuple(round(float(values.max()), 1) + 0.0 for values in (nose_high, nose_low, cross_deg))
+
+
+def _directional_summary(mask, grad_east, grad_north, heading_deg: float):
+    along, across = _along_and_across(grad_east, grad_north, heading_deg)
+    along_deg = along[mask]
+    cross_deg = across[mask]
+    nose_high = np.maximum(along_deg, 0.0)
+    nose_low = np.maximum(-along_deg, 0.0)
+    high, low, cross = _steepest(along_deg, cross_deg)
     return {
         "headingDeg": round(heading_deg % 360.0, 1),
-        "noseHighMaxDeg": round(float(nose_high.max()), 1),
-        "noseLowMaxDeg": round(float(nose_low.max()), 1),
-        "crossSlopeMaxDeg": round(float(cross_deg.max()), 1),
+        "noseHighMaxDeg": high,
+        "noseLowMaxDeg": low,
+        "crossSlopeMaxDeg": cross,
         "noseHighOverLimitPct": _pct(nose_high, nose_high > UH60_LIMITS_DEG["noseHigh"]),
         "noseLowOverLimitPct": _pct(nose_low, nose_low > UH60_LIMITS_DEG["noseLow"]),
         "crossSlopeOverLimitPct": _pct(cross_deg, cross_deg > UH60_LIMITS_DEG["crossSlope"]),
     }
+
+
+# Up to this many cells, the table by heading looks at every one; past it, only at those that can be the steepest (below).
+_EVERY_CELL_UP_TO = 256
+
+
+def _depth_inside(xs, ys, corner_xs, corner_ys):
+    """How far inside the convex polygon of the given corners each cell (xs, ys) is (negative outside), or None when it has no inside."""
+    if len(corner_xs) < 3:
+        return None
+    next_xs, next_ys = np.roll(corner_xs, -1), np.roll(corner_ys, -1)
+    dxs, dys = next_xs - corner_xs, next_ys - corner_ys
+    lengths = np.hypot(dxs, dys)
+    twice_area = float(np.sum(corner_xs * next_ys - next_xs * corner_ys))
+    if twice_area == 0.0 or not np.all(lengths > 0.0):
+        return None
+    inward = math.copysign(1.0, twice_area)                                # the inside is left of each edge when the corners turn anticlockwise
+    depth = np.full(len(xs), np.inf)
+    for x0, y0, dx, dy, length in zip(corner_xs, corner_ys, dxs, dys, lengths):
+        nx, ny = -dy * inward / length, dx * inward / length               # the edge's unit normal, pointing inside
+        np.minimum(depth, nx * xs + ny * ys - (nx * x0 + ny * y0), out=depth)
+    return depth
+
+
+def _hull(xs, ys):
+    """The convex hull's corners, as indices into the cells."""
+    return cv2.convexHull(np.column_stack((xs, ys)).astype(np.float32), returnPoints=False).ravel()
+
+
+def _steepest_candidates(east, north):
+    """The cells, by their gradients, that can be the steepest in some direction: all of them that matter to the table by heading.
+
+    A slope along (or across) a heading is a linear function of a cell's gradient, and a linear function over a set of points is greatest
+    at a corner of their convex hull. So only cells on the hull's edge, or within a float's rounding of it, can be a heading's steepest, and
+    360 headings are worked out over a few dozen cells instead of every cell of a large LZ, with the same answer: each cell's numbers are
+    the same whichever others are beside it, and the one that is greatest is always kept."""
+    if len(east) <= _EVERY_CELL_UP_TO:
+        return east, north
+    xs, ys = east.astype(np.float64), north.astype(np.float64)            # float32 values, exact in float64
+    # How far inside the hull a cell may be and still tie with its edge once the float32 products, sums and arctangents have rounded:
+    # about 1e-7 of the steepest gradient. A hundred times that costs nothing (a few more cells) and leaves no doubt.
+    margin = 1e-5 * float(np.max(np.hypot(xs, ys)))
+    # First a polygon of the cells furthest out in sixteen directions. It lies inside the hull, so a cell deeper inside it than the margin is
+    # deeper inside the hull too and goes now; the hull's own corners are never among those, so the hull is then found among what is left.
+    furthest = np.unique([int(np.argmax(math.cos(a) * xs + math.sin(a) * ys)) for a in np.arange(16) * (math.pi / 8.0)])
+    inner = _hull(xs[furthest], ys[furthest])
+    depth = _depth_inside(xs, ys, xs[furthest][inner], ys[furthest][inner])
+    if depth is not None:
+        near = depth <= margin
+        xs, ys, east, north = xs[near], ys[near], east[near], north[near]
+    corners = _hull(xs, ys)
+    depth = _depth_inside(xs, ys, xs[corners], ys[corners])
+    if depth is None:
+        # Every gradient on one line (a plane, or ground that tilts one way only): there is no inside to leave out, but cells with the same
+        # gradient have the same numbers, so one of each is enough.
+        unique = np.unique(np.column_stack((east, north)), axis=0)
+        return unique[:, 0], unique[:, 1]
+    keep = depth <= margin
+    return east[keep], north[keep]
+
+
+def _slope_by_heading(mask, grad_east, grad_north):
+    """The steepest nose high, nose low and cross slope over the LZ for every whole heading 0..359, by _directional_summary's arithmetic,
+    so a client can judge any landing heading, and recommend one, without asking again. The headings are the grid's: true north for the
+    Terrarium tiles (Web Mercator), the UTM grid's north for a local DEM."""
+    east, north = _steepest_candidates(grad_east[mask], grad_north[mask])
+    table = []
+    for heading in range(360):
+        high, low, cross = _steepest(*_along_and_across(east, north, heading))
+        table.append({"heading": heading, "noseHighMaxDeg": high, "noseLowMaxDeg": low, "crossSlopeMaxDeg": cross})
+    return table
 
 
 def _render_slope_png(slope_deg: np.ndarray, display_mask: np.ndarray) -> str:
@@ -524,5 +609,6 @@ def build_slope_analysis(polygon, landing_heading_deg: float | None = None) -> d
         "verticalDatum": grid.vertical_datum,
         "stats": stats,
         "directional": directional,
+        "byHeading": _slope_by_heading(display_mask, grad_east, grad_north),
         "thresholds": {"bands": SLOPE_BANDS_DEG, "uh60": UH60_LIMITS_DEG},
     }

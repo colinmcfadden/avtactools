@@ -1,5 +1,6 @@
 """Focused regression tests for metric terrain-slope calculations."""
 
+import math
 import unittest
 import tempfile
 from pathlib import Path
@@ -9,7 +10,15 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from terrain_provider import UH60_LIMITS_DEG, LocalRasterCatalog, _directional_summary, _horn_gradients
+from terrain_provider import (
+    UH60_LIMITS_DEG,
+    LocalRasterCatalog,
+    _directional_summary,
+    _horn_gradients,
+    _slope_by_heading,
+    _steepest_candidates,
+    build_slope_analysis,
+)
 
 
 def _ramp(degrees, size=9):
@@ -101,6 +110,100 @@ class HornSlopeTests(unittest.TestCase):
                 grid = LocalRasterCatalog().load_best((34.094, -117.094, 34.098, -117.090))
 
         self.assertIsNotNone(grid)
+
+
+class SlopeByHeadingTests(unittest.TestCase):
+    """The worst slope for every whole heading, which the clients judge a landing heading and recommend one from."""
+
+    FIELDS = ("noseHighMaxDeg", "noseLowMaxDeg", "crossSlopeMaxDeg")
+
+    @staticmethod
+    def _cells(dem, cell_m=1.0):
+        _, grad_east, grad_north = _horn_gradients(np.asarray(dem, dtype=np.float32), cell_m, cell_m)
+        return np.isfinite(grad_east) & np.isfinite(grad_north), grad_east, grad_north
+
+    def assertAgreesWithTheLandingHeadingSummary(self, mask, grad_east, grad_north, headings=range(360)):
+        table = _slope_by_heading(mask, grad_east, grad_north)
+        for heading in headings:
+            summary = _directional_summary(mask, grad_east, grad_north, float(heading))
+            self.assertEqual([table[heading][f] for f in self.FIELDS], [summary[f] for f in self.FIELDS], f"heading {heading}")
+
+    def test_every_whole_heading_once_and_in_order(self):
+        table = _slope_by_heading(*_ramp(8.0))
+
+        self.assertEqual([row["heading"] for row in table], list(range(360)))
+        self.assertTrue(all(set(row) == {"heading", *self.FIELDS} for row in table))
+
+    def test_a_tilted_plane_splits_into_its_components_at_every_heading(self):
+        # 10° rising toward 030°: at heading h the ground ahead rises atan(tan 10° cos(h - 30°)), and across it atan(tan 10° sin(h - 30°)).
+        rise, toward = math.tan(math.radians(10.0)), math.radians(30.0)
+        rows, cols = np.mgrid[0:12, 0:12]
+        dem = rise * (cols * math.sin(toward) - rows * math.cos(toward))          # rows run south
+        table = _slope_by_heading(*self._cells(dem))
+
+        for row in table:
+            off = math.radians(row["heading"]) - toward
+            along = math.degrees(math.atan(rise * math.cos(off)))
+            self.assertAlmostEqual(row["noseHighMaxDeg"], max(along, 0.0), delta=0.051, msg=row)
+            self.assertAlmostEqual(row["noseLowMaxDeg"], max(-along, 0.0), delta=0.051, msg=row)
+            self.assertAlmostEqual(row["crossSlopeMaxDeg"], abs(math.degrees(math.atan(rise * math.sin(off)))), delta=0.051, msg=row)
+        self.assertEqual([table[30][f] for f in self.FIELDS], [10.0, 0.0, 0.0])      # facing up the slope
+        self.assertEqual([table[210][f] for f in self.FIELDS], [0.0, 10.0, 0.0])     # facing down it
+        self.assertEqual(table[120]["crossSlopeMaxDeg"], 10.0)                         # across it
+
+    def test_level_ground_is_level_at_every_heading_with_no_negative_zero(self):
+        table = _slope_by_heading(*self._cells(np.zeros((30, 30))))
+
+        values = [row[f] for row in table for f in self.FIELDS]
+        self.assertEqual(set(values), {0.0})
+        self.assertTrue(all(math.copysign(1.0, v) == 1.0 for v in values))            # JSON would write -0.0
+
+    def test_rough_ground_agrees_with_the_landing_heading_summary_at_every_heading(self):
+        # Past a few hundred cells only those on the edge of the gradients' hull are measured; the answer must still be every cell's.
+        mask, grad_east, grad_north = self._cells(np.random.default_rng(20261013).normal(0.0, 3.0, (60, 60)))
+        self.assertGreater(int(mask.sum()), 256)
+
+        self.assertAgreesWithTheLandingHeadingSummary(mask, grad_east, grad_north)
+
+    def test_a_hill_on_a_ramp_agrees_too(self):
+        rows, cols = np.mgrid[0:120, 0:120]
+        dem = 300.0 + 0.5 * cols + 6.0 * np.exp(-(((rows - 90) ** 2) + ((cols - 90) ** 2)) / 200.0)
+
+        self.assertAgreesWithTheLandingHeadingSummary(*self._cells(dem, 11.0))
+
+    def test_whole_metre_elevations_whose_gradients_tie_agree_too(self):
+        # Rounded elevations give gradients on a lattice: many cells share each value and lie along the hull's edges.
+        mask, grad_east, grad_north = self._cells(np.round(np.random.default_rng(7).normal(0.0, 2.0, (50, 50))), 10.0)
+
+        self.assertAgreesWithTheLandingHeadingSummary(mask, grad_east, grad_north)
+
+    def test_a_large_lz_is_measured_over_a_few_cells(self):
+        mask, grad_east, grad_north = self._cells(np.cumsum(np.random.default_rng(3).normal(0.0, 0.5, (200, 200)), axis=0))
+        east, north = _steepest_candidates(grad_east[mask], grad_north[mask])
+
+        self.assertLess(len(east), 200)                                                # of 39,204
+        self.assertAgreesWithTheLandingHeadingSummary(mask, grad_east, grad_north, headings=(0, 45, 133, 180, 270, 359))
+
+    def test_a_plane_keeps_one_cell_for_each_gradient(self):
+        # Every gradient on one line: the hull has no inside, so cells with the same gradient (the same numbers) count once.
+        mask, grad_east, grad_north = self._cells(np.tile(np.arange(60) * 0.3, (60, 1)))
+        east, _ = _steepest_candidates(grad_east[mask], grad_north[mask])
+
+        self.assertLess(len(east), 10)
+        self.assertAgreesWithTheLandingHeadingSummary(mask, grad_east, grad_north)
+
+    def test_the_analysis_carries_the_table_and_it_agrees_with_its_landing_heading(self):
+        polygon = [[34.098, -117.097], [34.098, -117.093], [34.094, -117.093], [34.094, -117.097]]
+        with tempfile.TemporaryDirectory() as directory:
+            HornSlopeTests._write_ramp(directory)
+            env = {"TERRAIN_DATA_DIR": directory, "TERRAIN_SOURCE": "local"}
+            with patch.dict("os.environ", env, clear=False), patch("terrain_provider.LOCAL_CATALOG", LocalRasterCatalog()):
+                for heading in (0, 90, 225, 270):
+                    analysis = build_slope_analysis(polygon, landing_heading_deg=float(heading))
+                    self.assertEqual(len(analysis["byHeading"]), 360)
+                    row = analysis["byHeading"][heading]
+                    self.assertEqual([row[f] for f in self.FIELDS], [analysis["directional"][f] for f in self.FIELDS], f"heading {heading}")
+                self.assertEqual(len(build_slope_analysis(polygon)["byHeading"]), 360)    # with no landing heading too
 
 
 if __name__ == "__main__":
