@@ -32,10 +32,10 @@ class PackMessagesTest {
             PackMessages.words(PackFailure.of(NetworkException("offline", IOException("down"), requestMayHaveBeenSent = false))),
         )
         assertEquals("That invitation has expired. Ask whoever sent it for a new one.", PackMessages.words(PackFailure(410, "invite_expired")))
-        assertEquals("That pack is gone, or you are no longer in it.", PackMessages.words(PackFailure(404)))
+        assertEquals("That mission pack has been removed, or you are no longer in it.", PackMessages.words(PackFailure(404)))
         assertEquals("You do not have permission to do that.", PackMessages.words(PackFailure(403)))
         assertEquals("Too many requests. Wait a moment and try again.", PackMessages.words(PackFailure(429)))
-        assertEquals("Mission Packs are not turned on for your account yet.", PackMessages.words(PackFailure(403, "feature_disabled")))
+        assertEquals("Mission Packs are disabled for your account.", PackMessages.words(PackFailure(403, "feature_disabled")))
         // A code the app has no words for is told by its status.
         assertEquals("You do not have permission to do that.", PackMessages.words(PackFailure(403, "something_new")))
     }

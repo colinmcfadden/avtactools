@@ -213,7 +213,7 @@ class TeamsViewModelTest {
         r.api.teamFail = ApiException(403, "feature_disabled", "x")                                   // a refusal with words of its own says them
         r.model.loadTeam()
         advanceUntilIdle()
-        assertEquals("Mission Packs are not turned on for your account yet.", r.model.state.value.teamError)
+        assertEquals("Mission Packs are disabled for your account.", r.model.state.value.teamError)
     }
 
     @Test

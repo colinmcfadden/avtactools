@@ -9,8 +9,8 @@ import app.ezpztac.network.InviteAccepted
  */
 public object PackMessages {
     private val MESSAGES = mapOf(
-        "feature_disabled" to "Mission Packs are not turned on for your account yet.",
-        "pack_not_found" to "That pack is gone, or you are no longer in it.",
+        "feature_disabled" to "Mission Packs are disabled for your account.",
+        "pack_not_found" to "That mission pack has been removed, or you are no longer in it.",
         "pack_read_only" to "You can view this pack but not change it.",
         "owner_only" to "Only the pack's owner can do that.",
         "pack_finished" to "This pack is finished. It is read-only until its owner reopens it.",
