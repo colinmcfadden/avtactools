@@ -235,7 +235,8 @@ class LzPackTwoDevicesTest {
     //
     // The owner (2026-10-13): "doghouses, when turned, are getting duplicate history entries." A turn is one change, sent by the device that turned it
     // with the landing heading the doghouse gives, as two operations, so the pack logs it as two events, each with the change's sentence: the history
-    // showed the sentence twice for every turn (and five times for an analysis). It reads them as one line now (PackHistory, the web's packHistory.js).
+    // showed the sentence twice for every turn (and five times for an analysis). It reads them as one line now (PackHistory, the web's packHistory.js),
+    // which names the doghouse and the heading it was turned to (PackLz, packLz.js), so turns a second apart are a line each.
     // Nothing else is sent: the other device takes the turn as it came, whether it has the LZ/PZ open or closed, on the same account or another, by
     // polling or on the live stream an event at a time.
 
@@ -280,20 +281,27 @@ class LzPackTwoDevicesTest {
     private fun PackEditorRig.landingHere(): List<String?> = landingOf(PackLz.lzItemData(doc()))
 
     /**
-     * [turner]'s turns since [from] were [changes] changes, each one batch of two operations from its device, and nothing came from [other]: the
-     * history reads them as one line in [turner]'s name, and both devices and the pack give the doghouse [heading], the landing heading with it.
+     * [turner]'s turns since [from] were one change for each of [headings], each one batch of two operations from its device, and nothing came from
+     * [other]: the history reads each change as one line in [turner]'s name, naming the doghouse and the heading it was turned to, and both devices
+     * and the pack give the doghouse the last of [headings], the landing heading with it.
      */
-    private fun assertTurned(turner: PackEditorRig, other: PackEditorRig, from: Long, sentBefore: Int, changes: Int, heading: String, otherOpen: Boolean = true) {
+    private fun assertTurned(turner: PackEditorRig, other: PackEditorRig, from: Long, sentBefore: Int, headings: List<String>, otherOpen: Boolean = true) {
         val what = "${turner.me.name}'s turn"
+        val changes = headings.size
         assertEquals("$what: one batch for each change", changes, turner.sent().size - sentBefore)
         assertTrue("$what: each change the landing heading and the doghouse's", turner.sent().drop(sentBefore).all { ops -> ops.map { it["path"] } == TURN_PATHS })
         assertEquals("$what: nothing from the other device", emptyList<List<JsonObject>>(), other.sent())
         val events = turner.server.log(PACK).map { it.getValue("seq").jsonPrimitive.content.toLong() }.filter { it > from }
         assertEquals("$what: two events in the log for each change", 2 * changes, events.size)
         val lines = turner.historyAfter(from)
-        assertEquals("$what: one line of the history", 1, lines.size)
-        assertEquals("$what: in the turner's name", setOf(turner.me.id), lines.single().map { it.actor.id }.toSet())
-        assertEquals("$what: the change's sentence", setOf("${turner.me.name} turned a doghouse on LZ HAWK."), lines.single().map { it.summary }.toSet())
+        assertEquals("$what: a line of the history for each change, of its two events", List(changes) { 2 }, lines.map { it.size })
+        assertEquals("$what: in the turner's name", setOf(turner.me.id), lines.flatten().map { it.actor.id }.toSet())
+        assertEquals(
+            "$what: each line's sentence, naming the doghouse and its heading",
+            headings.map { listOf("${turner.me.name} turned doghouse RP1 to $it on LZ HAWK.") },
+            lines.map { line -> line.map { it.summary }.distinct() },
+        )
+        val heading = headings.last()
         assertEquals("$what: in the pack", listOf(heading, heading), landingOf(turner.serverData()))
         assertEquals("$what: on ${turner.me.name}'s device", listOf(heading, heading), turner.landingHere())
         if (otherOpen) assertEquals("$what: on the other device", listOf(heading, heading), other.landingHere())
@@ -340,14 +348,14 @@ class LzPackTwoDevicesTest {
                     val sentBefore = a.sent().size
                     a.turn()
                     settleBoth(a, b)
-                    assertTurned(a, b, from, sentBefore, changes = 1, heading = heading)
+                    assertTurned(a, b, from, sentBefore, headings = listOf(heading))
                 }
             }
         }
     }
 
     @Test
-    fun `presses of the bar a moment apart are one change, and a press each second a change each, and the history reads them as one line`() {
+    fun `presses of the bar a moment apart are one change and one line, and a press each second a change and a line each, each naming its heading`() {
         turning { a, b ->
             val from = a.server.headSeq(PACK)
             repeat(5) {
@@ -355,7 +363,7 @@ class LzPackTwoDevicesTest {
                 a.advance(200)
             }
             settleBoth(a, b)
-            assertTurned(a, b, from, sentBefore = 0, changes = 1, heading = "095°")
+            assertTurned(a, b, from, sentBefore = 0, headings = listOf("095°"))
         }
         turning { a, b ->
             val from = a.server.headSeq(PACK)
@@ -364,7 +372,7 @@ class LzPackTwoDevicesTest {
                 a.advance(1_000)
             }
             settleBoth(a, b)
-            assertTurned(a, b, from, sentBefore = 0, changes = 3, heading = "093°")
+            assertTurned(a, b, from, sentBefore = 0, headings = listOf("091°", "092°", "093°"))
         }
     }
 
@@ -373,12 +381,12 @@ class LzPackTwoDevicesTest {
         val from = a.server.headSeq(PACK)
         a.typeHeading(250.0)
         settleBoth(a, b)
-        assertTurned(a, b, from, sentBefore = 0, changes = 1, heading = "250°", otherOpen = false)
+        assertTurned(a, b, from, sentBefore = 0, headings = listOf("250°"), otherOpen = false)
         assertEquals(listOf("250°", "250°"), landingOf(checkNotNull(b.engine.open.value?.item(ITEM)).data.jsonObject))
         b.openItem(ITEM)
         settleBoth(a, b)
         assertEquals(listOf("250°", "250°"), b.landingHere())
-        assertTurned(a, b, from, sentBefore = 0, changes = 1, heading = "250°")
+        assertTurned(a, b, from, sentBefore = 0, headings = listOf("250°"))
     }
 
     @Test
@@ -387,7 +395,7 @@ class LzPackTwoDevicesTest {
         a.pressTurn(-15.0)
         a.advance(STILL)
         b.advance(STILL); a.advance(STILL)
-        assertTurned(a, b, from, sentBefore = 0, changes = 1, heading = "075°")
+        assertTurned(a, b, from, sentBefore = 0, headings = listOf("075°"))
     }
 
     @Test

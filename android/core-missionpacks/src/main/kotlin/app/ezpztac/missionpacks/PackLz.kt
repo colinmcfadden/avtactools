@@ -113,9 +113,16 @@ public object PackLz {
             val designation = Js.prop(element, "uniqueDesignation")
             if (Js.truthy(designation)) "unit ${Js.text(designation)}" else "a unit"
         },
+        // By its label, else by what its box shows (id_val, "[RP1]", less its brackets).
         Collection("doghouses") { element, _ ->
             val label = Js.prop(element, "label")
-            if (Js.truthy(label)) "doghouse ${Js.text(label)}" else "a doghouse"
+            val box = (Js.prop(element, "id_val") as? JsonPrimitive)?.takeIf { it.isString }?.content
+                ?.removePrefix("[")?.removeSuffix("]").orEmpty()
+            when {
+                Js.truthy(label) -> "doghouse ${Js.text(label)}"
+                box.isNotEmpty() -> "doghouse $box"
+                else -> "a doghouse"
+            }
         },
         Collection("measurements") { _, _ -> "a measurement" },
     )
@@ -156,10 +163,18 @@ public object PackLz {
                 phrases += when {
                     keys.any { it in POSITION_KEYS } -> "moved $what on $lz"
                     keys.any { it in TURN_KEYS } -> {
+                        // A doghouse keeps its heading as the text its box shows ("105°"), and is said to be turned to it as the box shows it.
+                        val shown = (Js.prop(element, "heading") as? JsonPrimitive)
+                            ?.takeIf { collection.name == "doghouses" && it.isString && it.content.isNotEmpty() }?.content
+                            ?.let { if (it.endsWith("°")) it else "$it°" }
                         val heading = TURN_KEYS.map { Js.prop(element, it) }.firstOrNull { value ->
                             Js.toNumber(value).isFinite() && value !is JsonNull && !(value is JsonPrimitive && value.isString && value.content.isEmpty())
                         }
-                        if (heading != null) "turned $what to ${JsNumber.toText(Js.round(Js.toNumber(heading)))}° on $lz" else "turned $what on $lz"
+                        when {
+                            shown != null -> "turned $what to $shown on $lz"
+                            heading != null -> "turned $what to ${JsNumber.toText(Js.round(Js.toNumber(heading)))}° on $lz"
+                            else -> "turned $what on $lz"
+                        }
                     }
                     else -> "changed $what on $lz"
                 }
