@@ -78,6 +78,7 @@ class DtoFixtureTest {
         "route-winds: no station answers" to WindsResponse.serializer(),
         "sync: changes" to ChangeFeed.serializer(),
         "sync: nothing new" to ChangeFeed.serializer(),
+        "sync: changes, with a brief" to ChangeFeed.serializer(),
         // Mission packs, teams, invitations and finding people
         "packs" to PacksBody.serializer(),
         "pack: create" to Pack.serializer(),
@@ -94,6 +95,7 @@ class DtoFixtureTest {
         "ops: make an LZ, a route set and a point set" to PackOpsResult.serializer(),
         "ops: edits, one skipped, with the events after base_seq" to PackOpsResult.serializer(),
         "ops: the same batch again, answered from the log" to PackOpsResult.serializer(),
+        "ops: a brief in a finished pack" to PackOpsResult.serializer(),
         "events: a page" to PackEventPage.serializer(),
         "events: the rest" to PackEventPage.serializer(),
         "seen" to PackSeenDto.serializer(),
@@ -144,6 +146,11 @@ class DtoFixtureTest {
             }
         }
 
+    private val briefResponses = setOf(
+        "brief: create", "brief: create again with the same identity", "brief: list", "brief: get", "brief: update", "brief: delete",
+        "weather: at a planned time, from the TAF", "weather: at a time no TAF covers, the observation",
+    )
+
     @Test
     fun `no successful response is left without a type`() {
         val uncovered = Recorded.all
@@ -151,6 +158,8 @@ class DtoFixtureTest {
             .map { it.name }
             // Bodies that are a status word only, not a record.
             .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "aircraft: delete", "account deletion") }
+            // The mission brief's (docs/MISSION_BRIEF.md): the app has no types for them until it ports briefs (step B7).
+            .filterNot { it in briefResponses }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
     }
 
