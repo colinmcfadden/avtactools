@@ -1075,6 +1075,12 @@ paths:
         Looks up the nearest METAR within a degree or so of the position and the FAA NOTAMs within 10 nm. The services behind it are other people's, so
         the answer is **always 200** with what could be had: when no station answers, `station_id` is `TIMEOUT`, the numbers are null and `pressure` is
         `"--"`; when the NOTAM search is down, `notams` is a sentence instead of an object. A caller shows both without treating them as errors.
+
+        With `at`, a planned time (a brief's, docs/MISSION_BRIEF.md §2.5), the answer is for then: a time more than 30 minutes ahead is answered
+        from the nearest TAF with a period covering it (`kind: "forecast"`, its station in `station_id`, the period in `valid_from` and
+        `valid_to`, and no temperature, dew point or METAR, which a TAF does not give); a time sooner, in the past, or that no TAF nearby covers,
+        from the latest METAR as without `at` (`kind: "observation"`, with the report's time in `observed`). The NOTAMs are those in force now
+        either way. Without `at` the answer is exactly as it always was, with none of these fields.
       security:
         - bearer: []
       parameters:
@@ -1086,6 +1092,11 @@ paths:
           in: query
           required: true
           schema: { type: number }
+        - name: at
+          in: query
+          required: false
+          description: An ISO 8601 time, e.g. `2026-10-16T14:30:00Z`; one without an offset is UTC. Anything else is 400 `invalid_at`.
+          schema: { type: string, maxLength: 40 }
       responses:
         "200":
           description: The report.
@@ -2701,7 +2712,7 @@ components:
         error: { type: string }
         code:
           type: string
-          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`"
+          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`"
 
     Error:
       type: object
@@ -2903,9 +2914,16 @@ components:
         wind_gust_kts: { type: number, nullable: true }
         vis_sm: { nullable: true, description: "Statute miles: a number, or text such as `10+`; null with no report." }
         pressure: { description: "Altimeter in inches of mercury, a number rounded to hundredths, or the text `--` when there is none." }
-        flight_category: { type: string, nullable: true, description: "VFR, MVFR, IFR or LIFR." }
+        flight_category: { type: string, nullable: true, description: "VFR, MVFR, IFR or LIFR. A forecast's is worked out from its ceiling and visibility, null when it gives either not." }
         raw_metar: { type: string, nullable: true }
         distance_miles: { type: number, description: "How far the station is from the position, in statute miles; 0 when none answered." }
+        kind: { type: string, enum: [observation, forecast], description: "Only when `at` was sent: what the answer is for that time." }
+        at: { type: string, description: "Only with `at`: the time asked for, as UTC (`2026-10-16T14:30:00Z`)." }
+        observed: { type: string, nullable: true, description: "An observation for `at` only: when the METAR was taken (UTC); null when no station answered." }
+        raw_taf: { type: string, nullable: true, description: "A forecast only: the TAF's text." }
+        issued: { type: string, nullable: true, description: "A forecast only: when the TAF was issued (UTC)." }
+        valid_from: { type: string, nullable: true, description: "A forecast only: the start of the period covering `at` (UTC)." }
+        valid_to: { type: string, nullable: true, description: "A forecast only: the end of that period (UTC)." }
         notams:
           description: |
             An object of lists of NOTAM text by the feature they are about (`{"Obstruction": ["…"]}`, or `{"Clear": ["No active NOTAMs in LZ area."]}` when
