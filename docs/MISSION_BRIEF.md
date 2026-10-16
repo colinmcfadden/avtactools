@@ -1,6 +1,6 @@
 # Mission brief — architecture and plan
 
-Status: **B0 and B1 done; B2 (backend) under way, B3 next** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
+Status: **B0, B1 and B2 done, B3 next** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
 seven web boards, three Android tablet boards). This file is the plan for building them on the web and Android. The owner's decisions of
 2026-10-16 are in §9.
 
@@ -126,7 +126,12 @@ minute; a body that does not rise or set that day says so, never a made-up time.
 
 `/api/weather` answers for *now* at one point. A brief wants departure, enroute and arrival, at planned times. Two additive changes to the
 server (routes the apps call are additive-only, AGENTS.md §6): an optional `at` (ISO time) that picks the TAF period for that time, saying
-whether the answer is an observation or a forecast; and the stations named, so a brief can say "KMGE" rather than a distance. Enroute winds
+whether the answer is an observation or a forecast; and the stations named, so a brief can say "KMGE" rather than a distance. **Built
+(B2):** a time more than 30 minutes ahead (the route winds' threshold) is the nearest TAF with a base period covering it (`kind:
+"forecast"`, `station_id` the TAF's, `valid_from`/`valid_to`, `issued`, `raw_taf`; a BECMG group changes only what it gives, TEMPO and
+PROB groups are not the forecast; no temperature, dew point or METAR, which a TAF does not give; the flight category worked out from its
+ceiling and visibility, null when it gives either not); anything sooner, or a time no TAF nearby covers, is the latest METAR (`kind:
+"observation"`, with `observed`). The NOTAMs are those in force now either way. Without `at` the answer is exactly as before. Enroute winds
 already come from `/api/route-winds`. The brief keeps the answers it was generated with and how old they are, the way the weather tiles do,
 and a stale report says so.
 
@@ -199,6 +204,14 @@ A presentation mode over the existing map, not a new map:
   brief item follow the same rule. The clients' read-only gate (`PackLock` on Android, the web's finished and viewer checks) lets brief
   items through and nothing else, and a test on each side holds that an LZ/PZ or route in the same pack is still refused. The
   history says who changed a finished pack's brief, like any change.
+- **As built (B2):** `SavedBrief.brief_data` is the brief document, sent and answered as `data` (`{name, data, client_uuid}`); every
+  `/api/briefs` route needs `mission_brief` (`entitlements.DEFAULT_OFF` until launch) and a write `cloud_save` too. The exception is
+  per batch (`pack_routes._only_briefs`): a batch whose every operation targets a brief, stored as one or made as one earlier in the
+  batch, goes through; a batch with anything else in it is refused whole, as before, so **the clients send brief edits in batches of
+  their own** (the web's session drops a refused batch with what is queued behind it, MISSION_PACKS.md §5 rule 7). Copying in from
+  the Library and updating from an original are not part of the exception, and a brief is not a source kind for copying in (its
+  references name the Library's LZ/PZs, not the pack's). *Save to Library* of a brief item makes a `SavedBrief` and needs
+  `mission_brief`. A pack's `item_counts` do not count briefs yet: Android decodes that object strictly (AGENTS.md §15).
 - **Generated PDFs are not kept**: "Last generated" in the menu is the document's `generated` entries; *PDF* there generates again from the
   plan as it is now, and says so if the plan changed since.
 
@@ -232,7 +245,7 @@ green, AGENTS.md and `docs/HANDOFF.md` updated in the same commit.
 |---|---|---|
 | **B0** | **Done.** `contracts/briefs/`: the template format, the two formats, the bindings, the constants and the standards, held by `briefTemplates.test.js` | — |
 | **B1** | **Done.** Web: `compile.js`, `templates.js`, `light.js` and their fixtures (`contracts/fixtures/brief`: `compile.json` from the web, `light.json` from Skyfield via `contracts/scripts/light_fixtures.py`) | B0 |
-| **B2** | Backend: `SavedBrief`, `/api/briefs`, sync kind, pack item kind `brief` and its exception, the weather route's `at`, OpenAPI, recorded responses, `mission_brief` | B0 |
+| **B2** | **Done.** Backend: `SavedBrief`, `/api/briefs`, sync kind, pack item kind `brief` and its exception, the weather route's `at`, OpenAPI, recorded responses, `mission_brief`; the web's `packOps.js` takes the kind, its cases in `contracts/fixtures/packs/ops-brief.json` (apart from `ops.json` until Android ports the kind in B7) | B0 |
 | **B3** | Web: the Brief menu and the three-step setup over `useBrief` (Library and pack) | B1, B2 |
 | **B4** | Backend + web: figures, the pages, Gotenberg, `POST /api/brief/pdf`; the review step and download | B3 |
 | **B5** | Web: the live sandtable | B3 |

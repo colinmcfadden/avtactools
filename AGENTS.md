@@ -101,15 +101,16 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Map layers** | The base map (satellite, topo, VFR sectional) and an **MGRS grid** over any of them, from the Layers control: zone and band boundaries (white dashes), 100 km squares, and lines at 10 km, 1 km or 100 m as the zoom allows (about 70 px apart), labelled with the zone, the square and the lines' principal digits; a label whose edge is covered (a phone's search bar) goes on the opposite edge. On or off is remembered per browser (`ezpz.mgrsGrid`), never saved with a plan. **Screen only**: the owner's call, 2026-10-08; it is left off LZ card exports. Android draws the same grid from the same code, ported and held to `contracts/fixtures/mgrs/grid.json` (§17, *The MGRS grid*) | `feature/mapStyles/`, `feature/mgrsGrid/`, `feature/export/captureFilter.js` | — |
 | **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
 | **Mission packs** | A shared container of LZs, sketched route sets and point sets a team plans one operation in. Members edit it through a server-ordered stream of id-addressed operations, every change is logged, and the owner can finish it (read-only for everyone). Teams, email invites, and name search limited to teammates. Edits reach everyone through a live stream (a separate service), or by polling where it is not running. Design and rules: `docs/MISSION_PACKS.md`. On Android the engine runs with the app, takes invitation links and has the workspace switcher and the Pack panel (§17, *Mission packs on Android*, *The workspace switcher*, *The Pack panel*); the other panels in a pack and the rest of its screens are next | `feature/missionPacks/` (the sync client `useMissionPack`; `packApi` for every route; invitation links; the editors kept in step with an open pack, `usePackLz` / `usePackRoutes` / `usePackPoints` on `usePackItemSync`: `docs/MISSION_PACKS.md` §5a; the screens in `feature/missionPacks/ui/`: the workspace switcher, the Pack panel with Items and History, New pack, Members, Teams, Add to pack, the finished banner and other people's pointers, joined to the app by `usePackWorkspace`) | `routes/pack_routes.py`, `routes/team_routes.py`, `pack_ops.py`, `pack_support.py`, `realtime/service.py` |
-| **Mission brief** *(in progress, branch `feat/mission-brief`; plan and the owner's decisions in `docs/MISSION_BRIEF.md`)* | The air movement and hasty multi-ship briefs from a pack or the session: a PDF and a live sandtable. So far the formats as data (`contracts/briefs/`, copied byte for byte into the web) and the pure core: `compileBrief` (everything a brief says, held to `contracts/fixtures/brief/compile.json`) and on-device light data (held to Skyfield, `light.json`). No screen yet | `feature/brief/` | — |
+| **Mission brief** *(in progress, branch `feat/mission-brief`; plan and the owner's decisions in `docs/MISSION_BRIEF.md`)* | The air movement and hasty multi-ship briefs from a pack or the session: a PDF and a live sandtable. So far the formats as data (`contracts/briefs/`, copied byte for byte into the web) and the pure core: `compileBrief` (everything a brief says, held to `contracts/fixtures/brief/compile.json`) and on-device light data (held to Skyfield, `light.json`). The server keeps briefs in the Library (`/api/briefs`, synced) and as pack items open to every member, and answers the weather at a planned time (`/api/weather?at=`). No screen yet | `feature/brief/` | `routes/brief_routes.py`, `pack_routes._only_briefs`, `routes/weather_routes.py` |
 | **3D LZ view** *(in progress, branch `feat/3d-lz-route`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
 
 Entitlement keys (`entitlements.FEATURES`): `lz_pz_tools`, `routes`,
 `msnx_import`, `threats`, `cloud_save`, `exports`, `aircraft_profiles`,
-`mission_packs`. A missing key means **enabled**, so new features default on,
+`mission_packs`, `mission_brief`. A missing key means **enabled**, so new features default on,
 except a feature in `entitlements.DEFAULT_OFF` (not launched yet: today
-`mission_packs`, which ships with the menu redesign). That one is off for everyone
-but admins and the testers an admin ticks it for, and only a tick is ever stored,
+`mission_packs`, which ships with the menu redesign, and `mission_brief`, being built:
+`docs/MISSION_BRIEF.md`). Those are off for everyone
+but admins and the testers an admin ticks them for, and only a tick is ever stored,
 never an "off" (`features_from_form`), so launching it is removing it from
 `DEFAULT_OFF`: everyone then has it, people whose access an admin edited included.
 
@@ -177,15 +178,15 @@ responses to. A route not in that file is not yet something an app may rely on.
 | auth, native apps | `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/sessions`, `DELETE /api/auth/sessions/<id>`, `DELETE /api/auth/me` (account deletion) — design in `AUTHENTICATION.md` |
 | terrain | `POST /api/analyze-field` (SAM), `POST /api/terrain-analysis` (slope), `POST /api/elevations` (planner/AMPS ground, Terrarium), `GET /api/terrain/heightmap/<level>/<x>/<y>`, `POST /api/terrain/heights` (3D ground + geoid, local DEMs) |
 | location | `POST /api/convert-grid` (MGRS → lat/lon), `POST /api/convert-to-mgrs` (no longer called by the SPA, which converts lat/lon → MGRS itself with `utils/mgrs.js`) |
-| weather | `GET /api/weather`, `POST /api/route-winds` |
+| weather | `GET /api/weather` (optional `at`, a planned time: the TAF period covering it, `kind: "forecast"`, or the METAR, `kind: "observation"`; without `at` unchanged), `POST /api/route-winds` |
 | export | `POST /api/generate-excel`, `POST /api/export-package` |
-| saved data | `/api/lz`, `/api/routes` (+ `/<id>/file`), `/api/pointsets` — CRUD, now with sync (below) |
-| sync | `GET /api/sync/changes?since=&limit=` — everything of the caller's after a cursor, deletions included (`lz`, `route`, `pointset`, `aircraft`) |
+| saved data | `/api/lz`, `/api/routes` (+ `/<id>/file`), `/api/pointsets`, `/api/briefs` (needs `mission_brief`) — CRUD, now with sync (below) |
+| sync | `GET /api/sync/changes?since=&limit=` — everything of the caller's after a cursor, deletions included (`lz`, `route`, `pointset`, `aircraft`, `brief`) |
 | aircraft | `/api/aircraft-profiles` CRUD, `/<id>/template`. A user's own profiles sync like saved records; the master list does not |
 | threats | `POST /api/threat-mask`, `POST /api/threats-ths`, `GET/POST /api/threats-kmz`, `POST /api/threats-kmz-link` |
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
 | lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key |
-| mission packs | `/api/packs` (+ `/<uuid>`, `/finish`, `/reopen`, `/duplicate`, `/ops`, `/events`, `/seen`, `/items…`, `/members…`, `/invites…`) — `docs/MISSION_PACKS.md` §4 |
+| mission packs | `/api/packs` (+ `/<uuid>`, `/finish`, `/reopen`, `/duplicate`, `/ops`, `/events`, `/seen`, `/items…`, `/members…`, `/invites…`) — `docs/MISSION_PACKS.md` §4. A batch of `/ops` all on `brief` items is taken from viewers and in a finished pack |
 | teams, invites, search | `/api/teams` (+ `/<id>`, `/members/<user_id>`, `/invites`), `/api/invites` (+ `/<id>/accept`, `/<id>/decline`, `/accept`), `GET /api/users/search?q=` (teammates only) |
 | admin | `/admin/*` — session cookie, not JWT. `/admin/packs` and `/admin/teams` are read only and never show what a pack holds |
 | app config | `GET /api/config` — **public**, cached 60 s: `minAppVersion` per platform, `maintenance`, which optional `services` are up, and the Mapbox public token (`app_config.py`, `routes/config_routes.py`) |
@@ -199,7 +200,7 @@ Regenerate this from the source of truth with `app.url_map` if it drifts.
 
 `models.py`: `User`, `LocalCredential`, `AccountToken` (verification and reset
 tokens, stored as SHA-256), `LoginEvent`, `AircraftProfile`, `SavedRoute`,
-`SavedPointSet`, `SavedLZ`, and the mission-pack tables `Team`, `TeamMember`,
+`SavedPointSet`, `SavedLZ`, `SavedBrief` (a mission brief's document, `docs/MISSION_BRIEF.md` §3), and the mission-pack tables `Team`, `TeamMember`,
 `MissionPack`, `MissionPackMember`, `MissionPackInvite`, `MissionPackItem`,
 `MissionPackEvent`.
 
@@ -208,13 +209,16 @@ hold the library's JSON unchanged, but in their own table, so nothing about pack
 touches the saved-record queries or the per-user sync feed. Three things to keep true:
 every write to a pack takes its row first (`pack_support.lock`) and numbers its
 events under it, so the log has one order; a finished pack refuses every edit
-with 423, the owner's included; and deleting an account calls
+with 423, the owner's included, and a viewer's with 403, **except a batch whose every
+operation is on a `brief` item**, which is open to every member in every state of the
+pack (the owner, 2026-10-16; `pack_routes._only_briefs`; a batch with anything else in it
+is refused whole, so clients send brief edits in batches of their own); and deleting an account calls
 `pack_support.release_account` first (both deletion paths do), because
 `mission_pack.owner_id` deliberately has no `ON DELETE`.
 
 **Saved records sync across devices** (`sync_support.py`; rules in
-`docs/NATIVE_APPS_PLAN.md`, "Sync and conflicts"). `SavedLZ`, `SavedRoute` and
-`SavedPointSet` — and a user's *own* `AircraftProfile`s, not the admin's master list —
+`docs/NATIVE_APPS_PLAN.md`, "Sync and conflicts"). `SavedLZ`, `SavedRoute`,
+`SavedPointSet` and `SavedBrief` — and a user's *own* `AircraftProfile`s, not the admin's master list —
 carry `client_uuid` (an identity the creating device chooses, unique
 per user), `revision` (bumped by every change), `deleted_at`, `change_seq` and
 `last_idem_key`, and a per-user `SyncCounter` hands out the order. Four things to
@@ -239,7 +243,7 @@ keep true when touching them:
 **There is no migration framework.** `db.create_all()` creates tables;
 new columns on existing tables are added by guarded `ALTER TABLE` statements in
 `app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile`,
-`LoginEvent`, `AccountToken` and the three saved-record models against the live
+`LoginEvent`, `AccountToken` and the four saved-record models against the live
 schema (`LoginEvent.client`, the refresh-token columns and the sync columns were
 added that way, each with a test against a pre-existing table).
 `schema_sync.ensure_unique_index` adds the `client_uuid` indexes the same way,
@@ -915,6 +919,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   from true by the grid convergence (about 1.7° at a zone's edge in north Georgia). Nothing corrects either (owner to decide).
 - Until the server with `byHeading` reaches staging and production, every analysis there has no table: the apps say HEADING REQUIRED at
   15° and "Heading limits not checked (server not updated)".
+- **Mission briefs are not ported to Android yet** (B7, `docs/MISSION_BRIEF.md`): its `PackOps` refuses the `brief` kind as
+  malformed (`bad_kind`), and what an installed app's engine and Pack panel then do with a pack that holds a brief item is untried:
+  try one on a device before the web makes them (B3). The kind's cases are apart (`contracts/fixtures/packs/ops-brief.json`) so
+  `PackOpsFixtureTest` still holds every case of `ops.json`; the app's strict decoder test passes over the brief records and the
+  weather-at answers; and a pack's `item_counts` do not count briefs until the app's `PackItemCounts` can take the key.
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -932,7 +941,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/MISSION_BRIEF.md` (the mission brief: proposal, not started), `docs/native-design/README.md`, `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
+  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/MISSION_BRIEF.md` (the mission brief: B0, B1 and B2 done), `docs/native-design/README.md`, `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
   "where things stand, what is next" note for whoever picks the Android work up; refresh it with each commit that moves either.
 
 ---
