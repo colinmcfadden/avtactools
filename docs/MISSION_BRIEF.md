@@ -1,6 +1,6 @@
 # Mission brief — architecture and plan
 
-Status: **planned; B0 under way** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
+Status: **planned; B0 done, B1 next** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
 seven web boards, three Android tablet boards). This file is the plan for building them on the web and Android. The owner's decisions of
 2026-10-16 are in §9.
 
@@ -230,7 +230,7 @@ green, AGENTS.md and `docs/HANDOFF.md` updated in the same commit.
 
 | Step | What | Depends on |
 |---|---|---|
-| **B0** | `contracts/briefs/`: the template format, the two formats, the bindings, the constants and the standards, held by a Jest test | — |
+| **B0** | **Done.** `contracts/briefs/`: the template format, the two formats, the bindings, the constants and the standards, held by `briefTemplates.test.js` | — |
 | **B1** | Web: `compile.js`, `templates.js`, `light.js` and their fixtures (`contracts/fixtures/brief`), with the light fixture script | B0 |
 | **B2** | Backend: `SavedBrief`, `/api/briefs`, sync kind, pack item kind `brief` and its exception, the weather route's `at`, OpenAPI, recorded responses, `mission_brief` | B0 |
 | **B3** | Web: the Brief menu and the three-step setup over `useBrief` (Library and pack) | B1, B2 |

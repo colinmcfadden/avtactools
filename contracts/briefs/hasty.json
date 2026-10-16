@@ -1,0 +1,242 @@
+{
+  "format": "ezpz-brief-template",
+  "id": "hasty",
+  "version": 1,
+  "title": "Tactical hasty multi-ship brief",
+  "shortTitle": "Hasty multi-ship brief",
+  "source": "Aviation Branch Handbook (Annex A to the Aviation Branch Operations SOP), 15 July 2024, Part 2",
+  "defaultWho": "AMC",
+  "roles": {
+    "PZ": ["9"],
+    "LZ": ["12", "13"],
+    "FARP": ["18"],
+    "HA": [],
+    "LAAGER": ["16"],
+    "FALSE_LZ": ["10"]
+  },
+  "paragraphs": [
+    {
+      "number": "1", "title": "Roll call and situation",
+      "sections": [
+        { "id": "1", "title": "Roll call", "step": "situation", "figure": "overview",
+          "items": [ { "id": "a", "label": "Ground element", "kind": "text" }, { "id": "b", "label": "Aviation element", "kind": "text", "bind": "flight.aircraft" } ],
+          "script": ["Roll call: ground element {a}; aviation element {b}."] },
+        { "id": "2", "title": "Supported unit / supporting unit", "step": "situation", "figure": "overview",
+          "items": [ { "id": "a", "label": "Supported unit", "kind": "text" }, { "id": "b", "label": "Supporting unit", "kind": "text" } ],
+          "script": ["Supported unit {a}; supporting unit {b}."] },
+        { "id": "3", "title": "Weather", "step": "situation", "figure": "overview",
+          "items": [ { "id": "a", "label": "Weather", "kind": "note", "bind": "weather.summary" } ],
+          "script": ["Weather: {a} Light: {bind:light.summary}"] },
+        { "id": "4", "title": "NOTAMs", "step": "situation", "figure": "overview",
+          "items": [ { "id": "a", "label": "NOTAMs", "kind": "note", "bind": "notams.summary" } ],
+          "script": ["NOTAMs: {a}"] }
+      ]
+    },
+    {
+      "number": "5", "title": "Mission and concept",
+      "sections": [
+        { "id": "5", "title": "Mission / key tasks / end state", "step": "mission", "figure": "overview",
+          "items": [ { "id": "a", "label": "Mission", "kind": "note" }, { "id": "b", "label": "Key tasks", "kind": "note" }, { "id": "c", "label": "End state", "kind": "note" } ],
+          "script": ["Mission: {a}", "Key tasks: {b}", "End state: {c}"] },
+        { "id": "6", "title": "Concept", "step": "mission", "figure": "overview",
+          "items": [ { "id": "a", "label": "Concept (with the macro concept sketch)", "kind": "note" } ],
+          "script": ["Concept: {a}"] },
+        { "id": "7", "title": "Number / type of aircraft", "step": "mission", "figure": "overview",
+          "items": [ { "id": "a", "label": "Number / type of aircraft", "kind": "text", "bind": "flight.aircraft" } ],
+          "script": ["{a}."] },
+        { "id": "8", "title": "H-hour", "step": "mission", "figure": "overview",
+          "items": [ { "id": "a", "label": "H-hour", "kind": "time" } ],
+          "script": ["H-hour is {a}."] }
+      ]
+    },
+    {
+      "number": "9", "title": "Enroute / PZ operations",
+      "sections": [
+        { "id": "9", "title": "Enroute / PZ operations", "repeat": "PZ", "step": "pz", "figure": "stop",
+          "facts": ["stop.elevation", "stop.slope"],
+          "items": [
+            { "id": "a", "label": "Takeoff time / direction / formation", "kind": "text", "bind": "stop.departurePlan" },
+            { "id": "b", "label": "Altitude / airspeed", "kind": "text" },
+            { "id": "c", "label": "Aircraft lighting", "kind": "text" },
+            { "id": "d", "label": "Location / grid / marking", "kind": "text", "bind": "stop.grid" },
+            { "id": "e", "label": "Call sign / frequency", "kind": "text" },
+            { "id": "f", "label": "Landing / pickup time", "kind": "time", "bind": "stop.arrive" },
+            { "id": "g", "label": "Landing heading / formation", "kind": "text", "bind": "stop.landingHeading" },
+            { "id": "h", "label": "Door / ramp entry", "kind": "text" },
+            { "id": "i", "label": "Number of troops / type of cargo loads", "kind": "text" }
+          ],
+          "script": [
+            "{bind:stop.name}, {d}, call sign and frequency {e}. Pickup at {f}, landing {g}.",
+            "Lighting {c}. Entry by {h}; loads {i}.",
+            "Takeoff {a}, at {b}."
+          ] }
+      ]
+    },
+    {
+      "number": "10", "title": "False insertion",
+      "sections": [
+        { "id": "10", "title": "False infiltration LZ / concept", "repeat": "FALSE_LZ", "step": "false", "figure": "stop",
+          "items": [ { "id": "a", "label": "Grid", "kind": "text", "bind": "stop.grid" }, { "id": "b", "label": "Concept", "kind": "note" } ],
+          "script": ["False insertion at {bind:stop.name}, {a}: {b}"] }
+      ]
+    },
+    {
+      "number": "11", "title": "Route / time of flight",
+      "sections": [
+        { "id": "11", "title": "Route / time of flight", "repeat": "route", "step": "route", "figure": "route",
+          "facts": ["route.distance", "route.time", "route.start", "route.end"],
+          "items": [ { "id": "a", "label": "Route / time of flight", "kind": "note", "bind": "route.overview" } ],
+          "script": ["{bind:route.name}: {a}"] }
+      ]
+    },
+    {
+      "number": "12", "title": "RP inbound and LZ operations",
+      "sections": [
+        { "id": "12", "title": "RP inbound conditions check", "repeat": "LZ", "step": "lz", "figure": "stop",
+          "facts": ["stop.elevation", "stop.slope"],
+          "items": [
+            { "id": "a", "label": "Wind validation (ACP before the RP)", "kind": "text" },
+            { "id": "b", "label": "Time on target", "kind": "time", "bind": "stop.arrive" },
+            { "id": "c", "label": "Time / distance to the LZ", "kind": "text", "bind": "stop.inbound" },
+            { "id": "d", "label": "Altitude / airspeed", "kind": "text" },
+            { "id": "e", "label": "Landing formation / direction", "kind": "text", "bind": "stop.landingHeading" },
+            { "id": "f", "label": "Weapons status and control measures", "kind": "text" },
+            { "id": "g", "label": "Doors open / closed", "kind": "text" },
+            { "id": "h", "label": "Actions on contact", "kind": "procedure", "standard": "actionsOnContact" },
+            { "id": "j", "label": "LZ markings", "kind": "text" },
+            { "id": "k", "label": "Barriers / hazards", "kind": "text" },
+            { "id": "l", "label": "Distance / direction to the objective", "kind": "text" },
+            { "id": "m", "label": "Escape plan", "kind": "text" },
+            { "id": "n", "label": "Go-around (direction, as a flight or single ship)", "kind": "procedure", "standard": "goAround" },
+            { "id": "o", "label": "Actions on the objective", "kind": "note" },
+            { "id": "p", "label": "Troop exit procedures", "kind": "text" },
+            { "id": "q", "label": "Departure sequence", "kind": "text" },
+            { "id": "r", "label": "ROZ coordination (frequency, call sign, responsibility)", "kind": "text" }
+          ],
+          "script": [
+            "RP inbound to {bind:stop.name}: wind check {a}; on target at {b}; {c}; {d}.",
+            "Landing {e}. Weapons {f}; doors {g}.",
+            "{h}",
+            "Markings {j}; hazards {k}; the objective is {l}. Escape plan {m}.",
+            "{n}",
+            "On the objective: {o} Troops exit {p}. Departure sequence {q}. ROZ: {r}."
+          ] },
+        { "id": "13", "title": "LZ operations", "repeat": "LZ", "step": "lz", "figure": "stop",
+          "items": [
+            { "id": "a", "label": "LZ sketch (the LZ card, from the plan)", "kind": "info" },
+            { "id": "b", "label": "LZ marking / security / call sign / frequency", "kind": "text" },
+            { "id": "c", "label": "Landing direction / formation", "kind": "text", "bind": "stop.landingHeading" },
+            { "id": "d", "label": "Weapons status and control measures", "kind": "text" },
+            { "id": "e", "label": "Door exit", "kind": "text" },
+            { "id": "f", "label": "Number of turns required", "kind": "text" },
+            { "id": "g", "label": "Takeoff direction / formation", "kind": "text", "bind": "stop.takeoffHeading" }
+          ],
+          "script": [
+            "In the LZ: {b}. Landing {c}; weapons {d}; exit {e}; {f} turns.",
+            "Takeoff {g}."
+          ] }
+      ]
+    },
+    {
+      "number": "14", "title": "Support",
+      "sections": [
+        { "id": "14", "title": "Hot / cold criteria", "step": "support", "figure": "none",
+          "items": [ { "id": "a", "label": "Criteria", "kind": "text" }, { "id": "b", "label": "Platform making the call / call sign / frequency", "kind": "text" } ],
+          "script": ["Hot or cold: {a}, called by {b}."] },
+        { "id": "15", "title": "Attack / scout aviation plan", "step": "support", "figure": "none",
+          "items": [
+            { "id": "a", "label": "Coverage times", "kind": "text" },
+            { "id": "b", "label": "Task and purpose", "kind": "text" },
+            { "id": "c", "label": "Grid reference graphic", "kind": "text" },
+            { "id": "d", "label": "Ammunition load", "kind": "text" }
+          ],
+          "script": ["Attack and scout: coverage {a}; task and purpose {b}; graphic {c}; load {d}."] },
+        { "id": "16", "title": "Laager plan", "repeat": "LAAGER", "step": "laager", "figure": "stop",
+          "items": [ { "id": "a", "label": "Location", "kind": "text", "bind": "stop.grid" }, { "id": "b", "label": "REDCON level", "kind": "choice", "options": ["REDCON 1", "REDCON 2", "REDCON 3", "REDCON 4", "REDCON 5"] } ],
+          "script": ["Laager at {bind:stop.name}, {a}, at {b}."] },
+        { "id": "17", "title": "Airspace control (rotary wing, CAS, ISR)", "step": "airspace", "figure": "none",
+          "items": [ { "id": "a", "label": "Airspace control", "kind": "note" } ],
+          "script": ["Airspace: {a}"] },
+        { "id": "18", "title": "Refuel plan / location", "repeat": "FARP", "step": "farp", "figure": "stop",
+          "items": [ { "id": "a", "label": "Location", "kind": "text", "bind": "stop.grid" }, { "id": "b", "label": "Refuel plan", "kind": "note" } ],
+          "script": ["Refuel at {bind:stop.name}, {a}: {b}"] },
+        { "id": "19", "title": "Detainee transport plan", "step": "detainee", "figure": "none",
+          "items": [ { "id": "a", "label": "Plan", "kind": "note" } ],
+          "script": ["Detainees: {a}"] },
+        { "id": "20", "title": "Abort criteria", "step": "abort", "figure": "none",
+          "items": [
+            { "id": "a", "label": "Weather", "kind": "text" },
+            { "id": "b", "label": "Minimum aircraft", "kind": "text" },
+            { "id": "c", "label": "Minimum force", "kind": "text" },
+            { "id": "d", "label": "Other", "kind": "text" }
+          ],
+          "script": ["Abort for weather {a}, below {b} aircraft, below {c} force, or {d}."] },
+        { "id": "21", "title": "Weather call", "step": "abort", "figure": "none",
+          "items": [ { "id": "a", "label": "Weather call", "kind": "text" } ],
+          "script": ["Weather call: {a}."] },
+        { "id": "22", "title": "Fires plan", "step": "fires", "figure": "none",
+          "items": [ { "id": "a", "label": "Fires plan", "kind": "note" } ],
+          "script": ["Fires: {a}"] },
+        { "id": "23", "title": "Deception plan", "step": "fires", "figure": "none",
+          "items": [ { "id": "a", "label": "Deception plan", "kind": "note" } ],
+          "script": ["Deception: {a}"] },
+        { "id": "24", "title": "Resupply", "step": "fires", "figure": "none",
+          "items": [ { "id": "a", "label": "Resupply", "kind": "note" } ],
+          "script": ["Resupply: {a}"] },
+        { "id": "25", "title": "Bump plan", "step": "fires", "figure": "none",
+          "items": [ { "id": "a", "label": "Bump plan", "kind": "procedure" } ],
+          "script": ["Bump plan: {a}"] }
+      ]
+    },
+    {
+      "number": "26", "title": "Contingencies",
+      "sections": [
+        { "id": "26", "title": "Contingencies", "step": "contingencies", "figure": "rally",
+          "facts": ["rally.points"],
+          "items": [
+            { "id": "a", "label": "Lead change", "kind": "procedure", "standard": "leadChange" },
+            { "id": "b", "label": "Lost communication", "kind": "procedure", "standard": "lostCommo" },
+            { "id": "c", "label": "Loss of visual contact (in-flight link-up and rally points)", "kind": "procedure", "standard": "lostVisual" },
+            { "id": "d", "label": "IIMC", "kind": "procedure", "standard": "iimc" },
+            { "id": "e", "label": "Downed aircraft / personnel recovery", "kind": "procedure", "standard": "downedAircraft" }
+          ],
+          "script": ["Contingencies.", "{a}", "{b}", "{c}", "{d}", "{e}"] },
+        { "id": "27", "title": "MEDEVAC aircraft location", "step": "contingencies", "figure": "rally",
+          "items": [ { "id": "a", "label": "Location", "kind": "text" } ],
+          "script": ["MEDEVAC is at {a}."] },
+        { "id": "28", "title": "QRF", "step": "contingencies", "figure": "rally",
+          "items": [
+            { "id": "a", "label": "Air or ground", "kind": "choice", "options": ["Air", "Ground"] },
+            { "id": "b", "label": "Trigger", "kind": "text" },
+            { "id": "c", "label": "Frequency", "kind": "text" },
+            { "id": "d", "label": "Response time", "kind": "text" }
+          ],
+          "script": ["QRF: {a}, triggered by {b}, on {c}, responding in {d}."] }
+      ]
+    },
+    {
+      "number": "29", "title": "Communication and command",
+      "sections": [
+        { "id": "29", "title": "Communication", "step": "signal", "figure": "none",
+          "items": [
+            { "id": "a", "label": "CAN", "kind": "text" },
+            { "id": "b", "label": "Internal frequencies (PACE)", "kind": "note" },
+            { "id": "c", "label": "Fires", "kind": "text" },
+            { "id": "d", "label": "SATCOM", "kind": "text" },
+            { "id": "e", "label": "GTC / RTO call signs", "kind": "text" },
+            { "id": "f", "label": "Aircraft call signs", "kind": "text" }
+          ],
+          "script": ["CAN {a}. Internal: {b} Fires {c}; SATCOM {d}.", "Ground call signs {e}; aircraft {f}."] },
+        { "id": "30", "title": "Command (GTC, AATFC, ATFC, AMC)", "step": "signal", "figure": "none",
+          "items": [ { "id": "a", "label": "Command", "kind": "text" } ],
+          "script": ["Command: {a}."] },
+        { "id": "31", "title": "ISR / CAS requested / approved", "step": "signal", "figure": "none",
+          "items": [ { "id": "a", "label": "ISR / CAS", "kind": "text" } ],
+          "script": ["ISR and CAS: {a}."] },
+        { "id": "32", "title": "Proposed timeline (approval brief, CONOPS to division, AB, CAR)", "step": "signal", "figure": "overview",
+          "items": [ { "id": "a", "label": "Proposed timeline", "kind": "note" } ],
+          "script": ["Timeline: {a}"] }
+      ]
+    }
+  ]
+}

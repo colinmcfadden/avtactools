@@ -140,7 +140,7 @@ avtactools/
 │  ├─ public/                msnx_template.msnx, static assets; public/cesium/ is copied at build
 │  └─ scripts/copy-cesium.js prestart/prebuild: copies Cesium's static build into public/
 ├─ android/                  Gradle project for the Android app (§17): pure-Kotlin core modules, Android libraries, the app
-├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17)
+├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17); briefs/: the mission brief's formats as data
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
 ├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md, ANDROID_MISSION_PACKS_PLAN.md; HANDOFF.md (where the Android build stands, what is next); native-design/ (the menu redesign for Android and iOS, phone and tablet: screenshots, outlines, sources, tokens; read its README before native UI work)
 ├─ .github/workflows/        release.yaml (semantic-release); android.yaml, contracts.yaml (path-filtered tests)

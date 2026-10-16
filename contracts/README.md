@@ -10,6 +10,7 @@ golden answers they are all tested against. See `docs/NATIVE_APPS_PLAN.md`
 contracts/
 ├─ openapi.yaml     the API routes the apps call (checked against the backend's responses)
 ├─ tokens/          design tokens (colours for dark, light and night, spacing, type) — tokens.json
+├─ briefs/          the mission brief's formats as data (templates, bindings, constants, standards) — see briefs/README.md
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy; grid.json: the web
 │  ├─ coords/       parse.json                      reference: the web app
