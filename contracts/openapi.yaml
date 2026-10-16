@@ -1678,7 +1678,7 @@ paths:
       summary: Apply a batch of edits, in order, each numbered and logged
       description: |
         Each operation is applied, or logged as `skipped` when what it edits is gone or in the
-        way; the rules are `contracts/fixtures/packs/ops.json`. Each carries a `client_op_id`
+        way; the rules are `contracts/fixtures/packs/ops.json` (and `ops-brief.json`). Each carries a `client_op_id`
         (printable ASCII, 64 at most): one the pack has seen is answered from the log and not
         applied again, so a batch whose answer was lost is safe to send again. A malformed
         operation refuses the whole batch (400 `invalid_op`, with `index` and `reason`) before
@@ -1687,7 +1687,10 @@ paths:
         With `base_seq`, `events` is everything after it (up to 500; `has_more` says there is
         more), so the client can rebase its unconfirmed edits; without it, just this batch's.
         Viewers get 403 `pack_read_only`; a finished pack 423 `pack_finished`; an item that
-        would pass 5 MB 413 `item_too_large`.
+        would pass 5 MB 413 `item_too_large`. The exception is a batch whose every operation is
+        on a `brief` item (one stored as a brief, or made as one earlier in the batch): briefing
+        is open to every member, viewers included, in every state of the pack. A batch with any
+        other operation in it is refused whole, so send brief edits in batches of their own.
 
         Those three refusals always carry `taken` (a server from before it sent none: read that
         as none): the operations of this batch the pack's log already has, the caller's own, in
@@ -3473,7 +3476,7 @@ components:
       required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
       properties:
         uuid: { type: string }
-        kind: { type: string, enum: [lz, route, pointset] }
+        kind: { type: string, enum: [lz, route, pointset, brief] }
         name: { type: string }
         revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
         seq: { type: integer, minimum: 0, description: The event that last changed it. }
@@ -3629,7 +3632,7 @@ components:
       additionalProperties: false
       required: [kind, id, client_uuid, name, revision]
       properties:
-        kind: { type: string, enum: [lz, route, pointset] }
+        kind: { type: string, enum: [lz, route, pointset, brief] }
         id: { type: integer }
         client_uuid: { type: string }
         name: { type: string }
