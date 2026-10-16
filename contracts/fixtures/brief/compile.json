@@ -1,0 +1,3265 @@
+{
+  "generatedBy": "frontend/src/contracts/briefCompileFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "cases": [
+    {
+      "name": "OP DK, air movement brief, the flow from the routes",
+      "format": "amb",
+      "document": {
+        "answers": {
+          "1.b": {"value":"Moderate"},
+          "2.b": {"value":"500-1 day"},
+          "2.d": {"value":"11:15, PC chalk 1"},
+          "3.a": {"value":"Insert two teams at LZ BLUEBIRD and LZ HAWK, then extract them from PZ IBIS."},
+          "4.b.vii": {"mode":"standard"},
+          "4.e.ii@lz:lz-hawk": {"value":"trail"},
+          "4.e.iii@lz:lz-hawk": {"value":""},
+          "5.a.i": {"mode":"custom","value":"Lead calls it; old lead takes trail."},
+          "5.a.iii": {"mode":"standard"},
+          "5.a.v": {"mode":"standard","fields":{"baseAltitude":"4,000 ft MSL","baseHeading":"the mountain heading","baseAirspeed":"100 KIAS"}},
+          "5.a.vii": {"mode":"standard"},
+          "7.a": {"value":"17:30"}
+        },
+        "rallyPoints": [{"ref":"route:set-opdk/r-alderaan","pointId":"a4","label":"inbound"},{"ref":"route:set-opdk/r-bespin","pointId":"b2","label":"outbound"}],
+        "scripts": {"3":"Insert the teams, extract them, everyone home."}
+      },
+      "plan": {
+        "name": "OP DK",
+        "missionAircraft": "uh60l",
+        "aircraftProfiles": [{"id":1,"slug":"uh60l","name":"UH-60L Black Hawk","designation":"UH-60L"}],
+        "lzs": [
+          {
+            "id": "lz-bluebird",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ BLUEBIRD",
+              "target": {"lat":34.6012,"lon":-84.0523,"mgrs":"16S GD 71020 49660"},
+              "flightData": {"landing_hdg":"306°","takeoff_hdg":"126°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.6002,-84.05330000000001],[34.602199999999996,-84.05330000000001],[34.602199999999996,-84.0513]],"results":{"status":"success"},"gridElevation":"2104","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [
+                  {"id":"h1","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h2","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h3","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h4","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"}
+                ],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"right"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "lz-hawk",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ HAWK",
+              "target": {"lat":34.5501,"lon":-84.1102,"mgrs":"16S GD 59833 44327"},
+              "flightData": {"landing_hdg":"203°","takeoff_hdg":"157°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.5491,-84.11120000000001],[34.5511,-84.11120000000001],[34.5511,-84.1092]],"results":{"status":"success"},"gridElevation":"2230","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [{"id":"h1","lat":34.5501,"lon":-84.1102,"heading":0,"profileId":"uh60l"},{"id":"h2","lat":34.5501,"lon":-84.1102,"heading":0,"profileId":"uh60l"}],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"R"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "farp-bucees",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "FARP BUCEES",
+              "target": {"lat":34.4801,"lon":-84.0412,"mgrs":""},
+              "flightData": {"landing_hdg":"340°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.4791,-84.04220000000001],[34.4811,-84.04220000000001],[34.4811,-84.0402]],"results":{"status":"success"},"gridElevation":"1890","latLong":""},
+              "graphics": {"doghouses":[],"helicopters":[],"pzMarkers":[],"sectorsOfFire":[],"goArounds":[],"units":[]}
+            }
+          },
+          {
+            "id": "pz-ibis",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "PZ IBIS",
+              "target": {"lat":34.5702,"lon":-84.1056,"mgrs":""},
+              "flightData": {"landing_hdg":"264°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.5692,-84.1066],[34.5712,-84.1066],[34.5712,-84.10459999999999]],"results":{"status":"success"},"gridElevation":"2150","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [
+                  {"id":"h1","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h2","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h3","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h4","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"}
+                ],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"left"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "lz-decoy",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ DECOY",
+              "target": {"lat":34.6501,"lon":-84.2001,"mgrs":""},
+              "flightData": {},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.649100000000004,-84.20110000000001],[34.6511,-84.20110000000001],[34.6511,-84.1991]],"results":{"status":"success"},"gridElevation":"","latLong":""},
+              "graphics": {"doghouses":[],"helicopters":[],"pzMarkers":[],"sectorsOfFire":[],"goArounds":[],"units":[]}
+            }
+          }
+        ],
+        "routeSets": [
+          {
+            "id": "set-opdk",
+            "name": "OP DK ROUTES",
+            "data": {
+              "version": 1,
+              "routes": [
+                {
+                  "id": "r-alderaan",
+                  "name": "ALDERAAN",
+                  "color": "#FF453A",
+                  "visible": true,
+                  "points": [
+                    {"id":"a1","name":".3MILE","ptType":"ip","kind":"amps","lat":33.9151,"lon":-84.5163},
+                    {"id":"a1s","kind":"shaping","ptType":null,"name":"","lat":34,"lon":-84.45},
+                    {"id":"a2","name":"TRACK","ptType":"turn","kind":"amps","lat":34.1502,"lon":-84.3511},
+                    {"id":"a3","name":"S-EP","ptType":"turn","kind":"amps","lat":34.3204,"lon":-84.2408},
+                    {"id":"a4","name":"ACP2","ptType":"turn","kind":"amps","lat":34.5002,"lon":-84.1202},
+                    {"id":"a5","name":".RP1","ptType":"ip","kind":"amps","lat":34.5803,"lon":-84.0702},
+                    {"id":"a6","name":"BLUEBIRD","ptType":"target","kind":"amps","lat":34.6012,"lon":-84.0523},
+                    {"id":"a7","name":"HAWK","ptType":"target","kind":"amps","lat":34.5501,"lon":-84.1102}
+                  ],
+                  "plan": {
+                    "aircraft": "UH-60L Black Hawk",
+                    "aircraftProfile": "uh60l",
+                    "airspeed": {"value":120,"type":"indicated"},
+                    "altitude": {"value":2500,"ref":"msl"},
+                    "wind": {"dirTrue":270,"speedKts":15},
+                    "tempC": 14,
+                    "fuelFlowLbHr": 960,
+                    "date": "2026-10-16",
+                    "perPoint": {
+                      "a1": {"clock":"11:56:32"},
+                      "a3": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a4": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a5": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a6": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":60,"type":"indicated"}},
+                      "a7": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":60,"type":"indicated"}}
+                    }
+                  },
+                  "elevations": {"a1":1068,"a2":1150,"a3":1420,"a4":1980,"a5":2010,"a6":2104,"a7":2230}
+                },
+                {
+                  "id": "r-bespin",
+                  "name": "BESPIN",
+                  "color": "#0A84FF",
+                  "visible": true,
+                  "points": [
+                    {"id":"b1","name":".SP3","ptType":"ip","kind":"amps","lat":34.5598,"lon":-84.1201},
+                    {"id":"b2","name":"RP5","ptType":"ip","kind":"amps","lat":34.5651,"lon":-84.1101},
+                    {"id":"b3","name":"IBIS","ptType":"target","kind":"amps","lat":34.5702,"lon":-84.1056},
+                    {"id":"b4","name":"KMGE","ptType":"target","kind":"amps","lat":33.9151,"lon":-84.5163}
+                  ],
+                  "plan": {
+                    "aircraft": "UH-60L Black Hawk",
+                    "aircraftProfile": "uh60l",
+                    "airspeed": {"value":120,"type":"indicated"},
+                    "altitude": {"value":2500,"ref":"msl"},
+                    "wind": {"dirTrue":270,"speedKts":15},
+                    "tempC": 14,
+                    "fuelFlowLbHr": 960,
+                    "date": "2026-10-16",
+                    "perPoint": {"b1":{"clock":"16:02:57"},"b3":{"airspeed":{"value":60,"type":"indicated"},"altitude":{"value":50,"ref":"agl"}}}
+                  },
+                  "elevations": {}
+                }
+              ]
+            }
+          }
+        ],
+        "threats": [{"name":"ZSU-23-4","lat":34.4012,"lon":-84.0011}]
+      },
+      "context": {
+        "generatedAt": "2026-10-16T18:02:00Z",
+        "utcOffsetMinutes": -240,
+        "weather": {
+          "departure": {"station_id":"KMGE","raw_metar":"KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002","pressure":30.02,"kind":"observation"},
+          "arrival": {"station_id":"KMGE","raw_taf":"FM161600 27010KT P6SM SCT050","kind":"forecast"},
+          "stops": {"lz-hawk":{"station_id":"KJZP","raw_metar":"KJZP 161553Z 24006KT 10SM CLR 17/08 A3001","wind_spd_kts":6,"wind_dir":240}}
+        },
+        "notams": {"Obstruction":["!FDC 6/1234 CRANE 340FT AGL 3NM N","!FDC 6/2222 TOWER LGT OTS"],"Airspace":["!ZTL 10/044 TFR"]}
+      },
+      "expected": {
+        "format": "ezpz-brief-model",
+        "version": 1,
+        "template": {"id":"amb","version":1,"title":"Non-tactical multi-ship / air movement brief","shortTitle":"Air movement brief"},
+        "generatedAt": "2026-10-16T18:02:00Z",
+        "utcOffsetMinutes": -240,
+        "mission": {"name":"OP DK","date":"16 Oct 2026","summary":"4 × UH-60L from 3MILE to LZ BLUEBIRD and LZ HAWK, pickup at PZ IBIS, fuel at FARP BUCEES, to LZ DECOY, back at KMGE at 16:26:28."},
+        "options": {"script":true,"constants":true,"lzCards":true,"navLogs":true,"iimc":true,"writeIns":true},
+        "constants": [
+          {"id":"enrouteAirspeed","label":"Enroute airspeed","short":"ENROUTE","value":"120 KIAS","source":"plan"},
+          {"id":"terrainFlightAirspeed","label":"Terrain flight airspeed","short":"TERRAIN FLT","value":null,"source":"blank"},
+          {"id":"rpInboundAirspeed","label":"RP inbound airspeed","short":"RP IN","value":"60 KIAS","source":"plan"},
+          {"id":"spOutboundAirspeed","label":"SP outbound airspeed","short":"SP OUT","value":"60 KIAS","source":"standard"},
+          {"id":"goAround","label":"Go-around direction","short":"GO-AROUND","value":null,"source":"blank"},
+          {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
+        ],
+        "flow": [
+          {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
+          {"ref":"lz:lz-bluebird","kind":"stop","role":"LZ","name":"LZ BLUEBIRD","arrive":"12:21:03","grid":"16S GD 71020 49660"},
+          {"ref":"lz:lz-hawk","kind":"stop","role":"LZ","name":"LZ HAWK","arrive":"12:25:54","grid":"16S GD 59833 44327"},
+          {"ref":"route:set-opdk/r-bespin","kind":"route","name":"BESPIN","start":"16:02:57","end":"16:26:28"},
+          {"ref":"lz:pz-ibis","kind":"stop","role":"PZ","name":"PZ IBIS","arrive":"16:03:31","grid":"16S GD 65532 29189"},
+          {"ref":"lz:farp-bucees","kind":"stop","role":"FARP","name":"FARP BUCEES","arrive":null,"grid":"16S GD 71735 19364"},
+          {"ref":"lz:lz-decoy","kind":"stop","role":"LZ","name":"LZ DECOY","arrive":null,"grid":"16S GD 56614 37808"}
+        ],
+        "steps": [
+          {
+            "id": "1",
+            "number": "1",
+            "title": "Roll call",
+            "who": "AMC",
+            "sections": ["1"],
+            "ref": null,
+            "role": null,
+            "page": 1,
+            "figure": {
+              "kind": "overview",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":"4 × UH-60L"},{"key":"packet.pages","label":"PAGES","value":"26"}],
+            "items": [
+              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"brief 1–18, LZ/PZ cards 19–23, nav logs 24–25, IIMC card 26","writeIn":false},
+              {"id":"1.b","key":"1.b","label":"Mission risk level","kind":"choice","source":"typed","text":"Moderate","writeIn":false}
+            ],
+            "script": [
+              [{"text":"This is the air movement brief for OP DK: 4 × UH-60L from 3MILE to LZ BLUEBIRD and LZ HAWK, pickup at PZ IBIS, fuel at FARP BUCEES, to LZ DECOY, back at KMGE at 16:26:28."}],
+              [{"text":"Check you have all 26 pages: brief 1–18, LZ/PZ cards 19–23, nav logs 24–25, IIMC card 26."}],
+              [{"text":"Mission risk level is Moderate."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "2",
+            "number": "2",
+            "title": "Situation",
+            "who": "AMC",
+            "sections": ["2"],
+            "ref": null,
+            "role": null,
+            "page": 2,
+            "figure": {
+              "kind": "overview",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"weather.departure","label":"WX TAKEOFF","value":"KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002"},
+              {"key":"light.sunset","label":"SUNSET","value":"19:03"},
+              {"key":"light.illumination","label":"ILLUM","value":"32%"},
+              {"key":"threats.summary","label":"THREATS","value":"ZSU-23-4, 8.4 nm southeast of ACP2."}
+            ],
+            "items": [
+              {
+                "id": "2.a",
+                "key": "2.a",
+                "label": "Weather conditions at takeoff, enroute and arrival",
+                "kind": "note",
+                "source": "plan",
+                "text": "Takeoff: KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002. Enroute: Winds 270/15 kt. Arrival: Forecast FM161600 27010KT P6SM SCT050.",
+                "writeIn": false
+              },
+              {"id":"2.b","key":"2.b","label":"Minimum weather","kind":"text","source":"typed","text":"500-1 day","writeIn":false},
+              {
+                "id": "2.c",
+                "key": "2.c",
+                "label": "Light data",
+                "kind": "text",
+                "source": "plan",
+                "text": "BMNT 06:50, sunrise 07:44, sunset 19:03, EENT 19:57, moonrise 13:31, moonset 23:06, illumination 32%.",
+                "writeIn": false
+              },
+              {"id":"2.d","key":"2.d","label":"Weather update time and responsibility","kind":"text","source":"typed","text":"11:15, PC chalk 1","writeIn":false},
+              {"id":"2.e","key":"2.e","label":"Mission abort time and criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.f","key":"2.f","label":"NOTAMs","kind":"note","source":"plan","text":"3 NOTAMs: 2 obstruction, 1 airspace.","writeIn":false}
+            ],
+            "script": [
+              [{"text":"Weather: Takeoff: KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002. Enroute: Winds 270/15 kt. Arrival: Forecast FM161600 27010KT P6SM SCT050."}],
+              [{"text":"Minimum weather is 500-1 day."}],
+              [{"text":"Light: BMNT 06:50, sunrise 07:44, sunset 19:03, EENT 19:57, moonrise 13:31, moonset 23:06, illumination 32%."}],
+              [{"text":"Weather update: 11:15, PC chalk 1. Mission abort: "},{"writeIn":"e","label":"Mission abort time and criteria"},{"text":"."}],
+              [{"text":"NOTAMs: 3 NOTAMs: 2 obstruction, 1 airspace."}],
+              [{"text":"Threats: ZSU-23-4, 8.4 nm southeast of ACP2."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "3",
+            "number": "3",
+            "title": "Mission and intent",
+            "who": "AMC",
+            "sections": ["3"],
+            "ref": null,
+            "role": null,
+            "page": 3,
+            "figure": {
+              "kind": "overview",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [],
+            "items": [
+              {"id":"3.a","key":"3.a","label":"Restate the mission","kind":"note","source":"typed","text":"Insert two teams at LZ BLUEBIRD and LZ HAWK, then extract them from PZ IBIS.","writeIn":false},
+              {"id":"3.b","key":"3.b","label":"Commander's intent","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"3.c","key":"3.c","label":"CONOP brief","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"Insert the teams, extract them, everyone home."}]],
+            "scriptEdited": true
+          },
+          {
+            "id": "4.a",
+            "number": "4.a",
+            "title": "Timeline",
+            "who": "Flight lead",
+            "sections": ["4.a"],
+            "ref": null,
+            "role": null,
+            "page": 4,
+            "figure": {
+              "kind": "overview",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [],
+            "items": [
+              {
+                "id": "4.a.a",
+                "key": "4.a.a",
+                "label": "Timeline",
+                "kind": "list",
+                "source": "plan",
+                "text": "11:56:32 ALDERAAN; 12:21:03 LZ BLUEBIRD; 12:25:54 LZ HAWK; 16:02:57 BESPIN; 16:03:31 PZ IBIS; FARP BUCEES; LZ DECOY",
+                "writeIn": false
+              }
+            ],
+            "script": [[{"text":"Timeline: 11:56:32 ALDERAAN; 12:21:03 LZ BLUEBIRD; 12:25:54 LZ HAWK; 16:02:57 BESPIN; 16:03:31 PZ IBIS; FARP BUCEES; LZ DECOY"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.b",
+            "number": "4.b",
+            "title": "Departure sequence",
+            "who": "Flight lead",
+            "sections": ["4.b"],
+            "ref": null,
+            "role": null,
+            "page": 5,
+            "figure": {
+              "kind": "departure",
+              "ref": null,
+              "bounds": [[33.874570000000006,-84.54385],[34.360929999999996,-84.21324999999999]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [{"key":"departure.point","label":"DEPART","value":"3MILE"},{"key":"departure.time","label":"TAKEOFF","value":"11:56:32"}],
+            "items": [
+              {"id":"4.b.i","key":"4.b.i","label":"Commo check","kind":"time","source":"plan","text":"11:31","writeIn":false},
+              {"id":"4.b.ii","key":"4.b.ii","label":"Taxi / load","kind":"time","source":"plan","text":"11:41","writeIn":false},
+              {"id":"4.b.iii","key":"4.b.iii","label":"Lineup","kind":"time","source":"plan","text":"11:51","writeIn":false},
+              {"id":"4.b.iv","key":"4.b.iv","label":"Fuel required for the mission","kind":"text","source":"plan","text":"846 lb","writeIn":false},
+              {
+                "id": "4.b.v",
+                "key": "4.b.v",
+                "label": "Departure plan (route, takeoff time, heading, altitude, airspeed, formation)",
+                "kind": "text",
+                "source": "plan",
+                "text": "ALDERAAN, takeoff 11:56:32, heading 030°, 2,500 ft MSL, 120 KIAS",
+                "writeIn": false
+              },
+              {"id":"4.b.vi","key":"4.b.vi","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "4.b.vii",
+                "key": "4.b.vii",
+                "label": "REDCON-1 procedures",
+                "kind": "procedure",
+                "source": "standard",
+                "text": "Every aircraft but trail turns its anti-collision light off at REDCON 1. Trail starts the REDCON 1 report in reverse chalk order; when lead reports REDCON 1 the flight is ready. Lead warns at least 5 seconds before departure and takes off on time, accelerating to 60 knots and climbing at less than 500 feet a minute. Anyone who cannot make the takeoff time tells lead.",
+                "writeIn": false
+              }
+            ],
+            "script": [
+              [{"text":"Commo check at 11:31, taxi and load at 11:41, lineup at 11:51."}],
+              [{"text":"Fuel required is 846 lb."}],
+              [{"text":"Departure: ALDERAAN, takeoff 11:56:32, heading 030°, 2,500 ft MSL, 120 KIAS. Lighting: "},{"writeIn":"vi","label":"Lighting"},{"text":"."}],
+              [
+                {
+                  "text": "Every aircraft but trail turns its anti-collision light off at REDCON 1. Trail starts the REDCON 1 report in reverse chalk order; when lead reports REDCON 1 the flight is ready. Lead warns at least 5 seconds before departure and takes off on time, accelerating to 60 knots and climbing at less than 500 feet a minute. Anyone who cannot make the takeoff time tells lead."
+                }
+              ]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.c@route:set-opdk/r-alderaan",
+            "number": "4.c",
+            "title": "Enroute sequence · ALDERAAN",
+            "who": "Flight lead",
+            "sections": ["4.c"],
+            "ref": "route:set-opdk/r-alderaan",
+            "role": null,
+            "page": 6,
+            "figure": {
+              "kind": "route",
+              "ref": "route:set-opdk/r-alderaan",
+              "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"route.distance","label":"DISTANCE","value":"51.4 nm"},
+              {"key":"route.time","label":"TIME","value":"0+29+22"},
+              {"key":"route.start","label":"START","value":"11:56:32"},
+              {"key":"route.end","label":"END","value":"12:25:54"}
+            ],
+            "items": [
+              {
+                "id": "4.c.i",
+                "key": "4.c.i@route:set-opdk/r-alderaan",
+                "label": "Route overview",
+                "kind": "note",
+                "source": "plan",
+                "text": "3MILE to TRACK 030° 16.3 nm 0+07+19; TRACK to S-EP 028° 11.6 nm 0+06+16; S-EP to ACP2 029° 12.3 nm 0+06+42; ACP2 to RP1 027° 5.4 nm 0+02+56; RP1 to BLUEBIRD 035° 1.5 nm 0+01+18; BLUEBIRD to HAWK 223° 4.2 nm 0+04+51",
+                "writeIn": false
+              },
+              {
+                "id": "4.c.ii",
+                "key": "4.c.ii@route:set-opdk/r-alderaan",
+                "label": "Airspeed",
+                "kind": "text",
+                "source": "plan",
+                "text": "120 KIAS (3MILE to TRACK), 100 KIAS (TRACK to RP1), 60 KIAS (RP1 to HAWK)",
+                "writeIn": false
+              },
+              {"id":"4.c.iii","key":"4.c.iii@route:set-opdk/r-alderaan","label":"Altitude","kind":"text","source":"plan","text":"2,500 ft MSL (3MILE to TRACK), 50 ft AGL (TRACK to HAWK)","writeIn":false},
+              {"id":"4.c.iv","key":"4.c.iv@route:set-opdk/r-alderaan","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.c.v","key":"4.c.v@route:set-opdk/r-alderaan","label":"Formations and separation","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {
+                  "text": "ALDERAAN: 3MILE to TRACK 030° 16.3 nm 0+07+19; TRACK to S-EP 028° 11.6 nm 0+06+16; S-EP to ACP2 029° 12.3 nm 0+06+42; ACP2 to RP1 027° 5.4 nm 0+02+56; RP1 to BLUEBIRD 035° 1.5 nm 0+01+18; BLUEBIRD to HAWK 223° 4.2 nm 0+04+51"
+                }
+              ],
+              [{"text":"Airspeed 120 KIAS (3MILE to TRACK), 100 KIAS (TRACK to RP1), 60 KIAS (RP1 to HAWK); altitude 2,500 ft MSL (3MILE to TRACK), 50 ft AGL (TRACK to HAWK)."}],
+              [{"text":"Lighting "},{"writeIn":"iv","label":"Lighting"},{"text":". Formation and separation: "},{"writeIn":"v","label":"Formations and separation"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.e@lz:lz-bluebird",
+            "number": "4.e",
+            "title": "Landing sequence · LZ BLUEBIRD",
+            "who": "Flight lead",
+            "sections": ["4.e"],
+            "ref": "lz:lz-bluebird",
+            "role": "LZ",
+            "page": 7,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:lz-bluebird",
+              "bounds": [[34.596505066475025,-84.05757402914784],[34.60589493352497,-84.04702597085216]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"stop.elevation","label":"ELEV","value":"2,104 ft MSL"},
+              {"key":"stop.landingHeading","label":"LAND","value":"306°"},
+              {"key":"stop.takeoffHeading","label":"T/O","value":"126°"},
+              {"key":"stop.goAround","label":"GO-AROUND","value":"right"},
+              {"key":"stop.arrive","label":"ARRIVE","value":"12:21:03"},
+              {"key":"stop.slope","label":"SLOPE","value":null}
+            ],
+            "items": [
+              {"id":"4.e.i","key":"4.e.i@lz:lz-bluebird","label":"Location","kind":"text","source":"plan","text":"16S GD 71020 49660","writeIn":false},
+              {"id":"4.e.ii","key":"4.e.ii@lz:lz-bluebird","label":"Formation","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iii","key":"4.e.iii@lz:lz-bluebird","label":"Performance planning","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iv","key":"4.e.iv@lz:lz-bluebird","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Inbound from RP1 at 12:19:45, 60 KIAS, 1.5 nm, 0+01+18."}],
+              [{"text":"LZ BLUEBIRD is 16S GD 71020 49660 at 2,104 ft MSL. Landing 306° in "},{"writeIn":"ii","label":"Formation"},{"text":"."}],
+              [{"text":"Go-around is right. Takeoff 126°."}],
+              [{"text":"Performance planning: "},{"writeIn":"iii","label":"Performance planning"},{"text":". Lighting: "},{"writeIn":"iv","label":"Lighting"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.e@lz:lz-hawk",
+            "number": "4.e",
+            "title": "Landing sequence · LZ HAWK",
+            "who": "Flight lead",
+            "sections": ["4.e"],
+            "ref": "lz:lz-hawk",
+            "role": "LZ",
+            "page": 8,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:lz-hawk",
+              "bounds": [[34.54540506647503,-84.11547201723347],[34.554794933524974,-84.10492798276654]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"stop.elevation","label":"ELEV","value":"2,230 ft MSL"},
+              {"key":"stop.landingHeading","label":"LAND","value":"203°"},
+              {"key":"stop.takeoffHeading","label":"T/O","value":"157°"},
+              {"key":"stop.goAround","label":"GO-AROUND","value":"right"},
+              {"key":"stop.arrive","label":"ARRIVE","value":"12:25:54"},
+              {"key":"stop.slope","label":"SLOPE","value":null}
+            ],
+            "items": [
+              {"id":"4.e.i","key":"4.e.i@lz:lz-hawk","label":"Location","kind":"text","source":"plan","text":"16S GD 59833 44327","writeIn":false},
+              {"id":"4.e.ii","key":"4.e.ii@lz:lz-hawk","label":"Formation","kind":"text","source":"typed","text":"trail","writeIn":false},
+              {"id":"4.e.iii","key":"4.e.iii@lz:lz-hawk","label":"Performance planning","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iv","key":"4.e.iv@lz:lz-hawk","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Inbound from BLUEBIRD at 12:21:03, 60 KIAS, 4.2 nm, 0+04+51."}],
+              [{"text":"LZ HAWK is 16S GD 59833 44327 at 2,230 ft MSL. Landing 203° in trail."}],
+              [{"text":"Go-around is right. Takeoff 157°."}],
+              [{"text":"Performance planning: "},{"writeIn":"iii","label":"Performance planning"},{"text":". Lighting: "},{"writeIn":"iv","label":"Lighting"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.c@route:set-opdk/r-bespin",
+            "number": "4.c",
+            "title": "Enroute sequence · BESPIN",
+            "who": "Flight lead",
+            "sections": ["4.c"],
+            "ref": "route:set-opdk/r-bespin",
+            "role": null,
+            "page": 9,
+            "figure": {
+              "kind": "route",
+              "ref": "route:set-opdk/r-bespin",
+              "bounds": [[33.849590000000006,-84.55737],[34.63571,-84.06452999999999]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"route.distance","label":"DISTANCE","value":"45.3 nm"},
+              {"key":"route.time","label":"TIME","value":"0+23+31"},
+              {"key":"route.start","label":"START","value":"16:02:57"},
+              {"key":"route.end","label":"END","value":"16:26:28"}
+            ],
+            "items": [
+              {
+                "id": "4.c.i",
+                "key": "4.c.i@route:set-opdk/r-bespin",
+                "label": "Route overview",
+                "kind": "note",
+                "source": "plan",
+                "text": "SP3 to RP5 057° 0.6 nm 0+00+15; RP5 to IBIS 036° 0.4 nm 0+00+20; IBIS to KMGE 208° 44.3 nm 0+22+57",
+                "writeIn": false
+              },
+              {"id":"4.c.ii","key":"4.c.ii@route:set-opdk/r-bespin","label":"Airspeed","kind":"text","source":"plan","text":"120 KIAS (SP3 to RP5), 60 KIAS (RP5 to IBIS), 120 KIAS (IBIS to KMGE)","writeIn":false},
+              {
+                "id": "4.c.iii",
+                "key": "4.c.iii@route:set-opdk/r-bespin",
+                "label": "Altitude",
+                "kind": "text",
+                "source": "plan",
+                "text": "2,500 ft MSL (SP3 to RP5), 50 ft AGL (RP5 to IBIS), 2,500 ft MSL (IBIS to KMGE)",
+                "writeIn": false
+              },
+              {"id":"4.c.iv","key":"4.c.iv@route:set-opdk/r-bespin","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.c.v","key":"4.c.v@route:set-opdk/r-bespin","label":"Formations and separation","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"BESPIN: SP3 to RP5 057° 0.6 nm 0+00+15; RP5 to IBIS 036° 0.4 nm 0+00+20; IBIS to KMGE 208° 44.3 nm 0+22+57"}],
+              [{"text":"Airspeed 120 KIAS (SP3 to RP5), 60 KIAS (RP5 to IBIS), 120 KIAS (IBIS to KMGE); altitude 2,500 ft MSL (SP3 to RP5), 50 ft AGL (RP5 to IBIS), 2,500 ft MSL (IBIS to KMGE)."}],
+              [{"text":"Lighting "},{"writeIn":"iv","label":"Lighting"},{"text":". Formation and separation: "},{"writeIn":"v","label":"Formations and separation"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.d@lz:pz-ibis",
+            "number": "4.d",
+            "title": "PZ operations · PZ IBIS",
+            "who": "Flight lead",
+            "sections": ["4.d"],
+            "ref": "lz:pz-ibis",
+            "role": "PZ",
+            "page": 10,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:pz-ibis",
+              "bounds": [[34.565505066475026,-84.11087280800702],[34.57489493352497,-84.10032719199297]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"stop.elevation","label":"ELEV","value":"2,150 ft MSL"},
+              {"key":"stop.landingHeading","label":"LAND","value":"264°"},
+              {"key":"stop.takeoffHeading","label":"T/O","value":null},
+              {"key":"stop.goAround","label":"GO-AROUND","value":"left"},
+              {"key":"stop.arrive","label":"ARRIVE","value":"16:03:31"},
+              {"key":"stop.slope","label":"SLOPE","value":null}
+            ],
+            "items": [
+              {"id":"4.d.i","key":"4.d.i@lz:pz-ibis","label":"Name","kind":"text","source":"plan","text":"PZ IBIS","writeIn":false},
+              {"id":"4.d.ii","key":"4.d.ii@lz:pz-ibis","label":"Location","kind":"text","source":"plan","text":"16S GD 65532 29189","writeIn":false},
+              {"id":"4.d.iii","key":"4.d.iii@lz:pz-ibis","label":"Landing plan","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.d.iv","key":"4.d.iv@lz:pz-ibis","label":"Loading plan","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.d.v","key":"4.d.v@lz:pz-ibis","label":"Passenger count procedures","kind":"text","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "4.d.vi",
+                "key": "4.d.vi@lz:pz-ibis",
+                "label": "Departure plan (route, takeoff time, heading, altitude, airspeed, formation)",
+                "kind": "text",
+                "source": "plan",
+                "text": "BESPIN from IBIS, takeoff 16:03:31, heading 208°, 50 ft AGL, 120 KIAS",
+                "writeIn": false
+              },
+              {"id":"4.d.vii","key":"4.d.vii@lz:pz-ibis","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"PZ IBIS, grid 16S GD 65532 29189, at 2,150 ft MSL, arriving 16:03:31."}],
+              [{"text":"Landing plan: "},{"writeIn":"iii","label":"Landing plan"},{"text":", landing 264°. Go-around left."}],
+              [{"text":"Loading plan: "},{"writeIn":"iv","label":"Loading plan"},{"text":". Passenger count: "},{"writeIn":"v","label":"Passenger count procedures"},{"text":"."}],
+              [{"text":"Departure: BESPIN from IBIS, takeoff 16:03:31, heading 208°, 50 ft AGL, 120 KIAS. Lighting: "},{"writeIn":"vii","label":"Lighting"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.f@lz:farp-bucees",
+            "number": "4.f",
+            "title": "FARP · FARP BUCEES",
+            "who": "Flight lead",
+            "sections": ["4.f"],
+            "ref": "lz:farp-bucees",
+            "role": "FARP",
+            "page": 11,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:farp-bucees",
+              "bounds": [[34.47540506647503,-84.0464692694144],[34.484794933524974,-84.0359307305856]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [{"key":"stop.elevation","label":"ELEV","value":"1,890 ft MSL"},{"key":"stop.landingHeading","label":"LAND","value":"340°"},{"key":"stop.arrive","label":"ARRIVE","value":null}],
+            "items": [
+              {"id":"4.f.i","key":"4.f.i@lz:farp-bucees","label":"Location","kind":"text","source":"plan","text":"16S GD 71735 19364","writeIn":false},
+              {"id":"4.f.ii","key":"4.f.ii@lz:farp-bucees","label":"Procedures","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"4.f.iii","key":"4.f.iii@lz:farp-bucees","label":"Performance planning","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.f.iv","key":"4.f.iv@lz:farp-bucees","label":"Timed or event driven, for deconfliction","kind":"choice","source":"blank","text":null,"writeIn":true},
+              {"id":"4.f.v","key":"4.f.v@lz:farp-bucees","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"FARP BUCEES, grid 16S GD 71735 19364, arriving "},{"writeIn":"bind:stop.arrive","label":"ARRIVE"},{"text":"."}],
+              [{"text":"Procedures: "},{"writeIn":"ii","label":"Procedures"}],
+              [
+                {"text":"Performance planning: "},
+                {"writeIn":"iii","label":"Performance planning"},
+                {"text":". Deconfliction is "},
+                {"writeIn":"iv","label":"Timed or event driven, for deconfliction"},
+                {"text":". Lighting: "},
+                {"writeIn":"v","label":"Lighting"},
+                {"text":"."}
+              ]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.e@lz:lz-decoy",
+            "number": "4.e",
+            "title": "Landing sequence · LZ DECOY",
+            "who": "Flight lead",
+            "sections": ["4.e"],
+            "ref": "lz:lz-decoy",
+            "role": "LZ",
+            "page": 12,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:lz-decoy",
+              "bounds": [[34.64540506647503,-84.20537595920304],[34.654794933524975,-84.19482404079697]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"stop.elevation","label":"ELEV","value":null},
+              {"key":"stop.landingHeading","label":"LAND","value":null},
+              {"key":"stop.takeoffHeading","label":"T/O","value":null},
+              {"key":"stop.goAround","label":"GO-AROUND","value":null},
+              {"key":"stop.arrive","label":"ARRIVE","value":null},
+              {"key":"stop.slope","label":"SLOPE","value":null}
+            ],
+            "items": [
+              {"id":"4.e.i","key":"4.e.i@lz:lz-decoy","label":"Location","kind":"text","source":"plan","text":"16S GD 56614 37808","writeIn":false},
+              {"id":"4.e.ii","key":"4.e.ii@lz:lz-decoy","label":"Formation","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iii","key":"4.e.iii@lz:lz-decoy","label":"Performance planning","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iv","key":"4.e.iv@lz:lz-decoy","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Inbound "},{"writeIn":"bind:stop.inbound","label":"INBOUND"},{"text":"."}],
+              [
+                {"text":"LZ DECOY is 16S GD 56614 37808 at "},
+                {"writeIn":"bind:stop.elevation","label":"ELEV"},
+                {"text":". Landing "},
+                {"writeIn":"bind:stop.landingHeading","label":"LAND"},
+                {"text":" in "},
+                {"writeIn":"ii","label":"Formation"},
+                {"text":"."}
+              ],
+              [{"text":"Go-around is "},{"writeIn":"bind:stop.goAround","label":"GO-AROUND"},{"text":". Takeoff "},{"writeIn":"bind:stop.takeoffHeading","label":"T/O"},{"text":"."}],
+              [{"text":"Performance planning: "},{"writeIn":"iii","label":"Performance planning"},{"text":". Lighting: "},{"writeIn":"iv","label":"Lighting"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "5.a",
+            "number": "5.a",
+            "title": "Contingencies",
+            "who": "AMC",
+            "sections": ["5.a"],
+            "ref": null,
+            "role": null,
+            "page": 13,
+            "figure": {
+              "kind": "rally",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": [{"ref":"route:set-opdk/r-alderaan","pointId":"a4"},{"ref":"route:set-opdk/r-bespin","pointId":"b2"}]
+            },
+            "facts": [{"key":"rally.points","label":"RALLY","value":"ACP2 (inbound), RP5 (outbound)"}],
+            "items": [
+              {"id":"5.a.i","key":"5.a.i","label":"Lead change procedures","kind":"procedure","source":"custom","text":"Lead calls it; old lead takes trail.","writeIn":false},
+              {"id":"5.a.ii","key":"5.a.ii","label":"Lost communication procedures","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "5.a.iii",
+                "key": "5.a.iii",
+                "label": "Loss of visual contact (in-flight link-up and rally points)",
+                "kind": "procedure",
+                "source": "standard",
+                "text": "Lost visual: use every digital aid, then call blind on internal. The aircraft you lost gives its heading, airspeed, MSL altitude, and bearing and distance from a common point, and shows trail lighting. You slow 10 knots below its airspeed and climb or descend 200 feet. Once visual, close at no more than 10 knots above it and call closing; trail calls saddled. Not visual: continue as two flights in radio contact and link up on the ground at the next landing zone. Rally points are ACP2 (inbound), RP5 (outbound).",
+                "writeIn": false
+              },
+              {"id":"5.a.iv","key":"5.a.iv","label":"Actions on contact","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "5.a.v",
+                "key": "5.a.v",
+                "label": "IIMC",
+                "kind": "procedure",
+                "source": "standard",
+                "text": "IIMC: announce it with your chalk and heading, go to instruments, never descend. Base altitude 4,000 ft MSL, adjusted 500 feet for each subsequent chalk; base heading the mountain heading, plus 10 degrees times your chalk number to the clear side; base airspeed 100 KIAS, less 10 knots for subsequent chalks. Contact the controlling agency. Recovery is ________.",
+                "writeIn": false
+              },
+              {"id":"5.a.vi","key":"5.a.vi","label":"Downed aircraft plan","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.vii","key":"5.a.vii","label":"Bump plan","kind":"procedure","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Contingencies."}],
+              [{"text":"Lead calls it; old lead takes trail."}],
+              [{"writeIn":"ii","label":"Lost communication procedures"}],
+              [
+                {
+                  "text": "Lost visual: use every digital aid, then call blind on internal. The aircraft you lost gives its heading, airspeed, MSL altitude, and bearing and distance from a common point, and shows trail lighting. You slow 10 knots below its airspeed and climb or descend 200 feet. Once visual, close at no more than 10 knots above it and call closing; trail calls saddled. Not visual: continue as two flights in radio contact and link up on the ground at the next landing zone. Rally points are ACP2 (inbound), RP5 (outbound)."
+                }
+              ],
+              [{"writeIn":"iv","label":"Actions on contact"}],
+              [
+                {
+                  "text": "IIMC: announce it with your chalk and heading, go to instruments, never descend. Base altitude 4,000 ft MSL, adjusted 500 feet for each subsequent chalk; base heading the mountain heading, plus 10 degrees times your chalk number to the clear side; base airspeed 100 KIAS, less 10 knots for subsequent chalks. Contact the controlling agency. Recovery is "
+                },
+                {"writeIn":"field:recovery","label":"Recovery airfield and approach"},
+                {"text":"."}
+              ],
+              [{"writeIn":"vi","label":"Downed aircraft plan"}],
+              [{"text":"Bump plan: "},{"writeIn":"vii","label":"Bump plan"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "5.b",
+            "number": "5.b",
+            "title": "Coordinating instructions",
+            "who": "AMC",
+            "sections": ["5.b"],
+            "ref": null,
+            "role": null,
+            "page": 14,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"5.b.i","key":"5.b.i","label":"Aircraft configuration (seats, external loads)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.ii","key":"5.b.ii","label":"Special equipment (VIP, headsets, seats, doors)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.iii","key":"5.b.iii","label":"EFB updated with current data and charged","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.iv","key":"5.b.iv","label":"Abort criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.v","key":"5.b.v","label":"Flight plan","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.vi","key":"5.b.vi","label":"RCOP completed and turned in to flight ops","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.vii","key":"5.b.vii","label":"Performance planning cards complete","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.viii","key":"5.b.viii","label":"Safety considerations","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"Aircraft configuration: "},
+                {"writeIn":"i","label":"Aircraft configuration (seats, external loads)"},
+                {"text":". Special equipment: "},
+                {"writeIn":"ii","label":"Special equipment (VIP, headsets, seats, doors)"},
+                {"text":"."}
+              ],
+              [
+                {"text":"EFBs: "},
+                {"writeIn":"iii","label":"EFB updated with current data and charged"},
+                {"text":". Abort criteria: "},
+                {"writeIn":"iv","label":"Abort criteria"},
+                {"text":". Flight plan: "},
+                {"writeIn":"v","label":"Flight plan"},
+                {"text":"."}
+              ],
+              [
+                {"text":"RCOP: "},
+                {"writeIn":"vi","label":"RCOP completed and turned in to flight ops"},
+                {"text":". Performance planning cards: "},
+                {"writeIn":"vii","label":"Performance planning cards complete"},
+                {"text":"."}
+              ],
+              [{"text":"Safety: "},{"writeIn":"viii","label":"Safety considerations"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "6",
+            "number": "6",
+            "title": "Command and signal",
+            "who": "AMC",
+            "sections": ["6"],
+            "ref": null,
+            "role": null,
+            "page": 15,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"6.a","key":"6.a","label":"Command (aviation succession of command)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.i","key":"6.b.i","label":"Internal frequencies (PACE)","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.ii","key":"6.b.ii","label":"COMSEC changeover, current commo card, SKL location","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.iii","key":"6.b.iii","label":"Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Succession of command: "},{"writeIn":"a","label":"Command (aviation succession of command)"},{"text":"."}],
+              [{"text":"Internal frequencies: "},{"writeIn":"b.i","label":"Internal frequencies (PACE)"}],
+              [{"text":"COMSEC: "},{"writeIn":"b.ii","label":"COMSEC changeover, current commo card, SKL location"},{"text":"."}],
+              [{"text":"Crew assignments: "},{"writeIn":"b.iii","label":"Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "7",
+            "number": "7",
+            "title": "Mission AAR time and location",
+            "who": "AMC",
+            "sections": ["7"],
+            "ref": null,
+            "role": null,
+            "page": 16,
+            "figure": {
+              "kind": "overview",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
+              "rallyPoints": []
+            },
+            "facts": [{"key":"arrival.point","label":"ARRIVE","value":"KMGE"},{"key":"arrival.time","label":"RETURN","value":"16:26:28"}],
+            "items": [
+              {"id":"7.a","key":"7.a","label":"Time","kind":"time","source":"typed","text":"17:30","writeIn":false},
+              {"id":"7.b","key":"7.b","label":"Location","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"We are back at KMGE at 16:26:28. The AAR is at 17:30 at "},{"writeIn":"b","label":"Location"},{"text":"."}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "8",
+            "number": "8",
+            "title": "Questions",
+            "who": "AMC",
+            "sections": ["8"],
+            "ref": null,
+            "role": null,
+            "page": 17,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"8.a","key":"8.a","label":"Questions","kind":"info","source":"info","text":null,"writeIn":false}],
+            "script": [[{"text":"Questions?"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "9",
+            "number": "9",
+            "title": "Commander / AMC comments",
+            "who": "Commander / AMC",
+            "sections": ["9"],
+            "ref": null,
+            "role": null,
+            "page": 18,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"9.a","key":"9.a","label":"Comments","kind":"note","source":"blank","text":null,"writeIn":true}],
+            "script": [[{"writeIn":"a","label":"Comments"}]],
+            "scriptEdited": false
+          }
+        ],
+        "pages": [
+          {"n":1,"kind":"cover","stepId":"1"},
+          {"n":2,"kind":"step","stepId":"2"},
+          {"n":3,"kind":"step","stepId":"3"},
+          {"n":4,"kind":"step","stepId":"4.a"},
+          {"n":5,"kind":"step","stepId":"4.b"},
+          {"n":6,"kind":"step","stepId":"4.c@route:set-opdk/r-alderaan"},
+          {"n":7,"kind":"step","stepId":"4.e@lz:lz-bluebird"},
+          {"n":8,"kind":"step","stepId":"4.e@lz:lz-hawk"},
+          {"n":9,"kind":"step","stepId":"4.c@route:set-opdk/r-bespin"},
+          {"n":10,"kind":"step","stepId":"4.d@lz:pz-ibis"},
+          {"n":11,"kind":"step","stepId":"4.f@lz:farp-bucees"},
+          {"n":12,"kind":"step","stepId":"4.e@lz:lz-decoy"},
+          {"n":13,"kind":"step","stepId":"5.a"},
+          {"n":14,"kind":"step","stepId":"5.b"},
+          {"n":15,"kind":"step","stepId":"6"},
+          {"n":16,"kind":"step","stepId":"7"},
+          {"n":17,"kind":"step","stepId":"8"},
+          {"n":18,"kind":"step","stepId":"9"},
+          {"n":19,"kind":"lzCard","ref":"lz:lz-bluebird","title":"LZ card · LZ BLUEBIRD"},
+          {"n":20,"kind":"lzCard","ref":"lz:lz-hawk","title":"LZ card · LZ HAWK"},
+          {"n":21,"kind":"lzCard","ref":"lz:pz-ibis","title":"PZ card · PZ IBIS"},
+          {"n":22,"kind":"lzCard","ref":"lz:farp-bucees","title":"FARP card · FARP BUCEES"},
+          {"n":23,"kind":"lzCard","ref":"lz:lz-decoy","title":"LZ card · LZ DECOY"},
+          {"n":24,"kind":"navLog","ref":"route:set-opdk/r-alderaan","title":"Nav log · ALDERAAN"},
+          {"n":25,"kind":"navLog","ref":"route:set-opdk/r-bespin","title":"Nav log · BESPIN"},
+          {"n":26,"kind":"iimc","title":"IIMC card"}
+        ],
+        "problems": [
+          {"ref":"lz:farp-bucees","message":"No route in the flow reaches FARP BUCEES before it, so it has no arrival time."},
+          {"ref":"lz:lz-decoy","message":"No route in the flow reaches LZ DECOY before it, so it has no arrival time."}
+        ]
+      }
+    },
+    {
+      "name": "OP DK, hasty brief, the person's flow and roles",
+      "format": "hasty",
+      "document": {
+        "flow": [
+          {"ref":"route:set-opdk/r-alderaan"},
+          {"ref":"lz:lz-decoy","role":"FALSE_LZ"},
+          {"ref":"lz:lz-bluebird","role":"LZ"},
+          {"ref":"lz:lz-hawk","role":"LAAGER"},
+          {"ref":"lz:farp-bucees","role":"FARP"},
+          {"ref":"route:set-opdk/r-bespin"},
+          {"ref":"lz:pz-ibis","role":"PZ"}
+        ],
+        "answers": {"8.a":{"value":"12:45"},"26.d":{"mode":"standard","fields":{"baseAltitude":"4,000 ft MSL"}},"12.n@lz:lz-bluebird":{"mode":"standard"}},
+        "constants": [{"id":"enrouteAirspeed"},{"id":"terrainFlightAirspeed","value":"100 KIAS"},{"id":"custom-1","label":"Formation","value":"Stag right, 3-5 disks"}]
+      },
+      "plan": {
+        "name": "OP DK",
+        "missionAircraft": "uh60l",
+        "aircraftProfiles": [{"id":1,"slug":"uh60l","name":"UH-60L Black Hawk","designation":"UH-60L"}],
+        "lzs": [
+          {
+            "id": "lz-bluebird",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ BLUEBIRD",
+              "target": {"lat":34.6012,"lon":-84.0523,"mgrs":"16S GD 71020 49660"},
+              "flightData": {"landing_hdg":"306°","takeoff_hdg":"126°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.6002,-84.05330000000001],[34.602199999999996,-84.05330000000001],[34.602199999999996,-84.0513]],"results":{"status":"success"},"gridElevation":"2104","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [
+                  {"id":"h1","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h2","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h3","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h4","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"}
+                ],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"right"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "lz-hawk",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ HAWK",
+              "target": {"lat":34.5501,"lon":-84.1102,"mgrs":"16S GD 59833 44327"},
+              "flightData": {"landing_hdg":"203°","takeoff_hdg":"157°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.5491,-84.11120000000001],[34.5511,-84.11120000000001],[34.5511,-84.1092]],"results":{"status":"success"},"gridElevation":"2230","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [{"id":"h1","lat":34.5501,"lon":-84.1102,"heading":0,"profileId":"uh60l"},{"id":"h2","lat":34.5501,"lon":-84.1102,"heading":0,"profileId":"uh60l"}],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"R"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "farp-bucees",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "FARP BUCEES",
+              "target": {"lat":34.4801,"lon":-84.0412,"mgrs":""},
+              "flightData": {"landing_hdg":"340°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.4791,-84.04220000000001],[34.4811,-84.04220000000001],[34.4811,-84.0402]],"results":{"status":"success"},"gridElevation":"1890","latLong":""},
+              "graphics": {"doghouses":[],"helicopters":[],"pzMarkers":[],"sectorsOfFire":[],"goArounds":[],"units":[]}
+            }
+          },
+          {
+            "id": "pz-ibis",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "PZ IBIS",
+              "target": {"lat":34.5702,"lon":-84.1056,"mgrs":""},
+              "flightData": {"landing_hdg":"264°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.5692,-84.1066],[34.5712,-84.1066],[34.5712,-84.10459999999999]],"results":{"status":"success"},"gridElevation":"2150","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [
+                  {"id":"h1","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h2","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h3","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h4","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"}
+                ],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"left"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "lz-decoy",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ DECOY",
+              "target": {"lat":34.6501,"lon":-84.2001,"mgrs":""},
+              "flightData": {},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.649100000000004,-84.20110000000001],[34.6511,-84.20110000000001],[34.6511,-84.1991]],"results":{"status":"success"},"gridElevation":"","latLong":""},
+              "graphics": {"doghouses":[],"helicopters":[],"pzMarkers":[],"sectorsOfFire":[],"goArounds":[],"units":[]}
+            }
+          }
+        ],
+        "routeSets": [
+          {
+            "id": "set-opdk",
+            "name": "OP DK ROUTES",
+            "data": {
+              "version": 1,
+              "routes": [
+                {
+                  "id": "r-alderaan",
+                  "name": "ALDERAAN",
+                  "color": "#FF453A",
+                  "visible": true,
+                  "points": [
+                    {"id":"a1","name":".3MILE","ptType":"ip","kind":"amps","lat":33.9151,"lon":-84.5163},
+                    {"id":"a1s","kind":"shaping","ptType":null,"name":"","lat":34,"lon":-84.45},
+                    {"id":"a2","name":"TRACK","ptType":"turn","kind":"amps","lat":34.1502,"lon":-84.3511},
+                    {"id":"a3","name":"S-EP","ptType":"turn","kind":"amps","lat":34.3204,"lon":-84.2408},
+                    {"id":"a4","name":"ACP2","ptType":"turn","kind":"amps","lat":34.5002,"lon":-84.1202},
+                    {"id":"a5","name":".RP1","ptType":"ip","kind":"amps","lat":34.5803,"lon":-84.0702},
+                    {"id":"a6","name":"BLUEBIRD","ptType":"target","kind":"amps","lat":34.6012,"lon":-84.0523},
+                    {"id":"a7","name":"HAWK","ptType":"target","kind":"amps","lat":34.5501,"lon":-84.1102}
+                  ],
+                  "plan": {
+                    "aircraft": "UH-60L Black Hawk",
+                    "aircraftProfile": "uh60l",
+                    "airspeed": {"value":120,"type":"indicated"},
+                    "altitude": {"value":2500,"ref":"msl"},
+                    "wind": {"dirTrue":270,"speedKts":15},
+                    "tempC": 14,
+                    "fuelFlowLbHr": 960,
+                    "date": "2026-10-16",
+                    "perPoint": {
+                      "a1": {"clock":"11:56:32"},
+                      "a3": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a4": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a5": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a6": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":60,"type":"indicated"}},
+                      "a7": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":60,"type":"indicated"}}
+                    }
+                  },
+                  "elevations": {"a1":1068,"a2":1150,"a3":1420,"a4":1980,"a5":2010,"a6":2104,"a7":2230}
+                },
+                {
+                  "id": "r-bespin",
+                  "name": "BESPIN",
+                  "color": "#0A84FF",
+                  "visible": true,
+                  "points": [
+                    {"id":"b1","name":".SP3","ptType":"ip","kind":"amps","lat":34.5598,"lon":-84.1201},
+                    {"id":"b2","name":"RP5","ptType":"ip","kind":"amps","lat":34.5651,"lon":-84.1101},
+                    {"id":"b3","name":"IBIS","ptType":"target","kind":"amps","lat":34.5702,"lon":-84.1056},
+                    {"id":"b4","name":"KMGE","ptType":"target","kind":"amps","lat":33.9151,"lon":-84.5163}
+                  ],
+                  "plan": {
+                    "aircraft": "UH-60L Black Hawk",
+                    "aircraftProfile": "uh60l",
+                    "airspeed": {"value":120,"type":"indicated"},
+                    "altitude": {"value":2500,"ref":"msl"},
+                    "wind": {"dirTrue":270,"speedKts":15},
+                    "tempC": 14,
+                    "fuelFlowLbHr": 960,
+                    "date": "2026-10-16",
+                    "perPoint": {"b1":{"clock":"16:02:57"},"b3":{"airspeed":{"value":60,"type":"indicated"},"altitude":{"value":50,"ref":"agl"}}}
+                  },
+                  "elevations": {}
+                }
+              ]
+            }
+          }
+        ],
+        "threats": [{"name":"ZSU-23-4","lat":34.4012,"lon":-84.0011}]
+      },
+      "context": {
+        "generatedAt": "2026-10-16T18:02:00Z",
+        "utcOffsetMinutes": -240,
+        "weather": {
+          "departure": {"station_id":"KMGE","raw_metar":"KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002","pressure":30.02,"kind":"observation"},
+          "arrival": {"station_id":"KMGE","raw_taf":"FM161600 27010KT P6SM SCT050","kind":"forecast"},
+          "stops": {"lz-hawk":{"station_id":"KJZP","raw_metar":"KJZP 161553Z 24006KT 10SM CLR 17/08 A3001","wind_spd_kts":6,"wind_dir":240}}
+        },
+        "notams": {"Obstruction":["!FDC 6/1234 CRANE 340FT AGL 3NM N","!FDC 6/2222 TOWER LGT OTS"],"Airspace":["!ZTL 10/044 TFR"]}
+      },
+      "expected": {
+        "format": "ezpz-brief-model",
+        "version": 1,
+        "template": {"id":"hasty","version":1,"title":"Tactical hasty multi-ship brief","shortTitle":"Hasty multi-ship brief"},
+        "generatedAt": "2026-10-16T18:02:00Z",
+        "utcOffsetMinutes": -240,
+        "mission": {
+          "name": "OP DK",
+          "date": "16 Oct 2026",
+          "summary": "4 × UH-60L from 3MILE false insertion at LZ DECOY, to LZ BLUEBIRD, laager at LZ HAWK, fuel at FARP BUCEES, pickup at PZ IBIS, back at KMGE at 16:26:28."
+        },
+        "options": {"script":true,"constants":true,"lzCards":true,"navLogs":true,"iimc":true,"writeIns":true},
+        "constants": [
+          {"id":"enrouteAirspeed","label":"Enroute airspeed","short":"ENROUTE","value":"120 KIAS","source":"plan"},
+          {"id":"terrainFlightAirspeed","label":"Terrain flight airspeed","short":"TERRAIN FLT","value":"100 KIAS","source":"typed"},
+          {"id":"custom-1","label":"Formation","short":"FORMATION","value":"Stag right, 3-5 disks","source":"typed"}
+        ],
+        "flow": [
+          {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
+          {"ref":"lz:lz-decoy","kind":"stop","role":"FALSE_LZ","name":"LZ DECOY","arrive":null,"grid":"16S GD 56614 37808"},
+          {"ref":"lz:lz-bluebird","kind":"stop","role":"LZ","name":"LZ BLUEBIRD","arrive":"12:21:03","grid":"16S GD 71020 49660"},
+          {"ref":"lz:lz-hawk","kind":"stop","role":"LAAGER","name":"LZ HAWK","arrive":"12:25:54","grid":"16S GD 59833 44327"},
+          {"ref":"lz:farp-bucees","kind":"stop","role":"FARP","name":"FARP BUCEES","arrive":null,"grid":"16S GD 71735 19364"},
+          {"ref":"route:set-opdk/r-bespin","kind":"route","name":"BESPIN","start":"16:02:57","end":"16:26:28"},
+          {"ref":"lz:pz-ibis","kind":"stop","role":"PZ","name":"PZ IBIS","arrive":"16:03:31","grid":"16S GD 65532 29189"}
+        ],
+        "steps": [
+          {
+            "id": "situation",
+            "number": "1–4",
+            "title": "Roll call and situation",
+            "who": "AMC",
+            "sections": ["1","2","3","4"],
+            "ref": null,
+            "role": null,
+            "page": 1,
+            "figure": {
+              "kind": "overview",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [],
+            "items": [
+              {"id":"1.a","key":"1.a","label":"Ground element","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"1.b","key":"1.b","label":"Aviation element","kind":"text","source":"plan","text":"4 × UH-60L","writeIn":false},
+              {"id":"2.a","key":"2.a","label":"Supported unit","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.b","key":"2.b","label":"Supporting unit","kind":"text","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "3.a",
+                "key": "3.a",
+                "label": "Weather",
+                "kind": "note",
+                "source": "plan",
+                "text": "Takeoff: KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002. Enroute: Winds 270/15 kt. Arrival: Forecast FM161600 27010KT P6SM SCT050.",
+                "writeIn": false
+              },
+              {"id":"4.a","key":"4.a","label":"NOTAMs","kind":"note","source":"plan","text":"3 NOTAMs: 2 obstruction, 1 airspace.","writeIn":false}
+            ],
+            "script": [
+              [{"text":"Roll call: ground element "},{"writeIn":"a","label":"Ground element"},{"text":"; aviation element 4 × UH-60L."}],
+              [{"text":"Supported unit "},{"writeIn":"a","label":"Supported unit"},{"text":"; supporting unit "},{"writeIn":"b","label":"Supporting unit"},{"text":"."}],
+              [
+                {
+                  "text": "Weather: Takeoff: KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002. Enroute: Winds 270/15 kt. Arrival: Forecast FM161600 27010KT P6SM SCT050. Light: BMNT 06:50, sunrise 07:44, sunset 19:03, EENT 19:57, moonrise 13:31, moonset 23:06, illumination 32%."
+                }
+              ],
+              [{"text":"NOTAMs: 3 NOTAMs: 2 obstruction, 1 airspace."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "mission",
+            "number": "5–8",
+            "title": "Mission and concept",
+            "who": "AMC",
+            "sections": ["5","6","7","8"],
+            "ref": null,
+            "role": null,
+            "page": 2,
+            "figure": {
+              "kind": "overview",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [],
+            "items": [
+              {"id":"5.a","key":"5.a","label":"Mission","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b","key":"5.b","label":"Key tasks","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"5.c","key":"5.c","label":"End state","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"6.a","key":"6.a","label":"Concept (with the macro concept sketch)","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"7.a","key":"7.a","label":"Number / type of aircraft","kind":"text","source":"plan","text":"4 × UH-60L","writeIn":false},
+              {"id":"8.a","key":"8.a","label":"H-hour","kind":"time","source":"typed","text":"12:45","writeIn":false}
+            ],
+            "script": [
+              [{"text":"Mission: "},{"writeIn":"a","label":"Mission"}],
+              [{"text":"Key tasks: "},{"writeIn":"b","label":"Key tasks"}],
+              [{"text":"End state: "},{"writeIn":"c","label":"End state"}],
+              [{"text":"Concept: "},{"writeIn":"a","label":"Concept (with the macro concept sketch)"}],
+              [{"text":"Aircraft: 4 × UH-60L."}],
+              [{"text":"H-hour is 12:45."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "route@route:set-opdk/r-alderaan",
+            "number": "11",
+            "title": "Route / time of flight · ALDERAAN",
+            "who": "AMC",
+            "sections": ["11"],
+            "ref": "route:set-opdk/r-alderaan",
+            "role": null,
+            "page": 3,
+            "figure": {
+              "kind": "route",
+              "ref": "route:set-opdk/r-alderaan",
+              "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"route.distance","label":"DISTANCE","value":"51.4 nm"},
+              {"key":"route.time","label":"TIME","value":"0+29+22"},
+              {"key":"route.start","label":"START","value":"11:56:32"},
+              {"key":"route.end","label":"END","value":"12:25:54"}
+            ],
+            "items": [
+              {
+                "id": "11.a",
+                "key": "11.a@route:set-opdk/r-alderaan",
+                "label": "Route / time of flight",
+                "kind": "note",
+                "source": "plan",
+                "text": "3MILE to TRACK 030° 16.3 nm 0+07+19; TRACK to S-EP 028° 11.6 nm 0+06+16; S-EP to ACP2 029° 12.3 nm 0+06+42; ACP2 to RP1 027° 5.4 nm 0+02+56; RP1 to BLUEBIRD 035° 1.5 nm 0+01+18; BLUEBIRD to HAWK 223° 4.2 nm 0+04+51",
+                "writeIn": false
+              }
+            ],
+            "script": [
+              [
+                {
+                  "text": "ALDERAAN: 3MILE to TRACK 030° 16.3 nm 0+07+19; TRACK to S-EP 028° 11.6 nm 0+06+16; S-EP to ACP2 029° 12.3 nm 0+06+42; ACP2 to RP1 027° 5.4 nm 0+02+56; RP1 to BLUEBIRD 035° 1.5 nm 0+01+18; BLUEBIRD to HAWK 223° 4.2 nm 0+04+51"
+                }
+              ]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "false@lz:lz-decoy",
+            "number": "10",
+            "title": "False infiltration LZ / concept · LZ DECOY",
+            "who": "AMC",
+            "sections": ["10"],
+            "ref": "lz:lz-decoy",
+            "role": "FALSE_LZ",
+            "page": 4,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:lz-decoy",
+              "bounds": [[34.64540506647503,-84.20537595920304],[34.654794933524975,-84.19482404079697]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [],
+            "items": [
+              {"id":"10.a","key":"10.a@lz:lz-decoy","label":"Grid","kind":"text","source":"plan","text":"16S GD 56614 37808","writeIn":false},
+              {"id":"10.b","key":"10.b@lz:lz-decoy","label":"Concept","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"False insertion at LZ DECOY, 16S GD 56614 37808: "},{"writeIn":"b","label":"Concept"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "lz@lz:lz-bluebird",
+            "number": "12–13",
+            "title": "RP inbound and LZ operations · LZ BLUEBIRD",
+            "who": "AMC",
+            "sections": ["12","13"],
+            "ref": "lz:lz-bluebird",
+            "role": "LZ",
+            "page": 5,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:lz-bluebird",
+              "bounds": [[34.596505066475025,-84.05757402914784],[34.60589493352497,-84.04702597085216]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [{"key":"stop.elevation","label":"ELEV","value":"2,104 ft MSL"},{"key":"stop.slope","label":"SLOPE","value":null}],
+            "items": [
+              {"id":"12.a","key":"12.a@lz:lz-bluebird","label":"Wind validation (ACP before the RP)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.b","key":"12.b@lz:lz-bluebird","label":"Time on target","kind":"time","source":"plan","text":"12:21:03","writeIn":false},
+              {"id":"12.c","key":"12.c@lz:lz-bluebird","label":"Time / distance to the LZ","kind":"text","source":"plan","text":"from RP1 at 12:19:45, 60 KIAS, 1.5 nm, 0+01+18","writeIn":false},
+              {"id":"12.d","key":"12.d@lz:lz-bluebird","label":"Altitude / airspeed","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.e","key":"12.e@lz:lz-bluebird","label":"Landing formation / direction","kind":"text","source":"plan","text":"306°","writeIn":false},
+              {"id":"12.f","key":"12.f@lz:lz-bluebird","label":"Weapons status and control measures","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.g","key":"12.g@lz:lz-bluebird","label":"Doors open / closed","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.h","key":"12.h@lz:lz-bluebird","label":"Actions on contact","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"12.j","key":"12.j@lz:lz-bluebird","label":"LZ markings","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.k","key":"12.k@lz:lz-bluebird","label":"Barriers / hazards","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.l","key":"12.l@lz:lz-bluebird","label":"Distance / direction to the objective","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.m","key":"12.m@lz:lz-bluebird","label":"Escape plan","kind":"text","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "12.n",
+                "key": "12.n@lz:lz-bluebird",
+                "label": "Go-around (direction, as a flight or single ship)",
+                "kind": "procedure",
+                "source": "standard",
+                "text": "Go-around as a flight: lead or the AMC calls \"flight, go-around\" and everyone follows lead, right. Single ship: call your chalk, go-around and direction, then land behind the last aircraft or in your position as briefed.",
+                "writeIn": false
+              },
+              {"id":"12.o","key":"12.o@lz:lz-bluebird","label":"Actions on the objective","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"12.p","key":"12.p@lz:lz-bluebird","label":"Troop exit procedures","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.q","key":"12.q@lz:lz-bluebird","label":"Departure sequence","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"12.r","key":"12.r@lz:lz-bluebird","label":"ROZ coordination (frequency, call sign, responsibility)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"13.a","key":"13.a@lz:lz-bluebird","label":"LZ sketch (the LZ card, from the plan)","kind":"info","source":"info","text":null,"writeIn":false},
+              {"id":"13.b","key":"13.b@lz:lz-bluebird","label":"LZ marking / security / call sign / frequency","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"13.c","key":"13.c@lz:lz-bluebird","label":"Landing direction / formation","kind":"text","source":"plan","text":"306°","writeIn":false},
+              {"id":"13.d","key":"13.d@lz:lz-bluebird","label":"Weapons status and control measures","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"13.e","key":"13.e@lz:lz-bluebird","label":"Door exit","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"13.f","key":"13.f@lz:lz-bluebird","label":"Number of turns required","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"13.g","key":"13.g@lz:lz-bluebird","label":"Takeoff direction / formation","kind":"text","source":"plan","text":"126°","writeIn":false}
+            ],
+            "script": [
+              [
+                {"text":"RP inbound to LZ BLUEBIRD: wind check "},
+                {"writeIn":"a","label":"Wind validation (ACP before the RP)"},
+                {"text":"; on target at 12:21:03; from RP1 at 12:19:45, 60 KIAS, 1.5 nm, 0+01+18; altitude and airspeed "},
+                {"writeIn":"d","label":"Altitude / airspeed"},
+                {"text":"."}
+              ],
+              [{"text":"Landing 306°. Weapons "},{"writeIn":"f","label":"Weapons status and control measures"},{"text":"; doors "},{"writeIn":"g","label":"Doors open / closed"},{"text":"."}],
+              [{"writeIn":"h","label":"Actions on contact"}],
+              [
+                {"text":"Markings "},
+                {"writeIn":"j","label":"LZ markings"},
+                {"text":"; hazards "},
+                {"writeIn":"k","label":"Barriers / hazards"},
+                {"text":"; the objective is "},
+                {"writeIn":"l","label":"Distance / direction to the objective"},
+                {"text":". Escape plan "},
+                {"writeIn":"m","label":"Escape plan"},
+                {"text":"."}
+              ],
+              [
+                {
+                  "text": "Go-around as a flight: lead or the AMC calls \"flight, go-around\" and everyone follows lead, right. Single ship: call your chalk, go-around and direction, then land behind the last aircraft or in your position as briefed."
+                }
+              ],
+              [
+                {"text":"On the objective: "},
+                {"writeIn":"o","label":"Actions on the objective"},
+                {"text":" Troops exit "},
+                {"writeIn":"p","label":"Troop exit procedures"},
+                {"text":". Departure sequence "},
+                {"writeIn":"q","label":"Departure sequence"},
+                {"text":". ROZ: "},
+                {"writeIn":"r","label":"ROZ coordination (frequency, call sign, responsibility)"},
+                {"text":"."}
+              ],
+              [
+                {"text":"In the LZ: "},
+                {"writeIn":"b","label":"LZ marking / security / call sign / frequency"},
+                {"text":". Landing 306°; weapons "},
+                {"writeIn":"d","label":"Weapons status and control measures"},
+                {"text":"; exit "},
+                {"writeIn":"e","label":"Door exit"},
+                {"text":"; "},
+                {"writeIn":"f","label":"Number of turns required"},
+                {"text":" turns."}
+              ],
+              [{"text":"Takeoff 126°."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "route@route:set-opdk/r-bespin",
+            "number": "11",
+            "title": "Route / time of flight · BESPIN",
+            "who": "AMC",
+            "sections": ["11"],
+            "ref": "route:set-opdk/r-bespin",
+            "role": null,
+            "page": 6,
+            "figure": {
+              "kind": "route",
+              "ref": "route:set-opdk/r-bespin",
+              "bounds": [[33.849590000000006,-84.55737],[34.63571,-84.06452999999999]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"route.distance","label":"DISTANCE","value":"45.3 nm"},
+              {"key":"route.time","label":"TIME","value":"0+23+31"},
+              {"key":"route.start","label":"START","value":"16:02:57"},
+              {"key":"route.end","label":"END","value":"16:26:28"}
+            ],
+            "items": [
+              {
+                "id": "11.a",
+                "key": "11.a@route:set-opdk/r-bespin",
+                "label": "Route / time of flight",
+                "kind": "note",
+                "source": "plan",
+                "text": "SP3 to RP5 057° 0.6 nm 0+00+15; RP5 to IBIS 036° 0.4 nm 0+00+20; IBIS to KMGE 208° 44.3 nm 0+22+57",
+                "writeIn": false
+              }
+            ],
+            "script": [[{"text":"BESPIN: SP3 to RP5 057° 0.6 nm 0+00+15; RP5 to IBIS 036° 0.4 nm 0+00+20; IBIS to KMGE 208° 44.3 nm 0+22+57"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "pz@lz:pz-ibis",
+            "number": "9",
+            "title": "Enroute / PZ operations · PZ IBIS",
+            "who": "AMC",
+            "sections": ["9"],
+            "ref": "lz:pz-ibis",
+            "role": "PZ",
+            "page": 7,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:pz-ibis",
+              "bounds": [[34.565505066475026,-84.11087280800702],[34.57489493352497,-84.10032719199297]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [{"key":"stop.elevation","label":"ELEV","value":"2,150 ft MSL"},{"key":"stop.slope","label":"SLOPE","value":null}],
+            "items": [
+              {
+                "id": "9.a",
+                "key": "9.a@lz:pz-ibis",
+                "label": "Takeoff time / direction / formation",
+                "kind": "text",
+                "source": "plan",
+                "text": "BESPIN from IBIS, takeoff 16:03:31, heading 208°, 50 ft AGL, 120 KIAS",
+                "writeIn": false
+              },
+              {"id":"9.b","key":"9.b@lz:pz-ibis","label":"Altitude / airspeed","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"9.c","key":"9.c@lz:pz-ibis","label":"Aircraft lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"9.d","key":"9.d@lz:pz-ibis","label":"Location / grid / marking","kind":"text","source":"plan","text":"16S GD 65532 29189","writeIn":false},
+              {"id":"9.e","key":"9.e@lz:pz-ibis","label":"Call sign / frequency","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"9.f","key":"9.f@lz:pz-ibis","label":"Landing / pickup time","kind":"time","source":"plan","text":"16:03:31","writeIn":false},
+              {"id":"9.g","key":"9.g@lz:pz-ibis","label":"Landing heading / formation","kind":"text","source":"plan","text":"264°","writeIn":false},
+              {"id":"9.h","key":"9.h@lz:pz-ibis","label":"Door / ramp entry","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"9.i","key":"9.i@lz:pz-ibis","label":"Number of troops / type of cargo loads","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"PZ IBIS, 16S GD 65532 29189, call sign and frequency "},{"writeIn":"e","label":"Call sign / frequency"},{"text":". Pickup at 16:03:31, landing 264°."}],
+              [
+                {"text":"Lighting "},
+                {"writeIn":"c","label":"Aircraft lighting"},
+                {"text":". Entry by "},
+                {"writeIn":"h","label":"Door / ramp entry"},
+                {"text":"; loads "},
+                {"writeIn":"i","label":"Number of troops / type of cargo loads"},
+                {"text":"."}
+              ],
+              [{"text":"Departure: BESPIN from IBIS, takeoff 16:03:31, heading 208°, 50 ft AGL, 120 KIAS. Altitude and airspeed "},{"writeIn":"b","label":"Altitude / airspeed"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "support",
+            "number": "14–15",
+            "title": "Hot / cold and the attack / scout plan",
+            "who": "AMC",
+            "sections": ["14","15"],
+            "ref": null,
+            "role": null,
+            "page": 8,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"14.a","key":"14.a","label":"Criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"14.b","key":"14.b","label":"Platform making the call / call sign / frequency","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"15.a","key":"15.a","label":"Coverage times","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"15.b","key":"15.b","label":"Task and purpose","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"15.c","key":"15.c","label":"Grid reference graphic","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"15.d","key":"15.d","label":"Ammunition load","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Hot or cold: "},{"writeIn":"a","label":"Criteria"},{"text":", called by "},{"writeIn":"b","label":"Platform making the call / call sign / frequency"},{"text":"."}],
+              [
+                {"text":"Attack and scout: coverage "},
+                {"writeIn":"a","label":"Coverage times"},
+                {"text":"; task and purpose "},
+                {"writeIn":"b","label":"Task and purpose"},
+                {"text":"; graphic "},
+                {"writeIn":"c","label":"Grid reference graphic"},
+                {"text":"; load "},
+                {"writeIn":"d","label":"Ammunition load"},
+                {"text":"."}
+              ]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "laager@lz:lz-hawk",
+            "number": "16",
+            "title": "Laager plan · LZ HAWK",
+            "who": "AMC",
+            "sections": ["16"],
+            "ref": "lz:lz-hawk",
+            "role": "LAAGER",
+            "page": 9,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:lz-hawk",
+              "bounds": [[34.54540506647503,-84.11547201723347],[34.554794933524974,-84.10492798276654]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [],
+            "items": [
+              {"id":"16.a","key":"16.a@lz:lz-hawk","label":"Location","kind":"text","source":"plan","text":"16S GD 59833 44327","writeIn":false},
+              {"id":"16.b","key":"16.b@lz:lz-hawk","label":"REDCON level","kind":"choice","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"Laager at LZ HAWK, 16S GD 59833 44327, at "},{"writeIn":"b","label":"REDCON level"},{"text":"."}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "airspace",
+            "number": "17",
+            "title": "Airspace control (rotary wing, CAS, ISR)",
+            "who": "AMC",
+            "sections": ["17"],
+            "ref": null,
+            "role": null,
+            "page": 10,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"17.a","key":"17.a","label":"Airspace control","kind":"note","source":"blank","text":null,"writeIn":true}],
+            "script": [[{"text":"Airspace: "},{"writeIn":"a","label":"Airspace control"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "farp@lz:farp-bucees",
+            "number": "18",
+            "title": "Refuel plan / location · FARP BUCEES",
+            "who": "AMC",
+            "sections": ["18"],
+            "ref": "lz:farp-bucees",
+            "role": "FARP",
+            "page": 11,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:farp-bucees",
+              "bounds": [[34.47540506647503,-84.0464692694144],[34.484794933524974,-84.0359307305856]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [],
+            "items": [
+              {"id":"18.a","key":"18.a@lz:farp-bucees","label":"Location","kind":"text","source":"plan","text":"16S GD 71735 19364","writeIn":false},
+              {"id":"18.b","key":"18.b@lz:farp-bucees","label":"Refuel plan","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"Refuel at FARP BUCEES, 16S GD 71735 19364: "},{"writeIn":"b","label":"Refuel plan"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "detainee",
+            "number": "19",
+            "title": "Detainee transport plan",
+            "who": "AMC",
+            "sections": ["19"],
+            "ref": null,
+            "role": null,
+            "page": 12,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"19.a","key":"19.a","label":"Plan","kind":"note","source":"blank","text":null,"writeIn":true}],
+            "script": [[{"text":"Detainees: "},{"writeIn":"a","label":"Plan"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "abort",
+            "number": "20–21",
+            "title": "Abort criteria and the weather call",
+            "who": "AMC",
+            "sections": ["20","21"],
+            "ref": null,
+            "role": null,
+            "page": 13,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"20.a","key":"20.a","label":"Weather","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"20.b","key":"20.b","label":"Minimum aircraft","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"20.c","key":"20.c","label":"Minimum force","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"20.d","key":"20.d","label":"Other","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"21.a","key":"21.a","label":"Weather call","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"Abort for weather "},
+                {"writeIn":"a","label":"Weather"},
+                {"text":", below "},
+                {"writeIn":"b","label":"Minimum aircraft"},
+                {"text":" aircraft, below "},
+                {"writeIn":"c","label":"Minimum force"},
+                {"text":" force, or "},
+                {"writeIn":"d","label":"Other"},
+                {"text":"."}
+              ],
+              [{"text":"Weather call: "},{"writeIn":"a","label":"Weather call"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "fires",
+            "number": "22–25",
+            "title": "Fires, deception, resupply and bump plan",
+            "who": "AMC",
+            "sections": ["22","23","24","25"],
+            "ref": null,
+            "role": null,
+            "page": 14,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"22.a","key":"22.a","label":"Fires plan","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"23.a","key":"23.a","label":"Deception plan","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"24.a","key":"24.a","label":"Resupply","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"25.a","key":"25.a","label":"Bump plan","kind":"procedure","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Fires: "},{"writeIn":"a","label":"Fires plan"}],
+              [{"text":"Deception: "},{"writeIn":"a","label":"Deception plan"}],
+              [{"text":"Resupply: "},{"writeIn":"a","label":"Resupply"}],
+              [{"text":"Bump plan: "},{"writeIn":"a","label":"Bump plan"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "contingencies",
+            "number": "26–28",
+            "title": "Contingencies, MEDEVAC and QRF",
+            "who": "AMC",
+            "sections": ["26","27","28"],
+            "ref": null,
+            "role": null,
+            "page": 15,
+            "figure": {
+              "kind": "rally",
+              "ref": null,
+              "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+              "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
+              "stops": ["lz:lz-decoy","lz:lz-bluebird","lz:lz-hawk","lz:farp-bucees","lz:pz-ibis"],
+              "rallyPoints": []
+            },
+            "facts": [{"key":"rally.points","label":"RALLY","value":null}],
+            "items": [
+              {"id":"26.a","key":"26.a","label":"Lead change","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"26.b","key":"26.b","label":"Lost communication","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"26.c","key":"26.c","label":"Loss of visual contact (in-flight link-up and rally points)","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "26.d",
+                "key": "26.d",
+                "label": "IIMC",
+                "kind": "procedure",
+                "source": "standard",
+                "text": "IIMC: announce it with your chalk and heading, go to instruments, never descend. Base altitude 4,000 ft MSL, adjusted 500 feet for each subsequent chalk; base heading ________, plus 10 degrees times your chalk number to the clear side; base airspeed ________, less 10 knots for subsequent chalks. Contact the controlling agency. Recovery is ________.",
+                "writeIn": false
+              },
+              {"id":"26.e","key":"26.e","label":"Downed aircraft / personnel recovery","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"27.a","key":"27.a","label":"Location","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"28.a","key":"28.a","label":"Air or ground","kind":"choice","source":"blank","text":null,"writeIn":true},
+              {"id":"28.b","key":"28.b","label":"Trigger","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"28.c","key":"28.c","label":"Frequency","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"28.d","key":"28.d","label":"Response time","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Contingencies."}],
+              [{"writeIn":"a","label":"Lead change"}],
+              [{"writeIn":"b","label":"Lost communication"}],
+              [{"writeIn":"c","label":"Loss of visual contact (in-flight link-up and rally points)"}],
+              [
+                {"text":"IIMC: announce it with your chalk and heading, go to instruments, never descend. Base altitude 4,000 ft MSL, adjusted 500 feet for each subsequent chalk; base heading "},
+                {"writeIn":"field:baseHeading","label":"Base heading"},
+                {"text":", plus 10 degrees times your chalk number to the clear side; base airspeed "},
+                {"writeIn":"field:baseAirspeed","label":"Base airspeed"},
+                {"text":", less 10 knots for subsequent chalks. Contact the controlling agency. Recovery is "},
+                {"writeIn":"field:recovery","label":"Recovery airfield and approach"},
+                {"text":"."}
+              ],
+              [{"writeIn":"e","label":"Downed aircraft / personnel recovery"}],
+              [{"text":"MEDEVAC is at "},{"writeIn":"a","label":"Location"},{"text":"."}],
+              [
+                {"text":"QRF: "},
+                {"writeIn":"a","label":"Air or ground"},
+                {"text":", triggered by "},
+                {"writeIn":"b","label":"Trigger"},
+                {"text":", on "},
+                {"writeIn":"c","label":"Frequency"},
+                {"text":", responding in "},
+                {"writeIn":"d","label":"Response time"},
+                {"text":"."}
+              ]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "signal",
+            "number": "29–32",
+            "title": "Communication, command, ISR / CAS and timeline",
+            "who": "AMC",
+            "sections": ["29","30","31","32"],
+            "ref": null,
+            "role": null,
+            "page": 16,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"29.a","key":"29.a","label":"CAN","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"29.b","key":"29.b","label":"Internal frequencies (PACE)","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"29.c","key":"29.c","label":"Fires","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"29.d","key":"29.d","label":"SATCOM","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"29.e","key":"29.e","label":"GTC / RTO call signs","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"29.f","key":"29.f","label":"Aircraft call signs","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"30.a","key":"30.a","label":"Command","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"31.a","key":"31.a","label":"ISR / CAS","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"32.a","key":"32.a","label":"Proposed timeline","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"CAN "},
+                {"writeIn":"a","label":"CAN"},
+                {"text":". Internal: "},
+                {"writeIn":"b","label":"Internal frequencies (PACE)"},
+                {"text":" Fires "},
+                {"writeIn":"c","label":"Fires"},
+                {"text":"; SATCOM "},
+                {"writeIn":"d","label":"SATCOM"},
+                {"text":"."}
+              ],
+              [{"text":"Ground call signs "},{"writeIn":"e","label":"GTC / RTO call signs"},{"text":"; aircraft "},{"writeIn":"f","label":"Aircraft call signs"},{"text":"."}],
+              [{"text":"Command: "},{"writeIn":"a","label":"Command"},{"text":"."}],
+              [{"text":"ISR and CAS: "},{"writeIn":"a","label":"ISR / CAS"},{"text":"."}],
+              [{"text":"Timeline: "},{"writeIn":"a","label":"Proposed timeline"}]
+            ],
+            "scriptEdited": false
+          }
+        ],
+        "pages": [
+          {"n":1,"kind":"cover","stepId":"situation"},
+          {"n":2,"kind":"step","stepId":"mission"},
+          {"n":3,"kind":"step","stepId":"route@route:set-opdk/r-alderaan"},
+          {"n":4,"kind":"step","stepId":"false@lz:lz-decoy"},
+          {"n":5,"kind":"step","stepId":"lz@lz:lz-bluebird"},
+          {"n":6,"kind":"step","stepId":"route@route:set-opdk/r-bespin"},
+          {"n":7,"kind":"step","stepId":"pz@lz:pz-ibis"},
+          {"n":8,"kind":"step","stepId":"support"},
+          {"n":9,"kind":"step","stepId":"laager@lz:lz-hawk"},
+          {"n":10,"kind":"step","stepId":"airspace"},
+          {"n":11,"kind":"step","stepId":"farp@lz:farp-bucees"},
+          {"n":12,"kind":"step","stepId":"detainee"},
+          {"n":13,"kind":"step","stepId":"abort"},
+          {"n":14,"kind":"step","stepId":"fires"},
+          {"n":15,"kind":"step","stepId":"contingencies"},
+          {"n":16,"kind":"step","stepId":"signal"},
+          {"n":17,"kind":"lzCard","ref":"lz:lz-decoy","title":"false insertion LZ card · LZ DECOY"},
+          {"n":18,"kind":"lzCard","ref":"lz:lz-bluebird","title":"LZ card · LZ BLUEBIRD"},
+          {"n":19,"kind":"lzCard","ref":"lz:lz-hawk","title":"laager card · LZ HAWK"},
+          {"n":20,"kind":"lzCard","ref":"lz:farp-bucees","title":"FARP card · FARP BUCEES"},
+          {"n":21,"kind":"lzCard","ref":"lz:pz-ibis","title":"PZ card · PZ IBIS"},
+          {"n":22,"kind":"navLog","ref":"route:set-opdk/r-alderaan","title":"Nav log · ALDERAAN"},
+          {"n":23,"kind":"navLog","ref":"route:set-opdk/r-bespin","title":"Nav log · BESPIN"},
+          {"n":24,"kind":"iimc","title":"IIMC card"}
+        ],
+        "problems": [
+          {"ref":"lz:lz-decoy","message":"No route in the flow reaches LZ DECOY before it, so it has no arrival time."},
+          {"ref":"lz:farp-bucees","message":"No route in the flow reaches FARP BUCEES before it, so it has no arrival time."}
+        ]
+      }
+    },
+    {
+      "name": "a flow naming what has gone, threats left out, no appendices",
+      "format": "amb",
+      "document": {
+        "flow": [{"ref":"route:set-opdk/r-alderaan"},{"ref":"lz:gone-lz","role":"LZ"},{"ref":"lz:lz-hawk","role":"BOGUS"}],
+        "include": {"threats":false},
+        "options": {"lzCards":false,"navLogs":false,"iimc":false},
+        "answers": {"5.a.v":{"mode":"standard","fields":{}}}
+      },
+      "plan": {
+        "name": "OP DK",
+        "missionAircraft": "uh60l",
+        "aircraftProfiles": [{"id":1,"slug":"uh60l","name":"UH-60L Black Hawk","designation":"UH-60L"}],
+        "lzs": [
+          {
+            "id": "lz-bluebird",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ BLUEBIRD",
+              "target": {"lat":34.6012,"lon":-84.0523,"mgrs":"16S GD 71020 49660"},
+              "flightData": {"landing_hdg":"306°","takeoff_hdg":"126°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.6002,-84.05330000000001],[34.602199999999996,-84.05330000000001],[34.602199999999996,-84.0513]],"results":{"status":"success"},"gridElevation":"2104","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [
+                  {"id":"h1","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h2","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h3","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"},
+                  {"id":"h4","lat":34.6012,"lon":-84.0523,"heading":0,"profileId":"uh60l"}
+                ],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"right"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "lz-hawk",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ HAWK",
+              "target": {"lat":34.5501,"lon":-84.1102,"mgrs":"16S GD 59833 44327"},
+              "flightData": {"landing_hdg":"203°","takeoff_hdg":"157°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.5491,-84.11120000000001],[34.5511,-84.11120000000001],[34.5511,-84.1092]],"results":{"status":"success"},"gridElevation":"2230","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [{"id":"h1","lat":34.5501,"lon":-84.1102,"heading":0,"profileId":"uh60l"},{"id":"h2","lat":34.5501,"lon":-84.1102,"heading":0,"profileId":"uh60l"}],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"R"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "farp-bucees",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "FARP BUCEES",
+              "target": {"lat":34.4801,"lon":-84.0412,"mgrs":""},
+              "flightData": {"landing_hdg":"340°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.4791,-84.04220000000001],[34.4811,-84.04220000000001],[34.4811,-84.0402]],"results":{"status":"success"},"gridElevation":"1890","latLong":""},
+              "graphics": {"doghouses":[],"helicopters":[],"pzMarkers":[],"sectorsOfFire":[],"goArounds":[],"units":[]}
+            }
+          },
+          {
+            "id": "pz-ibis",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "PZ IBIS",
+              "target": {"lat":34.5702,"lon":-84.1056,"mgrs":""},
+              "flightData": {"landing_hdg":"264°"},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.5692,-84.1066],[34.5712,-84.1066],[34.5712,-84.10459999999999]],"results":{"status":"success"},"gridElevation":"2150","latLong":""},
+              "graphics": {
+                "doghouses": [],
+                "helicopters": [
+                  {"id":"h1","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h2","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h3","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"},
+                  {"id":"h4","lat":34.5702,"lon":-84.1056,"heading":0,"profileId":"uh60l"}
+                ],
+                "pzMarkers": [],
+                "sectorsOfFire": [],
+                "goArounds": [{"id":"g1","side":"left"}],
+                "units": []
+              }
+            }
+          },
+          {
+            "id": "lz-decoy",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ DECOY",
+              "target": {"lat":34.6501,"lon":-84.2001,"mgrs":""},
+              "flightData": {},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.649100000000004,-84.20110000000001],[34.6511,-84.20110000000001],[34.6511,-84.1991]],"results":{"status":"success"},"gridElevation":"","latLong":""},
+              "graphics": {"doghouses":[],"helicopters":[],"pzMarkers":[],"sectorsOfFire":[],"goArounds":[],"units":[]}
+            }
+          }
+        ],
+        "routeSets": [
+          {
+            "id": "set-opdk",
+            "name": "OP DK ROUTES",
+            "data": {
+              "version": 1,
+              "routes": [
+                {
+                  "id": "r-alderaan",
+                  "name": "ALDERAAN",
+                  "color": "#FF453A",
+                  "visible": true,
+                  "points": [
+                    {"id":"a1","name":".3MILE","ptType":"ip","kind":"amps","lat":33.9151,"lon":-84.5163},
+                    {"id":"a1s","kind":"shaping","ptType":null,"name":"","lat":34,"lon":-84.45},
+                    {"id":"a2","name":"TRACK","ptType":"turn","kind":"amps","lat":34.1502,"lon":-84.3511},
+                    {"id":"a3","name":"S-EP","ptType":"turn","kind":"amps","lat":34.3204,"lon":-84.2408},
+                    {"id":"a4","name":"ACP2","ptType":"turn","kind":"amps","lat":34.5002,"lon":-84.1202},
+                    {"id":"a5","name":".RP1","ptType":"ip","kind":"amps","lat":34.5803,"lon":-84.0702},
+                    {"id":"a6","name":"BLUEBIRD","ptType":"target","kind":"amps","lat":34.6012,"lon":-84.0523},
+                    {"id":"a7","name":"HAWK","ptType":"target","kind":"amps","lat":34.5501,"lon":-84.1102}
+                  ],
+                  "plan": {
+                    "aircraft": "UH-60L Black Hawk",
+                    "aircraftProfile": "uh60l",
+                    "airspeed": {"value":120,"type":"indicated"},
+                    "altitude": {"value":2500,"ref":"msl"},
+                    "wind": {"dirTrue":270,"speedKts":15},
+                    "tempC": 14,
+                    "fuelFlowLbHr": 960,
+                    "date": "2026-10-16",
+                    "perPoint": {
+                      "a1": {"clock":"11:56:32"},
+                      "a3": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a4": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a5": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":100,"type":"indicated"}},
+                      "a6": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":60,"type":"indicated"}},
+                      "a7": {"altitude":{"value":50,"ref":"agl"},"airspeed":{"value":60,"type":"indicated"}}
+                    }
+                  },
+                  "elevations": {"a1":1068,"a2":1150,"a3":1420,"a4":1980,"a5":2010,"a6":2104,"a7":2230}
+                },
+                {
+                  "id": "r-bespin",
+                  "name": "BESPIN",
+                  "color": "#0A84FF",
+                  "visible": true,
+                  "points": [
+                    {"id":"b1","name":".SP3","ptType":"ip","kind":"amps","lat":34.5598,"lon":-84.1201},
+                    {"id":"b2","name":"RP5","ptType":"ip","kind":"amps","lat":34.5651,"lon":-84.1101},
+                    {"id":"b3","name":"IBIS","ptType":"target","kind":"amps","lat":34.5702,"lon":-84.1056},
+                    {"id":"b4","name":"KMGE","ptType":"target","kind":"amps","lat":33.9151,"lon":-84.5163}
+                  ],
+                  "plan": {
+                    "aircraft": "UH-60L Black Hawk",
+                    "aircraftProfile": "uh60l",
+                    "airspeed": {"value":120,"type":"indicated"},
+                    "altitude": {"value":2500,"ref":"msl"},
+                    "wind": {"dirTrue":270,"speedKts":15},
+                    "tempC": 14,
+                    "fuelFlowLbHr": 960,
+                    "date": "2026-10-16",
+                    "perPoint": {"b1":{"clock":"16:02:57"},"b3":{"airspeed":{"value":60,"type":"indicated"},"altitude":{"value":50,"ref":"agl"}}}
+                  },
+                  "elevations": {}
+                }
+              ]
+            }
+          }
+        ],
+        "threats": [{"name":"ZSU-23-4","lat":34.4012,"lon":-84.0011}]
+      },
+      "context": {"generatedAt":"2026-10-16T18:02:00Z","utcOffsetMinutes":-240,"weather":{"departure":{"station_id":"TIMEOUT","raw_metar":null}},"notams":"NOTAMs currently unavailable."},
+      "expected": {
+        "format": "ezpz-brief-model",
+        "version": 1,
+        "template": {"id":"amb","version":1,"title":"Non-tactical multi-ship / air movement brief","shortTitle":"Air movement brief"},
+        "generatedAt": "2026-10-16T18:02:00Z",
+        "utcOffsetMinutes": -240,
+        "mission": {"name":"OP DK","date":"16 Oct 2026","summary":"2 × UH-60L from 3MILE to LZ HAWK, back at HAWK at 12:25:54."},
+        "options": {"script":true,"constants":true,"lzCards":false,"navLogs":false,"iimc":false,"writeIns":true},
+        "constants": [
+          {"id":"enrouteAirspeed","label":"Enroute airspeed","short":"ENROUTE","value":"100 KIAS","source":"plan"},
+          {"id":"terrainFlightAirspeed","label":"Terrain flight airspeed","short":"TERRAIN FLT","value":null,"source":"blank"},
+          {"id":"rpInboundAirspeed","label":"RP inbound airspeed","short":"RP IN","value":"60 KIAS","source":"plan"},
+          {"id":"spOutboundAirspeed","label":"SP outbound airspeed","short":"SP OUT","value":"60 KIAS","source":"standard"},
+          {"id":"goAround","label":"Go-around direction","short":"GO-AROUND","value":"right","source":"plan"},
+          {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
+        ],
+        "flow": [
+          {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
+          {"ref":"lz:gone-lz","gone":true},
+          {"ref":"lz:lz-hawk","kind":"stop","role":"LZ","name":"LZ HAWK","arrive":"12:25:54","grid":"16S GD 59833 44327"}
+        ],
+        "steps": [
+          {
+            "id": "1",
+            "number": "1",
+            "title": "Roll call",
+            "who": "AMC",
+            "sections": ["1"],
+            "ref": null,
+            "role": null,
+            "page": 1,
+            "figure": {"kind":"overview","ref":null,"bounds":[[33.84649,-84.5627],[34.66981,-84.0059]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":"2 × UH-60L"},{"key":"packet.pages","label":"PAGES","value":"13"}],
+            "items": [
+              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"brief 1–13","writeIn":false},
+              {"id":"1.b","key":"1.b","label":"Mission risk level","kind":"choice","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"This is the air movement brief for OP DK: 2 × UH-60L from 3MILE to LZ HAWK, back at HAWK at 12:25:54."}],
+              [{"text":"Check you have all 13 pages: brief 1–13."}],
+              [{"text":"Mission risk level is "},{"writeIn":"b","label":"Mission risk level"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "2",
+            "number": "2",
+            "title": "Situation",
+            "who": "AMC",
+            "sections": ["2"],
+            "ref": null,
+            "role": null,
+            "page": 2,
+            "figure": {"kind":"overview","ref":null,"bounds":[[33.84649,-84.5627],[34.66981,-84.0059]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "facts": [
+              {"key":"weather.departure","label":"WX TAKEOFF","value":null},
+              {"key":"light.sunset","label":"SUNSET","value":"19:03"},
+              {"key":"light.illumination","label":"ILLUM","value":"32%"},
+              {"key":"threats.summary","label":"THREATS","value":"Not briefed."}
+            ],
+            "items": [
+              {"id":"2.a","key":"2.a","label":"Weather conditions at takeoff, enroute and arrival","kind":"note","source":"plan","text":"Enroute: Winds 270/15 kt.","writeIn":false},
+              {"id":"2.b","key":"2.b","label":"Minimum weather","kind":"text","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "2.c",
+                "key": "2.c",
+                "label": "Light data",
+                "kind": "text",
+                "source": "plan",
+                "text": "BMNT 06:50, sunrise 07:44, sunset 19:03, EENT 19:57, moonrise 13:31, moonset 23:06, illumination 32%.",
+                "writeIn": false
+              },
+              {"id":"2.d","key":"2.d","label":"Weather update time and responsibility","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.e","key":"2.e","label":"Mission abort time and criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.f","key":"2.f","label":"NOTAMs","kind":"note","source":"plan","text":"NOTAMs could not be searched: check them before flight.","writeIn":false}
+            ],
+            "script": [
+              [{"text":"Weather: Enroute: Winds 270/15 kt."}],
+              [{"text":"Minimum weather is "},{"writeIn":"b","label":"Minimum weather"},{"text":"."}],
+              [{"text":"Light: BMNT 06:50, sunrise 07:44, sunset 19:03, EENT 19:57, moonrise 13:31, moonset 23:06, illumination 32%."}],
+              [{"text":"Weather update: "},{"writeIn":"d","label":"Weather update time and responsibility"},{"text":". Mission abort: "},{"writeIn":"e","label":"Mission abort time and criteria"},{"text":"."}],
+              [{"text":"NOTAMs: NOTAMs could not be searched: check them before flight."}],
+              [{"text":"Threats: Not briefed."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "3",
+            "number": "3",
+            "title": "Mission and intent",
+            "who": "AMC",
+            "sections": ["3"],
+            "ref": null,
+            "role": null,
+            "page": 3,
+            "figure": {"kind":"overview","ref":null,"bounds":[[33.84649,-84.5627],[34.66981,-84.0059]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "facts": [],
+            "items": [
+              {"id":"3.a","key":"3.a","label":"Restate the mission","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"3.b","key":"3.b","label":"Commander's intent","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"3.c","key":"3.c","label":"CONOP brief","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"Mission: "},{"writeIn":"a","label":"Restate the mission"}],[{"text":"Intent: "},{"writeIn":"b","label":"Commander's intent"}],[{"text":"Concept: "},{"writeIn":"c","label":"CONOP brief"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.a",
+            "number": "4.a",
+            "title": "Timeline",
+            "who": "Flight lead",
+            "sections": ["4.a"],
+            "ref": null,
+            "role": null,
+            "page": 4,
+            "figure": {"kind":"overview","ref":null,"bounds":[[33.84649,-84.5627],[34.66981,-84.0059]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "facts": [],
+            "items": [{"id":"4.a.a","key":"4.a.a","label":"Timeline","kind":"list","source":"plan","text":"11:56:32 ALDERAAN; 12:25:54 LZ HAWK","writeIn":false}],
+            "script": [[{"text":"Timeline: 11:56:32 ALDERAAN; 12:25:54 LZ HAWK"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.b",
+            "number": "4.b",
+            "title": "Departure sequence",
+            "who": "Flight lead",
+            "sections": ["4.b"],
+            "ref": null,
+            "role": null,
+            "page": 5,
+            "figure": {"kind":"departure","ref":null,"bounds":[[33.874570000000006,-84.54385],[34.360929999999996,-84.21324999999999]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "facts": [{"key":"departure.point","label":"DEPART","value":"3MILE"},{"key":"departure.time","label":"TAKEOFF","value":"11:56:32"}],
+            "items": [
+              {"id":"4.b.i","key":"4.b.i","label":"Commo check","kind":"time","source":"plan","text":"11:31","writeIn":false},
+              {"id":"4.b.ii","key":"4.b.ii","label":"Taxi / load","kind":"time","source":"plan","text":"11:41","writeIn":false},
+              {"id":"4.b.iii","key":"4.b.iii","label":"Lineup","kind":"time","source":"plan","text":"11:51","writeIn":false},
+              {"id":"4.b.iv","key":"4.b.iv","label":"Fuel required for the mission","kind":"text","source":"plan","text":"470 lb","writeIn":false},
+              {
+                "id": "4.b.v",
+                "key": "4.b.v",
+                "label": "Departure plan (route, takeoff time, heading, altitude, airspeed, formation)",
+                "kind": "text",
+                "source": "plan",
+                "text": "ALDERAAN, takeoff 11:56:32, heading 030°, 2,500 ft MSL, 120 KIAS",
+                "writeIn": false
+              },
+              {"id":"4.b.vi","key":"4.b.vi","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.vii","key":"4.b.vii","label":"REDCON-1 procedures","kind":"procedure","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Commo check at 11:31, taxi and load at 11:41, lineup at 11:51."}],
+              [{"text":"Fuel required is 470 lb."}],
+              [{"text":"Departure: ALDERAAN, takeoff 11:56:32, heading 030°, 2,500 ft MSL, 120 KIAS. Lighting: "},{"writeIn":"vi","label":"Lighting"},{"text":"."}],
+              [{"writeIn":"vii","label":"REDCON-1 procedures"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.c@route:set-opdk/r-alderaan",
+            "number": "4.c",
+            "title": "Enroute sequence · ALDERAAN",
+            "who": "Flight lead",
+            "sections": ["4.c"],
+            "ref": "route:set-opdk/r-alderaan",
+            "role": null,
+            "page": 6,
+            "figure": {"kind":"route","ref":"route:set-opdk/r-alderaan","bounds":[[33.84649,-84.5627],[34.66981,-84.0059]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "facts": [
+              {"key":"route.distance","label":"DISTANCE","value":"51.4 nm"},
+              {"key":"route.time","label":"TIME","value":"0+29+22"},
+              {"key":"route.start","label":"START","value":"11:56:32"},
+              {"key":"route.end","label":"END","value":"12:25:54"}
+            ],
+            "items": [
+              {
+                "id": "4.c.i",
+                "key": "4.c.i@route:set-opdk/r-alderaan",
+                "label": "Route overview",
+                "kind": "note",
+                "source": "plan",
+                "text": "3MILE to TRACK 030° 16.3 nm 0+07+19; TRACK to S-EP 028° 11.6 nm 0+06+16; S-EP to ACP2 029° 12.3 nm 0+06+42; ACP2 to RP1 027° 5.4 nm 0+02+56; RP1 to BLUEBIRD 035° 1.5 nm 0+01+18; BLUEBIRD to HAWK 223° 4.2 nm 0+04+51",
+                "writeIn": false
+              },
+              {
+                "id": "4.c.ii",
+                "key": "4.c.ii@route:set-opdk/r-alderaan",
+                "label": "Airspeed",
+                "kind": "text",
+                "source": "plan",
+                "text": "120 KIAS (3MILE to TRACK), 100 KIAS (TRACK to RP1), 60 KIAS (RP1 to HAWK)",
+                "writeIn": false
+              },
+              {"id":"4.c.iii","key":"4.c.iii@route:set-opdk/r-alderaan","label":"Altitude","kind":"text","source":"plan","text":"2,500 ft MSL (3MILE to TRACK), 50 ft AGL (TRACK to HAWK)","writeIn":false},
+              {"id":"4.c.iv","key":"4.c.iv@route:set-opdk/r-alderaan","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.c.v","key":"4.c.v@route:set-opdk/r-alderaan","label":"Formations and separation","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {
+                  "text": "ALDERAAN: 3MILE to TRACK 030° 16.3 nm 0+07+19; TRACK to S-EP 028° 11.6 nm 0+06+16; S-EP to ACP2 029° 12.3 nm 0+06+42; ACP2 to RP1 027° 5.4 nm 0+02+56; RP1 to BLUEBIRD 035° 1.5 nm 0+01+18; BLUEBIRD to HAWK 223° 4.2 nm 0+04+51"
+                }
+              ],
+              [{"text":"Airspeed 120 KIAS (3MILE to TRACK), 100 KIAS (TRACK to RP1), 60 KIAS (RP1 to HAWK); altitude 2,500 ft MSL (3MILE to TRACK), 50 ft AGL (TRACK to HAWK)."}],
+              [{"text":"Lighting "},{"writeIn":"iv","label":"Lighting"},{"text":". Formation and separation: "},{"writeIn":"v","label":"Formations and separation"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.e@lz:lz-hawk",
+            "number": "4.e",
+            "title": "Landing sequence · LZ HAWK",
+            "who": "Flight lead",
+            "sections": ["4.e"],
+            "ref": "lz:lz-hawk",
+            "role": "LZ",
+            "page": 7,
+            "figure": {
+              "kind": "stop",
+              "ref": "lz:lz-hawk",
+              "bounds": [[34.54540506647503,-84.11547201723347],[34.554794933524974,-84.10492798276654]],
+              "routes": ["route:set-opdk/r-alderaan"],
+              "stops": ["lz:lz-hawk"],
+              "rallyPoints": []
+            },
+            "facts": [
+              {"key":"stop.elevation","label":"ELEV","value":"2,230 ft MSL"},
+              {"key":"stop.landingHeading","label":"LAND","value":"203°"},
+              {"key":"stop.takeoffHeading","label":"T/O","value":"157°"},
+              {"key":"stop.goAround","label":"GO-AROUND","value":"right"},
+              {"key":"stop.arrive","label":"ARRIVE","value":"12:25:54"},
+              {"key":"stop.slope","label":"SLOPE","value":null}
+            ],
+            "items": [
+              {"id":"4.e.i","key":"4.e.i@lz:lz-hawk","label":"Location","kind":"text","source":"plan","text":"16S GD 59833 44327","writeIn":false},
+              {"id":"4.e.ii","key":"4.e.ii@lz:lz-hawk","label":"Formation","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iii","key":"4.e.iii@lz:lz-hawk","label":"Performance planning","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iv","key":"4.e.iv@lz:lz-hawk","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Inbound from BLUEBIRD at 12:21:03, 60 KIAS, 4.2 nm, 0+04+51."}],
+              [{"text":"LZ HAWK is 16S GD 59833 44327 at 2,230 ft MSL. Landing 203° in "},{"writeIn":"ii","label":"Formation"},{"text":"."}],
+              [{"text":"Go-around is right. Takeoff 157°."}],
+              [{"text":"Performance planning: "},{"writeIn":"iii","label":"Performance planning"},{"text":". Lighting: "},{"writeIn":"iv","label":"Lighting"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "5.a",
+            "number": "5.a",
+            "title": "Contingencies",
+            "who": "AMC",
+            "sections": ["5.a"],
+            "ref": null,
+            "role": null,
+            "page": 8,
+            "figure": {"kind":"rally","ref":null,"bounds":[[33.84649,-84.5627],[34.66981,-84.0059]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "facts": [{"key":"rally.points","label":"RALLY","value":null}],
+            "items": [
+              {"id":"5.a.i","key":"5.a.i","label":"Lead change procedures","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.ii","key":"5.a.ii","label":"Lost communication procedures","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.iii","key":"5.a.iii","label":"Loss of visual contact (in-flight link-up and rally points)","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.iv","key":"5.a.iv","label":"Actions on contact","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "5.a.v",
+                "key": "5.a.v",
+                "label": "IIMC",
+                "kind": "procedure",
+                "source": "standard",
+                "text": "IIMC: announce it with your chalk and heading, go to instruments, never descend. Base altitude ________, adjusted 500 feet for each subsequent chalk; base heading ________, plus 10 degrees times your chalk number to the clear side; base airspeed ________, less 10 knots for subsequent chalks. Contact the controlling agency. Recovery is ________.",
+                "writeIn": false
+              },
+              {"id":"5.a.vi","key":"5.a.vi","label":"Downed aircraft plan","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.vii","key":"5.a.vii","label":"Bump plan","kind":"procedure","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Contingencies."}],
+              [{"writeIn":"i","label":"Lead change procedures"}],
+              [{"writeIn":"ii","label":"Lost communication procedures"}],
+              [{"writeIn":"iii","label":"Loss of visual contact (in-flight link-up and rally points)"}],
+              [{"writeIn":"iv","label":"Actions on contact"}],
+              [
+                {"text":"IIMC: announce it with your chalk and heading, go to instruments, never descend. Base altitude "},
+                {"writeIn":"field:baseAltitude","label":"Base altitude"},
+                {"text":", adjusted 500 feet for each subsequent chalk; base heading "},
+                {"writeIn":"field:baseHeading","label":"Base heading"},
+                {"text":", plus 10 degrees times your chalk number to the clear side; base airspeed "},
+                {"writeIn":"field:baseAirspeed","label":"Base airspeed"},
+                {"text":", less 10 knots for subsequent chalks. Contact the controlling agency. Recovery is "},
+                {"writeIn":"field:recovery","label":"Recovery airfield and approach"},
+                {"text":"."}
+              ],
+              [{"writeIn":"vi","label":"Downed aircraft plan"}],
+              [{"text":"Bump plan: "},{"writeIn":"vii","label":"Bump plan"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "5.b",
+            "number": "5.b",
+            "title": "Coordinating instructions",
+            "who": "AMC",
+            "sections": ["5.b"],
+            "ref": null,
+            "role": null,
+            "page": 9,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"5.b.i","key":"5.b.i","label":"Aircraft configuration (seats, external loads)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.ii","key":"5.b.ii","label":"Special equipment (VIP, headsets, seats, doors)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.iii","key":"5.b.iii","label":"EFB updated with current data and charged","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.iv","key":"5.b.iv","label":"Abort criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.v","key":"5.b.v","label":"Flight plan","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.vi","key":"5.b.vi","label":"RCOP completed and turned in to flight ops","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.vii","key":"5.b.vii","label":"Performance planning cards complete","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.viii","key":"5.b.viii","label":"Safety considerations","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"Aircraft configuration: "},
+                {"writeIn":"i","label":"Aircraft configuration (seats, external loads)"},
+                {"text":". Special equipment: "},
+                {"writeIn":"ii","label":"Special equipment (VIP, headsets, seats, doors)"},
+                {"text":"."}
+              ],
+              [
+                {"text":"EFBs: "},
+                {"writeIn":"iii","label":"EFB updated with current data and charged"},
+                {"text":". Abort criteria: "},
+                {"writeIn":"iv","label":"Abort criteria"},
+                {"text":". Flight plan: "},
+                {"writeIn":"v","label":"Flight plan"},
+                {"text":"."}
+              ],
+              [
+                {"text":"RCOP: "},
+                {"writeIn":"vi","label":"RCOP completed and turned in to flight ops"},
+                {"text":". Performance planning cards: "},
+                {"writeIn":"vii","label":"Performance planning cards complete"},
+                {"text":"."}
+              ],
+              [{"text":"Safety: "},{"writeIn":"viii","label":"Safety considerations"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "6",
+            "number": "6",
+            "title": "Command and signal",
+            "who": "AMC",
+            "sections": ["6"],
+            "ref": null,
+            "role": null,
+            "page": 10,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"6.a","key":"6.a","label":"Command (aviation succession of command)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.i","key":"6.b.i","label":"Internal frequencies (PACE)","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.ii","key":"6.b.ii","label":"COMSEC changeover, current commo card, SKL location","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.iii","key":"6.b.iii","label":"Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Succession of command: "},{"writeIn":"a","label":"Command (aviation succession of command)"},{"text":"."}],
+              [{"text":"Internal frequencies: "},{"writeIn":"b.i","label":"Internal frequencies (PACE)"}],
+              [{"text":"COMSEC: "},{"writeIn":"b.ii","label":"COMSEC changeover, current commo card, SKL location"},{"text":"."}],
+              [{"text":"Crew assignments: "},{"writeIn":"b.iii","label":"Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "7",
+            "number": "7",
+            "title": "Mission AAR time and location",
+            "who": "AMC",
+            "sections": ["7"],
+            "ref": null,
+            "role": null,
+            "page": 11,
+            "figure": {"kind":"overview","ref":null,"bounds":[[33.84649,-84.5627],[34.66981,-84.0059]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "facts": [{"key":"arrival.point","label":"ARRIVE","value":"HAWK"},{"key":"arrival.time","label":"RETURN","value":"12:25:54"}],
+            "items": [
+              {"id":"7.a","key":"7.a","label":"Time","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"7.b","key":"7.b","label":"Location","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"We are back at HAWK at 12:25:54. The AAR is at "},{"writeIn":"a","label":"Time"},{"text":" at "},{"writeIn":"b","label":"Location"},{"text":"."}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "8",
+            "number": "8",
+            "title": "Questions",
+            "who": "AMC",
+            "sections": ["8"],
+            "ref": null,
+            "role": null,
+            "page": 12,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"8.a","key":"8.a","label":"Questions","kind":"info","source":"info","text":null,"writeIn":false}],
+            "script": [[{"text":"Questions?"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "9",
+            "number": "9",
+            "title": "Commander / AMC comments",
+            "who": "Commander / AMC",
+            "sections": ["9"],
+            "ref": null,
+            "role": null,
+            "page": 13,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"9.a","key":"9.a","label":"Comments","kind":"note","source":"blank","text":null,"writeIn":true}],
+            "script": [[{"writeIn":"a","label":"Comments"}]],
+            "scriptEdited": false
+          }
+        ],
+        "pages": [
+          {"n":1,"kind":"cover","stepId":"1"},
+          {"n":2,"kind":"step","stepId":"2"},
+          {"n":3,"kind":"step","stepId":"3"},
+          {"n":4,"kind":"step","stepId":"4.a"},
+          {"n":5,"kind":"step","stepId":"4.b"},
+          {"n":6,"kind":"step","stepId":"4.c@route:set-opdk/r-alderaan"},
+          {"n":7,"kind":"step","stepId":"4.e@lz:lz-hawk"},
+          {"n":8,"kind":"step","stepId":"5.a"},
+          {"n":9,"kind":"step","stepId":"5.b"},
+          {"n":10,"kind":"step","stepId":"6"},
+          {"n":11,"kind":"step","stepId":"7"},
+          {"n":12,"kind":"step","stepId":"8"},
+          {"n":13,"kind":"step","stepId":"9"}
+        ],
+        "problems": [{"ref":"lz:gone-lz","message":"This item is no longer in the plan."}]
+      }
+    },
+    {
+      "name": "an empty plan: every value a write-in, no light without a place",
+      "format": "amb",
+      "document": {},
+      "plan": {"name":""},
+      "context": {"generatedAt":"2026-10-16T03:30:00Z","utcOffsetMinutes":-240},
+      "expected": {
+        "format": "ezpz-brief-model",
+        "version": 1,
+        "template": {"id":"amb","version":1,"title":"Non-tactical multi-ship / air movement brief","shortTitle":"Air movement brief"},
+        "generatedAt": "2026-10-16T03:30:00Z",
+        "utcOffsetMinutes": -240,
+        "mission": {"name":"the mission","date":"15 Oct 2026","summary":"the flight."},
+        "options": {"script":true,"constants":true,"lzCards":true,"navLogs":true,"iimc":true,"writeIns":true},
+        "constants": [
+          {"id":"enrouteAirspeed","label":"Enroute airspeed","short":"ENROUTE","value":null,"source":"blank"},
+          {"id":"terrainFlightAirspeed","label":"Terrain flight airspeed","short":"TERRAIN FLT","value":null,"source":"blank"},
+          {"id":"rpInboundAirspeed","label":"RP inbound airspeed","short":"RP IN","value":null,"source":"blank"},
+          {"id":"spOutboundAirspeed","label":"SP outbound airspeed","short":"SP OUT","value":"60 KIAS","source":"standard"},
+          {"id":"goAround","label":"Go-around direction","short":"GO-AROUND","value":null,"source":"blank"},
+          {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
+        ],
+        "flow": [],
+        "steps": [
+          {
+            "id": "1",
+            "number": "1",
+            "title": "Roll call",
+            "who": "AMC",
+            "sections": ["1"],
+            "ref": null,
+            "role": null,
+            "page": 1,
+            "figure": {"kind":"overview","ref":null,"bounds":null,"routes":[],"stops":[],"rallyPoints":[]},
+            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":null},{"key":"packet.pages","label":"PAGES","value":"11"}],
+            "items": [
+              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"brief 1–11","writeIn":false},
+              {"id":"1.b","key":"1.b","label":"Mission risk level","kind":"choice","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"This is the air movement brief for the mission: the flight."}],
+              [{"text":"Check you have all 11 pages: brief 1–11."}],
+              [{"text":"Mission risk level is "},{"writeIn":"b","label":"Mission risk level"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "2",
+            "number": "2",
+            "title": "Situation",
+            "who": "AMC",
+            "sections": ["2"],
+            "ref": null,
+            "role": null,
+            "page": 2,
+            "figure": {"kind":"overview","ref":null,"bounds":null,"routes":[],"stops":[],"rallyPoints":[]},
+            "facts": [
+              {"key":"weather.departure","label":"WX TAKEOFF","value":null},
+              {"key":"light.sunset","label":"SUNSET","value":null},
+              {"key":"light.illumination","label":"ILLUM","value":null},
+              {"key":"threats.summary","label":"THREATS","value":"None in the plan."}
+            ],
+            "items": [
+              {"id":"2.a","key":"2.a","label":"Weather conditions at takeoff, enroute and arrival","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"2.b","key":"2.b","label":"Minimum weather","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.c","key":"2.c","label":"Light data","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.d","key":"2.d","label":"Weather update time and responsibility","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.e","key":"2.e","label":"Mission abort time and criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.f","key":"2.f","label":"NOTAMs","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Weather: "},{"writeIn":"a","label":"Weather conditions at takeoff, enroute and arrival"}],
+              [{"text":"Minimum weather is "},{"writeIn":"b","label":"Minimum weather"},{"text":"."}],
+              [{"text":"Light: "},{"writeIn":"c","label":"Light data"}],
+              [{"text":"Weather update: "},{"writeIn":"d","label":"Weather update time and responsibility"},{"text":". Mission abort: "},{"writeIn":"e","label":"Mission abort time and criteria"},{"text":"."}],
+              [{"text":"NOTAMs: "},{"writeIn":"f","label":"NOTAMs"}],
+              [{"text":"Threats: None in the plan."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "3",
+            "number": "3",
+            "title": "Mission and intent",
+            "who": "AMC",
+            "sections": ["3"],
+            "ref": null,
+            "role": null,
+            "page": 3,
+            "figure": {"kind":"overview","ref":null,"bounds":null,"routes":[],"stops":[],"rallyPoints":[]},
+            "facts": [],
+            "items": [
+              {"id":"3.a","key":"3.a","label":"Restate the mission","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"3.b","key":"3.b","label":"Commander's intent","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"3.c","key":"3.c","label":"CONOP brief","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"Mission: "},{"writeIn":"a","label":"Restate the mission"}],[{"text":"Intent: "},{"writeIn":"b","label":"Commander's intent"}],[{"text":"Concept: "},{"writeIn":"c","label":"CONOP brief"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.a",
+            "number": "4.a",
+            "title": "Timeline",
+            "who": "Flight lead",
+            "sections": ["4.a"],
+            "ref": null,
+            "role": null,
+            "page": 4,
+            "figure": {"kind":"overview","ref":null,"bounds":null,"routes":[],"stops":[],"rallyPoints":[]},
+            "facts": [],
+            "items": [{"id":"4.a.a","key":"4.a.a","label":"Timeline","kind":"list","source":"blank","text":null,"writeIn":true}],
+            "script": [[{"text":"Timeline: "},{"writeIn":"a","label":"Timeline"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.b",
+            "number": "4.b",
+            "title": "Departure sequence",
+            "who": "Flight lead",
+            "sections": ["4.b"],
+            "ref": null,
+            "role": null,
+            "page": 5,
+            "figure": {"kind":"departure","ref":null,"bounds":null,"routes":[],"stops":[],"rallyPoints":[]},
+            "facts": [{"key":"departure.point","label":"DEPART","value":null},{"key":"departure.time","label":"TAKEOFF","value":null}],
+            "items": [
+              {"id":"4.b.i","key":"4.b.i","label":"Commo check","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.ii","key":"4.b.ii","label":"Taxi / load","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.iii","key":"4.b.iii","label":"Lineup","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.iv","key":"4.b.iv","label":"Fuel required for the mission","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.v","key":"4.b.v","label":"Departure plan (route, takeoff time, heading, altitude, airspeed, formation)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.vi","key":"4.b.vi","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.vii","key":"4.b.vii","label":"REDCON-1 procedures","kind":"procedure","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"Commo check at "},
+                {"writeIn":"i","label":"Commo check"},
+                {"text":", taxi and load at "},
+                {"writeIn":"ii","label":"Taxi / load"},
+                {"text":", lineup at "},
+                {"writeIn":"iii","label":"Lineup"},
+                {"text":"."}
+              ],
+              [{"text":"Fuel required is "},{"writeIn":"iv","label":"Fuel required for the mission"},{"text":"."}],
+              [{"text":"Departure: "},{"writeIn":"v","label":"Departure plan (route, takeoff time, heading, altitude, airspeed, formation)"},{"text":". Lighting: "},{"writeIn":"vi","label":"Lighting"},{"text":"."}],
+              [{"writeIn":"vii","label":"REDCON-1 procedures"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "5.a",
+            "number": "5.a",
+            "title": "Contingencies",
+            "who": "AMC",
+            "sections": ["5.a"],
+            "ref": null,
+            "role": null,
+            "page": 6,
+            "figure": {"kind":"rally","ref":null,"bounds":null,"routes":[],"stops":[],"rallyPoints":[]},
+            "facts": [{"key":"rally.points","label":"RALLY","value":null}],
+            "items": [
+              {"id":"5.a.i","key":"5.a.i","label":"Lead change procedures","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.ii","key":"5.a.ii","label":"Lost communication procedures","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.iii","key":"5.a.iii","label":"Loss of visual contact (in-flight link-up and rally points)","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.iv","key":"5.a.iv","label":"Actions on contact","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.v","key":"5.a.v","label":"IIMC","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.vi","key":"5.a.vi","label":"Downed aircraft plan","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.vii","key":"5.a.vii","label":"Bump plan","kind":"procedure","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Contingencies."}],
+              [{"writeIn":"i","label":"Lead change procedures"}],
+              [{"writeIn":"ii","label":"Lost communication procedures"}],
+              [{"writeIn":"iii","label":"Loss of visual contact (in-flight link-up and rally points)"}],
+              [{"writeIn":"iv","label":"Actions on contact"}],
+              [{"writeIn":"v","label":"IIMC"}],
+              [{"writeIn":"vi","label":"Downed aircraft plan"}],
+              [{"text":"Bump plan: "},{"writeIn":"vii","label":"Bump plan"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "5.b",
+            "number": "5.b",
+            "title": "Coordinating instructions",
+            "who": "AMC",
+            "sections": ["5.b"],
+            "ref": null,
+            "role": null,
+            "page": 7,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"5.b.i","key":"5.b.i","label":"Aircraft configuration (seats, external loads)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.ii","key":"5.b.ii","label":"Special equipment (VIP, headsets, seats, doors)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.iii","key":"5.b.iii","label":"EFB updated with current data and charged","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.iv","key":"5.b.iv","label":"Abort criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.v","key":"5.b.v","label":"Flight plan","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.vi","key":"5.b.vi","label":"RCOP completed and turned in to flight ops","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.vii","key":"5.b.vii","label":"Performance planning cards complete","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.viii","key":"5.b.viii","label":"Safety considerations","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"Aircraft configuration: "},
+                {"writeIn":"i","label":"Aircraft configuration (seats, external loads)"},
+                {"text":". Special equipment: "},
+                {"writeIn":"ii","label":"Special equipment (VIP, headsets, seats, doors)"},
+                {"text":"."}
+              ],
+              [
+                {"text":"EFBs: "},
+                {"writeIn":"iii","label":"EFB updated with current data and charged"},
+                {"text":". Abort criteria: "},
+                {"writeIn":"iv","label":"Abort criteria"},
+                {"text":". Flight plan: "},
+                {"writeIn":"v","label":"Flight plan"},
+                {"text":"."}
+              ],
+              [
+                {"text":"RCOP: "},
+                {"writeIn":"vi","label":"RCOP completed and turned in to flight ops"},
+                {"text":". Performance planning cards: "},
+                {"writeIn":"vii","label":"Performance planning cards complete"},
+                {"text":"."}
+              ],
+              [{"text":"Safety: "},{"writeIn":"viii","label":"Safety considerations"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "6",
+            "number": "6",
+            "title": "Command and signal",
+            "who": "AMC",
+            "sections": ["6"],
+            "ref": null,
+            "role": null,
+            "page": 8,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"6.a","key":"6.a","label":"Command (aviation succession of command)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.i","key":"6.b.i","label":"Internal frequencies (PACE)","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.ii","key":"6.b.ii","label":"COMSEC changeover, current commo card, SKL location","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.iii","key":"6.b.iii","label":"Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Succession of command: "},{"writeIn":"a","label":"Command (aviation succession of command)"},{"text":"."}],
+              [{"text":"Internal frequencies: "},{"writeIn":"b.i","label":"Internal frequencies (PACE)"}],
+              [{"text":"COMSEC: "},{"writeIn":"b.ii","label":"COMSEC changeover, current commo card, SKL location"},{"text":"."}],
+              [{"text":"Crew assignments: "},{"writeIn":"b.iii","label":"Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "7",
+            "number": "7",
+            "title": "Mission AAR time and location",
+            "who": "AMC",
+            "sections": ["7"],
+            "ref": null,
+            "role": null,
+            "page": 9,
+            "figure": {"kind":"overview","ref":null,"bounds":null,"routes":[],"stops":[],"rallyPoints":[]},
+            "facts": [{"key":"arrival.point","label":"ARRIVE","value":null},{"key":"arrival.time","label":"RETURN","value":null}],
+            "items": [
+              {"id":"7.a","key":"7.a","label":"Time","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"7.b","key":"7.b","label":"Location","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"We are back at "},
+                {"writeIn":"bind:arrival.point","label":"ARRIVE"},
+                {"text":" at "},
+                {"writeIn":"bind:arrival.time","label":"RETURN"},
+                {"text":". The AAR is at "},
+                {"writeIn":"a","label":"Time"},
+                {"text":" at "},
+                {"writeIn":"b","label":"Location"},
+                {"text":"."}
+              ]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "8",
+            "number": "8",
+            "title": "Questions",
+            "who": "AMC",
+            "sections": ["8"],
+            "ref": null,
+            "role": null,
+            "page": 10,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"8.a","key":"8.a","label":"Questions","kind":"info","source":"info","text":null,"writeIn":false}],
+            "script": [[{"text":"Questions?"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "9",
+            "number": "9",
+            "title": "Commander / AMC comments",
+            "who": "Commander / AMC",
+            "sections": ["9"],
+            "ref": null,
+            "role": null,
+            "page": 11,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"9.a","key":"9.a","label":"Comments","kind":"note","source":"blank","text":null,"writeIn":true}],
+            "script": [[{"writeIn":"a","label":"Comments"}]],
+            "scriptEdited": false
+          }
+        ],
+        "pages": [
+          {"n":1,"kind":"cover","stepId":"1"},
+          {"n":2,"kind":"step","stepId":"2"},
+          {"n":3,"kind":"step","stepId":"3"},
+          {"n":4,"kind":"step","stepId":"4.a"},
+          {"n":5,"kind":"step","stepId":"4.b"},
+          {"n":6,"kind":"step","stepId":"5.a"},
+          {"n":7,"kind":"step","stepId":"5.b"},
+          {"n":8,"kind":"step","stepId":"6"},
+          {"n":9,"kind":"step","stepId":"7"},
+          {"n":10,"kind":"step","stepId":"8"},
+          {"n":11,"kind":"step","stepId":"9"}
+        ],
+        "problems": []
+      }
+    },
+    {
+      "name": "a route with one named point, and an LZ no route reaches",
+      "format": "amb",
+      "document": {},
+      "plan": {
+        "name": "SHORT",
+        "lzs": [
+          {
+            "id": "lone",
+            "diagram": {
+              "schemaVersion": 2,
+              "name": "LZ LONE",
+              "target": {"lat":35,"lon":-85,"mgrs":""},
+              "flightData": {},
+              "analysis": {"customLZ":null,"detectedLZ":[[34.999,-85.001],[35.001,-85.001],[35.001,-84.999]],"results":{"status":"success"},"gridElevation":"900","latLong":""},
+              "graphics": {"doghouses":[],"helicopters":[],"pzMarkers":[],"sectorsOfFire":[],"goArounds":[],"units":[]}
+            }
+          }
+        ],
+        "routeSets": [
+          {
+            "id": "s",
+            "name": "S",
+            "data": {
+              "version": 1,
+              "routes": [
+                {
+                  "id": "one",
+                  "name": "ONE",
+                  "color": "#0A84FF",
+                  "visible": true,
+                  "points": [{"id":"x1","name":"ONLY","ptType":"ip","kind":"amps","lat":34,"lon":-84},{"id":"x2","kind":"shaping","ptType":null,"name":"","lat":34.1,"lon":-84.1}],
+                  "plan": {
+                    "aircraft": "UH-60L Black Hawk",
+                    "aircraftProfile": "uh60l",
+                    "airspeed": {"value":120,"type":"indicated"},
+                    "altitude": {"value":2500,"ref":"msl"},
+                    "wind": {"dirTrue":270,"speedKts":15},
+                    "tempC": 14,
+                    "fuelFlowLbHr": 960,
+                    "date": "2026-10-16",
+                    "perPoint": {"b1":{"clock":"16:02:57"},"b3":{"airspeed":{"value":60,"type":"indicated"},"altitude":{"value":50,"ref":"agl"}}}
+                  },
+                  "elevations": {}
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "context": {
+        "generatedAt": "2026-10-16T18:02:00Z",
+        "utcOffsetMinutes": -240,
+        "weather": {
+          "departure": {"station_id":"KMGE","raw_metar":"KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002","pressure":30.02,"kind":"observation"},
+          "arrival": {"station_id":"KMGE","raw_taf":"FM161600 27010KT P6SM SCT050","kind":"forecast"},
+          "stops": {"lz-hawk":{"station_id":"KJZP","raw_metar":"KJZP 161553Z 24006KT 10SM CLR 17/08 A3001","wind_spd_kts":6,"wind_dir":240}}
+        },
+        "notams": {"Obstruction":["!FDC 6/1234 CRANE 340FT AGL 3NM N","!FDC 6/2222 TOWER LGT OTS"],"Airspace":["!ZTL 10/044 TFR"]}
+      },
+      "expected": {
+        "format": "ezpz-brief-model",
+        "version": 1,
+        "template": {"id":"amb","version":1,"title":"Non-tactical multi-ship / air movement brief","shortTitle":"Air movement brief"},
+        "generatedAt": "2026-10-16T18:02:00Z",
+        "utcOffsetMinutes": -240,
+        "mission": {"name":"SHORT","date":"16 Oct 2026","summary":"the flight to LZ LONE."},
+        "options": {"script":true,"constants":true,"lzCards":true,"navLogs":true,"iimc":true,"writeIns":true},
+        "constants": [
+          {"id":"enrouteAirspeed","label":"Enroute airspeed","short":"ENROUTE","value":null,"source":"blank"},
+          {"id":"terrainFlightAirspeed","label":"Terrain flight airspeed","short":"TERRAIN FLT","value":null,"source":"blank"},
+          {"id":"rpInboundAirspeed","label":"RP inbound airspeed","short":"RP IN","value":null,"source":"blank"},
+          {"id":"spOutboundAirspeed","label":"SP outbound airspeed","short":"SP OUT","value":"60 KIAS","source":"standard"},
+          {"id":"goAround","label":"Go-around direction","short":"GO-AROUND","value":null,"source":"blank"},
+          {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
+        ],
+        "flow": [{"ref":"route:s/one","kind":"route","name":"ONE","start":null,"end":null},{"ref":"lz:lone","kind":"stop","role":"LZ","name":"LZ LONE","arrive":null,"grid":"16S FD 82516 74870"}],
+        "steps": [
+          {
+            "id": "1",
+            "number": "1",
+            "title": "Roll call",
+            "who": "AMC",
+            "sections": ["1"],
+            "ref": null,
+            "role": null,
+            "page": 1,
+            "figure": {"kind":"overview","ref":null,"bounds":[[34.998,-85.002],[35.002,-84.998]],"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":null},{"key":"packet.pages","label":"PAGES","value":"15"}],
+            "items": [
+              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"brief 1–13, LZ/PZ cards 14, nav logs 15","writeIn":false},
+              {"id":"1.b","key":"1.b","label":"Mission risk level","kind":"choice","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"This is the air movement brief for SHORT: the flight to LZ LONE."}],
+              [{"text":"Check you have all 15 pages: brief 1–13, LZ/PZ cards 14, nav logs 15."}],
+              [{"text":"Mission risk level is "},{"writeIn":"b","label":"Mission risk level"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "2",
+            "number": "2",
+            "title": "Situation",
+            "who": "AMC",
+            "sections": ["2"],
+            "ref": null,
+            "role": null,
+            "page": 2,
+            "figure": {"kind":"overview","ref":null,"bounds":[[34.998,-85.002],[35.002,-84.998]],"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [
+              {"key":"weather.departure","label":"WX TAKEOFF","value":"KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002"},
+              {"key":"light.sunset","label":"SUNSET","value":"19:04"},
+              {"key":"light.illumination","label":"ILLUM","value":"32%"},
+              {"key":"threats.summary","label":"THREATS","value":"None in the plan."}
+            ],
+            "items": [
+              {
+                "id": "2.a",
+                "key": "2.a",
+                "label": "Weather conditions at takeoff, enroute and arrival",
+                "kind": "note",
+                "source": "plan",
+                "text": "Takeoff: KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002. Arrival: Forecast FM161600 27010KT P6SM SCT050.",
+                "writeIn": false
+              },
+              {"id":"2.b","key":"2.b","label":"Minimum weather","kind":"text","source":"blank","text":null,"writeIn":true},
+              {
+                "id": "2.c",
+                "key": "2.c",
+                "label": "Light data",
+                "kind": "text",
+                "source": "plan",
+                "text": "BMNT 06:52, sunrise 07:47, sunset 19:04, EENT 19:59, moonrise 13:36, moonset 23:04, illumination 32%.",
+                "writeIn": false
+              },
+              {"id":"2.d","key":"2.d","label":"Weather update time and responsibility","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.e","key":"2.e","label":"Mission abort time and criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"2.f","key":"2.f","label":"NOTAMs","kind":"note","source":"plan","text":"3 NOTAMs: 2 obstruction, 1 airspace.","writeIn":false}
+            ],
+            "script": [
+              [{"text":"Weather: Takeoff: KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002. Arrival: Forecast FM161600 27010KT P6SM SCT050."}],
+              [{"text":"Minimum weather is "},{"writeIn":"b","label":"Minimum weather"},{"text":"."}],
+              [{"text":"Light: BMNT 06:52, sunrise 07:47, sunset 19:04, EENT 19:59, moonrise 13:36, moonset 23:04, illumination 32%."}],
+              [{"text":"Weather update: "},{"writeIn":"d","label":"Weather update time and responsibility"},{"text":". Mission abort: "},{"writeIn":"e","label":"Mission abort time and criteria"},{"text":"."}],
+              [{"text":"NOTAMs: 3 NOTAMs: 2 obstruction, 1 airspace."}],
+              [{"text":"Threats: None in the plan."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "3",
+            "number": "3",
+            "title": "Mission and intent",
+            "who": "AMC",
+            "sections": ["3"],
+            "ref": null,
+            "role": null,
+            "page": 3,
+            "figure": {"kind":"overview","ref":null,"bounds":[[34.998,-85.002],[35.002,-84.998]],"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [],
+            "items": [
+              {"id":"3.a","key":"3.a","label":"Restate the mission","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"3.b","key":"3.b","label":"Commander's intent","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"3.c","key":"3.c","label":"CONOP brief","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [[{"text":"Mission: "},{"writeIn":"a","label":"Restate the mission"}],[{"text":"Intent: "},{"writeIn":"b","label":"Commander's intent"}],[{"text":"Concept: "},{"writeIn":"c","label":"CONOP brief"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.a",
+            "number": "4.a",
+            "title": "Timeline",
+            "who": "Flight lead",
+            "sections": ["4.a"],
+            "ref": null,
+            "role": null,
+            "page": 4,
+            "figure": {"kind":"overview","ref":null,"bounds":[[34.998,-85.002],[35.002,-84.998]],"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [],
+            "items": [{"id":"4.a.a","key":"4.a.a","label":"Timeline","kind":"list","source":"plan","text":"ONE; LZ LONE","writeIn":false}],
+            "script": [[{"text":"Timeline: ONE; LZ LONE"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.b",
+            "number": "4.b",
+            "title": "Departure sequence",
+            "who": "Flight lead",
+            "sections": ["4.b"],
+            "ref": null,
+            "role": null,
+            "page": 5,
+            "figure": {"kind":"departure","ref":null,"bounds":null,"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [{"key":"departure.point","label":"DEPART","value":null},{"key":"departure.time","label":"TAKEOFF","value":null}],
+            "items": [
+              {"id":"4.b.i","key":"4.b.i","label":"Commo check","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.ii","key":"4.b.ii","label":"Taxi / load","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.iii","key":"4.b.iii","label":"Lineup","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.iv","key":"4.b.iv","label":"Fuel required for the mission","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.v","key":"4.b.v","label":"Departure plan (route, takeoff time, heading, altitude, airspeed, formation)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.vi","key":"4.b.vi","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.b.vii","key":"4.b.vii","label":"REDCON-1 procedures","kind":"procedure","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"Commo check at "},
+                {"writeIn":"i","label":"Commo check"},
+                {"text":", taxi and load at "},
+                {"writeIn":"ii","label":"Taxi / load"},
+                {"text":", lineup at "},
+                {"writeIn":"iii","label":"Lineup"},
+                {"text":"."}
+              ],
+              [{"text":"Fuel required is "},{"writeIn":"iv","label":"Fuel required for the mission"},{"text":"."}],
+              [{"text":"Departure: "},{"writeIn":"v","label":"Departure plan (route, takeoff time, heading, altitude, airspeed, formation)"},{"text":". Lighting: "},{"writeIn":"vi","label":"Lighting"},{"text":"."}],
+              [{"writeIn":"vii","label":"REDCON-1 procedures"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.c@route:s/one",
+            "number": "4.c",
+            "title": "Enroute sequence · ONE",
+            "who": "Flight lead",
+            "sections": ["4.c"],
+            "ref": "route:s/one",
+            "role": null,
+            "page": 6,
+            "figure": {"kind":"route","ref":"route:s/one","bounds":null,"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [
+              {"key":"route.distance","label":"DISTANCE","value":null},
+              {"key":"route.time","label":"TIME","value":null},
+              {"key":"route.start","label":"START","value":null},
+              {"key":"route.end","label":"END","value":null}
+            ],
+            "items": [
+              {"id":"4.c.i","key":"4.c.i@route:s/one","label":"Route overview","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"4.c.ii","key":"4.c.ii@route:s/one","label":"Airspeed","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.c.iii","key":"4.c.iii@route:s/one","label":"Altitude","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.c.iv","key":"4.c.iv@route:s/one","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.c.v","key":"4.c.v@route:s/one","label":"Formations and separation","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"ONE: "},{"writeIn":"i","label":"Route overview"}],
+              [{"text":"Airspeed "},{"writeIn":"ii","label":"Airspeed"},{"text":"; altitude "},{"writeIn":"iii","label":"Altitude"},{"text":"."}],
+              [{"text":"Lighting "},{"writeIn":"iv","label":"Lighting"},{"text":". Formation and separation: "},{"writeIn":"v","label":"Formations and separation"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "4.e@lz:lone",
+            "number": "4.e",
+            "title": "Landing sequence · LZ LONE",
+            "who": "Flight lead",
+            "sections": ["4.e"],
+            "ref": "lz:lone",
+            "role": "LZ",
+            "page": 7,
+            "figure": {"kind":"stop","ref":"lz:lone","bounds":[[34.99530506647503,-85.00528990636569],[35.00469493352497,-84.99471009363431]],"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [
+              {"key":"stop.elevation","label":"ELEV","value":"900 ft MSL"},
+              {"key":"stop.landingHeading","label":"LAND","value":null},
+              {"key":"stop.takeoffHeading","label":"T/O","value":null},
+              {"key":"stop.goAround","label":"GO-AROUND","value":null},
+              {"key":"stop.arrive","label":"ARRIVE","value":null},
+              {"key":"stop.slope","label":"SLOPE","value":null}
+            ],
+            "items": [
+              {"id":"4.e.i","key":"4.e.i@lz:lone","label":"Location","kind":"text","source":"plan","text":"16S FD 82516 74870","writeIn":false},
+              {"id":"4.e.ii","key":"4.e.ii@lz:lone","label":"Formation","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iii","key":"4.e.iii@lz:lone","label":"Performance planning","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"4.e.iv","key":"4.e.iv@lz:lone","label":"Lighting","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Inbound "},{"writeIn":"bind:stop.inbound","label":"INBOUND"},{"text":"."}],
+              [{"text":"LZ LONE is 16S FD 82516 74870 at 900 ft MSL. Landing "},{"writeIn":"bind:stop.landingHeading","label":"LAND"},{"text":" in "},{"writeIn":"ii","label":"Formation"},{"text":"."}],
+              [{"text":"Go-around is "},{"writeIn":"bind:stop.goAround","label":"GO-AROUND"},{"text":". Takeoff "},{"writeIn":"bind:stop.takeoffHeading","label":"T/O"},{"text":"."}],
+              [{"text":"Performance planning: "},{"writeIn":"iii","label":"Performance planning"},{"text":". Lighting: "},{"writeIn":"iv","label":"Lighting"},{"text":"."}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "5.a",
+            "number": "5.a",
+            "title": "Contingencies",
+            "who": "AMC",
+            "sections": ["5.a"],
+            "ref": null,
+            "role": null,
+            "page": 8,
+            "figure": {"kind":"rally","ref":null,"bounds":[[34.998,-85.002],[35.002,-84.998]],"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [{"key":"rally.points","label":"RALLY","value":null}],
+            "items": [
+              {"id":"5.a.i","key":"5.a.i","label":"Lead change procedures","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.ii","key":"5.a.ii","label":"Lost communication procedures","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.iii","key":"5.a.iii","label":"Loss of visual contact (in-flight link-up and rally points)","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.iv","key":"5.a.iv","label":"Actions on contact","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.v","key":"5.a.v","label":"IIMC","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.vi","key":"5.a.vi","label":"Downed aircraft plan","kind":"procedure","source":"blank","text":null,"writeIn":true},
+              {"id":"5.a.vii","key":"5.a.vii","label":"Bump plan","kind":"procedure","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Contingencies."}],
+              [{"writeIn":"i","label":"Lead change procedures"}],
+              [{"writeIn":"ii","label":"Lost communication procedures"}],
+              [{"writeIn":"iii","label":"Loss of visual contact (in-flight link-up and rally points)"}],
+              [{"writeIn":"iv","label":"Actions on contact"}],
+              [{"writeIn":"v","label":"IIMC"}],
+              [{"writeIn":"vi","label":"Downed aircraft plan"}],
+              [{"text":"Bump plan: "},{"writeIn":"vii","label":"Bump plan"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "5.b",
+            "number": "5.b",
+            "title": "Coordinating instructions",
+            "who": "AMC",
+            "sections": ["5.b"],
+            "ref": null,
+            "role": null,
+            "page": 9,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"5.b.i","key":"5.b.i","label":"Aircraft configuration (seats, external loads)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.ii","key":"5.b.ii","label":"Special equipment (VIP, headsets, seats, doors)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.iii","key":"5.b.iii","label":"EFB updated with current data and charged","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.iv","key":"5.b.iv","label":"Abort criteria","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.v","key":"5.b.v","label":"Flight plan","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.vi","key":"5.b.vi","label":"RCOP completed and turned in to flight ops","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.vii","key":"5.b.vii","label":"Performance planning cards complete","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"5.b.viii","key":"5.b.viii","label":"Safety considerations","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"Aircraft configuration: "},
+                {"writeIn":"i","label":"Aircraft configuration (seats, external loads)"},
+                {"text":". Special equipment: "},
+                {"writeIn":"ii","label":"Special equipment (VIP, headsets, seats, doors)"},
+                {"text":"."}
+              ],
+              [
+                {"text":"EFBs: "},
+                {"writeIn":"iii","label":"EFB updated with current data and charged"},
+                {"text":". Abort criteria: "},
+                {"writeIn":"iv","label":"Abort criteria"},
+                {"text":". Flight plan: "},
+                {"writeIn":"v","label":"Flight plan"},
+                {"text":"."}
+              ],
+              [
+                {"text":"RCOP: "},
+                {"writeIn":"vi","label":"RCOP completed and turned in to flight ops"},
+                {"text":". Performance planning cards: "},
+                {"writeIn":"vii","label":"Performance planning cards complete"},
+                {"text":"."}
+              ],
+              [{"text":"Safety: "},{"writeIn":"viii","label":"Safety considerations"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "6",
+            "number": "6",
+            "title": "Command and signal",
+            "who": "AMC",
+            "sections": ["6"],
+            "ref": null,
+            "role": null,
+            "page": 10,
+            "figure": null,
+            "facts": [],
+            "items": [
+              {"id":"6.a","key":"6.a","label":"Command (aviation succession of command)","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.i","key":"6.b.i","label":"Internal frequencies (PACE)","kind":"note","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.ii","key":"6.b.ii","label":"COMSEC changeover, current commo card, SKL location","kind":"text","source":"blank","text":null,"writeIn":true},
+              {"id":"6.b.iii","key":"6.b.iii","label":"Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)","kind":"note","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [{"text":"Succession of command: "},{"writeIn":"a","label":"Command (aviation succession of command)"},{"text":"."}],
+              [{"text":"Internal frequencies: "},{"writeIn":"b.i","label":"Internal frequencies (PACE)"}],
+              [{"text":"COMSEC: "},{"writeIn":"b.ii","label":"COMSEC changeover, current commo card, SKL location"},{"text":"."}],
+              [{"text":"Crew assignments: "},{"writeIn":"b.iii","label":"Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)"}]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "7",
+            "number": "7",
+            "title": "Mission AAR time and location",
+            "who": "AMC",
+            "sections": ["7"],
+            "ref": null,
+            "role": null,
+            "page": 11,
+            "figure": {"kind":"overview","ref":null,"bounds":[[34.998,-85.002],[35.002,-84.998]],"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "facts": [{"key":"arrival.point","label":"ARRIVE","value":"LZ LONE"},{"key":"arrival.time","label":"RETURN","value":null}],
+            "items": [
+              {"id":"7.a","key":"7.a","label":"Time","kind":"time","source":"blank","text":null,"writeIn":true},
+              {"id":"7.b","key":"7.b","label":"Location","kind":"text","source":"blank","text":null,"writeIn":true}
+            ],
+            "script": [
+              [
+                {"text":"We are back at LZ LONE at "},
+                {"writeIn":"bind:arrival.time","label":"RETURN"},
+                {"text":". The AAR is at "},
+                {"writeIn":"a","label":"Time"},
+                {"text":" at "},
+                {"writeIn":"b","label":"Location"},
+                {"text":"."}
+              ]
+            ],
+            "scriptEdited": false
+          },
+          {
+            "id": "8",
+            "number": "8",
+            "title": "Questions",
+            "who": "AMC",
+            "sections": ["8"],
+            "ref": null,
+            "role": null,
+            "page": 12,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"8.a","key":"8.a","label":"Questions","kind":"info","source":"info","text":null,"writeIn":false}],
+            "script": [[{"text":"Questions?"}]],
+            "scriptEdited": false
+          },
+          {
+            "id": "9",
+            "number": "9",
+            "title": "Commander / AMC comments",
+            "who": "Commander / AMC",
+            "sections": ["9"],
+            "ref": null,
+            "role": null,
+            "page": 13,
+            "figure": null,
+            "facts": [],
+            "items": [{"id":"9.a","key":"9.a","label":"Comments","kind":"note","source":"blank","text":null,"writeIn":true}],
+            "script": [[{"writeIn":"a","label":"Comments"}]],
+            "scriptEdited": false
+          }
+        ],
+        "pages": [
+          {"n":1,"kind":"cover","stepId":"1"},
+          {"n":2,"kind":"step","stepId":"2"},
+          {"n":3,"kind":"step","stepId":"3"},
+          {"n":4,"kind":"step","stepId":"4.a"},
+          {"n":5,"kind":"step","stepId":"4.b"},
+          {"n":6,"kind":"step","stepId":"4.c@route:s/one"},
+          {"n":7,"kind":"step","stepId":"4.e@lz:lone"},
+          {"n":8,"kind":"step","stepId":"5.a"},
+          {"n":9,"kind":"step","stepId":"5.b"},
+          {"n":10,"kind":"step","stepId":"6"},
+          {"n":11,"kind":"step","stepId":"7"},
+          {"n":12,"kind":"step","stepId":"8"},
+          {"n":13,"kind":"step","stepId":"9"},
+          {"n":14,"kind":"lzCard","ref":"lz:lone","title":"LZ card · LZ LONE"},
+          {"n":15,"kind":"navLog","ref":"route:s/one","title":"Nav log · ONE"}
+        ],
+        "problems": [{"ref":"route:s/one","message":"ONE needs at least two route points to be briefed."},{"ref":"lz:lone","message":"No route in the flow reaches LZ LONE before it, so it has no arrival time."}]
+      }
+    }
+  ]
+}

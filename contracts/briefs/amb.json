@@ -146,7 +146,7 @@
             { "id": "iv", "label": "Lighting", "kind": "text" }
           ],
           "script": [
-            "{bind:stop.inbound}",
+            "Inbound {bind:stop.inbound}.",
             "{bind:stop.name} is {i} at {bind:stop.elevation}. Landing {bind:stop.landingHeading} in {ii}.",
             "Go-around is {bind:stop.goAround}. Takeoff {bind:stop.takeoffHeading}.",
             "Performance planning: {iii}. Lighting: {iv}."

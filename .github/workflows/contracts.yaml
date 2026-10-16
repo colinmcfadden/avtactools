@@ -22,6 +22,9 @@ on:
       - "frontend/src/feature/msnxImport/**"
       - "frontend/src/feature/localPoints/**"
       - "frontend/src/feature/threats/**"
+      # The mission brief: its compiler and light data (brief/*.json) and the template copies held to contracts/briefs.
+      - "frontend/src/feature/brief/**"
+      - "frontend/src/feature/terrain/**"
       - "backend/requirements.txt"
       - "backend/ths_export.py"
       - "backend/threat_template.ths"
@@ -41,6 +44,9 @@ on:
       - "frontend/src/feature/msnxImport/**"
       - "frontend/src/feature/localPoints/**"
       - "frontend/src/feature/threats/**"
+      # The mission brief: its compiler and light data (brief/*.json) and the template copies held to contracts/briefs.
+      - "frontend/src/feature/brief/**"
+      - "frontend/src/feature/terrain/**"
       - "backend/requirements.txt"
       - "backend/ths_export.py"
       - "backend/threat_template.ths"

@@ -18,7 +18,7 @@
     {
       "number": "1", "title": "Roll call and situation",
       "sections": [
-        { "id": "1", "title": "Roll call", "step": "situation", "figure": "overview",
+        { "id": "1", "title": "Roll call", "stepTitle": "Roll call and situation", "step": "situation", "figure": "overview",
           "items": [ { "id": "a", "label": "Ground element", "kind": "text" }, { "id": "b", "label": "Aviation element", "kind": "text", "bind": "flight.aircraft" } ],
           "script": ["Roll call: ground element {a}; aviation element {b}."] },
         { "id": "2", "title": "Supported unit / supporting unit", "step": "situation", "figure": "overview",
@@ -35,7 +35,7 @@
     {
       "number": "5", "title": "Mission and concept",
       "sections": [
-        { "id": "5", "title": "Mission / key tasks / end state", "step": "mission", "figure": "overview",
+        { "id": "5", "title": "Mission / key tasks / end state", "stepTitle": "Mission and concept", "step": "mission", "figure": "overview",
           "items": [ { "id": "a", "label": "Mission", "kind": "note" }, { "id": "b", "label": "Key tasks", "kind": "note" }, { "id": "c", "label": "End state", "kind": "note" } ],
           "script": ["Mission: {a}", "Key tasks: {b}", "End state: {c}"] },
         { "id": "6", "title": "Concept", "step": "mission", "figure": "overview",
@@ -43,7 +43,7 @@
           "script": ["Concept: {a}"] },
         { "id": "7", "title": "Number / type of aircraft", "step": "mission", "figure": "overview",
           "items": [ { "id": "a", "label": "Number / type of aircraft", "kind": "text", "bind": "flight.aircraft" } ],
-          "script": ["{a}."] },
+          "script": ["Aircraft: {a}."] },
         { "id": "8", "title": "H-hour", "step": "mission", "figure": "overview",
           "items": [ { "id": "a", "label": "H-hour", "kind": "time" } ],
           "script": ["H-hour is {a}."] }
@@ -68,7 +68,7 @@
           "script": [
             "{bind:stop.name}, {d}, call sign and frequency {e}. Pickup at {f}, landing {g}.",
             "Lighting {c}. Entry by {h}; loads {i}.",
-            "Takeoff {a}, at {b}."
+            "Departure: {a}. Altitude and airspeed {b}."
           ] }
       ]
     },
@@ -92,7 +92,7 @@
     {
       "number": "12", "title": "RP inbound and LZ operations",
       "sections": [
-        { "id": "12", "title": "RP inbound conditions check", "repeat": "LZ", "step": "lz", "figure": "stop",
+        { "id": "12", "title": "RP inbound conditions check", "stepTitle": "RP inbound and LZ operations", "repeat": "LZ", "step": "lz", "figure": "stop",
           "facts": ["stop.elevation", "stop.slope"],
           "items": [
             { "id": "a", "label": "Wind validation (ACP before the RP)", "kind": "text" },
@@ -114,7 +114,7 @@
             { "id": "r", "label": "ROZ coordination (frequency, call sign, responsibility)", "kind": "text" }
           ],
           "script": [
-            "RP inbound to {bind:stop.name}: wind check {a}; on target at {b}; {c}; {d}.",
+            "RP inbound to {bind:stop.name}: wind check {a}; on target at {b}; {c}; altitude and airspeed {d}.",
             "Landing {e}. Weapons {f}; doors {g}.",
             "{h}",
             "Markings {j}; hazards {k}; the objective is {l}. Escape plan {m}.",
@@ -140,7 +140,7 @@
     {
       "number": "14", "title": "Support",
       "sections": [
-        { "id": "14", "title": "Hot / cold criteria", "step": "support", "figure": "none",
+        { "id": "14", "title": "Hot / cold criteria", "stepTitle": "Hot / cold and the attack / scout plan", "step": "support", "figure": "none",
           "items": [ { "id": "a", "label": "Criteria", "kind": "text" }, { "id": "b", "label": "Platform making the call / call sign / frequency", "kind": "text" } ],
           "script": ["Hot or cold: {a}, called by {b}."] },
         { "id": "15", "title": "Attack / scout aviation plan", "step": "support", "figure": "none",
@@ -163,7 +163,7 @@
         { "id": "19", "title": "Detainee transport plan", "step": "detainee", "figure": "none",
           "items": [ { "id": "a", "label": "Plan", "kind": "note" } ],
           "script": ["Detainees: {a}"] },
-        { "id": "20", "title": "Abort criteria", "step": "abort", "figure": "none",
+        { "id": "20", "title": "Abort criteria", "stepTitle": "Abort criteria and the weather call", "step": "abort", "figure": "none",
           "items": [
             { "id": "a", "label": "Weather", "kind": "text" },
             { "id": "b", "label": "Minimum aircraft", "kind": "text" },
@@ -174,7 +174,7 @@
         { "id": "21", "title": "Weather call", "step": "abort", "figure": "none",
           "items": [ { "id": "a", "label": "Weather call", "kind": "text" } ],
           "script": ["Weather call: {a}."] },
-        { "id": "22", "title": "Fires plan", "step": "fires", "figure": "none",
+        { "id": "22", "title": "Fires plan", "stepTitle": "Fires, deception, resupply and bump plan", "step": "fires", "figure": "none",
           "items": [ { "id": "a", "label": "Fires plan", "kind": "note" } ],
           "script": ["Fires: {a}"] },
         { "id": "23", "title": "Deception plan", "step": "fires", "figure": "none",
@@ -191,7 +191,7 @@
     {
       "number": "26", "title": "Contingencies",
       "sections": [
-        { "id": "26", "title": "Contingencies", "step": "contingencies", "figure": "rally",
+        { "id": "26", "title": "Contingencies", "stepTitle": "Contingencies, MEDEVAC and QRF", "step": "contingencies", "figure": "rally",
           "facts": ["rally.points"],
           "items": [
             { "id": "a", "label": "Lead change", "kind": "procedure", "standard": "leadChange" },
@@ -217,7 +217,7 @@
     {
       "number": "29", "title": "Communication and command",
       "sections": [
-        { "id": "29", "title": "Communication", "step": "signal", "figure": "none",
+        { "id": "29", "title": "Communication", "stepTitle": "Communication, command, ISR / CAS and timeline", "step": "signal", "figure": "none",
           "items": [
             { "id": "a", "label": "CAN", "kind": "text" },
             { "id": "b", "label": "Internal frequencies (PACE)", "kind": "note" },

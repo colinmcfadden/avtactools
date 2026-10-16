@@ -1,0 +1,258 @@
+{
+  "format": "ezpz-brief-template",
+  "id": "amb",
+  "version": 1,
+  "title": "Non-tactical multi-ship / air movement brief",
+  "shortTitle": "Air movement brief",
+  "source": "Aviation Branch Handbook (Annex A to the Aviation Branch Operations SOP), 15 July 2024, Part 2",
+  "defaultWho": "AMC",
+  "roles": {
+    "PZ": ["4.d"],
+    "LZ": ["4.e"],
+    "FARP": ["4.f"],
+    "HA": [],
+    "LAAGER": [],
+    "FALSE_LZ": []
+  },
+  "paragraphs": [
+    {
+      "number": "1", "title": "Roll call", "who": "AMC",
+      "sections": [
+        {
+          "id": "1", "title": "Roll call", "step": "1", "figure": "overview",
+          "facts": ["flight.aircraft", "packet.pages"],
+          "items": [
+            { "id": "a", "label": "Packet inventory", "kind": "text", "bind": "packet.inventory" },
+            { "id": "b", "label": "Mission risk level", "kind": "choice", "options": ["Low", "Moderate", "High", "Extremely high"] }
+          ],
+          "script": [
+            "This is the air movement brief for {bind:mission.name}: {bind:flight.summary}",
+            "Check you have all {bind:packet.pages} pages: {a}.",
+            "Mission risk level is {b}."
+          ]
+        }
+      ]
+    },
+    {
+      "number": "2", "title": "Situation", "who": "AMC",
+      "sections": [
+        {
+          "id": "2", "title": "Situation", "step": "2", "figure": "overview",
+          "facts": ["weather.departure", "light.sunset", "light.illumination", "threats.summary"],
+          "items": [
+            { "id": "a", "label": "Weather conditions at takeoff, enroute and arrival", "kind": "note", "bind": "weather.summary" },
+            { "id": "b", "label": "Minimum weather", "kind": "text" },
+            { "id": "c", "label": "Light data", "kind": "text", "bind": "light.summary" },
+            { "id": "d", "label": "Weather update time and responsibility", "kind": "text" },
+            { "id": "e", "label": "Mission abort time and criteria", "kind": "text" },
+            { "id": "f", "label": "NOTAMs", "kind": "note", "bind": "notams.summary" }
+          ],
+          "script": [
+            "Weather: {a}",
+            "Minimum weather is {b}.",
+            "Light: {c}",
+            "Weather update: {d}. Mission abort: {e}.",
+            "NOTAMs: {f}",
+            "Threats: {bind:threats.summary}"
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3", "title": "Mission and intent", "who": "AMC",
+      "sections": [
+        {
+          "id": "3", "title": "Mission and intent", "step": "3", "figure": "overview",
+          "items": [
+            { "id": "a", "label": "Restate the mission", "kind": "note" },
+            { "id": "b", "label": "Commander's intent", "kind": "note" },
+            { "id": "c", "label": "CONOP brief", "kind": "note" }
+          ],
+          "script": ["Mission: {a}", "Intent: {b}", "Concept: {c}"]
+        }
+      ]
+    },
+    {
+      "number": "4", "title": "Execution", "who": "Flight lead",
+      "sections": [
+        {
+          "id": "4.a", "title": "Timeline", "step": "4.a", "figure": "overview",
+          "items": [
+            { "id": "a", "label": "Timeline", "kind": "list", "bind": "timeline" }
+          ],
+          "script": ["Timeline: {a}"]
+        },
+        {
+          "id": "4.b", "title": "Departure sequence", "step": "4.b", "figure": "departure",
+          "facts": ["departure.point", "departure.time"],
+          "items": [
+            { "id": "i", "label": "Commo check", "kind": "time", "bind": "departure.commoCheck" },
+            { "id": "ii", "label": "Taxi / load", "kind": "time", "bind": "departure.taxi" },
+            { "id": "iii", "label": "Lineup", "kind": "time", "bind": "departure.lineup" },
+            { "id": "iv", "label": "Fuel required for the mission", "kind": "text", "bind": "departure.fuel" },
+            { "id": "v", "label": "Departure plan (route, takeoff time, heading, altitude, airspeed, formation)", "kind": "text", "bind": "departure.plan" },
+            { "id": "vi", "label": "Lighting", "kind": "text" },
+            { "id": "vii", "label": "REDCON-1 procedures", "kind": "procedure", "standard": "redcon1" }
+          ],
+          "script": [
+            "Commo check at {i}, taxi and load at {ii}, lineup at {iii}.",
+            "Fuel required is {iv}.",
+            "Departure: {v}. Lighting: {vi}.",
+            "{vii}"
+          ]
+        },
+        {
+          "id": "4.c", "title": "Enroute sequence", "repeat": "route", "step": "4.c", "figure": "route",
+          "facts": ["route.distance", "route.time", "route.start", "route.end"],
+          "items": [
+            { "id": "i", "label": "Route overview", "kind": "note", "bind": "route.overview" },
+            { "id": "ii", "label": "Airspeed", "kind": "text", "bind": "route.airspeed" },
+            { "id": "iii", "label": "Altitude", "kind": "text", "bind": "route.altitude" },
+            { "id": "iv", "label": "Lighting", "kind": "text" },
+            { "id": "v", "label": "Formations and separation", "kind": "text" }
+          ],
+          "script": [
+            "{bind:route.name}: {i}",
+            "Airspeed {ii}; altitude {iii}.",
+            "Lighting {iv}. Formation and separation: {v}."
+          ]
+        },
+        {
+          "id": "4.d", "title": "PZ operations", "repeat": "PZ", "step": "4.d", "figure": "stop",
+          "facts": ["stop.elevation", "stop.landingHeading", "stop.takeoffHeading", "stop.goAround", "stop.arrive", "stop.slope"],
+          "items": [
+            { "id": "i", "label": "Name", "kind": "text", "bind": "stop.name" },
+            { "id": "ii", "label": "Location", "kind": "text", "bind": "stop.grid" },
+            { "id": "iii", "label": "Landing plan", "kind": "text" },
+            { "id": "iv", "label": "Loading plan", "kind": "text" },
+            { "id": "v", "label": "Passenger count procedures", "kind": "text" },
+            { "id": "vi", "label": "Departure plan (route, takeoff time, heading, altitude, airspeed, formation)", "kind": "text", "bind": "stop.departurePlan" },
+            { "id": "vii", "label": "Lighting", "kind": "text" }
+          ],
+          "script": [
+            "{i}, grid {ii}, at {bind:stop.elevation}, arriving {bind:stop.arrive}.",
+            "Landing plan: {iii}, landing {bind:stop.landingHeading}. Go-around {bind:stop.goAround}.",
+            "Loading plan: {iv}. Passenger count: {v}.",
+            "Departure: {vi}. Lighting: {vii}."
+          ]
+        },
+        {
+          "id": "4.e", "title": "Landing sequence", "repeat": "LZ", "step": "4.e", "figure": "stop",
+          "facts": ["stop.elevation", "stop.landingHeading", "stop.takeoffHeading", "stop.goAround", "stop.arrive", "stop.slope"],
+          "items": [
+            { "id": "i", "label": "Location", "kind": "text", "bind": "stop.grid" },
+            { "id": "ii", "label": "Formation", "kind": "text" },
+            { "id": "iii", "label": "Performance planning", "kind": "text" },
+            { "id": "iv", "label": "Lighting", "kind": "text" }
+          ],
+          "script": [
+            "Inbound {bind:stop.inbound}.",
+            "{bind:stop.name} is {i} at {bind:stop.elevation}. Landing {bind:stop.landingHeading} in {ii}.",
+            "Go-around is {bind:stop.goAround}. Takeoff {bind:stop.takeoffHeading}.",
+            "Performance planning: {iii}. Lighting: {iv}."
+          ]
+        },
+        {
+          "id": "4.f", "title": "FARP", "repeat": "FARP", "step": "4.f", "figure": "stop",
+          "facts": ["stop.elevation", "stop.landingHeading", "stop.arrive"],
+          "items": [
+            { "id": "i", "label": "Location", "kind": "text", "bind": "stop.grid" },
+            { "id": "ii", "label": "Procedures", "kind": "note" },
+            { "id": "iii", "label": "Performance planning", "kind": "text" },
+            { "id": "iv", "label": "Timed or event driven, for deconfliction", "kind": "choice", "options": ["Timed", "Event driven"] },
+            { "id": "v", "label": "Lighting", "kind": "text" }
+          ],
+          "script": [
+            "{bind:stop.name}, grid {i}, arriving {bind:stop.arrive}.",
+            "Procedures: {ii}",
+            "Performance planning: {iii}. Deconfliction is {iv}. Lighting: {v}."
+          ]
+        }
+      ]
+    },
+    {
+      "number": "5", "title": "Service support", "who": "AMC",
+      "sections": [
+        {
+          "id": "5.a", "title": "Contingencies", "step": "5.a", "figure": "rally",
+          "facts": ["rally.points"],
+          "items": [
+            { "id": "i", "label": "Lead change procedures", "kind": "procedure", "standard": "leadChange" },
+            { "id": "ii", "label": "Lost communication procedures", "kind": "procedure", "standard": "lostCommo" },
+            { "id": "iii", "label": "Loss of visual contact (in-flight link-up and rally points)", "kind": "procedure", "standard": "lostVisual" },
+            { "id": "iv", "label": "Actions on contact", "kind": "procedure", "standard": "actionsOnContact" },
+            { "id": "v", "label": "IIMC", "kind": "procedure", "standard": "iimc" },
+            { "id": "vi", "label": "Downed aircraft plan", "kind": "procedure", "standard": "downedAircraft" },
+            { "id": "vii", "label": "Bump plan", "kind": "procedure" }
+          ],
+          "script": ["Contingencies.", "{i}", "{ii}", "{iii}", "{iv}", "{v}", "{vi}", "Bump plan: {vii}"]
+        },
+        {
+          "id": "5.b", "title": "Coordinating instructions", "step": "5.b", "figure": "none",
+          "items": [
+            { "id": "i", "label": "Aircraft configuration (seats, external loads)", "kind": "text" },
+            { "id": "ii", "label": "Special equipment (VIP, headsets, seats, doors)", "kind": "text" },
+            { "id": "iii", "label": "EFB updated with current data and charged", "kind": "text" },
+            { "id": "iv", "label": "Abort criteria", "kind": "text" },
+            { "id": "v", "label": "Flight plan", "kind": "text" },
+            { "id": "vi", "label": "RCOP completed and turned in to flight ops", "kind": "text" },
+            { "id": "vii", "label": "Performance planning cards complete", "kind": "text" },
+            { "id": "viii", "label": "Safety considerations", "kind": "note" }
+          ],
+          "script": [
+            "Aircraft configuration: {i}. Special equipment: {ii}.",
+            "EFBs: {iii}. Abort criteria: {iv}. Flight plan: {v}.",
+            "RCOP: {vi}. Performance planning cards: {vii}.",
+            "Safety: {viii}"
+          ]
+        }
+      ]
+    },
+    {
+      "number": "6", "title": "Command and signal", "who": "AMC",
+      "sections": [
+        {
+          "id": "6", "title": "Command and signal", "step": "6", "figure": "none",
+          "items": [
+            { "id": "a", "label": "Command (aviation succession of command)", "kind": "text" },
+            { "id": "b.i", "label": "Internal frequencies (PACE)", "kind": "note" },
+            { "id": "b.ii", "label": "COMSEC changeover, current commo card, SKL location", "kind": "text" },
+            { "id": "b.iii", "label": "Crew assignments (ATC, flight following, transponder, Alpha / Zulu, weather update)", "kind": "note" }
+          ],
+          "script": [
+            "Succession of command: {a}.",
+            "Internal frequencies: {b.i}",
+            "COMSEC: {b.ii}.",
+            "Crew assignments: {b.iii}"
+          ]
+        }
+      ]
+    },
+    {
+      "number": "7", "title": "Mission AAR time and location", "who": "AMC",
+      "sections": [
+        {
+          "id": "7", "title": "Mission AAR time and location", "step": "7", "figure": "overview",
+          "facts": ["arrival.point", "arrival.time"],
+          "items": [
+            { "id": "a", "label": "Time", "kind": "time" },
+            { "id": "b", "label": "Location", "kind": "text" }
+          ],
+          "script": ["We are back at {bind:arrival.point} at {bind:arrival.time}. The AAR is at {a} at {b}."]
+        }
+      ]
+    },
+    {
+      "number": "8", "title": "Questions", "who": "AMC",
+      "sections": [
+        { "id": "8", "title": "Questions", "step": "8", "figure": "none", "items": [ { "id": "a", "label": "Questions", "kind": "info" } ], "script": ["Questions?"] }
+      ]
+    },
+    {
+      "number": "9", "title": "Commander / AMC comments", "who": "Commander / AMC",
+      "sections": [
+        { "id": "9", "title": "Commander / AMC comments", "step": "9", "figure": "none", "items": [ { "id": "a", "label": "Comments", "kind": "note" } ], "script": ["{a}"] }
+      ]
+    }
+  ]
+}

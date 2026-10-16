@@ -103,6 +103,12 @@ const templateProblems = (file) => {
   // Steps: a step's sections are side by side and repeat alike, so one page and one sandtable step hold them.
   const seenSteps = new Map();
   sections.forEach((s, i) => {
+    const next = sections[i + 1];
+    const startsGroup = i === 0 || sections[i - 1].step !== s.step;
+    if (startsGroup && next && next.step === s.step && (typeof s.stepTitle !== "string" || !s.stepTitle.trim())) {
+      say(`step ${s.step} has several sections and no stepTitle on its first`);
+    }
+    if (!startsGroup && s.stepTitle !== undefined) say(`section ${s.id}: stepTitle only on a step's first section`);
     if (typeof s.step !== "string" || !s.step) {
       say(`section ${s.id} has no step`);
       return;
@@ -277,8 +283,20 @@ describe("mission brief templates", () => {
       ["an item of a repeated section named elsewhere", (t) => sectionOf(t, "7").script.push("{item:4.e.ii}"), /names an item of a repeated section/],
       ["a stop figure in a brief section", (t) => { sectionOf(t, "2").figure = "stop"; }, /a stop figure in a section not repeated per stop/],
       ["a choice with no options", (t) => { delete sectionOf(t, "1").items[1].options; }, /a choice needs options/],
+      ["a shared step with no title", (t) => { sectionOf(t, "8").step = "7"; sectionOf(t, "8").figure = "overview"; }, /step 7 has several sections and no stepTitle/],
     ])("%s", (_name, edit, expected) => {
       expect(broken(edit).join("\n")).toMatch(expected);
     });
+  });
+});
+
+// The web cannot import from outside src/, so it bundles copies (src/feature/brief/templates); they must be the files.
+describe("the web's bundled copies", () => {
+  const COPIES = path.resolve(__dirname, "../feature/brief/templates");
+  it.each(fs.readdirSync(BRIEFS).filter((f) => f.endsWith(".json")))("%s is contracts/briefs's byte for byte", (file) => {
+    expect(fs.readFileSync(path.join(COPIES, file), "utf8")).toBe(fs.readFileSync(path.join(BRIEFS, file), "utf8"));
+  });
+  it("holds no file contracts/briefs does not", () => {
+    expect(fs.readdirSync(COPIES).sort()).toEqual(fs.readdirSync(BRIEFS).filter((f) => f.endsWith(".json")).sort());
   });
 });

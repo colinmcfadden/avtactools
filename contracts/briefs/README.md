@@ -33,7 +33,8 @@ is never committed.**
       "sections": [
         { "id": "4.e", "title": "Landing sequence",
           "repeat": "LZ",            // one page and one sandtable step per stop of that role (or "route", per route in the flow)
-          "step": "4.e",             // sections that share a step (and a repeat) are one page and one step
+          "step": "4.e",             // side-by-side sections that share a step (and a repeat) are one page and one step
+          "stepTitle": "…",          // the title of such a step, on its first section (required when a step has several)
           "figure": "stop",          // overview | departure | route | stop | rally | none
           "facts": ["stop.grid", "stop.elevation"],   // bindings shown in the page's table besides the items
           "items": [
@@ -59,6 +60,8 @@ is never committed.**
   a write-in line. A procedure item's placeholder is its procedure's script as chosen (standard, custom or blank).
 - **Roles** are `PZ`, `LZ`, `FARP`, `HA` (holding area), `LAAGER` and `FALSE_LZ` (false insertion). Every role is listed in every
   template, each with the sections repeated for it; `"route"` sections repeat for each route in the flow.
+- **Order.** Steps are briefed in template order, except that a run of side-by-side repeated sections is briefed in flow
+  order: each stop and route as the flight meets it, with every section of the run that repeats for it.
 - **Figures** are what the compiler draws for the step: `overview` (the whole mission), `departure` (the departure point and the start of
   the first route), `route` (that route, its current leg lit), `stop` (that LZ/PZ's diagram), `rally` (the routes with the rally points),
   `none`.

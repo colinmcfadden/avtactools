@@ -24,6 +24,7 @@ contracts/
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
+│  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py)
 │  ├─ packs/        ops.json, diff.json, edit.json, shared.json, describe.json, session.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
