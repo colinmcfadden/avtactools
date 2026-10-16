@@ -48,6 +48,13 @@ class LzPanelScreenshotTest {
     @Test fun homeNight() = shot("home-night", ThemeMode.Night) { LzHomeContent(homeState(), LzPanelActions(), GRID) }
     @Test fun empty() = shot("empty") { LzHomeContent(DiagramsUiState(), LzPanelActions(), GRID) }
 
+    @Test fun homeWithTools() = shot("home-tools") {
+        val current = activeLz()
+        LzHomeContent(homeState(current), LzPanelActions(), GRID, tools = {
+            LzToolsSection(current, GraphicsUiState(listed = true, canEdit = true), BoundaryUiState(canStart = true, clears = true), null, LzPanelActions(), GRID)
+        })
+    }
+
     @Test
     fun plan() = shot("plan") {
         LzPlanContent(

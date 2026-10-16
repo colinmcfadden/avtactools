@@ -94,6 +94,9 @@ private val BAR_HEIGHT = 80.dp
  * above the pill stay, the pill and what floats above it riding down to the foot of the screen; the crosshair goes to the middle of the whole map, the camera's
  * padding being just the system's bars. Hidden, Back shows the frame ([onShow]) before anything else is asked, unless [backShows] is false (a page over the frame
  * that has Back for itself), and nothing in the frame keeps the keyboard.
+ *
+ * [closed] (the header's close button, [onClose]): the sheet slides down behind the bar of panels and is neither drawn, touched nor read there, kept composed as
+ * when hidden; the bar stays, and the map's middle, the readout and the toasts go down to the bar's top. Picking a panel on the bar brings it back (`pick`).
  */
 @Composable
 fun PhoneFrame(
@@ -114,6 +117,8 @@ fun PhoneFrame(
     hidden: Boolean = false,
     onShow: () -> Unit = {},
     backShows: Boolean = true,
+    closed: Boolean = false,
+    onClose: () -> Unit = {},
     mapScreen: @Composable (MapFrame) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -132,8 +137,13 @@ fun PhoneFrame(
     val hiding = animateFloatAsState(if (hidden) 1f else 0f, PanelSheetDefaults.Motion, label = "frame hidden")
     val gone by remember { derivedStateOf { hiding.value >= 1f } }
     val away = hidden && gone
-    // Hidden, nothing in the frame keeps the keyboard up or takes what is typed.
-    LaunchedEffect(hidden) { if (hidden) focus.clearFocus() }
+    // 0 open, 1 closed: the sheet going down behind the bar, read as it is drawn and laid out, as the frame's hiding is.
+    val closing = animateFloatAsState(if (closed) 1f else 0f, PanelSheetDefaults.Motion, label = "panel closed")
+    val shut by remember { derivedStateOf { closing.value >= 1f } }
+    // The sheet's edge as the panel closes: from where it rests down to the bar's top (the foot of its space).
+    val sheetEdge: () -> Float? = { edgeOf(sheet)?.let { edge -> closedEdge(edge, sheet.anchors?.spacePx, closing.value) } }
+    // Hidden or closed, nothing in the frame keeps the keyboard up or takes what is typed.
+    LaunchedEffect(hidden, closed) { if (hidden || closed) focus.clearFocus() }
     // Composed as the frame hides, so it is the newest Back and is asked before every other one.
     if (hidden) BackHandler(enabled = backShows, onBack = onShow)
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).onSizeChanged { heightPx = it.height }) {
@@ -142,11 +152,15 @@ fun PhoneFrame(
         val anchors = sheet.anchors
         val resting = sheet.heading.let { if (it == SheetDetent.Full) SheetDetent.Half else it }
         val sheetHeight: Dp = anchors?.let { with(density) { it.heightOf(resting).toDp() } } ?: PanelSheetDefaults.LoweredHeight
-        val padding = if (hidden) MapPadding(top = top, bottom = navigation) else MapPadding(top = top + MapChrome.ROW_BOTTOM, bottom = sheetHeight + bar)
+        val padding = when {
+            hidden -> MapPadding(top = top, bottom = navigation)
+            closed -> MapPadding(top = top + MapChrome.ROW_BOTTOM, bottom = bar)
+            else -> MapPadding(top = top + MapChrome.ROW_BOTTOM, bottom = sheetHeight + bar)
+        }
         val footPx = { heightPx - with(density) { navigation.toPx() } }
         val frame = MapFrame(
             padding = padding,
-            controlsBottom = { controlsEdge(edgeOf(sheet), hiding.value, footPx(), heightPx > 0) },
+            controlsBottom = { controlsEdge(sheetEdge(), hiding.value, footPx(), heightPx > 0) },
             hiding = FrameHiding(hidden, away) { hiding.value },
         )
         // The map over the whole screen, under the sheet and the bar, so they slide away over it and it is never resized as they go. Drawn here, not by the
@@ -158,11 +172,13 @@ fun PhoneFrame(
             Box(
                 Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(PaddingValues(bottom = bar))
                     .keptAway(hidden, away)
-                    // Down off the screen, its edge going to the screen's foot, and fading.
+                    // Closed: never read; once behind the bar not laid out either, though its room is kept, so the bar stays at the foot.
+                    .then(if (closed) Modifier.clearAndSetSemantics {}.then(if (shut) KeepsRoomEmpty else Modifier) else Modifier)
+                    // Down off the screen, its edge going to the screen's foot, and fading; closed, down behind the bar (drawn after it, over it).
                     .graphicsLayer {
                         val slid = hiding.value
                         val edge = sheet.offsetPx.takeUnless { it.isNaN() } ?: size.height
-                        translationY = slid * (size.height + barPx - edge).coerceAtLeast(0f)
+                        translationY = maxOf(slid * (size.height + barPx - edge), closing.value * (size.height - edge)).coerceAtLeast(0f)
                         alpha = 1f - slid
                     },
             ) {
@@ -171,7 +187,7 @@ fun PhoneFrame(
                     topLimit = top + MapChrome.SHEET_TOP_LIMIT,
                     raiseLabel = "Raise the ${current.label} panel",
                     lowerLabel = "Lower the ${current.label} panel",
-                    inert = hidden,
+                    inert = hidden || closed,
                     header = {
                         PanelHeader(head.title, subtitle = head.subtitle, subtitleMono = head.subtitleMono, onBack = head.back, backDescription = head.backDescription) {
                             headerActions()
@@ -181,6 +197,7 @@ fun PhoneFrame(
                                 if (full) "Lower the ${current.label} panel" else "Open the ${current.label} panel full height",
                                 onClick = { scope.launch { sheet.animateTo(sheet.fullOrHalf()) } },
                             )
+                            PanelAction(EzpzIcons.close, "Close the ${current.label} panel", onClick = onClose)
                         }
                     },
                     footer = footer?.let { foot -> { Box(Modifier.onSizeChanged { footerPx = it.height }) { foot() } } },
@@ -209,7 +226,10 @@ fun PhoneFrame(
         ToastHost(
             snackbars,
             Modifier.fillMaxSize().padding(horizontal = Tokens.Spacing.lg.dp)
-                .aboveTheControls(sheet, hiding = { hiding.value }, barPx = { barPx }, footPx = { footPx().takeIf { heightPx > 0 } }, floatingPx = floatingPx) { footerPx },
+                .aboveTheControls(
+                    edge = sheetEdge, atFull = { sheet.heading == SheetDetent.Full && closing.value <= 0f }, hiding = { hiding.value }, barPx = { barPx },
+                    footPx = { footPx().takeIf { heightPx > 0 } }, floatingPx = floatingPx,
+                ) { if (closed) 0 else footerPx },
         )
     }
 }
@@ -223,6 +243,13 @@ internal fun edgeOf(sheet: PanelSheetState): Float? {
     val edge = sheet.offsetPx
     return if (edge.isNaN()) null else max(edge, anchors.halfPx)
 }
+
+/**
+ * Where the sheet's edge ([edge], from [edgeOf]) is drawn as the panel closes ([closing], 0 open to 1 closed): down to the foot of its space ([spacePx], the bar's top),
+ * where it is gone behind the bar. Before the sheet has been laid out ([spacePx] null) where it rests.
+ */
+internal fun closedEdge(edge: Float, spacePx: Float?, closing: Float): Float =
+    if (spacePx == null || closing <= 0f) edge else edge + (spacePx - edge) * closing.coerceAtMost(1f)
 
 /**
  * Where the readout and the floating tools stand as the frame hides ([hiding], 0 shown to 1 hidden): from the sheet's edge ([sheetEdge], [edgeOf]) down to the foot
@@ -240,13 +267,17 @@ internal fun controlsEdge(sheetEdge: Float?, hiding: Float, footPx: Float, measu
  */
 internal fun Modifier.hidden(): Modifier = clearAndSetSemantics {}.layout { _, _ -> layout(0, 0) {} }
 
+/** Takes all the room it is given and lays nothing out in it (what it holds stays composed): the closed sheet's space, which the bar stays under. */
+private val KeepsRoomEmpty: Modifier = Modifier.layout { _, constraints -> layout(constraints.maxWidth, constraints.maxHeight) {} }
+
 /**
  * Places the toasts above the readout pill and whatever floats above it while the sheet is at half or lower, and at the foot of the sheet's space when it is at
- * full height (the map is covered then), above the panel's pinned footer ([footerPx]) if it has one. As the frame hides ([hiding]) they go to the foot of the
- * screen ([footPx]) with the pill. Read when placing, so they ride on the sheet as it moves.
+ * full height ([atFull]: the map is covered then), above the panel's pinned footer ([footerPx]) if it has one. As the frame hides ([hiding]) they go to the foot of the
+ * screen ([footPx]) with the pill. [edge] is the sheet's edge as drawn (down to the bar as the panel closes). Read when placing, so they ride on the sheet as it moves.
  */
 private fun Modifier.aboveTheControls(
-    sheet: PanelSheetState,
+    edge: () -> Float?,
+    atFull: () -> Boolean,
     hiding: () -> Float,
     barPx: () -> Int,
     footPx: () -> Float?,
@@ -259,8 +290,8 @@ private fun Modifier.aboveTheControls(
         val floating = floatingPx()
         // From a pill's bottom: the pill, what floats above it, and the gaps between.
         val lift = gap + PILL_HEIGHT.toPx() + gap + (if (floating > 0) floating + gap else 0f)
-        val edge = edgeOf(sheet)
-        val shown = if (edge == null || sheet.heading == SheetDetent.Full) constraints.maxHeight - barPx() - gap - footerPx() else edge - lift
+        val edge = edge()
+        val shown = if (edge == null || atFull()) constraints.maxHeight - barPx() - gap - footerPx() else edge - lift
         val slid = hiding()
         val foot = footPx()
         val bottom = if (slid <= 0f || foot == null) shown else shown + (foot - lift - shown) * slid

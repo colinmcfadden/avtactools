@@ -101,6 +101,7 @@ import app.ezpztac.map.rememberMapSearchState
 import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.UnitDraft
 import app.ezpztac.network.ApiUser
 import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
@@ -130,6 +131,8 @@ import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsUiState
 import app.ezpztac.workspace.DiagramsViewModel
 import app.ezpztac.workspace.ExportFile
+import app.ezpztac.workspace.GraphicKind
+import app.ezpztac.workspace.GraphicsViewModel
 import app.ezpztac.workspace.HeldObjectBarHost
 import app.ezpztac.workspace.ImportReviewHost
 import app.ezpztac.workspace.ImportSheet
@@ -234,6 +237,9 @@ fun MapHome(
     // The LZ/PZ panel's state: which of its pages is showing (for the header and Back), and its toasts.
     val diagrams: DiagramsViewModel = hiltViewModel()
     val lz by diagrams.state.collectAsStateWithLifecycle()
+    // The open LZ/PZ's planning graphics (the same view model the LZ/PZ panel draws): the map menu's *Add object* puts one at the press.
+    val graphics: GraphicsViewModel = hiltViewModel()
+    val graphicsState by graphics.state.collectAsStateWithLifecycle()
     // The Routes panel's state: its page (for the header and Back), the route plan page over the frame, and its toasts.
     val routesModel: RoutesViewModel = hiltViewModel()
     val routes by routesModel.state.collectAsStateWithLifecycle()
@@ -255,6 +261,8 @@ fun MapHome(
     // The frame never hides while an accessibility service explores by touch (nothing would say it went, or how to bring it back), nor on a tablet.
     val exploring by rememberTouchExploration()
     LaunchedEffect(exploring, tablet) { if (exploring || tablet) frameState.show() }
+    // A tablet's list collapses instead (its own button): the phone's closed panel is not carried into it.
+    LaunchedEffect(tablet) { if (tablet) frameState.open() }
     // Threats are drawn, held and taken in only while the account has them, which is while their panel is offered.
     val threatsOn = Panel.Threats in panels
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
@@ -265,6 +273,7 @@ fun MapHome(
     var raiseFor by remember { mutableStateOf<String?>(null) }
     val raisePack: () -> Unit = {
         frameState.show()
+        frameState.open()
         if (tablet) tabletState.showList() else scope.launch { if (sheet.settled == SheetDetent.Lowered) sheet.animateTo(SheetDetent.Half) }
     }
     val pickedPack: (String?) -> Unit = { uuid ->
@@ -346,7 +355,7 @@ fun MapHome(
         if (raise) raisePack()
     }
     // The map covered (the Library, a route's plan page, the phone's sheet at full height): nobody is pointing at it, for everyone else in a pack.
-    val mapCovered = overFrame || (!tablet && (routes.planOpen || (sheet.settled == SheetDetent.Full && !frameState.hidden)))
+    val mapCovered = overFrame || (!tablet && (routes.planOpen || (sheet.settled == SheetDetent.Full && !frameState.hidden && !frameState.closed)))
     LaunchedEffect(mapCovered) { home.mapCovered(mapCovered) }
     LaunchedEffect(packPanel) { packPanel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // An item opened from the Pack panel is shown in its own panel (an LZ/PZ in LZ/PZ, a route set in Routes), as the web's dock does.
@@ -487,7 +496,7 @@ fun MapHome(
                         Panel.Pack -> PackPanelHost(
                             packPanel,
                             looking = lookingAtPack(
-                                current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || (!tablet && (routes.planOpen || frameState.hidden)),
+                                current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || (!tablet && (routes.planOpen || frameState.hidden || frameState.closed)),
                             ),
                             onMembers = { invite -> members.open(openPack?.name.orEmpty(), invite) },
                             onUpdate = itemCopies::askUpdate, onSaveCopy = itemCopies::askSave,
@@ -533,7 +542,7 @@ fun MapHome(
                     // On a tablet the account, the workspace, Import and the Library are the rail's.
                     account = { if (!tablet) account(true) },
                     // How the open pack stands: a tablet's line always, a phone's only when it wants attention (its chip shows it), not under a full sheet.
-                    belowChips = { WorkspaceLine(openPack, tablet, underFullSheet = !tablet && sheet.heading == SheetDetent.Full) },
+                    belowChips = { WorkspaceLine(openPack, tablet, underFullSheet = !tablet && sheet.heading == SheetDetent.Full && !frameState.closed) },
                     chips = {
                         if (!tablet) {
                             // The Library opens on the tab of the panel showing, so what the person was looking at is what they find.
@@ -571,7 +580,8 @@ fun MapHome(
                                                 frameState.choose(it)
                                                 if (it == Panel.Lz) diagrams.showPage(LzPage.PLAN)     // a graphic's controls are on its LZ/PZ's plan
                                             }
-                                            frameState.show()                                          // the sheet raised: the frame with it
+                                            frameState.show()                                          // the sheet raised: the frame and the panel with it
+                                            frameState.open()
                                             if (tablet) tabletState.showList() else scope.launch { sheet.animateTo(SheetDetent.Full) }
                                         }
                                     },
@@ -634,6 +644,9 @@ fun MapHome(
                             newLzOff = lz.pack?.off,
                             addThreat = if (threatsOn) ({ threatsModel.beginAdd(open.place.at) }) else null,
                             routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); frameState.choose(Panel.Routes) } else null,
+                            addObject = lz.current?.takeIf { Panel.Lz in panels }?.let { current ->
+                                AddObjectChoice(current.name, off = addObjectOff(graphicsState.canEdit, graphicsState.locked)) { kind -> placeObject(graphics, kind, open.place.at) }
+                            },
                             copyGrid = { copyGrid(open.place.grid) },
                         ),
                     )
@@ -748,7 +761,7 @@ fun MapHome(
                     current = current,
                     counts = counts,
                     onPick = { picked ->
-                        val (panel, detent) = pick(current, sheet.settled, picked)
+                        val (panel, detent) = pick(current, sheet.settled, picked, closed = frameState.closed)
                         focus.clearFocus()                                                   // a field in the panel left behind keeps no keyboard up
                         frameState.choose(panel)
                         scope.launch { sheet.animateTo(detent) }
@@ -765,6 +778,12 @@ fun MapHome(
                     hidden = frameState.hidden,
                     onShow = frameState::show,
                     backShows = !routes.planOpen && !overFrame,
+                    // Its close button: the sheet goes down behind the bar until a panel is picked again.
+                    closed = frameState.closed,
+                    onClose = {
+                        focus.clearFocus()
+                        frameState.close()
+                    },
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
                 )
@@ -852,6 +871,25 @@ internal suspend fun SnackbarHostState.panelToast(text: String, tab: LibraryTab,
 private fun PackPointers(host: app.ezpztac.map.MapHost, home: HomeViewModel) {
     val pointers by home.pointers.collectAsStateWithLifecycle()
     PointersLayer(host, pointers)
+}
+
+/** Why *Add object* is off, in its menu's words: the open LZ/PZ is a read-only pack's ([locked]), or not analysed; null when it can place ([canEdit]). */
+internal fun addObjectOff(canEdit: Boolean, locked: String?): String? = when {
+    canEdit -> null
+    locked != null -> locked
+    else -> "Analyze the LZ/PZ first: its objects go in its landing zone"
+}
+
+/** Puts [kind] at [at] on the open LZ/PZ and holds it, as the LZ/PZ tools' *Add here* does; a unit is a friendly infantry one, changed from its options. */
+internal fun placeObject(graphics: GraphicsViewModel, kind: MapObject, at: LatLon) {
+    when (kind) {
+        MapObject.HELICOPTER -> graphics.place(GraphicKind.HELICOPTER, at)
+        MapObject.PZ_MARKER -> graphics.place(GraphicKind.PZ_MARKER, at)
+        MapObject.SECTOR_OF_FIRE -> graphics.place(GraphicKind.SECTOR_OF_FIRE, at)
+        MapObject.GO_AROUND_LEFT -> graphics.place(GraphicKind.GO_AROUND, at, direction = "left")
+        MapObject.GO_AROUND_RIGHT -> graphics.place(GraphicKind.GO_AROUND, at, direction = "right")
+        MapObject.UNIT -> graphics.addUnit(UnitDraft(), at)
+    }
 }
 
 /** The map's menu as it was opened: where (its grid, and the press in the map's pixels), and what *Add route point here* would do then. */

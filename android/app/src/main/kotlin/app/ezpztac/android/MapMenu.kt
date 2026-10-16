@@ -24,7 +24,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -56,6 +59,8 @@ import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzText
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.workspace.MapPointAction
+import app.ezpztac.workspace.ToolGlyph
+import app.ezpztac.workspace.ToolSymbol
 import kotlin.math.max
 
 /** What the map menu offers, and what each choice does. A choice whose panel this account is not offered is null, and not shown. */
@@ -66,8 +71,26 @@ internal data class MapMenuChoices(
     val addThreat: (() -> Unit)? = null,
     /** What *Add route point here* would do now, and doing it. */
     val routePoint: Pair<MapPointAction, () -> Unit>? = null,
+    /** *Add object*: a planning graphic of the open LZ/PZ put at the press. Null while no LZ/PZ is open. */
+    val addObject: AddObjectChoice? = null,
     val copyGrid: () -> Unit = {},
 )
+
+/**
+ * *Add object* (the owner's request of 2026-10-15): which LZ/PZ it adds to ([lzName]), why it cannot now ([off]: not analysed, or a read-only pack's), and putting
+ * the chosen [MapObject] at the press.
+ */
+internal data class AddObjectChoice(val lzName: String, val off: String?, val place: (MapObject) -> Unit)
+
+/** What *Add object* offers: the LZ/PZ tools that put a graphic at a place, with their tool grid's symbols. Draw LZ draws a boundary, which is not a place. */
+internal enum class MapObject(val label: String, val symbol: ToolSymbol, val supporting: String? = null) {
+    HELICOPTER("Helicopter", ToolSymbol.Helicopter, "The mission aircraft, clear of those down"),
+    PZ_MARKER("PZ marker", ToolSymbol.Pz),
+    SECTOR_OF_FIRE("Sector of fire", ToolSymbol.Sector),
+    GO_AROUND_LEFT("Left go-around", ToolSymbol.GoAroundLeft),
+    GO_AROUND_RIGHT("Right go-around", ToolSymbol.GoAroundRight),
+    UNIT("Unit", ToolSymbol.Unit, "Friendly infantry: change it from its options"),
+}
 
 /**
  * The design's map menu (`MapMenu`): a long press on nothing that can be picked up opens it beside the press ([at], in the map's own pixels, measured from its left
@@ -140,9 +163,13 @@ private fun menuWidth(grid: String): Dp {
     return max(MENU_WIDTH, gridWidth + HEADER_CHROME).coerceAtMost(widest)
 }
 
-/** The menu's grid and choices, apart from the window it opens in, so they can be tried without one. */
+/**
+ * The menu's grid and choices, apart from the window it opens in, so they can be tried without one. *Add object* turns the menu into the list of objects
+ * ([objects]), with a way back to the choices, in the same place, rather than a second menu over the first.
+ */
 @Composable
 internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoices, onDismiss: () -> Unit) {
+    var objects by remember(place) { mutableStateOf(false) }
     Row(
         Modifier.heightIn(min = 40.dp).padding(start = 14.dp, end = 16.dp).semantics(mergeDescendants = true) { heading() },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -154,9 +181,34 @@ internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoic
     }
     HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
     fun choose(action: () -> Unit): () -> Unit = { onDismiss(); action() }
+    val addObject = choices.addObject
+    if (objects && addObject != null && addObject.off == null) {
+        MenuChoice(EzpzIcons.arrowBack, "Add object", "To ${addObject.lzName}", onClick = { objects = false })
+        MapObject.entries.forEach { kind ->
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(kind.label, style = MaterialTheme.typography.labelLarge)
+                        if (kind.supporting != null) Text(kind.supporting, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+                leadingIcon = { ToolGlyph(kind.symbol, enabled = true) },
+                onClick = choose { addObject.place(kind) },
+                contentPadding = PaddingValues(start = 14.dp, end = 16.dp),
+                modifier = Modifier.heightIn(min = if (kind.supporting != null) 56.dp else 48.dp),
+            )
+        }
+        return
+    }
     choices.newLz?.let {
         val off = choices.newLzOff
         MenuChoice(EzpzIcons.addLocationAlt, "New LZ/PZ here", off ?: "Opens another LZ/PZ with this target", choose(it), accent = off == null, enabled = off == null)
+    }
+    addObject?.let { add ->
+        MenuChoice(
+            EzpzIcons.addCircle, "Add object here", add.off ?: "A helicopter, PZ, sector, go-around or unit on ${add.lzName}",
+            onClick = { objects = true }, accent = add.off == null, enabled = add.off == null,
+        )
     }
     choices.addThreat?.let { MenuChoice(EzpzIcons.crisisAlert, "Add threat here", null, choose(it)) }
     choices.routePoint?.let { (action, add) ->
