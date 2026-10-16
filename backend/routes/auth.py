@@ -31,6 +31,7 @@ from models import (
     AircraftProfile,
     LocalCredential,
     LoginEvent,
+    SavedBrief,
     SavedLZ,
     SavedPointSet,
     SavedRoute,
@@ -841,6 +842,7 @@ def delete_account():
     SavedRoute.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
+    SavedBrief.query.filter_by(user_id=uid).delete()
     AircraftProfile.query.filter_by(user_id=uid).delete()
     LoginEvent.query.filter_by(user_id=uid).delete()
     SyncCounter.query.filter_by(user_id=uid).delete()

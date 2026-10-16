@@ -923,6 +923,150 @@ paths:
         "409":
           $ref: "#/components/responses/PointSetConflict"
 
+  /api/briefs:
+    get:
+      operationId: listBriefs
+      summary: The caller's saved mission briefs (summaries, without deleted ones)
+      description: |
+        A brief kept in the Library, outside a mission pack (docs/MISSION_BRIEF.md §3). Every `/api/briefs` route needs
+        the `mission_brief` entitlement and answers 403 `feature_disabled` without it; a create or an edit needs
+        `cloud_save` too.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BriefSummary"
+    post:
+      operationId: createBrief
+      summary: Save a mission brief
+      description: |
+        As `POST /api/lz`: send `client_uuid`, a UUID the device chose, so a retry after a lost response returns the
+        first record (200) instead of making a second (201). `data` is the brief document; the server does not look
+        inside it.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, data]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { description: "The brief document (docs/MISSION_BRIEF.md §2.2).", type: object }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/briefs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getBrief
+      summary: One saved mission brief, with its document
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateBrief
+      summary: Edit a saved mission brief
+      description: |
+        As `PUT /api/lz/{id}`: send `If-Match: "<revision>"`; a server that has moved on overwrites nothing and answers
+        409 with its copy. Without `If-Match` the last writer wins. A retry with the same `Idempotency-Key` is answered,
+        not refused. Only what is sent changes.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { type: object }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry, which answers the whole record).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/BriefConflict"
+    delete:
+      operationId: deleteBrief
+      summary: Delete a saved mission brief
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion through `/api/sync/changes`.
+        Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/BriefConflict"
+
   /api/weather:
     get:
       operationId: weather
@@ -2481,6 +2625,23 @@ components:
               server:
                 $ref: "#/components/schemas/PointSetFull"
 
+    BriefConflict:
+      description: |
+        The brief changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/BriefFull"
+
     AircraftConflict:
       description: |
         The profile changed on the server since the revision the edit was based on.
@@ -2703,6 +2864,29 @@ components:
         revision: { type: integer, minimum: 1 }
         points: { type: array, items: { type: object } }
 
+    BriefSummary:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    BriefFull:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision, data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        data: { type: object, description: "The brief document (docs/MISSION_BRIEF.md §2.2)." }
+
     WeatherReport:
       type: object
       required: [station_id, name, temp_c, dewp_c, wind_spd_kts, wind_dir, wind_gust_kts, vis_sm, pressure, flight_category, raw_metar, distance_miles, notams]
@@ -2810,12 +2994,13 @@ components:
       type: object
       required: [type, id, client_uuid, revision, deleted, name, seq, data]
       description: |
-        One changed record. `type` says which collection: `lz`, `route`, `pointset` or
-        `aircraft` (the caller's own profiles; the master list does not sync).
+        One changed record. `type` says which collection: `lz`, `route`, `pointset`,
+        `aircraft` (the caller's own profiles; the master list does not sync) or `brief`.
+        A device passes over a `type` it does not know, which a newer server may add.
         A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
         has `kind`, `file_name` and `has_file`; fetch the mission file separately.
       properties:
-        type: { type: string, enum: [lz, route, pointset, aircraft] }
+        type: { type: string, enum: [lz, route, pointset, aircraft, brief] }
         id: { type: integer }
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
@@ -2827,7 +3012,7 @@ components:
         kind: { type: string, description: "Routes only: `sketch` or `mission`." }
         file_name: { type: string, nullable: true }
         has_file: { type: boolean }
-        data: { description: "lz_data, route_data, the points or the profile, per `type`." }
+        data: { description: "lz_data, route_data, the points, the profile or the brief document, per `type`." }
 
     ChangeFeed:
       type: object
