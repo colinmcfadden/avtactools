@@ -144,6 +144,9 @@ HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".
   elsewhere, on the live stream sent every turn back as two changes of its own, and looped for ever on a read-only pack's LZ/PZ without the headings. Android sent
   nothing extra (tried on two accounts and one, open, closed and live). Then the owner's wording, on the web and Android: a turn names the doghouse and its heading
   as the box shows them ("Colin M. turned doghouse RP1 to 105° on LZ HAWK.", not "turned a doghouse"), so turns a second apart are a line each; one turn is one line.
+- **The owner's requests of 2026-10-15** (`feat/android-panel-close-and-tools`): the phone's panel closes from its header (the bar brings it back), the LZ/PZ tools are also
+  under the open LZ/PZ's card, and the map's long-press menu has *Add object here* (a helicopter, PZ marker, sector, go-around or unit at the press). AGENTS.md §17, *The phone's
+  panel closed*, *The LZ/PZ panel* and *The map's long press*; `docs/ANDROID_SCREENS_PLAN.md`, after P4c. To try on a device with the rest.
 - **Everything else is still compiled and unit-tested on a JVM only.** The map layers (MapLibre),
   the share sheet, the system picker, the JavaScript symbol sandbox, Keystore, Google sign-in, WorkManager, R8 output
   and Android's own SQLite opening the `.ths` template are **compile-verified only** (each is flagged

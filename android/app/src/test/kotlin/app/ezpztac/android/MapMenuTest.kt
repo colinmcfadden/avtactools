@@ -123,6 +123,47 @@ class MapMenuTest {
         compose.onNode(hasText("New LZ/PZ here") and hasClickAction()).assertIsNotEnabled()
     }
 
+    // -- Add object: a planning graphic of the open LZ/PZ at the press ----------------------------------------------------------
+
+    @Test
+    fun `add object opens the list of objects in the menu, and each one closes it and is placed`() {
+        val done = mutableListOf<String>()
+        show(MapMenuChoices(newLz = {}, addObject = AddObjectChoice("LZ HAWK", off = null) { done += it.name }), dismissed = { done += "shut" })
+        compose.onNodeWithText("A helicopter, PZ, sector, go-around or unit on LZ HAWK").assertIsDisplayed()
+        compose.onNode(hasText("Add object here") and hasClickAction()).performClick()
+        // The menu turned into the list (nothing placed, nothing closed yet), with a way back.
+        assertEquals(emptyList<String>(), done)
+        compose.onNodeWithText("New LZ/PZ here").assertDoesNotExist()
+        compose.onNodeWithText("To LZ HAWK").assertIsDisplayed()
+        MapObject.entries.forEach { compose.onNode(hasText(it.label) and hasClickAction()).assertIsDisplayed() }
+        compose.onNode(hasText("Right go-around") and hasClickAction()).performClick()
+        assertEquals(listOf("shut", "GO_AROUND_RIGHT"), done)
+    }
+
+    @Test
+    fun `add object goes back to the menu's choices`() {
+        show(MapMenuChoices(newLz = {}, addObject = AddObjectChoice("LZ HAWK", off = null) {}))
+        compose.onNode(hasText("Add object here") and hasClickAction()).performClick()
+        compose.onNode(hasText("Add object") and hasClickAction()).performClick()
+        compose.onNodeWithText("New LZ/PZ here").assertIsDisplayed()
+        compose.onNodeWithText("Helicopter").assertDoesNotExist()
+    }
+
+    @Test
+    fun `add object is off with its reason while the LZ-PZ is not analysed, and not offered with none open`() {
+        show(MapMenuChoices(addObject = AddObjectChoice("LZ HAWK", off = addObjectOff(canEdit = false, locked = null)) {}))
+        compose.onNodeWithText("Analyze the LZ/PZ first: its objects go in its landing zone").assertIsDisplayed()
+        compose.onNode(hasText("Add object here") and hasClickAction()).assertIsNotEnabled()
+        assertEquals("Off in a finished pack", addObjectOff(canEdit = false, locked = "Off in a finished pack"))
+        assertNull(addObjectOff(canEdit = true, locked = null))
+    }
+
+    @Test
+    fun `with no LZ-PZ open there is no add object`() {
+        show(MapMenuChoices(newLz = {}))
+        compose.onNodeWithText("Add object here").assertDoesNotExist()
+    }
+
     // -- The real menu: its popup, where it goes, and its grid ----------------------------------------------------------------
 
     private fun menu(choices: MapMenuChoices, mode: ThemeMode = ThemeMode.Dark, at: IntOffset = IntOffset(300, 1100)) = compose.setContent {
@@ -193,6 +234,18 @@ class MapMenuTest {
     @Test fun menuNight() = shot("map-menu-night", ThemeMode.Night) { MapMenuChoices(newLz = {}, addThreat = {}, routePoint = MapPointAction.ChooseRoute to {}) }
 
     @Test fun menuLight() = shot("map-menu-light", ThemeMode.Light) { MapMenuChoices(newLz = {}, routePoint = MapPointAction.StartRoute to {}) }
+
+    @Test fun menuAddObject() = shot("map-menu-add-object") {
+        MapMenuChoices(newLz = {}, addObject = AddObjectChoice("LZ HAWK", off = null) {}, addThreat = {}, routePoint = MapPointAction.AddTo("ROUTE 1") to {})
+    }
+
+    @Test
+    fun menuObjects() {
+        menu(MapMenuChoices(newLz = {}, addObject = AddObjectChoice("LZ HAWK", off = null) {}, addThreat = {}), at = IntOffset(300, 1500))
+        compose.onNode(hasText("Add object here") and hasClickAction()).performClick()
+        compose.waitForIdle()
+        captureScreenRoboImage("build/screenshots/map-menu-objects.png")
+    }
 
     @Test
     fun `the grid heads the menu on one line, as the design draws it`() {

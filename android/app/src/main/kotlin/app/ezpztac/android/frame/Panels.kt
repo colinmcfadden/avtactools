@@ -42,9 +42,11 @@ data class PanelCounts(val threats: Int = 0, val imports: Int = 0, val packNew: 
 
 /**
  * What picking [picked] does, with [current] showing at [detent] (the web's sheet does the same): another panel opens, to half if the sheet
- * was lowered and at the height it was otherwise; the panel already showing goes down to its header, or up to half when it is down.
+ * was lowered and at the height it was otherwise; the panel already showing goes down to its header, or up to half when it is down. A [closed] panel (its close
+ * button) comes back at half, whichever is picked.
  */
-fun pick(current: Panel, detent: SheetDetent, picked: Panel): Pair<Panel, SheetDetent> = when {
+fun pick(current: Panel, detent: SheetDetent, picked: Panel, closed: Boolean = false): Pair<Panel, SheetDetent> = when {
+    closed -> picked to SheetDetent.Half
     picked != current -> picked to (if (detent == SheetDetent.Lowered) SheetDetent.Half else detent)
     detent == SheetDetent.Lowered -> picked to SheetDetent.Half
     else -> picked to SheetDetent.Lowered
@@ -52,7 +54,7 @@ fun pick(current: Panel, detent: SheetDetent, picked: Panel): Pair<Panel, SheetD
 
 /**
  * Whether the Pack panel is in sight, so what is new in it may be marked seen: it is the panel showing, nothing covers it ([covered]: the Library, a
- * route's plan page over a phone's frame), and its list stands on a tablet ([listShown]) or its sheet is not lowered on a phone.
+ * route's plan page over a phone's frame, the phone's frame hidden or its panel closed), and its list stands on a tablet ([listShown]) or its sheet is not lowered on a phone.
  */
 fun lookingAtPack(current: Panel, tablet: Boolean, listShown: Boolean, detent: SheetDetent, covered: Boolean): Boolean =
     current == Panel.Pack && !covered && (if (tablet) listShown else detent != SheetDetent.Lowered)

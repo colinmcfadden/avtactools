@@ -91,6 +91,30 @@ class PanelsTest {
     }
 
     @Test
+    fun `a closed panel comes back at half whichever is picked, and anything that chooses a panel opens it`() {
+        assertEquals(Panel.Lz to SheetDetent.Half, pick(Panel.Lz, SheetDetent.Half, Panel.Lz, closed = true))     // not lowered, as the one showing would be
+        assertEquals(Panel.Routes to SheetDetent.Half, pick(Panel.Lz, SheetDetent.Full, Panel.Routes, closed = true))
+        val frame = FrameState()
+        frame.close()
+        assertTrue(frame.closed)
+        frame.show()                                                                                   // the frame, not its panel
+        assertTrue(frame.closed)
+        frame.choose(Panel.Threats)
+        assertFalse(frame.closed)
+        frame.close()
+        frame.open()
+        assertFalse(frame.closed)
+    }
+
+    @Test
+    fun `as the panel closes its edge goes down to the bar's top`() {
+        assertEquals(1000f, closedEdge(1000f, 2000f, 0f), 0.01f)
+        assertEquals(1500f, closedEdge(1000f, 2000f, 0.5f), 0.01f)
+        assertEquals(2000f, closedEdge(1000f, 2000f, 1f), 0.01f)
+        assertEquals(1000f, closedEdge(1000f, null, 1f), 0.01f)                                       // not laid out yet: where it rests
+    }
+
+    @Test
     fun `a panel no longer offered gives way to the first`() {
         assertEquals(Panel.Lz, shownPanel(Panel.Threats, listOf(Panel.Lz, Panel.Routes, Panel.Imports)))
         assertEquals(Panel.Routes, shownPanel(Panel.Routes, Panel.entries))

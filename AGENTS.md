@@ -1442,6 +1442,9 @@ client is built around not losing one:
     or a route being drawn, and it ends when another LZ/PZ opens or the open one closes. Each new tool takes the sheet down again (`HomeViewModel.drawingWhat`).
   - **A page of the panel belongs to the LZ/PZ open**: one closed from outside (a sign-out, a mission pack) takes its plan page with it, so the next one
     opened starts from the open LZ/PZs.
+  - **The tools are under the open LZ/PZ's card too** (the owner's request of 2026-10-15; `LzToolsSection`, `LzHomeContent(tools)`): the panel's first page has the plan's
+    tool grid, with its unit builder and its question before a boundary clears an analysis, so a tool is a tap away whenever the panel shows an LZ/PZ. Each place keeps its
+    own builder and question. Not on a tablet while the LZ/PZ's plan stands in its pane beside the list (the plan has them), and not in a read-only pack.
   - **Not offered, because Android does not have them yet:** 3D, the LZ card export and its capture area, *Sketch a route* from the plan, the LZ box.
 - **The Routes panel** (S4; `feature-workspace`: `RoutesPanel.kt`, `RoutePlanPage.kt`, `SaveRoutesSheet`, `RouteSetNames`, `PlanDates`, over `RoutesViewModel`; `core-data`: `OpenRouteSets`;
   `app`: `OpenRouteSetPreferences`, `MapHome`; the steps and their amendments in `docs/ANDROID_SCREENS_PLAN.md`). Things to keep true:
@@ -1979,6 +1982,11 @@ client is built around not losing one:
   - ***Open Library* is offered only on the Saved toast** (`savedToLibrary` is its one wording, in all three panels; `offersLibrary` recognises it) and only for a tab the account has
     when the toast shows (`panelToast`, reading the tabs as they are then: the collectors outlive a change of features). Opening the Library closes a route's plan page, which would
     otherwise stay under it and come back over the panel the Library's *Open* chose.
+  - ***Add object here*** (the owner's request of 2026-10-15; `AddObjectChoice`, `MapObject`, `placeObject`, `addObjectOff`): while an LZ/PZ is open, for an account offered the
+    LZ/PZ panel, whichever panel shows. It turns the menu into the objects (helicopter, PZ marker, sector of fire, left and right go-around, unit, with the tool grid's symbols,
+    `ToolSymbol` / `ToolGlyph`) with a row back to the choices, in the same popup rather than a second one over it. Each puts one at the press and holds it
+    (`GraphicsViewModel.place` / `addUnit`, one undo step), as the tools' *Add here* does at the crosshair; a unit is friendly infantry, changed from its options. **Greyed
+    out, with the reason**, before the LZ/PZ is analysed and in a read-only pack. Draw LZ is not in it: a boundary is not a place.
   - **Not verifiable here:** the long press and the quick zoom on a real screen, the haptic, how the popup sits over the real map, and TalkBack (the menu names itself with `paneTitle`; the
     long press itself has no non-gesture counterpart, but every choice is also in a panel, at the crosshair).
 - **The phone's row** (the owner's decision of 2026-10-13, departing on purpose from docs/native-design's search bar over a row of chips: on a phone space is tight;
@@ -2024,6 +2032,16 @@ client is built around not losing one:
     back. Kept through a turn of the phone (`rememberSaveable`), never across launches. While hidden the Pack panel is not being looked at (its seen marker does not move) and
     a sheet at full height does not cover the map for the pointer.
   - **Not verifiable here:** the slide over the real map, the crosshair's glide with MapLibre's padding, MapLibre's single tap on a device, and TalkBack's touch exploration.
+- **The phone's panel closed** (the owner's request of 2026-10-15; `app`: `FrameState.closed` / `close` / `open`, `PhoneFrame(closed, onClose)`, `closedEdge`, `pick(closed)`). The
+  sheet's header has a close button beside its full-height arrow: the sheet slides down behind the bar of panels (300 ms, the sheet's own) and the map has the screen above the bar.
+  A tablet's list has its own collapse button already, so this is the phone's. Things to keep true:
+  - **The bar stays, and brings it back**: picking any tab, the one that was showing too, opens it at half (`pick(closed = true)`), and so does anything that chooses a panel
+    (`FrameState.choose`) or raises the sheet in code (`open`: `raisePack`, the held bar's options). Hiding the frame and showing it again does not open it (`show` is the frame's).
+  - **Closed, it keeps its room and lays nothing out in it** (`KeepsRoomEmpty`): laid out at no size, the bar would jump to the top of the screen. It stays composed, as hidden,
+    and is not read by a screen reader; the camera's bottom padding is the bar alone, and the readout, what floats above it and the toasts go down to the bar's top with the
+    sheet's edge (`closedEdge`). The keyboard goes down with it. While closed the Pack panel is not being looked at, and a sheet left at full height covers nothing.
+  - Kept through a turn of the phone (`FrameState.Saver`), never across launches; a window that turns into a tablet's opens it.
+  - **Not verifiable here:** the slide behind the bar over the real map, and the map's padding easing to the bar.
 - **The tablet** (S9; `app`: `frame/TabletFrame.kt` (`TabletFrame`, `TabletFrameState`, `tabletPanes`, `usesTabletFrame`), `MapHome`; `feature-workspace`: `LzPane`,
   `LargeDialog`, `RoutePlanPage(inPane)`; `feature-map`: `MapScreen(buttonsAtFoot)`). A window at least 840 dp wide (Material's expanded width) **and 480 dp tall** has the
   tablet's frame (the design's AT screens): a rail (the workspace, Import with its menu at the tile, the panels with their counts, the Library, the account), the panel showing

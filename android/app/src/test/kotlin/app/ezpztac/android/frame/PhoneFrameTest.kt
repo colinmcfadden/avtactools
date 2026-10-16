@@ -107,6 +107,7 @@ class PhoneFrameTest {
                     panel = panel,
                     footer = footer,
                     hidden = frameState.hidden, onShow = frameState::show, backShows = backShows,
+                    closed = frameState.closed, onClose = frameState::close,
                 ) { frame ->
                     mapFrame = frame
                     onFrame(frame)
@@ -254,6 +255,54 @@ class PhoneFrameTest {
         val toast = compose.onNodeWithText("Saved").fetchSemanticsNode().boundsInRoot
         val foot = compose.onNodeWithText("Sketch a route").fetchSemanticsNode().boundsInRoot
         assertTrue("toast ${toast.bottom} over the footer's top ${foot.top}", toast.bottom <= foot.top)
+    }
+
+    // -- The panel closed by its header's close button -----------------------------------------------------------------------------
+
+    @Test
+    fun `the close button takes the panel away and leaves the bar, and the map has the screen above the bar`() {
+        show(Panel.Routes, SheetDetent.Half)
+        compose.onNodeWithContentDescription("Close the Routes panel").performClick()
+        compose.waitForIdle()
+        assertTrue(frameState.closed)
+        compose.onNodeWithText("Inside Routes").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Open the Routes panel full height").assertDoesNotExist()
+        compose.onNode(hasText("Routes") and isSelectable()).assertIsDisplayed()                       // the bar stays, to bring it back
+        // The map's middle and the readout go down to the bar's top; where the sheet was is the map's.
+        assertEquals(80f, mapFrame!!.padding.bottom.value, 0.5f)
+        val root = compose.onRoot().fetchSemanticsNode().size.height.toFloat()
+        val barTop = root - with(compose.density) { 80.dp.toPx() }
+        assertEquals(barTop, mapFrame!!.controlsBottom()!!, 1.5f)
+        compose.onRoot().performTouchInput { click(Offset(centerX, height * 0.7f)) }
+        assertEquals(listOf("map"), log)
+    }
+
+    @Test
+    fun `a closed panel comes back when a panel is picked on the bar, and stays composed meanwhile`() {
+        show(Panel.Lz, SheetDetent.Half, panel = { each -> var taps by remember { mutableStateOf(0) }; Text("${each.label} tapped $taps", Modifier.clickable { taps++ }) })
+        compose.onNodeWithText("LZ/PZ tapped 0").performClick()
+        compose.onNodeWithContentDescription("Close the LZ/PZ panel").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("LZ/PZ tapped 1").assertDoesNotExist()
+        compose.onNode(hasText("LZ/PZ") and isSelectable()).performClick()
+        compose.waitForIdle()
+        assertFalse(frameState.closed)
+        compose.onNodeWithText("LZ/PZ tapped 1").assertIsDisplayed()                                  // the same panel, not one made again
+    }
+
+    @Test
+    fun `closed, a toast stands above the readout over the bar`() {
+        val toasts = SnackbarHostState()
+        show(Panel.Lz, SheetDetent.Full, snackbars = toasts, withRow = true)
+        compose.onNodeWithContentDescription("Close the LZ/PZ panel").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle { CoroutineScope(Dispatchers.Main).launch { toasts.showSnackbar("Saved") } }
+        compose.waitForIdle()
+        val toast = compose.onNodeWithText("Saved").fetchSemanticsNode().boundsInRoot
+        val pill = compose.onNode(hasContentDescription("Grid under the crosshair", substring = true)).fetchSemanticsNode().boundsInRoot
+        val tab = compose.onNode(hasText("LZ/PZ") and isSelectable()).fetchSemanticsNode().boundsInRoot
+        assertTrue("the toast ${toast.bottom} above the pill ${pill.top}", toast.bottom <= pill.top)
+        assertTrue("the pill ${pill.bottom} above the bar ${tab.top}", pill.bottom <= tab.top)
     }
 
     // -- The frame hidden by a tap on the map --------------------------------------------------------------------------------------

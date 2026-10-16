@@ -17,23 +17,40 @@ import androidx.compose.ui.platform.LocalContext
  * What the frame shows, kept through a turn of the phone and never across launches: the panel [chosen], and whether the phone's frame is [hidden] (the owner's
  * decision of 2026-10-13: a tap on the map hides the row, the sheet and the bar, and leaves the readout, the map's buttons and what floats over the map).
  * Choosing a panel, by the person or in code, always shows the frame, even the panel already chosen: whatever opens, raises or changes a panel means it to be seen.
+ *
+ * The phone's panel can also be [closed] (the owner's request of 2026-10-15: its header's close button): the sheet goes down behind the bar of panels and the map has
+ * the screen above the bar, until a panel is chosen again (the bar, or anything in code that chooses one) or it is [open]ed.
  */
 @Stable
-class FrameState(chosen: Panel = Panel.Lz, hidden: Boolean = false) {
+class FrameState(chosen: Panel = Panel.Lz, hidden: Boolean = false, closed: Boolean = false) {
     var chosen by mutableStateOf(chosen)
         private set
 
     var hidden by mutableStateOf(hidden)
         private set
 
-    /** Shows [panel], and the frame with it. */
+    var closed by mutableStateOf(closed)
+        private set
+
+    /** Shows [panel], and the frame and its panel with it. */
     fun choose(panel: Panel) {
         chosen = panel
         hidden = false
+        closed = false
     }
 
     fun show() {
         hidden = false
+    }
+
+    /** The panel's close button: the sheet goes until a panel is chosen again. */
+    fun close() {
+        closed = true
+    }
+
+    /** The panel comes back (something raises the sheet), where it was chosen. */
+    fun open() {
+        closed = false
     }
 
     fun hide() {
@@ -50,8 +67,8 @@ class FrameState(chosen: Panel = Panel.Lz, hidden: Boolean = false) {
 
     internal companion object {
         val Saver = listSaver<FrameState, Any>(
-            save = { listOf(it.chosen.name, it.hidden) },
-            restore = { FrameState(Panel.valueOf(it[0] as String), it[1] as Boolean) },
+            save = { listOf(it.chosen.name, it.hidden, it.closed) },
+            restore = { FrameState(Panel.valueOf(it[0] as String), it[1] as Boolean, it.getOrNull(2) as? Boolean ?: false) },
         )
     }
 }

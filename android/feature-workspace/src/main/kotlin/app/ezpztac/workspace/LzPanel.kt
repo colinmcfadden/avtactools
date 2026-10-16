@@ -167,7 +167,13 @@ fun LzPanelHost(
         dismissError = graphics::dismissError,
     )
     when (pane.shows(state.page)) {
-        LzPage.HOME -> LzHomeContent(state, actions, crosshairGrid, modifier)
+        LzPage.HOME -> LzHomeContent(
+            state, actions, crosshairGrid, modifier,
+            // The open LZ/PZ's tools under its card, unless its plan, which has them, stands beside the list (a tablet's pane); none in a read-only pack.
+            tools = state.current?.takeIf { it.locked == null && (pane == LzPane.WHOLE || state.page != LzPage.PLAN) }?.let { current ->
+                { LzToolsSection(current, graphicsState, boundaryState, placing, actions, crosshairGrid) }
+            },
+        )
         LzPage.PLAN -> state.current?.let {
             LzPlanContent(it, graphicsState, boundaryState, placing, actions, graphicsActions, crosshairGrid, modifier, nowMillis = now)
         }
@@ -205,11 +211,18 @@ enum class LzPane {
 // -- Home: the open LZ/PZs ---------------------------------------------------------------------------------------------------
 
 /**
- * The open LZ/PZs (the design's Home): the one on the map as a card, the others "Also open", a new one at the crosshair, and the most recent of the rest of
- * the Library. A conflict waiting for a choice is said at the top, because it is easy to miss on the list of everything.
+ * The open LZ/PZs (the design's Home): the one on the map as a card with its [tools] under it, the others "Also open", a new one at the crosshair, and the most
+ * recent of the rest of the Library. A conflict waiting for a choice is said at the top, because it is easy to miss on the list of everything.
  */
 @Composable
-fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid: String?, modifier: Modifier = Modifier) {
+fun LzHomeContent(
+    state: DiagramsUiState,
+    actions: LzPanelActions,
+    crosshairGrid: String?,
+    modifier: Modifier = Modifier,
+    /** The open LZ/PZ's tools, drawn under its card (the host's [LzToolsSection]); none: not drawn. */
+    tools: (@Composable () -> Unit)? = null,
+) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
         // A conflict is the Library's: in a pack it would read as if one of the pack's LZ/PZs had one.
@@ -227,6 +240,7 @@ fun LzHomeContent(state: DiagramsUiState, actions: LzPanelActions, crosshairGrid
         val packLabel: @Composable () -> Unit = { pack?.let { SectionLabel("In ${it.name} · ${it.count}") } }
         if (pack != null && pack.opening == null && current?.inPack != null) packLabel()
         if (current != null) ActiveLzCard(current, actions)
+        if (current != null) tools?.invoke()
         if (pack != null) {
             when {
                 pack.opening != null -> Text(pack.opening, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -596,17 +610,8 @@ fun LzPlanContent(
 ) {
     var confirmDelete by rememberSaveable(current.uuid) { mutableStateOf(false) }
     var renaming by rememberSaveable(current.uuid) { mutableStateOf<String?>(null) }
-    var addingUnit by rememberSaveable { mutableStateOf(false) }
-    var newUnit by rememberSaveable(stateSaver = UnitDraftSaver) { mutableStateOf(UnitDraft()) }
-    var confirmDraw by rememberSaveable { mutableStateOf(false) }
     // The pack finished (or this person made a viewer) while something was being started here: it goes, and does not come back by itself on a reopen.
-    LaunchedEffect(current.locked) {
-        if (current.locked != null) {
-            renaming = null
-            addingUnit = false
-            confirmDraw = false
-        }
-    }
+    LaunchedEffect(current.locked) { if (current.locked != null) renaming = null }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Chips(current.chips)
         current.inPack?.alsoHere?.let { AlsoHere(it) }
@@ -634,6 +639,39 @@ fun LzPlanContent(
         current.weather?.let { WeatherSection(it, nowMillis, actions.refreshWeather) }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        LzToolsSection(current, graphics, boundary, placing, actions, crosshairGrid)
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        GraphicsContent(graphics, crosshairGrid, graphicsActions, placeButtons = false)
+    }
+}
+
+/**
+ * The LZ/PZ tools (the design's tool grid) with what they ask for: the unit builder, the question before a new boundary clears an analysis, and why a tool is off.
+ * On the open LZ/PZ's plan, and under its card on the panel's first page (the owner's request of 2026-10-15), so a tool is a tap away whenever the LZ/PZ panel
+ * shows one: each place keeps its own builder and question.
+ */
+@Composable
+internal fun LzToolsSection(
+    current: ActiveDiagramUi,
+    graphics: GraphicsUiState,
+    boundary: BoundaryUiState,
+    placing: PlacementUi?,
+    actions: LzPanelActions,
+    crosshairGrid: String?,
+    modifier: Modifier = Modifier,
+) {
+    var addingUnit by rememberSaveable(current.uuid) { mutableStateOf(false) }
+    var newUnit by rememberSaveable(stateSaver = UnitDraftSaver) { mutableStateOf(UnitDraft()) }
+    var confirmDraw by rememberSaveable(current.uuid) { mutableStateOf(false) }
+    // The pack finished (or this person made a viewer) while something was being started here: it goes, and does not come back by itself on a reopen.
+    LaunchedEffect(current.locked) {
+        if (current.locked != null) {
+            addingUnit = false
+            confirmDraw = false
+        }
+    }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         SectionLabel("LZ/PZ tools")
         // In a read-only pack every tool is off, and this says why (the design's "Off in a finished pack").
         current.inPack?.short?.let { off ->
@@ -687,9 +725,6 @@ fun LzPlanContent(
                 }
             }
         }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        GraphicsContent(graphics, crosshairGrid, graphicsActions, placeButtons = false)
     }
 }
 
@@ -828,13 +863,13 @@ private fun ToolGrid(
     onUnit: () -> Unit,
 ) {
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
-        { m -> ToolTile("Draw LZ", "Draw the LZ/PZ boundary", Glyph.Boundary, canDraw && !drawing, drawing, m, onDraw) },
-        { m -> ToolTile("Helo", "Place helicopters", Glyph.Helicopter, canPlace, placing == PlaceTool.HELICOPTER, m) { onTool(PlaceTool.HELICOPTER) } },
-        { m -> ToolTile("PZ", "Place PZ markers", Glyph.Pz, canPlace, placing == PlaceTool.PZ_MARKER, m) { onTool(PlaceTool.PZ_MARKER) } },
-        { m -> ToolTile("Sector", "Place sectors of fire", Glyph.Sector, canPlace, placing == PlaceTool.SECTOR_OF_FIRE, m) { onTool(PlaceTool.SECTOR_OF_FIRE) } },
-        { m -> ToolTile("Unit", "Make a unit to place at the crosshair", Glyph.Unit, canPlace, addingUnit, m, onUnit) },
-        { m -> ToolTile("L-GA", "Place left go-arounds", Glyph.GoAroundLeft, canPlace, placing == PlaceTool.GO_AROUND_LEFT, m) { onTool(PlaceTool.GO_AROUND_LEFT) } },
-        { m -> ToolTile("R-GA", "Place right go-arounds", Glyph.GoAroundRight, canPlace, placing == PlaceTool.GO_AROUND_RIGHT, m) { onTool(PlaceTool.GO_AROUND_RIGHT) } },
+        { m -> ToolTile("Draw LZ", "Draw the LZ/PZ boundary", ToolSymbol.Boundary, canDraw && !drawing, drawing, m, onDraw) },
+        { m -> ToolTile("Helo", "Place helicopters", ToolSymbol.Helicopter, canPlace, placing == PlaceTool.HELICOPTER, m) { onTool(PlaceTool.HELICOPTER) } },
+        { m -> ToolTile("PZ", "Place PZ markers", ToolSymbol.Pz, canPlace, placing == PlaceTool.PZ_MARKER, m) { onTool(PlaceTool.PZ_MARKER) } },
+        { m -> ToolTile("Sector", "Place sectors of fire", ToolSymbol.Sector, canPlace, placing == PlaceTool.SECTOR_OF_FIRE, m) { onTool(PlaceTool.SECTOR_OF_FIRE) } },
+        { m -> ToolTile("Unit", "Make a unit to place at the crosshair", ToolSymbol.Unit, canPlace, addingUnit, m, onUnit) },
+        { m -> ToolTile("L-GA", "Place left go-arounds", ToolSymbol.GoAroundLeft, canPlace, placing == PlaceTool.GO_AROUND_LEFT, m) { onTool(PlaceTool.GO_AROUND_LEFT) } },
+        { m -> ToolTile("R-GA", "Place right go-arounds", ToolSymbol.GoAroundRight, canPlace, placing == PlaceTool.GO_AROUND_RIGHT, m) { onTool(PlaceTool.GO_AROUND_RIGHT) } },
     )
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         tiles.chunked(4).forEach { row ->
@@ -846,10 +881,11 @@ private fun ToolGrid(
     }
 }
 
-private enum class Glyph { Boundary, Helicopter, Pz, Sector, Unit, GoAroundLeft, GoAroundRight }
+/** The tools' little map symbols: the LZ/PZ panel's tool grid, and the map menu's *Add object* list. */
+enum class ToolSymbol { Boundary, Helicopter, Pz, Sector, Unit, GoAroundLeft, GoAroundRight }
 
 @Composable
-private fun ToolTile(label: String, description: String, glyph: Glyph, enabled: Boolean, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun ToolTile(label: String, description: String, glyph: ToolSymbol, enabled: Boolean, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -875,7 +911,7 @@ private fun ToolTile(label: String, description: String, glyph: Glyph, enabled: 
 
 /** The tools' little map symbols, as the design draws them, in the palette's own colours so they dim with it at night. */
 @Composable
-private fun ToolGlyph(glyph: Glyph, enabled: Boolean) {
+fun ToolGlyph(glyph: ToolSymbol, enabled: Boolean) {
     val alpha = if (enabled) 1f else 0.4f
     val warning = EzpzTheme.status.warning.copy(alpha = alpha)
     val success = EzpzTheme.status.success.copy(alpha = alpha)
@@ -886,30 +922,30 @@ private fun ToolGlyph(glyph: Glyph, enabled: Boolean) {
         fun p(x: Float, y: Float) = Offset(x * u, y * u)
         val thin = Stroke(1.8f * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
         when (glyph) {
-            Glyph.Boundary -> drawPath(polygon(u, 12f to 3f, 20f to 7.5f, 20f to 16.5f, 12f to 21f, 4f to 16.5f, 4f to 7.5f), warning, style = thin)
-            Glyph.Helicopter -> {
+            ToolSymbol.Boundary -> drawPath(polygon(u, 12f to 3f, 20f to 7.5f, 20f to 16.5f, 12f to 21f, 4f to 16.5f, 4f to 7.5f), warning, style = thin)
+            ToolSymbol.Helicopter -> {
                 drawCircle(success, radius = 8f * u, center = p(12f, 12f), style = thin)
                 drawLine(success, p(7.5f, 7.5f), p(16.5f, 16.5f), 1.8f * u, StrokeCap.Round)
                 drawLine(success, p(16.5f, 7.5f), p(7.5f, 16.5f), 1.8f * u, StrokeCap.Round)
             }
-            Glyph.Pz -> {
+            ToolSymbol.Pz -> {
                 drawLine(accent, p(3f, 12f), p(13f, 12f), 2f * u, StrokeCap.Round)
                 drawLine(accent, p(3f, 12f), p(7f, 8.5f), 2f * u, StrokeCap.Round)
                 drawLine(accent, p(3f, 12f), p(7f, 15.5f), 2f * u, StrokeCap.Round)
                 drawCircle(error, radius = 3f * u, center = p(18f, 12f), style = thin)
             }
-            Glyph.Sector -> {
+            ToolSymbol.Sector -> {
                 val triangle = polygon(u, 12f to 4f, 20f to 19f, 4f to 19f)
                 drawPath(triangle, error.copy(alpha = 0.28f * alpha), style = Fill)
                 drawPath(triangle, error, style = Stroke(1.5f * u, join = StrokeJoin.Round))
             }
-            Glyph.Unit -> {
+            ToolSymbol.Unit -> {
                 drawRoundRect(accent, topLeft = p(3.5f, 6.5f), size = androidx.compose.ui.geometry.Size(17f * u, 11f * u), cornerRadius = androidx.compose.ui.geometry.CornerRadius(u, u), style = thin)
                 drawLine(accent, p(3.5f, 6.5f), p(20.5f, 17.5f), 1.5f * u)
                 drawLine(accent, p(20.5f, 6.5f), p(3.5f, 17.5f), 1.5f * u)
             }
-            Glyph.GoAroundLeft -> goAround(u, warning, left = true)
-            Glyph.GoAroundRight -> goAround(u, warning, left = false)
+            ToolSymbol.GoAroundLeft -> goAround(u, warning, left = true)
+            ToolSymbol.GoAroundRight -> goAround(u, warning, left = false)
         }
     }
 }

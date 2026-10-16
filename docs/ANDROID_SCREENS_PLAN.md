@@ -655,6 +655,15 @@ pack (it passes by itself). 29 mutations of these rules, each killed by its test
 
 With P4c the redesign's screens S1–S9 and P1–P4 are built; the owner tries the app on a device next.
 
+**After P4: the owner's requests of 2026-10-15** (branch `feat/android-panel-close-and-tools`), not in the design:
+- **The phone's panel closes.** A close button in the sheet's header, beside its full-height arrow, takes the sheet down behind the bar of panels; picking any tab brings it
+  back at half. A tablet's list already collapses from its own header.
+- **The LZ/PZ tools are under the open LZ/PZ's card** on the panel's first page as well as on its plan (not on a tablet while the plan stands beside the list).
+- ***Add object here* in the map's long-press menu**, while an LZ/PZ is open: the menu turns into the objects the tools place at a point (helicopter, PZ marker, sector of
+  fire, left and right go-around, unit) and the one chosen is put at the press and held. Off with its reason before an analysis and in a read-only pack.
+Tests: `PanelsTest`, `PhoneFrameTest`, `MapMenuTest` (with pictures of the menu and its objects), `LzPanelScreenTest`, `LzPanelScreenshotTest`. **Not verifiable here:** the
+slide behind the bar over the real map, and the long press on a device.
+
 
 ## How each step is checked
 

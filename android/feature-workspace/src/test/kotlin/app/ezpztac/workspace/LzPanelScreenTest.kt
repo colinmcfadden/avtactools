@@ -38,6 +38,7 @@ import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.sync.SyncStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -206,6 +207,30 @@ class LzPanelScreenTest {
         compose.onNodeWithText("1 LZ/PZ needs a choice", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Review").performClick()
         assertEquals(listOf("browse"), log)                                                  // the Library, where conflicts are settled
+    }
+
+    @Test
+    fun `the open one's tools are under its card, and a tool turns its mode on from there`() {
+        val current = activeLz()
+        show {
+            LzHomeContent(homeState(current), actions, GRID, tools = {
+                LzToolsSection(current, GraphicsUiState(listed = true, canEdit = true), BoundaryUiState(canStart = true, clears = true), null, actions, GRID)
+            })
+        }
+        compose.onNodeWithText("LZ/PZ tools").assertIsDisplayed()
+        val card = compose.onNodeWithText("Plan").fetchSemanticsNode().boundsInRoot
+        val helo = compose.onNodeWithContentDescription("Place helicopters").fetchSemanticsNode().boundsInRoot
+        val also = compose.onNodeWithText("Also open").fetchSemanticsNode().boundsInRoot
+        assertTrue("the tools ${helo.top} under the card ${card.bottom}, above the others open ${also.top}", helo.top > card.bottom && helo.bottom < also.top)
+        compose.onNodeWithContentDescription("Place helicopters").performClick()
+        compose.onNodeWithContentDescription("Place PZ markers").performClick()
+        assertEquals(listOf("tool HELICOPTER", "tool PZ_MARKER"), log)
+    }
+
+    @Test
+    fun `with no tools given the first page has none`() {
+        show { LzHomeContent(homeState(), actions, GRID) }
+        compose.onNodeWithText("LZ/PZ tools").assertDoesNotExist()
     }
 
     // -- Plan ------------------------------------------------------------------------------------------------------------------
