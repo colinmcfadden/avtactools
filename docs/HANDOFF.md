@@ -5,7 +5,8 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
+Last refreshed: 2026-10-19 for the mission brief (§0a: B0 to B4 built on `feat/mission-brief`, web and server; Android's part is B7 to B9).
+Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
 S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, P3c Teams, P4a copies into a pack, P4b updating a copy and copies to the Library, P4c the edits a pack would not take, every review's fixes in: S1–S9 and P1–P4 are built, and the owner's device run is next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
@@ -14,6 +15,50 @@ map, from the Layers menu (AGENTS.md §17, *The MGRS grid*), its code ported and
 two-device run found, a pack's route written twice (§1); the audit of every setting in a pack that followed it (§1); and the owner's changes to the phone's frame
 from the same day's device run (§1): the search, the workspace, Import and the Library on one row, a tap on the map that hides the frame, and how an open pack
 stands said on its chip.
+
+---
+
+## 0a. The mission brief (2026-10-16 to 19)
+
+Branch **`feat/mission-brief`**, on `develop` (which has `feat/android-panel-close-and-tools`, merged as PR #97). **Not pushed; no PR yet.** The plan, the
+owner's decisions of 2026-10-16 and each step's state are in **`docs/MISSION_BRIEF.md`** (read it first); AGENTS.md §4, §6, §9 and §10 say what exists.
+
+**What it is:** the air movement and hasty multi-ship briefs (Aviation Branch Handbook formats; the owner confirmed their item lists and standard values
+releasable, the handbook itself is CUI-marked and never committed) generated from a mission pack or the session: a PDF and, next, a live sandtable.
+Web and Android; Android tablet size and up only for now.
+
+**Built (each with its tests, the commit named):**
+- **B0** `contracts/briefs/`: the two formats as data (templates, bindings, constants, standards), held by `briefTemplates.test.js`; the web bundles
+  byte-for-byte copies in `frontend/src/feature/brief/templates/` (a test fails if a copy differs: change `contracts/briefs`, then copy).
+- **B1** `compileBrief` (`frontend/src/feature/brief/compile.js`, pure: no clock, zone or network) held to `contracts/fixtures/brief/compile.json`, and
+  on-device light data (`light.js`) held to Skyfield (`contracts/scripts/light_fixtures.py`, `light.json`; Skyfield is a dev-only reference the owner
+  approved, never shipped).
+- **B2** (built in a side session, reviewed and merged here): `SavedBrief` and `/api/briefs` synced like an LZ, the pack item kind `brief` open to every
+  member in every state of the pack (`pack_routes._only_briefs`), `/api/weather?at=`, the `mission_brief` entitlement (default off).
+- **B3** the web's Brief menu and three-step setup (`BriefSetup` over `useBrief`): Library record outside a pack, the pack's brief item inside one; the
+  web's pack session takes brief edits in a read-only pack, in batches of their own (`packs/session-brief.json`).
+- **B4** the PDF: `POST /api/brief/pdf` draws the figures from the model's `geometry` (tiles + SVG, `backend/brief/figures.py`), lays out the pages
+  (`pages.py`, `templates/`) and prints them through **Gotenberg** (`GOTENBERG_URL`). Tried end to end on the owner's Mac against Gotenberg 8.21.1 run
+  locally with JavaScript off and the network denied, and through the real Download PDF button. **A brief says no page numbers** (Chromium may break a
+  long step onto two pages): the packet is said by section, the footer numbers pages.
+
+**Checks that ran (2026-10-19, the owner's Mac):** the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
+`mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android
+`:core-network:test` and `:core-missionpacks:test`.
+
+**Not verifiable here, or not tried:** a brief built from real LZ/PZs and routes in the browser (only the fixture's OP DK, in Jest and the PDF test);
+a pack-mode brief in the browser (Jest only); the weather `at` answers from aviationweather.gov live; Gotenberg on the Coolify VM.
+
+**Next, in order** (docs/MISSION_BRIEF.md §5): **B5** the web's live sandtable (the brief's steps on the live map; it must not name a PDF page);
+**B6** strip charts in the PDF; **B7** Android's `core-brief` (port `compile.js` and `light.js`, held to `compile.json` and `light.json`; the record kind;
+the pack kind with `packs/ops-brief.json` and `packs/session-brief.json`'s session rules); **B8** Android setup, review, Share and Save (tablet);
+**B9** Android sandtable. **Owner steps:** deploy Gotenberg on the VM (AGENTS.md §9 has the command line) and set `GOTENBERG_URL`; check Mapbox's
+terms for printed figures before the PDF ships; tick *Mission brief* for testers in the admin dashboard.
+
+**Local setup left on the Mac:** `frontend/.env` (gitignored) points at a backend on **port 5055**, because macOS's AirPlay receiver holds 5000; run the
+backend with `cd backend && venv/bin/python -m flask --app app run --port 5055` (add `GOTENBERG_URL=http://127.0.0.1:3091` and
+`docker run --rm -p 3091:3000 gotenberg/gotenberg:8.21.1 gotenberg --chromium-disable-javascript=true` for the PDF). A test account
+`brief.check@local.ezpz.test` (admin) is in the local SQLite database; its password is not recorded in the repo: make another with `dev_user.py` if needed.
 
 ---
 
@@ -162,6 +207,8 @@ HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".
 
 ## 2. Next work, in order
 
+(The mission brief has its own next steps: §0a.)
+
 0. **Two devices in one pack again**, after the settings audit: what only a device run shows is the live stream end to end, a drag and its pointer on the real map, and
    the clock form and the unit builder with someone else's change arriving while they are open. Then the owner's calls in AGENTS.md §15 (an aircraft's own airframe
    on other devices, two clocks, the web's partial values and forms, which want the web first).
@@ -303,8 +350,15 @@ another (a deliberate difference from the web, which drops them); refused edits 
 is not open; `feature_disabled`, `affiliation_required` and an ended session pause the queue rather than drop it. Also approved and
 done: the five web session fixes, the `taken` field, and the role re-read under the lock on every pack write route.
 
+**Made on 2026-10-16, for the mission brief** (`docs/MISSION_BRIEF.md` §9): the formats' item lists and standard values are releasable; a finished
+pack's brief is a pack item that stays open to change, and every member (viewers too) may brief; the PDF is rendered on the server by Gotenberg;
+light data is our own sun and moon code; Android is tablet size and up only for now; every flow role (PZ, LZ, FARP, holding area, laager, false
+insertion); only the presenter's map moves in the sandtable; the weather at planned times (`/api/weather?at=`); strip charts are in. And on
+2026-10-19: Skyfield as the light fixtures' reference.
+
 **Still open:**
 
+- **Gotenberg** on the VM and `GOTENBERG_URL` (the brief's PDF); Mapbox's terms for printed figures.
 - **`applicationId`** — permanent once published; release builds are refused until `-Pezpz.applicationId=<id>` is passed.
 - **Mapbox token** — if it is URL-restricted, a native app (no web referrer) may be refused; give the apps their own via
   `MAPBOX_PUBLIC_TOKEN`.
@@ -324,8 +378,9 @@ done: the five web session fixes, the `taken` field, and the role re-read under 
 
 Full list in AGENTS.md; the ones that matter most for a fresh agent:
 
-- **Unclassified only.** Threats are never synced or persisted server-side; on the device they live in memory plus a sealed
-  no-backup file for at most 48 h after the last change, wiped at sign-out. **The only Android threat network call is the terrain mask, made
+- **Unclassified only.** The mission brief's handbook is CUI-marked: never commit it or send it to a service; the templates carry its item lists
+  and standard values in the app's own words, by the owner's leave (2026-10-16). Threats are never synced or persisted server-side; on the device they
+  live in memory plus a sealed no-backup file, wiped at sign-out. **The only Android threat network call is the terrain mask, made
   when the person presses its button**: do not add another, or make this one on its own, without the person asking for it.
 - **Agents do not deploy.** Never push `main`, run `fly deploy`, or trigger production. No new major dependency without asking.
 - **The web is the reference; `contracts/` fixtures are the contract.** Never hand-edit a fixture; change the web (or backend)
