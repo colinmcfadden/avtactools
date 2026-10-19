@@ -57,7 +57,7 @@ class CompileBriefTest {
     fun `writes the document's options in JavaScript's order, and numbers as JavaScript writes them`() {
         val model = CompileBrief.compile(amb, json("""{"options": {"zebra": 1.50, "2": true, "lzCards": false, "0": {"b": 2.0, "1": 1e2}}}"""))
         assertEquals(
-            """{"0":{"1":100,"b":2},"2":true,"script":true,"constants":true,"lzCards":false,"navLogs":true,"iimc":true,"writeIns":true,"zebra":1.5}""",
+            """{"0":{"1":100,"b":2},"2":true,"script":true,"constants":true,"lzCards":false,"navLogs":true,"strips":true,"iimc":true,"writeIns":true,"zebra":1.5}""",
             model["options"].toString(),
         )
     }

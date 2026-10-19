@@ -70,7 +70,7 @@ class CompileFixtureTest {
         assertEquals("iimc", pages.last().text("kind"))
         // The packet by section, never by page: Chromium decides where pages break.
         val roll = script(amb.step("1"))
-        assertTrue(roll.contains("The packet holds the brief (18 steps), 5 LZ/PZ cards, 2 nav logs and the IIMC card"), roll)
+        assertTrue(roll.contains("The packet holds the brief (18 steps), 5 LZ/PZ cards, 2 nav logs, 12 strip charts and the IIMC card"), roll)
         assertFalse(Regex("[0-9]+–[0-9]+").containsMatchIn(roll))
     }
 

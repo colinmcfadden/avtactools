@@ -16,7 +16,6 @@ import app.ezpztac.brief.BriefText.percentText
 import app.ezpztac.brief.BriefText.plural
 import app.ezpztac.brief.BriefText.pointName
 import app.ezpztac.brief.BriefText.wallOf
-import app.ezpztac.geo.GreatCircle
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramNormalizer
@@ -96,41 +95,43 @@ public object CompileBrief {
 // The plan, as the brief reads it.
 
 /** An LZ/PZ of the plan. */
-private class StopItem(val ref: String, val id: String, val name: String, val diagram: Diagram, val target: DiagramTarget?)
+internal class StopItem(val ref: String, val id: String, val name: String, val diagram: Diagram, val target: DiagramTarget?)
 
 /** A named (AMPS) point of a route, as the route holds it: what `===` compares and what a rally point names. */
-private class NamedPoint(val raw: JsonObject, val point: RoutePoint)
+internal class NamedPoint(val raw: JsonObject, val point: RoutePoint)
 
 /** A route of the plan with the planner's results. [named] and [result]'s points are the same points, in the same order. */
-private class RouteItem(
+internal class RouteItem(
     val ref: String,
     val id: String,
     val name: String,
     val raw: JsonObject,
     val points: List<RoutePoint>,
+    /** Every point of the route as it holds it, shaping points too, in its order: what a strip chart is cut along. */
+    val every: List<NamedPoint>,
     val named: List<NamedPoint>,
     val result: PlanResult,
 )
 
 /** An entry of the flow: a new object for each place the flow names an item, as the web's spreads make one, so two are never the same. */
-private sealed class Entry {
+internal sealed class Entry {
     abstract val ref: String
 }
 
-private class StopEntry(val item: StopItem, val role: String) : Entry() {
+internal class StopEntry(val item: StopItem, val role: String) : Entry() {
     override val ref: String get() = item.ref
     val name: String get() = item.name
     val target: DiagramTarget? get() = item.target
     val diagram: Diagram get() = item.diagram
 }
 
-private class RouteEntry(val item: RouteItem) : Entry() {
+internal class RouteEntry(val item: RouteItem) : Entry() {
     override val ref: String get() = item.ref
     val name: String get() = item.name
     val points: List<PlanPoint> get() = item.result.points
 }
 
-private class GoneEntry(override val ref: String) : Entry()
+internal class GoneEntry(override val ref: String) : Entry()
 
 /** A part of a sentence: text, or a line to write on with what it is for. */
 private sealed class Part {
@@ -217,6 +218,7 @@ private class Compiler(
             name = Js.trim(Js.text(raw["name"]?.takeIf(Js::truthy) ?: JsonPrimitive(""))).ifEmpty { "ROUTE" },
             raw = raw,
             points = points,
+            every = parsed,
             // The planner's own filter, so these stay the plan's points one for one.
             named = parsed.filter { it.point.kind != RoutePoint.KIND_SHAPING && !it.point.id.isNullOrEmpty() },
             result = result,
@@ -284,8 +286,7 @@ private class Compiler(
     /** JavaScript's `\w`, which is ASCII whatever the platform's regular expressions take a word character to be. */
     private fun isWordChar(c: Char) = c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '_'
 
-    private fun metresBetween(lat: Double, lon: Double, target: DiagramTarget): Double =
-        GreatCircle.distanceNm(lat, lon, target.lat, target.lon) * METRES_PER_NM
+    private fun metresBetween(lat: Double, lon: Double, target: DiagramTarget): Double = Sphere.metresBetween(lat, lon, target.lat, target.lon)
 
     /**
      * The flow: the person's order if they gave one, else each route followed by the LZ/PZs at its points (in the order it reaches them),
@@ -594,7 +595,7 @@ private class Compiler(
     }
 
     private fun threatsText(routes: List<RouteEntry>): String {
-        if (Js.path(doc, "include", "threats").let { it is JsonPrimitive && !it.isString && it.content == "false" }) return "Not briefed."
+        if (threatsLeftOut()) return "Not briefed."
         val list = threatList()
         if (list.isEmpty()) return "None in the plan."
         return "${list.joinToString("; ") { t ->
@@ -604,15 +605,18 @@ private class Compiler(
             var nearest: Pair<PlanPoint, Double>? = null
             routes.forEach { r ->
                 r.points.forEach { p ->
-                    val d = GreatCircle.distanceNm(p.lat, p.lon, lat, lon)
+                    val d = Sphere.distanceNm(p.lat, p.lon, lat, lon)
                     if (nearest == null || d < nearest!!.second) nearest = p to d
                 }
             }
             val (p, d) = nearest ?: return@joinToString name
-            val bearing = GreatCircle.trueCourseDeg(p.lat, p.lon, lat, lon)
+            val bearing = Sphere.trueCourseDeg(p.lat, p.lon, lat, lon)
             "$name, ${nmText(d)} ${compassOf(bearing)} of ${pointName(p.name, "the route")}"
         }}."
     }
+
+    /** The brief leaves the threats out (`include.threats` is false). */
+    private fun threatsLeftOut(): Boolean = Js.path(doc, "include", "threats").let { it is JsonPrimitive && !it.isString && it.content == "false" }
 
     private fun threatList(): List<JsonObject> = (plan["threats"] as? JsonArray).orEmpty()
         .filter { it is JsonObject && Js.num(it["lat"]) != null && Js.num(it["lon"]) != null }.map { it as JsonObject }
@@ -1021,6 +1025,29 @@ private class Compiler(
                 }
             }
         }
+        // Strip charts, three to a page, a route's strips together and in the order they are flown.
+        val stripScale = Js.numberOf(options["stripScale"])?.takeIf { it in StripCharts.SCALES } ?: StripCharts.SCALES[0]
+        val threatsShown = if (threatsLeftOut()) emptyList() else threatList()
+        val strips = if (Js.truthy(options["strips"])) {
+            StripCharts.of(flowRoutes, flowStops.filter { it.target != null }, threatsShown, stripScale, ::problem, ::altitudeOf)
+        } else {
+            emptyList()
+        }
+        flowRoutes.forEach { r ->
+            val own = strips.filter { Js.isText(it["ref"], r.ref) }
+            for (i in own.indices step 3) {
+                val shown = own.subList(i, minOf(i + 3, own.size))
+                val parts = if (shown.size > 1) "${Js.text(shown.first()["part"])}–${Js.text(shown.last()["part"])}" else Js.text(shown.first()["part"])
+                val range = if (own.size > 3) " ($parts of ${own.size})" else ""
+                pages += buildJsonObject {
+                    put("n", pages.size + 1)
+                    put("kind", "strips")
+                    put("ref", r.ref)
+                    put("title", "Strip charts · ${r.name}$range")
+                    put("strips", JsonArray(shown.map { it.getValue("id") }))
+                }
+            }
+        }
         if (hasIimcCard) {
             pages += buildJsonObject {
                 put("n", pages.size + 1)
@@ -1037,6 +1064,7 @@ private class Compiler(
             "the brief (${plural(planned.size, "step", "steps")})",
             if (count("lzCard") > 0) plural(count("lzCard"), "LZ/PZ card", "LZ/PZ cards") else null,
             if (count("navLog") > 0) plural(count("navLog"), "nav log", "nav logs") else null,
+            StripCharts.inventory(strips.size),
             if (count("iimc") > 0) "the IIMC card" else null,
         )
         val inventoryText = if (inventory.size > 1) "${inventory.dropLast(1).joinToString(", ")} and ${inventory.last()}" else inventory[0]
@@ -1218,6 +1246,7 @@ private class Compiler(
             )
             put("steps", JsonArray(steps))
             put("pages", JsonArray(pages))
+            put("strips", JsonArray(strips))
             put("problems", JsonArray(problems))
         }
     }
@@ -1243,7 +1272,7 @@ private class Compiler(
     /** The document's options over the defaults, as `{...defaults, ...doc.options}` makes them. */
     private fun optionsOf(): JsonObject {
         val merged = LinkedHashMap<String, JsonElement>()
-        listOf("script", "constants", "lzCards", "navLogs", "iimc", "writeIns").forEach { merged[it] = JsonPrimitive(true) }
+        listOf("script", "constants", "lzCards", "navLogs", "strips", "iimc", "writeIns").forEach { merged[it] = JsonPrimitive(true) }
         (doc["options"] as? JsonObject)?.let { o -> Js.orderedKeys(o.keys).forEach { merged[it] = asJavaScriptWrites(o.getValue(it)) } }
         return JsonObject(Js.orderedKeys(merged.keys).associateWith { merged.getValue(it) })
     }
@@ -1330,7 +1359,7 @@ private class Compiler(
                 putValue("goAround", str(goAroundSide(diagram)))
             }
         }
-        val threats = if (Js.path(doc, "include", "threats").let { it is JsonPrimitive && !it.isString && it.content == "false" }) {
+        val threats = if (threatsLeftOut()) {
             emptyList()
         } else {
             threatList().map { t ->
@@ -1458,7 +1487,7 @@ private class Compiler(
         }
         val target = stop.target!!
         val dLat = 300 / 111320.0
-        // StrictMath, fdlibm, as the JavaScript engines' cos: the bounds are compared to the web's to the last digit.
+        // StrictMath: the same bits on the JVM and every device. compile.json's bounds are compared exactly, and agree.
         val dLon = dLat / maxOf(0.01, StrictMath.cos((target.lat * Math.PI) / 180))
         return corners + listOf(target.lat - dLat to target.lon - dLon, target.lat + dLat to target.lon + dLon)
     }
@@ -1492,7 +1521,6 @@ private class Compiler(
     private companion object {
         /** A stop is at a route point within this distance of its target. */
         const val STOP_MATCH_M = 500.0
-        const val METRES_PER_NM = 1852.0
         val PLACEHOLDER = Regex("""\{([^{}]*)\}""")
         val ISO_DATE = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
         val ISO_DATE_PARTS = Regex("([0-9]{4})-([0-9]{2})-([0-9]{2})")
