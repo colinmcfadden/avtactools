@@ -20,14 +20,14 @@
       "sections": [
         {
           "id": "1", "title": "Roll call", "step": "1", "figure": "overview",
-          "facts": ["flight.aircraft", "packet.pages"],
+          "facts": ["flight.aircraft"],
           "items": [
             { "id": "a", "label": "Packet inventory", "kind": "text", "bind": "packet.inventory" },
             { "id": "b", "label": "Mission risk level", "kind": "choice", "options": ["Low", "Moderate", "High", "Extremely high"] }
           ],
           "script": [
             "This is the air movement brief for {bind:mission.name}: {bind:flight.summary}",
-            "Check you have all {bind:packet.pages} pages: {a}.",
+            "The packet holds {a}: check you have every page.",
             "Mission risk level is {b}."
           ]
         }

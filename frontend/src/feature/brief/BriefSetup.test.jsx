@@ -11,6 +11,7 @@ jest.mock("./briefApi", () => ({
   createBrief: jest.fn(),
   updateBrief: jest.fn(),
   weatherAt: jest.fn(),
+  printBrief: jest.fn(),
 }));
 
 const fixture = require("../../../../contracts/fixtures/brief/compile.json");
@@ -144,7 +145,27 @@ describe("brief setup, step 3", () => {
     expect(sheet).toHaveTextContent("Landing 203°");
     fireEvent.click(screen.getByRole("switch", { name: /Nav logs/ }));
     expect(lastDoc.options).toEqual({ navLogs: false });
-    expect(screen.getByRole("button", { name: "Download PDF" })).toBeDisabled();
+  });
+
+  it("prints the brief the review shows, and says why when it cannot", async () => {
+    window.URL.createObjectURL = jest.fn(() => "blob:brief");
+    window.URL.revokeObjectURL = jest.fn();
+    briefApi.printBrief.mockResolvedValueOnce(new Blob(["%PDF"], { type: "application/pdf" }));
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: /Review/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    });
+    const [model] = briefApi.printBrief.mock.calls[0];
+    expect(model.format).toBe("ezpz-brief-model");
+    expect(model.geometry.routes["route:set-opdk/r-alderaan"].log[0]).toMatchObject({ from: "3MILE", to: "TRACK" });
+    expect(window.URL.createObjectURL).toHaveBeenCalled();
+
+    briefApi.printBrief.mockRejectedValueOnce(new Error("The PDF is not available on this server yet."));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    });
+    expect(screen.getByRole("dialog")).toHaveTextContent("The PDF is not available on this server yet.");
   });
 
   it("says what it could not brief", () => {

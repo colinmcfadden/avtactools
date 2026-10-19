@@ -16,6 +16,33 @@ export const createBrief = async ({ name, data, clientUuid }) =>
 
 export const updateBrief = async (id, { name, data }) => (await api.put(`/briefs/${id}`, { name, data })).data;
 
+const PDF_WORDS = {
+  pdf_unavailable: "The PDF is not available on this server yet.",
+  pdf_failed: "The PDF could not be made. Try again in a moment.",
+  invalid_brief: "The brief could not be printed: open it again and retry.",
+  too_large: "The brief is too large to print.",
+  feature_disabled: "Mission briefs are not turned on for your account.",
+};
+
+/**
+ * The brief as the server prints it (POST /api/brief/pdf): a Blob of the PDF, or an Error whose message is the app's
+ * words for why not (never the server's own text).
+ */
+export const printBrief = async (model) => {
+  try {
+    const response = await api.post("/brief/pdf", { model }, { responseType: "blob" });
+    return response.data;
+  } catch (error) {
+    let code = null;
+    try {
+      code = JSON.parse(await error.response?.data?.text?.())?.code ?? null;
+    } catch {
+      code = null;
+    }
+    throw new Error(PDF_WORDS[code] ?? (error.response ? "The PDF could not be made." : "No connection to the server: the PDF needs one."));
+  }
+};
+
 /** The report or forecast for a place at an instant (ISO); null when the server could not answer. */
 export const weatherAt = async ({ lat, lon, at }) => {
   try {

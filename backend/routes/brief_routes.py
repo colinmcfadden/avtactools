@@ -7,11 +7,16 @@ last-writer-wins for the web, and a deletion is a tombstone. Every route needs `
 launched yet (``entitlements.DEFAULT_OFF``); a write needs ``cloud_save`` too, as any saved record does.
 """
 
-from flask import Blueprint, jsonify, request
+import io
+import re
+
+from flask import Blueprint, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
 
 import sync_support as sync
+import terrain_tiles
+from brief import gotenberg, pages
 from entitlements import require_feature
 from models import SavedBrief, db
 
@@ -165,3 +170,39 @@ def delete_brief(brief_id):
     sync.stamp(saved, user_id, sync.idempotency_key(request), deleted=True)
     db.session.commit()
     return jsonify({"status": "deleted", "revision": saved.revision})
+
+
+# -- The PDF ------------------------------------------------------------------------------------------------------------
+
+# A brief model is tens to a few hundred kilobytes (a route's line in every figure's geometry once).
+MAX_MODEL_BYTES = 4 * 1024 * 1024
+
+
+@brief_bp.route('/api/brief/pdf', methods=['POST'])
+@jwt_required()
+@require_feature('mission_brief')
+@terrain_tiles.pauses_warming
+def brief_pdf():
+    """The brief the client compiled, printed: its figures drawn from the plan over the chosen base map, its pages laid
+    out as HTML, and Chromium's PDF of them through Gotenberg (docs/MISSION_BRIEF.md §2.7). Nothing is kept: neither
+    the model nor the PDF is stored or logged. 503 when this server has no Gotenberg."""
+    if request.content_length and request.content_length > MAX_MODEL_BYTES:
+        return jsonify({"error": "The brief is too large to print.", "code": "too_large"}), 413
+    body = request.get_json(silent=True)
+    model = body.get('model') if isinstance(body, dict) else None
+    if not gotenberg.url():
+        return jsonify({"error": "The PDF is not available on this server.", "code": "pdf_unavailable"}), 503
+    try:
+        html, header, footer, files, paper = pages.build(model)
+    except pages.BadModel as exc:
+        return jsonify({"error": str(exc), "code": "invalid_brief"}), 400
+    try:
+        pdf = gotenberg.print_pdf(html, header, footer, files, paper)
+    except gotenberg.Unavailable:
+        return jsonify({"error": "The PDF is not available on this server.", "code": "pdf_unavailable"}), 503
+    except gotenberg.Failed:
+        return jsonify({"error": "The PDF could not be made. Try again in a moment.", "code": "pdf_failed"}), 502
+    name = re.sub(r'[^A-Za-z0-9 _-]+', '', str((model.get('mission') or {}).get('name') or '')).strip() or 'mission'
+    response = send_file(io.BytesIO(pdf), mimetype='application/pdf', as_attachment=True, download_name=f'{name} brief.pdf')
+    response.headers['Cache-Control'] = 'no-store'
+    return response

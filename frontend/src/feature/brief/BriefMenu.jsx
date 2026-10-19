@@ -4,7 +4,7 @@ import Menu, { MenuItem, useMenu } from "../ui/Menu";
 
 /*
  * The top bar's Brief button and its menu (the design's "Brief menu"): what the brief is built from, and Generate
- * brief… The live sandtable and the last PDF join it when they are built (docs/MISSION_BRIEF.md, B4 and B5).
+ * brief… (whose last step downloads the PDF). The live sandtable joins it when it is built (docs/MISSION_BRIEF.md, B5).
  */
 const BriefMenu = ({ packName = null, summary, onGenerate }) => {
   const menu = useMenu();

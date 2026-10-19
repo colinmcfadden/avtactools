@@ -1,6 +1,6 @@
 # Mission brief — architecture and plan
 
-Status: **B0 to B3 done, B4 next** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
+Status: **B0 to B4 done, B5 next** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
 seven web boards, three Android tablet boards). This file is the plan for building them on the web and Android. The owner's decisions of
 2026-10-16 are in §9.
 
@@ -247,7 +247,7 @@ green, AGENTS.md and `docs/HANDOFF.md` updated in the same commit.
 | **B1** | **Done.** Web: `compile.js`, `templates.js`, `light.js` and their fixtures (`contracts/fixtures/brief`: `compile.json` from the web, `light.json` from Skyfield via `contracts/scripts/light_fixtures.py`) | B0 |
 | **B2** | **Done.** Backend: `SavedBrief`, `/api/briefs`, sync kind, pack item kind `brief` and its exception, the weather route's `at`, OpenAPI, recorded responses, `mission_brief`; the web's `packOps.js` takes the kind, its cases in `contracts/fixtures/packs/ops-brief.json` (apart from `ops.json` until Android ports the kind in B7) | B0 |
 | **B3** | **Done.** Web: the Brief menu (top bar, `mission_brief` only) and the three-step setup (`BriefSetup`: flow and constants, details with Standard / Custom / Blank and the script, review of the pages as compiled) over `useBrief`: outside a pack a Library record (`/api/briefs`, the one this browser opened last for the account, made at the first change under its own identity, saved 0.8 s after the last), in a pack the pack's brief item (made at the first change, every change sent as the pack's operations). The web's pack session takes brief edits in a read-only pack and sends them in batches of their own (`packs/session-brief.json`). The weather is asked for the departure, arrival and each stop at their planned times while the setup is open. Not yet: the PDF (B4), the sandtable (B5) | B1, B2 |
-| **B4** | Backend + web: figures, the pages, Gotenberg, `POST /api/brief/pdf`; the review step and download | B3 |
+| **B4** | **Done.** compileBrief gives the figures' `geometry` (route lines and nav-log rows, LZ/PZ boundaries and aircraft, threats, rally points) so the server only draws; `backend/brief/` draws each figure (tiles stitched with Pillow, the plan as SVG), lays out the pages (Jinja, print CSS; the cover on its own page) and prints them through Gotenberg (`POST /api/brief/pdf`, `GOTENBERG_URL`); the review step's Download PDF. Tried against Gotenberg 8.21.1 with JavaScript off and the network denied: OP DK's 17 figures in 6 s cold (1 s with tiles cached), printed in 0.5 s. **Changed on the way:** a brief says no page numbers (the packet by section, the contents by step): Chromium breaks a long step onto a second page, which the client cannot know; the footer's numbers are Chromium's own and true | B3 |
 | **B5** | Web: the live sandtable | B3 |
 | **B6** | Backend + web: strip charts in the appendix | B4 |
 | **B7** | Android: `core-brief` ported and held to every fixture; the record kind, the pack kind and its exception (`packs/ops-brief.json`, and `packs/session-brief.json`'s session rules) | B1, B2 |

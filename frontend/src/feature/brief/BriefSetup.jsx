@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { printBrief } from "./briefApi";
 import Dialog from "../ui/Dialog";
 import FlowStep from "./FlowStep";
 import DetailsStep from "./DetailsStep";
@@ -23,7 +24,25 @@ const SAVE_WORDS = { saving: "Saving…", saved: "Saved to your Library", unsave
 
 const BriefSetup = ({ brief, title, threatCount, onClose }) => {
   const [step, setStep] = useState(0);
+  const [printing, setPrinting] = useState(null);
   const { model, doc, setDoc, format } = brief;
+  const download = async () => {
+    setPrinting({ busy: true });
+    try {
+      const pdf = await printBrief(model);
+      const url = URL.createObjectURL(pdf);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${(brief.inPack ? model.mission.name : "Mission").replace(/[^A-Za-z0-9 _-]+/g, "").trim() || "Mission"} brief.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setPrinting(null);
+    } catch (error) {
+      setPrinting({ error: error.message });
+    }
+  };
   const close = () => {
     brief.flush();
     onClose();
@@ -39,6 +58,7 @@ const BriefSetup = ({ brief, title, threatCount, onClose }) => {
   const note = brief.inPack
     ? `Kept with ${title} for everyone in it.${brief.readOnlyPack ? " The pack is read-only, but its brief stays open to change." : ""}`
     : SAVE_WORDS[brief.saveState] ?? "Kept with this brief in your Library. Generating again starts from these answers.";
+  const footNote = printing?.error ?? (printing?.busy ? "Drawing the figures and printing the pages: this takes a few seconds." : note);
 
   return (
     <Dialog
@@ -47,7 +67,7 @@ const BriefSetup = ({ brief, title, threatCount, onClose }) => {
       icon="file"
       onClose={close}
       className="brief-setup"
-      note={note}
+      note={footNote}
       footer={(
         <>
           {step > 0 && <button type="button" className="ui-btn ui-btn--38" onClick={() => setStep(step - 1)}>Back</button>}
@@ -57,7 +77,9 @@ const BriefSetup = ({ brief, title, threatCount, onClose }) => {
               Next: {STEPS[step + 1].title.toLowerCase()}
             </button>
           ) : (
-            <button type="button" className="ui-btn ui-btn--primary ui-btn--38" disabled title="The PDF is not available yet">Download PDF</button>
+            <button type="button" className="ui-btn ui-btn--primary ui-btn--38" disabled={Boolean(printing?.busy)} onClick={download}>
+              {printing?.busy ? "Printing…" : "Download PDF"}
+            </button>
           )}
         </>
       )}

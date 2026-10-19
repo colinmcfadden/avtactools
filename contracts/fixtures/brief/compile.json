@@ -223,6 +223,107 @@
             {"id":"lz-decoy","ref":"lz:lz-decoy","lat":34.6501,"lon":-84.2001,"at":null}
           ]
         },
+        "geometry": {
+          "routes": {
+            "route:set-opdk/r-alderaan": {
+              "name": "ALDERAAN",
+              "color": "#FF453A",
+              "line": [[33.9151,-84.5163],[34,-84.45],[34.1502,-84.3511],[34.3204,-84.2408],[34.5002,-84.1202],[34.5803,-84.0702],[34.6012,-84.0523],[34.5501,-84.1102]],
+              "points": [
+                {"name":"3MILE","type":"ip","lat":33.9151,"lon":-84.5163},
+                {"name":"TRACK","type":"turn","lat":34.1502,"lon":-84.3511},
+                {"name":"S-EP","type":"turn","lat":34.3204,"lon":-84.2408},
+                {"name":"ACP2","type":"turn","lat":34.5002,"lon":-84.1202},
+                {"name":"RP1","type":"ip","lat":34.5803,"lon":-84.0702},
+                {"name":"BLUEBIRD","type":"target","lat":34.6012,"lon":-84.0523},
+                {"name":"HAWK","type":"target","lat":34.5501,"lon":-84.1102}
+              ],
+              "log": [
+                {"from":"3MILE","to":"TRACK","course":"030°","distance":"16.3 nm","time":"0+07+19","clock":"12:03:51","altitude":"2,500 ft MSL","airspeed":"120 KIAS"},
+                {"from":"TRACK","to":"S-EP","course":"028°","distance":"11.6 nm","time":"0+06+16","clock":"12:10:07","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"S-EP","to":"ACP2","course":"029°","distance":"12.3 nm","time":"0+06+42","clock":"12:16:49","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"ACP2","to":"RP1","course":"027°","distance":"5.4 nm","time":"0+02+56","clock":"12:19:45","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"RP1","to":"BLUEBIRD","course":"035°","distance":"1.5 nm","time":"0+01+18","clock":"12:21:03","altitude":"50 ft AGL","airspeed":"60 KIAS"},
+                {"from":"BLUEBIRD","to":"HAWK","course":"223°","distance":"4.2 nm","time":"0+04+51","clock":"12:25:54","altitude":"50 ft AGL","airspeed":"60 KIAS"}
+              ]
+            },
+            "route:set-opdk/r-bespin": {
+              "name": "BESPIN",
+              "color": "#0A84FF",
+              "line": [[34.5598,-84.1201],[34.5651,-84.1101],[34.5702,-84.1056],[33.9151,-84.5163]],
+              "points": [
+                {"name":"SP3","type":"ip","lat":34.5598,"lon":-84.1201},
+                {"name":"RP5","type":"ip","lat":34.5651,"lon":-84.1101},
+                {"name":"IBIS","type":"target","lat":34.5702,"lon":-84.1056},
+                {"name":"KMGE","type":"target","lat":33.9151,"lon":-84.5163}
+              ],
+              "log": [
+                {"from":"SP3","to":"RP5","course":"057°","distance":"0.6 nm","time":"0+00+15","clock":"16:03:12","altitude":"2,500 ft MSL","airspeed":"120 KIAS"},
+                {"from":"RP5","to":"IBIS","course":"036°","distance":"0.4 nm","time":"0+00+20","clock":"16:03:31","altitude":"50 ft AGL","airspeed":"60 KIAS"},
+                {"from":"IBIS","to":"KMGE","course":"208°","distance":"44.3 nm","time":"0+22+57","clock":"16:26:28","altitude":"2,500 ft MSL","airspeed":"120 KIAS"}
+              ]
+            }
+          },
+          "stops": {
+            "lz:lz-bluebird": {
+              "name": "LZ BLUEBIRD",
+              "role": "LZ",
+              "lat": 34.6012,
+              "lon": -84.0523,
+              "boundary": [[34.6002,-84.05330000000001],[34.602199999999996,-84.05330000000001],[34.602199999999996,-84.0513]],
+              "aircraft": [{"lat":34.6012,"lon":-84.0523,"heading":0},{"lat":34.6012,"lon":-84.0523,"heading":0},{"lat":34.6012,"lon":-84.0523,"heading":0},{"lat":34.6012,"lon":-84.0523,"heading":0}],
+              "landingHeading": 306,
+              "takeoffHeading": 126,
+              "goAround": "right"
+            },
+            "lz:lz-hawk": {
+              "name": "LZ HAWK",
+              "role": "LZ",
+              "lat": 34.5501,
+              "lon": -84.1102,
+              "boundary": [[34.5491,-84.11120000000001],[34.5511,-84.11120000000001],[34.5511,-84.1092]],
+              "aircraft": [{"lat":34.5501,"lon":-84.1102,"heading":0},{"lat":34.5501,"lon":-84.1102,"heading":0}],
+              "landingHeading": 203,
+              "takeoffHeading": 157,
+              "goAround": "right"
+            },
+            "lz:pz-ibis": {
+              "name": "PZ IBIS",
+              "role": "PZ",
+              "lat": 34.5702,
+              "lon": -84.1056,
+              "boundary": [[34.5692,-84.1066],[34.5712,-84.1066],[34.5712,-84.10459999999999]],
+              "aircraft": [{"lat":34.5702,"lon":-84.1056,"heading":0},{"lat":34.5702,"lon":-84.1056,"heading":0},{"lat":34.5702,"lon":-84.1056,"heading":0},{"lat":34.5702,"lon":-84.1056,"heading":0}],
+              "landingHeading": 264,
+              "takeoffHeading": null,
+              "goAround": "left"
+            },
+            "lz:farp-bucees": {
+              "name": "FARP BUCEES",
+              "role": "FARP",
+              "lat": 34.4801,
+              "lon": -84.0412,
+              "boundary": [[34.4791,-84.04220000000001],[34.4811,-84.04220000000001],[34.4811,-84.0402]],
+              "aircraft": [],
+              "landingHeading": 340,
+              "takeoffHeading": null,
+              "goAround": null
+            },
+            "lz:lz-decoy": {
+              "name": "LZ DECOY",
+              "role": "LZ",
+              "lat": 34.6501,
+              "lon": -84.2001,
+              "boundary": [[34.649100000000004,-84.20110000000001],[34.6511,-84.20110000000001],[34.6511,-84.1991]],
+              "aircraft": [],
+              "landingHeading": null,
+              "takeoffHeading": null,
+              "goAround": null
+            }
+          },
+          "threats": [{"name":"ZSU-23-4","lat":34.4012,"lon":-84.0011}],
+          "rally": [{"name":"ACP2","label":"inbound","lat":34.5002,"lon":-84.1202},{"name":"RP5","label":"outbound","lat":34.5651,"lon":-84.1101}]
+        },
         "flow": [
           {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
           {"ref":"lz:lz-bluebird","kind":"stop","role":"LZ","name":"LZ BLUEBIRD","arrive":"12:21:03","grid":"16S GD 71020 49660"},
@@ -250,14 +351,14 @@
               "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
               "rallyPoints": []
             },
-            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":"4 × UH-60L"},{"key":"packet.pages","label":"PAGES","value":"26"}],
+            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":"4 × UH-60L"}],
             "items": [
-              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"brief 1–18, LZ/PZ cards 19–23, nav logs 24–25, IIMC card 26","writeIn":false},
+              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"the brief (18 steps), 5 LZ/PZ cards, 2 nav logs and the IIMC card","writeIn":false},
               {"id":"1.b","key":"1.b","label":"Mission risk level","kind":"choice","source":"typed","text":"Moderate","writeIn":false}
             ],
             "script": [
               [{"text":"This is the air movement brief for OP DK: 4 × UH-60L from 3MILE to LZ BLUEBIRD and LZ HAWK, pickup at PZ IBIS, fuel at FARP BUCEES, to LZ DECOY, back at KMGE at 16:26:28."}],
-              [{"text":"Check you have all 26 pages: brief 1–18, LZ/PZ cards 19–23, nav logs 24–25, IIMC card 26."}],
+              [{"text":"The packet holds the brief (18 steps), 5 LZ/PZ cards, 2 nav logs and the IIMC card: check you have every page."}],
               [{"text":"Mission risk level is Moderate."}]
             ],
             "scriptEdited": false
@@ -978,7 +1079,7 @@
           {"n":23,"kind":"lzCard","ref":"lz:lz-decoy","title":"LZ card · LZ DECOY"},
           {"n":24,"kind":"navLog","ref":"route:set-opdk/r-alderaan","title":"Nav log · ALDERAAN"},
           {"n":25,"kind":"navLog","ref":"route:set-opdk/r-bespin","title":"Nav log · BESPIN"},
-          {"n":26,"kind":"iimc","title":"IIMC card"}
+          {"n":26,"kind":"iimc","title":"IIMC card","itemId":"5.a.v"}
         ],
         "problems": [
           {"ref":"lz:farp-bucees","message":"No route in the flow reaches FARP BUCEES before it, so it has no arrival time."},
@@ -1203,6 +1304,107 @@
             {"id":"farp-bucees","ref":"lz:farp-bucees","lat":34.4801,"lon":-84.0412,"at":null},
             {"id":"pz-ibis","ref":"lz:pz-ibis","lat":34.5702,"lon":-84.1056,"at":"2026-10-16T20:03:31.000Z"}
           ]
+        },
+        "geometry": {
+          "routes": {
+            "route:set-opdk/r-alderaan": {
+              "name": "ALDERAAN",
+              "color": "#FF453A",
+              "line": [[33.9151,-84.5163],[34,-84.45],[34.1502,-84.3511],[34.3204,-84.2408],[34.5002,-84.1202],[34.5803,-84.0702],[34.6012,-84.0523],[34.5501,-84.1102]],
+              "points": [
+                {"name":"3MILE","type":"ip","lat":33.9151,"lon":-84.5163},
+                {"name":"TRACK","type":"turn","lat":34.1502,"lon":-84.3511},
+                {"name":"S-EP","type":"turn","lat":34.3204,"lon":-84.2408},
+                {"name":"ACP2","type":"turn","lat":34.5002,"lon":-84.1202},
+                {"name":"RP1","type":"ip","lat":34.5803,"lon":-84.0702},
+                {"name":"BLUEBIRD","type":"target","lat":34.6012,"lon":-84.0523},
+                {"name":"HAWK","type":"target","lat":34.5501,"lon":-84.1102}
+              ],
+              "log": [
+                {"from":"3MILE","to":"TRACK","course":"030°","distance":"16.3 nm","time":"0+07+19","clock":"12:03:51","altitude":"2,500 ft MSL","airspeed":"120 KIAS"},
+                {"from":"TRACK","to":"S-EP","course":"028°","distance":"11.6 nm","time":"0+06+16","clock":"12:10:07","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"S-EP","to":"ACP2","course":"029°","distance":"12.3 nm","time":"0+06+42","clock":"12:16:49","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"ACP2","to":"RP1","course":"027°","distance":"5.4 nm","time":"0+02+56","clock":"12:19:45","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"RP1","to":"BLUEBIRD","course":"035°","distance":"1.5 nm","time":"0+01+18","clock":"12:21:03","altitude":"50 ft AGL","airspeed":"60 KIAS"},
+                {"from":"BLUEBIRD","to":"HAWK","course":"223°","distance":"4.2 nm","time":"0+04+51","clock":"12:25:54","altitude":"50 ft AGL","airspeed":"60 KIAS"}
+              ]
+            },
+            "route:set-opdk/r-bespin": {
+              "name": "BESPIN",
+              "color": "#0A84FF",
+              "line": [[34.5598,-84.1201],[34.5651,-84.1101],[34.5702,-84.1056],[33.9151,-84.5163]],
+              "points": [
+                {"name":"SP3","type":"ip","lat":34.5598,"lon":-84.1201},
+                {"name":"RP5","type":"ip","lat":34.5651,"lon":-84.1101},
+                {"name":"IBIS","type":"target","lat":34.5702,"lon":-84.1056},
+                {"name":"KMGE","type":"target","lat":33.9151,"lon":-84.5163}
+              ],
+              "log": [
+                {"from":"SP3","to":"RP5","course":"057°","distance":"0.6 nm","time":"0+00+15","clock":"16:03:12","altitude":"2,500 ft MSL","airspeed":"120 KIAS"},
+                {"from":"RP5","to":"IBIS","course":"036°","distance":"0.4 nm","time":"0+00+20","clock":"16:03:31","altitude":"50 ft AGL","airspeed":"60 KIAS"},
+                {"from":"IBIS","to":"KMGE","course":"208°","distance":"44.3 nm","time":"0+22+57","clock":"16:26:28","altitude":"2,500 ft MSL","airspeed":"120 KIAS"}
+              ]
+            }
+          },
+          "stops": {
+            "lz:lz-decoy": {
+              "name": "LZ DECOY",
+              "role": "FALSE_LZ",
+              "lat": 34.6501,
+              "lon": -84.2001,
+              "boundary": [[34.649100000000004,-84.20110000000001],[34.6511,-84.20110000000001],[34.6511,-84.1991]],
+              "aircraft": [],
+              "landingHeading": null,
+              "takeoffHeading": null,
+              "goAround": null
+            },
+            "lz:lz-bluebird": {
+              "name": "LZ BLUEBIRD",
+              "role": "LZ",
+              "lat": 34.6012,
+              "lon": -84.0523,
+              "boundary": [[34.6002,-84.05330000000001],[34.602199999999996,-84.05330000000001],[34.602199999999996,-84.0513]],
+              "aircraft": [{"lat":34.6012,"lon":-84.0523,"heading":0},{"lat":34.6012,"lon":-84.0523,"heading":0},{"lat":34.6012,"lon":-84.0523,"heading":0},{"lat":34.6012,"lon":-84.0523,"heading":0}],
+              "landingHeading": 306,
+              "takeoffHeading": 126,
+              "goAround": "right"
+            },
+            "lz:lz-hawk": {
+              "name": "LZ HAWK",
+              "role": "LAAGER",
+              "lat": 34.5501,
+              "lon": -84.1102,
+              "boundary": [[34.5491,-84.11120000000001],[34.5511,-84.11120000000001],[34.5511,-84.1092]],
+              "aircraft": [{"lat":34.5501,"lon":-84.1102,"heading":0},{"lat":34.5501,"lon":-84.1102,"heading":0}],
+              "landingHeading": 203,
+              "takeoffHeading": 157,
+              "goAround": "right"
+            },
+            "lz:farp-bucees": {
+              "name": "FARP BUCEES",
+              "role": "FARP",
+              "lat": 34.4801,
+              "lon": -84.0412,
+              "boundary": [[34.4791,-84.04220000000001],[34.4811,-84.04220000000001],[34.4811,-84.0402]],
+              "aircraft": [],
+              "landingHeading": 340,
+              "takeoffHeading": null,
+              "goAround": null
+            },
+            "lz:pz-ibis": {
+              "name": "PZ IBIS",
+              "role": "PZ",
+              "lat": 34.5702,
+              "lon": -84.1056,
+              "boundary": [[34.5692,-84.1066],[34.5712,-84.1066],[34.5712,-84.10459999999999]],
+              "aircraft": [{"lat":34.5702,"lon":-84.1056,"heading":0},{"lat":34.5702,"lon":-84.1056,"heading":0},{"lat":34.5702,"lon":-84.1056,"heading":0},{"lat":34.5702,"lon":-84.1056,"heading":0}],
+              "landingHeading": 264,
+              "takeoffHeading": null,
+              "goAround": "left"
+            }
+          },
+          "threats": [{"name":"ZSU-23-4","lat":34.4012,"lon":-84.0011}],
+          "rally": []
         },
         "flow": [
           {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
@@ -1865,7 +2067,7 @@
           {"n":21,"kind":"lzCard","ref":"lz:pz-ibis","title":"PZ card · PZ IBIS"},
           {"n":22,"kind":"navLog","ref":"route:set-opdk/r-alderaan","title":"Nav log · ALDERAAN"},
           {"n":23,"kind":"navLog","ref":"route:set-opdk/r-bespin","title":"Nav log · BESPIN"},
-          {"n":24,"kind":"iimc","title":"IIMC card"}
+          {"n":24,"kind":"iimc","title":"IIMC card","itemId":"26.d"}
         ],
         "problems": [
           {"ref":"lz:lz-decoy","message":"No route in the flow reaches LZ DECOY before it, so it has no arrival time."},
@@ -2068,6 +2270,47 @@
           "arrival": {"lat":34.5501,"lon":-84.1102,"at":"2026-10-16T16:25:54.000Z"},
           "stops": [{"id":"lz-hawk","ref":"lz:lz-hawk","lat":34.5501,"lon":-84.1102,"at":"2026-10-16T16:25:54.000Z"}]
         },
+        "geometry": {
+          "routes": {
+            "route:set-opdk/r-alderaan": {
+              "name": "ALDERAAN",
+              "color": "#FF453A",
+              "line": [[33.9151,-84.5163],[34,-84.45],[34.1502,-84.3511],[34.3204,-84.2408],[34.5002,-84.1202],[34.5803,-84.0702],[34.6012,-84.0523],[34.5501,-84.1102]],
+              "points": [
+                {"name":"3MILE","type":"ip","lat":33.9151,"lon":-84.5163},
+                {"name":"TRACK","type":"turn","lat":34.1502,"lon":-84.3511},
+                {"name":"S-EP","type":"turn","lat":34.3204,"lon":-84.2408},
+                {"name":"ACP2","type":"turn","lat":34.5002,"lon":-84.1202},
+                {"name":"RP1","type":"ip","lat":34.5803,"lon":-84.0702},
+                {"name":"BLUEBIRD","type":"target","lat":34.6012,"lon":-84.0523},
+                {"name":"HAWK","type":"target","lat":34.5501,"lon":-84.1102}
+              ],
+              "log": [
+                {"from":"3MILE","to":"TRACK","course":"030°","distance":"16.3 nm","time":"0+07+19","clock":"12:03:51","altitude":"2,500 ft MSL","airspeed":"120 KIAS"},
+                {"from":"TRACK","to":"S-EP","course":"028°","distance":"11.6 nm","time":"0+06+16","clock":"12:10:07","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"S-EP","to":"ACP2","course":"029°","distance":"12.3 nm","time":"0+06+42","clock":"12:16:49","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"ACP2","to":"RP1","course":"027°","distance":"5.4 nm","time":"0+02+56","clock":"12:19:45","altitude":"50 ft AGL","airspeed":"100 KIAS"},
+                {"from":"RP1","to":"BLUEBIRD","course":"035°","distance":"1.5 nm","time":"0+01+18","clock":"12:21:03","altitude":"50 ft AGL","airspeed":"60 KIAS"},
+                {"from":"BLUEBIRD","to":"HAWK","course":"223°","distance":"4.2 nm","time":"0+04+51","clock":"12:25:54","altitude":"50 ft AGL","airspeed":"60 KIAS"}
+              ]
+            }
+          },
+          "stops": {
+            "lz:lz-hawk": {
+              "name": "LZ HAWK",
+              "role": "LZ",
+              "lat": 34.5501,
+              "lon": -84.1102,
+              "boundary": [[34.5491,-84.11120000000001],[34.5511,-84.11120000000001],[34.5511,-84.1092]],
+              "aircraft": [{"lat":34.5501,"lon":-84.1102,"heading":0},{"lat":34.5501,"lon":-84.1102,"heading":0}],
+              "landingHeading": 203,
+              "takeoffHeading": 157,
+              "goAround": "right"
+            }
+          },
+          "threats": [],
+          "rally": []
+        },
         "flow": [
           {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
           {"ref":"lz:gone-lz","gone":true},
@@ -2084,14 +2327,14 @@
             "role": null,
             "page": 1,
             "figure": {"kind":"overview","ref":null,"bounds":[[33.84649,-84.5627],[34.66981,-84.0059]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
-            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":"2 × UH-60L"},{"key":"packet.pages","label":"PAGES","value":"13"}],
+            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":"2 × UH-60L"}],
             "items": [
-              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"brief 1–13","writeIn":false},
+              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"the brief (13 steps)","writeIn":false},
               {"id":"1.b","key":"1.b","label":"Mission risk level","kind":"choice","source":"blank","text":null,"writeIn":true}
             ],
             "script": [
               [{"text":"This is the air movement brief for OP DK: 2 × UH-60L from 3MILE to LZ HAWK, back at HAWK at 12:25:54."}],
-              [{"text":"Check you have all 13 pages: brief 1–13."}],
+              [{"text":"The packet holds the brief (13 steps): check you have every page."}],
               [{"text":"Mission risk level is "},{"writeIn":"b","label":"Mission risk level"},{"text":"."}]
             ],
             "scriptEdited": false
@@ -2511,6 +2754,7 @@
           {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
         ],
         "places": {"departure":null,"arrival":null,"stops":[]},
+        "geometry": {"routes":{},"stops":{},"threats":[],"rally":[]},
         "flow": [],
         "steps": [
           {
@@ -2523,14 +2767,14 @@
             "role": null,
             "page": 1,
             "figure": {"kind":"overview","ref":null,"bounds":null,"routes":[],"stops":[],"rallyPoints":[]},
-            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":null},{"key":"packet.pages","label":"PAGES","value":"11"}],
+            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":null}],
             "items": [
-              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"brief 1–11","writeIn":false},
+              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"the brief (11 steps)","writeIn":false},
               {"id":"1.b","key":"1.b","label":"Mission risk level","kind":"choice","source":"blank","text":null,"writeIn":true}
             ],
             "script": [
               [{"text":"This is the air movement brief for the mission: the flight."}],
-              [{"text":"Check you have all 11 pages: brief 1–11."}],
+              [{"text":"The packet holds the brief (11 steps): check you have every page."}],
               [{"text":"Mission risk level is "},{"writeIn":"b","label":"Mission risk level"},{"text":"."}]
             ],
             "scriptEdited": false
@@ -2899,6 +3143,12 @@
           {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
         ],
         "places": {"departure":null,"arrival":null,"stops":[{"id":"lone","ref":"lz:lone","lat":35,"lon":-85,"at":null}]},
+        "geometry": {
+          "routes": {"route:s/one":{"name":"ONE","color":"#0A84FF","line":[[34,-84],[34.1,-84.1]],"points":[],"log":[]}},
+          "stops": {"lz:lone":{"name":"LZ LONE","role":"LZ","lat":35,"lon":-85,"boundary":[[34.999,-85.001],[35.001,-85.001],[35.001,-84.999]],"aircraft":[],"landingHeading":null,"takeoffHeading":null,"goAround":null}},
+          "threats": [],
+          "rally": []
+        },
         "flow": [{"ref":"route:s/one","kind":"route","name":"ONE","start":null,"end":null},{"ref":"lz:lone","kind":"stop","role":"LZ","name":"LZ LONE","arrive":null,"grid":"16S FD 82516 74870"}],
         "steps": [
           {
@@ -2911,14 +3161,14 @@
             "role": null,
             "page": 1,
             "figure": {"kind":"overview","ref":null,"bounds":[[34.998,-85.002],[35.002,-84.998]],"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
-            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":null},{"key":"packet.pages","label":"PAGES","value":"15"}],
+            "facts": [{"key":"flight.aircraft","label":"AIRCRAFT","value":null}],
             "items": [
-              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"brief 1–13, LZ/PZ cards 14, nav logs 15","writeIn":false},
+              {"id":"1.a","key":"1.a","label":"Packet inventory","kind":"text","source":"plan","text":"the brief (13 steps), 1 LZ/PZ card and 1 nav log","writeIn":false},
               {"id":"1.b","key":"1.b","label":"Mission risk level","kind":"choice","source":"blank","text":null,"writeIn":true}
             ],
             "script": [
               [{"text":"This is the air movement brief for SHORT: the flight to LZ LONE."}],
-              [{"text":"Check you have all 15 pages: brief 1–13, LZ/PZ cards 14, nav logs 15."}],
+              [{"text":"The packet holds the brief (13 steps), 1 LZ/PZ card and 1 nav log: check you have every page."}],
               [{"text":"Mission risk level is "},{"writeIn":"b","label":"Mission risk level"},{"text":"."}]
             ],
             "scriptEdited": false

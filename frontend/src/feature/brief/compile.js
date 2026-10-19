@@ -747,18 +747,20 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
   planned.forEach((st, i) => pages.push({ n: i + 1, kind: i === 0 ? "cover" : "step", stepId: stepIdOf(st) }));
   if (options.lzCards) flowStops.forEach((s) => pages.push({ n: pages.length + 1, kind: "lzCard", ref: s.ref, title: `${ROLE_NAMES[s.role]} card · ${s.name}` }));
   if (options.navLogs) flowRoutes.forEach((r) => pages.push({ n: pages.length + 1, kind: "navLog", ref: r.ref, title: `Nav log · ${r.name}` }));
-  if (hasIimcCard) pages.push({ n: pages.length + 1, kind: "iimc", title: "IIMC card" });
+  if (hasIimcCard) pages.push({ n: pages.length + 1, kind: "iimc", title: "IIMC card", itemId: `${iimcItem.s.id}.${iimcItem.it.id}` });
 
-  const range = (kind) => {
-    const ns = pages.filter((p) => p.kind === kind || (kind === "step" && p.kind === "cover")).map((p) => p.n);
-    if (ns.length === 0) return null;
-    return ns.length === 1 ? `${ns[0]}` : `${ns[0]}–${ns[ns.length - 1]}`;
-  };
+  // What the packet holds, by section, never by page: where Chromium breaks the printed pages is not known here, so a
+  // page number the brief said could be wrong (the PDF's own footer numbers every page truly).
+  const count = (kind) => pages.filter((p) => p.kind === kind).length;
   const inventory = [
-    ["brief", range("step")], ["LZ/PZ cards", range("lzCard")], ["nav logs", range("navLog")], ["IIMC card", range("iimc")],
-  ].filter(([, r]) => r).map(([what, r]) => `${what} ${r}`).join(", ");
+    `the brief (${plural(planned.length, "step", "steps")})`,
+    count("lzCard") ? `${plural(count("lzCard"), "LZ/PZ card", "LZ/PZ cards")}` : null,
+    count("navLog") ? `${plural(count("navLog"), "nav log", "nav logs")}` : null,
+    count("iimc") ? "the IIMC card" : null,
+  ].filter(Boolean);
+  const inventoryText = inventory.length > 1 ? `${inventory.slice(0, -1).join(", ")} and ${inventory[inventory.length - 1]}` : inventory[0];
   brief["packet.pages"] = String(pages.length);
-  brief["packet.inventory"] = inventory;
+  brief["packet.inventory"] = inventoryText;
 
   const scripts = isObject(doc.scripts) ? doc.scripts : {};
 
@@ -871,6 +873,7 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
     options,
     constants,
     places: placesOf(flow, offset),
+    geometry: geometryOf(flow, plan, doc),
     flow: flow.map((f) => (f.gone
       ? { ref: f.ref, gone: true }
       : f.kind === "route"
@@ -880,6 +883,68 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
     pages,
     problems,
   };
+};
+
+/**
+ * What the figures draw, once for the whole brief (each figure names what it shows by reference), in lat/lon with the
+ * words already written, so the server that draws them decides nothing (docs/MISSION_BRIEF.md §2.6):
+ *  - routes: each route in the flow, by ref: its name and colour, its line through every point (shaping points too, so
+ *    it is the path flown), its named points, and its nav log's rows (the leg to each named point);
+ *  - stops: each LZ/PZ in the flow, by ref: its name, role, target, boundary, aircraft, landing and takeoff headings
+ *    and go-around side;
+ *  - threats (unless the brief leaves them out) and the rally points.
+ */
+const geometryOf = (flow, plan, doc) => {
+  const routes = {};
+  const stops = {};
+  const pair = (lat, lon) => (num(lat) !== null && num(lon) !== null ? [lat, lon] : null);
+  flow.filter((f) => f.kind === "route").forEach((r) => {
+    const points = r.result?.points || [];
+    routes[r.ref] = {
+      name: r.name,
+      color: typeof r.route.color === "string" ? r.route.color : null,
+      line: (r.route.points || []).map((p) => pair(p.lat, p.lon)).filter(Boolean),
+      points: points.map((p) => ({ name: pointName(p.name, "PT"), type: p.ptType ?? null, lat: p.lat, lon: p.lon })),
+      log: points.slice(1).map((p, i) => ({
+        from: pointName(points[i].name, "PT"),
+        to: pointName(p.name, "PT"),
+        course: headingText(p.legCourseTrueDeg),
+        distance: nmText(p.legDistNm),
+        time: p.legTimeSec !== null ? durationText(p.legTimeSec) : null,
+        clock: clockText(wallOf(p.clockTime)),
+        altitude: altitudeText(p),
+        airspeed: airspeedText(p.airspeed),
+      })),
+    };
+  });
+  flow.filter((f) => f.kind === "stop" && f.target).forEach((stop) => {
+    const { diagram } = stop;
+    const boundary = diagram.analysis?.customLZ || diagram.analysis?.detectedLZ;
+    const landing = landingHeadingOf(diagram.flightData?.landing_hdg);
+    const takeoff = landingHeadingOf(diagram.flightData?.takeoff_hdg);
+    stops[stop.ref] = {
+      name: stop.name,
+      role: stop.role,
+      lat: stop.target.lat,
+      lon: stop.target.lon,
+      boundary: Array.isArray(boundary) ? boundary.map((p) => (Array.isArray(p) ? pair(p[0], p[1]) : null)).filter(Boolean) : null,
+      aircraft: (diagram.graphics?.helicopters || [])
+        .map((h) => (pair(h?.lat, h?.lon) ? { lat: h.lat, lon: h.lon, heading: num(Number(h.heading)) ?? 0 } : null))
+        .filter(Boolean),
+      landingHeading: landing,
+      takeoffHeading: takeoff,
+      goAround: goAroundSide(diagram),
+    };
+  });
+  const threats = doc.include?.threats === false ? [] : (Array.isArray(plan.threats) ? plan.threats : [])
+    .filter((t) => isObject(t) && num(t.lat) !== null && num(t.lon) !== null)
+    .map((t) => ({ name: String(t.name ?? t.label ?? "").trim() || "Threat", lat: t.lat, lon: t.lon }));
+  const rally = (Array.isArray(doc.rallyPoints) ? doc.rallyPoints : []).map((r) => {
+    const route = flow.find((f) => f.kind === "route" && f.ref === r?.ref);
+    const point = route?.named.find((p) => p.id === r?.pointId);
+    return point ? { name: pointName(point.name, "RALLY"), label: r.label === "outbound" ? "outbound" : "inbound", lat: point.lat, lon: point.lon } : null;
+  }).filter(Boolean);
+  return { routes, stops, threats, rally };
 };
 
 /**

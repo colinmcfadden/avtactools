@@ -1067,6 +1067,57 @@ paths:
         "409":
           $ref: "#/components/responses/BriefConflict"
 
+  /api/brief/pdf:
+    post:
+      operationId: printBrief
+      summary: Print a mission brief as a PDF
+      description: |
+        The brief the client compiled (compileBrief's model: docs/MISSION_BRIEF.md §2.3) laid out as pages and printed
+        by Gotenberg on the server (§2.7): its figures drawn from the model's geometry over the base map
+        `options.figureMap` names, on the paper `options.paper` names. Nothing is kept: neither the model nor the PDF.
+        Needs `mission_brief`. A heavy request: other work on the server waits for it.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: { description: "The compiled brief (format ezpz-brief-model).", type: object }
+      responses:
+        "200":
+          description: The PDF, as an attachment.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "400":
+          description: "`invalid_brief`: the body is not a brief model."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "403":
+          description: "`feature_disabled`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "413":
+          description: "`too_large`: more than 4 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "502":
+          description: "`pdf_failed`: Gotenberg did not print it."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "503":
+          description: "`pdf_unavailable`: this server has no Gotenberg (`GOTENBERG_URL`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
   /api/weather:
     get:
       operationId: weather

@@ -240,7 +240,9 @@ describe("compileBrief", () => {
     expect(amb.pages.filter((p) => p.kind === "lzCard")).toHaveLength(5);
     expect(amb.pages.filter((p) => p.kind === "navLog")).toHaveLength(2);
     expect(amb.pages[amb.pages.length - 1].kind).toBe("iimc");
-    expect(scriptText(step(amb, "1")).join(" ")).toContain(`all ${amb.pages.length} pages`);
+    // The packet by section, never by page: Chromium decides where pages break.
+    expect(scriptText(step(amb, "1")).join(" ")).toContain("The packet holds the brief (18 steps), 5 LZ/PZ cards, 2 nav logs and the IIMC card");
+    expect(scriptText(step(amb, "1")).join(" ")).not.toMatch(/\d+–\d+/);
   });
 
   it("finds what the plan holds", () => {

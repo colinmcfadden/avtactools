@@ -1,7 +1,7 @@
 {
   "description": "Whether each URL is heavy server work (isPriorityRequest in feature/auth/requestPriority.js): the end of the path, with any query string left off, is one of the listed paths. A native client holds background requests back while a heavy one is in flight.",
   "generatedBy": "frontend/src/contracts/networkFixtures.test.js (UPDATE_CONTRACTS=1)",
-  "heavyPaths": ["/analyze-field","/terrain-analysis","/threat-mask","/export-package","/generate-excel"],
+  "heavyPaths": ["/analyze-field","/terrain-analysis","/threat-mask","/export-package","/generate-excel","/brief/pdf"],
   "cases": [
     {"url":"/analyze-field","heavy":true},
     {"url":"/api/analyze-field","heavy":true},
