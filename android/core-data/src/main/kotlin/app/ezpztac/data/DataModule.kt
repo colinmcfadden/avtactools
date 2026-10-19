@@ -10,6 +10,7 @@ import app.ezpztac.missionpacks.RoutePackKind
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.RouteSet
 import app.ezpztac.network.ApiClient
+import app.ezpztac.network.AuthState
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.SyncScheduler
@@ -100,10 +101,11 @@ internal object DataModule {
     @Singleton
     fun packStore(database: EzpzDatabase): PackStore = RoomPackStore(database)
 
-    /** What a pack would not take of a person's edits is kept in their library, as `NAME (my edits)`. */
+    /** What a pack would not take of a person's edits is kept in their library, as `NAME (my edits)`; a brief only for an account with mission briefs. */
     @Provides
     @Singleton
-    fun packKeeper(store: SyncStore): PackKeeper = LibraryPackKeeper(store)
+    fun packKeeper(store: SyncStore, api: ApiClient): PackKeeper =
+        LibraryPackKeeper(store, keepsBriefs = { (api.state.value as? AuthState.SignedIn)?.user?.hasFeature("mission_brief") == true })
 
     /**
      * Mission packs outlive any screen (a pack closed with edits still going out sends them), so the engine runs in a scope of its own.

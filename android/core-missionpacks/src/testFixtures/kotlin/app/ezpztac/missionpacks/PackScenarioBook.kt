@@ -153,6 +153,38 @@ public object PackScenarioBook {
             eventually("and kept in his library") { s.b.keeper.records.size == 1 }
             assertEquals(15, heading(s.b.keeper.records.single().version.data))
         },
+        PackScenario("a brief is open to everyone in every state of the pack: a viewer's and a finished pack's brief edits reach it, and nothing else does") { env ->
+            // docs/MISSION_BRIEF.md §3: the server takes a batch whose every operation is on a brief in a read-only pack, and the device sends them alone.
+            val s = opDk(env)
+            env.send(s.pack, s.colin, json("""{"type": "item.create", "item": "br-1", "kind": "brief", "name": "OP DK BRIEF", "data": {"version": 1, "answers": {}}}"""))
+            eventually("both devices have the brief") { s.a.item("br-1") != null && s.b.item("br-1") != null }
+            // The server's own words for a brief made with no sentence of its client's.
+            assertTrue(env.log(s.pack, s.colin).any { (it["summary"] as? JsonPrimitive)?.contentOrNull == "Colin P. added the brief \"OP DK BRIEF\"." })
+
+            env.setRole(s.pack, s.colin, s.sam, "viewer")
+            eventually("Sam's device hears he may only view") { s.b.state?.readOnly == true }
+            assertNull(s.b.edit(setAnswer("2.b", "500-1 day")))
+            assertEquals("read_only", s.b.edit(setHeading(10)))
+            assertEquals("read_only", s.b.edit(setAnswer("2.d", "11:15"), setHeading(10)))   // one edit with anything else in it is not a brief's
+            s.b.sent(s.pack)
+            assertEquals("500-1 day", answer(env.data(s.pack, s.colin, "br-1"), "2.b"))
+
+            // Waiting on Sam's device when the pack is finished: the brief edit still goes, the LZ/PZ's is refused and kept as his own.
+            env.setRole(s.pack, s.colin, s.sam, "editor")
+            eventually("and that he may edit again") { s.b.state?.readOnly == false }
+            s.b.network.offline = true
+            assertNull(s.b.edit(setHeading(45)))
+            assertNull(s.b.edit(setAnswer("3.a", "Insert the teams.")))
+            env.finish(s.pack, s.colin)
+            s.b.online()
+            eventually("the brief edit reaches the finished pack") { answer(env.data(s.pack, s.colin, "br-1"), "3.a") == "Insert the teams." }
+            eventually("and the other is refused") { s.b.stored(s.pack)?.let { it.pending.isEmpty() && it.dropped.map { d -> d.reason } == listOf("pack_finished") } == true }
+            assertEquals(270, s.serverHeading())
+            assertNull(s.a.edit(setAnswer("5.a.iii", "standard")))                            // the owner too, in the pack he finished
+            s.a.sent(s.pack)
+            assertEquals("standard", answer(env.data(s.pack, s.colin, "br-1"), "5.a.iii"))
+            eventually("everyone sees every answer") { listOf(s.a, s.b).all { answer(it.item("br-1")?.data, "5.a.iii") == "standard" } }
+        },
         PackScenario("someone removed from the pack: it is gone for them, what they had waiting is kept, and the device forgets the pack") { env ->
             val s = opDk(env)
             s.b.network.offline = true
@@ -485,6 +517,11 @@ public object PackScenarioBook {
     private fun setHeading(value: Int): JsonObject = json("""{"type": "set", "item": "lz-1", "path": ["flightData", "landingHeading"], "value": $value}""")
 
     private fun setNotes(value: String): JsonObject = json("""{"type": "set", "item": "lz-1", "path": ["notes"], "value": "$value"}""")
+
+    private fun setAnswer(key: String, value: String): JsonObject = json("""{"type": "set", "item": "br-1", "path": ["answers", "$key"], "value": {"value": "$value"}}""")
+
+    private fun answer(data: JsonElement?, key: String): String? =
+        ((((data as? JsonObject)?.get("answers") as? JsonObject)?.get(key) as? JsonObject)?.get("value") as? JsonPrimitive)?.contentOrNull
 
     private fun heading(data: JsonElement?): Int? =
         ((data as? JsonObject)?.get("flightData") as? JsonObject)?.get("landingHeading")?.jsonPrimitive?.intOrNull

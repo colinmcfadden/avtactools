@@ -57,6 +57,9 @@ Web and Android; Android tablet size and up only for now.
   `light.json`) and `BriefFormats` (`contracts/briefs` bundled by the build, held byte for byte and to the format's rules). AGENTS.md §17 has the row.
   **7b** the brief's Library record: `RecordKind.BRIEF` over `/api/briefs` (core-network's calls, core-sync's gateway and change feed), through every per-kind
   sync scenario on the fake server, the real Flask server (the live test server now registers the briefs blueprint) and Room.
+  **7c** the pack kind: `PackOps` takes `brief` (`ops-brief.json` folded into `PackOpsFixtureTest`), `PackSessions` takes brief edits in a read-only pack,
+  sends them in batches of their own and keeps them when the pack turns read-only (`session-brief.json`), `PackLock` lets brief items through and nothing else,
+  `PackItemCounts` takes `brief`, a refused brief is kept in the Library as a brief; a pack story holds it on the fake server, the real one and Room.
 
 **Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
 `mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android

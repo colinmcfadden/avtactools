@@ -167,6 +167,12 @@ class DtoFixtureTest {
     }
 
     @Test
+    fun `a pack's item counts take briefs, and a server that does not count them says none`() {
+        assertEquals(PackItemCounts(1, 2, 0, 0), strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0}"""))
+        assertEquals(3, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "brief": 3}""").brief)
+    }
+
+    @Test
     fun `an installed app survives a field a newer server adds`() {
         val withNew = Recorded.text("me").replaceFirst("{", """{"added_in_a_later_release": {"x": [1, 2]}, """)
         val user = ApiClient.JSON.decodeFromString(ApiUser.serializer(), withNew)

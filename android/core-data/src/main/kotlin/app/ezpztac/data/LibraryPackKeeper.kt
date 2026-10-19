@@ -28,6 +28,11 @@ import kotlinx.serialization.json.JsonObject
  */
 internal class LibraryPackKeeper(
     private val store: SyncStore,
+    /**
+     * Whether the account may keep a brief in its library: `/api/briefs` needs `mission_brief`, and a record the server refuses for the account
+     * would wait in the outbox for good, unseen (no Library tab lists briefs yet). Without it a brief is not kept, and the person is told.
+     */
+    private val keepsBriefs: () -> Boolean = { false },
     /** When a kept version is noted as made ([LocalRecord.updatedAt]), as SyncRepository.create notes every record made here. */
     private val clock: () -> String = { java.time.Instant.now().toString() },
 ) : PackKeeper {
@@ -50,6 +55,7 @@ internal class LibraryPackKeeper(
 
     private suspend fun keepOne(version: KeptVersion): KeptOutcome {
         val kind = KINDS[version.kind] ?: return KeptOutcome.NothingToKeep(version.key, "unknown_kind")
+        if (kind == RecordKind.BRIEF && !keepsBriefs()) return KeptOutcome.NothingToKeep(version.key, "mission_brief_off")
         val document = documentOf(kind, version)
             ?: return KeptOutcome.NothingToKeep(version.key, if (kind == RecordKind.POINT_SET) "empty_point_set" else "unreadable")
         val uuid = uuidFor(version.key)
@@ -70,12 +76,15 @@ internal class LibraryPackKeeper(
     // (PackOps refuses anything else).
     private fun documentOf(kind: RecordKind, version: KeptVersion): JsonObject? = when {
         kind == RecordKind.POINT_SET -> (version.data as? JsonArray)?.takeIf { it.isNotEmpty() }?.let { JsonObject(mapOf("points" to it)) }
+        // A brief's document is the person's answers, kept whole (docs/MISSION_BRIEF.md §3). **Not like the web**, whose saveVersionToLibrary
+        // would save it as an empty set of routes.
+        kind == RecordKind.BRIEF -> version.data as? JsonObject
         version.asIs && version.data is JsonObject -> version.data as JsonObject
         else -> PackActions.libraryData(version.kind, version.data) as? JsonObject
     }
 
     companion object {
-        private val KINDS = mapOf("lz" to RecordKind.LZ, "route" to RecordKind.ROUTE, "pointset" to RecordKind.POINT_SET)
+        private val KINDS = mapOf("lz" to RecordKind.LZ, "route" to RecordKind.ROUTE, "pointset" to RecordKind.POINT_SET, "brief" to RecordKind.BRIEF)
 
         /** The library record a kept version is saved as, named by its key so that keeping it twice makes one record. */
         fun uuidFor(key: String): String = UUID.nameUUIDFromBytes("ezpz-pack-kept:$key".toByteArray(Charsets.UTF_8)).toString()
