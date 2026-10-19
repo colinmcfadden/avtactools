@@ -781,6 +781,10 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   (`TabletFrameTest`), and the phone frame now draws its sheet itself. Keep movable contents side by side, never one inside another while both move.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
+- **A child's z-index counts only inside its parent's stacking context.** The phone's Capture and Export were `position: fixed; z-index: 9999`
+  inside the map's tool rail (`z-index: 1000`), so the bottom sheet (1050) covered them at every height and nobody could export an LZ card
+  from a phone. What floats on the phone's map goes in `.shell-map`, positioned from its edges (as the Layers button is): the map ends where
+  the sheet begins, so it is never under the sheet. `MobileQuickAccess.test.jsx` holds the pills out of the rail.
 - **A queued test dispatcher hides what the main thread does.** A view model's coroutines run on `Dispatchers.Main.immediate`, which runs
   work resumed on the main thread at once, inside whatever resumed it; `StandardTestDispatcher` as Main runs each in turn. The shell's pack
   gate passed every test so, and an independent review then proved four ordering bugs with `UnconfinedTestDispatcher` as Main and writes that

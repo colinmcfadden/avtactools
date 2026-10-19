@@ -111,21 +111,46 @@
     }
 }
 
-/* --- Mobile Export Controls (Bottom Right) --- */
+/* --- Mobile Export Controls (LZ card Capture / Export) --- */
+/* Wide windows export from the sidebar. */
 .mobile-export-container {
-    position: fixed;
-    bottom: 25px; /* Keeps it above mobile browser bars */
-    right: 15px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    z-index: 9999;
-    align-items: flex-end;
+    display: none;
 }
 
-.mobile-export-buttons {
-    display: flex;
-    gap: 10px;
+@media (max-width: 850px) {
+    /* In the map, as the Layers button is (MapStyleSwitcher.css), so they end where the bottom sheet
+       begins: the map's bottom follows the sheet (Dock.jsx). Stacked above Layers (its 28 px offset and
+       64 px button, then 10 px), clear of the attribution at the bottom right and, as a column at the
+       left, of the rail on the right however wide its labelled buttons are. Under the Layers menu
+       (z-index 1000), which opens over them, and under the sheet while it moves. */
+    .mobile-export-container {
+        position: absolute;
+        left: 12px;
+        bottom: calc(102px + env(safe-area-inset-bottom, 0px));
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 999;
+    }
+
+    .mobile-export-buttons {
+        display: flex;
+        flex-direction: column; /* one width for both: the wider pill's */
+        gap: 8px;
+    }
+}
+
+/* A phone on its side has a map too short for the column (it would reach the zoom buttons): a row
+   beside Layers, where a touch screen shows nothing else (CursorGridReadout.css). */
+@media (max-width: 850px) and (max-height: 500px) {
+    .mobile-export-container {
+        left: 84px;
+        bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .mobile-export-buttons {
+        flex-direction: row;
+    }
 }
 
 .mobile-pill-btn {

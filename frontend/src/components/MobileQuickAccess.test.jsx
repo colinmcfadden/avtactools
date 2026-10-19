@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import fs from "fs";
+import path from "path";
 import React from "react";
 import MobileQuickAccess from "./MobileQuickAccess";
 
@@ -102,5 +104,44 @@ describe("the phone's quick access, once a target is set", () => {
     renderQuickAccess({ canAnalyze: false, canDrawBoundary: false, canUseDiagramTools: false, canSaveDiagram: false, canExport: true, onAnalyze: () => {}, onToggleDrawing: () => {} });
     expect(screen.getByRole("button", { name: "Re-analyze" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Draw LZ" })).toBeDisabled();
+  });
+});
+
+// jsdom applies no stylesheet, so the rules themselves are read. A media block holds rules one level deep.
+const MEDIA = /@media([^{]+)\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}/g;
+const stylesheet = (file) => fs.readFileSync(path.join(__dirname, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const rules = (css, selector) =>
+  [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, sel]) => sel.trim() === selector).map(([, , body]) => body);
+const px = (body, property) => Number(body.match(new RegExp(`${property}: (?:calc\\()?(\\d+)px`))?.[1]);
+
+describe("the phone's LZ card export", () => {
+  it("is not inside the rail, whose stacking context lies under the bottom sheet", () => {
+    const { container } = renderQuickAccess();
+    const capture = screen.getByRole("button", { name: /Capture/ });
+    expect(capture.closest(".mobile-quick-access-container")).toBeNull();
+    // Beside the rail in the map, as the Layers button is: the map ends where the sheet begins.
+    expect(capture.closest(".mobile-export-container").parentElement).toBe(container);
+  });
+
+  it("stands in the map above the Layers button, at the left, clear of the rail, and only below 850 px", () => {
+    const css = stylesheet("MobileQuickAccess.css");
+    const wide = css.replace(MEDIA, "");
+    const phone = [...css.matchAll(MEDIA)]
+      .filter(([, query]) => query.trim() === "(max-width: 850px)")
+      .flatMap(([, , body]) => rules(body, ".mobile-export-container"));
+    expect(rules(wide, ".mobile-export-container")).toEqual([expect.stringMatching(/display: none;/)]);
+    expect(phone).toHaveLength(1);
+    const [box] = phone;
+    // Fixed, a bottom offset is the window's, under the sheet whatever its height.
+    expect(css).not.toMatch(/position: fixed/);
+    expect(box).toMatch(/position: absolute;/);
+    expect(box).toMatch(/left: \d+px;/);
+    expect(box).not.toMatch(/right:/);
+
+    const layersCss = stylesheet("../feature/mapStyles/MapStyleSwitcher.css");
+    const [layers] = rules(layersCss, ".map-style-switcher");
+    const [toggle] = rules(layersCss, ".map-style-toggle");
+    expect(px(box, "left")).toBe(px(layers, "left"));
+    expect(px(box, "bottom")).toBeGreaterThan(px(layers, "bottom") + px(toggle, "height"));
   });
 });

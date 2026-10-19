@@ -145,6 +145,7 @@ const MobileQuickAccess = ({
   };
 
   return (
+    <>
     <div className="mobile-quick-access-container">
       {/* The readiness hint ("Set a target…") is intentionally NOT rendered here.
           On mobile it pushed this vertical icon rail toward mid-screen; the same
@@ -322,8 +323,11 @@ const MobileQuickAccess = ({
         )}
       </div>
       </>)}
+    </div>
 
-      {/* --- NEW: Bottom Right Export Controls --- */}
+      {/* LZ card export, above the Layers button. Not inside the rail: the rail is its own stacking
+          context (z-index 1000), under the bottom sheet's 1050, and a fixed bottom ignored the sheet
+          altogether. Placed in the map like the Layers button, it ends where the sheet begins. */}
       {can("exports") && (
       <div className="mobile-export-container">
         
@@ -355,7 +359,7 @@ const MobileQuickAccess = ({
         </div>
       </div>
       )}
-    </div>
+    </>
   );
 };
 
