@@ -870,6 +870,7 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
     mission: { name: brief["mission.name"], date: brief["mission.date"], summary: brief["flight.summary"] },
     options,
     constants,
+    places: placesOf(flow, offset),
     flow: flow.map((f) => (f.gone
       ? { ref: f.ref, gone: true }
       : f.kind === "route"
@@ -878,6 +879,29 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
     steps,
     pages,
     problems,
+  };
+};
+
+/**
+ * Where and when the weather is wanted: the departure (the first route's first point, at its clock), the arrival (the last
+ * route's last point) and each stop (its target, at the time a route reaches it), each time as an instant at the offset;
+ * null where the plan does not say. The caller asks /api/weather with these and hands the answers back as `context.weather`.
+ */
+const placesOf = (flow, offset) => {
+  const instant = (wall) => (wall === null ? null : new Date(wall - offset * 60000).toISOString());
+  const routes = flow.filter((f) => f.kind === "route" && f.result?.points?.length);
+  const first = routes[0]?.result.points[0] ?? null;
+  const lastRoute = routes[routes.length - 1];
+  const last = lastRoute ? lastRoute.result.points[lastRoute.result.points.length - 1] : null;
+  const place = (p) => (p ? { lat: p.lat, lon: p.lon, at: instant(wallOf(p.clockTime)) } : null);
+  return {
+    departure: place(first),
+    arrival: place(last),
+    stops: flow.filter((f) => f.kind === "stop" && f.target).map((stop) => {
+      const before = flow.slice(0, flow.indexOf(stop)).reverse().find((f) => f.kind === "route");
+      const at = before ? routePointAt(before, stop.target) : null;
+      return { id: stop.id, ref: stop.ref, lat: stop.target.lat, lon: stop.target.lon, at: at ? instant(wallOf(at.point.clockTime)) : null };
+    }),
   };
 };
 

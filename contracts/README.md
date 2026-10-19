@@ -25,7 +25,7 @@ contracts/
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
 │  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py)
-│  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, settings.json, history.json
+│  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
 └─ scripts/         generators: the fixtures PyGeodesy owns, and tokens.py
@@ -70,6 +70,7 @@ reference is.
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | `core-missionpacks` (`PackOps`: every case, strictly: status, reason, null kept apart from absent, keys in JavaScript's order; `PackOpsFixtureTest`) |
 | `packs/ops-brief.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` | `core-missionpacks` once it ports the `brief` kind (`docs/MISSION_BRIEF.md`, B7); apart from `ops.json` until then, so `PackOpsFixtureTest` still holds every case there |
+| `packs/session-brief.json` | `frontend/src/contracts/packSessionFixtures.test.js` | — | `core-missionpacks` once it ports the `brief` kind (B7): brief edits taken in a read-only pack, sent in batches of their own, kept when the pack turns read-only; apart from `session.json`, which is unchanged |
 | `packs/diff.json` | `frontend/src/contracts/packDiffFixtures.test.js` | — | `core-missionpacks` (`PackDiff`: the operations an editor's change is sent as, every case strictly and in order, each rebuilt with `PackOps`, and every `sameData` pair; the `webBug` cases and pairs are not copied and have tests of the right behaviour; `PackDiffFixtureTest`) |
 | `packs/shared.json`, `packs/describe.json`, `packs/edit.json` | `frontend/src/contracts/packSharedFixtures.test.js` | — | `core-missionpacks` (`PackLz`, `PackRoutes`, `PackPoints`, `PackSentences`, `PackEdit`: what is each person's own, the history's sentences and new items' names, how one edit is put together; every case, the `webBug` ones not copied and tested for the right behaviour; `PackSharedFixtureTest`, `PackDescribeFixtureTest`, `PackEditFixtureTest`) |
 | `packs/settings.json` | `frontend/src/contracts/packSettingsFixtures.test.js` | — | `core-missionpacks` (`LzPackKind`, `RoutePackKind`, `PackDiff`: each setting's item read and written back unchanged, the web's operations for it strictly and in order, and what the port sends instead, kept whole, rebuilding the same item; `PackSettingsFixtureTest`) |
@@ -99,6 +100,7 @@ sync is held to these files:
 |---|---|---|
 | `ops.json` | What one operation does to a pack's items (the server applies it the same way) | `packOps.js` |
 | `ops-brief.json` | The same, for the `brief` kind | `packOps.js` |
+| `session-brief.json` | `session.json`'s rules for brief edits: taken in a read-only pack, their own batches, kept when the pack turns read-only | `packSession.js` |
 | `diff.json` | The operations an editor's change to an item is sent as, in order | `packDiff.js` |
 | `edit.json` | One change as sent: the rename, the operations that bring an old item to today's shape, the change, one sentence on each | `packEdit.js` (`composeEdit`, from `usePackItemSync`) |
 | `shared.json` | What of an item is each person's own and never sent; a set's points made ready; the name and library form of a person's own version of an item ("NAME (my edits)"); the shape an editor gives an LZ/PZ or route set it opens, which the reshape in `edit.json` brings an older item to | `packLz.js`, `packRoutes.js` (with `useLzWorkspace.normalizeLzDiagram` and `useRouteSketch.restoreSketchRoute`), `usePackPoints.js`, `packSentences.js`, `packActions.js` |

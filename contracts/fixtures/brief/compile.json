@@ -212,6 +212,17 @@
           {"id":"goAround","label":"Go-around direction","short":"GO-AROUND","value":null,"source":"blank"},
           {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
         ],
+        "places": {
+          "departure": {"lat":33.9151,"lon":-84.5163,"at":"2026-10-16T15:56:32.000Z"},
+          "arrival": {"lat":33.9151,"lon":-84.5163,"at":"2026-10-16T20:26:28.000Z"},
+          "stops": [
+            {"id":"lz-bluebird","ref":"lz:lz-bluebird","lat":34.6012,"lon":-84.0523,"at":"2026-10-16T16:21:03.000Z"},
+            {"id":"lz-hawk","ref":"lz:lz-hawk","lat":34.5501,"lon":-84.1102,"at":"2026-10-16T16:25:54.000Z"},
+            {"id":"pz-ibis","ref":"lz:pz-ibis","lat":34.5702,"lon":-84.1056,"at":"2026-10-16T20:03:31.000Z"},
+            {"id":"farp-bucees","ref":"lz:farp-bucees","lat":34.4801,"lon":-84.0412,"at":null},
+            {"id":"lz-decoy","ref":"lz:lz-decoy","lat":34.6501,"lon":-84.2001,"at":null}
+          ]
+        },
         "flow": [
           {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
           {"ref":"lz:lz-bluebird","kind":"stop","role":"LZ","name":"LZ BLUEBIRD","arrive":"12:21:03","grid":"16S GD 71020 49660"},
@@ -1182,6 +1193,17 @@
           {"id":"terrainFlightAirspeed","label":"Terrain flight airspeed","short":"TERRAIN FLT","value":"100 KIAS","source":"typed"},
           {"id":"custom-1","label":"Formation","short":"FORMATION","value":"Stag right, 3-5 disks","source":"typed"}
         ],
+        "places": {
+          "departure": {"lat":33.9151,"lon":-84.5163,"at":"2026-10-16T15:56:32.000Z"},
+          "arrival": {"lat":33.9151,"lon":-84.5163,"at":"2026-10-16T20:26:28.000Z"},
+          "stops": [
+            {"id":"lz-decoy","ref":"lz:lz-decoy","lat":34.6501,"lon":-84.2001,"at":null},
+            {"id":"lz-bluebird","ref":"lz:lz-bluebird","lat":34.6012,"lon":-84.0523,"at":"2026-10-16T16:21:03.000Z"},
+            {"id":"lz-hawk","ref":"lz:lz-hawk","lat":34.5501,"lon":-84.1102,"at":"2026-10-16T16:25:54.000Z"},
+            {"id":"farp-bucees","ref":"lz:farp-bucees","lat":34.4801,"lon":-84.0412,"at":null},
+            {"id":"pz-ibis","ref":"lz:pz-ibis","lat":34.5702,"lon":-84.1056,"at":"2026-10-16T20:03:31.000Z"}
+          ]
+        },
         "flow": [
           {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
           {"ref":"lz:lz-decoy","kind":"stop","role":"FALSE_LZ","name":"LZ DECOY","arrive":null,"grid":"16S GD 56614 37808"},
@@ -2041,6 +2063,11 @@
           {"id":"goAround","label":"Go-around direction","short":"GO-AROUND","value":"right","source":"plan"},
           {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
         ],
+        "places": {
+          "departure": {"lat":33.9151,"lon":-84.5163,"at":"2026-10-16T15:56:32.000Z"},
+          "arrival": {"lat":34.5501,"lon":-84.1102,"at":"2026-10-16T16:25:54.000Z"},
+          "stops": [{"id":"lz-hawk","ref":"lz:lz-hawk","lat":34.5501,"lon":-84.1102,"at":"2026-10-16T16:25:54.000Z"}]
+        },
         "flow": [
           {"ref":"route:set-opdk/r-alderaan","kind":"route","name":"ALDERAAN","start":"11:56:32","end":"12:25:54"},
           {"ref":"lz:gone-lz","gone":true},
@@ -2483,6 +2510,7 @@
           {"id":"goAround","label":"Go-around direction","short":"GO-AROUND","value":null,"source":"blank"},
           {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
         ],
+        "places": {"departure":null,"arrival":null,"stops":[]},
         "flow": [],
         "steps": [
           {
@@ -2870,6 +2898,7 @@
           {"id":"goAround","label":"Go-around direction","short":"GO-AROUND","value":null,"source":"blank"},
           {"id":"enrouteFormation","label":"Enroute formation","short":"FORMATION","value":null,"source":"blank"}
         ],
+        "places": {"departure":null,"arrival":null,"stops":[{"id":"lone","ref":"lz:lone","lat":35,"lon":-85,"at":null}]},
         "flow": [{"ref":"route:s/one","kind":"route","name":"ONE","start":null,"end":null},{"ref":"lz:lone","kind":"stop","role":"LZ","name":"LZ LONE","arrive":null,"grid":"16S FD 82516 74870"}],
         "steps": [
           {

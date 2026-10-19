@@ -972,6 +972,8 @@ export const usePackWorkspace = ({
     status: liveStatus,
     session,
     items,
+    // The open pack's own edit (useMissionPack), for what is not an editor's: the mission brief's item.
+    edit: live.edit,
     readOnly,
     role: meta?.role ?? null,
     others,

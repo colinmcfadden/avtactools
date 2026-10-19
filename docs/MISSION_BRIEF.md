@@ -1,6 +1,6 @@
 # Mission brief — architecture and plan
 
-Status: **B0, B1 and B2 done, B3 next** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
+Status: **B0 to B3 done, B4 next** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
 seven web boards, three Android tablet boards). This file is the plan for building them on the web and Android. The owner's decisions of
 2026-10-16 are in §9.
 
@@ -246,11 +246,11 @@ green, AGENTS.md and `docs/HANDOFF.md` updated in the same commit.
 | **B0** | **Done.** `contracts/briefs/`: the template format, the two formats, the bindings, the constants and the standards, held by `briefTemplates.test.js` | — |
 | **B1** | **Done.** Web: `compile.js`, `templates.js`, `light.js` and their fixtures (`contracts/fixtures/brief`: `compile.json` from the web, `light.json` from Skyfield via `contracts/scripts/light_fixtures.py`) | B0 |
 | **B2** | **Done.** Backend: `SavedBrief`, `/api/briefs`, sync kind, pack item kind `brief` and its exception, the weather route's `at`, OpenAPI, recorded responses, `mission_brief`; the web's `packOps.js` takes the kind, its cases in `contracts/fixtures/packs/ops-brief.json` (apart from `ops.json` until Android ports the kind in B7) | B0 |
-| **B3** | Web: the Brief menu and the three-step setup over `useBrief` (Library and pack) | B1, B2 |
+| **B3** | **Done.** Web: the Brief menu (top bar, `mission_brief` only) and the three-step setup (`BriefSetup`: flow and constants, details with Standard / Custom / Blank and the script, review of the pages as compiled) over `useBrief`: outside a pack a Library record (`/api/briefs`, the one this browser opened last for the account, made at the first change under its own identity, saved 0.8 s after the last), in a pack the pack's brief item (made at the first change, every change sent as the pack's operations). The web's pack session takes brief edits in a read-only pack and sends them in batches of their own (`packs/session-brief.json`). The weather is asked for the departure, arrival and each stop at their planned times while the setup is open. Not yet: the PDF (B4), the sandtable (B5) | B1, B2 |
 | **B4** | Backend + web: figures, the pages, Gotenberg, `POST /api/brief/pdf`; the review step and download | B3 |
 | **B5** | Web: the live sandtable | B3 |
 | **B6** | Backend + web: strip charts in the appendix | B4 |
-| **B7** | Android: `core-brief` ported and held to every fixture; the record kind, the pack kind and its exception | B1, B2 |
+| **B7** | Android: `core-brief` ported and held to every fixture; the record kind, the pack kind and its exception (`packs/ops-brief.json`, and `packs/session-brief.json`'s session rules) | B1, B2 |
 | **B8** | Android: brief setup, review, Share and Save (tablet) | B4, B7 |
 | **B9** | Android: the sandtable (tablet) | B7 |
 | later | Threats in the brief (needs *T*), others following the sandtable, the AOPORD/AMB and air assault formats, a phone layout | — |

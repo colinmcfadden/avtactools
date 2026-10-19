@@ -37,6 +37,8 @@ const TopBar = ({
   onImport,
   canImport = {},
   onOpenLibrary,
+  // What goes before Import: the mission brief's button, for an account that has it.
+  briefSlot = null,
   user,
   isAdmin = false,
   onSignOut,
@@ -98,6 +100,7 @@ const TopBar = ({
       )}
 
       <div className="shell-topbar__end">
+        {briefSlot}
         <button type="button" className="shell-topbar__button" {...imports.buttonProps}>
           <Icon name="download" size={15} />
           <span className="shell-topbar__button-label">Import</span>

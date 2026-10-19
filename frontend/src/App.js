@@ -64,6 +64,9 @@ import { ConfirmDialog } from "./feature/ui/Dialog";
 import { useMenu } from "./feature/ui/Menu";
 import { PanelHead } from "./feature/shell/Dock";
 import usePackWorkspace from "./feature/missionPacks/ui/usePackWorkspace";
+import { useBrief } from "./feature/brief/useBrief";
+import BriefMenu from "./feature/brief/BriefMenu";
+import BriefSetup from "./feature/brief/BriefSetup";
 import PackPanel from "./feature/missionPacks/ui/PackPanel";
 import WorkspaceSwitcher from "./feature/missionPacks/ui/WorkspaceSwitcher";
 import { FinishedBanner } from "./feature/missionPacks/ui/PackDialogs";
@@ -448,6 +451,7 @@ function App() {
     aircraft_profiles: !uf || uf.aircraft_profiles !== false,
     // Default off (entitlements.DEFAULT_OFF): only an explicit "on" shows Mission Packs.
     mission_packs: Boolean(uf && uf.mission_packs === true),
+    mission_brief: Boolean(uf && uf.mission_brief === true),
   };
   const { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
@@ -617,6 +621,20 @@ function App() {
     onOpenLibrary: () => openLibrary("lz"),
   });
   const inPack = Boolean(packs.open);
+
+  // --- The mission brief (docs/MISSION_BRIEF.md): from the open pack, else from this session ----------------------
+  const [briefOpen, setBriefOpen] = useState(false);
+  const brief = useBrief({
+    enabled: feat.mission_brief,
+    active: briefOpen,
+    user,
+    pack: inPack ? { name: packs.meta?.name ?? "", items: packs.items, edit: packs.edit, readOnly: packs.readOnly } : null,
+    session: { name: "", diagrams, routeSets },
+    threats: feat.threats ? threats : [],
+    aircraftProfiles,
+    missionAircraft: activeProfile?.slug ?? null,
+    toast,
+  });
   const packReadOnly = inPack && packs.readOnly;
   const editable = !packReadOnly;
   const diagramReadinessText = diagramReadiness({ hasTarget: hasActiveTarget, analyzed: canEditGraphics, editable });
@@ -1341,6 +1359,9 @@ function App() {
           isAdmin={Boolean(user?.is_admin)}
           onSignOut={logout}
           onOpenLibrary={() => openLibrary("lz")}
+          briefSlot={feat.mission_brief ? (
+            <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} />
+          ) : null}
           onImport={(kind) => pickers[kind]?.open()}
           canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
           pack={packs.topPack}
@@ -1928,6 +1949,14 @@ function App() {
           subtitle={inPack ? `Everything you have saved. Adding one puts a copy of it in ${packs.meta?.name ?? "the pack"}.` : undefined}
           // Already in a pack, the switcher is a click away in the top bar and the sentence would not fit.
           onOpenPacks={feat.mission_packs && !inPack ? openWorkspaceSwitcher : undefined}
+        />
+      )}
+      {briefOpen && feat.mission_brief && (
+        <BriefSetup
+          brief={brief}
+          title={inPack ? packs.meta?.name ?? "the pack" : "this session"}
+          threatCount={feat.threats ? threats.length : 0}
+          onClose={() => setBriefOpen(false)}
         />
       )}
       {pickers.msnx.element}
