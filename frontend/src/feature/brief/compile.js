@@ -732,7 +732,7 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
 
   // Steps, then their pages, so the packet's own page count can be said on its first page.
   const options = {
-    script: true, constants: true, lzCards: true, navLogs: true, iimc: true, writeIns: true,
+    script: true, constants: true, lzCards: true, navLogs: true, strips: true, iimc: true, writeIns: true,
     ...(isObject(doc.options) ? doc.options : {}),
   };
   const planned = planSteps(template, flow);
@@ -747,6 +747,20 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
   planned.forEach((st, i) => pages.push({ n: i + 1, kind: i === 0 ? "cover" : "step", stepId: stepIdOf(st) }));
   if (options.lzCards) flowStops.forEach((s) => pages.push({ n: pages.length + 1, kind: "lzCard", ref: s.ref, title: `${ROLE_NAMES[s.role]} card · ${s.name}` }));
   if (options.navLogs) flowRoutes.forEach((r) => pages.push({ n: pages.length + 1, kind: "navLog", ref: r.ref, title: `Nav log · ${r.name}` }));
+  // Strip charts, three to a page, a route's strips together and in the order they are flown.
+  const stripScale = STRIP_SCALES.includes(options.stripScale) ? options.stripScale : STRIP_SCALES[0];
+  const threatsShown = doc.include?.threats === false ? [] : (Array.isArray(plan.threats) ? plan.threats : [])
+    .filter((t) => isObject(t) && num(t.lat) !== null && num(t.lon) !== null);
+  const strips = options.strips ? stripChartsOf(flowRoutes, flowStops.filter((s) => s.target), threatsShown, stripScale, problems) : [];
+  flowRoutes.forEach((r) => {
+    const own = strips.filter((st) => st.ref === r.ref);
+    for (let i = 0; i < own.length; i += 3) {
+      const shown = own.slice(i, i + 3);
+      const parts = shown.length > 1 ? `${shown[0].part}–${shown[shown.length - 1].part}` : String(shown[0].part);
+      const range = own.length > 3 ? ` (${parts} of ${own.length})` : "";
+      pages.push({ n: pages.length + 1, kind: "strips", ref: r.ref, title: `Strip charts · ${r.name}${range}`, strips: shown.map((st) => st.id) });
+    }
+  });
   if (hasIimcCard) pages.push({ n: pages.length + 1, kind: "iimc", title: "IIMC card", itemId: `${iimcItem.s.id}.${iimcItem.it.id}` });
 
   // What the packet holds, by section, never by page: where Chromium breaks the printed pages is not known here, so a
@@ -756,6 +770,7 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
     `the brief (${plural(planned.length, "step", "steps")})`,
     count("lzCard") ? `${plural(count("lzCard"), "LZ/PZ card", "LZ/PZ cards")}` : null,
     count("navLog") ? `${plural(count("navLog"), "nav log", "nav logs")}` : null,
+    strips.length ? `${plural(strips.length, "strip chart", "strip charts")}` : null,
     count("iimc") ? "the IIMC card" : null,
   ].filter(Boolean);
   const inventoryText = inventory.length > 1 ? `${inventory.slice(0, -1).join(", ")} and ${inventory[inventory.length - 1]}` : inventory[0];
@@ -881,6 +896,7 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
         : { ref: f.ref, kind: "stop", role: f.role, name: f.name, arrive: perStop.get(f.ref)["stop.arrive"], grid: perStop.get(f.ref)["stop.grid"] })),
     steps,
     pages,
+    strips,
     problems,
   };
 };
@@ -1018,6 +1034,270 @@ const boundsOf = (points) => {
   const padLat = Math.max(0.002, (n - s) * 0.1);
   const padLon = Math.max(0.002, (e - w) * 0.1);
   return [[s - padLat, w - padLon], [n + padLat, e + padLon]];
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Strip charts (docs/MISSION_BRIEF.md §2.6): each route along its course, cut into strips a kneeboard holds.
+
+/** A strip as printed: 5.5 by 21.5 cm, three to a page, the direction of flight up. */
+export const STRIP_CM = { width: 5.5, length: 21.5 };
+/** The scales a strip is drawn at; the first is used unless the brief says another. */
+export const STRIP_SCALES = [100000, 250000];
+/** More strips than this are not made: a brief is a packet, not an atlas. */
+export const MAX_STRIPS = 60;
+
+const R_METRES = 3440.065 * METRES_PER_NM; // the planner's sphere (routeCalc's distanceNm), in metres
+const RAD = Math.PI / 180;
+const round7 = (v) => Math.round(v * 1e7) / 1e7;
+
+/** Ground sizes of a strip at a scale: its length and width, the margin kept at each end, and how far off its axis the route may run. */
+const stripDims = (scale) => {
+  const length = (STRIP_CM.length / 100) * scale;
+  const width = (STRIP_CM.width / 100) * scale;
+  const margin = length * 0.05;
+  return { length, width, margin, usable: length - 2 * margin, maxCross: width * 0.3 };
+};
+
+/** A place as metres east and north of an origin, on a plane fitted at their middle latitude. */
+const localOf = (origin, p) => {
+  const mid = ((origin.lat + p.lat) / 2) * RAD;
+  return { x: (p.lon - origin.lon) * RAD * R_METRES * Math.cos(mid), y: (p.lat - origin.lat) * RAD * R_METRES };
+};
+
+/** The place `x` metres east and `y` north of an origin (the inverse of localOf). */
+const placeOf = (origin, x, y) => {
+  const lat = origin.lat + y / R_METRES / RAD;
+  const mid = ((origin.lat + lat) / 2) * RAD;
+  return { lat, lon: origin.lon + x / (R_METRES * Math.max(1e-9, Math.cos(mid))) / RAD };
+};
+
+/**
+ * The direction from a piece's first point to its last, as a unit vector; its first real movement while it has no
+ * length; and, for a piece that has not moved a metre yet, `none` (pointing north, which nothing then relies on).
+ */
+const axisOf = (local) => {
+  const end = local[local.length - 1];
+  const chord = Math.hypot(end.x, end.y);
+  const ahead = chord >= 1 ? end : local.find((q) => Math.hypot(q.x, q.y) >= 1);
+  if (!ahead) return { ux: 0, uy: 1, chord, none: true };
+  const len = Math.hypot(ahead.x, ahead.y);
+  return { ux: ahead.x / len, uy: ahead.y / len, chord, none: false };
+};
+
+/**
+ * Whether a run of the route fits one strip: no longer than the strip less its margins, never more than `maxCross`
+ * off the line from its start to its end (labels need the room either side), and never going back along it (the
+ * direction of flight stays up the strip).
+ */
+const fitsStrip = (piece, dims) => {
+  const origin = piece[0];
+  const local = piece.map((p) => localOf(origin, p));
+  const { ux, uy, chord } = axisOf(local);
+  if (chord > dims.usable) return false;
+  let before = 0;
+  return local.every((q) => {
+    const along = q.x * ux + q.y * uy;
+    const cross = q.x * uy - q.y * ux;
+    const fits = Math.abs(cross) <= dims.maxCross && along >= before - 1 && along <= dims.usable;
+    before = along;
+    return fits;
+  });
+};
+
+const between = (a, b, t) => ({ lat: a.lat + (b.lat - a.lat) * t, lon: a.lon + (b.lon - a.lon) * t, pos: a.pos + (b.pos - a.pos) * t });
+
+/** A strip carries on into the next leg only when that leg keeps within this many degrees of the strip's course. */
+const MAX_CARRY_TURN = 20;
+
+/** How far, in degrees, the leg from a piece's end to `next` turns off the piece's own course; none for a piece with no course yet. */
+const turnAt = (piece, next) => {
+  const origin = piece[0];
+  const { ux, uy, none } = axisOf(piece.map((p) => localOf(origin, p)));
+  if (none) return 0;
+  const from = piece[piece.length - 1];
+  const leg = localOf(from, next);
+  const len = Math.hypot(leg.x, leg.y);
+  if (len < 1) return 0;
+  return Math.acos(Math.max(-1, Math.min(1, (leg.x * ux + leg.y * uy) / len))) / RAD;
+};
+
+/**
+ * The route's path cut into strips: as far as each strip holds it, then the next from where that one ended, so a bend
+ * the strip cannot hold starts a new one and a long leg runs on over several. Each piece is points along the path with
+ * `pos`, its place along the route's own points (a whole number at a point, between at a cut).
+ */
+const cutIntoStrips = (path, dims, budget) => {
+  const pieces = [];
+  let piece = [path[0]];
+  for (let i = 1; i < path.length; ) {
+    // Past what a brief may hold (and what the person is told about), no more is cut: a far-flung point costs nothing.
+    if (pieces.length >= budget) return { pieces, more: true };
+    const next = path[i];
+    if (fitsStrip([...piece, next], dims)) {
+      piece.push(next);
+      i += 1;
+      continue;
+    }
+    const from = piece[piece.length - 1];
+    if (piece.length === 1) {
+      // A leg longer than a strip, on its own: cut into as few equal parts as the strip holds, so none is a stub.
+      const parts = Math.ceil(metresBetween(from, next) / (dims.usable * 0.995));
+      if (parts <= 1) {
+        piece.push(next);
+        i += 1;
+      } else {
+        piece.push(between(from, next, 1 / parts));
+      }
+    } else if (turnAt(piece, next) <= MAX_CARRY_TURN) {
+      // On along a leg that keeps the course, as far as still fits, unless that is next to nothing. A real turn ends the
+      // strip at the turn point instead, so the next strip starts there.
+      let lo = 0;
+      let hi = 1;
+      for (let k = 0; k < 40; k += 1) {
+        const mid = (lo + hi) / 2;
+        if (fitsStrip([...piece, between(from, next, mid)], dims)) lo = mid;
+        else hi = mid;
+      }
+      const leg = metresBetween(from, next);
+      let reach = leg * lo;
+      // Leave the rest of the leg at least a quarter of a strip, so the next strip is never a stub before a turn.
+      if (reach < leg && leg - reach < dims.usable * 0.25) reach = leg - dims.usable * 0.25;
+      if (reach >= dims.usable * 0.05) piece.push(between(from, next, reach / leg));
+    }
+    pieces.push(piece);
+    piece = [piece[piece.length - 1]];
+  }
+  if (piece.length >= 2) {
+    // What is left past the last cut, if it is shorter than a strip's margin, is drawn in the margin of the strip before.
+    const last = pieces[pieces.length - 1];
+    const along = piece.slice(1).reduce((sum, p, k) => sum + metresBetween(piece[k], p), 0);
+    if (last && along < dims.margin) last.push(...piece.slice(1));
+    else pieces.push(piece);
+  }
+  return { pieces, more: false };
+};
+
+/** Distance along the route's own points to a place on it (`pos`), and back. */
+const distanceAlong = (points) => {
+  const sums = [0];
+  for (let i = 1; i < points.length; i += 1) sums.push(sums[i - 1] + metresBetween(points[i - 1], points[i]));
+  const at = (pos) => {
+    const i = Math.min(points.length - 1, Math.max(0, Math.floor(pos)));
+    if (i >= points.length - 1) return sums[points.length - 1];
+    return sums[i] + (sums[i + 1] - sums[i]) * (pos - i);
+  };
+  const posAt = (metres) => {
+    for (let i = 1; i < points.length; i += 1) {
+      if (metres <= sums[i] || i === points.length - 1) {
+        const span = sums[i] - sums[i - 1];
+        return i - 1 + (span > 0 ? Math.min(1, Math.max(0, (metres - sums[i - 1]) / span)) : 0);
+      }
+    }
+    return 0;
+  };
+  return { at, posAt };
+};
+
+/** A longitude brought to within 180° of another, so places either side of the antimeridian are measured the short way. */
+const besideLon = (lon, near) => lon + 360 * Math.round((near - lon) / 360);
+
+/** Whether a place lies on a strip: its rectangle from `margin` behind the start, along the axis, `width` across. */
+const onStrip = (origin, ux, uy, dims, p) => {
+  const q = localOf(origin, { lat: p.lat, lon: besideLon(p.lon, origin.lon) });
+  const along = q.x * ux + q.y * uy;
+  const cross = q.x * uy - q.y * ux;
+  return along >= -dims.margin && along <= dims.length - dims.margin && Math.abs(cross) <= dims.width / 2;
+};
+
+/**
+ * The strip charts of the routes in the flow, as data the server draws (it only projects, turns and writes): for each
+ * strip its route and part, scale, the course up it (true, as a number to turn by and as text), its centre and ground
+ * size, the route's path along it, the checkpoints on it, a note on each leg it holds (course, distance, time and
+ * altitude, the nav log's words, put at the middle of the leg's run on the strip), and the LZ/PZs and threats that lie
+ * on it. A route with fewer than two named points has none. The MGRS grid is added when the PDF is asked for
+ * (stripGrid.js), so this stays exact. Numbers are rounded (places to 1e-7°, the course to 0.01°) so a port gives the same.
+ */
+const stripChartsOf = (flowRoutes, flowStops, threats, scale, problems) => {
+  const dims = stripDims(scale);
+  const strips = [];
+  flowRoutes.forEach((r) => {
+    const points = (r.route.points || []).map((p, pos) => ({ lat: p.lat, lon: p.lon, pos, id: p.id, kind: p.kind, name: p.name, ptType: p.ptType }));
+    if (points.some((p) => num(p.lat) === null || num(p.lon) === null)) return;
+    const namedAt = points.filter((p) => p.kind !== "shaping" && p.id);
+    const planned = r.result?.points || [];
+    if (namedAt.length < 2 || planned.length < 2) return;
+    if (points.some((p) => Math.abs(p.lat) > 84 || Math.abs(p.lon) > 720)) {
+      problems.push({ ref: r.ref, message: `${r.name} runs beyond 84° of latitude, past what the map and the MGRS grid show: it has no strip charts.` });
+      return;
+    }
+    // Each place within 180° of longitude of the one before, so a route across the antimeridian is cut the short way.
+    points.forEach((p, k) => {
+      if (k > 0) p.lon = besideLon(p.lon, points[k - 1].lon);
+    });
+    const path = points.slice(namedAt[0].pos, namedAt[namedAt.length - 1].pos + 1);
+    const flown = path.slice(1).reduce((sum, p, k) => sum + metresBetween(path[k], p), 0);
+    if (flown < 1) return;
+    const allowed = MAX_STRIPS - strips.length;
+    const { pieces, more } = cutIntoStrips(path, dims, allowed);
+    const along = distanceAlong(points);
+    const made = [];
+    pieces.forEach((piece) => {
+      if (made.length >= allowed) return;
+      const origin = piece[0];
+      const local = piece.map((p) => localOf(origin, p));
+      const { ux, uy } = axisOf(local);
+      const course = Math.round((((Math.atan2(ux, uy) / RAD) % 360) + 360) % 360 * 100) / 100 % 360;
+      const centreAlong = dims.length / 2 - dims.margin;
+      const centre = placeOf(origin, ux * centreAlong, uy * centreAlong);
+      const first = piece[0].pos;
+      const last = piece[piece.length - 1].pos;
+      const legs = [];
+      for (let k = 0; k + 1 < namedAt.length; k += 1) {
+        const from = Math.max(first, namedAt[k].pos);
+        const to = Math.min(last, namedAt[k + 1].pos);
+        if (!(to > from)) continue;
+        const middle = along.posAt((along.at(from) + along.at(to)) / 2);
+        const i = Math.min(points.length - 2, Math.floor(middle));
+        const at = between(points[i], points[i + 1], middle - i);
+        const leg = planned[k + 1];
+        legs.push({
+          from: pointName(namedAt[k].name, "PT"),
+          to: pointName(namedAt[k + 1].name, "PT"),
+          at: [round7(at.lat), round7(at.lon)],
+          course: headingText(leg.legCourseTrueDeg),
+          distance: nmText(leg.legDistNm),
+          time: leg.legTimeSec !== null ? durationText(leg.legTimeSec) : null,
+          altitude: altitudeText(leg),
+        });
+      }
+      made.push({
+        ref: r.ref,
+        name: r.name,
+        scale,
+        course,
+        courseText: headingText(course),
+        centre: [round7(centre.lat), round7(centre.lon)],
+        length: dims.length,
+        width: dims.width,
+        path: piece.map((p) => [round7(p.lat), round7(p.lon)]),
+        points: namedAt
+          .filter((p) => p.pos >= first - 1e-9 && p.pos <= last + 1e-9)
+          .map((p) => ({ name: pointName(p.name, "PT"), type: p.ptType ?? null, lat: p.lat, lon: p.lon })),
+        legs,
+        stops: flowStops
+          .filter((s) => onStrip(origin, ux, uy, dims, s.target))
+          .map((s) => ({ name: s.name, role: s.role, lat: s.target.lat, lon: besideLon(s.target.lon, origin.lon) })),
+        threats: threats
+          .filter((t) => onStrip(origin, ux, uy, dims, t))
+          .map((t) => ({ name: String(t.name ?? t.label ?? "").trim() || "Threat", lat: t.lat, lon: besideLon(t.lon, origin.lon) })),
+      });
+    });
+    if (more || made.length < pieces.length) {
+      problems.push({ ref: r.ref, message: `Strip charts stop at ${MAX_STRIPS} strips: the rest of ${r.name} has none.` });
+    }
+    made.forEach((strip, i) => strips.push({ id: `${r.ref}#${i + 1}`, ...strip, part: i + 1, parts: made.length }));
+  });
+  return strips;
 };
 
 /** A step's script as plain sentences, a write-in as a line: for the sandtable and anything that reads text. */

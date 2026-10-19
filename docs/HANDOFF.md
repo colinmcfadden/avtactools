@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-19 for the mission brief (§0a: B0 to B5 built on `feat/mission-brief`, web and server; Android's part is B7 to B9).
+Last refreshed: 2026-10-19 for the mission brief (§0a: B0 to B6 built on `feat/mission-brief`, web and server; Android's part is B7 to B9, B7 under way in its own session).
 Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
@@ -52,17 +52,30 @@ Web and Android; Android tablet size and up only for now.
   against a local backend with OP DK seeded as a pack: every step, the narrow layout, keys with the map focused, a right-click, an aircraft
   window put away, an LZ/PZ removed and then the whole pack deleted mid-brief, End brief and Escape.
 
+- **B6** strip charts in the PDF's appendix (MISSION_BRIEF.md §2.6, *As built*): `compileBrief` cuts each route into 5.5 × 21.5 cm strips
+  (`model.strips`, a `strips` page kind three a page; 1:100,000 or 1:250,000; topo unless asked), the MGRS 1 km grid is added only when printing
+  (`stripGrid.js`, held to the new `strip-grid.json`), and the server turns the map course up and draws the strip (`figures.draw_strip`). Printed
+  through Gotenberg 8.21.1 on this Mac with real Mapbox tiles: OP DK's 12 strips on 4 pages in about 2 s with tiles cached, and the 1:250,000
+  dogleg case across the zone 16/17 boundary; pages looked at as images. `compile.json` changed (every case's options, the strips, the packet sentence,
+  four strip cases): B7's port must follow it, and compare the strips' numbers within a tolerance. An independent review then found, and this fixed:
+  strips cut with stubs, north-up nothing pieces and a wrong course across the antimeridian, no bound on a long route (now 60 strips, said in setup)
+  and nothing past 84° of latitude; the server taking the strip's pixel size from the model, trusting its field types, caching decoded tiles, laying a
+  strip out twice and leaving grid lines through the scale bar's and arrow's corners unnumbered (now every line is numbered on an edge or on itself,
+  swept at every course and both scales); the squares beside the route unnamed; and the cover counting pages Chromium decides.
+
 **Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
 `mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android
 `:core-network:test` and `:core-missionpacks:test`. For B5 (web only, no server code changed): the web's whole Jest suite (1,068 passed; only
 `mgrsGridFixtures` fails, as before), `npm run build` with no new warnings, and the backend's `test_brief_pdf.py` and `test_contract_fixtures.py`
-against the regenerated `compile.json`.
+against the regenerated `compile.json`. For B6: the web's whole Jest suite (1,098 passed; only `mgrsGridFixtures`), `npm run build` with no new
+warnings, and the backend's CI list (531 passed, 2 skipped: the live service needs Postgres); OP DK at 1:100,000 and the dogleg at 1:250,000
+printed again through Gotenberg after the review's fixes and looked at.
 
 **Not verifiable here, or not tried:** a brief built from real LZ/PZs and routes in the browser (only the fixture's OP DK, in Jest and the PDF test,
 and seeded as a pack for the sandtable); the sandtable's animated flights (the agent's browser reports reduced motion, so only the unanimated fit was
 seen) and on a projector or a presenter's clicker; the weather `at` answers from aviationweather.gov live; Gotenberg on the Coolify VM.
 
-**Next, in order** (docs/MISSION_BRIEF.md §5): **B6** strip charts in the PDF; **B7** Android's `core-brief` (port `compile.js` and `light.js`, held to `compile.json` and `light.json`; the record kind;
+**Next, in order** (docs/MISSION_BRIEF.md §5): **B7** Android's `core-brief` (under way in its own session, on its own branch from `feat/mission-brief`) (port `compile.js` and `light.js`, held to `compile.json` and `light.json`; the record kind;
 the pack kind with `packs/ops-brief.json` and `packs/session-brief.json`'s session rules); **B8** Android setup, review, Share and Save (tablet);
 **B9** Android sandtable (held to `brief/sandtable.json`). **Owner steps:** deploy Gotenberg on the VM (AGENTS.md §9 has the command line) and set `GOTENBERG_URL`; check Mapbox's
 terms for printed figures before the PDF ships; tick *Mission brief* for testers in the admin dashboard.

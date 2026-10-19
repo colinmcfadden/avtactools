@@ -25,7 +25,8 @@ contracts/
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
 │  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py),
-│  │                sandtable.json (reference: the web, feature/brief/sandtableSteps.js, read from compile.json's models)
+│  │                sandtable.json (reference: the web, feature/brief/sandtableSteps.js, read from compile.json's models),
+│  │                strip-grid.json (reference: the web, feature/brief/stripGrid.js over mgrsGrid.js, the strips' MGRS grid)
 │  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
@@ -54,6 +55,7 @@ reference is.
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` once it is ported (`docs/MISSION_BRIEF.md`, B7) |
+| `brief/strip-grid.json` | `frontend/src/contracts/briefStripGridFixtures.test.js` | `backend/tests/test_brief_pdf.py` (draws OP DK's strips with it) | Android's PDF (B8): the MGRS 1 km grid the web adds to each strip of `compile.json` before printing, compared within `mgrs/grid.json`'s tolerances (a line sampled with other points, an end a millimetre off) |
 | `brief/sandtable.json` | `frontend/src/contracts/briefSandtableFixtures.test.js` | — | the Android sandtable (B9): each step as the sandtable lists it and what the map shows for it, from `compile.json`'s models (both are made from the same cases, `briefCases.js`, so one `UPDATE_CONTRACTS=1` run writes both) |
 | `workspace/ops.json` | `frontend/src/contracts/workspaceOpsFixtures.test.js` | — | `core-model` (`DiagramOps`) |
 | `workspace/doghouses.json` | `frontend/src/contracts/doghouseFixtures.test.js` | — | `core-model` (`Doghouses`, `JsValue.parseInt` / `parseFloat`) |

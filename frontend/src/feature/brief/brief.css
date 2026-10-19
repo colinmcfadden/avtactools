@@ -33,6 +33,7 @@
 }
 .brief-seg__opt:first-child { border-left: 0; }
 .brief-seg__opt[aria-checked="true"] { background: #3f6fa3; color: #fff; }
+.brief-seg--below { margin-top: 6px; }
 
 .brief-h2 { margin: 0; font-size: 14px; font-weight: 700; color: #f3f5f7; }
 .brief-h3 { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: #e7eaee; display: flex; align-items: center; gap: 6px; }

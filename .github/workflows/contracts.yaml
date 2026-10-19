@@ -25,6 +25,8 @@ on:
       # The mission brief: its compiler and light data (brief/*.json) and the template copies held to contracts/briefs.
       - "frontend/src/feature/brief/**"
       - "frontend/src/feature/terrain/**"
+      # The MGRS grid (mgrs/grid.json), which the brief's strip charts are gridded with too (brief/strip-grid.json).
+      - "frontend/src/feature/mgrsGrid/**"
       - "backend/requirements.txt"
       - "backend/ths_export.py"
       - "backend/threat_template.ths"
@@ -47,6 +49,8 @@ on:
       # The mission brief: its compiler and light data (brief/*.json) and the template copies held to contracts/briefs.
       - "frontend/src/feature/brief/**"
       - "frontend/src/feature/terrain/**"
+      # The MGRS grid (mgrs/grid.json), which the brief's strip charts are gridded with too (brief/strip-grid.json).
+      - "frontend/src/feature/mgrsGrid/**"
       - "backend/requirements.txt"
       - "backend/ths_export.py"
       - "backend/threat_template.ths"

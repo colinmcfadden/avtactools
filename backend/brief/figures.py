@@ -11,8 +11,10 @@ kept in memory between figures and briefs (``_cache``), by source and address on
 
 import io
 import math
+import re
 import threading
 from collections import OrderedDict
+from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 from xml.sax.saxutils import escape
 
@@ -101,22 +103,29 @@ class Frame:
 # -- Tiles ----------------------------------------------------------------------------------------------------------
 
 def _fetch_tile(source_id, url, z, x, y):
+    """A tile as RGB, or None. The cache keeps the tile as it came (a few hundred KB), not decoded (3 MB at 1024 px), so a
+    brief of strip charts cannot leave gigabytes of tiles beside the analysis model."""
     key = (source_id, z, x, y)
     with _cache_lock:
-        if key in _cache:
+        data = _cache.get(key)
+        if data is not None:
             _cache.move_to_end(key)
-            return _cache[key]
+    if data is None:
+        try:
+            response = _session.get(url.format(z=z, x=x, y=y), timeout=TILE_TIMEOUT_S)
+            response.raise_for_status()
+            data = response.content
+            Image.open(io.BytesIO(data)).verify()
+        except Exception:  # noqa: BLE001 - a tile that will not come is a grey square, said on the figure
+            return None
+        with _cache_lock:
+            _cache[key] = data
+            while len(_cache) > _CACHE_TILES:
+                _cache.popitem(last=False)
     try:
-        response = _session.get(url.format(z=z, x=x, y=y), timeout=TILE_TIMEOUT_S)
-        response.raise_for_status()
-        image = Image.open(io.BytesIO(response.content)).convert('RGB')
-    except Exception:  # noqa: BLE001 - a tile that will not come is a grey square, said on the figure
+        return Image.open(io.BytesIO(data)).convert('RGB')
+    except Exception:  # noqa: BLE001
         return None
-    with _cache_lock:
-        _cache[key] = image
-        while len(_cache) > _CACHE_TILES:
-            _cache.popitem(last=False)
-    return image
 
 
 def base_image(frame, source_id):
@@ -158,6 +167,14 @@ def _num(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
+_HEX_COLOUR = re.compile(r'^#[0-9A-Fa-f]{6}$')
+
+
+def _colour(value, default):
+    """A colour from the model only as #RRGGBB: anything else (a pack member typed it) is the default, never markup."""
+    return value if isinstance(value, str) and _HEX_COLOUR.match(value) else default
+
+
 def _point(frame, lat, lon):
     if not (_num(lat) and _num(lon)):
         return None
@@ -166,7 +183,7 @@ def _point(frame, lat, lon):
 
 def _label(x, y, text, size=22, colour='#ffffff', anchor='start', dx=12, dy=-10):
     text = escape(str(text))
-    return (f'<text x="{x + dx:.1f}" y="{y + dy:.1f}" font-size="{size}" text-anchor="{anchor}" fill="{colour}" '
+    return (f'<text x="{x + dx:.1f}" y="{y + dy:.1f}" font-size="{size:.3g}" text-anchor="{anchor}" fill="{colour}" '
             f'stroke="#101317" stroke-width="5" paint-order="stroke" font-weight="700">{text}</text>')
 
 
@@ -218,7 +235,7 @@ def overlay_svg(frame, spec, geometry, missing_tiles=0):
         if not route:
             continue
         lit = kind in ('route', 'departure') and ref == focus
-        colour = FOCUS_COLOUR if lit else (route.get('color') or ROUTE_COLOUR)
+        colour = FOCUS_COLOUR if lit else _colour(route.get('color'), ROUTE_COLOUR)
         parts.append(_polyline(frame, route.get('line') or [], colour, 7 if lit else 5, opacity=1.0 if lit or kind != 'route' else 0.55))
         for p in route.get('points') or []:
             at = _point(frame, p.get('lat'), p.get('lon'))
@@ -318,3 +335,340 @@ def draw(spec, geometry, source_id):
     frame = Frame(bounds, source_id)
     image, missing = base_image(frame, source_id)
     return {'jpeg': jpeg(image), 'svg': overlay_svg(frame, spec, geometry, missing), 'zoom': frame.zoom}
+
+
+# -- Strip charts ---------------------------------------------------------------------------------------------------
+#
+# A strip (compileBrief's ``strips``) is a rectangle of ground along a route, ``length`` metres up its ``course`` (true)
+# and ``width`` across, round ``centre``, drawn at ``scale`` with the direction of flight up. The base map is fetched
+# north up round the turned rectangle, brought to the strip's own metres per pixel, turned and cut out in one affine
+# transform; the plan is drawn over it in the strip's own pixels, so its words stay upright. The 1 km MGRS grid comes in
+# the strip (``grid``, worked out by the client) and is only projected and drawn here.
+
+STRIP_PX_PER_CM = 200 / 2.54     # the same 200 px to the printed inch as the other figures
+PT = 200 / 72                    # pixels to a printed point
+# Printed sizes, in points, of a strip's words: read on a kneeboard, so none under 6.
+GRID_PT, LEG_PT, POINT_PT, PLACE_PT, NOTE_PT = 6, 7, 8, 7, 5
+STRIP_MAX_MOSAIC_PX = 7000       # a mosaic larger than this is fetched a zoom coarser
+STRIP_CM = (5.5, 21.5)          # a strip as printed, width by length: compileBrief's STRIP_CM
+STRIP_MAX_PATH = 4000
+STRIP_MAX_ITEMS = 400
+STRIP_MAX_LINES = 2000
+STRIP_MAX_LINE_POINTS = 600
+STRIP_MAX_GRID_POINTS = 40000
+GRID_COLOURS = {'satellite': ('#ffffff', 0.62), 'topo': ('#1d3a6b', 0.55), 'sectional': ('#1d3a6b', 0.6)}
+
+
+def _pair(value):
+    return (value[0], value[1]) if isinstance(value, (list, tuple)) and len(value) == 2 and _num(value[0]) and _num(value[1]) else None
+
+
+def _small_int(value):
+    return isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 1000
+
+
+def _str_or_none(value):
+    return value is None or isinstance(value, str)
+
+
+def valid_strip(strip):
+    """Whether a strip is one this module can draw: its numbers finite and in range, its size the printed strip's at its
+    scale (the image's pixels are the printed strip's, never the model's to choose), its lists and words of a size and type
+    it will draw. A strip that is not is left out of the brief, never the brief failed for it."""
+    if not isinstance(strip, dict):
+        return False
+    centre = _pair(strip.get('centre'))
+    if not centre or not -85 < centre[0] < 85 or not -540 < centre[1] < 540:
+        return False
+    if not (_num(strip.get('course')) and 0 <= strip['course'] <= 360):
+        return False
+    if not (_num(strip.get('scale')) and 1000 <= strip['scale'] <= 10000000):
+        return False
+    for key, cm in (('width', STRIP_CM[0]), ('length', STRIP_CM[1])):
+        ground = strip.get(key)
+        if not _num(ground) or abs(ground / strip['scale'] * 100 - cm) > cm * 0.01:
+            return False
+    if not (_small_int(strip.get('part')) and _small_int(strip.get('parts'))):
+        return False
+    if not all(_str_or_none(strip.get(k)) for k in ('name', 'courseText')):
+        return False
+    path = strip.get('path')
+    if not isinstance(path, list) or not 2 <= len(path) <= STRIP_MAX_PATH or not all(_pair(p) for p in path):
+        return False
+    for key in ('points', 'legs', 'stops', 'threats'):
+        items = strip.get(key, [])
+        if not isinstance(items, list) or len(items) > STRIP_MAX_ITEMS or not all(isinstance(i, dict) for i in items):
+            return False
+    if not all(_str_or_none(s.get('role')) for s in strip.get('stops', [])):
+        return False
+    grid = strip.get('grid')
+    if grid is not None:
+        lines = grid.get('lines') if isinstance(grid, dict) else None
+        if not isinstance(lines, list) or len(lines) > STRIP_MAX_LINES:
+            return False
+        if not all(isinstance(l, dict) and isinstance(l.get('points'), list) and len(l['points']) <= STRIP_MAX_LINE_POINTS
+                   and _str_or_none(l.get('kind')) and _str_or_none(l.get('axis')) and _str_or_none(l.get('text')) for l in lines):
+            return False
+        if sum(len(l['points']) for l in lines) > STRIP_MAX_GRID_POINTS:
+            return False
+        for key in ('squares', 'others'):
+            if not isinstance(grid.get(key, []), list) or not all(isinstance(q, str) for q in grid.get(key, [])):
+                return False
+    return True
+
+
+class StripFrame:
+    """A strip's own pixels: (0, 0) its top left, the course up, ``metres_per_px`` the same everywhere along it."""
+
+    def __init__(self, strip, source_id):
+        self.source = SOURCES.get(source_id) or SOURCES['topo']
+        self.tile_px = self.source['tile_px']
+        self.width = round(STRIP_CM[0] * STRIP_PX_PER_CM)
+        self.height = round(STRIP_CM[1] * STRIP_PX_PER_CM)
+        self.metres_per_px = strip['length'] / self.height
+        self.course = strip['course'] % 360
+        theta = math.radians(self.course)
+        self.cos, self.sin = math.cos(theta), math.sin(theta)
+        lat, lon = strip['centre']
+        self.mid_lat = lat
+        ground = 2 * math.pi * 6378137 * math.cos(math.radians(lat))
+        # The coarsest zoom still as sharp as the strip, so the mosaic is only ever brought down to it.
+        zoom = math.ceil(math.log2(ground / (self.tile_px * self.metres_per_px)))
+        self.zoom = max(MIN_ZOOM, min(self.source['max_zoom'], zoom))
+        while True:
+            self.scale = self.metres_per_px / (ground / (self.tile_px * 2 ** self.zoom))   # world px per strip px
+            half_w = self.scale * (self.width / 2 * abs(self.cos) + self.height / 2 * abs(self.sin)) + 2
+            half_h = self.scale * (self.width / 2 * abs(self.sin) + self.height / 2 * abs(self.cos)) + 2
+            if max(half_w, half_h) * 2 <= STRIP_MAX_MOSAIC_PX or self.zoom <= MIN_ZOOM:
+                break
+            self.zoom -= 1
+        self.cx, self.cy = world_px(lat, lon, self.zoom, self.tile_px)
+        self.mosaic = SimpleNamespace(source=self.source, tile_px=self.tile_px, zoom=self.zoom,
+                                      left=self.cx - half_w, top=self.cy - half_h,
+                                      width=math.ceil(2 * half_w), height=math.ceil(2 * half_h))
+
+    def project(self, lat, lon):
+        """A place in the strip's pixels."""
+        x, y = world_px(lat, lon, self.zoom, self.tile_px)
+        dx, dy = x - self.cx, y - self.cy
+        sx = (dx * self.cos + dy * self.sin) / self.scale
+        sy = (-dx * self.sin + dy * self.cos) / self.scale
+        return self.width / 2 + sx, self.height / 2 + sy
+
+
+def strip_image(frame, source_id):
+    """The base map under a strip, turned so its course is up, as RGB of the strip's size; and the tiles not fetched."""
+    mosaic, missing = base_image(frame.mosaic, source_id)
+    cx, cy = frame.cx - frame.mosaic.left, frame.cy - frame.mosaic.top
+    s = frame.scale
+    if s > 1.05:
+        # Brought down to the strip's scale first, so the turn does not alias the map's fine lines and words.
+        size = (max(1, round(mosaic.width / s)), max(1, round(mosaic.height / s)))
+        mosaic = mosaic.resize(size, Image.Resampling.LANCZOS)
+        cx, cy, s = cx / frame.scale, cy / frame.scale, 1.0
+    w, h, c, n = frame.width, frame.height, frame.cos, frame.sin
+    data = (s * c, -s * n, cx - s * c * w / 2 + s * n * h / 2,
+            s * n, s * c, cy - s * n * w / 2 - s * c * h / 2)
+    image = mosaic.transform((w, h), Image.Transform.AFFINE, data, resample=Image.Resampling.BICUBIC, fillcolor=(205, 202, 192))
+    return image, missing
+
+
+def _crossings(points, edge, width, height):
+    """Where a polyline crosses one edge of the strip: y for the long edges, x for the top and bottom."""
+    at = {'left': ('x', 0.0), 'right': ('x', float(width)), 'top': ('y', 0.0), 'bottom': ('y', float(height))}[edge]
+    out = []
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if at[0] == 'x' and (x0 - at[1]) * (x1 - at[1]) < 0:
+            out.append(y0 + (y1 - y0) * (at[1] - x0) / (x1 - x0))
+        elif at[0] == 'y' and (y0 - at[1]) * (y1 - at[1]) < 0:
+            out.append(x0 + (x1 - x0) * (at[1] - y0) / (y1 - y0))
+    return out
+
+
+# The north arrow's middle, in from the strip's top right corner so the right edge stays free for the grid's digits.
+STRIP_NORTH_AT = (-66, 70)
+LABEL_GAP = 2                    # px between two labels' boxes, their dark halos included
+# How far a label may slide along its edge from where its line meets it, when that spot is taken: lines of one kind meet
+# an edge at least 1 km apart (31 px at 1:250,000), so a label slid this far is still nearest its own line.
+LABEL_SLIDES = (0, -6, 6, -12, 12)
+
+
+def _label_box(x, baseline, words, size, anchor):
+    """The box a bold label of digits takes, its 2.5 px halo included: each figure is about 0.6 of the type's size."""
+    w = len(words) * size * 0.6 + 5
+    x0 = {'start': x - 2.5, 'end': x - w + 2.5}.get(anchor, x - w / 2)
+    return (x0, baseline - size * 0.75 - 2.5, x0 + w, baseline + 2.5)
+
+
+def _fits(box, placed, width, height):
+    x0, y0, x1, y1 = box
+    if x0 < 1 or y0 < 1 or x1 > width - 1 or y1 > height - 1:
+        return False
+    g = LABEL_GAP
+    return not any(x0 < b[2] + g and b[0] < x1 + g and y0 < b[3] + g and b[1] < y1 + g for b in placed)
+
+
+def _edge_labels(points, text, axis, width, height, placed, colour, own_only):
+    """A grid line's digits, once, just inside the strip where the line meets its edge: an easting's on the left edge and
+    a northing's on the right (a turned strip crosses both kinds on both edges, so the side says which); a line that never
+    reaches its own side, or finds no room there, is numbered where it does cross, at the top, the bottom or the other
+    side, with E or N before the digits. A label goes only where its box is clear of every other (``placed``: the labels
+    so far, the north arrow and the attribution), slid a little along the edge if it must (``LABEL_SLIDES``); at the top
+    and the bottom in either of two rows, since lines a kilometre apart at 1:250,000 meet those edges closer together
+    than a label is wide. Every line is given its own side first (``own_only``), and only then the others what is left."""
+    own, other = ('left', 'right') if axis == 'easting' else ('right', 'left')
+    mark = 'E' if axis == 'easting' else 'N'
+    size = GRID_PT * PT
+    for edge in (own,) if own_only else ('top', 'bottom', other):
+        words = text if edge == own else mark + text
+        for where in _crossings(points, edge, width, height):
+            if edge in ('left', 'right'):
+                x, anchor = (4, 'start') if edge == 'left' else (width - 4, 'end')
+                spots = [(x, where + slide + size * 0.36, anchor) for slide in LABEL_SLIDES]
+            else:
+                spots = [(where + slide, (size * 0.75 + 4 + 20 * row) if edge == 'top' else (height - 6 - 20 * row), 'middle')
+                         for slide in LABEL_SLIDES for row in (0, 1)]
+            for x, baseline, anchor in spots:
+                box = _label_box(x, baseline, words, size, anchor)
+                if _fits(box, placed, width, height):
+                    placed.append(box)
+                    return [_label(x, baseline, words, size=size, colour=colour, anchor=anchor, dx=0, dy=0)]
+    return []
+
+
+def _inner_label(points, text, axis, width, height, placed, colour):
+    """A line no edge had room to number is numbered on itself, a little way in from where it enters the strip at either
+    end (as a topographic sheet prints values inside its neatline), with E or N before the digits, where it is clear."""
+    size = GRID_PT * PT
+    words = ('E' if axis == 'easting' else 'N') + text
+    inside = []
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        steps = max(1, int(math.hypot(x1 - x0, y1 - y0) / 8))
+        for k in range(steps):
+            x, y = x0 + (x1 - x0) * k / steps, y0 + (y1 - y0) * k / steps
+            if 8 <= x <= width - 8 and 8 <= y <= height - 8:
+                inside.append((x, y))
+    for i in range(min(30, (len(inside) + 1) // 2)):
+        for x, y in (inside[i], inside[-1 - i]):
+            box = _label_box(x, y + size * 0.36, words, size, 'middle')
+            if _fits(box, placed, width, height):
+                placed.append(box)
+                return [_label(x, y + size * 0.36, words, size=size, colour=colour, anchor='middle', dx=0, dy=0)]
+    return []
+
+
+def strip_overlay_svg(frame, strip, source_id, missing_tiles=0):
+    """The plan over a strip, in the strip's pixels: the grid and its digits, the route, its checkpoints, a note on each
+    leg, the LZ/PZs and threats on it, a north arrow turned to true north, a scale bar and the attribution."""
+    parts = []
+    width, height = frame.width, frame.height
+    grid_colour, grid_opacity = GRID_COLOURS.get(source_id, GRID_COLOURS['topo'])
+    label_colour = '#ffffff'
+    grid = strip.get('grid') if isinstance(strip.get('grid'), dict) else {}
+    nx, ny = width + STRIP_NORTH_AT[0], STRIP_NORTH_AT[1]
+    note = frame.source['attribution']
+    if missing_tiles:
+        note = f'{missing_tiles} map tile{"s" if missing_tiles != 1 else ""} not fetched · {note}'
+    note_size = NOTE_PT * PT
+    # What the grid's digits keep clear of: the north arrow and its N, and the attribution along the bottom right.
+    placed = [(nx - 26, ny - 26, nx + 26, ny + 24 + GRID_PT * PT + 3),
+              (width - 8 - len(note) * note_size * 0.55, height - 5 - note_size * 0.75, width - 4, height - 2)]
+    numbered = []
+    for line in grid.get('lines') or []:
+        pts = [frame.project(*p) for p in (_pair(q) for q in line.get('points') or []) if p]
+        if len(pts) < 2:
+            continue
+        kind = line.get('kind')
+        weight = {'zone': 2.4, 'major': 1.8}.get(kind, 0.9)
+        dash = ' stroke-dasharray="10 6"' if kind == 'zone' else ''
+        d = ' '.join(f'{x:.1f},{y:.1f}' for x, y in pts)
+        parts.append(f'<polyline points="{d}" fill="none" stroke="{grid_colour}" stroke-width="{weight}" '
+                     f'stroke-opacity="{grid_opacity}"{dash}/>')
+        text = line.get('text')
+        if isinstance(text, str) and kind != 'zone':
+            numbered.append((pts, text[:4], line.get('axis')))
+    left_over = []
+    for pts, text, axis in numbered:
+        label = _edge_labels(pts, text, axis, width, height, placed, label_colour, own_only=True)
+        parts.extend(label) if label else left_over.append((pts, text, axis))
+    bare = []
+    for pts, text, axis in left_over:
+        label = _edge_labels(pts, text, axis, width, height, placed, label_colour, own_only=False)
+        parts.extend(label) if label else bare.append((pts, text, axis))
+    for pts, text, axis in bare:
+        parts.extend(_inner_label(pts, text, axis, width, height, placed, label_colour))
+
+    path = [p for p in (_pair(q) for q in strip.get('path') or []) if p]
+    pts = [frame.project(lat, lon) for lat, lon in path]
+    if len(pts) >= 2:
+        d = ' '.join(f'{x:.1f},{y:.1f}' for x, y in pts)
+        parts.append(f'<polyline points="{d}" fill="none" stroke="#101317" stroke-width="9" stroke-linejoin="round" stroke-opacity="0.7"/>'
+                     f'<polyline points="{d}" fill="none" stroke="{FOCUS_COLOUR}" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>')
+
+    for stop in strip.get('stops') or []:
+        at = _point(frame, stop.get('lat'), stop.get('lon')) if isinstance(stop, dict) else None
+        if at:
+            colour = ROLE_COLOURS.get(stop.get('role'), '#ffd166')
+            parts.append(f'<rect x="{at[0] - 8:.1f}" y="{at[1] - 8:.1f}" width="16" height="16" fill="#101317" stroke="{colour}" stroke-width="3.5"/>')
+            parts.append(_label(*at, _text_of(stop.get('name')), size=PLACE_PT * PT, anchor='end' if at[0] > width / 2 else 'start',
+                                dx=-13 if at[0] > width / 2 else 13, dy=-9))
+    for threat in strip.get('threats') or []:
+        at = _point(frame, threat.get('lat'), threat.get('lon')) if isinstance(threat, dict) else None
+        if at:
+            parts.append(f'<circle cx="{at[0]:.1f}" cy="{at[1]:.1f}" r="11" fill="#e06a62" fill-opacity="0.35" stroke="#e06a62" stroke-width="3"/>')
+            parts.append(_label(*at, _text_of(threat.get('name')) or 'Threat', size=PLACE_PT * PT, colour='#ffb3ad'))
+
+    for point in strip.get('points') or []:
+        at = _point(frame, point.get('lat'), point.get('lon')) if isinstance(point, dict) else None
+        if at:
+            left = at[0] > width / 2
+            parts.append(f'<circle cx="{at[0]:.1f}" cy="{at[1]:.1f}" r="7" fill="#101317" stroke="{FOCUS_COLOUR}" stroke-width="3"/>')
+            parts.append(_label(*at, _text_of(point.get('name')), size=POINT_PT * PT, anchor='end' if left else 'start',
+                                dx=-12 if left else 12, dy=7))
+
+    for leg in strip.get('legs') or []:
+        at = _pair(leg.get('at')) if isinstance(leg, dict) else None
+        if not at:
+            continue
+        x, y = frame.project(*at)
+        right = x <= width / 2
+        anchor, dx = ('start', 14) if right else ('end', -14)
+        lines = [' '.join(t for t in (_text_of(leg.get('course')), _text_of(leg.get('distance'))) if t),
+                 _text_of(leg.get('time')), _text_of(leg.get('altitude'))]
+        for i, words in enumerate(w for w in lines if w):
+            parts.append(_label(x, y, words, size=LEG_PT * PT, colour='#ffd166', anchor=anchor, dx=dx, dy=-12 + i * (LEG_PT * PT + 2)))
+
+    # North, turned to true north on the strip; a scale only where there is no grid (the 1 km squares are the scale, and
+    # a bar in a corner would leave the lines that cross it unnumbered); and whose map it is.
+    parts.append(f'<g transform="translate({nx} {ny}) rotate({-frame.course:.2f})"><polygon points="0,-24 11,9 0,3 -11,9" '
+                 f'fill="#ffffff" stroke="#101317" stroke-width="2.5"/></g>'
+                 f'<text x="{nx}" y="{ny + 24 + GRID_PT * PT:.0f}" font-size="{GRID_PT * PT:.1f}" text-anchor="middle" fill="#ffffff" stroke="#101317" '
+                 f'stroke-width="4" paint-order="stroke" font-weight="800">N</text>')
+    metres = None if numbered else _nice_scale(frame.metres_per_px * width * 0.45)
+    if metres:
+        bar = metres / frame.metres_per_px
+        words = f'{metres / 1000:g} km' if metres >= 1000 else f'{metres:g} m'
+        y = height - 38
+        parts.append(f'<rect x="12" y="{y}" width="{bar:.1f}" height="8" fill="#ffffff" stroke="#101317" stroke-width="1.5"/>')
+        parts.append(f'<text x="12" y="{y - 7}" font-size="{GRID_PT * PT:.1f}" fill="#ffffff" stroke="#101317" stroke-width="4" '
+                     f'paint-order="stroke" font-weight="700">{escape(words)}</text>')
+    parts.append(f'<text x="{width - 6}" y="{height - 5}" font-size="{note_size:.1f}" text-anchor="end" fill="#ffffff" '
+                 f'stroke="#101317" stroke-width="3" paint-order="stroke">{escape(note)}</text>')
+    # Stretched as the image is, so the plan never drifts off the map if the box is a hair off the strip's shape.
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+            f'class="fig-overlay">{"".join(parts)}</svg>')
+
+
+def _text_of(value, limit=60):
+    return value[:limit] if isinstance(value, str) else ''
+
+
+def draw_strip(strip, source_id):
+    """A strip chart: its base map turned course up as JPEG bytes, and the plan over it as SVG; None for a strip this
+    module cannot draw."""
+    if not valid_strip(strip):
+        return None
+    frame = StripFrame(strip, source_id)
+    image, missing = strip_image(frame, source_id)
+    return {'jpeg': jpeg(image), 'svg': strip_overlay_svg(frame, strip, source_id, missing),
+            'width': frame.width, 'height': frame.height}

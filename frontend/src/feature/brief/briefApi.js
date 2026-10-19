@@ -1,4 +1,5 @@
 import api from "../auth/api";
+import { withStripGrids } from "./stripGrid";
 
 /*
  * The server's side of a brief outside a pack (backend/routes/brief_routes.py): the person's answers kept in their
@@ -26,11 +27,11 @@ const PDF_WORDS = {
 
 /**
  * The brief as the server prints it (POST /api/brief/pdf): a Blob of the PDF, or an Error whose message is the app's
- * words for why not (never the server's own text).
+ * words for why not (never the server's own text). The strip charts' MGRS grid is worked out here, for the print only.
  */
 export const printBrief = async (model) => {
   try {
-    const response = await api.post("/brief/pdf", { model }, { responseType: "blob" });
+    const response = await api.post("/brief/pdf", { model: withStripGrids(model) }, { responseType: "blob" });
     return response.data;
   } catch (error) {
     let code = null;

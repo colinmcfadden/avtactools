@@ -165,7 +165,7 @@ export const CASES = [
     document: {
       flow: [{ ref: "route:set-opdk/r-alderaan" }, { ref: "lz:gone-lz", role: "LZ" }, { ref: "lz:lz-hawk", role: "BOGUS" }],
       include: { threats: false },
-      options: { lzCards: false, navLogs: false, iimc: false },
+      options: { lzCards: false, navLogs: false, strips: false, iimc: false },
       answers: { "5.a.v": { mode: "standard", fields: {} } },
     },
     plan: OP_DK,
@@ -186,6 +186,125 @@ export const CASES = [
       name: "SHORT",
       lzs: [{ id: "lone", diagram: diagram("LZ LONE", [35.0, -85.0], { elevation: "900" }) }],
       routeSets: [{ id: "s", name: "S", data: { version: 1, routes: [{ ...bespin, id: "one", name: "ONE", points: [point("x1", "ONLY", "ip", 34.0, -84.0), shaping("x2", 34.1, -84.1)] }] } }],
+    },
+    context: CONTEXT,
+  },
+  {
+    // A gentle bend a strip holds (the shaping point), a dogleg of about 60° at BEND that ends a strip, a leg longer than a
+    // strip, and an LZ/PZ and a threat by the route: where strips are cut, and what lies on each, at the second scale.
+    name: "strip charts at 1:250,000: a dogleg, a gentle bend and a long leg",
+    format: "amb",
+    document: { options: { stripScale: 250000, lzCards: false, navLogs: false, iimc: false } },
+    plan: {
+      name: "DOGLEG",
+      lzs: [{ id: "lz-end", diagram: diagram("LZ END", [35.62, -83.13], { elevation: "1200", landing: "045°" }) }],
+      routeSets: [{
+        id: "set-dog",
+        name: "DOGLEG ROUTES",
+        data: {
+          version: 1,
+          routes: [{
+            ...bespin,
+            id: "dog",
+            name: "DOGLEG",
+            color: "#30D158",
+            points: [
+              point("d1", "SP", "ip", 34.6, -84.3),
+              shaping("d1s", 34.8, -84.17),
+              point("d2", "BEND", "turn", 34.98, -84.1),
+              point("d3", "DOG", "turn", 35.02, -83.7),
+              point("d4", "FAR", "turn", 35.55, -83.2),
+              point("d5", "END", "target", 35.62, -83.13),
+            ],
+            plan: plan({ d1: { clock: "09:00:00" } }),
+            elevations: {},
+          }],
+        },
+      }],
+      threats: [{ name: "SA-8", lat: 35.3, lon: -83.5 }],
+    },
+    context: CONTEXT,
+  },
+  {
+    // A start point given twice (a shaping point on it), a leg two and a half strips long that ends at a turn onto another
+    // long leg, a threat on a strip the brief leaves out, and a scale strips are not drawn at (so 1:100,000).
+    name: "strip charts: a doubled start, a long leg ending at a turn, threats left out, an unknown scale",
+    format: "amb",
+    document: { options: { stripScale: 50000, lzCards: false, navLogs: false, iimc: false }, include: { threats: false } },
+    plan: {
+      name: "LONG LEG",
+      routeSets: [{
+        id: "set-long",
+        name: "LONG ROUTES",
+        data: {
+          version: 1,
+          routes: [{
+            ...bespin,
+            id: "long",
+            name: "LONG",
+            color: "#BF5AF2",
+            points: [
+              point("l1", "SP", "ip", 34.0, -85.0),
+              shaping("l1s", 34.0, -84.999999),
+              point("l2", "TURN", "turn", 33.78, -84.53),
+              point("l3", "END", "target", 34.0, -84.38),
+            ],
+            plan: plan({ l1: { clock: "10:00:00" } }),
+            elevations: {},
+          }],
+        },
+      }],
+      threats: [{ name: "SA-6", lat: 33.9, lon: -84.75 }],
+    },
+    context: CONTEXT,
+  },
+  {
+    // A route across the antimeridian is cut the short way, not round the world.
+    name: "strip charts across the antimeridian",
+    format: "amb",
+    document: { options: { lzCards: false, navLogs: false, iimc: false } },
+    plan: {
+      name: "DATELINE",
+      routeSets: [{
+        id: "set-date",
+        name: "DATELINE",
+        data: {
+          version: 1,
+          routes: [{
+            ...bespin,
+            id: "date",
+            name: "DATELINE",
+            points: [point("x1", "WEST", "ip", 51.9, 179.95), point("x2", "EAST", "turn", 51.95, -179.95), point("x3", "ADAK", "target", 51.88, -179.8)],
+            plan: plan({ x1: { clock: "10:00:00" } }),
+            elevations: {},
+          }],
+        },
+      }],
+    },
+    context: CONTEXT,
+  },
+  {
+    // More strips than a packet holds: the first 60 are made, and setup says the rest have none.
+    name: "strip charts stop at the most a packet holds",
+    format: "amb",
+    document: { options: { lzCards: false, navLogs: false, iimc: false } },
+    plan: {
+      name: "FERRY",
+      routeSets: [{
+        id: "set-ferry",
+        name: "FERRY",
+        data: {
+          version: 1,
+          routes: [{
+            ...bespin,
+            id: "ferry",
+            name: "FERRY",
+            points: [point("f1", "SOUTH", "ip", 30.0, -89.5), point("f2", "NORTH", "target", 42.0, -89.5)],
+            plan: plan({ f1: { clock: "06:00:00" } }),
+            elevations: {},
+          }],
+        },
+      }],
     },
     context: CONTEXT,
   },

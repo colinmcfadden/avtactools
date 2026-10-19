@@ -13,11 +13,15 @@ const OPTIONS = [
   { key: "constants", label: "Mission constants on every page", text: "The band across the top" },
   { key: "lzCards", label: "LZ/PZ cards", text: "Appendix, one for each LZ/PZ in the flow" },
   { key: "navLogs", label: "Nav logs", text: "Appendix, one for each route" },
+  { key: "strips", label: "Strip charts", text: "Appendix, each route up its course, three strips to a page for a kneeboard" },
   { key: "iimc", label: "IIMC card", text: "Appendix, when the IIMC procedure is set" },
   { key: "writeIns", label: "Write-in lines for blanks", text: "Off leaves blank fields out" },
 ];
 const MAPS = [["satellite", "Satellite"], ["topo", "Topo"], ["sectional", "Sectional"]];
 const PAPERS = [["letter", "Letter"], ["a4", "A4"]];
+// The strip charts' own map and scale: topo shows the ground a low-level route is flown over; the PDF's server reads the map.
+const STRIP_MAPS = [["topo", "Topo"], ["sectional", "Sectional"], ["satellite", "Satellite"]];
+const STRIP_SCALES = [[100000, "1:100,000"], [250000, "1:250,000"]];
 
 const pageTitle = (page, steps) => {
   if (page.kind === "cover" || page.kind === "step") {
@@ -35,6 +39,8 @@ const ReviewStep = ({ model, doc, setDoc, coverTitle }) => {
   const setOption = (key, value) => setDoc((d) => ({ ...d, options: { ...(d.options || {}), [key]: value } }));
   const figureMap = doc.options?.figureMap ?? "satellite";
   const paper = doc.options?.paper ?? "letter";
+  const stripMap = doc.options?.stripMap ?? "topo";
+  const stripScale = model.strips?.[0]?.scale ?? doc.options?.stripScale ?? 100000;
 
   return (
     <div className="brief-review">
@@ -113,6 +119,24 @@ const ReviewStep = ({ model, doc, setDoc, coverTitle }) => {
               <button key={id} type="button" role="radio" aria-checked={figureMap === id} className="brief-seg__opt" onClick={() => setOption("figureMap", id)}>{label}</button>
             ))}
           </div>
+          {options.strips && (
+            <>
+              <h3 className="brief-h3">Strip charts</h3>
+              <div role="radiogroup" aria-label="Map on the strip charts" className="brief-seg">
+                {STRIP_MAPS.map(([id, label]) => (
+                  <button key={id} type="button" role="radio" aria-checked={stripMap === id} className="brief-seg__opt" onClick={() => setOption("stripMap", id)}>{label}</button>
+                ))}
+              </div>
+              <div role="radiogroup" aria-label="Strip chart scale" className="brief-seg brief-seg--below">
+                {STRIP_SCALES.map(([value, label]) => (
+                  <button key={value} type="button" role="radio" aria-checked={stripScale === value} className="brief-seg__opt" onClick={() => setOption("stripScale", value)}>{label}</button>
+                ))}
+              </div>
+              <p className="brief-hint">{model.strips?.length
+                ? `${model.strips.length} ${model.strips.length === 1 ? "strip" : "strips"}, each ${model.strips[0].length / 1000} by ${model.strips[0].width / 1000} km of ground, with the 1 km MGRS grid.`
+                : "No route in the flow has two named points to draw a strip along."}</p>
+            </>
+          )}
           <h3 className="brief-h3">Paper</h3>
           <div role="radiogroup" aria-label="Paper" className="brief-seg">
             {PAPERS.map(([id, label]) => (
