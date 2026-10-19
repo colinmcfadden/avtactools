@@ -60,6 +60,14 @@
   .summary { font-size: 10.5pt; margin: 4pt 0 8pt; }
   .problems { margin: 6pt 0; padding: 5pt 8pt; border: 0.8pt solid #b8860b; color: #6b4e00; }
   .problems ul { margin: 2pt 0 0; padding-left: 12pt; }
+  /* Strip charts: three to a page, each 5.5 by 21.5 cm as compileBrief cut it (its scale holds on paper), to cut out. */
+  .strips { display: flex; gap: 0.2in; margin-top: 4pt; }
+  .strip { margin: 0; width: 5.5cm; break-inside: avoid; }
+  .strip figcaption { font-size: 7.5pt; color: #16181b; margin-bottom: 2pt; overflow-wrap: anywhere; }
+  /* The border outside the box, so what is drawn is the strip's 5.5 by 21.5 cm exactly, as its scale needs. */
+  .strip .figure { box-sizing: content-box; width: 5.5cm; height: 21.5cm; margin: 0; }
+  .strip .figure img { width: 100%; height: 100%; }
+  .strip .squares { font-size: 7pt; color: #555b62; margin-top: 2pt; }
 </style>
 </head>
 <body>
@@ -68,7 +76,7 @@
   {% if page.kind == 'cover' %}
     <div class="kicker">{{ format_title }}</div>
     <h1>{{ mission_name }}</h1>
-    <div>{{ aircraft or '' }}{% if aircraft and mission_date %} · {% endif %}{{ mission_date or '' }} · {{ page_count }} pages · generated {{ generated }}</div>
+    <div>{{ aircraft or '' }}{% if aircraft and mission_date %} · {% endif %}{{ mission_date or '' }} · generated {{ generated }}</div>
     {% if summary %}<p class="summary">{{ summary }}</p>{% endif %}
     {% if constants %}{{ band(constants) }}{% endif %}
     {% if page.figure %}{{ figure(page.figure, 'Overview of the mission.') }}{% endif %}
@@ -103,6 +111,18 @@
         <tr><td>{{ leg.from }}</td><td>{{ leg.to }}</td><td>{{ leg.course or '' }}</td><td>{{ leg.distance or '' }}</td><td>{{ leg.time or '' }}</td><td>{{ leg.clock or '' }}</td><td>{{ leg.altitude or '' }}</td><td>{{ leg.airspeed or '' }}</td></tr>
       {% endfor %}
     </table>
+  {% elif page.kind == 'strips' %}
+    <div class="kicker">Appendix · strip charts · direction of flight up</div>
+    <h2>{{ page.title }}</h2>
+    <div class="strips">
+      {% for s in page.strips %}
+      <figure class="strip">
+        <figcaption><b>{{ s.course }} · {{ s.scale }} · {{ s.part }}/{{ s.parts }}</b> {{ s.name }}</figcaption>
+        <div class="figure"><img src="{{ s.figure.file }}" alt="">{{ s.figure.svg }}</div>
+        <div class="squares">{% if s.gridded %}{% if s.squares %}MGRS {{ s.squares }}{% if s.others %} · also {{ s.others }}{% endif %} · {% endif %}eastings left, northings right, others marked E or N{% else %}No MGRS grid was sent with this strip.{% endif %}</div>
+      </figure>
+      {% endfor %}
+    </div>
   {% elif page.kind == 'iimc' %}
     <div class="kicker">Appendix · IIMC card</div>
     <h2>IIMC</h2>

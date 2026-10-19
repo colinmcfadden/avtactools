@@ -147,6 +147,25 @@ describe("brief setup, step 3", () => {
     expect(lastDoc.options).toEqual({ navLogs: false });
   });
 
+  it("offers the strip charts with their own map and scale, and lists their pages", async () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: /Review/ }));
+    const pages = screen.getByRole("navigation", { name: "Pages" });
+    expect(within(pages).getByRole("button", { name: /Strip charts · ALDERAAN \(1–3 of 6\)/ })).toBeInTheDocument();
+    const stripMaps = screen.getByRole("radiogroup", { name: "Map on the strip charts" });
+    expect(within(stripMaps).getByRole("radio", { name: "Topo" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/12 strips, each 21.5 by 5.5 km of ground/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "1:250,000" }));
+    expect(lastDoc.options).toEqual({ stripScale: 250000 });
+    expect(screen.getByRole("radio", { name: "1:250,000" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/each 53.75 by 13.75 km of ground/)).toBeInTheDocument();
+    fireEvent.click(within(stripMaps).getByRole("radio", { name: "Sectional" }));
+    expect(lastDoc.options).toEqual({ stripScale: 250000, stripMap: "sectional" });
+    fireEvent.click(screen.getByRole("switch", { name: /Strip charts/ }));
+    expect(within(pages).queryByRole("button", { name: /Strip charts/ })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "Map on the strip charts" })).toBeNull();
+  });
+
   it("prints the brief the review shows, and says why when it cannot", async () => {
     window.URL.createObjectURL = jest.fn(() => "blob:brief");
     window.URL.revokeObjectURL = jest.fn();

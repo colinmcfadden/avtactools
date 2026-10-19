@@ -2,7 +2,10 @@
 Gotenberg stood in for. The model is the web's own, from contracts/fixtures/brief/compile.json."""
 
 import copy
+import io
 import json
+import math
+import re
 import sys
 from pathlib import Path
 from unittest import mock
@@ -22,6 +25,18 @@ from routes.brief_routes import brief_bp  # noqa: E402
 FIXTURE = json.loads((BACKEND_DIR.parent / 'contracts' / 'fixtures' / 'brief' / 'compile.json').read_text(encoding='utf-8'))
 MODEL = FIXTURE['cases'][0]['expected']          # OP DK, air movement brief
 HASTY = FIXTURE['cases'][1]['expected']
+# The strip charts' MGRS grid, as the web adds it to the model when it asks for the PDF (feature/brief/stripGrid.js).
+STRIP_GRIDS = json.loads((BACKEND_DIR.parent / 'contracts' / 'fixtures' / 'brief' / 'strip-grid.json').read_text(encoding='utf-8'))
+
+
+def _with_grids(model, case_name):
+    """A compiled model with its strips' grids, as the web sends it."""
+    model = copy.deepcopy(model)
+    grids = next(c for c in STRIP_GRIDS['cases'] if c['name'] == case_name)
+    by_id = {s['id']: s['grid'] for s in grids['strips']}
+    for strip in model['strips']:
+        strip['grid'] = by_id[strip['id']]
+    return model
 
 
 def _tile(*_args, **_kwargs):
@@ -221,3 +236,232 @@ class PdfRouteTests(NativeAuthCase):
                                     data=json.dumps(big))
         self.assertEqual(response.status_code, 413)
 
+
+# -- Strip charts -----------------------------------------------------------------------------------------------------
+
+STRIP = MODEL['strips'][0]          # ALDERAAN 1/6: 3MILE up the first leg, 031°
+
+
+def _strip(**changes):
+    strip = copy.deepcopy(STRIP)
+    strip.update(changes)
+    return strip
+
+
+def test_a_strip_is_drawn_at_its_scale_three_to_a_page_course_up():
+    frame = figures.StripFrame(STRIP, 'topo')
+    # 5.5 by 21.5 cm at 200 px to the inch, and the ground the scale gives it.
+    assert (frame.width, frame.height) == (433, 1693)
+    assert abs(frame.metres_per_px * frame.height - 21500) < 1e-6
+    # Its centre is the middle; a kilometre up the course is straight up, one to the right straight right.
+    cx, cy = frame.project(*STRIP['centre'])
+    assert abs(cx - frame.width / 2) < 0.01 and abs(cy - frame.height / 2) < 0.01
+    lat, lon = STRIP['centre']
+    import math
+    c = math.radians(STRIP['course'])
+    up = (lat + 1000 * math.cos(c) / 111320, lon + 1000 * math.sin(c) / (111320 * math.cos(math.radians(lat))))
+    x, y = frame.project(*up)
+    assert abs(x - frame.width / 2) < 1.5 and abs((frame.height / 2 - y) * frame.metres_per_px - 1000) < 12
+    right = (lat - 1000 * math.sin(c) / 111320, lon + 1000 * math.cos(c) / (111320 * math.cos(math.radians(lat))))
+    x, y = frame.project(*right)
+    assert abs(y - frame.height / 2) < 1.5 and abs((x - frame.width / 2) * frame.metres_per_px - 1000) < 12
+    # The route starts near the bottom and runs up the strip.
+    start = frame.project(*STRIP['path'][0])
+    end = frame.project(*STRIP['path'][-1])
+    assert abs(start[0] - frame.width / 2) < 30 and start[1] > frame.height * 0.9
+    assert end[1] < start[1] and abs(end[0] - frame.width / 2) < frame.width * 0.3
+
+
+def test_the_map_under_a_strip_is_turned_so_the_course_is_up():
+    """North white, south black: course 000 puts white on top, 180 at the bottom, 090 (east up) on the left."""
+    def halves(mosaic):
+        frame_cy = mosaic['frame'].cy - mosaic['frame'].mosaic.top
+        image = Image.new('RGB', (mosaic['frame'].mosaic.width, mosaic['frame'].mosaic.height), (0, 0, 0))
+        image.paste((255, 255, 255), (0, 0, image.width, max(0, round(frame_cy))))
+        return image, 0
+
+    for course, (top, bottom, left, right) in ((0, (255, 0, None, None)), (180, (0, 255, None, None)), (90, (None, None, 255, 0))):
+        frame = figures.StripFrame(_strip(course=course), 'topo')
+        with mock.patch.object(figures, 'base_image', side_effect=lambda f, s, fr=frame: halves({'frame': fr})):
+            image, missing = figures.strip_image(frame, 'topo')
+        assert image.size == (frame.width, frame.height) and missing == 0
+        w, h = image.size
+        if top is not None:
+            assert image.getpixel((w // 2, h // 6))[0] == top and image.getpixel((w // 2, h * 5 // 6))[0] == bottom
+        else:
+            assert image.getpixel((w // 6, h // 2))[0] == left and image.getpixel((w * 5 // 6, h // 2))[0] == right
+
+
+def test_a_strip_says_its_checkpoints_legs_and_grid_course_up():
+    strip = _with_grids(MODEL, FIXTURE['cases'][0]['name'])['strips'][0]
+    frame = figures.StripFrame(strip, 'topo')
+    svg = figures.strip_overlay_svg(frame, strip, 'topo')
+    assert '3MILE' in svg
+    assert '030° 16.3 nm' in svg and '0+07+19' in svg and '2,500 ft MSL' in svg
+    assert f'rotate({-strip["course"]:.2f})' in svg              # the north arrow points to true north
+    digits = {l['text'] for l in strip['grid']['lines'] if l.get('text')}
+    shown = [d for d in digits if f'>{d}</text>' in svg]
+    assert len(shown) >= 6                                         # the 1 km lines are numbered at the edges
+    assert svg.count('<polyline') >= len(strip['grid']['lines'])
+
+
+def test_strip_pages_lay_out_three_strips_each_on_the_strip_map():
+    model = _with_grids(MODEL, FIXTURE['cases'][0]['name'])
+    calls = []
+    with mock.patch.object(figures, '_fetch_tile', side_effect=lambda source, *a: calls.append(source) or _tile()):
+        html, _h, _f, files, _paper = pages.build(model)
+    assert html.count('class="page"') == len(model['pages']) + 1
+    assert html.count('Appendix · strip charts') == 4
+    assert html.count('class="strip"') == len(model['strips']) == 12
+    assert '031° · 1:100,000 · 1/6</b> ALDERAAN' in html
+    assert 'MGRS 16S GC → 16S GD · eastings left, northings right, others marked E or N' in html
+    # The figures on the brief's own map (satellite here), the strips on the strip map (topo unless asked).
+    assert set(calls) == {'satellite', 'topo'}
+    strip_files = [name for name in files if Image.open(io.BytesIO(files[name])).size == (433, 1693)]
+    assert len(strip_files) == 12
+
+
+def _contents(html):
+    table = re.search(r'<table class="contents">(.*?)</table>', html, re.S).group(1)
+    return re.findall(r'<tr><td>(.*?)</td>', table)
+
+
+def test_a_strip_that_will_not_draw_is_left_out_and_not_promised():
+    model = copy.deepcopy(MODEL)
+    model['strips'][0]['course'] = float('nan')
+    model['strips'][1]['path'] = [[34.0, -84.0]] * 5000
+    model['strips'][2]['grid'] = {'lines': [{'points': [[34, -84]] * 10000}]}
+    html, *_ = _build(model)
+    assert html.count('class="strip"') == len(model['strips']) - 3
+    # A page none of whose strips draw is not laid out, and the contents and the count do not name it.
+    for strip in model['strips'][3:6]:
+        strip['width'] = -1
+    html, *_ = _build(model)
+    assert 'Strip charts · ALDERAAN (1–3 of 6)' not in html
+    assert 'Strip charts · ALDERAAN (4–6 of 6)' not in html
+    assert len(_contents(html)) == len(model['pages']) - 2
+
+
+def test_a_page_kind_this_server_does_not_know_is_not_promised():
+    model = copy.deepcopy(MODEL)
+    model['pages'].append({'n': len(model['pages']) + 1, 'kind': 'hologram', 'title': 'A page from the future'})
+    html, *_ = _build(model)
+    assert 'A page from the future' not in html
+    assert len(_contents(html)) == len(MODEL['pages'])
+    # The cover promises no count of pages: Chromium decides where a long page breaks (docs/MISSION_BRIEF.md §2.6).
+    assert not re.search(r'\d+ pages', html)
+
+
+def _gridded_strip(course, scale, lat0=34.5, lon0=-84.3):
+    """A strip at any course and scale under a synthetic 1 km grid (easting and northing lines a kilometre apart round
+    its centre), labelled with two digits as the real grid is."""
+    width, length = 0.055 * scale, 0.215 * scale
+    reach = math.hypot(width, length) / 2 + 2000
+
+    def at(x, y):
+        return [lat0 + y / 111320, lon0 + x / (111320 * math.cos(math.radians(lat0)))]
+
+    n = int(reach // 1000)
+    lines = []
+    for i in range(-n, n + 1):
+        lines.append({'kind': 'minor', 'axis': 'easting', 'text': f'{(i + 40) % 100:02d}', 'i': i,
+                      'points': [at(i * 1000, -reach + k * reach / 6) for k in range(13)]})
+        lines.append({'kind': 'minor', 'axis': 'northing', 'text': f'{(i + 70) % 100:02d}', 'i': i,
+                      'points': [at(-reach + k * reach / 6, i * 1000) for k in range(13)]})
+    return {'id': 'r#1', 'centre': [lat0, lon0], 'course': course, 'scale': scale, 'width': width, 'length': length,
+            'part': 1, 'parts': 1, 'name': 'R', 'courseText': f'{course:03.0f}°', 'path': [at(0, -length / 3), at(0, length / 3)],
+            'points': [], 'legs': [], 'stops': [], 'threats': [], 'grid': {'lines': lines, 'squares': [], 'others': []}}
+
+
+def _inside_px(pts, width, height):
+    total = 0.0
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        steps = max(1, int(math.hypot(x1 - x0, y1 - y0) / 2))
+        for k in range(steps):
+            x, y = x0 + (x1 - x0) * (k + 0.5) / steps, y0 + (y1 - y0) * (k + 0.5) / steps
+            if 0 <= x <= width and 0 <= y <= height:
+                total += math.hypot(x1 - x0, y1 - y0) / steps
+    return total
+
+
+def test_the_grid_on_a_strip_is_numbered_whatever_its_course():
+    """At both scales and every course, a line that runs more than 150 px (a corner's worth) across the strip is numbered
+    somewhere: on its own edge, another with E or N, or on itself near an end. At most one goes without, never two
+    neighbours, so any line's value can be read off the next."""
+    for scale in (100000, 250000):
+        for course in range(0, 360, 15):
+            strip = _gridded_strip(course + 2.5, scale)
+            frame = figures.StripFrame(strip, 'topo')
+            numbered = set()
+            for name in ('_edge_labels', '_inner_label'):
+                real = getattr(figures, name)
+
+                def spy(points, text, axis, *a, real=real, **k):
+                    out = real(points, text, axis, *a, **k)
+                    if out:
+                        numbered.add((axis, text))
+                    return out
+                mock.patch.object(figures, name, side_effect=spy).start()
+            try:
+                svg = figures.strip_overlay_svg(frame, strip, 'topo')
+            finally:
+                mock.patch.stopall()
+            bare = {(l['axis'], l['i']) for l in strip['grid']['lines'] if (l['axis'], l['text']) not in numbered
+                    and _inside_px([frame.project(*p) for p in l['points']], frame.width, frame.height) > 150}
+            assert len(bare) <= 1, (scale, course, bare)
+            assert '<rect' not in svg                       # the 1 km squares are the scale: no bar in a corner
+
+
+def test_a_strip_not_the_printed_size_or_of_the_wrong_types_is_not_drawn():
+    assert figures.valid_strip(STRIP)
+    for changes in ({'width': STRIP['width'] * 1.05}, {'length': STRIP['length'] * 4, 'width': STRIP['width'] * 4},
+                    {'width': STRIP['length']}, {'part': 0}, {'parts': True}, {'part': 1.5}, {'name': ['ALDERAAN']},
+                    {'courseText': 31}, {'stops': [{'name': 'X', 'role': ['lz']}]}, {'legs': ['030°']},
+                    {'grid': {'lines': [{'kind': ['major'], 'points': []}]}}, {'grid': {'lines': [], 'squares': 'GC'}},
+                    {'grid': {'lines': [], 'others': [7]}}, {'grid': {'lines': [{'points': [[34, -84]] * 600}] * 70}}):
+        assert not figures.valid_strip(_strip(**changes)), changes
+    # A scale the client does not offer still draws, so long as the strip is the printed strip at that scale.
+    assert figures.valid_strip(_strip(scale=50000, width=2750, length=10750))
+
+
+def test_strip_fields_of_the_wrong_type_never_fail_the_brief():
+    for change in (lambda m: m.update(strips={'a': 1}), lambda m: m['options'].update(stripMap=['topo']),
+                   lambda m: next(p for p in m['pages'] if p['kind'] == 'strips').update(strips='r#1'),
+                   lambda m: m['strips'][0].update(grid={'lines': [], 'squares': 3})):
+        model = copy.deepcopy(MODEL)
+        change(model)
+        html, *_ = _build(model)
+        assert 'class="page"' in html
+
+
+def test_a_strip_named_twice_is_laid_out_once():
+    model = copy.deepcopy(MODEL)
+    first, second = [p for p in model['pages'] if p['kind'] == 'strips'][:2]
+    one = first['strips'][0]
+    first['strips'] = [one, one, one]
+    second['strips'] = [one] + second['strips'][1:]
+    html, *_ = _build(model)
+    # The first page shows it once (its other two are not named now), the second leaves it out: three fewer in all.
+    assert html.count('class="strip"') == len(model['strips']) - 3
+
+
+def test_a_tile_is_kept_as_it_came_and_fetched_once():
+    png = io.BytesIO()
+    Image.new('RGB', (256, 256), (10, 20, 30)).save(png, 'PNG')
+    answer = mock.Mock(content=png.getvalue(), raise_for_status=lambda: None)
+    figures._cache.clear()
+    with mock.patch.object(figures._session, 'get', return_value=answer) as get:
+        first = figures._fetch_tile('topo', 'https://tiles.test/{z}/{x}/{y}', 9, 1, 2)
+        again = figures._fetch_tile('topo', 'https://tiles.test/{z}/{x}/{y}', 9, 1, 2)
+    assert get.call_count == 1
+    assert first.mode == 'RGB' and again.getpixel((5, 5)) == (10, 20, 30)
+    assert figures._cache[('topo', 9, 1, 2)] == png.getvalue()        # the bytes, not a decoded image
+    figures._cache.clear()
+
+
+def test_a_route_colour_is_never_markup():
+    model = copy.deepcopy(MODEL)
+    model['geometry']['routes']['route:set-opdk/r-bespin']['color'] = '"/><text>INJECTED</text><x a="'
+    html, *_ = _build(model)
+    assert 'INJECTED' not in html
+    assert figures.ROUTE_COLOUR in html

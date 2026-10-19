@@ -1074,7 +1074,10 @@ paths:
       description: |
         The brief the client compiled (compileBrief's model: docs/MISSION_BRIEF.md §2.3) laid out as pages and printed
         by Gotenberg on the server (§2.7): its figures drawn from the model's geometry over the base map
-        `options.figureMap` names, on the paper `options.paper` names. Nothing is kept: neither the model nor the PDF.
+        `options.figureMap` names, on the paper `options.paper` names. Its strip charts (`model.strips`, each with the MGRS
+        grid the client adds as `grid`) are drawn turned course up on the map `options.stripMap` names; a strip that is
+        not the printed 5.5 by 21.5 cm at its scale, or will not draw, is left out. Nothing is kept: neither the model nor
+        the PDF.
         Needs `mission_brief`. A heavy request: other work on the server waits for it.
       security:
         - bearer: []

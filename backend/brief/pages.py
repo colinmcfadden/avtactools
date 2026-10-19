@@ -19,7 +19,9 @@ _env = Environment(loader=FileSystemLoader(str(_TEMPLATES)), autoescape=select_a
 
 PAPERS = {'letter': ('8.5', '11', 'letter'), 'a4': ('8.27', '11.69', 'A4')}
 ROLE_WORDS = {'LZ': 'LZ', 'PZ': 'PZ', 'FARP': 'FARP', 'HA': 'Holding area', 'LAAGER': 'Laager', 'FALSE_LZ': 'False insertion LZ'}
-MAX_FIGURES = 60
+# Figures drawn for one brief: the steps' and appendices' (about 30 for a big one) and its strip charts (compileBrief makes
+# at most 60), each a set of map tiles to fetch.
+MAX_FIGURES = 100
 
 
 class BadModel(ValueError):
@@ -49,7 +51,17 @@ def check_model(model):
 def _source(model):
     options = model.get('options') if isinstance(model.get('options'), dict) else {}
     source = options.get('figureMap')
-    return source if source in figures.SOURCES else 'satellite'
+    return source if isinstance(source, str) and source in figures.SOURCES else 'satellite'
+
+
+def _strip_source(model):
+    options = model.get('options') if isinstance(model.get('options'), dict) else {}
+    source = options.get('stripMap')
+    return source if isinstance(source, str) and source in figures.SOURCES else 'topo'
+
+
+def _scale_words(scale):
+    return f'1:{int(scale):,}' if isinstance(scale, (int, float)) and not isinstance(scale, bool) else ''
 
 
 def _paper(model):
@@ -68,12 +80,14 @@ def build(model, now=None):
     files = {}
     drawn = {}
 
-    def render_figure(spec):
-        if not isinstance(spec, dict) or len(drawn) >= MAX_FIGURES:
+    def render_figure(spec, draw=None):
+        if not isinstance(spec, dict):
             return None
         key = json.dumps(spec, sort_keys=True)
         if key not in drawn:
-            made = figures.draw(spec, geometry, source)
+            if len(files) >= MAX_FIGURES:
+                return None
+            made = draw(spec) if draw else figures.draw(spec, geometry, source)
             if made is None:
                 drawn[key] = None
             else:
@@ -81,6 +95,11 @@ def build(model, now=None):
                 files[name] = made['jpeg']
                 drawn[key] = {'file': name, 'svg': Markup(made['svg'])}
         return drawn[key]
+
+    strip_source = _strip_source(model)
+    strips = model.get('strips') if isinstance(model.get('strips'), list) else []
+    strips_by_id = {s['id']: s for s in strips if isinstance(s, dict) and isinstance(s.get('id'), str)}
+    strips_shown = set()
 
     routes = geometry.get('routes') if isinstance(geometry.get('routes'), dict) else {}
     stops = geometry.get('stops') if isinstance(geometry.get('stops'), dict) else {}
@@ -128,6 +147,27 @@ def build(model, now=None):
             spec = {'kind': 'route', 'ref': page.get('ref'), 'routes': [page.get('ref')], 'stops': list(stops),
                     'bounds': figures.bounds_around([tuple(p) for p in route.get('line') or []], pad_m=600)}
             out.update(route=route, figure=render_figure(spec))
+        elif kind == 'strips':
+            shown = []
+            for strip_id in (page.get('strips') or [])[:3] if isinstance(page.get('strips'), list) else []:
+                # Each strip once in a brief, however often a page names it.
+                strip = strips_by_id.get(strip_id) if isinstance(strip_id, str) and strip_id not in strips_shown else None
+                if not figures.valid_strip(strip):
+                    continue
+                strips_shown.add(strip_id)
+                figure = render_figure(strip, lambda spec: figures.draw_strip(spec, strip_source))
+                if not figure:
+                    continue
+                grid = strip.get('grid') if isinstance(strip.get('grid'), dict) else {}
+                squares = [_text(q, 12) for q in grid.get('squares') or []][:6]
+                others = [_text(q, 12) for q in grid.get('others') or []][:6]
+                shown.append({'figure': figure, 'name': _text(strip.get('name'), 100), 'part': strip.get('part'),
+                              'parts': strip.get('parts'), 'course': _text(strip.get('courseText'), 8),
+                              'scale': _scale_words(strip.get('scale')), 'squares': ' → '.join(squares),
+                              'others': ', '.join(others), 'gridded': bool(grid.get('lines'))})
+            if not shown:
+                continue
+            out.update(title=_text(page.get('title'), 200), strips=shown)
         elif kind == 'iimc':
             item = next((i for s in model['steps'] for i in s.get('items') or [] if i.get('id') == page.get('itemId')), None)
             out['text'] = item.get('text') if item and not item.get('writeIn') else None
@@ -135,8 +175,13 @@ def build(model, now=None):
             continue
         pages.append(out)
 
+    # The contents are of the pages laid out: a page this server cannot draw (a kind a newer client sends, or strips that
+    # would not draw) is not promised. No count of pages: Chromium decides where a long one breaks.
+    laid_out = {page['n'] for page in pages}
     contents = []
     for page in model['pages']:
+        if page['n'] not in laid_out:
+            continue
         step = steps.get(page.get('stepId')) if page.get('kind') in ('cover', 'step') else None
         contents.append({'n': page['n'], 'title': f"{step.get('number')} {step.get('title')}" if step else _text(page.get('title')),
                          'who': step.get('who') if step else ''})
@@ -154,7 +199,7 @@ def build(model, now=None):
     html = _env.get_template('brief.html').render(
         title=f'{name} · brief', pages=pages, contents=contents, format_title=_text(template.get('title')).upper(),
         mission_name=name, mission_date=_text(mission.get('date')), summary=_text(mission.get('summary')), aircraft=aircraft,
-        generated=stamp, page_count=len(model['pages']), constants=constants,
+        generated=stamp, constants=constants,
         problems=[_text(p.get('message')) for p in model.get('problems') or [] if isinstance(p, dict)],
         write_ins=options.get('writeIns', True), show_script=options.get('script', True), page_size=size,
     )

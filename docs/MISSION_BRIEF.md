@@ -1,6 +1,6 @@
 # Mission brief — architecture and plan
 
-Status: **B0 to B5 done, B6 next** (branch `feat/mission-brief`, 2026-10-16 to 19). The screens are the design canvas's section 6 (*Mission brief*:
+Status: **B0 to B6 done; B7 under way in its own session** (branch `feat/mission-brief`, 2026-10-16 to 19). The screens are the design canvas's section 6 (*Mission brief*:
 seven web boards, three Android tablet boards). This file is the plan for building them on the web and Android. The owner's decisions of
 2026-10-16 are in §9.
 
@@ -83,7 +83,8 @@ What the person has answered, kept so that generating again starts from their an
   "constants": [{"id": "enrouteIas", "value": "120 KIAS", "source": "routes"}, ...],
   "answers": {"2.b": {"value": "..."}, "5.a.iii": {"mode": "standard"}, "5.a.v": {"mode": "custom", "fields": {...}}},
   "scripts": {"5.a": "edited text, kept until reset"},
-  "options": {"script": true, "constants": true, "appendices": ["lzCards", "navLogs", "iimc"], "figureMap": "satellite", "paper": "letter", "writeIns": true},
+  "options": {"script": true, "constants": true, "lzCards": true, "navLogs": true, "strips": true, "iimc": true, "writeIns": true,
+              "figureMap": "satellite", "paper": "letter", "stripMap": "topo", "stripScale": 100000},
   "generated": [{"at": "...", "by": "...", "pages": 26}]
 }
 ```
@@ -159,6 +160,23 @@ screen, and Android has no DOM; a brief has 20 to 30 figures.
 is up, cut where it bends too far for one strip, on the topo (or sectional, or satellite) map, with the MGRS 1 km grid (its lines worked out by
 the client with the grid code both apps already share, `mgrsGrid.js` / `MgrsGrid`, and sent in the figure spec: the server only draws), the checkpoints with their names, and each leg's heading, distance, time and altitude written beside
 it. They are an appendix, sized to fold onto a kneeboard. Not the 1:50K map: our base maps are what crews see in the app.
+
+As built (B6): a strip is **5.5 by 21.5 cm** printed, three to a page (letter or A4), at **1:100,000** unless the brief asks 1:250,000
+(`options.stripScale`), on the **topo** map unless it asks another (`options.stripMap`; the other figures keep `figureMap`). `compileBrief` cuts each
+route's path, between its first and last named points, into strips (`model.strips`): a strip holds the path while it is no longer than the strip less
+5% at each end, keeps within 30% of the strip's width of the line from its start to its end (room for the words either side) and never goes back
+along it; a turn of more than 20° ends a strip at the turn point, and a long leg runs on over several. Each strip says its route and part, its course
+(the axis, true), centre and ground size, the path, the checkpoints on it, a note for each leg on it (course, distance, time, altitude: the nav log's
+words, at the middle of the leg's run on the strip) and the LZ/PZs and threats on it; at most 60 a brief (more is a problem said in setup). The grid is
+added only when the PDF is asked for (`stripGrid.js`, `withStripGrids`, over `mgrsGrid.js`), so `compile.json` stays exact for the Android port and
+`strip-grid.json` pins the grid. The server turns the base map so the course is up and draws the plan in the strip's own pixels: eastings numbered
+on the left edge and northings on the right, a line that cannot be numbered on its own side numbered where it meets another edge, or on itself near
+an end, with E or N before it (each label only where its box is clear of the others, the north arrow and the attribution; a sweep of every course at
+both scales leaves at most one line in a strip unnumbered, never two side by side: `test_the_grid_on_a_strip_is_numbered_whatever_its_course`), a north
+arrow turned to true north, and under the strip the 100 km squares the route crosses and any other the strip reaches. **No scale bar on a gridded
+strip**: the 1 km squares are the scale, the caption prints it, and a bar in a corner left the lines through that corner unnumbered. The strip's
+pixels are its printed size, never the model's to choose (a strip whose ground size is not 5.5 by 21.5 cm at its scale is left out), each strip is
+laid out once however often a page names it, and the cover promises no count of pages. Words are 6 to 8 pt.
 
 ### 2.7 The PDF: HTML on the server, printed by Gotenberg
 
@@ -269,7 +287,7 @@ green, AGENTS.md and `docs/HANDOFF.md` updated in the same commit.
 | **B3** | **Done.** Web: the Brief menu (top bar, `mission_brief` only) and the three-step setup (`BriefSetup`: flow and constants, details with Standard / Custom / Blank and the script, review of the pages as compiled) over `useBrief`: outside a pack a Library record (`/api/briefs`, the one this browser opened last for the account, made at the first change under its own identity, saved 0.8 s after the last), in a pack the pack's brief item (made at the first change, every change sent as the pack's operations). The web's pack session takes brief edits in a read-only pack and sends them in batches of their own (`packs/session-brief.json`). The weather is asked for the departure, arrival and each stop at their planned times while the setup is open. Not yet: the PDF (B4), the sandtable (B5) | B1, B2 |
 | **B4** | **Done.** compileBrief gives the figures' `geometry` (route lines and nav-log rows, LZ/PZ boundaries and aircraft, threats, rally points) so the server only draws; `backend/brief/` draws each figure (tiles stitched with Pillow, the plan as SVG), lays out the pages (Jinja, print CSS; the cover on its own page) and prints them through Gotenberg (`POST /api/brief/pdf`, `GOTENBERG_URL`); the review step's Download PDF. Tried against Gotenberg 8.21.1 with JavaScript off and the network denied: OP DK's 17 figures in 6 s cold (1 s with tiles cached), printed in 0.5 s. **Changed on the way:** a brief says no page numbers (the packet by section, the contents by step): Chromium breaks a long step onto a second page, which the client cannot know; the footer's numbers are Chromium's own and true | B3 |
 | **B5** | **Done.** Web: the live sandtable (§2.8): the Brief menu's *Present live sandtable* and the review's *Present sandtable*, the bar, steps, constants and script card over the live map, each step flown to and drawn as the PDF draws its figure (`sandtableSteps.js`, held to `contracts/fixtures/brief/sandtable.json` for B9), editing off while it runs. **Changed on the way:** a departure figure names the route it leaves on (`compile.json` regenerated), which the PDF's rules already expected and now light | B3 |
-| **B6** | Backend + web: strip charts in the appendix | B4 |
+| **B6** | **Done.** Strip charts in the appendix (§2.6, *As built*): `compileBrief`'s `strips` and the `strips` page kind (three a page), the grid at print time (`stripGrid.js`, `strip-grid.json`), the review step's switch, strip map and scale, the server's turned strips (`figures.draw_strip`). On the way: a route colour is only ever `#RRGGBB` in a figure (it went into the SVG unescaped), a page the server cannot lay out is no longer listed in the contents, and the cover counts no pages. An independent review's findings fixed (the cutting's edge cases, the server's trust in the model, every grid line numbered) | B4 |
 | **B7** | Android: `core-brief` ported and held to every fixture; the record kind, the pack kind and its exception (`packs/ops-brief.json`, and `packs/session-brief.json`'s session rules). **7a done** (branch `claude/android-core-brief-2ffe1e`): `core-brief`, `compileBrief` and the light data held strictly to every case of `compile.json` and `light.json`, the formats bundled from `contracts/briefs` and held to their rules. **7b done**: `RecordKind.BRIEF`, `/api/briefs` typed and synced, through every per-kind scenario on the fake server, the real one and Room. **7c done**: the pack kind (`PackOps`, `ops-brief.json` folded in beside `ops.json`), `session-brief.json`'s session rules, `PackLock` letting briefs through and nothing else, `PackItemCounts.brief`, and a pack story on the fake server, the real one and Room | B1, B2 |
 | **B8** | Android: brief setup, review, Share and Save (tablet) | B4, B7 |
 | **B9** | Android: the sandtable (tablet) | B7 |
