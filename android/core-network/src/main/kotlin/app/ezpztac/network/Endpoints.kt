@@ -371,6 +371,67 @@ public suspend fun ApiClient.deletePointSet(id: Int, baseRevision: Int? = null, 
     )
 }
 
+// -- Saved mission briefs -----------------------------------------------------------
+//
+// A brief kept in the Library, outside a mission pack (docs/MISSION_BRIEF.md §3): the person's answers, as a document the server does not look inside.
+// Every route needs the `mission_brief` entitlement (403 `feature_disabled` without it), and a create or an edit `cloud_save` too.
+
+public suspend fun ApiClient.listBriefs(): List<BriefSummary> =
+    decode(execute(ApiClient.Call("GET", "/api/briefs")))
+
+public suspend fun ApiClient.getBrief(id: Int): BriefFull =
+    decode(execute(ApiClient.Call("GET", "/api/briefs/$id")))
+
+/**
+ * Saves a new brief. Pass the [clientUuid] the device chose and a retry after a lost response returns the first record ([Saved.created] false)
+ * instead of making a second.
+ */
+public suspend fun ApiClient.createBrief(
+    name: String,
+    data: JsonObject,
+    clientUuid: String,
+    idempotencyKey: String = newKey(),
+): Saved<BriefSummary> {
+    val response = execute(
+        ApiClient.Call(
+            "POST", "/api/briefs",
+            body = buildJsonObject { put("name", name); put("data", data); put("client_uuid", clientUuid) },
+            headers = mapOf("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+    return Saved(decode(response), created = response.status == 201)
+}
+
+/**
+ * Edits a brief on top of [baseRevision], the revision the edit was made against. Only what is given is sent and changed. If the server has moved on,
+ * nothing is overwritten and [RevisionConflictException] carries the server's copy.
+ */
+public suspend fun ApiClient.updateBrief(
+    id: Int,
+    baseRevision: Int?,
+    name: String? = null,
+    data: JsonObject? = null,
+    idempotencyKey: String = newKey(),
+): BriefSummary = decode(
+    execute(
+        ApiClient.Call(
+            "PUT", "/api/briefs/$id",
+            body = buildJsonObject { if (name != null) put("name", name); if (data != null) put("data", data) },
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    ),
+)
+
+/** Deletes a brief. The server keeps a tombstone so other devices learn of it. Deleting twice is not an error. */
+public suspend fun ApiClient.deleteBrief(id: Int, baseRevision: Int? = null, idempotencyKey: String = newKey()) {
+    execute(
+        ApiClient.Call(
+            "DELETE", "/api/briefs/$id",
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+}
+
 // -- Aircraft profiles ------------------------------------------------------------
 
 /** The master list, then the caller's own profiles. */

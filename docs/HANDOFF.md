@@ -55,6 +55,8 @@ Web and Android; Android tablet size and up only for now.
 - **B7** (a side session, branch `claude/android-core-brief-2ffe1e`, on `feat/mission-brief` at B5; not pushed): **7a** the new pure module
   `android/core-brief`: `CompileBrief` (compile.js ported, held strictly to every case of `compile.json`), `Light` (light.js, held to Skyfield's
   `light.json`) and `BriefFormats` (`contracts/briefs` bundled by the build, held byte for byte and to the format's rules). AGENTS.md §17 has the row.
+  **7b** the brief's Library record: `RecordKind.BRIEF` over `/api/briefs` (core-network's calls, core-sync's gateway and change feed), through every per-kind
+  sync scenario on the fake server, the real Flask server (the live test server now registers the briefs blueprint) and Room.
 
 **Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
 `mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android

@@ -392,6 +392,81 @@ class ApiClientCallsTest {
         }
     }
 
+    // -- Saved mission briefs ----------------------------------------------------------
+
+    private val brief = buildJsonObject { put("version", 1); put("template", buildJsonObject { put("id", "amb"); put("version", 1) }) }
+
+    @Test
+    fun `saving a brief is a JSON body with its document and identity, and says whether it was new`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("brief: create") }
+            val first = rig.client.createBrief("OP DK BRIEF", brief, uuid, idempotencyKey = "key-b1")
+            assertTrue(first.created)
+            assertEquals(1, first.value.revision)
+            val sent = rig.requests.single()
+            assertEquals("POST", sent.method)
+            assertEquals("/api/briefs", sent.requestUrl!!.encodedPath)
+            assertEquals("key-b1", sent.getHeader("Idempotency-Key"))
+            val body = ApiClient.JSON.parseToJsonElement(sent.body.readUtf8()) as JsonObject
+            assertEquals(setOf("name", "data", "client_uuid"), body.keys)
+            assertEquals(brief, body["data"])
+
+            rig.serve { Recorded.mock("brief: create again with the same identity") }
+            assertFalse(rig.client.createBrief("OP DK BRIEF", brief, uuid).created)           // a repeat of a lost response: 200
+        }
+    }
+
+    @Test
+    fun `an edit of a brief says which revision it was made on, and sends only what changed`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("brief: update") }
+            val updated = rig.client.updateBrief(1, baseRevision = 1, name = "OP DK AMB", idempotencyKey = "key-b2")
+            assertEquals(2, updated.revision)
+            val sent = rig.requests.single()
+            assertEquals("PUT", sent.method)
+            assertEquals("/api/briefs/1", sent.requestUrl!!.encodedPath)
+            assertEquals("\"1\"", sent.getHeader("If-Match"))
+            assertEquals(setOf("name"), (ApiClient.JSON.parseToJsonElement(sent.body.readUtf8()) as JsonObject).keys)
+
+            rig.serve { Recorded.mock("brief: update") }
+            rig.client.updateBrief(1, baseRevision = null, data = brief)
+            val second = rig.requests.last()
+            assertNull(second.getHeader("If-Match"))
+            assertEquals(setOf("data"), (ApiClient.JSON.parseToJsonElement(second.body.readUtf8()) as JsonObject).keys)
+        }
+    }
+
+    @Test
+    fun `a conflict on a brief carries the server's copy, document and all`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("brief: update on a stale revision") }
+            val e = assertThrows<RevisionConflictException> { rig.client.updateBrief(1, baseRevision = 1, name = "mine") }
+            val server = ApiClient.JSON.decodeFromJsonElement(BriefFull.serializer(), e.server)
+            assertEquals("OP DK AMB", server.name)
+            assertEquals(2, server.revision)
+            assertEquals(JsonPrimitive("amb"), (server.data["template"] as JsonObject)["id"])
+        }
+    }
+
+    @Test
+    fun `listing, reading and deleting a brief, and an account without mission briefs is refused`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("brief: list") }
+            assertEquals("OP DK BRIEF", rig.client.listBriefs().single().name)
+            rig.serve { Recorded.mock("brief: get") }
+            assertEquals(JsonPrimitive(1), rig.client.getBrief(1).data["version"])
+            rig.serve { Recorded.mock("brief: delete") }
+            rig.client.deleteBrief(1, baseRevision = 2, idempotencyKey = "key-b3")
+            val sent = rig.requests.last()
+            assertEquals("DELETE", sent.method)
+            assertEquals("/api/briefs/1", sent.requestUrl!!.encodedPath)
+            assertEquals("\"2\"", sent.getHeader("If-Match"))
+            assertEquals("key-b3", sent.getHeader("Idempotency-Key"))
+            rig.serve { Recorded.mock("briefs: an account without mission brief") }
+            assertEquals(403, assertThrows<ApiException> { rig.client.listBriefs() }.status)
+        }
+    }
+
     // -- Aircraft profiles ------------------------------------------------------------
 
     @Test

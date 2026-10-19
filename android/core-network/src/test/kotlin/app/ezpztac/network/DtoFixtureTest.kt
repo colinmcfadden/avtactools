@@ -49,6 +49,11 @@ class DtoFixtureTest {
         "pointset: list" to ListSerializer(PointSetSummary.serializer()),
         "pointset: get" to PointSetFull.serializer(),
         "pointset: update" to PointSetSummary.serializer(),
+        "brief: create" to BriefSummary.serializer(),
+        "brief: create again with the same identity" to BriefSummary.serializer(),
+        "brief: list" to ListSerializer(BriefSummary.serializer()),
+        "brief: get" to BriefFull.serializer(),
+        "brief: update" to BriefSummary.serializer(),
         "aircraft: list with no profiles of my own" to ListSerializer(AircraftProfileDto.serializer()),
         "aircraft: create" to AircraftProfileDto.serializer(),
         "aircraft: list" to ListSerializer(AircraftProfileDto.serializer()),
@@ -146,10 +151,9 @@ class DtoFixtureTest {
             }
         }
 
-    private val briefResponses = setOf(
-        "brief: create", "brief: create again with the same identity", "brief: list", "brief: get", "brief: update", "brief: delete",
-        "weather: at a planned time, from the TAF", "weather: at a time no TAF covers, the observation",
-    )
+    // The weather at a planned time (`/api/weather?at=`), which the brief's setup asks for (docs/MISSION_BRIEF.md §2.5): the app has no type for its
+    // added fields until the setup is ported (step B8).
+    private val weatherAtResponses = setOf("weather: at a planned time, from the TAF", "weather: at a time no TAF covers, the observation")
 
     @Test
     fun `no successful response is left without a type`() {
@@ -157,9 +161,8 @@ class DtoFixtureTest {
             .filter { it.status in 200..202 && it.body != null && it.name !in decoders }
             .map { it.name }
             // Bodies that are a status word only, not a record.
-            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "aircraft: delete", "account deletion") }
-            // The mission brief's (docs/MISSION_BRIEF.md): the app has no types for them until it ports briefs (step B7).
-            .filterNot { it in briefResponses }
+            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in weatherAtResponses }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
     }
 

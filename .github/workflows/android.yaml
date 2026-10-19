@@ -47,7 +47,8 @@ jobs:
 
       # The API client is also tried against the real Flask routes (backend/tests/live_server.py), so a
       # client and the server it will meet cannot drift apart. Those tests run when EZPZ_LIVE_PYTHON points
-      # at a Python that has the server's packages, and are skipped without it.
+      # at a Python that has the server's packages, and are skipped without it. The mission brief's routes
+      # (routes/brief_routes.py) reach the terrain code, which imports OpenCV (and contourpy for the slope contours).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -55,7 +56,8 @@ jobs:
         working-directory: .
         run: |
           for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
-                   python-dotenv PyYAML openpyxl pillow rasterio numpy mercantile affine; do
+                   python-dotenv PyYAML openpyxl pillow rasterio numpy mercantile affine \
+                   opencv-python-headless contourpy; do
             grep -i "^$p==" backend/requirements.txt
           done | xargs pip install
 
