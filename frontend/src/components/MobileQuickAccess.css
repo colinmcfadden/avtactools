@@ -25,14 +25,25 @@
 
 /* --- Mobile/Tablet Breakpoint --- */
 @media (max-width: 850px) {
+    /* Level with the MGRS box: the floating menu button it once sat under is in the top bar now. The
+       gap is tight so the whole rail stays above a phone's lowered sheet (about 530 px of a 660 px
+       window). */
     .mobile-quick-access-container {
         display: flex;
         flex-direction: column;
-        gap: 15px; 
+        align-items: flex-end; /* the labelled buttons reach left, over the map */
+        gap: 8px;
         position: absolute;
         right: 15px;
-        top: 80px; 
-        z-index: 1000; 
+        top: 15px;
+        z-index: 1000;
+        /* As wide as its widest button, so its empty corner lies over the MGRS box's GO: only the
+           buttons take a tap. */
+        pointer-events: none;
+    }
+
+    .mobile-quick-access-container > * {
+        pointer-events: auto;
     }
 
     .qa-btn {
@@ -65,6 +76,38 @@
     .qa-btn svg {
         width: 28px;
         height: 28px;
+    }
+
+    /* Analyze and Draw LZ say what they do: they are the next step once a target is set. */
+    .qa-btn.qa-pill {
+        width: auto;
+        gap: 7px;
+        padding: 0 14px;
+        color: var(--ff-text-main);
+        font-size: 0.9rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .qa-btn.qa-pill svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    /* Without Sketch Route above it, the first button would sit beside the MGRS box, which it is wider than. */
+    .qa-btn.qa-pill:first-child {
+        margin-top: 58px;
+    }
+
+    .qa-btn.qa-pill--primary {
+        background: #3f6fa3; /* the redesign's primary fill: white on it is 5.2:1 */
+        border-color: rgba(255, 255, 255, 0.28);
+        color: #ffffff;
+    }
+
+    .qa-btn.qa-pill--drawing {
+        border-color: #FFC107;
+        color: #FFC107;
     }
 }
 
