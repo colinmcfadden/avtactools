@@ -100,7 +100,7 @@ public object JsNumber {
     }
 
     // `String(list)`: the elements joined by commas, null as nothing and a list within by its own text.
-    private fun joined(list: JsonArray): String = list.joinToString(",") { element ->
+    internal fun joined(list: JsonArray): String = list.joinToString(",") { element ->
         when (element) {
             is JsonNull -> ""
             is JsonArray -> joined(element)
@@ -113,7 +113,8 @@ public object JsNumber {
         }
     }
 
-    private val DECIMAL_TEXT = Regex("""[+-]?(?:Infinity|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)""")
+    // ASCII digits spelt out: on Android java.util.regex is ICU's, whose \d takes every script's digits, and toDouble would then throw on "٣٤".
+    private val DECIMAL_TEXT = Regex("""[+-]?(?:Infinity|(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)""")
     private val BASE_TEXT = Regex("""0([xXoObB])([0-9A-Za-z]+)""")
 
     /** ECMAScript StringToNumber: [text] trimmed as JavaScript trims, then read whole or not at all. */
@@ -146,7 +147,7 @@ public object JsNumber {
     }
 
     /** `text.trim()` as JavaScript does it, which is not Kotlin's: it takes the byte order mark, and leaves U+001C to U+001F. */
-    internal fun trimJs(text: String): String {
+    public fun trimJs(text: String): String {
         var start = 0
         var end = text.length
         while (start < end && isJsSpace(text[start])) start++
