@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { printBrief } from "./briefApi";
 import Dialog from "../ui/Dialog";
+import Icon from "../ui/Icon";
 import FlowStep from "./FlowStep";
 import DetailsStep from "./DetailsStep";
 import ReviewStep from "./ReviewStep";
@@ -22,7 +23,7 @@ const STEPS = [
 
 const SAVE_WORDS = { saving: "Saving…", saved: "Saved to your Library", unsaved: "Saving…", error: "Could not save: your answers are kept here and tried again with your next change" };
 
-const BriefSetup = ({ brief, title, threatCount, onClose }) => {
+const BriefSetup = ({ brief, title, threatCount, onClose, onPresent }) => {
   const [step, setStep] = useState(0);
   const [printing, setPrinting] = useState(null);
   const { model, doc, setDoc, format } = brief;
@@ -46,6 +47,11 @@ const BriefSetup = ({ brief, title, threatCount, onClose }) => {
   const close = () => {
     brief.flush();
     onClose();
+  };
+  // The sandtable walks the same steps on the map; the setup closes for it.
+  const present = () => {
+    brief.flush();
+    onPresent();
   };
   const chooseFormat = (id) => {
     const chosen = briefFormat(id);
@@ -77,9 +83,18 @@ const BriefSetup = ({ brief, title, threatCount, onClose }) => {
               Next: {STEPS[step + 1].title.toLowerCase()}
             </button>
           ) : (
-            <button type="button" className="ui-btn ui-btn--primary ui-btn--38" disabled={Boolean(printing?.busy)} onClick={download}>
-              {printing?.busy ? "Printing…" : "Download PDF"}
-            </button>
+            <>
+              {onPresent && (
+                <button type="button" className="ui-btn ui-btn--38" onClick={present}>
+                  <Icon name="play" size={14} />
+                  Present sandtable
+                </button>
+              )}
+              <button type="button" className="ui-btn ui-btn--primary ui-btn--38" disabled={Boolean(printing?.busy)} onClick={download}>
+                <Icon name="download" size={14} />
+                {printing?.busy ? "Printing…" : "Download PDF"}
+              </button>
+            </>
           )}
         </>
       )}

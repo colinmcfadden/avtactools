@@ -93,6 +93,45 @@ describe("useBrief outside a pack", () => {
     expect(briefApi.getBrief).toHaveBeenCalledWith(41);
   });
 
+  it("says it is still reading the kept brief from the moment it opens until the answer comes, and not otherwise", async () => {
+    localStorage.setItem("ezpz.brief.7", JSON.stringify({ id: 41, clientUuid: "c-1" }));
+    let answer;
+    briefApi.getBrief.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const seen = [];
+    const { result } = renderHook(() => {
+      const brief = useBrief({ enabled: true, active: true, user: USER, session: { name: "", diagrams: DIAGRAMS, routeSets: ROUTE_SETS } });
+      seen.push(brief.loading);
+      return brief;
+    });
+    // From the very first render, before the read is even out: nothing shows the blank brief meanwhile.
+    expect(seen[0]).toBe(true);
+    expect(result.current.loading).toBe(true);
+    await act(async () => answer({ id: 41, data: { version: 1, template: { id: "amb", version: 1 }, answers: {} } }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasDoc).toBe(true);
+  });
+
+  it("does not take a brief read for the account signed in before", async () => {
+    localStorage.setItem("ezpz.brief.7", JSON.stringify({ id: 41, clientUuid: "c-1" }));
+    let answer;
+    briefApi.getBrief.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const { result, rerender } = renderHook(({ user }) => useBrief({
+      enabled: true, active: true, user, session: { name: "", diagrams: DIAGRAMS, routeSets: ROUTE_SETS },
+    }), { initialProps: { user: USER } });
+    rerender({ user: { id: 8, name: "Sam B." } });
+    await act(async () => answer({ id: 41, data: { version: 1, template: { id: "hasty", version: 1 }, answers: {} } }));
+    await act(async () => {});
+    expect(result.current.hasDoc).toBe(false);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.format.template.id).toBe("amb");
+  });
+
+  it("reads nothing, and so waits for nothing, when no brief was kept or it is closed", async () => {
+    expect(render().result.current.loading).toBe(false);
+    localStorage.setItem("ezpz.brief.7", JSON.stringify({ id: 41, clientUuid: "c-1" }));
+    expect(render(false).result.current.loading).toBe(false);
+  });
+
   it("asks for the weather at the departure, the arrival and each stop, at their times", async () => {
     render();
     await waitFor(() => expect(briefApi.weatherAt).toHaveBeenCalled());

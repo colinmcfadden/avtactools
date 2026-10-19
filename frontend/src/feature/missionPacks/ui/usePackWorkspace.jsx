@@ -117,6 +117,13 @@ const lastChangeWords = (count, last, me) => {
  * pack was loaded does not follow edits made since; a sentence whose facts did not come back is left
  * out, and only the plain warning stands in for the count.
  */
+/**
+ * Whether this person is looking at the Pack panel, so what is new in the pack counts as seen: the pack loaded, its panel
+ * shown and not folded away, the window in front, and no brief being presented over the frame (which puts the dock away).
+ */
+export const lookingAtPack = ({ loaded, presenting, panel, collapsed, visible }) =>
+  Boolean(loaded) && !presenting && panel === "pack" && !collapsed && Boolean(visible);
+
 export const UpdateFromOriginalDialog = ({ packUuid, item, me, getItem = packApi.getItem, onCancel, onConfirm }) => {
   const [fresh, setFresh] = useState({ status: "loading", source: null });
   useEffect(() => {
@@ -176,6 +183,8 @@ export const usePackWorkspace = ({
   points,
   library,
   onOpenLibrary,
+  // A brief presented on the live sandtable puts the dock away, the Pack panel with it.
+  presenting = false,
 }) => {
   const me = user?.id ?? null;
   const actor = actorName(user);
@@ -372,7 +381,7 @@ export const usePackWorkspace = ({
     headSeq: session?.seq ?? 0,
     seenSeq: meta?.seen_seq ?? 0,
     loaded: Boolean(session),
-    looking: Boolean(session) && dock.panel === "pack" && !dock.collapsed && visible,
+    looking: lookingAtPack({ loaded: session, presenting, panel: dock.panel, collapsed: dock.collapsed, visible }),
   });
   const newCount = items.filter((item) => changedSince(item, seen.newSince, me)).length;
 

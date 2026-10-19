@@ -3,10 +3,10 @@ import Icon from "../ui/Icon";
 import Menu, { MenuItem, useMenu } from "../ui/Menu";
 
 /*
- * The top bar's Brief button and its menu (the design's "Brief menu"): what the brief is built from, and Generate
- * brief… (whose last step downloads the PDF). The live sandtable joins it when it is built (docs/MISSION_BRIEF.md, B5).
+ * The top bar's Brief button and its menu (the design's "Brief menu"): what the brief is built from, Generate brief…
+ * (whose last step downloads the PDF), and Present live sandtable, which walks the same steps on the map.
  */
-const BriefMenu = ({ packName = null, summary, onGenerate }) => {
+const BriefMenu = ({ packName = null, summary, onGenerate, onPresent }) => {
   const menu = useMenu();
   return (
     <>
@@ -30,6 +30,16 @@ const BriefMenu = ({ packName = null, summary, onGenerate }) => {
           onClose={menu.close}
           onSelect={onGenerate}
         />
+        {onPresent && (
+          <MenuItem
+            rich
+            icon={<Icon name="play" size={18} />}
+            title="Present live sandtable"
+            text="Walk the mission on the map from the start point, one step at a time, with the script on screen."
+            onClose={menu.close}
+            onSelect={onPresent}
+          />
+        )}
         {!packName && (
           <>
             <div className="ui-menu__divider" />

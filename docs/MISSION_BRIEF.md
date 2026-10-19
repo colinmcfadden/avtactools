@@ -1,6 +1,6 @@
 # Mission brief — architecture and plan
 
-Status: **B0 to B4 done, B5 next** (branch `feat/mission-brief`, 2026-10-16). The screens are the design canvas's section 6 (*Mission brief*:
+Status: **B0 to B5 done, B6 next** (branch `feat/mission-brief`, 2026-10-16 to 19). The screens are the design canvas's section 6 (*Mission brief*:
 seven web boards, three Android tablet boards). This file is the plan for building them on the web and Android. The owner's decisions of
 2026-10-16 are in §9.
 
@@ -106,8 +106,15 @@ no random ids. It:
 4. writes each step's script from the template's sentences, unless the person edited it;
 5. gives each step a **figure spec**: the area to show (bounds), the paper size, the base map, and the layers to draw (the whole route,
    the current leg lit, the LZ box, aircraft, go-arounds, threats' rings, rally points), all as plain data;
-6. returns the pages (cover, contents, steps, appendices) and the sandtable's steps from the same list, so the sandtable's step 8 and the
-   PDF's page 8 are the same thing.
+6. returns the pages (cover, contents, steps, appendices) and the sandtable's steps from one list of steps, so a step says the same thing
+   on the sandtable as in the PDF. A step is called by its place in the brief and its paragraph number, never by a printed page: Chromium
+   decides where pages break (B4). A step's `page` is its place in that list, not a page the PDF prints it on.
+
+As built, a figure spec names what it shows (`kind`, the `ref` in focus, `bounds`, the routes and LZ/PZs on it) and the brief's `geometry`
+holds everything in lat/lon; how each is drawn (the route in focus lit, the others dimmed on a route step, the LZ/PZ in focus with its
+boundary, aircraft and landing heading, rally points on the rally step, threats always) is one rule kept twice, by the PDF
+(`backend/brief/figures.py`) and by the sandtable (`feature/brief/sandtableSteps.js`, held to `contracts/fixtures/brief/sandtable.json`). A
+departure step's `ref` is the route the flight leaves on, so both light it.
 
 Its fixtures (`contracts/fixtures/brief/*.json`, written by the web's tests as the others are) pin it for: both templates, a pack with
 several LZ/PZs and two route sets (the design's OP DK), every role, standard/custom/blank for each contingency, blanks, edited scripts,
@@ -182,9 +189,22 @@ The owner asked whether Gotenberg would do; it is the best fit, and the plan use
 
 A presentation mode over the existing map, not a new map:
 
-- **Web:** `feature/brief/Sandtable.jsx`, over `MapView`: the steps' list, the script card, the constants box (collapsible), arrows and
-  ← → keys, *End brief*. Each step flies the map to its figure's bounds and draws its layers (the lit leg, rally points at the
-  contingencies step) as a Leaflet layer of its own. Editing is off while it runs.
+- **Web (built, B5):** *Present live sandtable* in the Brief menu, and *Present sandtable* beside *Download PDF* at the review.
+  `feature/brief/Sandtable.jsx` (`useSandtable` and its bar, steps and stage) over the live `MapView`: a bar in the top bar's place
+  (Presenting, the pack or *This session* and the format, UNCLASSIFIED, *Step n of N*, *End brief*), the steps in the sidebar's place, the
+  constants box top right and the script card at the bottom (who briefs it, the step's planned time, the script with its write-ins, the
+  facts, ← and →, a progress bar). Each step flies the map to its figure (`SandtableLayer.jsx`), fitted clear of the card and the box, and
+  draws it from the brief's `geometry` as the PDF does; a step with no figure shows the whole plan, unlit, over the brief's overview. The
+  arrows, Page Up / Page Down (a presenter's clicker), Home, End and the space bar step; Escape or *End brief* ends it and the map goes back
+  to where it was. **Editing is off:** the planning frame (sidebar, top bar, dock, the tools over the map) is put away but kept mounted, the
+  map draws none of the planning layers and takes no click or right-click, no key reaches the rest of the app (Ctrl/⌘ S included), a
+  file dropped anywhere is ignored, the planning windows (a unit, a threat, an aircraft, an export) are put away with the frame and the 3D
+  view is closed, and toasts move to the top and offer no actions. In a pack, this person's pointer is taken off the others' maps and the
+  Pack panel no longer counts as looked at; a brief ends in the same render as its workspace (a pack left or gone), so the map comes back to
+  the new workspace's LZ/PZ. A step is followed by its id, so the plan changing under it (someone else's edit, the weather arriving) keeps
+  the presenter on it; a step that goes leaves them at its place in the list, on the step now there, which is then the one followed. Outside
+  a pack, a brief the Library still has to send is waited for (*Opening the brief…*), so the blank one is never shown. It never names a PDF
+  page: a step is *Step n of N*. Below 850 px the steps and the constants start folded and the steps lie over the map.
 - **Android:** `feature-brief`'s `SandtableScreen` over the same `EzpzMap`, the camera moved with `MapHost`, 56 dp step buttons, a tablet
   layout (tablet only, §9).
 - **Only the presenter's map moves** (the design's choice). Others following along through a pack's live stream is later (§9).
@@ -248,7 +268,7 @@ green, AGENTS.md and `docs/HANDOFF.md` updated in the same commit.
 | **B2** | **Done.** Backend: `SavedBrief`, `/api/briefs`, sync kind, pack item kind `brief` and its exception, the weather route's `at`, OpenAPI, recorded responses, `mission_brief`; the web's `packOps.js` takes the kind, its cases in `contracts/fixtures/packs/ops-brief.json` (apart from `ops.json` until Android ports the kind in B7) | B0 |
 | **B3** | **Done.** Web: the Brief menu (top bar, `mission_brief` only) and the three-step setup (`BriefSetup`: flow and constants, details with Standard / Custom / Blank and the script, review of the pages as compiled) over `useBrief`: outside a pack a Library record (`/api/briefs`, the one this browser opened last for the account, made at the first change under its own identity, saved 0.8 s after the last), in a pack the pack's brief item (made at the first change, every change sent as the pack's operations). The web's pack session takes brief edits in a read-only pack and sends them in batches of their own (`packs/session-brief.json`). The weather is asked for the departure, arrival and each stop at their planned times while the setup is open. Not yet: the PDF (B4), the sandtable (B5) | B1, B2 |
 | **B4** | **Done.** compileBrief gives the figures' `geometry` (route lines and nav-log rows, LZ/PZ boundaries and aircraft, threats, rally points) so the server only draws; `backend/brief/` draws each figure (tiles stitched with Pillow, the plan as SVG), lays out the pages (Jinja, print CSS; the cover on its own page) and prints them through Gotenberg (`POST /api/brief/pdf`, `GOTENBERG_URL`); the review step's Download PDF. Tried against Gotenberg 8.21.1 with JavaScript off and the network denied: OP DK's 17 figures in 6 s cold (1 s with tiles cached), printed in 0.5 s. **Changed on the way:** a brief says no page numbers (the packet by section, the contents by step): Chromium breaks a long step onto a second page, which the client cannot know; the footer's numbers are Chromium's own and true | B3 |
-| **B5** | Web: the live sandtable | B3 |
+| **B5** | **Done.** Web: the live sandtable (§2.8): the Brief menu's *Present live sandtable* and the review's *Present sandtable*, the bar, steps, constants and script card over the live map, each step flown to and drawn as the PDF draws its figure (`sandtableSteps.js`, held to `contracts/fixtures/brief/sandtable.json` for B9), editing off while it runs. **Changed on the way:** a departure figure names the route it leaves on (`compile.json` regenerated), which the PDF's rules already expected and now light | B3 |
 | **B6** | Backend + web: strip charts in the appendix | B4 |
 | **B7** | Android: `core-brief` ported and held to every fixture; the record kind, the pack kind and its exception (`packs/ops-brief.json`, and `packs/session-brief.json`'s session rules) | B1, B2 |
 | **B8** | Android: brief setup, review, Share and Save (tablet) | B4, B7 |

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import Icon from "../ui/Icon";
+import Sentence from "./Sentence";
 
 /*
  * Setup, step 3: review (the design's "Brief setup 3"). The pages as the brief compiles them now, one shown with its
@@ -25,16 +26,6 @@ const pageTitle = (page, steps) => {
   }
   return page.title;
 };
-
-const Sentence = ({ parts }) => (
-  <p>
-    {parts.map((part, j) => (part.writeIn !== undefined
-      // eslint-disable-next-line react/no-array-index-key
-      ? <span key={j} className="brief-writein">{part.label ? `${part.label} ` : ""}________</span>
-      // eslint-disable-next-line react/no-array-index-key
-      : <React.Fragment key={j}>{part.text}</React.Fragment>))}
-  </p>
-);
 
 const ReviewStep = ({ model, doc, setDoc, coverTitle }) => {
   const [pageN, setPageN] = useState(1);

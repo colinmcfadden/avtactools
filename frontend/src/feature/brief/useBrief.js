@@ -69,6 +69,7 @@ export const useBrief = ({
   const [libraryDoc, setLibraryDoc] = useState(null);
   const [packDraft, setPackDraft] = useState(null);
   const [saveState, setSaveState] = useState(null);
+  const [opening, setOpening] = useState(false);
   const record = useRef(null);
   const saveTimer = useRef(null);
   const latestDoc = useRef(null);
@@ -76,32 +77,46 @@ export const useBrief = ({
   const doc = inPack ? briefItem?.data ?? packDraft : libraryDoc;
   latestDoc.current = doc;
 
-  // Outside a pack: the brief this browser opened last, read once the brief is first opened.
   const loaded = useRef(false);
+  const reads = useRef(0);
+  // Another account signing in starts from nothing. Before the read below, so that read is the new account's (and on
+  // mount clears nothing it has just begun); a read still out for the account before is not taken.
+  useEffect(() => {
+    reads.current += 1;
+    loaded.current = false;
+    record.current = null;
+    setOpening(false);
+    setLibraryDoc(null);
+    setPackDraft(null);
+  }, [user?.id]);
+
+  // Outside a pack: the brief this browser opened last, read once the brief is first opened.
   useEffect(() => {
     if (!enabled || inPack || !active || loaded.current) return;
     loaded.current = true;
     const kept = remembered(user);
     record.current = kept;
     if (!kept?.id) return;
+    const read = ++reads.current;
+    setOpening(true);
     getBrief(kept.id)
       .then((body) => {
+        if (read !== reads.current) return;
         if (body?.data && typeof body.data === "object") setLibraryDoc((current) => current ?? body.data);
       })
       .catch(() => {
+        if (read !== reads.current) return;
         // Deleted elsewhere, or another account's: start again, under a new identity.
         record.current = null;
         remember(user, null);
+      })
+      .finally(() => {
+        if (read === reads.current) setOpening(false);
       });
   }, [enabled, inPack, active, user]);
-
-  // Another account signing in starts from nothing.
-  useEffect(() => {
-    loaded.current = false;
-    record.current = null;
-    setLibraryDoc(null);
-    setPackDraft(null);
-  }, [user?.id]);
+  // Whether the brief opened last is still being read: from the moment the brief is opened, not only once the request is
+  // out, so nothing shows the blank brief in the meantime (the live sandtable waits for it).
+  const loading = Boolean(enabled && !inPack && active && (opening || (!loaded.current && remembered(user)?.id)));
 
   const saveToLibrary = useCallback(async () => {
     saveTimer.current = null;
@@ -230,6 +245,7 @@ export const useBrief = ({
     format,
     model,
     saveState: inPack ? null : saveState,
+    loading,
     weather: { loading: weather.loading, fetchedAt: weather.fetchedAt, refresh: () => refreshWeather() },
   };
 };

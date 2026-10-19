@@ -29,7 +29,7 @@ const WEIGHTS = { minor: 1, major: 1.75, zone: 2.5 }; // drawn widths are set in
 
 // Map overlays the labels keep clear of: Leaflet's own controls, and what the app floats over
 // the map beside it (the unit badge, the base map picker, a finished pack's banner, the phone
-// layout's search and buttons).
+// layout's search and buttons, and a brief's sandtable: its constants and script card).
 const OVERLAYS_INSIDE = ".leaflet-control";
 const OVERLAYS_BESIDE = [
   ".unit-badge",
@@ -37,6 +37,8 @@ const OVERLAYS_BESIDE = [
   ".packs-banner",
   ".mobile-top-search-container",
   ".mobile-quick-access-container",
+  ".sandtable-constants",
+  ".sandtable-card",
 ].join(", ");
 
 const avoidBoxes = (map) => {

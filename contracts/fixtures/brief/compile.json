@@ -489,7 +489,7 @@
             "page": 5,
             "figure": {
               "kind": "departure",
-              "ref": null,
+              "ref": "route:set-opdk/r-alderaan",
               "bounds": [[33.874570000000006,-84.54385],[34.360929999999996,-84.21324999999999]],
               "routes": ["route:set-opdk/r-alderaan","route:set-opdk/r-bespin"],
               "stops": ["lz:lz-bluebird","lz:lz-hawk","lz:pz-ibis","lz:farp-bucees","lz:lz-decoy"],
@@ -2424,7 +2424,14 @@
             "ref": null,
             "role": null,
             "page": 5,
-            "figure": {"kind":"departure","ref":null,"bounds":[[33.874570000000006,-84.54385],[34.360929999999996,-84.21324999999999]],"routes":["route:set-opdk/r-alderaan"],"stops":["lz:lz-hawk"],"rallyPoints":[]},
+            "figure": {
+              "kind": "departure",
+              "ref": "route:set-opdk/r-alderaan",
+              "bounds": [[33.874570000000006,-84.54385],[34.360929999999996,-84.21324999999999]],
+              "routes": ["route:set-opdk/r-alderaan"],
+              "stops": ["lz:lz-hawk"],
+              "rallyPoints": []
+            },
             "facts": [{"key":"departure.point","label":"DEPART","value":"3MILE"},{"key":"departure.time","label":"TAKEOFF","value":"11:56:32"}],
             "items": [
               {"id":"4.b.i","key":"4.b.i","label":"Commo check","kind":"time","source":"plan","text":"11:31","writeIn":false},
@@ -3266,7 +3273,7 @@
             "ref": null,
             "role": null,
             "page": 5,
-            "figure": {"kind":"departure","ref":null,"bounds":null,"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
+            "figure": {"kind":"departure","ref":"route:s/one","bounds":null,"routes":["route:s/one"],"stops":["lz:lone"],"rallyPoints":[]},
             "facts": [{"key":"departure.point","label":"DEPART","value":null},{"key":"departure.time","label":"TAKEOFF","value":null}],
             "items": [
               {"id":"4.b.i","key":"4.b.i","label":"Commo check","kind":"time","source":"blank","text":null,"writeIn":true},

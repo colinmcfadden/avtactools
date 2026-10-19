@@ -24,7 +24,8 @@ contracts/
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
-│  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py)
+│  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py),
+│  │                sandtable.json (reference: the web, feature/brief/sandtableSteps.js, read from compile.json's models)
 │  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
@@ -52,6 +53,8 @@ reference is.
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
+| `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` once it is ported (`docs/MISSION_BRIEF.md`, B7) |
+| `brief/sandtable.json` | `frontend/src/contracts/briefSandtableFixtures.test.js` | — | the Android sandtable (B9): each step as the sandtable lists it and what the map shows for it, from `compile.json`'s models (both are made from the same cases, `briefCases.js`, so one `UPDATE_CONTRACTS=1` run writes both) |
 | `workspace/ops.json` | `frontend/src/contracts/workspaceOpsFixtures.test.js` | — | `core-model` (`DiagramOps`) |
 | `workspace/doghouses.json` | `frontend/src/contracts/doghouseFixtures.test.js` | — | `core-model` (`Doghouses`, `JsValue.parseInt` / `parseFloat`) |
 | `formats/number_text.json` | `frontend/src/contracts/numberTextFixtures.test.js` | — | `core-model` (`JsNumber.toText`) |

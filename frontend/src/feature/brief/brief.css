@@ -164,3 +164,124 @@ select.brief-kind { cursor: pointer; padding: 0 4px; }
   .brief-details__nav, .brief-review__pages { flex-direction: row; overflow-x: auto; }
   .brief-details__para, .brief-review__page { width: auto; flex: none; }
 }
+
+/* -- The live sandtable (docs/MISSION_BRIEF.md §2.8; the design's "Try it · live sandtable") ------------------------- */
+
+/* While it runs the planning frame is put away (kept mounted, so nothing in it loses its place): its bar takes the top
+   bar's place across the window, its steps the sidebar's, and the map has the rest. */
+.app-container--presenting { box-sizing: border-box; padding-top: 56px; }
+.app-container--presenting > .sidebar,
+.app-container--presenting > .mobile-hamburger-btn,
+.app-container--presenting > .sidebar-collapse-toggle,
+.app-container--presenting .shell-topbar,
+.app-container--presenting .shell-dock { display: none; }
+.app-container--presenting .shell-map { top: 0; right: 0; bottom: 0; left: 0; }
+/* Over the map only the sandtable's own boxes: no planning tools, banners or badges; and none of the planning windows (a
+   unit, a threat, an aircraft, an export), kept as they were for after the brief. */
+.app-container--presenting .shell-map > :not(.leaflet-container):not(.sandtable-constants):not(.sandtable-card),
+.app-container--presenting > .export-modal-container { display: none; }
+/* Toasts go to the top, clear of the card's arrows, and offer nothing to do: their actions open planning flows. */
+body:has(.app-container--presenting) .ui-toasts { top: 68px; bottom: auto; }
+body:has(.app-container--presenting) .ui-toast__action { display: none; }
+
+.sandtable-bar {
+  position: fixed; top: 0; left: 0; right: 0; height: 56px; z-index: 1100; box-sizing: border-box;
+  display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  background: var(--surface-1); border-bottom: 1px solid var(--hairline-strong);
+}
+.sandtable-bar__live { flex: none; height: 24px; padding: 0 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
+.sandtable-bar__titles { flex: 1; min-width: 0; }
+.sandtable-bar__title { margin: 0; font-size: 15px; font-weight: 700; color: #f3f5f7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sandtable-bar__sub { font-size: 12px; color: var(--ff-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sandtable-bar__end { flex: none; display: flex; align-items: center; gap: 10px; }
+.sandtable-bar__mark { font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #82d4ae; }
+.sandtable-bar__position { font-size: 12.5px; font-weight: 600; color: #c9d0d8; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.sandtable-steps {
+  flex: none; width: 290px; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; z-index: 1000;
+  background: var(--surface-1); border-right: 1px solid var(--hairline);
+}
+.sandtable-steps__head { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px 6px 16px; }
+.sandtable-steps__list { list-style: none; margin: 0; padding: 0 8px 12px; flex: 1; min-height: 0; overflow: auto; }
+.sandtable-steps__step {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: baseline; gap: 8px; width: 100%; min-height: 40px;
+  box-sizing: border-box; padding: 9px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent;
+  color: #b4bcc6; font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+}
+.sandtable-steps__step:hover { background: rgba(255, 255, 255, 0.05); color: var(--ff-text-main); }
+.sandtable-steps__step:focus-visible { outline: 2px solid var(--ff-accent); outline-offset: -2px; }
+.sandtable-steps__step[aria-current="step"] { background: #24364a; border-color: rgba(124, 189, 224, 0.55); color: #fff; font-weight: 700; }
+.sandtable-steps__n { font-family: var(--mono); font-size: 11.5px; color: var(--ff-text-muted); }
+.sandtable-steps__step[aria-current="step"] .sandtable-steps__n { color: #92c9ea; }
+.sandtable-steps__title { overflow-wrap: anywhere; }
+.sandtable-steps__time { font-family: var(--mono); font-size: 11px; color: var(--ff-text-muted); }
+.sandtable-steps__wait { padding: 4px 16px; }
+
+.sandtable-constants {
+  position: absolute; top: 12px; right: 12px; z-index: 1050; width: 270px; max-height: calc(100% - 24px); overflow: auto;
+  box-sizing: border-box; background: var(--glass); border: 1px solid var(--hairline-strong); border-radius: 8px; box-shadow: var(--deck-shadow);
+}
+.sandtable-constants__head {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 36px; padding: 0 12px;
+  border: 0; background: transparent; color: var(--ff-text-muted); font: inherit; cursor: pointer;
+}
+.sandtable-constants__head:focus-visible { outline: 2px solid var(--ff-accent); outline-offset: -2px; }
+.sandtable-constants__list { margin: 0; padding: 0 12px 10px; }
+.sandtable-constants__list div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 12px; }
+.sandtable-constants__list dt { color: #b4bcc6; }
+.sandtable-constants__list dd { margin: 0; font-weight: 700; color: #f3f5f7; text-align: right; font-variant-numeric: tabular-nums; }
+
+.sandtable-card {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 1050;
+  width: min(780px, calc(100% - 32px)); max-height: min(48%, 400px); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 12px;
+  background: var(--glass); border: 1px solid var(--hairline-strong); border-radius: 10px; box-shadow: var(--deck-shadow);
+}
+.sandtable-card__tags { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.sandtable-card__section { text-transform: uppercase; letter-spacing: 0.05em; }
+.sandtable-card__time { margin-left: auto; font-family: var(--mono); font-size: 12px; color: #c9d0d8; }
+.sandtable-card__title { margin: 0; font-size: 18px; font-weight: 700; color: #f3f5f7; }
+.sandtable-card__body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.sandtable-card__script { font-size: 14px; line-height: 1.5; color: #e7eaee; }
+.sandtable-card__script p { margin: 0 0 6px; }
+.sandtable-card__script .brief-writein { font-size: 12px; }
+.sandtable-card__facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.sandtable-card__facts div { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--hairline); }
+.sandtable-card__facts dt { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ff-text-muted); }
+.sandtable-card__facts dd { margin: 0; font-size: 12.5px; font-weight: 600; color: #e7eaee; }
+.sandtable-card__nav { display: flex; align-items: center; gap: 12px; padding-top: 2px; }
+.sandtable-card__arrow {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 20px;
+  border: 1px solid var(--hairline-strong); background: var(--surface-2); color: var(--ff-text-main); cursor: pointer;
+}
+.sandtable-card__arrow:hover { background: var(--surface-3); }
+.sandtable-card__arrow--next { background: var(--primary-fill); border-color: rgba(124, 189, 224, 0.55); color: #fff; }
+.sandtable-card__arrow--next:hover { background: #4a7db3; }
+.sandtable-card__arrow:focus-visible { outline: 2px solid var(--ff-accent); outline-offset: 2px; }
+.sandtable-card__arrow:disabled { background: #171a20; color: #6f7885; border-color: var(--hairline); cursor: not-allowed; }
+.sandtable-card__progress { flex: 1; min-width: 0; display: flex; gap: 3px; }
+.sandtable-card__progress span { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); }
+.sandtable-card__progress .is-done { background: #5aa7d4; }
+.sandtable-card__progress .is-current { background: #ffd166; }
+.sandtable-card__keys { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ff-text-muted); white-space: nowrap; }
+
+/* On the map: the figure's words and marks (SandtableLayer). */
+.sandtable-map-label__anchor, .sandtable-map-arrow__anchor, .sandtable-map-stop__anchor, .sandtable-map-rally { background: none; border: 0; }
+.sandtable-map-label {
+  position: absolute; left: 10px; top: 0; transform: translateY(-50%); white-space: nowrap; pointer-events: none;
+  font-size: 12px; font-weight: 800; text-shadow: 0 0 3px #101317, 0 0 3px #101317, 0 0 2px #101317;
+}
+.sandtable-map-label--small { font-size: 11px; font-weight: 700; }
+.sandtable-map-label--large { font-size: 15px; left: 13px; }
+.sandtable-map-stop { display: block; width: 100%; height: 100%; box-sizing: border-box; background: #101317; border: 3px solid; }
+.sandtable-map-arrow, .sandtable-map-rally svg { display: block; }
+
+@media (max-width: 850px) {
+  .sandtable-bar { gap: 8px; padding: 0 10px; }
+  .sandtable-bar__sub, .sandtable-bar__position { display: none; }
+  /* Over the map, not beside it: the map keeps the window's width. */
+  .sandtable-steps { position: fixed; top: 56px; left: 0; bottom: 0; width: min(300px, 86vw); z-index: 1150; box-shadow: var(--deck-shadow); }
+  .sandtable-constants { width: min(240px, calc(100% - 24px)); }
+  .sandtable-card { bottom: 8px; width: calc(100% - 16px); max-height: 52%; padding: 12px; }
+  .sandtable-card__keys { display: none; }
+}

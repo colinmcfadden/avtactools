@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-19 for the mission brief (§0a: B0 to B4 built on `feat/mission-brief`, web and server; Android's part is B7 to B9).
+Last refreshed: 2026-10-19 for the mission brief (§0a: B0 to B5 built on `feat/mission-brief`, web and server; Android's part is B7 to B9).
 Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
@@ -24,7 +24,7 @@ Branch **`feat/mission-brief`**, on `develop` (which has `feat/android-panel-clo
 owner's decisions of 2026-10-16 and each step's state are in **`docs/MISSION_BRIEF.md`** (read it first); AGENTS.md §4, §6, §9 and §10 say what exists.
 
 **What it is:** the air movement and hasty multi-ship briefs (Aviation Branch Handbook formats; the owner confirmed their item lists and standard values
-releasable, the handbook itself is CUI-marked and never committed) generated from a mission pack or the session: a PDF and, next, a live sandtable.
+releasable, the handbook itself is CUI-marked and never committed) generated from a mission pack or the session: a PDF and a live sandtable.
 Web and Android; Android tablet size and up only for now.
 
 **Built (each with its tests, the commit named):**
@@ -41,18 +41,30 @@ Web and Android; Android tablet size and up only for now.
   (`pages.py`, `templates/`) and prints them through **Gotenberg** (`GOTENBERG_URL`). Tried end to end on the owner's Mac against Gotenberg 8.21.1 run
   locally with JavaScript off and the network denied, and through the real Download PDF button. **A brief says no page numbers** (Chromium may break a
   long step onto two pages): the packet is said by section, the footer numbers pages.
+- **B5** the web's live sandtable: *Present live sandtable* in the Brief menu and *Present sandtable* at the review. The brief's steps walked
+  on the live map (`Sandtable.jsx`, `SandtableLayer.jsx`), each flown to and drawn from the model's `geometry` by the PDF's own rules
+  (`sandtableSteps.js`, held to the new `contracts/fixtures/brief/sandtable.json`, which B9 follows); the planning frame put away and nothing
+  taking an edit while it runs; a step is *Step n of N*, never a page. On the way, a departure figure now names the route it leaves on
+  (`compile.json` regenerated), so the PDF lights it too. Reviewed independently on four counts (state and keys, the map, editing off, the
+  contract), each finding checked by a skeptic: thirteen were real (two others were refuted) and are fixed with tests (each fix undone once to see its test fail), among
+  them planning windows left open over the brief, a sign-out mid-brief throwing, a pack that went leaving the map on its old area, and
+  `useBrief`'s account reset running after its read (it now runs first, and a read for the account before is dropped). Tried in the browser
+  against a local backend with OP DK seeded as a pack: every step, the narrow layout, keys with the map focused, a right-click, an aircraft
+  window put away, an LZ/PZ removed and then the whole pack deleted mid-brief, End brief and Escape.
 
-**Checks that ran (2026-10-19, the owner's Mac):** the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
+**Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
 `mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android
-`:core-network:test` and `:core-missionpacks:test`.
+`:core-network:test` and `:core-missionpacks:test`. For B5 (web only, no server code changed): the web's whole Jest suite (1,068 passed; only
+`mgrsGridFixtures` fails, as before), `npm run build` with no new warnings, and the backend's `test_brief_pdf.py` and `test_contract_fixtures.py`
+against the regenerated `compile.json`.
 
-**Not verifiable here, or not tried:** a brief built from real LZ/PZs and routes in the browser (only the fixture's OP DK, in Jest and the PDF test);
-a pack-mode brief in the browser (Jest only); the weather `at` answers from aviationweather.gov live; Gotenberg on the Coolify VM.
+**Not verifiable here, or not tried:** a brief built from real LZ/PZs and routes in the browser (only the fixture's OP DK, in Jest and the PDF test,
+and seeded as a pack for the sandtable); the sandtable's animated flights (the agent's browser reports reduced motion, so only the unanimated fit was
+seen) and on a projector or a presenter's clicker; the weather `at` answers from aviationweather.gov live; Gotenberg on the Coolify VM.
 
-**Next, in order** (docs/MISSION_BRIEF.md §5): **B5** the web's live sandtable (the brief's steps on the live map; it must not name a PDF page);
-**B6** strip charts in the PDF; **B7** Android's `core-brief` (port `compile.js` and `light.js`, held to `compile.json` and `light.json`; the record kind;
+**Next, in order** (docs/MISSION_BRIEF.md §5): **B6** strip charts in the PDF; **B7** Android's `core-brief` (port `compile.js` and `light.js`, held to `compile.json` and `light.json`; the record kind;
 the pack kind with `packs/ops-brief.json` and `packs/session-brief.json`'s session rules); **B8** Android setup, review, Share and Save (tablet);
-**B9** Android sandtable. **Owner steps:** deploy Gotenberg on the VM (AGENTS.md §9 has the command line) and set `GOTENBERG_URL`; check Mapbox's
+**B9** Android sandtable (held to `brief/sandtable.json`). **Owner steps:** deploy Gotenberg on the VM (AGENTS.md §9 has the command line) and set `GOTENBERG_URL`; check Mapbox's
 terms for printed figures before the PDF ships; tick *Mission brief* for testers in the admin dashboard.
 
 **Local setup left on the Mac:** `frontend/.env` (gitignored) points at a backend on **port 5055**, because macOS's AirPlay receiver holds 5000; run the

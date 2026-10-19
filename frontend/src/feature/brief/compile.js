@@ -2,7 +2,7 @@
  * compileBrief: a format, the person's answers and the plan in, everything the brief says out.
  *
  * The one place a brief's content is decided (docs/MISSION_BRIEF.md §2.3). The PDF and the sandtable only lay out
- * what this returns, so the sandtable's step 8 and the PDF's page 8 always say the same thing. Pure and
+ * what this returns, so a step says the same thing on the sandtable as in the PDF. Pure and
  * deterministic: no clock (the generation time is an input), no network, no random ids. Held to
  * contracts/fixtures/brief/compile.json; Android's core-brief is a port of this file held to the same fixture.
  *
@@ -970,7 +970,10 @@ const placesOf = (flow, offset) => {
   };
 };
 
-/** What a step's figure shows, as data the renderer draws: the area, the item in focus, and what is on it. */
+/**
+ * What a step's figure shows, as data the renderer draws: the area, the item in focus, and what is on it. The item in
+ * focus is the step's own (a route, an LZ/PZ), and at the departure the route the flight leaves on, which is lit.
+ */
 const figureOf = (kind, entry, all, doc) => {
   if (kind === "none") return null;
   const routesIn = all.filter((f) => f.kind === "route");
@@ -983,7 +986,7 @@ const figureOf = (kind, entry, all, doc) => {
   else focus = [...routesIn.flatMap(pointsOf), ...stopsIn.map((s) => [s.target.lat, s.target.lon])];
   return {
     kind,
-    ref: entry ? entry.ref : null,
+    ref: entry ? entry.ref : kind === "departure" && routesIn[0] ? routesIn[0].ref : null,
     bounds: boundsOf(focus),
     routes: routesIn.map((r) => r.ref),
     stops: stopsIn.map((s) => s.ref),
