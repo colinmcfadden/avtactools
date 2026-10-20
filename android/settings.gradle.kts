@@ -52,6 +52,9 @@ include(":core-sync")
 // Mission packs (docs/MISSION_PACKS.md): pure, held to contracts/fixtures/packs; not map packs.
 include(":core-missionpacks")
 
+// The 3D LZ view's scene (docs/ANDROID_3D_PLAN.md): pure, held to contracts/fixtures/viewer3d; the GL that draws it is feature-viewer3d's.
+include(":core-scene3d")
+
 // Android Gradle Plugin modules. The domain stays in the core modules above; these hold what needs the Android
 // framework (UI, the database, the app itself). Feature modules never depend on each other, `app` wires them.
 include(":core-designsystem")
