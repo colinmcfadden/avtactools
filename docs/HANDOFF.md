@@ -62,6 +62,16 @@ Web and Android; Android tablet size and up only for now.
   and nothing past 84° of latitude; the server taking the strip's pixel size from the model, trusting its field types, caching decoded tiles, laying a
   strip out twice and leaving grid lines through the scale bar's and arrow's corners unnumbered (now every line is numbered on an edge or on itself,
   swept at every course and both scales); the squares beside the route unnamed; and the cover counting pages Chromium decides.
+- **B7** (a side session, branch `claude/android-core-brief-2ffe1e`, on `feat/mission-brief` at B5; not pushed): **7a** the new pure module
+  `android/core-brief`: `CompileBrief` (compile.js ported, held strictly to every case of `compile.json`), `Light` (light.js, held to Skyfield's
+  `light.json`) and `BriefFormats` (`contracts/briefs` bundled by the build, held byte for byte and to the format's rules). AGENTS.md §17 has the row.
+  **7b** the brief's Library record: `RecordKind.BRIEF` over `/api/briefs` (core-network's calls, core-sync's gateway and change feed), through every per-kind
+  sync scenario on the fake server, the real Flask server (the live test server now registers the briefs blueprint) and Room.
+  **7c** the pack kind: `PackOps` takes `brief` (`ops-brief.json` folded into `PackOpsFixtureTest`), `PackSessions` takes brief edits in a read-only pack,
+  sends them in batches of their own and keeps them when the pack turns read-only (`session-brief.json`), `PackLock` lets brief items through and nothing else,
+  `PackItemCounts` takes `brief`, a refused brief is kept in the Library as a brief; a pack story holds it on the fake server, the real one and Room.
+  Then B6 merged in and followed: the strip charts in `CompileBrief` (`StripCharts`), every case of the new `compile.json` exact, strip cases included;
+  `strip-grid.json` (the grid added at print time) is B8's, with the PDF request.
 
 **Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
 `mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android

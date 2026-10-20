@@ -29,7 +29,8 @@ public data class OpResult(val items: Map<String, PackItemState>, val status: Op
  * caller tell cheaply what an edit touched.
  */
 public object PackOps {
-    public val ITEM_KINDS: List<String> = listOf("lz", "route", "pointset")
+    // A brief (docs/MISSION_BRIEF.md §3) holds an object, as an LZ and a route set do; only a point set holds a list.
+    public val ITEM_KINDS: List<String> = listOf("lz", "route", "pointset", "brief")
 
     /** What a client may send. `item.replace` is the server's own (update from original). */
     public val CLIENT_OP_TYPES: List<String> = listOf("item.create", "item.delete", "item.rename", "set", "patch", "upsert", "insert", "remove")

@@ -59,4 +59,12 @@ class JsNumberOfTest {
         // Either side of the run U+2000 to U+200A, the separators Kotlin's trim takes, and NEL: none is a space to JavaScript.
         listOf("῿", "​", "\u001C", "\u001F", "\u0085").forEach { assertEquals(it, JsNumber.trimJs(it), "U+" + it[0].code.toString(16)) }
     }
+
+    @Test
+    fun `digits of another script are not a number, and never end the read`() {
+        // Android's regular expressions (ICU) take every script's digits for \d, and toDouble then threw: a target typed in Arabic digits ended the read.
+        assertTrue(JsNumber.of(JsonPrimitive("٣٤")).isNaN())
+        assertTrue(JsNumber.of(JsonPrimitive("３４")).isNaN())
+        assertNull(DiagramNormalizer.normalizeTarget(Json.parseToJsonElement("""{"lat": "٣٤", "lon": "-84"}""")))
+    }
 }

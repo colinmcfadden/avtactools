@@ -17,7 +17,8 @@ The formats come from the Aviation Branch Handbook (Annex A to the Aviation Bran
 2026-10-16 that their item lists and standard values are releasable; they are written here in the app's own words. **The handbook itself
 is never committed.**
 
-`frontend/src/contracts/briefTemplates.test.js` holds every rule below; Android's `core-brief` will run the same checks.
+`frontend/src/contracts/briefTemplates.test.js` holds every rule below; Android's `core-brief` runs the same checks (`BriefTemplatesTest`) and
+bundles these files unchanged (its build copies them; the test holds the bundled bytes to the files).
 
 ## A template
 

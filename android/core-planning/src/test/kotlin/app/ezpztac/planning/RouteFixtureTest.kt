@@ -139,4 +139,12 @@ class RouteFixtureTest {
             assertEquals(emptyList<String>(), differences.take(12), name)
         }
     }
+
+    @Test
+    fun `a clock is trimmed as JavaScript trims, and read in ASCII digits only`() {
+        val day = LocalDate.of(2026, 10, 16)
+        assertEquals(LocalDateTime.of(2026, 10, 16, 11, 56, 32), RouteCalc.parseClock("2026-10-16", "\uFEFF11:56:32", day))
+        assertEquals(null, RouteCalc.parseClock("2026-10-16", "\u001C11:56:32", day))
+        assertEquals(null, RouteCalc.parseClock("2026-10-16", "١١:٥٦", day))                 // Arabic digits are no clock to the web
+    }
 }

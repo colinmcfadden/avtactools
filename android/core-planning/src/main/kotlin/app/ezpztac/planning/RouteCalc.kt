@@ -3,6 +3,7 @@ package app.ezpztac.planning
 import app.ezpztac.geo.GreatCircle
 import app.ezpztac.model.Airspeed
 import app.ezpztac.model.AltitudeSetting
+import app.ezpztac.model.JsNumber
 import app.ezpztac.model.PlanLeg
 import app.ezpztac.model.PlanPoint
 import app.ezpztac.model.PlanResult
@@ -78,7 +79,8 @@ public object RouteCalc {
     public fun planPoints(points: List<RoutePoint>): List<RoutePoint> =
         points.filter { it.kind != RoutePoint.KIND_SHAPING && !it.id.isNullOrEmpty() }
 
-    private val CLOCK = Regex("""(\d{1,2}):(\d{2})(?::(\d{2}))?""")
+    // ASCII digits spelt out, as JavaScript's \d is: Android's regular expressions (ICU) take every script's digits for \d.
+    private val CLOCK = Regex("""([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))?""")
 
     /**
      * A `HH:MM` or `HH:MM:SS` clock on a `YYYY-MM-DD` date. An empty date means
@@ -87,7 +89,7 @@ public object RouteCalc {
      */
     internal fun parseClock(date: String, time: String?, today: LocalDate): LocalDateTime? {
         if (time.isNullOrEmpty()) return null
-        val match = CLOCK.matchEntire(time.trim()) ?: return null
+        val match = CLOCK.matchEntire(JsNumber.trimJs(time)) ?: return null
         val (hh, mm, ss) = match.destructured
         val day = if (date.isEmpty()) today else runCatching { LocalDate.parse(date) }.getOrNull() ?: return null
         return day.atStartOfDay()

@@ -79,4 +79,12 @@ class DoghouseInputTest {
         assertEquals(55.0, shown.airspeed, 0.0)
         assertEquals("090", shown.heading)
     }
+
+    @Test
+    fun `a heading kept in a list is read by its text, as JavaScript reads it`() {
+        // parseInt(String([306])) is parseInt("306"): the web reads 306°, and an object has no heading.
+        assertEquals(306, Doghouses.landingHeadingOf(kotlinx.serialization.json.JsonArray(listOf(JsonPrimitive(306)))))
+        assertNull(Doghouses.landingHeadingOf(JsonObject(mapOf("hdg" to JsonPrimitive(306)))))
+        assertNull(Doghouses.landingHeadingOf(kotlinx.serialization.json.JsonArray(emptyList())))
+    }
 }
