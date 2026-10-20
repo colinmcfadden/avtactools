@@ -2463,7 +2463,12 @@ client is built around not losing one:
     step shown taller; the card and the constants box are given their content colour (§14, *A colour made translucent*).
   - **Keys** (a presenter's clicker sends Page Up and Page Down): the arrows and those step, Home and End go to the ends, the space bar and Enter step unless a focused
     button takes them, Escape ends; a key with Ctrl, Alt or Meta does nothing. The frame is a focus target (no stop of its own for a screen reader) and takes the
-    focus as it begins.
+    focus as it begins. When it ends the focus goes back to the rail's *Brief* (`TabletFrame`), as the web's goes back to its Brief button (the setup it was begun
+    from is gone by then); a button takes the focus only from someone using keys, so after a touch nothing is focused. The card says the web's "← → keys" only
+    while a keyboard is attached and open (`KeysHint`; a clicker has no arrows, a bare touchscreen no keys), and not in a narrow window.
+  - **The bar names the open pack** as the web's does (`packs.meta?.name`): `MapHome` tells the view model the open pack's name with its uuid (`workspaceIs`), so the
+    name shows while the pack's brief is still read and follows a rename, which does not end the sandtable. The chips and labels keep the app's sentence case
+    (*Presenting*, *Steps · 18*, *Mission constants*), where the web's CSS upper-cases them.
   - **Not verifiable here:** the flights and the figure on a real map (GL; the pictures, `SandtableScreenTest`, draw the scene over a stand-in as MapLibre would), a
     presenter's clicker, TalkBack, and the frame on a real tablet's insets. Each wants a device run.
 - **Aircraft profiles** (`core-data`: `AircraftProfiles`; `core-model`: `AircraftDraft`; `feature-workspace`: `AircraftViewModel`,

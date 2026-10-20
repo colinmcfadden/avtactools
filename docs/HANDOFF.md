@@ -93,7 +93,10 @@ Web and Android; Android tablet size and up only for now.
   lies over the map), held to Leaflet's own answers in the new `brief/sandtable-fit.json` (with the web's `fitInsets`). Editing is off while it runs, and it ends with its workspace, the account, End brief, Back or Escape. Its three independent
   reviews (parity with the web, lifecycle and concurrency, the screens) found, among others: a sandtable ending with its pack could leave the map on the pack's view (it now ends in the same composition, and a flight waits for the view to be given
   back); a flight asked before MapLibre has made the map was undone by its first camera (`MapHost.attach` now sets the camera first); an opening queued behind a
-  close was never dropped; the review's foot cut its buttons at large text; TalkBack would have said "not selected" on every other step; each was fixed with a test. The brief's design boards were not to hand: the layout
+  close was never dropped; the review's foot cut its buttons at large text; TalkBack would have said "not selected" on every other step; each was fixed with a test. Rechecking them after the commit closed
+  three more: the keyboard's focus goes back to the rail's *Brief* when the sandtable ends (the web's goes back to its Brief button), the bar names the open
+  pack while its brief is still read and after a rename, and the card says "← → keys" while a keyboard is attached. The toasts' timing and their not being
+  counted as covers are the web's own, and the labels' collisions are too. The brief's design boards were not to hand: the layout
   follows the web's, and the rail's *Brief* still opens the setup (AGENTS.md §15).
 
 **Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
@@ -104,8 +107,8 @@ against the regenerated `compile.json`. For B6: the web's whole Jest suite (1,09
 warnings, and the backend's CI list (531 passed, 2 skipped: the live service needs Postgres); OP DK at 1:100,000 and the dogleg at 1:250,000
 printed again through Gotenberg after the review's fixes and looked at. For B8: Android's full `./gradlew test lintDebug assembleDebug` (5,633 tests,
 3 skipped, none failed; lint clean), the screens drawn by Roborazzi at 1,280 and 840 dp and looked at, the web's brief and contract tests (165 and 14
-in `useBrief`) and `npm run build` with no new warnings. For B9 (2026-10-20): Android's full `./gradlew test lintDebug assembleDebug` (5,762 tests, 3 skipped, none failed; lint
-clean), the web's contract tests (275 of 276; only `mgrsGridFixtures`, as before) with `sandtable-fit.json` written by Leaflet 1.9.4 itself, the
+in `useBrief`) and `npm run build` with no new warnings. For B9 (2026-10-20): Android's full `./gradlew test lintDebug assembleDebug` (5,769 tests with the recheck's, 3 skipped, none
+failed; lint clean), the web's contract tests (275 of 276; only `mgrsGridFixtures`, as before) with `sandtable-fit.json` written by Leaflet 1.9.4 itself, the
 sandtable drawn by Roborazzi (1,280 × 800 in the three palettes, 845 dp with the steps over the map, large text on a short window) and looked at, and
 14 mutations of the step's fixes (the flight, the session's order, the screens), every one killed.
 

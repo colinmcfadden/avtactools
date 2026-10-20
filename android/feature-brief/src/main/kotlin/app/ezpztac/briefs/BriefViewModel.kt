@@ -72,7 +72,8 @@ data class BriefUi(
 /**
  * The live sandtable while it runs (docs/MISSION_BRIEF.md §2.8, the web's `useSandtable`): the step followed by its id ([stepId]; null before the first is shown)
  * and where it was in the list ([anchor]), so a step that goes from the brief leaves the presenter at that place, on the step now there, which is then the one
- * followed; whether the steps and the constants show; and the workspace it was begun in ([pack], the open pack's uuid; null for this session), which it ends with.
+ * followed; whether the steps and the constants show; and the workspace it was begun in ([pack], the open pack's uuid; null for this session), which it ends with,
+ * with the pack's name as it is now ([packName], the web's `packs.meta?.name`: the bar names the pack before its brief is read, and after a rename).
  */
 data class SandtableUi(
     val stepId: String? = null,
@@ -80,6 +81,7 @@ data class SandtableUi(
     val stepsOpen: Boolean = true,
     val constantsOpen: Boolean = true,
     val pack: String? = null,
+    val packName: String? = null,
 )
 
 /** Writes a PDF where the person chose to save it (the system's create-document picker); tests give their own. */
@@ -131,8 +133,9 @@ class BriefViewModel @Inject constructor(
     private val mutableSaves = MutableSharedFlow<String>(extraBufferCapacity = 1)
     private var making: Job? = null
 
-    // The workspace the frame says is open (the open pack's uuid; null for this session): what a sandtable begun now belongs to.
+    // The workspace the frame says is open (the open pack's uuid and name; null for this session): what a sandtable begun now belongs to.
     private var workspace: String? = null
+    private var workspaceName: String? = null
 
     // The brief's close under way, if one is: what opens it next waits for it.
     private var closing: Job? = null
@@ -220,7 +223,7 @@ class BriefViewModel @Inject constructor(
     fun present(narrow: Boolean, pack: String? = workspace) = afterClosing {
         making?.cancel()
         val pdf = local.value.pdf.made
-        local.update { BriefUi(presenting = SandtableUi(stepsOpen = !narrow, constantsOpen = !narrow, pack = pack)) }
+        local.update { BriefUi(presenting = SandtableUi(stepsOpen = !narrow, constantsOpen = !narrow, pack = pack, packName = workspaceName.takeIf { pack != null && pack == workspace })) }
         pdf?.pdf?.close()
         door.open()
     }
@@ -233,11 +236,15 @@ class BriefViewModel @Inject constructor(
         closeDoor()
     }
 
-    /** The workspace now ([pack], the open pack's uuid; null for this session): a sandtable begun in another ends, as the web's does in the same render. */
-    fun workspaceIs(pack: String?) {
+    /**
+     * The workspace now ([pack], the open pack's uuid, and its [name]; null for this session): a sandtable begun in another ends, as the web's does in the same render;
+     * one begun in this one goes on, under the pack's name as it is now.
+     */
+    fun workspaceIs(pack: String?, name: String? = null) {
         workspace = pack
+        workspaceName = name
         val presenting = local.value.presenting ?: return
-        if (presenting.pack != pack) endPresenting()
+        if (presenting.pack != pack) endPresenting() else if (presenting.packName != name) presentingUpdate { it.copy(packName = name) }
     }
 
     /** Shows step [index] of the brief as it is now; nothing for a step that is not there. */

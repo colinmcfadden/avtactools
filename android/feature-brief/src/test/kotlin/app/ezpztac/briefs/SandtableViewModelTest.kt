@@ -157,6 +157,35 @@ class SandtableViewModelTest {
     }
 
     @Test
+    fun `the bar names the open pack as the web's does, before its brief is read and after a rename`() = vmTest { env ->
+        env.door.mutableState.value = null
+        env.model.workspaceIs("p-1")
+        env.model.present(narrow = false)
+        runCurrent()
+        assertEquals("The pack", env.shown!!.title)                     // no name heard yet: the web's `?? "The pack"`
+        env.model.workspaceIs("p-1", "OP DOGWOOD")
+        runCurrent()
+        assertTrue(env.shown!!.loading)
+        assertEquals("OP DOGWOOD", env.shown!!.title)                   // the pack's name, though its brief is still being read
+        env.model.workspaceIs("p-1", "OP DOGWOOD 2")                    // renamed while it runs: it goes on, under the new name
+        runCurrent()
+        assertEquals("OP DOGWOOD 2", env.shown!!.title)
+        env.door.mutableState.value = BriefFixtures.state()             // put together for "OP DK", before the rename reached it
+        runCurrent()
+        assertEquals("OP DOGWOOD 2 · Air movement brief", env.shown!!.title)
+        assertEquals(listOf("open"), env.door.log)
+    }
+
+    @Test
+    fun `a sandtable begun once the pack's name is heard names it at once`() = vmTest { env ->
+        env.door.mutableState.value = null
+        env.model.workspaceIs("p-1", "OP DOGWOOD")
+        env.model.present(narrow = false)
+        runCurrent()
+        assertEquals("OP DOGWOOD", env.shown!!.title)
+    }
+
+    @Test
     fun `a brief that could not be put together says so, with no step`() = vmTest { env ->
         env.door.mutableState.value = null
         env.door.mutableFailed.value = true

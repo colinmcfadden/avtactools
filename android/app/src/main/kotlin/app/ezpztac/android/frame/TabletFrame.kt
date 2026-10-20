@@ -53,10 +53,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
@@ -248,6 +251,7 @@ fun TabletFrame(
     val top = if (band != null) 0.dp else WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var mapHeight by remember { mutableIntStateOf(0) }
+    val briefFocus = remember { FocusRequester() }
     BoxWithConstraints(modifier.fillMaxSize()) {
         val panes = state.panes(maxWidth, standing != null)
         val bandMax = maxHeight * BAND_MAX_SHARE
@@ -260,11 +264,24 @@ fun TabletFrame(
         // the sandtable's then.
         val presenting = presentation != null
         BackHandler(enabled = standing != null && panes.support && !presenting) { standing?.onClose?.invoke() }
+        // When a brief ends the keyboard's focus goes back to the rail's Brief, as the web gives it back to its Brief button (the setup the sandtable was begun
+        // from is gone by then), once the rail is laid out again. A button takes the focus only from someone using keys (`Focusability.SystemDefined`), so after a
+        // touch nothing is focused, as before.
+        var presented by remember { mutableStateOf(false) }
+        LaunchedEffect(presenting) {
+            if (presenting) {
+                presented = true
+            } else if (presented) {
+                presented = false
+                withFrameNanos { }
+                briefFocus.requestFocus()
+            }
+        }
         // Put away while a brief is presented: composed, neither laid out nor read.
         val away = if (presenting) Modifier.hidden() else Modifier
         Row(Modifier.fillMaxSize()) {
             Box(away) {
-                Rail(panels, current, counts, rail = rail, onPick = { picked ->
+                Rail(panels, current, counts, rail = rail, briefFocus = briefFocus, onPick = { picked ->
                     state.showList()
                     onPick(picked)
                 })
@@ -348,7 +365,7 @@ private val PRESENTING = MapFrame(padding = MapPadding(), controlsBottom = { nul
  * window is not tall enough for all of it, so the Library and the account are never pushed off the screen.
  */
 @Composable
-private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail: TabletRail, onPick: (Panel) -> Unit) {
+private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail: TabletRail, briefFocus: FocusRequester, onPick: (Panel) -> Unit) {
     Surface(Modifier.width(RAIL_WIDTH).fillMaxHeight(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         BoxWithConstraints(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start))) {
             Column(
@@ -405,7 +422,7 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
                 Column(Modifier.padding(top = Tokens.Spacing.lg.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     // The brief and the Library are dialogs and pages, not panels: buttons, not tabs.
                     rail.onBrief?.let { brief ->
-                        RailButton(EzpzIcons.description, "Brief", onClick = brief)
+                        RailButton(EzpzIcons.description, "Brief", onClick = brief, modifier = Modifier.focusRequester(briefFocus))
                         Spacer(Modifier.height(Tokens.Spacing.sm.dp))
                     }
                     RailButton(EzpzIcons.collectionsBookmark, "Library", onClick = rail.onLibrary)
@@ -462,9 +479,9 @@ private fun RailTile(icon: Int, label: String, description: String, tonal: Boole
 
 /** A button in the rail drawn as its destinations are (an icon over its word), for what is not one of them: the Library. */
 @Composable
-private fun RailButton(icon: Int, label: String, onClick: () -> Unit) {
+private fun RailButton(icon: Int, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(
-        Modifier.width(80.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = Tokens.Spacing.xs.dp),
+        modifier.width(80.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = Tokens.Spacing.xs.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(width = 56.dp, height = 32.dp), contentAlignment = Alignment.Center) {

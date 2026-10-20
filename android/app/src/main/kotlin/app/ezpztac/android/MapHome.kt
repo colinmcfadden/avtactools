@@ -345,7 +345,7 @@ fun MapHome(
     val presenting = briefsHere && sandtable?.let { it.ui.pack == openPack?.uuid } == true
     val sandtableBoxes = remember { SandtableBoxes() }
     val sandtableHandover = remember { SandtableHandover() }
-    LaunchedEffect(openPack?.uuid) { briefs.workspaceIs(openPack?.uuid) }
+    LaunchedEffect(openPack?.uuid, openPack?.name) { briefs.workspaceIs(openPack?.uuid, openPack?.name) }
     val briefsHereNow by rememberUpdatedState(briefsHere)
     // Read as it is now, not as last composed: a flight asked for as the workspace changes belongs to the new workspace, not to the sandtable.
     val presentingNow = { briefsHereNow && briefs.sandtable.value?.let { it.ui.pack == workspace.open.value?.uuid } == true }

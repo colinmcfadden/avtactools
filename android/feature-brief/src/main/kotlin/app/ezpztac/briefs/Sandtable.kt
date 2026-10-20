@@ -1,5 +1,6 @@
 package app.ezpztac.briefs
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
@@ -79,6 +80,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -92,6 +94,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -152,7 +155,10 @@ data class SandtableShown(
             val index = if (model == null) -1 else SandtableSteps.indexOfStep(model, ui.stepId, ui.anchor)
             val view = if (index >= 0) SandtableSteps.look(model, index) else null
             val read = model?.let(BriefReading::steps).orEmpty()
-            val place = brief?.inputs?.pack?.let { it.name.ifEmpty { "The pack" } } ?: if (brief == null && ui.pack != null) "The pack" else "This session"
+            // The bar names the open pack as the web's does (`packs.meta?.name ?? "The pack"`), before the brief is read and after a rename; else the pack the brief
+            // was put together for; outside a pack, this session.
+            val inPack = ui.pack != null || brief?.inputs?.pack != null
+            val place = if (inPack) ui.packName ?: brief?.inputs?.pack?.name ?: "The pack" else "This session"
             val shortTitle = ((model?.get("template") as? JsonObject)?.get("shortTitle") as? JsonPrimitive)?.takeIf { it.isString }?.content
             return SandtableShown(
                 brief = brief, failed = failed, ui = ui, steps = steps, titles = read.map { it.title }, index = index, view = view,
@@ -532,6 +538,7 @@ private fun StepCard(shown: SandtableShown, actions: SandtableActions, compact: 
                 if (step != null && current != null) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                         StateChip("${step.number} ${current.section}".uppercase(), StatusTone.Info)
+                        // Nobody named draws no chip, where the web's draws an empty one.
                         if (step.who.isNotEmpty()) StateChip(step.who, StatusTone.Neutral)
                         current.time?.let {
                             Spacer(Modifier.weight(1f))
@@ -605,8 +612,9 @@ private fun Fact(fact: BriefReading.Fact) {
 }
 
 /**
- * ← and →, 56 dp across (gloves) whatever room they are given, and the progress through the brief between them; in a narrow window, where the bar does not say it,
- * where the brief is ("Step 8 of 18") before it, when the bar does not say it.
+ * ← and →, 56 dp across (gloves) whatever room they are given, and the progress through the brief between them. Where the bar keeps to its essentials ([compact])
+ * the step's place ("Step 8 of 18") stands before the progress, since the bar does not say it; otherwise, while a keyboard is attached, the web's "← → keys"
+ * stands before → ([KeysHint]), as the web's does above 850 px.
  */
 @Composable
 private fun Nav(shown: SandtableShown, actions: SandtableActions, compact: Boolean) {
@@ -616,11 +624,41 @@ private fun Nav(shown: SandtableShown, actions: SandtableActions, compact: Boole
         }
         if (compact) shown.current?.let { Text(it.position, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
         Progress(shown, Modifier.weight(1f))
+        if (!compact && keyboardAttached()) KeysHint()
         FilledIconButton(onClick = actions.next, enabled = shown.index >= 0 && shown.index < shown.steps.lastIndex, modifier = Modifier.requiredSize(ARROW), shape = CircleShape) {
             Icon(painterResource(EzpzIcons.chevronRight), contentDescription = SandtableWords.NEXT)
         }
     }
 }
+
+/** A keyboard is attached and open (not a cover folded away): its arrow keys step the brief. A presenter's clicker has none, and a bare touchscreen no keys at all. */
+@Composable
+private fun keyboardAttached(): Boolean {
+    val configuration = LocalConfiguration.current
+    return configuration.keyboard == Configuration.KEYBOARD_QWERTY && configuration.hardKeyboardHidden != Configuration.HARDKEYBOARDHIDDEN_YES
+}
+
+/** The web's "← → keys" (`sandtable-card__keys`): drawn, not read (its `aria-hidden`), since the steps' buttons and the keys themselves say it to a screen reader. */
+@Composable
+private fun KeysHint() {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        Modifier.clearAndSetSemantics { testTag = KEYS_TAG },
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf("←", "→").forEach { key ->
+            Text(
+                key, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1,
+                modifier = Modifier.border(1.dp, scheme.outlineVariant, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+        }
+        Text(SandtableWords.KEYS, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1, modifier = Modifier.padding(start = 2.dp))
+    }
+}
+
+/** What a test finds the keys' hint by: it is drawn, not read. */
+internal const val KEYS_TAG = "sandtable-keys"
 
 /**
  * A bar for each step: those briefed, the one shown (taller, so it is told by more than its colour), those to come, in the palette's own colours (the web's
@@ -694,6 +732,7 @@ internal object SandtableWords {
     const val PANE = "Presenting the brief"
     const val BRIEF_STEPS = "Brief steps"
     const val CURRENT = "Current step"
+    const val KEYS = "keys"
     const val FAILED = "The brief could not be put together from the plan as it is now. End it and present it again; if that does not help, the plan holds something the brief cannot read."
 
     /** A write-in line, as a screen reader says it. */

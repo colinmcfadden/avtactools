@@ -33,6 +33,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -198,6 +199,28 @@ class SandtableScreenTest {
         assertEquals("end", log.last())
         assertEquals(2, log.count { it == "end" })
         picture("sandtable-route")
+    }
+
+    @Test
+    fun `with no keyboard attached the card says nothing of keys`() {
+        set(shown("4.e@lz:lz-hawk"))
+        compose.onNodeWithTag(KEYS_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-mdpi-keysexposed-qwerty")
+    fun `with a keyboard attached the card says its arrow keys step, as the web's does, drawn and not read`() {
+        set(shown("4.e@lz:lz-hawk"))
+        compose.onNodeWithTag(KEYS_TAG).assertIsDisplayed()
+        compose.onNodeWithText("keys").assertDoesNotExist()
+        picture("sandtable-keys")
+    }
+
+    @Test
+    @Config(qualifiers = "w845dp-h800dp-mdpi-keysexposed-qwerty")
+    fun `in a narrow window the card says where the brief is, not the keys`() {
+        set(shown("4.e@lz:lz-hawk", stepsOpen = false, constantsOpen = false))
+        compose.onNodeWithTag(KEYS_TAG).assertDoesNotExist()
     }
 
     @Test

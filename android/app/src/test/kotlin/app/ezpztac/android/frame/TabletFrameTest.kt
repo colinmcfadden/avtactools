@@ -21,12 +21,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -69,6 +74,7 @@ class TabletFrameTest {
     private val snackbars = SnackbarHostState()
     private var panelsDisposed = 0
     private var mapsMade = 0
+    private var inputModes: InputModeManager? = null
 
     private fun frame(mode: ThemeMode = ThemeMode.Dark, withSupport: Boolean = false, withRoute: Boolean = false, brief: Boolean = false) = compose.setContent {
         var current by remember { mutableStateOf(Panel.Lz) }
@@ -76,6 +82,7 @@ class TabletFrameTest {
         var route by remember { mutableStateOf(withRoute) }
         var asked by remember { mutableIntStateOf(0) }
         askAgain = { asked++ }
+        inputModes = LocalInputModeManager.current
         EzpzTheme(mode) {
             TabletFrame(
                 panels = Panel.entries - Panel.Pack, current = current, counts = PanelCounts(threats = 1, imports = 3),
@@ -154,6 +161,30 @@ class TabletFrameTest {
         assertEquals(0, panelsDisposed)
         assertEquals(1, mapsMade)
         assertTrue(mapFrame!!.padding.top > 0.dp)
+    }
+
+    @Test
+    fun `when a brief ends the keyboard's focus goes back to the rail's Brief, as the web gives it back to its Brief button`() {
+        frame(brief = true)
+        // Someone using keys (a presenter's clicker): the brief ends with the focus on Brief, ready for the next.
+        compose.runOnIdle { assertTrue(inputModes!!.requestInputMode(InputMode.Keyboard)) }
+        presenting = true
+        compose.waitForIdle()
+        compose.onNodeWithText("Brief").assertDoesNotExist()
+        presenting = false
+        compose.waitForIdle()
+        compose.onNodeWithText("Brief").assertIsFocused()
+    }
+
+    @Test
+    fun `after a brief ended by touch no button takes the focus`() {
+        frame(brief = true)
+        compose.runOnIdle { assertEquals("the test starts with the screen touched", InputMode.Touch, inputModes!!.inputMode) }
+        presenting = true
+        compose.waitForIdle()
+        presenting = false
+        compose.waitForIdle()
+        compose.onNodeWithText("Brief").assertIsNotFocused()
     }
 
     @Test
