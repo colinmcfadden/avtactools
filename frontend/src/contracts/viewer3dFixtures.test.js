@@ -1,11 +1,14 @@
 import { act, renderHook } from "@testing-library/react";
 import api from "../feature/auth/api";
 import { MAX_TILT_DEG, compassPose } from "../feature/viewer3d/compass";
+import * as sceneSettings from "../feature/viewer3d/sceneSettings";
 import { AGL_MISMATCH_FT, FT_TO_M, MAX_SAMPLES, SAMPLE_STEP_M, placeRoutes, prepareRoutes } from "../feature/viewer3d/routeScene";
 import { PROBE_LEVEL, TERRAIN_MAX_LEVEL, TERRAIN_SAMPLES, terrainTileAt } from "../feature/viewer3d/terrainProvider";
 import { useLidarTileset } from "../feature/viewer3d/useLidarTileset";
 
 const fs = require("fs");
+// The twister Cesium's PntsLoader samples a tile's points with (a dependency of @cesium/engine).
+const MersenneTwister = require("mersenne-twister");
 const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 
 jest.mock("../feature/auth/api", () => ({
@@ -387,7 +390,22 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+// -- How the view looks and moves ----------------------------------------------------------------------------------------------------------------
+
+// The settings the web's view is drawn with (sceneSettings.js), and the draws Cesium sizes a leaf's points from: a tile with no geometric error of
+// its own is given one from the box round twenty of its points, picked by these twenty draws of its twister from seed 0, made once for every tile
+// (PntsLoader.computeApproximateExtrema and getRandomValues; PointCloudStylingPipelineStage.getGeometricError).
+const sceneFixture = () => {
+  const twister = new MersenneTwister(0);
+  return {
+    generatedBy: GENERATED_BY,
+    settings: saved({ ...sceneSettings }),
+    pointSample: { seed: 0, draws: Array.from({ length: 20 }, () => twister.random()) },
+  };
+};
+
 test("viewer3d/routeScene.json is what the web places", () => settle("viewer3d/routeScene.json", routeSceneFixture()));
+test("viewer3d/scene.json is how the web's view looks and moves, and how Cesium samples a tile to size its points", () => settle("viewer3d/scene.json", sceneFixture()));
 test("viewer3d/compass.json is how the web's compass turns and tilts", () => settle("viewer3d/compass.json", compassFixture()));
 test("viewer3d/terrain.json is which terrain tile holds a place", () => settle("viewer3d/terrain.json", terrainFixture()));
 test("viewer3d/lidarFlow.json is how the web finds or builds a point cloud", async () => settle("viewer3d/lidarFlow.json", await flowFixture()));

@@ -25,7 +25,7 @@ contracts/
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
 │  ├─ packs/        ops.json, diff.json, edit.json, shared.json, describe.json, session.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
-│  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json   reference: the web app (feature/viewer3d/)
+│  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json, scene.json   reference: the web app (feature/viewer3d/)
 │  │                geodesy.json   geodetic to geocentric points               reference: PROJ (scripts/geodesy_fixtures.py)
 │  │                tileset/   a LiDAR tileset as the server serves it        reference: py3dtiles 12.1.1 (scripts/tileset_fixture.py)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
@@ -103,6 +103,7 @@ shows can:
 | `compass.json` | How the compass turns and tilts for a camera's heading and pitch, and the heading it shows (`330°T`) | `compass.js` |
 | `terrain.json` | Which terrain tile holds a place at each level (Cesium's geographic tiling), and the tiles' size | `terrainProvider.js` |
 | `lidarFlow.json` | Finding or building a point cloud while someone waits: every request, how long after the last answer it came, the answer, and what the view shows then, through every answer the server can give | `useLidarTileset.js` |
+| `scene.json` | How the view looks and moves (the opening pose, the point sizes, the screen-space errors, the eye-dome lighting, the flights' lengths), and the twenty draws Cesium sizes a leaf's points from (`PntsLoader`'s twister from seed 0, from the `mersenne-twister` package Cesium itself uses) | `sceneSettings.js` |
 
 `tileset/` is a LiDAR tileset as the server serves it (`backend/lidar/tiles.py`): a synthetic point cloud converted by py3dtiles 12.1.1, the
 build image's version, with `context/` beside it as the thinned ring. Regenerate with `python contracts/scripts/tileset_fixture.py` in the
