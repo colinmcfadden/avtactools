@@ -6,6 +6,7 @@ import app.ezpztac.data.AircraftEntry
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.AnalysisStatus
+import app.ezpztac.data.BuildOnSave
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.DiagramSummary
@@ -49,6 +50,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
@@ -278,6 +280,9 @@ data class ActiveDiagramUi(
 
     /** Why it cannot be changed: a read-only pack's. Looked at, analysed by nobody, named by nobody. */
     val locked: String? get() = inPack?.reason
+
+    /** Saved as the web's `savedId` says it ([LzNames.isSaved]); a pack's never is. What keeps its point cloud building when the 3D view closes. */
+    val saved: Boolean get() = inPack == null && LzNames.isSaved(name, status, conflictOf)
 }
 
 data class DiagramsUiState(
@@ -318,6 +323,8 @@ class DiagramsViewModel @Inject constructor(
     private val slopeVisibility: SlopeVisibility,
     /** The open Mission Pack: while one is open its LZ/PZs are the panel's, and a new one goes into it. */
     private val pack: OpenPack = OpenPack.None,
+    /** An LZ/PZ saved here asks for its point cloud, so 3D is ready when it is opened (the web's useBuildOnSave). */
+    private val buildOnSave: BuildOnSave = BuildOnSave.None,
 ) : ViewModel() {
     private val local = MutableStateFlow(DiagramsUiState())
     private val page = MutableStateFlow(LzPage.HOME)
@@ -328,8 +335,11 @@ class DiagramsViewModel @Inject constructor(
     /** What the panel tells the person in a toast once it has happened: Saved "LZ HAWK" to your Library. */
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
+    // The person's own LZ/PZs, read once for the list and for asking for a saved one's point cloud: each record change is parsed once.
+    private val summaries = repository.observe().shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
+
     // What the panel reads of the open pack: a presence frame that only moves someone's pointer is not passed on (PackGlance).
-    private val inputs = combine(repository.observe(), session.active, local, openSet.ids, page) { summaries, active, local, open, page ->
+    private val inputs = combine(summaries, session.active, local, openSet.ids, page) { summaries, active, local, open, page ->
         Inputs(summaries, active, local, open, page)
     }.combine(pack.glance) { inputs, glance -> inputs.copy(pack = glance) }
 
@@ -397,6 +407,22 @@ class DiagramsViewModel @Inject constructor(
             session.active.collect { diagram ->
                 if (diagram != null) openSet.add(diagram.id) else if (page.value == LzPage.PLAN) page.value = LzPage.HOME
             }
+        }
+        // The person's own LZ/PZs as they stand: one saved while this runs (named and analysed: *Save* shows *Saved*) asks for its point cloud.
+        // The open one is seen as it is in the editor: an LZ/PZ is written to the Library only once it is analysed, so one named first would otherwise
+        // first be seen saved, as if it had arrived so. A pack's never is.
+        viewModelScope.launch {
+            combine(summaries, session.active) { list, active ->
+                val open = active?.takeIf { PackRef.parse(it.id) == null }
+                list.filter { it.uuid != open?.id }.map { lz ->
+                    BuildOnSave.Seen(lz.uuid, LzNames.isSaved(lz.name, lz.status, lz.conflictOf), lz.target?.let { LatLon(it.lat, it.lon) })
+                } + listOfNotNull(
+                    open?.let { d ->
+                        val conflictOf = list.firstOrNull { it.uuid == d.id }?.conflictOf
+                        BuildOnSave.Seen(d.id, LzNames.isSaved(d.name, d.status, conflictOf), d.target?.let { LatLon(it.lat, it.lon) })
+                    },
+                )
+            }.collect(buildOnSave::see)
         }
     }
 

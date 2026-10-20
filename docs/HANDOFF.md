@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
+Last refreshed: 2026-10-20 (the 3D LZ view, §0a, on `claude/android-3d-view-e38b76`). Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
 S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, P3c Teams, P4a copies into a pack, P4b updating a copy and copies to the Library, P4c the edits a pack would not take, every review's fixes in: S1–S9 and P1–P4 are built, and the owner's device run is next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
@@ -40,6 +40,25 @@ DEMs and as Roborazzi pictures on Android; neither on a device. **Next:** the ow
 
 The server must reach staging (`develop`) before a device shows any of it: until then every analysis has no `byHeading`, and the apps say
 HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".
+
+---
+
+## 0a. The 3D LZ view (2026-10-20)
+
+Branch `claude/android-3d-view-e38b76` (from `develop` at `85a54cd`), committed locally, not pushed. **The plan is `docs/ANDROID_3D_PLAN.md`**: the steps V0–V7
+and the owner's decisions (a native OpenGL ES renderer of our own, the whole screen with the system bars left see-through, the title `3D · NAME`). What each
+piece holds and the rules it keeps are AGENTS.md §17, *The 3D view*.
+
+**Done**, each reviewed independently and its findings fixed with tests: V0 (the six routes the app calls, in `contracts/openapi.yaml` with recorded
+responses; the web's fixtures for the build flow, the route scene, the compass and the terrain's tiling; a small tileset py3dtiles itself made, by a script),
+V3 (`core-scene3d`: the earth's frame held to PROJ, the tileset and `.pnts` readers, the camera, Cesium's choice of tiles) and V1 (the calls with every read
+bounded, `LidarBuilds` held to the build-flow fixture scenario by scenario, build on save from the LZ/PZ panel, the watcher kept on the device so the next
+launch lets go of what the last one waited on, and a live-server test of the LiDAR routes and the build service's queue). **Next:** V2, the full-screen
+page with its *3D* buttons and its place over both frames; then V4 (the points on the screen, ending in the owner's first device run), V5 (terrain and
+imagery), V6 (routes) and V7 (lifecycle, memory, the last reviews).
+
+**For the owner** (AGENTS.md §15): the server's heightmap samples sit half a cell from where Cesium draws them; a tileset's key can be turned back into its
+place; the web shows a failed build's raw text, with the place in it.
 
 ---
 
@@ -193,7 +212,7 @@ HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".
 7. **Route hand-off**: **GPX and Garmin FPL built** (a route shared from its card; AGENTS.md §17, *Sharing a route with another app*). Not built: an ATAK data package (a zip with a
    manifest) or KML/KMZ, and threats to ATAK; both want the owner's say on what ATAK crews expect. **Dragging on the map is built** (a long press picks up a graphic, a threat or a route
    point; a tap holds it and shows the bar with the turn buttons); boundary corners are not draggable yet. The admin-attached AMPS template (`resolveExportTemplate`) is not built.
-8. **Later phases** (plan): P3 offline map packs / on-device viewshed / the remaining exports; P4 the 3D view. The online terrain mask is built (the held
+8. **Later phases** (plan): P3 offline map packs / on-device viewshed / the remaining exports; P4 the 3D view (under way: §0a, `docs/ANDROID_3D_PLAN.md`). The online terrain mask is built (the held
    threat's *Show terrain mask*; AGENTS.md §17, *The terrain mask*); KMZ and QR calls exist on the backend but **no Android call is made**. The owner approved a transient send *only when the person
    explicitly asks* and the server must not retain it; an offline viewshed is not built.
 9. **When the initial build is done: the dev environment / device login session** the owner asked for (§4).

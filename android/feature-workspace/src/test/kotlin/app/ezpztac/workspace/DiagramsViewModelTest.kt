@@ -2,6 +2,7 @@ package app.ezpztac.workspace
 
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.BuildOnSave
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
@@ -147,6 +148,7 @@ class DiagramsViewModelTest {
         scope: TestScope, label: String = "A", val server: FakeServer = FakeServer(), realEngine: Boolean = false, resolver: ConflictResolver? = null,
         masterList: List<AircraftProfile> = emptyList(),
         val pack: FakeOpenPack = FakeOpenPack(),
+        buildOnSave: BuildOnSave = BuildOnSave.None,
     ) {
         val terrain = Terrain()
         val device = Device(label, server)
@@ -170,7 +172,7 @@ class DiagramsViewModelTest {
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            analysis, aircraft, weather, open, slopeVisibility, pack,
+            analysis, aircraft, weather, open, slopeVisibility, pack, buildOnSave,
         )
         val rows get() = model.state.value.rows
 
@@ -1418,6 +1420,48 @@ class DiagramsViewModelTest {
         advanceUntilIdle()
         assertEquals(LzNames.MADE_UP_REFUSED, r.model.state.value.error)
         assertEquals("LZ HAWK", r.model.state.value.current!!.name)
+    }
+
+    @Test
+    fun `an LZ-PZ saved here asks for its point cloud once, and one that arrives saved asks for nothing`() = runTest(dispatcher) {
+        val asked = mutableListOf<LatLon>()
+        val r = Rig(this, buildOnSave = BuildOnSave { asked += it }).also { advanceUntilIdle() }
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val uuid = r.model.state.value.current!!.uuid
+        r.model.rename(uuid, "LZ HAWK")
+        advanceUntilIdle()
+        assertTrue("named, but not analysed: not saved", asked.isEmpty())
+        r.model.analyze()
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(here.lat, here.lon)), asked)
+        r.model.rename(uuid, "LZ HAWK 2")
+        advanceUntilIdle()
+        assertEquals("a rename is no new save", 1, asked.size)
+        // The same records seen afresh, as by the next launch: what is first seen saved is no reason to spend a build.
+        val again = mutableListOf<LatLon>()
+        DiagramsViewModel(
+            r.repository, r.session, ConflictResolver { _, _, _ -> }, r.analysis, r.aircraft, r.weather, r.open, r.slopeVisibility, r.pack,
+            BuildOnSave { again += it },
+        )
+        advanceUntilIdle()
+        assertTrue(again.isEmpty())
+    }
+
+    @Test
+    fun `an LZ-PZ analysed while it is still called by its made-up name is not saved, and naming it is the save`() = runTest(dispatcher) {
+        val asked = mutableListOf<LatLon>()
+        val r = Rig(this, buildOnSave = BuildOnSave { asked += it }).also { advanceUntilIdle() }
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        assertTrue("analysed, but still called LZ/PZ 1", asked.isEmpty())
+        assertFalse(r.model.state.value.current!!.saved)
+        r.model.saveAs("LZ HAWK")
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(here.lat, here.lon)), asked)
+        assertTrue(r.model.state.value.current!!.saved)
     }
 
     @Test
