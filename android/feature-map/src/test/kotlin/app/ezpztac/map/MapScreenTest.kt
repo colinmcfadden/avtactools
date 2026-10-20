@@ -75,6 +75,7 @@ class MapScreenTest {
         buttonsAtFoot: Boolean = false,
         grid: Boolean? = null,
         chrome: MapChromeBoxes? = null,
+        controls: Boolean = true,
     ) {
         compose.setContent {
             EzpzTheme(mode) {
@@ -84,11 +85,51 @@ class MapScreenTest {
                     onClearSearchError = { log += "clearError"; said = null }, onSelectStyle = { log += "style $it" },
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
                     onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding, buttonsAtFoot = buttonsAtFoot,
-                    onToggleGrid = grid?.let { { log += "grid" } }, chrome = chrome, search = search, hiding = hiding,
-                    map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40))) },          // stands in for the GPU-drawn map
+                    onToggleGrid = grid?.let { { log += "grid" } }, chrome = chrome, search = search, hiding = hiding, controls = controls,
+                    map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40)).semantics { contentDescription = "The map" }) },  // stands in for the GPU-drawn map
                 )
             }
         }
+    }
+
+    @Test
+    fun `the controls go when a brief is presented and come back as they were when it ends`() {
+        val chrome = MapChromeBoxes()
+        var controls by mutableStateOf(true)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                MapScreen(
+                    state = state(), camera = CameraState(LatLon(34.78, -84.08), 16.0), gps = GpsState.Off, onSearch = { true }, onClearSearchError = {}, onSelectStyle = {},
+                    onToggleGps = {}, onGpsPermissionResult = {}, onLocateMe = {}, onFaceNorth = {}, buttonsAtFoot = true, chrome = chrome, search = search, controls = controls,
+                    map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40))) },
+                )
+            }
+        }
+        compose.waitForIdle()
+        val before = chrome.shown().size
+        assertTrue(before > 0)
+        compose.onNodeWithContentDescription("Map centre").assertIsDisplayed()
+        controls = false
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Map centre").assertDoesNotExist()
+        assertTrue(chrome.shown().isEmpty())
+        controls = true
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Map centre").assertIsDisplayed()
+        assertEquals(before, chrome.shown().size)
+    }
+
+    @Test
+    fun `while a brief is presented nothing is drawn over the map, and nothing over it is told to the grid's labels`() {
+        val chrome = MapChromeBoxes()
+        show(state(), controls = false, buttonsAtFoot = true, chrome = chrome)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("The map").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Map centre").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Base map", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("16S GD 66993 52949").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        assertTrue(chrome.shown().isEmpty())
     }
 
     @Test

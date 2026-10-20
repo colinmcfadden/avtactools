@@ -5,7 +5,8 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-19 for the mission brief (§0a: B0 to B8 built on `feat/mission-brief`: the web and the server, then Android's core (B7) and its setup, review, Share and Save on a tablet (B8); B9, the Android sandtable, is next).
+Last refreshed: 2026-10-20 for the mission brief (§0a: B0 to B9 built on `feat/mission-brief`: the web and the server, then Android's core (B7), its setup, review, Share and Save on a tablet (B8), and its live sandtable (B9)).
+Before that, 2026-10-19 (B8).
 Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
@@ -18,7 +19,7 @@ stands said on its chip.
 
 ---
 
-## 0a. The mission brief (2026-10-16 to 19)
+## 0a. The mission brief (2026-10-16 to 20)
 
 Branch **`feat/mission-brief`**, on `develop` (which has `feat/android-panel-close-and-tools`, merged as PR #97). **Not pushed; no PR yet.** The plan, the
 owner's decisions of 2026-10-16 and each step's state are in **`docs/MISSION_BRIEF.md`** (read it first); AGENTS.md §4, §6, §9 and §10 say what exists.
@@ -84,6 +85,17 @@ Web and Android; Android tablet size and up only for now.
   changes outside Android: `compile.json` gained a slope case (the web's slope call, now held on both sides) and the web keeps its weather when a
   refresh gets no answer, as the plan always said.
 
+- **B9** Android's live sandtable on a tablet (AGENTS.md §17, *The sandtable on a tablet*): the setup's *Present sandtable* (on every step) closes the setup and
+  draws feature-brief's `SandtableFrame` over the map where the tablet's frame has it (`TabletFrame`'s `presentation`: the map never moves; the rail, panes and band
+  put away, kept composed): the bar, the steps, the constants and the script card. Each step is core-brief's `SandtableSteps` (the web's `sandtableSteps.js`, held strictly to every case of
+  `sandtable.json`, from compile.json's model and from the brief compiled here), drawn from the model's `geometry` (`SandtableScene`: GeoJSON to MapLibre,
+  `SandtableOverlay`, and the marks and words in Compose, `SandtableMarksLayer`) and flown to as the web's Leaflet frames it (`SandtableCamera`, clear of what
+  lies over the map), held to Leaflet's own answers in the new `brief/sandtable-fit.json` (with the web's `fitInsets`). Editing is off while it runs, and it ends with its workspace, the account, End brief, Back or Escape. Its three independent
+  reviews (parity with the web, lifecycle and concurrency, the screens) found, among others: a sandtable ending with its pack could leave the map on the pack's view (it now ends in the same composition, and a flight waits for the view to be given
+  back); a flight asked before MapLibre has made the map was undone by its first camera (`MapHost.attach` now sets the camera first); an opening queued behind a
+  close was never dropped; the review's foot cut its buttons at large text; TalkBack would have said "not selected" on every other step; each was fixed with a test. The brief's design boards were not to hand: the layout
+  follows the web's, and the rail's *Brief* still opens the setup (AGENTS.md §15).
+
 **Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
 `mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android
 `:core-network:test` and `:core-missionpacks:test`. For B5 (web only, no server code changed): the web's whole Jest suite (1,068 passed; only
@@ -92,7 +104,10 @@ against the regenerated `compile.json`. For B6: the web's whole Jest suite (1,09
 warnings, and the backend's CI list (531 passed, 2 skipped: the live service needs Postgres); OP DK at 1:100,000 and the dogleg at 1:250,000
 printed again through Gotenberg after the review's fixes and looked at. For B8: Android's full `./gradlew test lintDebug assembleDebug` (5,633 tests,
 3 skipped, none failed; lint clean), the screens drawn by Roborazzi at 1,280 and 840 dp and looked at, the web's brief and contract tests (165 and 14
-in `useBrief`) and `npm run build` with no new warnings.
+in `useBrief`) and `npm run build` with no new warnings. For B9 (2026-10-20): Android's full `./gradlew test lintDebug assembleDebug` (5,762 tests, 3 skipped, none failed; lint
+clean), the web's contract tests (275 of 276; only `mgrsGridFixtures`, as before) with `sandtable-fit.json` written by Leaflet 1.9.4 itself, the
+sandtable drawn by Roborazzi (1,280 × 800 in the three palettes, 845 dp with the steps over the map, large text on a short window) and looked at, and
+14 mutations of the step's fixes (the flight, the session's order, the screens), every one killed.
 
 **Not verifiable here, or not tried:** a brief built from real LZ/PZs and routes in the browser (only the fixture's OP DK, in Jest and the PDF test,
 and seeded as a pack for the sandtable); the sandtable's animated flights (the agent's browser reports reduced motion, so only the unanimated fit was
@@ -101,7 +116,14 @@ seen) and on a projector or a presenter's clicker; the weather `at` answers from
 **Not verifiable here (B8):** the platform's renderer drawing a real PDF (Robolectric's cannot open one), the share sheet and the picker, a real
 Gotenberg print on a device, the setup over the real map, and TalkBack: the owner's device run.
 
-**Next, in order** (docs/MISSION_BRIEF.md §5): **B9** Android sandtable (held to `brief/sandtable.json`), on a tablet. Owner's calls the B8 reviews raised
+**Not verifiable here (B9):** the figure MapLibre draws (its GL layers are compile-only: the Roborazzi pictures draw the same scene over a stand-in map, and
+the marks and words are the app's own Compose), the flights on a real map and the view given back, a presenter's clicker on a real tablet, TalkBack, and the
+frame on a tablet's real insets and cut-outs: the owner's device run. **To try first on a device:** present OP DK's brief from the setup, step through it
+with the arrows and a clicker (Page Down), pan the map mid-step and step on (it flies again), turn the tablet, then End brief (the map comes back where it
+was); in a pack, have another member change an LZ/PZ while presenting.
+
+**Next, in order** (docs/MISSION_BRIEF.md §5): the owner's device run of B8 and B9 on a tablet; then §5's *later*. Owner's call from B9 (AGENTS.md §15):
+whether the rail's *Brief* becomes the web's Brief menu, with *Present live sandtable* one tap away. Owner's calls the B8 reviews raised
 (AGENTS.md §15): one identity for a session's LZ/PZ and route in a Library brief (the web and Android name them differently), two brief items made
 when two members start a pack's brief at once, and the weather asked an hour off across a change of daylight saving; each web first. **Owner steps:** deploy Gotenberg on the VM (AGENTS.md §9 has the command line) and set `GOTENBERG_URL`; check Mapbox's
 terms for printed figures before the PDF ships; tick *Mission brief* for testers in the admin dashboard.

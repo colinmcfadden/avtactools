@@ -15,6 +15,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -53,7 +56,7 @@ class BriefExport(val fileName: String, val bytes: ByteArray)
 /**
  * The setup as the screens draw it: whether it is open, which step shows, the brief compiled now ([brief]; null for a moment as it opens), whether it could not
  * be put together ([failed]), and the PDF. The PDF is [stale] when the brief has changed since it was made (an answer, an option, the plan): the review says so,
- * and Share and Save make it again first.
+ * and Share and Save make it again first. While the brief is presented on the live sandtable, [presenting] says how (the setup is not open then).
  */
 data class BriefUi(
     val open: Boolean = false,
@@ -61,9 +64,23 @@ data class BriefUi(
     val brief: BriefState? = null,
     val pdf: PdfUi = PdfUi(),
     val failed: Boolean = false,
+    val presenting: SandtableUi? = null,
 ) {
     val stale: Boolean get() = pdf.made != null && brief != null && pdf.made.model != brief.model
 }
+
+/**
+ * The live sandtable while it runs (docs/MISSION_BRIEF.md §2.8, the web's `useSandtable`): the step followed by its id ([stepId]; null before the first is shown)
+ * and where it was in the list ([anchor]), so a step that goes from the brief leaves the presenter at that place, on the step now there, which is then the one
+ * followed; whether the steps and the constants show; and the workspace it was begun in ([pack], the open pack's uuid; null for this session), which it ends with.
+ */
+data class SandtableUi(
+    val stepId: String? = null,
+    val anchor: Int = 0,
+    val stepsOpen: Boolean = true,
+    val constantsOpen: Boolean = true,
+    val pack: String? = null,
+)
 
 /** Writes a PDF where the person chose to save it (the system's create-document picker); tests give their own. */
 fun interface BriefFileWriter {
@@ -114,6 +131,15 @@ class BriefViewModel @Inject constructor(
     private val mutableSaves = MutableSharedFlow<String>(extraBufferCapacity = 1)
     private var making: Job? = null
 
+    // The workspace the frame says is open (the open pack's uuid; null for this session): what a sandtable begun now belongs to.
+    private var workspace: String? = null
+
+    // The brief's close under way, if one is: what opens it next waits for it.
+    private var closing: Job? = null
+
+    // Counts the closes (the setup closed, the sandtable ended, the brief closed for another account): an opening queued behind a close runs only if none came since.
+    private var generation = 0
+
     val state: StateFlow<BriefUi> = combine(local, door.state, door.failed) { ui, brief, failed -> ui.copy(brief = brief, failed = failed) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, BriefUi())
 
@@ -126,26 +152,129 @@ class BriefViewModel @Inject constructor(
     /** A file name for the system's create-document picker: the screen opens it, and gives the place chosen back to [saveTo]. */
     val saves: SharedFlow<String> = mutableSaves.asSharedFlow()
 
+    /**
+     * The live sandtable as the screens draw it while it runs; null while it does not. Worked out on the main thread from a brief another client may have written (a
+     * pack's): one it cannot read is said as a brief that could not be put together, never the end of the app, as a compile that fails is.
+     */
+    val sandtable: StateFlow<SandtableShown?> = state.map { ui -> ui.presenting?.let { shownOf(ui.brief, ui.failed, it) } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private fun shownOf(brief: BriefState?, failed: Boolean, ui: SandtableUi): SandtableShown = try {
+        SandtableShown.of(brief, failed, ui)
+    } catch (_: Exception) {
+        SandtableShown.of(null, failed = true, ui = ui)
+    }
+
     init {
         viewModelScope.launch { door.refusals.collect { mutableNotices.emit(it) } }
-        // Closed by itself (another account): the setup goes with it, and the PDF shown, which holds the last person's plan.
-        viewModelScope.launch { door.opened.collect { open -> if (!open && local.value.open) letGo() } }
+        // Closed by itself (another account): the setup and the sandtable go with it, and the PDF shown, which holds the last person's plan.
+        viewModelScope.launch { door.opened.collect { open -> if (!open && (local.value.open || local.value.presenting != null)) letGo() } }
+        // The step shown is the one followed, and where it is now is kept (the web's effect): if it goes from the brief the presenter stays at that place in the
+        // list, and the step then shown is followed in its turn, never another that later lands at that place.
+        viewModelScope.launch { sandtable.collect { shown -> shown?.let(::follow) } }
     }
 
     /** Opens the setup at its first step: the brief compiles from now. */
-    fun open() {
+    fun open() = afterClosing {
         door.open()
         local.update { BriefUi(open = true, step = SetupStep.FLOW, pdf = it.pdf) }
     }
 
-    /** Closes the setup, writing a change still waiting; the PDF shown is let go (its file deleted). */
+    /** Closes the setup, or ends the sandtable, writing a change still waiting; the PDF shown is let go (its file deleted). An opening still waiting goes too. */
     fun close() {
-        if (!local.value.open) return
+        generation++
+        if (!local.value.open && local.value.presenting == null) return
         letGo()
-        viewModelScope.launch { door.close() }
+        closeDoor()
+    }
+
+    // The brief closes as it writes what waits, which takes a moment: the setup or the sandtable opened meanwhile (the sandtable ended and the setup opened
+    // straight after) opens it once that is over, or the close would land after the open and shut the brief under it.
+    private fun closeDoor() {
+        closing = viewModelScope.launch { door.close() }
+    }
+
+    // An opening waits for a close still writing, and is dropped if a close comes after it ([generation]): one asked on a tablet whose window is a phone's by the time
+    // the close is over, or for an account that has gone, never opens.
+    private fun afterClosing(opening: () -> Unit) {
+        val wait = closing?.takeIf { it.isActive }
+        if (wait == null) {
+            opening()
+        } else {
+            val asked = generation
+            viewModelScope.launch {
+                wait.join()
+                if (generation == asked) opening()
+            }
+        }
+    }
+
+    // -- The live sandtable -----------------------------------------------------------------------------------------------------------------------------------
+
+    /**
+     * Presents the brief on the live sandtable (docs/MISSION_BRIEF.md §2.8), from its first step: the setup closes for it (its PDF let go) and the brief stays open,
+     * compiled as the plan changes. [narrow] (a window narrower than the steps' wide layout) starts the steps and the constants folded, as the web's does below
+     * 850 px. It belongs to the workspace it is begun in ([pack]: the open pack's uuid, null for this session; by default the one [workspaceIs] last said): it ends
+     * when that changes.
+     */
+    fun present(narrow: Boolean, pack: String? = workspace) = afterClosing {
+        making?.cancel()
+        val pdf = local.value.pdf.made
+        local.update { BriefUi(presenting = SandtableUi(stepsOpen = !narrow, constantsOpen = !narrow, pack = pack)) }
+        pdf?.pdf?.close()
+        door.open()
+    }
+
+    /** Ends the sandtable (End brief, Back): the brief closes, writing a change still waiting. */
+    fun endPresenting() {
+        generation++
+        if (local.value.presenting == null) return
+        local.update { it.copy(presenting = null) }
+        closeDoor()
+    }
+
+    /** The workspace now ([pack], the open pack's uuid; null for this session): a sandtable begun in another ends, as the web's does in the same render. */
+    fun workspaceIs(pack: String?) {
+        workspace = pack
+        val presenting = local.value.presenting ?: return
+        if (presenting.pack != pack) endPresenting()
+    }
+
+    /** Shows step [index] of the brief as it is now; nothing for a step that is not there. */
+    fun goToStep(index: Int) {
+        val shown = sandtable.value ?: return
+        val step = shown.steps.getOrNull(index) ?: return
+        presentingUpdate { it.copy(stepId = step.id, anchor = index) }
+    }
+
+    fun nextStep() {
+        sandtable.value?.let { goToStep(it.index + 1) }
+    }
+
+    fun previousStep() {
+        sandtable.value?.let { if (it.index > 0) goToStep(it.index - 1) }
+    }
+
+    fun firstStep() = goToStep(0)
+
+    fun lastStep() {
+        sandtable.value?.let { goToStep(it.steps.lastIndex) }
+    }
+
+    fun showSteps(open: Boolean) = presentingUpdate { it.copy(stepsOpen = open) }
+
+    fun showConstants(open: Boolean) = presentingUpdate { it.copy(constantsOpen = open) }
+
+    private fun presentingUpdate(change: (SandtableUi) -> SandtableUi) = local.update { ui -> ui.presenting?.let { ui.copy(presenting = change(it)) } ?: ui }
+
+    private fun follow(shown: SandtableShown) {
+        val step = shown.current ?: return
+        val ui = shown.ui
+        if (shown.index != ui.anchor || step.id != ui.stepId) presentingUpdate { it.copy(stepId = step.id, anchor = shown.index) }
     }
 
     private fun letGo() {
+        generation++
         making?.cancel()
         val pdf = local.value.pdf.made
         local.update { BriefUi() }
@@ -224,7 +353,13 @@ class BriefViewModel @Inject constructor(
                     return@launch
                 }
                 val bytes = door.print(brief.model)
-                val opened = pdfs.open(bytes)
+                // Opened whole, then let go if the PDF is no longer wanted (the setup closed, the sandtable begun): cut short part way, it would be left open, its
+                // file in the cache until sign-out.
+                val opened = withContext(NonCancellable) { pdfs.open(bytes) }
+                if (!isActive) {
+                    opened.close()
+                    throw CancellationException("The PDF is no longer wanted")
+                }
                 val made = MadePdf(opened, bytes, brief.model, fileNameOf(brief))
                 val old = local.value.pdf.made
                 local.update { it.copy(pdf = PdfUi(made = made)) }

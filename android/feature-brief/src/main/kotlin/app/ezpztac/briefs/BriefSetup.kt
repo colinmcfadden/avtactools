@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,6 +36,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -66,11 +70,14 @@ class BriefActions(
     val makePdf: () -> Unit = {},
     val share: () -> Unit = {},
     val save: () -> Unit = {},
+    /** Presents the brief on the live sandtable: the setup closes for it. */
+    val present: () -> Unit = {},
 )
 
-fun briefActionsOf(viewModel: BriefViewModel) = BriefActions(
+/** The setup's actions over [viewModel]; [narrow] (a window narrower than the sandtable's [NARROW]) starts the sandtable with its steps and constants folded. */
+fun briefActionsOf(viewModel: BriefViewModel, narrow: Boolean = false) = BriefActions(
     close = viewModel::close, show = viewModel::show, next = viewModel::next, edit = viewModel::edit, refreshWeather = viewModel::refreshWeather,
-    makePdf = viewModel::makePdf, share = viewModel::share, save = viewModel::save,
+    makePdf = viewModel::makePdf, share = viewModel::share, save = viewModel::save, present = { viewModel.present(narrow) },
 )
 
 /**
@@ -84,7 +91,8 @@ fun BriefSetupHost(viewModel: BriefViewModel, snackbars: SnackbarHostState) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(PDF)) { uri -> viewModel.saveTo(uri) }
     LaunchedEffect(viewModel) { viewModel.saves.collect { picker.launch(it) } }
     if (!state.open) return
-    val actions = remember(viewModel) { briefActionsOf(viewModel) }
+    val narrow = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() } < NARROW
+    val actions = remember(viewModel, narrow) { briefActionsOf(viewModel, narrow) }
     Dialog(onDismissRequest = actions.close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)) {
         Box {
             BriefSetupContent(state, actions, Modifier.briefDialog())
@@ -180,14 +188,23 @@ fun BriefSetupContent(state: BriefUi, actions: BriefActions, modifier: Modifier 
     }
 }
 
+/**
+ * The setup's foot: how the brief is kept and how much of it is filled, *Present sandtable* on every step, and on the review *Save to device* and *Share PDF*. The
+ * buttons stand beside the note while it keeps [FOOT_NOTE_MIN], and go under it, at the end, where they do not (a narrow window, large text), each whole.
+ *
+ * **Not like the web**, whose setup offers *Present sandtable* only at the review: the web's Brief menu presents the brief without the setup, and on Android the
+ * rail's *Brief* opens the setup itself (B8), so the setup offers it from its first step; the review asks the server for its PDF, which presenting does not need.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Foot(state: BriefUi, brief: BriefState?, actions: BriefActions) {
-    Row(
+    FlowRow(
         Modifier.fillMaxWidth().padding(start = Tokens.Spacing.xl.dp, top = Tokens.Spacing.md.dp, end = Tokens.Spacing.xl.dp, bottom = Tokens.Spacing.md.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp, Alignment.End),
+        verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).widthIn(min = FOOT_NOTE_MIN)) {
             if (brief != null) {
                 Hint(footNote(state, brief))
                 val (filled, blanks) = BriefEdits.counts(brief.model)
@@ -196,11 +213,18 @@ private fun Foot(state: BriefUi, brief: BriefState?, actions: BriefActions) {
         }
         if (state.step == SetupStep.REVIEW && brief != null) {
             state.pdf.made?.takeIf { !state.stale }?.let { Hint("${it.pdf.pages} ${if (it.pdf.pages == 1) "page" else "pages"}") }
+        }
+        // The same steps walked on the map (the web's, beside its Download PDF): the setup closes for it.
+        if (brief != null) PillButton(SandtableWords.PRESENT, onClick = actions.present, icon = EzpzIcons.playArrow, style = PillStyle.Outlined)
+        if (state.step == SetupStep.REVIEW && brief != null) {
             PillButton("Save to device", onClick = actions.save, icon = EzpzIcons.download, style = PillStyle.Outlined, enabled = !state.pdf.making)
             PillButton("Share PDF", onClick = actions.share, icon = EzpzIcons.share, enabled = !state.pdf.making)
         }
     }
 }
+
+/** The least the foot's note keeps beside the buttons before they go under it. */
+private val FOOT_NOTE_MIN = 240.dp
 
 /** How the brief is kept, as the foot says it (the web's), or that the PDF is being made. */
 internal fun footNote(state: BriefUi, brief: BriefState): String {

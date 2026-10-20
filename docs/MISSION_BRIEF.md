@@ -1,7 +1,7 @@
 # Mission brief — architecture and plan
 
-Status: **B0 to B8 done** (`feat/mission-brief`, 2026-10-16 to 19; B7 was built on its own branch and merged): the web, the server and Android's setup,
-review, Share and Save on a tablet. B9, Android's sandtable, is next. The screens are the design canvas's section 6 (*Mission brief*:
+Status: **B0 to B9 done** (`feat/mission-brief`, 2026-10-16 to 20; B7 was built on its own branch and merged): the web, the server, and Android's setup,
+review, Share and Save and the live sandtable on a tablet. What is left is §5's *later*. The screens are the design canvas's section 6 (*Mission brief*:
 seven web boards, three Android tablet boards). This file is the plan for building them on the web and Android. The owner's decisions of
 2026-10-16 are in §9.
 
@@ -226,8 +226,16 @@ A presentation mode over the existing map, not a new map:
   the presenter on it; a step that goes leaves them at its place in the list, on the step now there, which is then the one followed. Outside
   a pack, a brief the Library still has to send is waited for (*Opening the brief…*), so the blank one is never shown. It never names a PDF
   page: a step is *Step n of N*. Below 850 px the steps and the constants start folded and the steps lie over the map.
-- **Android:** `feature-brief`'s `SandtableScreen` over the same `EzpzMap`, the camera moved with `MapHost`, 56 dp step buttons, a tablet
-  layout (tablet only, §9).
+- **Android (built, B9):** *Present sandtable* in the setup's foot on every step (the rail's *Brief* opens the setup as B8 built it, so presenting never waits on
+  the review's PDF; the brief's design boards were not to hand, so the web's one-tap *Present live sandtable* from its Brief menu is the owner's call).
+  `feature-brief`'s `SandtableFrame` is drawn over
+  the map where the tablet's frame has it (`TabletFrame`'s `presentation`: the map never moves; the rail, panes and band put away, kept composed): the bar, the steps (over the map and folded at the start
+  narrower than 850 dp, as the web's), the constants and the card, 56 dp step buttons. Each step's figure is plain data (`SandtableScene`, the web's `attachSandtable`):
+  its lines, boundary and dots to MapLibre as GeoJSON, its marks and words in Compose over the map; the map is flown as Leaflet's `flyToBounds` frames it
+  (`SandtableCamera`, held to Leaflet's own answers in `sandtable-fit.json`), clear of what lies over it, north up, and given back at the end. The steps are
+  core-brief's `SandtableSteps`, held strictly to `sandtable.json`. Editing is off as on the web (the planning layers empty, taps, long presses and drags taken by nothing, flights paused, a file opened
+  meanwhile waiting, toasts at the top without actions), and it ends with its workspace, the account, End brief, Back or Escape. AGENTS.md §17, *The
+  sandtable on a tablet*, has the rest.
 - **Only the presenter's map moves** (the design's choice). Others following along through a pack's live stream is later (§9).
 
 ---
@@ -301,7 +309,7 @@ green, AGENTS.md and `docs/HANDOFF.md` updated in the same commit.
 | **B6** | **Done.** Strip charts in the appendix (§2.6, *As built*): `compileBrief`'s `strips` and the `strips` page kind (three a page), the grid at print time (`stripGrid.js`, `strip-grid.json`), the review step's switch, strip map and scale, the server's turned strips (`figures.draw_strip`). On the way: a route colour is only ever `#RRGGBB` in a figure (it went into the SVG unescaped), a page the server cannot lay out is no longer listed in the contents, and the cover counts no pages. An independent review's findings fixed (the cutting's edge cases, the server's trust in the model, every grid line numbered) | B4 |
 | **B7** | **Done.** Android: `core-brief` ported and held to every fixture; the record kind, the pack kind and its exception (`packs/ops-brief.json`, and `packs/session-brief.json`'s session rules). **7a done** (branch `claude/android-core-brief-2ffe1e`): `core-brief`, `compileBrief` and the light data held strictly to every case of `compile.json` and `light.json`, the formats bundled from `contracts/briefs` and held to their rules. **7b done**: `RecordKind.BRIEF`, `/api/briefs` typed and synced, through every per-kind scenario on the fake server, the real one and Room. **B6 followed**: the strip charts in `compileBrief` (`StripCharts`), every number of `compile.json`'s strip cases exact; the print-time grid (`strip-grid.json`) is B8's. **7c done**: the pack kind (`PackOps`, `ops-brief.json` folded in beside `ops.json`), `session-brief.json`'s session rules, `PackLock` letting briefs through and nothing else, `PackItemCounts.brief`, and a pack story on the fake server, the real one and Room | B1, B2 |
 | **B8** | **Done.** Android, on a tablet: the rail's *Brief* (`mission_brief` only) opens the setup's three steps over core-data's `BriefSession` (`BriefKeeper`, `BriefSources`; core-brief's `BriefEdits`), the review over the real PDF (`POST /api/brief/pdf` with the strips' grid added at print time, `StripGrid` held to `strip-grid.json`; drawn by `PdfRenderer`), *Save to device* and *Share PDF*; the weather at the planned times typed (`weatherAt`). Three independent reviews (parity with the web, concurrency and lifecycle, the screens) and their findings fixed: changes laid over the version they are written or sent to and sent in order, the Library brief read again on opening, a paused pack's changes held, compile and keep failures said rather than ending the app, the session closed for another account, every row keyed by what it holds, a narrow window's layout, the PDF's renderer and files. **Changed on the way:** the session's slope call was never briefed outside a pack on Android (`compile.json` gained a slope case, held on both sides), and a refresh with no answer blanked the weather on both platforms (both keep it now, as §2.5 always said) | B4, B7 |
-| **B9** | Android: the sandtable (tablet) | B7 |
+| **B9** | **Done.** Android, on a tablet: the live sandtable (§2.8, *Android*): the setup's *Present sandtable*, `SandtableFrame` over the map with the frame put away, each step drawn from `geometry` (`SandtableScene`, GeoJSON to MapLibre and Compose marks) and flown to as the web frames it (`SandtableCamera`); core-brief's `SandtableSteps` held strictly to every case of `sandtable.json`, and the fit to `sandtable-fit.json` (new: the web's `fitInsets` and Leaflet's own `flyToBounds` framing, written by `briefSandtableFitFixtures.test.js`). Three independent reviews (parity with the web, lifecycle and concurrency, the screens) and their findings fixed with tests | B7, B8 |
 | later | Threats in the brief (needs *T*), others following the sandtable, the AOPORD/AMB and air assault formats, a phone layout | — |
 
 The web and the backend lead, as for everything else; Android follows once the fixtures exist. B2 can run beside B1. Rendering on the
@@ -324,7 +332,8 @@ server makes Android's PDF a request and a viewer, not a second layout.
 
 ## 7. What cannot be verified in an agent session
 
-How a printed page looks on paper (ask for a print), the sandtable's flights on a real map, the PDF in the readers crews use (Adobe,
+How a printed page looks on paper (ask for a print), the sandtable's flights on a real map (the web's in a browser; Android's on a device: its figure is drawn
+there by MapLibre, which an agent session cannot run), the PDF in the readers crews use (Adobe,
 ForeFlight's documents, Android's viewers), the share sheet on a device, and Gotenberg's speed and memory on the VM.
 
 ---

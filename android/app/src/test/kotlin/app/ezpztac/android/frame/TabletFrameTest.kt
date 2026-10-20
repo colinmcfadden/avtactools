@@ -42,6 +42,7 @@ import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.designsystem.rememberPanelSheetState
 import app.ezpztac.missionpacks.PackStatus
 import com.github.takahirom.roborazzi.captureRoboImage
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -64,6 +65,10 @@ class TabletFrameTest {
     private val said = mutableListOf<String>()
     private var mapFrame: MapFrame? = null
     private var askAgain: () -> Unit = {}
+    private var presenting by mutableStateOf(false)
+    private val snackbars = SnackbarHostState()
+    private var panelsDisposed = 0
+    private var mapsMade = 0
 
     private fun frame(mode: ThemeMode = ThemeMode.Dark, withSupport: Boolean = false, withRoute: Boolean = false, brief: Boolean = false) = compose.setContent {
         var current by remember { mutableStateOf(Panel.Lz) }
@@ -74,7 +79,7 @@ class TabletFrameTest {
         EzpzTheme(mode) {
             TabletFrame(
                 panels = Panel.entries - Panel.Pack, current = current, counts = PanelCounts(threats = 1, imports = 3),
-                onPick = { current = it; picked += it }, snackbars = remember { SnackbarHostState() },
+                onPick = { current = it; picked += it }, snackbars = snackbars,
                 rail = TabletRail(
                     importMenu = { dismiss -> Text("The import menu", Modifier.semantics { contentDescription = "Close the import menu" }.padding(8.dp)); said += "importMenu"; if (false) dismiss() },
                     onLibrary = { said += "library" },
@@ -93,12 +98,62 @@ class TabletFrameTest {
                     },
                     if (route) SupportingPane(key = "route:r1", title = null, onClose = { route = false; said += "closeRoute" }) { Text("ROUTE 1 plan") } else null,
                 ),
-                panel = { panel -> Column(Modifier.padding(16.dp)) { Text("${panel.label} panel body") } },
+                panel = { panel ->
+                    DisposableEffect(panel) { onDispose { panelsDisposed++ } }
+                    Column(Modifier.padding(16.dp)) { Text("${panel.label} panel body") }
+                },
+                presentation = if (presenting) {
+                    { toasts ->
+                        Column(Modifier.fillMaxSize()) {
+                            Text("The sandtable's bar", Modifier.background(Color.Black))
+                            Box(Modifier.fillMaxWidth().weight(1f)) { toasts(Modifier) }
+                        }
+                    }
+                } else {
+                    null
+                },
             ) { frame ->
                 mapFrame = frame
+                // The map is made once, wherever the frame draws it: what it remembers is kept through a brief presented over it.
+                remember { mapsMade++ }
                 Box(Modifier.fillMaxSize().background(Color(0xFF3A4A3A))) { Text("The map", Modifier.padding(16.dp)) }
             }
         }
+    }
+
+    @Test
+    fun `while a brief is presented the frame is put away but kept, the map stays where it is with the whole window and no padding, and toasts offer nothing to do`() {
+        frame(withSupport = true)
+        compose.onNodeWithText("LZ/PZ panel body").assertIsDisplayed()
+        presenting = true
+        compose.waitForIdle()
+        compose.onNodeWithText("The sandtable's bar").assertIsDisplayed()
+        // The map is under the presentation, the whole window's: never made again, never moved.
+        val map = compose.onNodeWithText("The map").fetchSemanticsNode().boundsInRoot
+        assertTrue("the map has the window's left edge: $map", map.left < 40f)
+        assertEquals(1, mapsMade)
+        assertEquals(app.ezpztac.map.MapPadding(), mapFrame!!.padding)
+        assertEquals(null, mapFrame!!.controlsBottom())
+        // The rail, the panel and the supporting pane are neither seen nor read, and stay composed.
+        compose.onNodeWithText("LZ/PZ panel body").assertDoesNotExist()
+        compose.onNodeWithText("Aircraft, analysis and the tools").assertDoesNotExist()
+        compose.onNodeWithText("Library").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Account").assertDoesNotExist()
+        assertEquals(0, panelsDisposed)
+        // A toast says its words and offers no action (they open planning flows).
+        compose.runOnUiThread { kotlinx.coroutines.MainScope().launch { snackbars.showSnackbar("Saved \"LZ HAWK\"", actionLabel = "Open Library", withDismissAction = true) } }
+        compose.waitForIdle()
+        compose.onNodeWithText("Saved \"LZ HAWK\"").assertIsDisplayed()
+        compose.onNodeWithText("Open Library").assertDoesNotExist()
+        snackbars.currentSnackbarData?.dismiss()
+        presenting = false
+        compose.waitForIdle()
+        compose.onNodeWithText("The sandtable's bar").assertDoesNotExist()
+        compose.onNodeWithText("LZ/PZ panel body").assertIsDisplayed()
+        compose.onNodeWithText("Aircraft, analysis and the tools").assertIsDisplayed()
+        assertEquals(0, panelsDisposed)
+        assertEquals(1, mapsMade)
+        assertTrue(mapFrame!!.padding.top > 0.dp)
     }
 
     @Test

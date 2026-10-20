@@ -189,6 +189,8 @@ fun MapScreen(
     search: MapSearchState = rememberMapSearchState(),
     /** The phone's frame hiding (a tap on the map): the row, what is said under it and the search go with it, up off the screen; the rest stays. */
     hiding: FrameHiding = FrameHiding.SHOWN,
+    /** Whether anything is drawn over the map: not while a brief is presented on the live sandtable (feature-brief), which draws its own. */
+    controls: Boolean = true,
     map: @Composable () -> Unit,
 ) {
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
@@ -196,6 +198,7 @@ fun MapScreen(
     LaunchedEffect(hiding.hidden) { if (hiding.hidden) search.close() }
     Box(modifier.fillMaxSize()) {
         map()
+        if (!controls) return@Box
 
         // The crosshair is the middle of the map that shows: between the row and the sheet, moving with the map when the sheet comes to rest.
         val crossTop by animateDpAsState(padding.top, tween(PanelSheetDefaults.SettleMillis), label = "crosshair top")

@@ -9,9 +9,9 @@ import kotlinx.serialization.json.intOrNull
 
 /**
  * The compiled brief (core-brief's `CompileBrief`, docs/MISSION_BRIEF.md §2.3) read as the screens show it. Only reading: what a brief says is decided by the compiler,
- * and the screens lay it out (the web's setup reads the same fields).
+ * and the screens lay it out (the web's setup and sandtable read the same fields).
  */
-internal object BriefReading {
+object BriefReading {
     private fun text(value: JsonElement?): String? = (value as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
 
     private fun objects(value: JsonElement?): List<JsonObject> = (value as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }

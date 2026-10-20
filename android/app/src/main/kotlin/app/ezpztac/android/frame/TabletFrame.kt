@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -229,6 +230,13 @@ fun TabletFrame(
     toasts: Boolean = true,
     /** Across the top beside the rail, over the panes and the map (a finished pack's, the design's AT Finished): it takes the window's top inset itself. */
     band: (@Composable () -> Unit)? = null,
+    /**
+     * While a brief is presented on the live sandtable (feature-brief's `SandtableFrame`): the rail, the panes and the band are put away, kept composed as they were
+     * (their scroll, what was typed in them, what they listen for), as the web keeps its planning frame; the map takes the whole window where it is, with no padding of
+     * its own and none of its controls (it never moves: MapLibre's surface is not taken off the screen and put back), and the presentation is drawn over it. [toasts]
+     * go where the presentation puts them, and offer nothing to do.
+     */
+    presentation: (@Composable BoxScope.(toasts: @Composable (Modifier) -> Unit) -> Unit)? = null,
     mapScreen: @Composable (MapFrame) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -248,22 +256,28 @@ fun TabletFrame(
             state.listShown = panes.list
             if (!panes.list) focus.clearFocus()
         }
-        // Back puts away the supporting pane that stands, as its close button does; one waiting out of sight is not taken away unseen.
-        BackHandler(enabled = standing != null && panes.support) { standing?.onClose?.invoke() }
+        // Back puts away the supporting pane that stands, as its close button does; one waiting out of sight is not taken away unseen. Not while presenting: Back is
+        // the sandtable's then.
+        val presenting = presentation != null
+        BackHandler(enabled = standing != null && panes.support && !presenting) { standing?.onClose?.invoke() }
+        // Put away while a brief is presented: composed, neither laid out nor read.
+        val away = if (presenting) Modifier.hidden() else Modifier
         Row(Modifier.fillMaxSize()) {
-            Rail(panels, current, counts, rail = rail, onPick = { picked ->
-                state.showList()
-                onPick(picked)
-            })
+            Box(away) {
+                Rail(panels, current, counts, rail = rail, onPick = { picked ->
+                    state.showList()
+                    onPick(picked)
+                })
+            }
             Column(Modifier.weight(1f).fillMaxHeight()) {
             if (band != null) {
-                Box(Modifier.heightIn(max = bandMax).verticalScroll(rememberScrollState())) { band() }
+                Box(Modifier.heightIn(max = bandMax).verticalScroll(rememberScrollState()).then(away)) { band() }
             }
-            Row(Modifier.weight(1f).fillMaxWidth().then(if (band != null) Modifier.consumeWindowInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)) else Modifier)) {
+            Row(Modifier.weight(1f).fillMaxWidth().then(if (band != null && !presenting) Modifier.consumeWindowInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)) else Modifier)) {
             // The panel's list: always composed (its scroll, its pickers, what it listens for), laid out only while it stands. A surface, so what is drawn on it
             // takes the palette's colour for text, as in the phone's sheet.
             Surface(
-                Modifier.then(if (panes.list) Modifier.width(LIST_WIDTH).fillMaxHeight() else Modifier.hidden()).edge(end = true, MaterialTheme.colorScheme.outlineVariant),
+                Modifier.then(if (panes.list && !presenting) Modifier.width(LIST_WIDTH).fillMaxHeight() else Modifier.hidden()).edge(end = true, MaterialTheme.colorScheme.outlineVariant),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Bottom))) {
@@ -287,8 +301,11 @@ fun TabletFrame(
                     padding = MapPadding(top = top + MapChrome.SEARCH_BOTTOM, bottom = bottomInset),
                     controlsBottom = { if (mapHeight > 0) mapHeight - bottomPx else null },
                 )
-                mapScreen(frame)
-                if (toasts) {
+                // The one map, here whatever the frame shows: while presenting it is the whole window's and the presentation is drawn over it.
+                mapScreen(if (presenting) PRESENTING else frame)
+                if (presentation != null) {
+                    presentation { place -> if (toasts) ToastHost(snackbars, place.padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.md.dp), actions = false) }
+                } else if (toasts) {
                     ToastHost(
                         snackbars,
                         Modifier.fillMaxSize().padding(horizontal = Tokens.Spacing.lg.dp).aboveTheReadout(floatingPx) { bottomPx.roundToInt() },
@@ -298,7 +315,7 @@ fun TabletFrame(
             // Every supporting pane stays composed (what was typed in it, its scroll), and only the one that stands is laid out.
             supporting.forEach { pane ->
                 key(pane.key) {
-                    val shown = pane === standing && panes.support
+                    val shown = pane === standing && panes.support && !presenting
                     Surface(
                         Modifier.then(if (shown) Modifier.width(SUPPORT_WIDTH).fillMaxHeight() else Modifier.hidden()).edge(end = false, MaterialTheme.colorScheme.outlineVariant)
                             .then(if (pane.title != null) Modifier.semantics { paneTitle = pane.title } else Modifier),
@@ -322,6 +339,9 @@ fun TabletFrame(
         }
     }
 }
+
+/** The map while a brief is presented: the whole of it is the figure's, with no strip of its own kept for controls (it has none then). */
+private val PRESENTING = MapFrame(padding = MapPadding(), controlsBottom = { null })
 
 /**
  * The rail (the design's, 96 dp): the workspace and Import at the top, the panels with their counts, the Library and the account at the foot. It scrolls where the

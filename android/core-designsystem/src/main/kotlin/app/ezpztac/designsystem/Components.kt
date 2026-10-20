@@ -20,8 +20,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -99,11 +101,11 @@ fun Banner(
  * reader announces each, and Material gives one more time when an accessibility service is on.
  */
 @Composable
-fun ToastHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
+fun ToastHost(state: SnackbarHostState, modifier: Modifier = Modifier, actions: Boolean = true) {
     val colors = LocalToastColors.current
     SnackbarHost(state, modifier) { data ->
         Snackbar(
-            snackbarData = data,
+            snackbarData = if (actions) data else WordsAlone(data),
             shape = RoundedCornerShape(Tokens.Radius.sm.dp),
             containerColor = androidx.compose.ui.graphics.Color(colors.container),
             contentColor = androidx.compose.ui.graphics.Color(colors.content),
@@ -111,6 +113,20 @@ fun ToastHost(state: SnackbarHostState, modifier: Modifier = Modifier) {
             dismissActionContentColor = androidx.compose.ui.graphics.Color(colors.content),
         )
     }
+}
+
+/**
+ * A toast with its words and close button and no action ([ToastHost] with `actions` off): while a brief is presented on the live sandtable a toast's action would
+ * open a planning flow, so it offers none, as the web's toasts offer none then. What it asked of the person is left as unanswered, as a toast that times out.
+ */
+private class WordsAlone(private val data: SnackbarData) : SnackbarData {
+    override val visuals: SnackbarVisuals = object : SnackbarVisuals by data.visuals {
+        override val actionLabel: String? get() = null
+    }
+
+    override fun performAction() = data.performAction()
+
+    override fun dismiss() = data.dismiss()
 }
 
 @Composable
