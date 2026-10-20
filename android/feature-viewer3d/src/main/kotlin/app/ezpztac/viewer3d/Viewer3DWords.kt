@@ -90,6 +90,9 @@ object Viewer3DWords {
 
     const val LZ = "LZ"
     const val FRAME_LZ = "Frame the landing zone"
+    const val ROUTES = "Routes"
+    const val FRAME_ROUTES = "Frame the visible routes"
+    const val NO_ROUTES = "No visible routes to show"
     const val FACE_NORTH = "Face north"
     const val POINT_SIZE = "Point size"
 

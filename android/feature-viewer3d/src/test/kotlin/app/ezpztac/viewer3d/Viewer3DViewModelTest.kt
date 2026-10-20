@@ -36,8 +36,13 @@ class Viewer3DViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun TestScope.model(api: FakeLidar = FakeLidar(), probe: FakeProbe = FakeProbe(), sizes: PointSizeMemory = InMemoryPointSizes()) =
-        viewModel(api, backgroundScope, probe, scenes(dispatcher = main, clock = { testScheduler.currentTime }), sizes)
+    private fun TestScope.model(
+        api: FakeLidar = FakeLidar(),
+        probe: FakeProbe = FakeProbe(),
+        sizes: PointSizeMemory = InMemoryPointSizes(),
+        routes: FakeRoutes = FakeRoutes(),
+        ground: FakeGround = FakeGround(),
+    ) = viewModel(api, backgroundScope, probe, scenes(dispatcher = main, clock = { testScheduler.currentTime }), sizes, routes, ground)
 
     @Test
     fun `shown, it looks up the point cloud and asks after the ground, and closed it lets both go`() = runTest(main) {
@@ -152,6 +157,50 @@ class Viewer3DViewModelTest {
         })[Viewer3DViewModel::class.java]
         store.clear()
         assertNull("cleared: the scene let go", second.listener)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `the routes the map shows are placed on the ground and handed to the scene, a hidden one not, and closed it asks nothing more`() = runTest(main) {
+        val routes = FakeRoutes(listOf(lzRoute()))
+        val ground = FakeGround()
+        val model = model(routes = routes, ground = ground)
+        model.show(hawk)
+        advanceUntilIdle()
+        val scene = model.session.value!!
+        assertTrue(scene.hasRoutes.value)
+        assertEquals(1, ground.asked.size)
+        // Hidden on the map, so not drawn here; shown again, drawn again.
+        routes.shown.value = listOf(lzRoute(visible = false))
+        advanceUntilIdle()
+        assertFalse(scene.hasRoutes.value)
+        routes.shown.value = listOf(lzRoute())
+        advanceUntilIdle()
+        assertTrue(scene.hasRoutes.value)
+        model.close()
+        advanceUntilIdle()
+        val asked = ground.asked.size
+        routes.shown.value = listOf(lzRoute(id = "route-2"))
+        advanceUntilIdle()
+        assertEquals("closed: nothing asked", asked, ground.asked.size)
+        // Closed while the routes wait their pause: the ask waiting is let go too.
+        model.show(hawk)
+        advanceTimeBy(200)
+        model.close()
+        advanceUntilIdle()
+        assertEquals(asked, ground.asked.size)
+    }
+
+    @Test
+    fun `routes placed before the cloud is in hand are handed to its scene as it is made`() = runTest(main) {
+        val model = model(api = FakeLidar(resolveMs = 2_000), routes = FakeRoutes(listOf(lzRoute())))
+        model.show(hawk)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertNull(model.session.value)
+        advanceUntilIdle()
+        assertTrue(model.session.value!!.hasRoutes.value)
+        model.close()
         advanceUntilIdle()
     }
 

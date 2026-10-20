@@ -12,9 +12,9 @@ import javax.microedition.khronos.opengles.GL10
 
 /**
  * Draws a [SceneSession] on the GL thread (docs/ANDROID_3D_PLAN.md, V4), only when asked: the view renders when something changed (a finger, a
- * tile, a flight, the point size), never on a clock. Each tileset's points go into the [PointTarget], sized as Cesium's attenuation sizes them,
- * then are lit by the eye-dome lighting onto the screen at their own depth, the core first and the ring after it, over the scene's `#05080d`,
- * as Cesium lights each tileset on its own. A context that is lost takes every buffer with it; the next is set up afresh, and the tiles go onto
+ * tile, a flight, the point size, the routes), never on a clock. Each tileset's points go into the [PointTarget], sized as Cesium's attenuation
+ * sizes them, then are lit by the eye-dome lighting onto the screen at their own depth, the core first and the ring after it, over the scene's
+ * `#05080d`, as Cesium lights each tileset on its own; the routes over them ([RouteDrawing]). A context that is lost takes every buffer with it; the next is set up afresh, and the tiles go onto
  * it again from the session, which keeps them. Compile-only: nothing here can be seen from an agent session.
  */
 internal class SceneRenderer(
@@ -23,10 +23,12 @@ internal class SceneRenderer(
     private val again: () -> Unit,
 ) : GLSurfaceView.Renderer {
     private var programs: ScenePrograms? = null
+    private var routePrograms: RoutePrograms? = null
     private var target: PointTarget? = null
     private val buffers = PointBuffers()
     private val ground = GroundBuffers()
     private val textures = ImageryTextures()
+    private val routes = RouteDrawing()
     private var width = 0
     private var height = 0
     private var failed = false
@@ -36,10 +38,11 @@ internal class SceneRenderer(
         buffers.forget()
         ground.forget()
         textures.forget()
+        routes.forget()
         session.texturesLost(again)
         target = null
         programs = try {
-            ScenePrograms.build()
+            ScenePrograms.build().also { routePrograms = RoutePrograms.build(ScenePrograms::link) }
         } catch (_: GlException) {
             fail()
             null
@@ -64,17 +67,18 @@ internal class SceneRenderer(
         GLES30.glDepthMask(true)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
         val p = programs ?: return
+        val r = routePrograms ?: return
         val t = target ?: return
         // A fault in drawing is the 3D view's to say, never the app's end: an exception on the GL thread has nothing above it to catch it.
         try {
-            draw(p, t)
+            draw(p, r, t)
         } catch (_: RuntimeException) {
             fail()
             programs = null
         }
     }
 
-    private fun draw(p: ScenePrograms, t: PointTarget) {
+    private fun draw(p: ScenePrograms, r: RoutePrograms, t: PointTarget) {
         val work = session.frame(width, height, pixelRatio, again) ?: return
         for (gone in work.letGo) buffers.release(gone)
         for (gone in work.groundLetGo) ground.release(gone)
@@ -133,6 +137,9 @@ internal class SceneRenderer(
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
         }
+        // The routes over the points, against their depth: a leg flown through the canopy is dashed across it, as the web's is.
+        routes.update(work.routes, work.routesVersion, pixelRatio.toFloat())
+        routes.draw(r, camera, view, projection, width, height)
         // A flight is drawn frame by frame until it lands; imagery just put on the GPU, or ground left unbuilt, wants another frame.
         if (work.animating || work.uploads.isNotEmpty() || ground.behind) again()
     }

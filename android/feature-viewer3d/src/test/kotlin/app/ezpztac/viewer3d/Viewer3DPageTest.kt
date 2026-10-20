@@ -1,5 +1,6 @@
 package app.ezpztac.viewer3d
 
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -26,6 +27,8 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -42,6 +45,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import app.ezpztac.data.LidarPhase
 import app.ezpztac.data.LidarProblem
+import app.ezpztac.data.SceneHeights
 import app.ezpztac.data.Viewer3DTarget
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
@@ -58,6 +62,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import java.time.Duration
 import org.robolectric.annotation.Config
 
 /** The 3D view's page: its bar, each state in the web's words (a failure in the app's own), and that it is the only thing taking touches and Back. */
@@ -304,6 +310,24 @@ class Viewer3DPageTest {
         assertEquals(9f, compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current)
         assertEquals("9, not the slider's per cent", "9", compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).fetchSemanticsNode().config[SemanticsProperties.StateDescription])
     }
+
+    @Test
+    fun `Routes is there with no routes, unavailable and saying why, and with them it frames them`() {
+        val routes = FakeRoutes()
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), routes = routes)
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, surface = standIn) } }
+        compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
+        compose.onNodeWithText(Viewer3DWords.ROUTES).assertIsDisplayed().assertIsNotEnabled()
+        assertEquals(Viewer3DWords.NO_ROUTES, routesState())
+        compose.runOnIdle { routes.shown.value = listOf(lzRoute()) }
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(SceneHeights.PAUSE_MS + 1))
+        compose.waitUntil(5_000) { model.session.value!!.hasRoutes.value }
+        compose.onNodeWithText(Viewer3DWords.ROUTES).assertIsEnabled().performClick()
+        val scene = model.session.value!!
+        assertTrue("Routes flies to them", scene.frame(1080, 2200, 2.75, scene.listener!!)!!.animating)
+    }
+
+    private fun routesState(): String? = compose.onNodeWithText(Viewer3DWords.ROUTES).fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
 
     @Test
     fun `a screen reader hears the scene said as it is drawn, and its actions step the camera as the fingers would`() {

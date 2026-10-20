@@ -19,15 +19,19 @@ public data class CameraPose(val position: Vec3, val heading: Double, val pitch:
     public companion object {
         /**
          * The web's view of a [sphere] (`frameSphere` in `Viewer3D.jsx`): looking down at 35° from 30° west of north, 2.2 radii back. How the view
-         * opens on the core's sphere, and where the *LZ* button flies to.
+         * opens on the core's sphere, and where the *LZ* and *Routes* buttons fly to. A sphere with no size is looked at from [POINT_RANGE], as Cesium
+         * looks at one (`adjustBoundingSphereOffset`: a range of 0 is none given).
          */
         public fun framing(frame: LocalFrame, sphere: Sphere): CameraPose {
+            val range = (sphere.radius * SceneLook.CAMERA_RANGE_FACTOR).takeIf { it != 0.0 } ?: POINT_RANGE
             val (position, heading, pitch) = lookAt(
-                frame, sphere.center, Math.toRadians(SceneLook.CAMERA_HEADING_DEG), Math.toRadians(SceneLook.CAMERA_PITCH_DEG),
-                sphere.radius * SceneLook.CAMERA_RANGE_FACTOR,
+                frame, sphere.center, Math.toRadians(SceneLook.CAMERA_HEADING_DEG), Math.toRadians(SceneLook.CAMERA_PITCH_DEG), range,
             )
             return CameraPose(position, heading, pitch)
         }
+
+        /** Cesium's `MINIMUM_ZOOM`: how far it stands from a sphere with no size. */
+        public const val POINT_RANGE: Double = 100.0
     }
 }
 

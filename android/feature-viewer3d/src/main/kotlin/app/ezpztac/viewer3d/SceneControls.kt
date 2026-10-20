@@ -124,18 +124,30 @@ internal fun GlScene(session: SceneSession) {
 private fun BoxScope.SceneOver(session: SceneSession, retry: () -> Unit) {
     val status by session.status.collectAsStateWithLifecycle()
     val pose by session.compass.collectAsStateWithLifecycle()
-    SceneOverContent(status, pose, session::frameLz, session::faceNorth, retry)
+    val hasRoutes by session.hasRoutes.collectAsStateWithLifecycle()
+    SceneOverContent(status, pose, session::frameLz, session::faceNorth, retry, hasRoutes, session::frameRoutes)
 }
 
-/** Over the scene: how it stands while it is not drawn (at the start), or the camera's *LZ* and the compass (at the end), as the web's. */
+/**
+ * Over the scene: how it stands while it is not drawn (at the start), or the camera's *LZ* and *Routes* and the compass (at the end), as the
+ * web's; *Routes* is there with no routes to frame, unavailable, as the web's is.
+ */
 @Composable
-internal fun BoxScope.SceneOverContent(status: SceneStatus, pose: CompassPose?, onLz: () -> Unit, onFaceNorth: () -> Unit, retry: () -> Unit) {
+internal fun BoxScope.SceneOverContent(
+    status: SceneStatus,
+    pose: CompassPose?,
+    onLz: () -> Unit,
+    onFaceNorth: () -> Unit,
+    retry: () -> Unit,
+    hasRoutes: Boolean = false,
+    onRoutes: () -> Unit = {},
+) {
     if (status == SceneStatus.Drawing) {
         Column(
             Modifier.align(Alignment.TopEnd).padding(Tokens.Spacing.md.dp),
             horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
         ) {
-            LzButton(onLz)
+            CameraButtons(onLz, hasRoutes, onRoutes)
             pose?.let { Compass(it, onFaceNorth) }
         }
     } else {
@@ -175,19 +187,42 @@ internal fun SceneState(status: SceneStatus, retry: () -> Unit, modifier: Modifi
     }
 }
 
-/** *LZ*: back to the view the scene opened on, the landing zone framed (the web's camera button). */
+/**
+ * The camera's buttons, side by side in one pill as the web's are: *LZ*, back to the view the scene opened on, and *Routes*, the routes drawn
+ * framed; unavailable, and saying why, with none to frame.
+ */
 @Composable
-internal fun LzButton(onClick: () -> Unit) {
-    Box(
+internal fun CameraButtons(onLz: () -> Unit, hasRoutes: Boolean, onRoutes: () -> Unit) {
+    Row(
         Modifier.clip(RoundedCornerShape(50)).background(CONTROL_GROUND)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50))
-            .clickable(onClickLabel = Viewer3DWords.FRAME_LZ, role = Role.Button, onClick = onClick)
-            .sizeIn(minWidth = 56.dp, minHeight = 48.dp).padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center,
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50)).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(Viewer3DWords.LZ, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp))
+        CameraButton(Viewer3DWords.LZ, Viewer3DWords.FRAME_LZ, enabled = true, onClick = onLz)
+        CameraButton(Viewer3DWords.ROUTES, Viewer3DWords.FRAME_ROUTES, enabled = hasRoutes, onClick = onRoutes, why = Viewer3DWords.NO_ROUTES)
     }
 }
+
+// One of the camera's buttons: its word, what it does for a screen reader, and why it is unavailable ([why]) when it is.
+@Composable
+private fun CameraButton(word: String, doing: String, enabled: Boolean, onClick: () -> Unit, why: String? = null) {
+    val ink = MaterialTheme.colorScheme.onSurface
+    Box(
+        Modifier.clip(RoundedCornerShape(50))
+            .clickable(enabled = enabled, onClickLabel = doing, role = Role.Button, onClick = onClick)
+            .semantics { if (!enabled && why != null) stateDescription = why }
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            word, color = if (enabled) ink else ink.copy(alpha = DISABLED_ALPHA),
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
+        )
+    }
+}
+
+/** Material's for what cannot be used now. */
+private const val DISABLED_ALPHA = 0.38f
 
 /**
  * The compass: the web's dial (`Compass3D.jsx`) lying on the ground, turned so its N points north and leaned back as far as the view is

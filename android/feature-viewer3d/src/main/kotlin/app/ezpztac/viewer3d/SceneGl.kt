@@ -207,7 +207,8 @@ internal class ScenePrograms private constructor(
             return shader
         }
 
-        private fun link(vertex: String, fragment: String): Int {
+        /** A program of [vertex] and [fragment], for one context; the routes' are linked here too. */
+        fun link(vertex: String, fragment: String): Int {
             val vs = compile(GLES30.GL_VERTEX_SHADER, vertex)
             val fs = compile(GLES30.GL_FRAGMENT_SHADER, fragment)
             val program = GLES30.glCreateProgram()

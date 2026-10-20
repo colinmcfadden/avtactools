@@ -6,12 +6,16 @@ import app.ezpztac.data.TilesetFiles
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.NetworkException
+import app.ezpztac.scene3d.BoundingSpheres
 import app.ezpztac.scene3d.CameraGesture
 import app.ezpztac.scene3d.CameraPose
 import app.ezpztac.scene3d.ImageryTileId
 import app.ezpztac.scene3d.LocalFrame
 import app.ezpztac.scene3d.PntsReader
 import app.ezpztac.scene3d.PointCloudScene
+import app.ezpztac.scene3d.RouteGeometry
+import app.ezpztac.scene3d.RouteHeights
+import app.ezpztac.scene3d.RouteScene3D
 import app.ezpztac.scene3d.SceneGround
 import app.ezpztac.scene3d.SceneLook
 import app.ezpztac.scene3d.ScreenPoint
@@ -456,6 +460,43 @@ class SceneSessionTest {
         assertTrue(r.asked > asked)
         r.session.setPointSize(1)
         assertEquals(SceneLook.DEFAULT_POINT_SIZE, r.session.pointSize)
+        r.close()
+    }
+
+    @Test
+    fun `routes placed are drawn from the next frame, Routes frames them as LZ frames the core, and with none there is nothing to frame`() = runTest {
+        val r = rig()
+        advanceUntilIdle()
+        val opening = r.frame()!!.camera
+        assertFalse(r.session.hasRoutes.value)
+        r.session.frameRoutes()
+        assertFalse("nothing to frame", r.frame()!!.animating)
+        val prepared = RouteScene3D.prepare(listOf(lzRoute()))
+        val placed = RouteScene3D.place(prepared, RouteHeights(prepared.samples.map { 340.0 }, prepared.samples.map { -30.35 }))
+        val asked = r.asked
+        r.session.setRoutes(placed)
+        assertTrue("a frame asked for", r.asked > asked)
+        assertTrue(r.session.hasRoutes.value)
+        val work = r.frame()!!
+        assertEquals(1, work.routesVersion)
+        assertEquals(RouteGeometry.of(placed, frame).positions, work.routes.positions)
+        assertTrue(work.routes.positions.isNotEmpty())
+        r.session.frameRoutes()
+        assertTrue(r.frame()!!.animating)
+        advanceTimeBy(SceneLook.FRAME_MS)
+        val framed = r.frame()!!.camera
+        val expected = CameraPose.framing(frame, BoundingSpheres.fromPoints(work.routes.positions, frame)!!)
+        assertEquals(expected.position.x, framed.position.x, 1e-6)
+        assertEquals(expected.position.y, framed.position.y, 1e-6)
+        assertEquals(expected.position.z, framed.position.z, 1e-6)
+        assertSameHeading(expected.heading, framed.heading)
+        assertNotEquals(opening.position.x, framed.position.x, 1e-3)
+        // No routes now: none drawn, and nothing to frame.
+        r.session.setRoutes(emptyList())
+        assertFalse(r.session.hasRoutes.value)
+        val none = r.frame()!!
+        assertEquals(2, none.routesVersion)
+        assertTrue(none.routes.lines.isEmpty())
         r.close()
     }
 

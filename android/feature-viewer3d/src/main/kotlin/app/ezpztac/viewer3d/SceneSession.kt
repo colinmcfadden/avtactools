@@ -7,6 +7,7 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.NetworkException
 import app.ezpztac.network.RateLimitedException
+import app.ezpztac.scene3d.BoundingSpheres
 import app.ezpztac.scene3d.CameraFlight
 import app.ezpztac.scene3d.CameraGesture
 import app.ezpztac.scene3d.CameraMoves
@@ -17,8 +18,10 @@ import app.ezpztac.scene3d.ImageryDraw
 import app.ezpztac.scene3d.ImageryScene
 import app.ezpztac.scene3d.ImageryTileId
 import app.ezpztac.scene3d.LocalFrame
+import app.ezpztac.scene3d.PlacedRoute
 import app.ezpztac.scene3d.PntsReader
 import app.ezpztac.scene3d.PointCloudScene
+import app.ezpztac.scene3d.RouteGeometry
 import app.ezpztac.scene3d.SceneDepth
 import app.ezpztac.scene3d.SceneGround
 import app.ezpztac.scene3d.SceneLook
@@ -134,6 +137,9 @@ class SceneWork(
     val imageryWhole: Set<TerrainTileId> = emptySet(),
     val uploads: List<Pair<ImageryTileId, ImageryImage>> = emptyList(),
     val imageryLetGo: List<ImageryTileId> = emptyList(),
+    /** The routes, in the scene's frame, and how many times they have changed: the renderer makes their buffers again when it has. */
+    val routes: RouteGeometry = RouteGeometry.NONE,
+    val routesVersion: Int = 0,
 )
 
 /**
@@ -184,6 +190,11 @@ class SceneSession(
 
     private val _compass = MutableStateFlow<CompassPose?>(null)
 
+    private val _hasRoutes = MutableStateFlow(false)
+
+    /** Whether there are routes drawn for *Routes* to frame (the web's button is disabled without). */
+    val hasRoutes: StateFlow<Boolean> = _hasRoutes.asStateFlow()
+
     /** The compass for the camera as last drawn; null until the first frame. */
     val compass: StateFlow<CompassPose?> = _compass.asStateFlow()
 
@@ -212,6 +223,8 @@ class SceneSession(
     private var viewport: Viewport? = null
     private var coreRoot: Tile? = null
     private var ringRoot: Tile? = null
+    private var routes: RouteGeometry = RouteGeometry.NONE
+    private var routesVersion = 0
 
     private class Viewport(val width: Int, val height: Int, val pixelRatio: Double)
 
@@ -284,11 +297,15 @@ class SceneSession(
         val now = clock()
         val camera: ViewCamera
         val animating: Boolean
+        val drawnRoutes: RouteGeometry
+        val drawnRoutesVersion: Int
         synchronized(lock) {
             viewport = Viewport(widthPx, heightPx, pixelRatio)
             val at = poseAt(now) ?: return null
             camera = at.camera(widthPx, heightPx, pixelRatio, SceneDepth.NEAR, SceneDepth.FAR)
             animating = flight != null
+            drawnRoutes = routes
+            drawnRoutesVersion = routesVersion
         }
         updateCompass(camera)
         val work = scene.frame(camera, now)
@@ -304,6 +321,7 @@ class SceneSession(
             camera, work.byCloud, work.letGo, pointSize, animating,
             ground = ground?.drawn.orEmpty(), groundLetGo = ground?.letGo.orEmpty(),
             imagery = laid?.byTerrain.orEmpty(), imageryWhole = laid?.complete.orEmpty(), uploads = uploads, imageryLetGo = laid?.letGo.orEmpty(),
+            routes = drawnRoutes, routesVersion = drawnRoutesVersion,
         )
     }
 
@@ -351,6 +369,26 @@ class SceneSession(
                 },
             ),
         )
+    }
+
+    /** The routes placed on the ground ([app.ezpztac.data.SceneHeights]), drawn from the next frame on. */
+    fun setRoutes(placed: List<PlacedRoute>) {
+        val geometry = RouteGeometry.of(placed, frame)
+        synchronized(lock) {
+            routes = geometry
+            routesVersion++
+        }
+        _hasRoutes.value = geometry.lines.isNotEmpty()
+        invalidate()
+    }
+
+    /** *Routes*: flies to frame every place the routes' lines pass, as *LZ* frames the core (the web's `frameRoutes`), in [SceneLook.FRAME_MS]. */
+    fun frameRoutes() {
+        synchronized(lock) {
+            val sphere = BoundingSpheres.fromPoints(routes.positions, frame) ?: return
+            fly(CameraPose.framing(frame, sphere), SceneLook.FRAME_MS)
+        }
+        invalidate()
     }
 
     /** *LZ*: flies back to the view the scene opened on, the core's sphere framed, in [SceneLook.FRAME_MS]. */

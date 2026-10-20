@@ -2,20 +2,24 @@ package app.ezpztac.viewer3d
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.GroundUnder
 import app.ezpztac.data.LidarBuilds
 import app.ezpztac.data.LidarLookup
 import app.ezpztac.data.LidarLookupRun
 import app.ezpztac.data.LidarPhase
 import app.ezpztac.data.LidarProblem
+import app.ezpztac.data.SceneHeights
 import app.ezpztac.data.TerrainProbe
 import app.ezpztac.data.TilesetAddress
 import app.ezpztac.data.Viewer3DTarget
 import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.model.LatLon
+import app.ezpztac.model.SketchRoute
 import app.ezpztac.scene3d.SceneLook
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,11 +69,17 @@ data class Viewer3DUi(
     }
 }
 
+/** The routes the 2D map draws now (the open set's, a pack's included), for the 3D view to draw the same: a hidden one is left out as they are placed. */
+fun interface ShownRoutes {
+    fun routes(): Flow<List<SketchRoute>>
+}
+
 /**
  * The 3D view's state: one lookup (core-data's [LidarBuilds]) for each LZ/PZ it is shown on, the web's probe for ground there, and once the point
  * cloud is in hand its scene ([SceneSession]: the tiles, the camera). The view model outlives the page (it is the activity's), so [show] starts
  * what an opening needs and [close] lets go of it; a new target, or the same one moved, starts again, and only its being saved changes on the run.
- * The point size is the person's, kept on the device ([PointSizeMemory]).
+ * The point size is the person's, kept on the device ([PointSizeMemory]). While it is shown, the routes the map draws ([ShownRoutes]) are placed on
+ * the ground under them ([SceneHeights], the web's `useRouteScene`) and handed to whichever scene is up, as they change.
  */
 @HiltViewModel
 class Viewer3DViewModel @Inject constructor(
@@ -77,6 +87,8 @@ class Viewer3DViewModel @Inject constructor(
     private val probe: TerrainProbe,
     private val scenes: SceneMaker,
     private val pointSizes: PointSizeMemory,
+    private val shownRoutes: ShownRoutes,
+    private val routeGround: GroundUnder,
 ) : ViewModel() {
     private val target = MutableStateFlow<Viewer3DTarget?>(null)
     private val lookup = MutableStateFlow(LidarLookup())
@@ -85,6 +97,7 @@ class Viewer3DViewModel @Inject constructor(
     private var jobs: List<Job> = emptyList()
     private val _session = MutableStateFlow<SceneSession?>(null)
     private var sceneOf: Pair<String?, String?>? = null
+    private var heights: SceneHeights? = null
     private val _pointSize = MutableStateFlow(SceneLook.pointSizeOrDefault(pointSizes.get()))
 
     /** The scene of the point cloud being shown; null until it is in hand. */
@@ -110,6 +123,7 @@ class Viewer3DViewModel @Inject constructor(
         val at = LatLon(shown.lat, shown.lon)
         val started = lidar.start(viewModelScope, at, keep = shown.saved)
         run = started
+        val placing = SceneHeights(routeGround, viewModelScope).also { heights = it }
         jobs = listOf(
             viewModelScope.launch {
                 started.state.collect {
@@ -118,6 +132,8 @@ class Viewer3DViewModel @Inject constructor(
                 }
             },
             viewModelScope.launch { ground.value = probe.hasGround(at) },
+            viewModelScope.launch { shownRoutes.routes().collect(placing::routes) },
+            viewModelScope.launch { placing.placed.collect { _session.value?.setRoutes(it) } },
         )
     }
 
@@ -127,7 +143,9 @@ class Viewer3DViewModel @Inject constructor(
         if (_session.value != null && sceneOf == at) return
         _session.value?.close()
         sceneOf = at
-        _session.value = scenes.make(LatLon(target.lat, target.lon), TilesetAddress.of(found.url), TilesetAddress.of(found.contextUrl), viewModelScope, _pointSize.value)
+        val made = scenes.make(LatLon(target.lat, target.lon), TilesetAddress.of(found.url), TilesetAddress.of(found.contextUrl), viewModelScope, _pointSize.value)
+        heights?.placed?.value?.let(made::setRoutes)
+        _session.value = made
     }
 
     /** The point size, 2 to 16, kept for next time. */
@@ -155,6 +173,8 @@ class Viewer3DViewModel @Inject constructor(
         jobs = emptyList()
         run?.close()
         run = null
+        heights?.close()
+        heights = null
         _session.value?.close()
         _session.value = null
         sceneOf = null
@@ -165,6 +185,7 @@ class Viewer3DViewModel @Inject constructor(
 
     override fun onCleared() {
         run?.close()
+        heights?.close()
         _session.value?.close()
     }
 }

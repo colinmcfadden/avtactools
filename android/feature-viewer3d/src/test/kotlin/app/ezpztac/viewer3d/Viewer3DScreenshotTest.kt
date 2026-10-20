@@ -61,7 +61,14 @@ class Viewer3DScreenshotTest {
 
     private val oblique = CompassPose.of(Math.toRadians(-30.0), Math.toRadians(-35.0))
 
-    private fun scene(file: String, status: SceneStatus = SceneStatus.Drawing, pose: CompassPose = oblique, mode: ThemeMode = ThemeMode.Dark, noGround: Boolean = false) {
+    private fun scene(
+        file: String,
+        status: SceneStatus = SceneStatus.Drawing,
+        pose: CompassPose = oblique,
+        mode: ThemeMode = ThemeMode.Dark,
+        noGround: Boolean = false,
+        routes: Boolean = true,
+    ) {
         compose.setContent {
             EzpzTheme(mode) {
                 Viewer3DPage(
@@ -72,7 +79,7 @@ class Viewer3DScreenshotTest {
                             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(SCENE_BACKGROUND, Color(0xFF2C3A24), Color(0xFF5B6B3C)))))
                             if (mode == ThemeMode.Night) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = SCENE_NIGHT_DIM)))
                         },
-                        over = { SceneOverContent(status, pose, {}, {}, {}) },
+                        over = { SceneOverContent(status, pose, {}, {}, {}, hasRoutes = routes) },
                         foot = { SceneFootContent(status, 5, {}) },
                     ),
                 )
@@ -89,6 +96,7 @@ class Viewer3DScreenshotTest {
     @Test fun sceneFailed() = scene("failed", SceneStatus.Failed(SceneProblem.UNREACHABLE))
     @Test fun sceneNoGl() = scene("no-gl", SceneStatus.Failed(SceneProblem.NO_GL), noGround = true)
     @Test fun sceneNoGround() = scene("no-ground", noGround = true)
+    @Test fun sceneNoRoutes() = scene("no-routes", routes = false)
 
     @Test
     @Config(qualifiers = "w360dp-h740dp-xxhdpi", fontScale = 2.0f)

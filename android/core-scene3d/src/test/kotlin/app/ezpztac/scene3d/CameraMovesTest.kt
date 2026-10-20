@@ -39,6 +39,14 @@ class CameraMovesTest {
     }
 
     @Test
+    fun `a sphere with no size is framed from 100 m, as Cesium frames one`() {
+        val frame = LocalFrame(34.591552, -84.128225)
+        val pose = CameraPose.framing(frame, Sphere(Vec3(10.0, 20.0, 370.0), 0.0))
+        assertEquals(CameraPose.POINT_RANGE, (pose.position - Vec3(10.0, 20.0, 370.0)).length, 1e-6)
+        assertEquals(-35 * deg, pose.pitch, 1e-5)                                                // in the centre's own up, a few arcseconds off the scene's
+    }
+
+    @Test
     fun `the middle of the view is the ground point the camera looks at`() {
         val c = camera(start)
         assertNear(Vec3(0.0, 0.0, ground), moves.pivot(c), 1e-6)

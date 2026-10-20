@@ -6,6 +6,9 @@ plugins {
 // their tiles chosen as Cesium chooses them, the terrain's tiles and meshes, the routes' shapes and the compass. Everything that
 // decides what the renderer draws is here, where it is tested; the OpenGL that draws it is feature-viewer3d's, and compile-only.
 dependencies {
+    // The routes drawn in 3D are the 2D map's, planned by the same planner (routeScene.js calls computeRoutePlan).
+    api(project(":core-model"))
+    implementation(project(":core-planning"))
     // A tileset.json is read as a JSON tree: the format asks a reader to pass over what it does not know.
     implementation(libs.kotlinx.serialization.json)
     testImplementation(project(":core-testing"))
