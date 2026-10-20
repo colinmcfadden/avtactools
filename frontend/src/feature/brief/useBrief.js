@@ -186,7 +186,8 @@ export const useBrief = ({
   useEffect(() => {
     if (active) setOpenedAt(Date.now());
   }, [active]);
-  const [weather, setWeather] = useState({ key: null, loading: false, fetchedAt: null, departure: null, arrival: null, stops: {} });
+  // `key`: the places asked about last; `fetchedFor`: the places what is here was fetched for.
+  const [weather, setWeather] = useState({ key: null, fetchedFor: null, loading: false, fetchedAt: null, departure: null, arrival: null, stops: {} });
 
   const extras = useMemo(
     () => ({ threats, aircraftProfiles, missionAircraft }),
@@ -207,14 +208,22 @@ export const useBrief = ({
     setWeather((w) => ({ ...w, key, loading: true }));
     const ask = (place) => (place?.lat != null ? weatherAt(place) : Promise.resolve(null));
     const [departure, arrival, ...stops] = await Promise.all([ask(places.departure), ask(places.arrival), ...places.stops.map(ask)]);
-    setWeather((w) => (w.key !== key ? w : {
-      key,
-      loading: false,
-      fetchedAt: Date.now(),
-      departure,
-      arrival,
-      stops: Object.fromEntries(places.stops.map((stop, i) => [stop.id, stops[i]]).filter(([, report]) => report)),
-    }));
+    setWeather((w) => {
+      if (w.key !== key) return w;
+      // No answer at all (no connection): what was fetched for these places stays, with its age, as the weather tiles keep theirs.
+      if (departure == null && arrival == null && stops.every((report) => report == null) && w.fetchedFor === key && w.fetchedAt != null) {
+        return { ...w, loading: false };
+      }
+      return {
+        key,
+        fetchedFor: key,
+        loading: false,
+        fetchedAt: Date.now(),
+        departure,
+        arrival,
+        stops: Object.fromEntries(places.stops.map((stop, i) => [stop.id, stops[i]]).filter(([, report]) => report)),
+      };
+    });
   }, [bare.places, placesKey]);
 
   useEffect(() => {

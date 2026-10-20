@@ -140,6 +140,19 @@ describe("useBrief outside a pack", () => {
     expect(asked).toHaveLength(2 + 5);
   });
 
+  it("keeps the weather there was, with its age, when a refresh gets no answer at all", async () => {
+    briefApi.weatherAt.mockResolvedValue({ station_id: "KMGE", raw_metar: "KMGE 161553Z 27008KT 10SM FEW045 18/09 A3002", pressure: 30.02, kind: "observation" });
+    const { result } = render();
+    await waitFor(() => expect(result.current.weather.fetchedAt).not.toBeNull());
+    const fetchedAt = result.current.weather.fetchedAt;
+    const steps = JSON.stringify(result.current.model.steps);
+    briefApi.weatherAt.mockResolvedValue(null);                                   // no connection
+    await act(async () => { await result.current.weather.refresh(); });
+    expect(result.current.weather.loading).toBe(false);
+    expect(result.current.weather.fetchedAt).toBe(fetchedAt);
+    expect(JSON.stringify(result.current.model.steps)).toBe(steps);
+  });
+
   it("asks nothing while the brief is closed", () => {
     render(false);
     expect(briefApi.weatherAt).not.toHaveBeenCalled();
