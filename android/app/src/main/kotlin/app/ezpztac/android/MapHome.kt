@@ -72,6 +72,8 @@ import app.ezpztac.android.frame.rememberTabletFrameState
 import app.ezpztac.android.frame.shownPanel
 import app.ezpztac.android.frame.usesTabletFrame
 import app.ezpztac.android.packs.InviteNotices
+import app.ezpztac.briefs.BriefSetupHost
+import app.ezpztac.briefs.BriefViewModel
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
@@ -161,10 +163,13 @@ import app.ezpztac.workspace.importsLine
 import app.ezpztac.workspace.offersLibrary
 import app.ezpztac.workspace.rememberFileImport
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** How far from a graphic's point a finger still counts as on it: the platform's minimum touch target is 48 dp across, so 24 dp each way. */
 private const val TOUCH_RADIUS_DP = 24.0
@@ -291,6 +296,26 @@ fun MapHome(
     val members: MembersViewModel = hiltViewModel()
     val membersOpen by remember(members) { members.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
     LaunchedEffect(members) { members.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // The mission brief's setup (docs/MISSION_BRIEF.md, B8): from the tablet's rail only, for an account with Mission briefs; a dialog drawing the frame's
+    // toasts over itself. Its PDF goes to the share sheet from here. A window that turns into a phone's, or an account without the feature, closes it.
+    val briefs: BriefViewModel = hiltViewModel()
+    val briefsHere = tablet && user.hasFeature("mission_brief")
+    val briefOpen by remember(briefs) { briefs.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
+    LaunchedEffect(briefs) { briefs.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // A brief's PDF is megabytes: written off the main thread, and a write that fails (the disk full) is said, never the end of the app.
+    LaunchedEffect(briefs) {
+        briefs.exports.collect { pdf ->
+            val chooser = try {
+                withContext(Dispatchers.IO) { ShareExport.prepare(context, ExportFile(pdf.fileName, pdf.bytes)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (chooser != null) context.startActivity(chooser) else launch { snackbars.showSnackbar("The PDF could not be handed to another app.", withDismissAction = true) }
+        }
+    }
+    LaunchedEffect(briefsHere) { if (!briefsHere) briefs.close() }
     // Teams, from the switcher's teams line: a page (a dialog on a tablet) drawing the frame's toasts over itself.
     val teams: TeamsViewModel = hiltViewModel()
     val teamsOpen by remember(teams) { teams.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
@@ -320,7 +345,7 @@ fun MapHome(
     val addingTo = CopyRules.addingTo(packsHere, openPack)
     val adding by copies.adding.collectAsStateWithLifecycle()
     // A page or dialog over the frame (the Library, Members, Teams, New pack): nobody is looking at the map or the Pack panel under it.
-    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen
+    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen || briefOpen
     LaunchedEffect(newPack) {
         newPack.made.collect { uuid ->
             pickedPack(uuid)
@@ -717,6 +742,10 @@ fun MapHome(
                             libraryTab = libraryTabFor(current)
                         },
                         account = { account(false) },
+                        onBrief = if (briefsHere) ({
+                            focus.clearFocus()
+                            briefs.open()
+                        }) else null,
                         workspace = openPack.let { pack ->
                             RailWorkspace(
                                 // Only a tile that opens the switcher says it changes the workspace.
@@ -747,7 +776,7 @@ fun MapHome(
                         routesModel = routesModel, routePlan = movableRoutePlan, onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
                     ),
                     // The Library, Members and Teams draw the toasts over themselves, as dialogs: the frame's under their scrim would be a second copy.
-                    toasts = libraryTab == null && !membersOpen && !teamsOpen,
+                    toasts = libraryTab == null && !membersOpen && !teamsOpen && !briefOpen,
                     band = openPack?.takeIf { it.finished }?.let { finished ->
                         { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen, onSaveCopy = CopyRules.bannerCopy(lz.current?.uuid, saveCopy)) }
                     },
@@ -795,6 +824,7 @@ fun MapHome(
             if (packsHere) NewPackHost(newPack, tablet)
             if (packsHere) MembersHost(members, tablet, snackbars)
             if (packsHere) TeamsHost(teams, tablet, snackbars)
+            if (briefsHere) BriefSetupHost(briefs, snackbars)
             // The Library (the design's): opening an item from it shuts it and shows the panel the item is in, as the web's does; renaming, deleting and settling a
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(

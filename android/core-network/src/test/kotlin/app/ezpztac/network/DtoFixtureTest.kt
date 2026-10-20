@@ -7,6 +7,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DynamicTest
@@ -44,6 +47,9 @@ class DtoFixtureTest {
         "weather: no station and no NOTAMs" to WeatherReportDto.serializer(),
         "weather: both services down" to WeatherReportDto.serializer(),
         "weather: the NOTAM search fails" to WeatherReportDto.serializer(),
+        // The weather at a planned time (`weatherAt`): kept whole as JSON, which is how the brief's compiler reads it (docs/MISSION_BRIEF.md §2.5).
+        "weather: at a planned time, from the TAF" to JsonObject.serializer(),
+        "weather: at a time no TAF covers, the observation" to JsonObject.serializer(),
         "pointset: create" to PointSetSummary.serializer(),
         "pointset: create again with the same identity" to PointSetSummary.serializer(),
         "pointset: list" to ListSerializer(PointSetSummary.serializer()),
@@ -151,10 +157,6 @@ class DtoFixtureTest {
             }
         }
 
-    // The weather at a planned time (`/api/weather?at=`), which the brief's setup asks for (docs/MISSION_BRIEF.md §2.5): the app has no type for its
-    // added fields until the setup is ported (step B8).
-    private val weatherAtResponses = setOf("weather: at a planned time, from the TAF", "weather: at a time no TAF covers, the observation")
-
     @Test
     fun `no successful response is left without a type`() {
         val uncovered = Recorded.all
@@ -162,8 +164,22 @@ class DtoFixtureTest {
             .map { it.name }
             // Bodies that are a status word only, not a record.
             .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "aircraft: delete", "account deletion") }
-            .filterNot { it in weatherAtResponses }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
+    }
+
+    @Test
+    fun `the weather at a planned time carries what the brief reads of it`() {
+        // Kept whole as JSON, so no type notices a field renamed: what core-brief's compile reads of a report (the station, its words, whether it is a forecast,
+        // the wind, the altimeter and the NOTAMs) is held to what the server answers here.
+        listOf("weather: at a planned time, from the TAF" to "forecast", "weather: at a time no TAF covers, the observation" to "observation").forEach { (name, kind) ->
+            val report = Json.parseToJsonElement(Recorded.text(name)).jsonObject
+            fun number(key: String) = (report[key] as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull
+            assertEquals(JsonPrimitive(kind), report["kind"], name)
+            assertTrue((report["station_id"] as? JsonPrimitive)?.isString == true, name)
+            assertTrue(listOf("raw_taf", "raw_metar").any { (report[it] as? JsonPrimitive)?.isString == true }, name)
+            assertTrue(number("wind_spd_kts") != null && number("wind_dir") != null && number("pressure") != null, name)
+            assertTrue(report["notams"] is JsonObject, name)
+        }
     }
 
     @Test

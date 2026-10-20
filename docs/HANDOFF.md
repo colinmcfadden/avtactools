@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-19 for the mission brief (§0a: B0 to B6 built on `feat/mission-brief`, web and server; Android's part is B7 to B9, B7 under way in its own session).
+Last refreshed: 2026-10-19 for the mission brief (§0a: B0 to B8 built on `feat/mission-brief`: the web and the server, then Android's core (B7) and its setup, review, Share and Save on a tablet (B8); B9, the Android sandtable, is next).
 Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
@@ -62,7 +62,7 @@ Web and Android; Android tablet size and up only for now.
   and nothing past 84° of latitude; the server taking the strip's pixel size from the model, trusting its field types, caching decoded tiles, laying a
   strip out twice and leaving grid lines through the scale bar's and arrow's corners unnumbered (now every line is numbered on an edge or on itself,
   swept at every course and both scales); the squares beside the route unnamed; and the cover counting pages Chromium decides.
-- **B7** (a side session, branch `claude/android-core-brief-2ffe1e`, on `feat/mission-brief` at B5; not pushed): **7a** the new pure module
+- **B7** (built in a side session on its own branch, `claude/android-core-brief-2ffe1e`, and merged here): **7a** the new pure module
   `android/core-brief`: `CompileBrief` (compile.js ported, held strictly to every case of `compile.json`), `Light` (light.js, held to Skyfield's
   `light.json`) and `BriefFormats` (`contracts/briefs` bundled by the build, held byte for byte and to the format's rules). AGENTS.md §17 has the row.
   **7b** the brief's Library record: `RecordKind.BRIEF` over `/api/briefs` (core-network's calls, core-sync's gateway and change feed), through every per-kind
@@ -72,6 +72,17 @@ Web and Android; Android tablet size and up only for now.
   `PackItemCounts` takes `brief`, a refused brief is kept in the Library as a brief; a pack story holds it on the fake server, the real one and Room.
   Then B6 merged in and followed: the strip charts in `CompileBrief` (`StripCharts`), every case of the new `compile.json` exact, strip cases included;
   `strip-grid.json` (the grid added at print time) is B8's, with the PDF request.
+- **B8** Android's brief on a tablet (AGENTS.md §17, *The brief on a tablet*): the rail's *Brief* opens the setup's three steps (`feature-brief`, a dialog
+  nearly the window), the review over the real PDF (drawn by `PdfRenderer`), *Save to device* and *Share PDF*. Under it core-data's `BriefKeeper`
+  (the Library record or the pack's item; a change kept as a transform and laid over the version it is written or sent to), `BriefSources` (the
+  pack's items, or this session's open LZ/PZs with their measured slope and route sets) and `BriefSession` (compiled off the main thread with the weather
+  at the planned times, `weatherAt`; printed with the strips' grid, core-brief's `StripGrid`); core-brief's `BriefEdits` are the setup's edits. Three
+  independent reviews (parity with the web, concurrency and lifecycle, the screens) found real faults, all fixed with tests and checked by mutation:
+  pack edits that could go out of order or crash the app, a Library brief never read again (the next change wrote over a newer version), a paused
+  pack's changes dropped, the session left open for the next account, a field's words carried to another answer (no row was keyed), the script reset
+  undone, the slope call never briefed outside a pack, the PDF renderer's thread lock and leftover files, a narrow window's layout. On the way, two
+  changes outside Android: `compile.json` gained a slope case (the web's slope call, now held on both sides) and the web keeps its weather when a
+  refresh gets no answer, as the plan always said.
 
 **Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
 `mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android
@@ -79,15 +90,20 @@ Web and Android; Android tablet size and up only for now.
 `mgrsGridFixtures` fails, as before), `npm run build` with no new warnings, and the backend's `test_brief_pdf.py` and `test_contract_fixtures.py`
 against the regenerated `compile.json`. For B6: the web's whole Jest suite (1,098 passed; only `mgrsGridFixtures`), `npm run build` with no new
 warnings, and the backend's CI list (531 passed, 2 skipped: the live service needs Postgres); OP DK at 1:100,000 and the dogleg at 1:250,000
-printed again through Gotenberg after the review's fixes and looked at.
+printed again through Gotenberg after the review's fixes and looked at. For B8: Android's full `./gradlew test lintDebug assembleDebug` (5,633 tests,
+3 skipped, none failed; lint clean), the screens drawn by Roborazzi at 1,280 and 840 dp and looked at, the web's brief and contract tests (165 and 14
+in `useBrief`) and `npm run build` with no new warnings.
 
 **Not verifiable here, or not tried:** a brief built from real LZ/PZs and routes in the browser (only the fixture's OP DK, in Jest and the PDF test,
 and seeded as a pack for the sandtable); the sandtable's animated flights (the agent's browser reports reduced motion, so only the unanimated fit was
 seen) and on a projector or a presenter's clicker; the weather `at` answers from aviationweather.gov live; Gotenberg on the Coolify VM.
 
-**Next, in order** (docs/MISSION_BRIEF.md §5): **B7** Android's `core-brief` (under way in its own session, on its own branch from `feat/mission-brief`) (port `compile.js` and `light.js`, held to `compile.json` and `light.json`; the record kind;
-the pack kind with `packs/ops-brief.json` and `packs/session-brief.json`'s session rules); **B8** Android setup, review, Share and Save (tablet);
-**B9** Android sandtable (held to `brief/sandtable.json`). **Owner steps:** deploy Gotenberg on the VM (AGENTS.md §9 has the command line) and set `GOTENBERG_URL`; check Mapbox's
+**Not verifiable here (B8):** the platform's renderer drawing a real PDF (Robolectric's cannot open one), the share sheet and the picker, a real
+Gotenberg print on a device, the setup over the real map, and TalkBack: the owner's device run.
+
+**Next, in order** (docs/MISSION_BRIEF.md §5): **B9** Android sandtable (held to `brief/sandtable.json`), on a tablet. Owner's calls the B8 reviews raised
+(AGENTS.md §15): one identity for a session's LZ/PZ and route in a Library brief (the web and Android name them differently), two brief items made
+when two members start a pack's brief at once, and the weather asked an hour off across a change of daylight saving; each web first. **Owner steps:** deploy Gotenberg on the VM (AGENTS.md §9 has the command line) and set `GOTENBERG_URL`; check Mapbox's
 terms for printed figures before the PDF ships; tick *Mission brief* for testers in the admin dashboard.
 
 **Local setup left on the Mac:** `frontend/.env` (gitignored) points at a backend on **port 5055**, because macOS's AirPlay receiver holds 5000; run the

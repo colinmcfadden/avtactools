@@ -46,6 +46,7 @@ dependencies {
     implementation(project(":feature-map"))
     implementation(project(":feature-workspace"))
     implementation(project(":feature-packs"))
+    implementation(project(":feature-brief"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

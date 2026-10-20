@@ -104,8 +104,8 @@ object ShareExport {
     private fun keepFor(name: String) = if (name.endsWith(".ths", ignoreCase = true)) KEEP_THREATS_MS else KEEP_MS
 
     /**
-     * A file name with no folder in it, keeping one of the four extensions the app exports (`.msnx` mission, `.ths` threats, `.gpx` and `.fpl` for another app) and giving
-     * anything else `.msnx`, which is what most exports are.
+     * A file name with no folder in it, keeping one of the extensions the app exports (`.msnx` mission, `.ths` threats, `.gpx` and `.fpl` for another app, `.pdf` a
+     * mission brief) and giving anything else `.msnx`, which is what most exports are.
      */
     internal fun plainName(name: String): String {
         val last = name.substringAfterLast('/').substringAfterLast('\\').trim().trim('.')
@@ -114,6 +114,7 @@ object ShareExport {
             when (extension) {
                 ".ths" -> "threats"
                 ".gpx", ".fpl" -> "route"
+                ".pdf" -> "Mission brief"
                 else -> "ROUTES"
             }
         }
@@ -127,13 +128,17 @@ object ShareExport {
     internal fun mimeOf(fileName: String): String = when {
         fileName.endsWith(".gpx", ignoreCase = true) -> "application/gpx+xml"
         fileName.endsWith(".fpl", ignoreCase = true) -> "application/xml"
+        fileName.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
         else -> MIME
     }
 
-    private fun titleOf(files: List<ExportFile>): String =
-        if (files.all { it.fileName.endsWith(".gpx", ignoreCase = true) || it.fileName.endsWith(".fpl", ignoreCase = true) }) "Share route" else "Export for AMPS"
+    private fun titleOf(files: List<ExportFile>): String = when {
+        files.all { it.fileName.endsWith(".pdf", ignoreCase = true) } -> "Share brief"
+        files.all { it.fileName.endsWith(".gpx", ignoreCase = true) || it.fileName.endsWith(".fpl", ignoreCase = true) } -> "Share route"
+        else -> "Export for AMPS"
+    }
 
-    private val EXTENSIONS = listOf(".ths", ".gpx", ".fpl", ".msnx")
+    private val EXTENSIONS = listOf(".ths", ".gpx", ".fpl", ".pdf", ".msnx")
 
     private const val MIME = "application/octet-stream"
 }

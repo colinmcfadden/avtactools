@@ -1,6 +1,7 @@
 # Mission brief — architecture and plan
 
-Status: **B0 to B6 done, B7 done on its own branch** (`feat/mission-brief`; B7 on `claude/android-core-brief-2ffe1e`, 2026-10-16 to 19). The screens are the design canvas's section 6 (*Mission brief*:
+Status: **B0 to B8 done** (`feat/mission-brief`, 2026-10-16 to 19; B7 was built on its own branch and merged): the web, the server and Android's setup,
+review, Share and Save on a tablet. B9, Android's sandtable, is next. The screens are the design canvas's section 6 (*Mission brief*:
 seven web boards, three Android tablet boards). This file is the plan for building them on the web and Android. The owner's decisions of
 2026-10-16 are in §9.
 
@@ -141,7 +142,9 @@ PROB groups are not the forecast; no temperature, dew point or METAR, which a TA
 ceiling and visibility, null when it gives either not); anything sooner, or a time no TAF nearby covers, is the latest METAR (`kind:
 "observation"`, with `observed`). The NOTAMs are those in force now either way. Without `at` the answer is exactly as before. Enroute winds
 already come from `/api/route-winds`. The brief keeps the answers it was generated with and how old they are, the way the weather tiles do,
-and a stale report says so.
+and a stale report says so. **As built (B8):** on the web and Android a refresh that gets no answer at all (no connection) keeps what was there,
+with its age. Both ask about the places a compile without the weather gives, at the device's offset when the brief opened, so across a change
+of daylight saving before the departure they ask an hour off (AGENTS.md §15).
 
 ### 2.6 Figures, drawn from the plan, on the server
 
@@ -250,6 +253,12 @@ A presentation mode over the existing map, not a new map:
   the Library and updating from an original are not part of the exception, and a brief is not a source kind for copying in (its
   references name the Library's LZ/PZs, not the pack's). *Save to Library* of a brief item makes a `SavedBrief` and needs
   `mission_brief`. A pack's `item_counts` do not count briefs yet: Android decodes that object strictly (AGENTS.md §15).
+- **As built (B8, Android):** the same records and items, kept by core-data's `BriefKeeper`. A change is kept as what it does (a transform of the
+  document, core-brief's `BriefEdits`) and laid over the brief as it is when it is written or sent, so a version another device or member made
+  meanwhile is kept. In the Library the brief is read again each time the setup opens, and the one opened last is remembered for each account.
+  In a pack changes go in order, as one batch of their own; what the pack cannot take now (loading, paused) waits and goes when it can, and what
+  it never will (closed, gone) is kept in the Library as "NAME (my edits)" (**not like the web**, which drops them: owner decision 4 of the
+  pack work). A change the pack's rules call no change sends nothing. AGENTS.md §17, *The brief on a tablet*, has the rest.
 - **Generated PDFs are not kept**: "Last generated" in the menu is the document's `generated` entries; *PDF* there generates again from the
   plan as it is now, and says so if the plan changed since.
 
@@ -267,10 +276,12 @@ the brief exception in `pack_routes`, the weather route's `at`, OpenAPI and reco
 `entitlements.DEFAULT_OFF` until launch, and `GOTENBERG_URL` (AGENTS.md §10). Gotenberg itself is the published image, configured in the
 Coolify app (JavaScript off, network denied); no Dockerfile of ours.
 
-**Android:** `core-brief` (pure Kotlin: templates, document, `compileBrief`, light data; held to `contracts/fixtures/brief`),
-`feature-brief` (setup, review over `PdfRenderer`, Share and Save, the sandtable; Robolectric and Roborazzi tests), the brief's record in
-`core-sync`/`core-data`, the pack kind and the brief exception in `core-missionpacks` and `PackLock`, and a *Brief* entry in the
-**tablet's rail only** (the owner, 2026-10-16: tablet size and up for now; the phone's frame offers none).
+**Android:** `core-brief` (pure Kotlin: templates, document, `compileBrief`, light data, the strips' print-time grid `StripGrid`, and the
+setup's edits `BriefEdits`; held to `contracts/fixtures/brief`), `feature-brief` (setup, review over `PdfRenderer`, Share and Save, the
+sandtable; Robolectric and Roborazzi tests), the brief's record in `core-sync`/`core-data` and what sets it up in `core-data` (`BriefKeeper`,
+where it is kept; `BriefSources`, what it is built from; `BriefSession`, compiled with the weather at its planned times), the pack kind and
+the brief exception in `core-missionpacks` and `PackLock`, and a *Brief* entry in the **tablet's rail only** (the owner, 2026-10-16: tablet
+size and up for now; the phone's frame offers none).
 
 ---
 
@@ -288,8 +299,8 @@ green, AGENTS.md and `docs/HANDOFF.md` updated in the same commit.
 | **B4** | **Done.** compileBrief gives the figures' `geometry` (route lines and nav-log rows, LZ/PZ boundaries and aircraft, threats, rally points) so the server only draws; `backend/brief/` draws each figure (tiles stitched with Pillow, the plan as SVG), lays out the pages (Jinja, print CSS; the cover on its own page) and prints them through Gotenberg (`POST /api/brief/pdf`, `GOTENBERG_URL`); the review step's Download PDF. Tried against Gotenberg 8.21.1 with JavaScript off and the network denied: OP DK's 17 figures in 6 s cold (1 s with tiles cached), printed in 0.5 s. **Changed on the way:** a brief says no page numbers (the packet by section, the contents by step): Chromium breaks a long step onto a second page, which the client cannot know; the footer's numbers are Chromium's own and true | B3 |
 | **B5** | **Done.** Web: the live sandtable (§2.8): the Brief menu's *Present live sandtable* and the review's *Present sandtable*, the bar, steps, constants and script card over the live map, each step flown to and drawn as the PDF draws its figure (`sandtableSteps.js`, held to `contracts/fixtures/brief/sandtable.json` for B9), editing off while it runs. **Changed on the way:** a departure figure names the route it leaves on (`compile.json` regenerated), which the PDF's rules already expected and now light | B3 |
 | **B6** | **Done.** Strip charts in the appendix (§2.6, *As built*): `compileBrief`'s `strips` and the `strips` page kind (three a page), the grid at print time (`stripGrid.js`, `strip-grid.json`), the review step's switch, strip map and scale, the server's turned strips (`figures.draw_strip`). On the way: a route colour is only ever `#RRGGBB` in a figure (it went into the SVG unescaped), a page the server cannot lay out is no longer listed in the contents, and the cover counts no pages. An independent review's findings fixed (the cutting's edge cases, the server's trust in the model, every grid line numbered) | B4 |
-| **B7** | Android: `core-brief` ported and held to every fixture; the record kind, the pack kind and its exception (`packs/ops-brief.json`, and `packs/session-brief.json`'s session rules). **7a done** (branch `claude/android-core-brief-2ffe1e`): `core-brief`, `compileBrief` and the light data held strictly to every case of `compile.json` and `light.json`, the formats bundled from `contracts/briefs` and held to their rules. **7b done**: `RecordKind.BRIEF`, `/api/briefs` typed and synced, through every per-kind scenario on the fake server, the real one and Room. **B6 followed**: the strip charts in `compileBrief` (`StripCharts`), every number of `compile.json`'s strip cases exact; the print-time grid (`strip-grid.json`) is B8's. **7c done**: the pack kind (`PackOps`, `ops-brief.json` folded in beside `ops.json`), `session-brief.json`'s session rules, `PackLock` letting briefs through and nothing else, `PackItemCounts.brief`, and a pack story on the fake server, the real one and Room | B1, B2 |
-| **B8** | Android: brief setup, review, Share and Save (tablet) | B4, B7 |
+| **B7** | **Done.** Android: `core-brief` ported and held to every fixture; the record kind, the pack kind and its exception (`packs/ops-brief.json`, and `packs/session-brief.json`'s session rules). **7a done** (branch `claude/android-core-brief-2ffe1e`): `core-brief`, `compileBrief` and the light data held strictly to every case of `compile.json` and `light.json`, the formats bundled from `contracts/briefs` and held to their rules. **7b done**: `RecordKind.BRIEF`, `/api/briefs` typed and synced, through every per-kind scenario on the fake server, the real one and Room. **B6 followed**: the strip charts in `compileBrief` (`StripCharts`), every number of `compile.json`'s strip cases exact; the print-time grid (`strip-grid.json`) is B8's. **7c done**: the pack kind (`PackOps`, `ops-brief.json` folded in beside `ops.json`), `session-brief.json`'s session rules, `PackLock` letting briefs through and nothing else, `PackItemCounts.brief`, and a pack story on the fake server, the real one and Room | B1, B2 |
+| **B8** | **Done.** Android, on a tablet: the rail's *Brief* (`mission_brief` only) opens the setup's three steps over core-data's `BriefSession` (`BriefKeeper`, `BriefSources`; core-brief's `BriefEdits`), the review over the real PDF (`POST /api/brief/pdf` with the strips' grid added at print time, `StripGrid` held to `strip-grid.json`; drawn by `PdfRenderer`), *Save to device* and *Share PDF*; the weather at the planned times typed (`weatherAt`). Three independent reviews (parity with the web, concurrency and lifecycle, the screens) and their findings fixed: changes laid over the version they are written or sent to and sent in order, the Library brief read again on opening, a paused pack's changes held, compile and keep failures said rather than ending the app, the session closed for another account, every row keyed by what it holds, a narrow window's layout, the PDF's renderer and files. **Changed on the way:** the session's slope call was never briefed outside a pack on Android (`compile.json` gained a slope case, held on both sides), and a refresh with no answer blanked the weather on both platforms (both keep it now, as §2.5 always said) | B4, B7 |
 | **B9** | Android: the sandtable (tablet) | B7 |
 | later | Threats in the brief (needs *T*), others following the sandtable, the AOPORD/AMB and air assault formats, a phone layout | — |
 

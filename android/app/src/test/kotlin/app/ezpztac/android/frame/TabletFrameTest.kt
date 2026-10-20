@@ -65,7 +65,7 @@ class TabletFrameTest {
     private var mapFrame: MapFrame? = null
     private var askAgain: () -> Unit = {}
 
-    private fun frame(mode: ThemeMode = ThemeMode.Dark, withSupport: Boolean = false, withRoute: Boolean = false) = compose.setContent {
+    private fun frame(mode: ThemeMode = ThemeMode.Dark, withSupport: Boolean = false, withRoute: Boolean = false, brief: Boolean = false) = compose.setContent {
         var current by remember { mutableStateOf(Panel.Lz) }
         var support by remember { mutableStateOf(withSupport) }
         var route by remember { mutableStateOf(withRoute) }
@@ -79,6 +79,7 @@ class TabletFrameTest {
                     importMenu = { dismiss -> Text("The import menu", Modifier.semantics { contentDescription = "Close the import menu" }.padding(8.dp)); said += "importMenu"; if (false) dismiss() },
                     onLibrary = { said += "library" },
                     account = { Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.extraLarge).semantics { contentDescription = "Account" }) },
+                    onBrief = if (brief) ({ said += "brief" }) else null,
                 ),
                 head = PanelHead(current.label, "3 open · this session"),
                 supporting = listOfNotNull(
@@ -161,6 +162,21 @@ class TabletFrameTest {
         assertEquals(listOf("library"), said)
         compose.onNodeWithContentDescription("Account").assertIsDisplayed()
         compose.onNodeWithContentDescription("Workspace: Personal").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the brief is a button on the rail for an account with Mission briefs, and nowhere for one without`() {
+        frame(brief = true)
+        val button = compose.onNodeWithText("Brief").fetchSemanticsNode()
+        assertFalse(SemanticsProperties.Selected in button.config)                                // a button, not a sixth tab
+        compose.onNodeWithText("Brief").performClick()
+        assertEquals(listOf("brief"), said)
+    }
+
+    @Test
+    fun `without Mission briefs the rail has no Brief`() {
+        frame()
+        compose.onNodeWithText("Brief").assertDoesNotExist()
     }
 
     @Test
