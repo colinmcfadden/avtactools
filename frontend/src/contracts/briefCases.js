@@ -102,6 +102,19 @@ const OP_DK = {
   threats: [{ name: "ZSU-23-4", lat: 34.4012, lon: -84.0011 }],
 };
 
+// A slope table as /api/terrain-analysis gives it: every whole heading, each limit's steepest slope there ([at] of the heading).
+const byHeading = (at) => Array.from({ length: 360 }, (_, heading) => ({ heading, ...at(heading) }));
+const SLOPES = {
+  // Steep somewhere (11.3°), but within every limit at 306°: CAUTION, and no wind report for this stop.
+  "lz-bluebird": { stats: { maxDeg: 11.3 }, byHeading: byHeading((h) => ({ noseHighMaxDeg: 2.4, noseLowMaxDeg: h === 306 ? 5.9 : 1.8, crossSlopeMaxDeg: 3.1 })) },
+  // Nose down 5.2° at 203°: inside the 6° limit in calm air, over the 4° the 6 kt wind leaves.
+  "lz-hawk": { stats: { maxDeg: 7.5 }, byHeading: byHeading((h) => ({ noseHighMaxDeg: 1.2, noseLowMaxDeg: h === 203 ? 5.2 : 0.8, crossSlopeMaxDeg: 2 })) },
+  // A table, and no landing heading to judge it at: the steepest slope alone.
+  "lz-decoy": { stats: { maxDeg: 16.2 }, byHeading: byHeading(() => ({ noseHighMaxDeg: 9, noseLowMaxDeg: 7.5, crossSlopeMaxDeg: 16.2 })) },
+  // A server from before byHeading: the steepest slope alone, though PZ IBIS has a landing heading.
+  "pz-ibis": { stats: { maxDeg: 4 } },
+};
+
 const CONTEXT = {
   generatedAt: "2026-10-16T18:02:00Z",
   utcOffsetMinutes: -240,
@@ -305,6 +318,19 @@ export const CASES = [
           }],
         },
       }],
+    },
+    context: CONTEXT,
+  },
+  {
+    // The slope measured over each LZ/PZ (an analysis's runtime terrainData, which a session's diagrams carry and a saved LZ/PZ
+    // never does): the call at its landing heading, the limits cut for the wind its stop's weather gives (LZ HAWK's 6 kt), and the
+    // steepest slope alone where no heading can be judged (no landing heading, or a server from before byHeading).
+    name: "the slope of each LZ/PZ: judged at its landing heading, for its stop's wind",
+    format: "amb",
+    document: { options: { navLogs: false, strips: false, iimc: false } },
+    plan: {
+      ...OP_DK,
+      lzs: OP_DK.lzs.map((lz) => (SLOPES[lz.id] ? { ...lz, diagram: { ...lz.diagram, analysis: { ...lz.diagram.analysis, terrainData: SLOPES[lz.id] } } } : lz)),
     },
     context: CONTEXT,
   },
