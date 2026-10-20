@@ -98,6 +98,12 @@ data class RecentLz(val uuid: String, val name: String, val updated: String?)
  * changed, docs/ANDROID_SCREENS_PLAN.md): how far along it is, then whether the server has it, or, until it is analysed, that it must be before it is
  * saved, whatever it is called.
  */
+/**
+ * What is shown in 3D: the open LZ/PZ when it is the one asked for ([viewing]), else nothing. Another opened while the view was up reaches the state a moment
+ * before the view lets go of it, and is never shown even for that moment: a frame drawn then would start a lookup, or a build, for it.
+ */
+internal fun shownIn3D(viewing: String?, current: ActiveDiagramUi?): Viewer3DTarget? = viewing?.let { id -> current?.takeIf { it.uuid == id }?.threeD }
+
 internal fun lzChips(status: DiagramStatus, sync: SyncStatus?, conflictOf: String?): List<LzChip> {
     val progress = when (status) {
         DiagramStatus.ANALYZED -> LzChip("Analyzed", ChipTone.SUCCESS)
@@ -402,7 +408,7 @@ class DiagramsViewModel @Inject constructor(
             }
             local.copy(
                 current = current,
-                viewer3d = inputs.viewing?.let { id -> current?.takeIf { it.uuid == id }?.threeD },
+                viewer3d = shownIn3D(inputs.viewing, current),
                 rows = rows,
                 open = openRows,
                 openCount = openRows.size + (if (active != null) 1 else 0),
@@ -609,7 +615,8 @@ class DiagramsViewModel @Inject constructor(
                 if (pack.openItem(item)) then() else local.update { it.copy(error = "That LZ/PZ is no longer in the pack.") }
             }
         }
-        if (state.value.rows.firstOrNull { it.uuid == uuid }?.isActive == true) return then()
+        // A row the state still shows open lags the session (another was opened a moment ago): left alone, as a tap on it always was; the next finds them agreeing.
+        if (state.value.rows.firstOrNull { it.uuid == uuid }?.isActive == true) return
         // The person's own are set aside in a pack, and come back when it is left: one opened here would be edited beside the pack's, as if it were one of them.
         if (pack.state.value != null && PackRef.parse(uuid) == null) return fail(OWN_IN_PACK)
         run("The diagram could not be opened.") {
@@ -624,18 +631,27 @@ class DiagramsViewModel @Inject constructor(
 
     // -- The 3D view -------------------------------------------------------------------------------------------------------
 
+    // The LZ/PZ last asked to be seen in 3D, until it is: an open that ends after the view was closed, or after another was asked for, shows nothing.
+    private var asked3d: String? = null
+
     /**
      * Shows [uuid] in 3D, over the whole screen. The view always shows the open LZ/PZ, as the web's window does, so one that is not open is opened first. One
      * with no target has nothing to look at, and is refused in words.
      */
-    fun view3d(uuid: String) = openThen(uuid) {
-        val open = session.active.value
-        if (open?.id != uuid) return@openThen
-        if (open.target == null) fail(NO_TARGET_3D) else viewing.value = uuid
+    fun view3d(uuid: String) {
+        asked3d = uuid
+        openThen(uuid) {
+            if (asked3d != uuid) return@openThen
+            asked3d = null
+            val open = session.active.value
+            if (open?.id != uuid) return@openThen
+            if (open.target == null) fail(NO_TARGET_3D) else viewing.value = uuid
+        }
     }
 
-    /** The 3D view closed (its bar's close button, Back). */
+    /** The 3D view closed (its bar's close button, Back), or one asked for and still opening is no longer wanted. */
     fun close3d() {
+        asked3d = null
         viewing.value = null
     }
 

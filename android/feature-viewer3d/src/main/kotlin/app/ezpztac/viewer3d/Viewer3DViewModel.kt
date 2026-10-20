@@ -9,6 +9,7 @@ import app.ezpztac.data.LidarPhase
 import app.ezpztac.data.LidarProblem
 import app.ezpztac.data.TerrainProbe
 import app.ezpztac.data.Viewer3DTarget
+import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.model.LatLon
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -32,6 +33,8 @@ data class Viewer3DUi(
     val ahead: Int? = null,
     val elapsedS: Int? = null,
     val saved: Boolean = false,
+    /** A mission pack's LZ/PZ, which is never saved to the Library. */
+    val inPack: Boolean = false,
     val problem: LidarProblem? = null,
     val buildFailed: Boolean = false,
     val noGround: Boolean = false,
@@ -48,6 +51,7 @@ data class Viewer3DUi(
             ahead = lookup.position?.takeIf { it > 0 },
             elapsedS = lookup.elapsedS,
             saved = target.saved,
+            inPack = PackRef.parse(target.uuid) != null,
             problem = lookup.problem,
             buildFailed = lookup.buildFailed,
             // Said only with the cloud to see, as the web does: until then there is nothing to be under.

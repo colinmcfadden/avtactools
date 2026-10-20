@@ -2343,14 +2343,19 @@ client is built around not losing one:
   `BuildOnSave`, `TerrainProbe`, `Viewer3DTarget`; `feature-viewer3d`; `feature-workspace`: `DiagramsViewModel.view3d`, the LZ/PZ panel's *3D*; `app`: `MapHome`,
   `LidarWaitingPreferences`). Built so far: the calls, the build flow, build on save, the scene's maths, and the page with its ways in; not yet the GL scene, the terrain,
   the imagery or the routes. Things to keep true:
-  - **The view always shows the open LZ/PZ** (`DiagramsViewModel.view3d`, as the web's window does): *3D* on another row opens that one first; another opened, or
-    this one closed (a delete, a sign-out, a pack left, which close it), lets the view go, and it does not come back by itself; one with no target has nothing to look
-    at and its *3D* is off. Its title and whether it is saved follow the LZ/PZ while it is shown, and a target moved under it (someone else in a pack) looks again.
+  - **The view always shows the open LZ/PZ** (`DiagramsViewModel.view3d`, as the web's window does): *3D* on another row opens that one first (the map goes to it and
+    what was held is put down, as opening it does, and closing 3D shows that); another opened, or this one closed (a delete, a sign-out, a pack left, which close it),
+    lets the view go, and it does not come back by itself, not even for a frame (a test records every state); one with no target has nothing to look at and its *3D*
+    is off. One asked for while its LZ/PZ opens is withdrawn by a close or another ask meanwhile. Its title and whether it is saved follow the LZ/PZ while it is
+    shown, and a target moved under it (someone else in a pack) looks again.
   - **The whole screen, over everything** (the owner's, 2026-10-20): `MapHome` draws it last, over either frame; the frame stays composed and untouched under it, out
-    of a screen reader's reach (`clearAndSetSemantics`) and of touch (the page is a `Surface`, which takes what nothing on it takes), so closing shows the sheet, the
-    panel, the page, what is held and what was typed as they were (`Viewer3DOverFrameTest`). Its Back is asked first; the frame's toasts are drawn over it; the
-    Library opening (a toast's *Open Library*) closes it. The system bars stay, see-through, and the bar sits below the status bar. Drawn in the dark palette, the
-    night one at night (red, never bright: the bar's words too).
+    of a screen reader's reach, of the keyboard's (`underPage`: a focus search into it goes to the page, whose focus does not leave it) and of touch (the page is a
+    `Surface`, which takes what nothing on it takes), so closing shows the sheet, the panel, the page, what is held and what was typed as they were under it
+    (`Viewer3DOverFrameTest`). Its Back is asked first, and a frame made again under it (a tablet turned, a foldable opened: a handler made later is asked first)
+    gives way (`TabletFrame(backEnabled)`, `PhoneFrame(backShows)`); the frame's toasts are drawn over it; the Library opening (a toast's *Open Library*) closes it.
+    The host leaving with a target still set (a sign-out, an emailed link, *Update required* take the map away) lets its lookup go, or its build would be asked
+    after under whoever signs in next. Each state is said to a screen reader as it comes, a failure at once (as the web's `role="alert"`). The system bars stay,
+    see-through, and the bar sits below the status bar. Drawn in the dark palette, the night one at night (red, never bright: the bar's words too).
   - **The build flow is the web's `useLidarTileset`, held to `contracts/fixtures/viewer3d/lidarFlow.json` scenario by scenario** (`LidarBuildsFixtureTest`: every answer
     the server can give, the poll every 3 s, five failed polls, two resubmits after a 404 or `cancelled`, and JavaScript's truthiness, so an empty `url` or `stage` is
     none: `orNull`). The requests each scenario makes are compared too, so a `watcher` or a `keep=1` left out fails.

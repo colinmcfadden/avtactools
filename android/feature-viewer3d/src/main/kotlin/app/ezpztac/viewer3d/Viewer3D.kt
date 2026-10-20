@@ -1,9 +1,11 @@
 package app.ezpztac.viewer3d
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -25,12 +27,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -66,7 +72,8 @@ internal val SCENE_BACKGROUND = Color(0xFF05080D)
  * The 3D view over the whole screen, phone and tablet alike (the owner, 2026-10-20), while [target] is set: shown on it, closed (by its bar's
  * close button or Back) with [onClose]. The map and the frame under it are left composed and untouched, so closing shows them exactly as they
  * were; the frame's toasts ([snackbars]) are drawn over it, since the frame's own are under it. Drawn in the dark palette (the night one at
- * night), since the scene is always dark. [scene] draws the point cloud once it is there.
+ * night), since the scene is always dark. [scene] draws the point cloud once it is there. The keyboard's focus is held in the page ([focus],
+ * where the frame under it sends a focus search), starting on its first control.
  */
 @Composable
 fun Viewer3DHost(
@@ -75,25 +82,37 @@ fun Viewer3DHost(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     snackbars: SnackbarHostState? = null,
+    focus: FocusRequester = remember { FocusRequester() },
     viewModel: Viewer3DViewModel = hiltViewModel(),
     scene: @Composable (Viewer3DUi) -> Unit = { ReadyForNow() },
 ) {
     LaunchedEffect(target) { if (target == null) viewModel.close() else viewModel.show(target) }
+    // The host can leave with a target still set (a sign-out, an emailed link, *Update required* take the map away): its lookup goes with it, or it
+    // would go on asking after the build, and let go of it, under whoever signs in next.
+    DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     if (target == null) return
     val state by viewModel.state.collectAsStateWithLifecycle()
     BackHandler(onBack = onClose)
-    val focus = LocalFocusManager.current
-    LaunchedEffect(Unit) { focus.clearFocus() }                                             // a field left focused under it keeps no keyboard up
-    EzpzTheme(if (night) ThemeMode.Night else ThemeMode.Dark) {
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(Unit) {
+        focusManager.clearFocus()                                                            // a field left focused under it keeps no keyboard up
+        focus.requestFocus()                                                                 // a keyboard starts on the page's first control
+    }
+    EzpzTheme(pageTheme(night)) {
         Viewer3DPage(
             state ?: Viewer3DUi(target.name, LidarPhase.RESOLVING, saved = target.saved), Viewer3DActions(onClose, viewModel::retry), modifier, snackbars, scene,
+            focus = focus,
         )
     }
 }
 
+/** The palette the page is drawn in: the night one at night, else the dark one, whatever the app's, since the scene is always dark. */
+internal fun pageTheme(night: Boolean): ThemeMode = if (night) ThemeMode.Night else ThemeMode.Dark
+
 /**
  * The page, stateless: the scene (or how it stands) under a bar with its title and close button, below the status bar. It takes every touch, so
- * none reaches the map under it, and names itself to a screen reader as a pane of its own.
+ * none reaches the map under it, names itself to a screen reader as a pane of its own, and holds the keyboard's focus: a focus search does not
+ * leave it, and [focus] takes it to its first control.
  */
 @Composable
 fun Viewer3DPage(
@@ -102,12 +121,14 @@ fun Viewer3DPage(
     modifier: Modifier = Modifier,
     snackbars: SnackbarHostState? = null,
     scene: @Composable (Viewer3DUi) -> Unit = { ReadyForNow() },
+    focus: FocusRequester = remember { FocusRequester() },
 ) {
     // A Surface takes the touches nothing on it takes (Material's own), where a plain background would let them fall through to the map.
     // The palette's own text colours (red at night, never bright), on the scene's dark whatever the palette.
     Surface(
         color = SCENE_BACKGROUND, contentColor = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier.fillMaxSize().semantics { paneTitle = Viewer3DWords.pane(ui.name) },
+        modifier = modifier.fillMaxSize().semantics { paneTitle = Viewer3DWords.pane(ui.name) }
+            .focusRequester(focus).focusProperties { onExit = { cancelFocusChange() } }.focusGroup(),
     ) {
         Box(Modifier.fillMaxSize()) {
             if (ui.phase == LidarPhase.AVAILABLE) scene(ui)
@@ -173,12 +194,12 @@ private fun Status(ui: Viewer3DUi, actions: Viewer3DActions) {
             verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
         ) {
             when (ui.phase) {
-                LidarPhase.RESOLVING -> {
+                LidarPhase.RESOLVING -> Said {
                     Heading(Viewer3DWords.LOOKING_UP)
                     Body(Viewer3DWords.LOOKING_UP_BODY)
                 }
                 LidarPhase.BUILDING -> {
-                    Heading(Viewer3DWords.BUILDING)
+                    Said { Heading(Viewer3DWords.BUILDING) }
                     Text(
                         Viewer3DWords.progress(ui.stage, ui.ahead), style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -188,22 +209,37 @@ private fun Status(ui: Viewer3DUi, actions: Viewer3DActions) {
                         Viewer3DWords.elapsed(buildClock(ui.elapsedS)), style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Body(Viewer3DWords.BUILDING_HINT + " " + if (ui.saved) Viewer3DWords.BUILDING_SAVED else Viewer3DWords.BUILDING_UNSAVED)
+                    Body(Viewer3DWords.BUILDING_HINT + " " + Viewer3DWords.closing(ui.saved, ui.inPack))
                 }
                 LidarPhase.MISSING -> {
-                    Heading(Viewer3DWords.MISSING)
-                    Body(Viewer3DWords.MISSING_BODY)
+                    Said {
+                        Heading(Viewer3DWords.MISSING)
+                        Body(Viewer3DWords.MISSING_BODY)
+                    }
                     PillButton(Viewer3DWords.CHECK_AGAIN, onClick = actions.retry, icon = EzpzIcons.refresh)
                 }
                 LidarPhase.ERROR -> {
-                    Heading(Viewer3DWords.failedTitle(ui.buildFailed))
-                    Body(Viewer3DWords.problem(ui.problem))
+                    // As the web's role="alert": a build that failed after minutes of waiting is said at once.
+                    Said(urgent = true) {
+                        Heading(Viewer3DWords.failedTitle(ui.buildFailed))
+                        Body(Viewer3DWords.problem(ui.problem))
+                    }
                     PillButton(Viewer3DWords.RETRY, onClick = actions.retry, icon = EzpzIcons.refresh)
                 }
                 else -> Unit
             }
         }
     }
+}
+
+/** Words a screen reader says as they come, without the person going to them: politely, or at once when [urgent]. */
+@Composable
+internal fun Said(urgent: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.semantics(mergeDescendants = true) { liveRegion = if (urgent) LiveRegionMode.Assertive else LiveRegionMode.Polite },
+        verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+        content = content,
+    )
 }
 
 @Composable

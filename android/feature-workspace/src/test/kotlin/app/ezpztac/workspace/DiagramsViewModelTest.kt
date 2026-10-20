@@ -1529,6 +1529,75 @@ class DiagramsViewModelTest {
     }
 
     @Test
+    fun `an LZ-PZ with no target open beside another has its 3D off`() = runTest(dispatcher) {
+        val r = rig()
+        val made = r.repository.create(DiagramTarget(here.lat, here.lon, grid), "LZ BLANK")
+        r.repository.save(made.copy(target = null))
+        r.model.open(made.id)
+        advanceUntilIdle()
+        r.model.newAt(there)
+        advanceUntilIdle()
+        assertEquals(listOf(made.id), r.model.state.value.open.map { it.uuid })
+        assertEquals(listOf(false), r.model.state.value.open.map { it.hasTarget })
+    }
+
+    @Test
+    fun `3D is shown on the open LZ-PZ only when it is the one asked for`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val open = r.model.state.value.current!!
+        assertEquals(open.threeD, shownIn3D(open.uuid, open))
+        // Another opened under the view, before the view has let go: nothing, not the one now open.
+        assertNull(shownIn3D("another", open))
+        assertNull(shownIn3D(null, open))
+        assertNull(shownIn3D(open.uuid, null))
+    }
+
+    @Test
+    fun `3D asked for while its LZ-PZ opens is withdrawn by closing it before it has opened`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(there)
+        advanceUntilIdle()
+        // The first is opened before it is shown, which takes a moment; the view is closed meanwhile (the Library opened over it, say).
+        r.model.view3d(first)
+        r.model.close3d()
+        advanceUntilIdle()
+        assertEquals("opened, as asked", first, r.session.active.value?.id)
+        assertNull(r.model.state.value.viewer3d)
+        // Asked for again, it is shown.
+        r.model.view3d(first)
+        advanceUntilIdle()
+        assertEquals(first, r.model.state.value.viewer3d?.uuid)
+    }
+
+    @Test
+    fun `the 3D view never shows, even for a moment, an LZ-PZ opened while it was up`() = runTest(dispatcher) {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))                           // every state as the main thread sees it (AGENTS.md §14)
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(there)
+        advanceUntilIdle()
+        val second = r.model.state.value.current!!.uuid
+        // Collected as each state is made: a background collector would see only the last (advanceUntilIdle does not run it).
+        val seen = mutableListOf<String?>()
+        val watching = launch(UnconfinedTestDispatcher(testScheduler)) { r.model.state.collect { seen += it.viewer3d?.uuid } }
+        r.model.view3d(second)
+        advanceUntilIdle()
+        r.model.open(first)
+        advanceUntilIdle()
+        watching.cancel()
+        assertTrue(seen.toString(), second in seen)
+        assertFalse("never the one opened under it: $seen", first in seen)
+        assertNull(r.model.state.value.viewer3d)
+    }
+
+    @Test
     fun `an LZ-PZ analysed while it is still called by its made-up name is not saved, and naming it is the save`() = runTest(dispatcher) {
         val asked = mutableListOf<LatLon>()
         val r = Rig(this, buildOnSave = BuildOnSave { asked += it }).also { advanceUntilIdle() }

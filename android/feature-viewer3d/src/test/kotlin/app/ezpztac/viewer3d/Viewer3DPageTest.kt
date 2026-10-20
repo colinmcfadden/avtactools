@@ -6,14 +6,27 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -30,6 +43,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,7 +77,7 @@ class Viewer3DPageTest {
     fun `while it looks, it says so`() {
         show(Viewer3DUi("LZ HAWK", LidarPhase.RESOLVING))
         compose.onNodeWithText("Looking up").assertIsDisplayed()
-        compose.onNodeWithText("Checking for a point cloud at this place…").assertIsDisplayed()
+        compose.onNodeWithText("Checking for a point cloud at this location…", substring = true).assertIsDisplayed()
     }
 
     @Test
@@ -135,5 +151,102 @@ class Viewer3DPageTest {
         // Gone, it leaves Back to what was under it.
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         assertEquals(listOf("close", "under"), log)
+    }
+
+    @Test
+    fun `a mission pack's LZ-PZ is never told to save itself to keep its build going`() {
+        assertEquals(Viewer3DWords.BUILDING_SAVED, Viewer3DWords.closing(saved = true, inPack = false))
+        assertEquals(Viewer3DWords.BUILDING_UNSAVED, Viewer3DWords.closing(saved = false, inPack = false))
+        assertEquals("Closing this stops the build.", Viewer3DWords.closing(saved = false, inPack = true))
+        show(Viewer3DUi("LZ/PZ 1", LidarPhase.BUILDING, stage = "waiting", inPack = true))
+        compose.onNodeWithText("Save the LZ/PZ", substring = true).assertDoesNotExist()
+        val lookup = app.ezpztac.data.LidarLookup(LidarPhase.BUILDING)
+        assertTrue(Viewer3DUi.of(Viewer3DTarget("pack:p-1:i-1", "LZ/PZ 1", 34.59, -84.13, saved = false), lookup, null).inPack)
+        assertFalse(Viewer3DUi.of(Viewer3DTarget("lz-1", "LZ HAWK", 34.59, -84.13, saved = false), lookup, null).inPack)
+    }
+
+    @Test
+    fun `each state is said to a screen reader as it comes, and a failure at once`() {
+        var ui by mutableStateOf(Viewer3DUi("LZ HAWK", LidarPhase.RESOLVING))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DPage(ui, actions) } }
+        fun said(text: String) = compose.onNode(hasText(text, substring = true)).fetchSemanticsNode().config.getOrNull(SemanticsProperties.LiveRegion)
+        assertEquals(LiveRegionMode.Polite, said(Viewer3DWords.LOOKING_UP))
+        ui = Viewer3DUi("LZ HAWK", LidarPhase.BUILDING, stage = "waiting")
+        compose.waitForIdle()
+        assertEquals(LiveRegionMode.Polite, said(Viewer3DWords.BUILDING))
+        assertEquals(LiveRegionMode.Polite, said("Queued"))
+        ui = Viewer3DUi("LZ HAWK", LidarPhase.MISSING)
+        compose.waitForIdle()
+        assertEquals(LiveRegionMode.Polite, said(Viewer3DWords.MISSING))
+        ui = Viewer3DUi("LZ HAWK", LidarPhase.ERROR, problem = LidarProblem.BUILD_FAILED, buildFailed = true)
+        compose.waitForIdle()
+        assertEquals(LiveRegionMode.Assertive, said("Build failed"))
+        compose.onNode(hasText("Build failed", substring = true) and hasText("could not be built", substring = true)).assertExists()
+    }
+
+    @Test
+    fun `it is drawn in the night palette at night and the dark one by day`() {
+        assertEquals(ThemeMode.Night, pageTheme(night = true))
+        assertEquals(ThemeMode.Dark, pageTheme(night = false))
+    }
+
+    @Test
+    fun `opening it takes the focus from a field under it, so no keyboard stays up for what it covers`() {
+        val model = Viewer3DViewModel(lidarBuilds(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)), FakeProbe())
+        var target by mutableStateOf<Viewer3DTarget?>(null)
+        var fieldFocused = false
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                Box(Modifier.fillMaxSize()) {
+                    BasicTextField("LZ RAVEN", {}, Modifier.onFocusChanged { fieldFocused = it.isFocused })
+                    Viewer3DHost(target, night = false, onClose = { target = null }, viewModel = model)
+                }
+            }
+        }
+        compose.onNode(hasSetTextAction()).performClick()
+        compose.waitForIdle()
+        assertTrue(fieldFocused)
+        compose.runOnIdle { target = Viewer3DTarget("lz-1", "LZ HAWK", 34.59, -84.13, saved = false) }
+        compose.waitForIdle()
+        assertFalse(fieldFocused)
+    }
+
+    @Test
+    fun `with a keyboard the focus starts on the page and does not leave it`() {
+        val focus = FocusRequester()
+        val under = mutableListOf<String>()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().onFocusChanged { if (it.hasFocus) under += "under" }.clickable { })
+                    Viewer3DPage(Viewer3DUi("LZ HAWK", LidarPhase.ERROR, problem = LidarProblem.LOOKUP_FAILED), actions, focus = focus)
+                }
+            }
+        }
+        compose.onRoot().performKeyInput { pressKey(Key.ShiftLeft) }                          // a keyboard, as a tablet's, moving nothing
+        compose.runOnIdle { focus.requestFocus() }
+        compose.waitForIdle()
+        compose.onNode(isFocused()).assert(hasContentDescription(Viewer3DWords.CLOSE))
+        repeat(6) { compose.onRoot().performKeyInput { pressKey(Key.Tab) } }
+        compose.onNode(isFocused()).assertExists()
+        assertEquals(emptyList<String>(), under)
+    }
+
+    @Test
+    fun `the page leaving with its LZ-PZ still set lets go of the build it was waiting on`() {
+        val lidar = FakeLidar(built = false)
+        val model = Viewer3DViewModel(lidarBuilds(lidar, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)), FakeProbe())
+        var here by mutableStateOf(true)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                if (here) Viewer3DHost(Viewer3DTarget("lz-1", "LZ HAWK", 34.59, -84.13, saved = false), night = false, onClose = {}, viewModel = model)
+            }
+        }
+        compose.waitUntil(5_000) { "build keep=false" in lidar.calls }
+        // A sign-out takes the map, and the page with it, with no close.
+        compose.runOnIdle { here = false }
+        compose.waitForIdle()
+        assertTrue(lidar.calls.toString(), "release ${FakeLidar.KEY}" in lidar.calls)
+        assertNull(model.state.value)
     }
 }

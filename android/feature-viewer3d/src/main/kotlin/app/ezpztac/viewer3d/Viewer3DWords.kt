@@ -15,12 +15,23 @@ object Viewer3DWords {
     const val CLOSE = "Close 3D view"
 
     const val LOOKING_UP = "Looking up"
-    const val LOOKING_UP_BODY = "Checking for a point cloud at this place…"
+    const val LOOKING_UP_BODY = "Checking for a point cloud at this location…"
 
     const val BUILDING = "Building point cloud"
     const val BUILDING_HINT = "Takes several minutes the first time; opens at once after that."
     const val BUILDING_SAVED = "This LZ/PZ is saved, so you may close this and the build finishes in the background."
     const val BUILDING_UNSAVED = "Closing this stops the build. Save the LZ/PZ to keep it building."
+    const val BUILDING_IN_PACK = "Closing this stops the build."
+
+    /**
+     * What closing the view does to the build: a saved LZ/PZ's goes on; anyone else's stops, and saving keeps it going, except a mission pack's, which
+     * is the pack's and is never saved to the Library (**not like the web**, which tells a pack's members to save it).
+     */
+    fun closing(saved: Boolean, inPack: Boolean): String = when {
+        saved -> BUILDING_SAVED
+        inPack -> BUILDING_IN_PACK
+        else -> BUILDING_UNSAVED
+    }
 
     /** The build service's stages as a crew member would want to read them (the web's STAGE_LABELS); one this version does not know, as it is. */
     fun stage(stage: String?): String = when (stage) {

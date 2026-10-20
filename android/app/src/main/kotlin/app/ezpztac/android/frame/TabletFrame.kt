@@ -227,6 +227,11 @@ fun TabletFrame(
     toasts: Boolean = true,
     /** Across the top beside the rail, over the panes and the map (a finished pack's, the design's AT Finished): it takes the window's top inset itself. */
     band: (@Composable () -> Unit)? = null,
+    /**
+     * Whether Back puts away the supporting pane that stands: not while a page is drawn over the frame, whose own Back comes first. The frame is made again
+     * when the window crosses into a tablet's (a turn, a foldable opened), and a handler made later is asked first.
+     */
+    backEnabled: Boolean = true,
     mapScreen: @Composable (MapFrame) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -247,7 +252,7 @@ fun TabletFrame(
             if (!panes.list) focus.clearFocus()
         }
         // Back puts away the supporting pane that stands, as its close button does; one waiting out of sight is not taken away unseen.
-        BackHandler(enabled = standing != null && panes.support) { standing?.onClose?.invoke() }
+        BackHandler(enabled = backEnabled && standing != null && panes.support) { standing?.onClose?.invoke() }
         Row(Modifier.fillMaxSize()) {
             Rail(panels, current, counts, rail = rail, onPick = { picked ->
                 state.showList()
