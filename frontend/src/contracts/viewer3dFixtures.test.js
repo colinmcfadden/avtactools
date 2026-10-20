@@ -248,13 +248,10 @@ const flowCase = async (name, steps, { keep = false, target = TARGET } = {}) => 
     return Promise.resolve({});
   });
 
-  const mounting = {};
-  await act(async () => {
-    mounting.hook = renderHook((props) => useLidarTileset(props), { initialProps: { ...target, keep } });
-  });
-  const { hook } = mounting;
+  // renderHook and rerender are in act already; what the hook starts is settled by flush.
+  const { result, rerender, unmount } = renderHook((props) => useLidarTileset(props), { initialProps: { ...target, keep } });
   await flush();
-  const log = [{ mounted: { keep }, then: snapshot(hook.result.current) }];
+  const log = [{ mounted: { keep }, then: snapshot(result.current) }];
 
   const nextRequest = async (limitMs) => {
     let afterMs = 0;
@@ -270,20 +267,19 @@ const flowCase = async (name, steps, { keep = false, target = TARGET } = {}) => 
 
   for (const step of steps) {
     if (step.keep !== undefined) {
-      // eslint-disable-next-line no-await-in-loop
-      await act(async () => { hook.rerender({ ...target, keep: step.keep }); });
+      rerender({ ...target, keep: step.keep });
       // eslint-disable-next-line no-await-in-loop
       await flush();
-      log.push({ saved: step.keep, then: snapshot(hook.result.current) });
+      log.push({ saved: step.keep, then: snapshot(result.current) });
     } else if (step.retry) {
       // eslint-disable-next-line no-await-in-loop
-      await act(async () => { hook.result.current.refresh(); });
+      await act(async () => { result.current.refresh(); });
       // eslint-disable-next-line no-await-in-loop
       await flush();
-      log.push({ retried: true, then: snapshot(hook.result.current) });
+      log.push({ retried: true, then: snapshot(result.current) });
     } else if (step.close) {
       const before = deletes.length;
-      hook.unmount();
+      unmount();
       // eslint-disable-next-line no-await-in-loop
       await flush();
       log.push({ closed: true, released: deletes.slice(before) });
@@ -298,13 +294,13 @@ const flowCase = async (name, steps, { keep = false, target = TARGET } = {}) => 
       else pending.resolve({ status: answer.status, data: answer.data });
       // eslint-disable-next-line no-await-in-loop
       await flush();
-      const then = snapshot(hook.result.current);
+      const then = snapshot(result.current);
       log.push({ request: pending.request, afterMs, answer, then, ...(then.error ? { errorFromServer: then.error === answer.data?.error } : {}) });
     }
   }
   const closed = steps.some((step) => step.close);
   const coming = closed ? null : await nextRequest(10000);
-  if (!closed) hook.unmount();
+  if (!closed) unmount();
   return { name, keep, target, steps: log, next: coming ? { request: coming.pending.request, afterMs: coming.afterMs } : null };
 };
 
@@ -349,6 +345,15 @@ const flowFixture = async () => {
       { answer: NOT_BUILT(true) }, { answer: QUEUED(0) }, { answer: SERVICE_DOWN }, { answer: UNREACHABLE }, { answer: RUNNING("building tiles", 70) },
       { answer: SERVICE_DOWN }, { answer: DONE() },
     ]],
+    ["an outage, a moment's answer, and another outage", [
+      { answer: NOT_BUILT(true) }, { answer: QUEUED(0) },
+      { answer: SERVICE_DOWN }, { answer: UNREACHABLE }, { answer: SERVICE_DOWN }, { answer: UNREACHABLE }, { answer: RUNNING("building tiles", 70) },
+      { answer: SERVICE_DOWN }, { answer: UNREACHABLE }, { answer: SERVICE_DOWN }, { answer: UNREACHABLE }, { answer: DONE() },
+    ]],
+    ["a job that names no stage", [{ answer: NOT_BUILT(true) }, { answer: ok(job("queued", { position: 3 }), 202) }, { answer: ok(job("running")) }, { close: true }]],
+    ["a job whose stage is empty", [{ answer: NOT_BUILT(true) }, { answer: ok(job("queued", { stage: "", position: 0 }), 202) }, { close: true }]],
+    ["done, with no tileset to open", [{ answer: NOT_BUILT(true) }, { answer: QUEUED(0) }, { answer: ok(job("done", { stage: "done", elapsed_s: 90 })) }, { close: true }]],
+    ["built already, with an empty ring", [{ answer: ok({ ...built(KEY), contextUrl: "", available: true }) }]],
     ["contact lost for good", [
       { answer: NOT_BUILT(true) }, { answer: QUEUED(0) },
       { answer: UNREACHABLE }, { answer: UNREACHABLE }, { answer: SERVICE_DOWN }, { answer: UNREACHABLE }, { answer: UNREACHABLE },
