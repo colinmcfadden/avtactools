@@ -26,6 +26,7 @@ contracts/
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
 │  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py),
 │  │                sandtable.json (reference: the web, feature/brief/sandtableSteps.js, read from compile.json's models),
+│  │                sandtable-fit.json (reference: the web's fitInsets, and Leaflet's own flyToBounds framing),
 │  │                strip-grid.json (reference: the web, feature/brief/stripGrid.js over mgrsGrid.js, the strips' MGRS grid)
 │  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
@@ -57,7 +58,8 @@ reference is.
 | `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` (`CompileBrief`: every case, strictly: null kept apart from absent, numbers in JavaScript's digits, keys in JavaScript's order, the strips' numbers and the slope calls too; `CompileFixtureTest`) |
 | `brief/light.json` | `frontend/src/contracts/briefLightFixtures.test.js` | — (reference: Skyfield, `scripts/light_fixtures.py`) | `core-brief` (`Light`, within the file's tolerances; `LightFixtureTest`) |
 | `brief/strip-grid.json` | `frontend/src/contracts/briefStripGridFixtures.test.js` | `backend/tests/test_brief_pdf.py` (draws OP DK's strips with it) | `core-brief` (`StripGrid`, `StripGridTest`): the MGRS 1 km grid Android adds to each strip of `compile.json` before printing, compared within `mgrs/grid.json`'s tolerances (a line sampled with other points, an end a millimetre off) |
-| `brief/sandtable.json` | `frontend/src/contracts/briefSandtableFixtures.test.js` | — | the Android sandtable (B9): each step as the sandtable lists it and what the map shows for it, from `compile.json`'s models (both are made from the same cases, `briefCases.js`, so one `UPDATE_CONTRACTS=1` run writes both) |
+| `brief/sandtable.json` | `frontend/src/contracts/briefSandtableFixtures.test.js` | — | `core-brief` (`SandtableSteps`, `SandtableFixtureTest`): each step as the sandtable lists it and what the map shows for it, from `compile.json`'s models (both are made from the same cases, `briefCases.js`, so one `UPDATE_CONTRACTS=1` run writes both), strictly, as `compile.json` is held |
+| `brief/sandtable-fit.json` | `frontend/src/contracts/briefSandtableFitFixtures.test.js` | — | `core-brief` (`SandtableSteps.fitInsets`, `SandtableFitFixtureTest`: what is kept clear of the card, the constants and the steps, squeezes and ties included) and `feature-brief` (`SandtableCamera`, `SandtableCameraFixtureTest`): where Leaflet itself flies for a step's area with those insets (`flyToBounds`, `maxZoom` 17, `zoomSnap` 0.1, the app's Leaflet named in the file), which Android works out for MapLibre (its zoom one less, never below 0) |
 | `workspace/ops.json` | `frontend/src/contracts/workspaceOpsFixtures.test.js` | — | `core-model` (`DiagramOps`) |
 | `workspace/doghouses.json` | `frontend/src/contracts/doghouseFixtures.test.js` | — | `core-model` (`Doghouses`, `JsValue.parseInt` / `parseFloat`) |
 | `formats/number_text.json` | `frontend/src/contracts/numberTextFixtures.test.js` | — | `core-model` (`JsNumber.toText`) |
