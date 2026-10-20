@@ -524,6 +524,22 @@ class SceneSessionTest {
     }
 
     @Test
+    fun `in the back it lets go of what the last frame did not draw, and the next frame says what went`() = runTest {
+        val r = rig()
+        advanceUntilIdle()
+        settle(r)
+        r.session.gesture(listOf(CameraGesture.Zoom(ScreenPoint(540.0, 1100.0), 0.01)))   // far off: little drawn
+        val drawn = r.frame()!!.clouds.single().map { it.tile }
+        val before = r.session.heldPoints
+        r.session.trim()
+        assertTrue(r.session.heldPoints < before)
+        val next = r.frame()!!
+        assertEquals(drawn, next.clouds.single().map { it.tile })
+        assertTrue(next.letGo.isNotEmpty())
+        r.close()
+    }
+
+    @Test
     fun `closing lets go of the points in hand`() = runTest {
         val r = rig()
         advanceUntilIdle()

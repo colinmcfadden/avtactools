@@ -150,6 +150,24 @@ class ImageryTest {
     }
 
     @Test
+    fun `trimmed, it lets go of the textures the last frame did not lay on, and the next frame says which`() {
+        val scene = ImageryScene()
+        val elsewhere = TerrainTiling.tileAt(lat + 1.0, lon + 1.0, 14)
+        for (t in listOf(elsewhere, terrain)) {
+            for (id in scene.frame(listOf(t), 0).fetch) scene.arrived(id, ImageryScene.TILE_BYTES)
+        }
+        val laid = scene.frame(listOf(terrain), 0).byTerrain.getValue(terrain).map { it.imagery }
+        val before = scene.bytesHeld
+        scene.trim()
+        assertEquals(laid.size * ImageryScene.TILE_BYTES, scene.bytesHeld)
+        val next = scene.frame(listOf(terrain), 0)
+        assertEquals(laid, next.byTerrain.getValue(terrain).map { it.imagery })
+        assertEquals(before - scene.bytesHeld, next.letGo.size * ImageryScene.TILE_BYTES)
+        assertTrue(next.letGo.none { it in laid })
+        assertTrue(scene.frame(listOf(terrain), 0).letGo.isEmpty())
+    }
+
+    @Test
     fun `a tile that could not be read is never asked for again, one that met no connection after a pause`() {
         val scene = ImageryScene()
         val f = scene.frame(listOf(terrain), 0)

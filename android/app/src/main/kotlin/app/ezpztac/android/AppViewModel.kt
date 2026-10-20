@@ -20,6 +20,7 @@ import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.SessionPointSets
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.TilesetCacheCleaner
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.Ownership
 import app.ezpztac.network.ApiException
@@ -62,6 +63,7 @@ class AppViewModel @Inject constructor(
     private val weather: WeatherService,
     private val threats: ThreatStore,
     private val exports: ExportCleaner,
+    private val tiles: TilesetCacheCleaner,
     private val incoming: IncomingFiles,
     private val sessionPoints: SessionPointSets,
     private val mapTokens: MapTokenSink,
@@ -225,6 +227,7 @@ class AppViewModel @Inject constructor(
                 weather.clear()                                                  // where this account's landing zones are does not stay for the next person
                 threats.wipe()                                                   // nor does the threat picture: it is the most sensitive thing on the device
                 exports.clear()                                                  // nor a .ths or mission that was shared: they are in the clear in the cache
+                tiles.clear()                                                    // nor the point clouds the 3D view kept: each is a place
             }
             return
         }

@@ -176,9 +176,25 @@ class MapHost {
 fun rememberMapHost(): MapHost = remember { MapHost() }
 
 /**
+ * Whether the map's view draws: while the screen it is on is resumed and nothing is drawn over the whole of it (the 3D view). MapLibre's view
+ * is told once each way ([resume], [pause]), as its own lifecycle would tell it, never twice the same.
+ */
+internal class MapRendering(private val resume: () -> Unit, private val pause: () -> Unit) {
+    private var running = false
+
+    fun set(resumed: Boolean, covered: Boolean) {
+        val wanted = resumed && !covered
+        if (wanted == running) return
+        running = wanted
+        if (wanted) resume() else pause()
+    }
+}
+
+/**
  * The MapLibre view, with its lifecycle forwarded and the style kept in step with [style]. The first camera is [initial]; after that the
  * person moves it. Attribution stays on (Mapbox's and the FAA's terms require it), the logo is MapLibre's own and is hidden, and tilt is
- * off: this is a flat planning map.
+ * off: this is a flat planning map. While [covered] (a page drawn over the whole of it), it is paused as if its screen were in the back: it
+ * draws nothing nobody can see, and is just as it was when uncovered.
  */
 @Composable
 fun EzpzMap(
@@ -186,6 +202,8 @@ fun EzpzMap(
     style: MapBaseStyle,
     initial: CameraState,
     modifier: Modifier = Modifier,
+    /** Something is drawn over the whole of it (the 3D view): it draws nothing meanwhile. */
+    covered: Boolean = false,
     /** The strips at the top and bottom that the app's controls cover (the search bar, the sheet): the crosshair is the middle of the rest. */
     padding: MapPadding = MapPadding(),
     /** A tap on the map, where it landed. Not told of a drag or a pinch. */
@@ -210,14 +228,16 @@ fun EzpzMap(
     val drop by rememberUpdatedState(onDrop)
     val cancelled by rememberUpdatedState(onDragCancelled)
     val press by rememberUpdatedState(onPress)
+    val isCovered by rememberUpdatedState(covered)
+    val rendering = remember(view) { MapRendering(view::onResume, view::onPause) }
 
     DisposableEffect(owner, view) {
         view.onCreate(Bundle())
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> view.onStart()
-                Lifecycle.Event.ON_RESUME -> view.onResume()
-                Lifecycle.Event.ON_PAUSE -> view.onPause()
+                Lifecycle.Event.ON_RESUME, Lifecycle.Event.ON_PAUSE ->
+                    rendering.set(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED), isCovered)
                 Lifecycle.Event.ON_STOP -> view.onStop()
                 else -> Unit
             }
@@ -225,7 +245,7 @@ fun EzpzMap(
         owner.lifecycle.addObserver(observer)
         // Join in at the owner's current state: the observer only hears what happens next.
         if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) view.onStart()
-        if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onResume()
+        rendering.set(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED), isCovered)
         view.listener = object : LongPressTouches.Listener {
             private fun at(x: Float, y: Float) = host.screenToLatLon(x, y)
             override fun onPickUp(x: Float, y: Float) = at(x, y)?.let(pickUp) ?: false
@@ -252,11 +272,12 @@ fun EzpzMap(
             view.listener = null
             owner.lifecycle.removeObserver(observer)
             host.detach()
-            view.onPause()
+            rendering.set(resumed = false, covered = isCovered)
             view.onStop()
             view.onDestroy()
         }
     }
+    LaunchedEffect(rendering, covered) { rendering.set(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED), covered) }
 
     LaunchedEffect(style.id, style.tiles) { host.applyStyle(style) }
     val topPx = with(LocalDensity.current) { padding.top.roundToPx() }

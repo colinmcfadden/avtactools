@@ -310,6 +310,27 @@ class PointCloudSceneTest {
     }
 
     @Test
+    fun `trimmed, it lets go of what the last frame did not touch, keeps what it drew, and the next frame says what went`() {
+        val doc = core()
+        val scene = PointCloudScene().apply { add(doc, 2.0) }
+        val near = looking(doc, 30.0)
+        scene.settle(near)
+        val far = looking(doc, 20_000.0)
+        val drawn = scene.frame(far, 0).drawn.map { it.tile }
+        val before = scene.heldPoints
+        scene.trim()
+        val kept = scene.heldPoints
+        assertTrue(kept < before, "$kept of $before")
+        val next = scene.frame(far, 0)
+        assertEquals(drawn, next.drawn.map { it.tile })
+        assertTrue(next.letGo.isNotEmpty() && next.letGo.none { gone -> drawn.any { it === gone } })
+        assertEquals(before - kept, next.letGo.sumOf { points(it).count.toLong() })
+        assertTrue(scene.frame(far, 0).letGo.isEmpty(), "said once")
+        // Back close in, what went is asked for again.
+        assertTrue(scene.frame(near, 0).fetch.isNotEmpty())
+    }
+
+    @Test
     fun `clearing lets go of everything, and what was out is asked for afresh`() {
         val doc = core()
         val scene = PointCloudScene().apply { add(doc, 2.0) }

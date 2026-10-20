@@ -276,6 +276,15 @@ class SceneSession(
         imagery.failed(id, again = false, atMs = clock())
     }
 
+    /**
+     * The app went to the back: what the last frame did not draw is let go of (the points, and the imagery's textures at the next frame), so the
+     * system is less likely to end the app, and the view comes back as it was; what is wanted again comes from the device's cache.
+     */
+    fun trim() {
+        scene.trim()
+        imagery.trim()
+    }
+
     /** [view]'s GL context went, and the imagery's textures with it: they are fetched again (the HTTP cache has them). Not another view's. */
     fun texturesLost(view: () -> Unit) {
         if (view === listener) imagery.lostTextures()

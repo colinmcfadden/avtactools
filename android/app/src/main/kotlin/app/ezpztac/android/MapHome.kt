@@ -603,6 +603,7 @@ fun MapHome(
                     // The search bar and the sheet are reserved from the map, so the camera's centre is the crosshair, which is drawn between them.
                     EzpzMap(
                         host = host, style = state.style, initial = viewModel.initialCamera, padding = frame.padding, modifier = Modifier.fillMaxSize(),
+                        covered = lz.viewer3d != null,                       // the 3D view is over the whole of it
                         onTap = { at ->
                             // With the phone's search open, a tap on the map folds it and does nothing else.
                             if (!search.foldOnTap()) {

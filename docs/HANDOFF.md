@@ -61,9 +61,10 @@ eye-dome lighting, the fingers as Cesium's touch controls, *LZ*, the compass and
 point budget refetching for ever, the wrong tiles let go of when many went at once, the ground the fingers hold to sitting in the trees, points too small on a
 dense screen, the tilt's rate and the flights' easing, a GL view being replaced taking the new one's frames, and a screen reader's way to move the camera), and V5 (the ground under it: Cesium's quadtree over the
 server's heightmaps, none where the server has none, with Mapbox's satellite imagery laid on as Cesium lays it), and V6 (the routes the map shows, at their
-planned MSL with their curtains, drop lines, dots and labels as the web's, and *Routes* to frame them). **Not verifiable here:** that opening 3D in touch mode drops the
+planned MSL with their curtains, drop lines, dots and labels as the web's, and *Routes* to frame them), and V7 (the 2D map paused while 3D covers it, the
+point clouds' files kept on the device for a week and cleared at sign-out, and what is not drawn let go of in the back). **Not verifiable here:** that opening 3D in touch mode drops the
 keyboard of a field left focused under it (Robolectric runs in keyboard mode, where the page takes the focus itself), and anything GL draws. **Next:** the
-owner's device runs (below) and V7 (lifecycle, memory, the last reviews).
+owner's device runs (below) and V7's three last reviews.
 
 **Owner device run 1** (V4): open a built LZ/PZ's *3D* on a phone and the same LZ in the web's 3D window, and compare screenshots from the same view (*LZ* on
 both): the points' size and density as the camera comes in, the outlines the eye-dome lighting draws, the background. Then try one finger, a pinch, a twist
@@ -77,6 +78,10 @@ Mapbox token may be URL-restricted and refusing a native app (AGENTS.md §8): th
 **Owner device run 3** (V6): an LZ/PZ with a route open on the map: the route at its planned MSL, its curtain meeting the ground, the drop lines and the
 labels (name, MSL, AGL measured; amber where the AGL is more than 50 ft off the plan's) matching the route's plan; a leg through trees dashed across them;
 *Routes* framing them; a route hidden on the map not drawn; and the same in the web's 3D window beside it.
+
+**Owner device run 4** (V7): Android Studio's profiler with an LZ/PZ open in 3D for a while (turning, zooming, *LZ*, *Routes*): memory under 600 MB, the frame
+rate, and nothing growing without end; the app sent to the back and brought again (the view as it was); the map under it after closing 3D (where it was, no
+flash); an LZ/PZ opened in 3D a second time with no signal (it should come from the device).
 
 **For the owner** (AGENTS.md §15): the server's heightmap samples sit half a cell from where Cesium draws them; a tileset's key can be turned back into its
 place; the web shows a failed build's raw text, with the place in it.

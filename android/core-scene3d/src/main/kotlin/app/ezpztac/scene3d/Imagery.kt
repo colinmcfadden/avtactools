@@ -118,6 +118,8 @@ public class ImageryScene(public val maxFetches: Int = MAX_FETCHES, public val h
     private val held = HashMap<ImageryTileId, Held>()
     private val loading = HashSet<ImageryTileId>()
     private val failures = HashMap<ImageryTileId, Failure>()
+    // Let go of by [trim] since the last frame, for the next to say.
+    private val trimmed = ArrayList<ImageryTileId>()
     private var frameNumber = 0L
     private var nowMs = 0L
     private var heldBytes = 0L
@@ -153,7 +155,20 @@ public class ImageryScene(public val maxFetches: Int = MAX_FETCHES, public val h
             loading += id
             fetch += id
         }
-        return ImageryFrame(byTerrain, complete, fetch, letGo())
+        val gone = letGo() + trimmed
+        trimmed.clear()
+        return ImageryFrame(byTerrain, complete, fetch, gone)
+    }
+
+    /** Lets go of every texture the last frame did not lay on (the app went to the back); the next frame says which, for the GPU to free them. */
+    @Synchronized
+    public fun trim() {
+        val unused = held.entries.mapNotNull { (id, h) -> if (h.lastFrame < frameNumber) id to h else null }
+        for ((id, h) in unused) {
+            held.remove(id)
+            heldBytes -= h.bytes
+            trimmed += id
+        }
     }
 
     /** [id] is on the GPU, taking [bytes]. */
@@ -182,6 +197,7 @@ public class ImageryScene(public val maxFetches: Int = MAX_FETCHES, public val h
     @Synchronized
     public fun lostTextures() {
         held.clear()
+        trimmed.clear()
         heldBytes = 0
     }
 
@@ -190,6 +206,7 @@ public class ImageryScene(public val maxFetches: Int = MAX_FETCHES, public val h
         held.clear()
         loading.clear()
         failures.clear()
+        trimmed.clear()
         heldBytes = 0
     }
 

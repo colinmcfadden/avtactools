@@ -55,6 +55,8 @@ public class PointCloudScene(
     private val held = IdentityHashMap<Tile, Held>()
     private val loading: MutableSet<Tile> = Collections.newSetFromMap(IdentityHashMap())
     private val failures = IdentityHashMap<Tile, Failure>()
+    // Let go of by [trim] since the last frame, for the next to say.
+    private val trimmed = ArrayList<Tile>()
     private var frameNumber = 0L
     private var nowMs = 0L
 
@@ -108,7 +110,23 @@ public class PointCloudScene(
             loading += tile
             fetch += TileFetch(tile, content.path, content is TilesetContent)
         }
-        return SceneFrame(byCloud.flatten(), fetch, letGo(), byCloud)
+        val gone = letGo() + trimmed
+        trimmed.clear()
+        return SceneFrame(byCloud.flatten(), fetch, gone, byCloud)
+    }
+
+    /**
+     * Lets go of every tile in hand that the last frame did not touch (the app went to the back: the less it holds, the less likely the system is to
+     * end it), keeping what that frame drew, so the view comes back as it was; the next frame says what went, for its GPU copy to go too.
+     */
+    @Synchronized
+    public fun trim() {
+        val unused = held.entries.mapNotNull { (tile, h) -> if (h.lastFrame < frameNumber) tile to h else null }
+        for ((tile, h) in unused) {
+            held.remove(tile)
+            heldPoints -= h.points.count
+            trimmed += tile
+        }
     }
 
     /** [tile]'s points came, and are in hand. */
@@ -171,6 +189,7 @@ public class PointCloudScene(
         held.clear()
         loading.clear()
         failures.clear()
+        trimmed.clear()
         heldPoints = 0
     }
 

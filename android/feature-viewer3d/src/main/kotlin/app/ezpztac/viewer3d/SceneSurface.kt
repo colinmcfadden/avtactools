@@ -66,6 +66,11 @@ internal class SceneSurface(context: Context, private val session: SceneSession)
         onPause()
     }
 
+    // In the back, the less the app holds the less likely the system is to end it: what is not on the screen is let go of.
+    override fun onStop(owner: LifecycleOwner) {
+        session.trim()
+    }
+
     /** The view is going: the session no longer asks it for frames. */
     fun release() {
         if (session.listener === ask) session.listener = null

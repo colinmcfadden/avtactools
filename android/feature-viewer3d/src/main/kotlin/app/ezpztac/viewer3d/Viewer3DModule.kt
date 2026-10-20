@@ -5,9 +5,11 @@ import android.content.Context
 import app.ezpztac.data.ApiClientGroundUnder
 import app.ezpztac.data.ApiClientTerrainHeights
 import app.ezpztac.data.ApiClientTilesetFiles
+import app.ezpztac.data.CachedTilesetFiles
 import app.ezpztac.data.GroundUnder
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.TerrainHeights
+import app.ezpztac.data.TilesetCacheCleaner
 import app.ezpztac.data.TilesetFiles
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.network.ApiClient
@@ -32,8 +34,20 @@ internal object Viewer3DModule {
     /** The imagery's own disk cache, in the app's cache (the system may clear it): about a thousand of Mapbox's tiles. */
     private const val IMAGERY_CACHE_BYTES = 256L * 1024 * 1024
 
+    /** The point clouds' own disk cache, in the app's cache (the system may clear it), cleared at sign-out. */
+    private const val TILES_CACHE = "viewer3d-tiles"
+
+    // One for the process: two over one directory would spoil each other.
     @Provides
-    fun tilesetFiles(client: ApiClient): TilesetFiles = ApiClientTilesetFiles(client)
+    @Singleton
+    fun tilesetCache(client: ApiClient, @ApplicationContext context: Context): CachedTilesetFiles =
+        CachedTilesetFiles(ApiClientTilesetFiles(client), File(context.cacheDir, TILES_CACHE))
+
+    @Provides
+    fun tilesetFiles(cache: CachedTilesetFiles): TilesetFiles = cache
+
+    @Provides
+    fun tilesetCacheCleaner(cache: CachedTilesetFiles): TilesetCacheCleaner = cache
 
     @Provides
     fun terrainHeights(client: ApiClient): TerrainHeights = ApiClientTerrainHeights(client)
