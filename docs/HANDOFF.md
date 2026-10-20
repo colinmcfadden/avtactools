@@ -53,9 +53,9 @@ piece holds and the rules it keeps are AGENTS.md §17, *The 3D view*.
 responses; the web's fixtures for the build flow, the route scene, the compass and the terrain's tiling; a small tileset py3dtiles itself made, by a script),
 V3 (`core-scene3d`: the earth's frame held to PROJ, the tileset and `.pnts` readers, the camera, Cesium's choice of tiles) and V1 (the calls with every read
 bounded, `LidarBuilds` held to the build-flow fixture scenario by scenario, build on save from the LZ/PZ panel, the watcher kept on the device so the next
-launch lets go of what the last one waited on, and a live-server test of the LiDAR routes and the build service's queue). **Next:** V2, the full-screen
-page with its *3D* buttons and its place over both frames; then V4 (the points on the screen, ending in the owner's first device run), V5 (terrain and
-imagery), V6 (routes) and V7 (lifecycle, memory, the last reviews).
+launch lets go of what the last one waited on, and a live-server test of the LiDAR routes and the build service's queue), and V2 (the full-screen page in every
+state, over both frames, closing back to the map as it was, with *3D* on the LZ/PZ panel's card, its plan page and each other open or pack LZ/PZ). **Next:** V4 (the
+points on the screen, ending in the owner's first device run), V5 (terrain and imagery), V6 (routes) and V7 (lifecycle, memory, the last reviews).
 
 **For the owner** (AGENTS.md §15): the server's heightmap samples sit half a cell from where Cesium draws them; a tileset's key can be turned back into its
 place; the web shows a failed build's raw text, with the place in it.

@@ -148,6 +148,7 @@ import app.ezpztac.workspace.LzPanelHost
 import app.ezpztac.workspace.MapPointAction
 import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.PointsViewModel
+import app.ezpztac.viewer3d.Viewer3DHost
 import app.ezpztac.workspace.RoutePlanHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesFooterHost
@@ -320,7 +321,7 @@ fun MapHome(
     val addingTo = CopyRules.addingTo(packsHere, openPack)
     val adding by copies.adding.collectAsStateWithLifecycle()
     // A page or dialog over the frame (the Library, Members, Teams, New pack): nobody is looking at the map or the Pack panel under it.
-    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen
+    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen || lz.viewer3d != null
     LaunchedEffect(newPack) {
         newPack.made.collect { uuid ->
             pickedPack(uuid)
@@ -448,7 +449,10 @@ fun MapHome(
     val libraryOpen = libraryTab != null
     // The Library opens over the frame, and a route's plan page is a page over the frame too: a Saved toast's Open Library pressed on the plan page would leave the
     // plan under the Library, and come back over the panel the Library's Open then chose. Opening the Library closes it.
-    LaunchedEffect(libraryOpen) { if (libraryOpen && !tablet) routesModel.closePlan() }
+    LaunchedEffect(libraryOpen) {
+        if (libraryOpen && !tablet) routesModel.closePlan()
+        if (libraryOpen) diagrams.close3d()                                                  // a toast's Open Library, drawn over 3D, shows the Library
+    }
     LaunchedEffect(libraryOpen, lz.error) {
         val said = lz.error
         if (libraryOpen && said != null) {
@@ -751,7 +755,7 @@ fun MapHome(
                     band = openPack?.takeIf { it.finished }?.let { finished ->
                         { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen, onSaveCopy = CopyRules.bannerCopy(lz.current?.uuid, saveCopy)) }
                     },
-                    modifier = if (libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
+                    modifier = if (libraryTab != null || lz.viewer3d != null) Modifier.clearAndSetSemantics {} else Modifier,
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
                 )
@@ -773,7 +777,7 @@ fun MapHome(
                     floatingPx = { floating },
                     footer = footer,
                     // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
-                    modifier = if (routes.planOpen || libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
+                    modifier = if (routes.planOpen || libraryTab != null || lz.viewer3d != null) Modifier.clearAndSetSemantics {} else Modifier,
                     // A tap on the map hides it; Back shows it again, unless a page over the frame has Back for itself.
                     hidden = frameState.hidden,
                     onShow = frameState::show,
@@ -850,6 +854,9 @@ fun MapHome(
             // one made later, so it is made again when the Library's window is (it opens, or turns from a page into a tablet's dialog).
             if (packsHere) key(tablet, libraryTab != null) { AddToPackHost(copies, tablet) }
             if (packsHere) ItemDialogsHost(itemCopies, tablet)
+            // The open LZ/PZ in 3D, over the whole screen and everything on it, phone and tablet alike (the owner, 2026-10-20): the frame under it stays
+            // composed and untouched, neither read nor touched while it is up, so closing it shows the map as it was.
+            Viewer3DHost(target = lz.viewer3d, night = night, onClose = diagrams::close3d, snackbars = snackbars)
         }
     }
 }

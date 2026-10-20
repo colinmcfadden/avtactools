@@ -233,6 +233,48 @@ class LzPanelScreenTest {
         compose.onNodeWithText("LZ/PZ tools").assertDoesNotExist()
     }
 
+    // -- 3D --------------------------------------------------------------------------------------------------------------------
+
+    private val target = app.ezpztac.model.LatLon(34.783817, -84.08219)
+
+    @Test
+    fun `3D is beside Plan on the open LZ-PZ's card, and asks for that LZ-PZ`() {
+        val asked = mutableListOf<String>()
+        show { LzHomeContent(homeState(activeLz().copy(target = target)), LzPanelActions(view3d = { asked += it }), GRID) }
+        compose.onNodeWithText("3D").assertIsEnabled().performClick()
+        assertEquals(listOf("lz-1"), asked)
+    }
+
+    @Test
+    fun `an LZ-PZ with no target has nothing to see in 3D, and its 3D is off`() {
+        show { LzHomeContent(homeState(activeLz()), LzPanelActions(view3d = { error("asked") }), GRID) }
+        compose.onNodeWithText("3D").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Open LZ HAWK (ROCK) in 3D").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `each other open LZ-PZ with a target has its own 3D, which asks for it`() {
+        val asked = mutableListOf<String>()
+        val state = homeState(activeLz().copy(target = target)).let { it.copy(open = it.open.map { row -> row.copy(hasTarget = row.uuid == "lz-2") }) }
+        show { LzHomeContent(state, LzPanelActions(view3d = { asked += it }), GRID) }
+        compose.onNodeWithContentDescription("Open LZ HAWK (ROCK) in 3D").assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Open LZ/PZ 3 in 3D").assertIsNotEnabled()
+        assertEquals(listOf("lz-2"), asked)
+    }
+
+    @Test
+    fun `3D is beside Save on the open LZ-PZ's plan`() {
+        val asked = mutableListOf<String>()
+        show {
+            LzPlanContent(
+                activeLz().copy(target = target), GraphicsUiState(listed = true, canEdit = true), BoundaryUiState(canStart = true, clears = true), null,
+                LzPanelActions(view3d = { asked += it }), GraphicsActions(), GRID,
+            )
+        }
+        compose.onNodeWithText("3D").assertIsEnabled().performClick()
+        assertEquals(listOf("lz-1"), asked)
+    }
+
     // -- Plan ------------------------------------------------------------------------------------------------------------------
 
     private fun plan(current: ActiveDiagramUi = activeLz(), canEdit: Boolean = true, canDraw: Boolean = true, placing: PlacementUi? = null) {

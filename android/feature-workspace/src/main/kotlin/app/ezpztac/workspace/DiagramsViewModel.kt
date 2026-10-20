@@ -17,6 +17,7 @@ import app.ezpztac.data.PackGlance
 import app.ezpztac.data.PackLock
 import app.ezpztac.data.SlopeState
 import app.ezpztac.data.SlopeVisibility
+import app.ezpztac.data.Viewer3DTarget
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.WeatherState
 import app.ezpztac.designsystem.EzpzIcons
@@ -54,6 +55,8 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -74,6 +77,8 @@ data class DiagramRow(
     val chips: List<LzChip> = emptyList(),
     /** A Mission Pack's item that someone else has open: "Jess R. has it open". */
     val presence: String? = null,
+    /** It has a target, so there is a place to see in 3D. */
+    val hasTarget: Boolean = false,
 )
 
 /** The pages of the LZ/PZ panel: the open LZ/PZs, the open one's plan and tools, and the aircraft. Every LZ/PZ saved is the Library's (S7). */
@@ -274,6 +279,8 @@ data class ActiveDiagramUi(
     val saveContents: List<String> = emptyList(),
     /** A Mission Pack's item: saved to the pack as it changes, with no *Save* of its own. Null for the person's own. */
     val inPack: InPackUi? = null,
+    /** Where its target is, when it has one: what the 3D view is shown on. */
+    val target: LatLon? = null,
 ) {
     /** *Save* names an LZ/PZ that still has its made-up name, once it is analysed (the web's "Analyze to save"); a pack's are named in the pack. */
     val canSave: Boolean get() = inPack == null && madeUpName && status == DiagramStatus.ANALYZED && conflictOf == null
@@ -283,6 +290,9 @@ data class ActiveDiagramUi(
 
     /** Saved as the web's `savedId` says it ([LzNames.isSaved]); a pack's never is. What keeps its point cloud building when the 3D view closes. */
     val saved: Boolean get() = inPack == null && LzNames.isSaved(name, status, conflictOf)
+
+    /** What the 3D view is shown on, for one with a target. */
+    val threeD: Viewer3DTarget? get() = target?.let { Viewer3DTarget(uuid, name, it.lat, it.lon, saved) }
 }
 
 data class DiagramsUiState(
@@ -305,6 +315,8 @@ data class DiagramsUiState(
     val planAsked: Int = 0,
     /** The open Mission Pack's LZ/PZs, while one is open; null in the Library. */
     val pack: PackLzListUi? = null,
+    /** The open LZ/PZ while its 3D view is shown, over the whole screen. */
+    val viewer3d: Viewer3DTarget? = null,
 )
 
 /**
@@ -338,12 +350,18 @@ class DiagramsViewModel @Inject constructor(
     // The person's own LZ/PZs, read once for the list and for asking for a saved one's point cloud: each record change is parsed once.
     private val summaries = repository.observe().shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
 
+    // The LZ/PZ whose 3D view is shown: always the open one (the web's window shows the open LZ/PZ).
+    private val viewing = MutableStateFlow<String?>(null)
+
     // What the panel reads of the open pack: a presence frame that only moves someone's pointer is not passed on (PackGlance).
     private val inputs = combine(summaries, session.active, local, openSet.ids, page) { summaries, active, local, open, page ->
         Inputs(summaries, active, local, open, page)
-    }.combine(pack.glance) { inputs, glance -> inputs.copy(pack = glance) }
+    }.combine(pack.glance) { inputs, glance -> inputs.copy(pack = glance) }.combine(viewing) { inputs, viewing -> inputs.copy(viewing = viewing) }
 
-    private data class Inputs(val summaries: List<DiagramSummary>, val active: Diagram?, val local: DiagramsUiState, val open: List<String>, val page: LzPage, val pack: PackGlance? = null)
+    private data class Inputs(
+        val summaries: List<DiagramSummary>, val active: Diagram?, val local: DiagramsUiState, val open: List<String>, val page: LzPage, val pack: PackGlance? = null,
+        val viewing: String? = null,
+    )
 
     // The open pack's LZ/PZs as diagrams, by local id, each read once for as long as its data is the same (an item no change touched keeps its instance). Made
     // again from the pack's items each time, so an item removed, or another pack's, is let go.
@@ -379,12 +397,12 @@ class DiagramsViewModel @Inject constructor(
             val openRows = if (glance != null) emptyList() else open.filter { it != active?.id }.mapNotNull { id -> byId[id]?.toRow(isActive = false) }
             val diagrams = diagramsOf(glance)
             val packList = glance?.let { packListOf(it, active, diagrams) }
+            val current = active?.let {
+                inPack(currentOf(it, status, slopes, slopeShown, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState()), glance)
+            }
             local.copy(
-                current = active?.let {
-                    inPack(
-                        currentOf(it, status, slopes, slopeShown, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState()), glance,
-                    )
-                },
+                current = current,
+                viewer3d = inputs.viewing?.let { id -> current?.takeIf { it.uuid == id }?.threeD },
                 rows = rows,
                 open = openRows,
                 openCount = openRows.size + (if (active != null) 1 else 0),
@@ -407,6 +425,11 @@ class DiagramsViewModel @Inject constructor(
             session.active.collect { diagram ->
                 if (diagram != null) openSet.add(diagram.id) else if (page.value == LzPage.PLAN) page.value = LzPage.HOME
             }
+        }
+        // The 3D view shows the open LZ/PZ: another opened, or this one closed (a sign-out, a pack left, a delete), lets it go, and it does not come back by
+        // itself when this one opens again.
+        viewModelScope.launch {
+            session.active.map { it?.id }.distinctUntilChanged().collect { id -> if (id != viewing.value) viewing.value = null }
         }
         // The person's own LZ/PZs as they stand: one saved while this runs (named and analysed: *Save* shows *Saved*) asks for its point cloud.
         // The open one is seen as it is in the editor: an LZ/PZ is written to the Library only once it is analysed, so one named first would otherwise
@@ -576,19 +599,44 @@ class DiagramsViewModel @Inject constructor(
         }
     }
 
-    fun open(uuid: String) {
-        if (session.active.value?.id == uuid) return
+    fun open(uuid: String) = openThen(uuid)
+
+    // Opens [uuid], then does [then] once it is the one open (at once if it is already).
+    private fun openThen(uuid: String, then: () -> Unit = {}) {
+        if (session.active.value?.id == uuid) return then()
         packItem(uuid)?.let { item ->
             return run("The LZ/PZ could not be opened.") {
-                if (!pack.openItem(item)) local.update { it.copy(error = "That LZ/PZ is no longer in the pack.") }
+                if (pack.openItem(item)) then() else local.update { it.copy(error = "That LZ/PZ is no longer in the pack.") }
             }
         }
-        if (state.value.rows.firstOrNull { it.uuid == uuid }?.isActive == true) return
+        if (state.value.rows.firstOrNull { it.uuid == uuid }?.isActive == true) return then()
         // The person's own are set aside in a pack, and come back when it is left: one opened here would be edited beside the pack's, as if it were one of them.
         if (pack.state.value != null && PackRef.parse(uuid) == null) return fail(OWN_IN_PACK)
         run("The diagram could not be opened.") {
-            if (session.open(uuid)) openSet.add(uuid) else local.update { it.copy(error = "That diagram is no longer here.") }
+            if (session.open(uuid)) {
+                openSet.add(uuid)
+                then()
+            } else {
+                local.update { it.copy(error = "That diagram is no longer here.") }
+            }
         }
+    }
+
+    // -- The 3D view -------------------------------------------------------------------------------------------------------
+
+    /**
+     * Shows [uuid] in 3D, over the whole screen. The view always shows the open LZ/PZ, as the web's window does, so one that is not open is opened first. One
+     * with no target has nothing to look at, and is refused in words.
+     */
+    fun view3d(uuid: String) = openThen(uuid) {
+        val open = session.active.value
+        if (open?.id != uuid) return@openThen
+        if (open.target == null) fail(NO_TARGET_3D) else viewing.value = uuid
+    }
+
+    /** The 3D view closed (its bar's close button, Back). */
+    fun close3d() {
+        viewing.value = null
     }
 
     /** Renames [uuid] [name]; with [replacing], the LZ/PZ that has the name is deleted first (the Library's *Replace*). */
@@ -638,7 +686,7 @@ class DiagramsViewModel @Inject constructor(
             val diagram = diagrams[localId] ?: return@mapNotNull null
             DiagramRow(
                 uuid = localId, name = item.name, status = diagram.status, grid = diagram.target?.mgrs?.takeIf { it.isNotBlank() },
-                sync = SyncStatus.SYNCED, conflictOf = null, isActive = false,
+                sync = SyncStatus.SYNCED, conflictOf = null, isActive = false, hasTarget = diagram.target != null,
                 // Read-only is said once, by the open card and the head, as the design draws it (the web marks every row).
                 chips = packLzChips(diagram.status, false, PackFacts.original(item), PackFacts.fromLibrary(item), glance.waiting(item)) - SYNCED_IN_PACK,
                 presence = glance.withItOpen(item.uuid).takeIf { it.isNotEmpty() }?.let(PackFacts::hasItOpen),
@@ -729,6 +777,7 @@ class DiagramsViewModel @Inject constructor(
         // The switch is there while the open LZ/PZ has a slope measured for the boundary it has now, as the map's button is.
         slopeShown = slopeShown.takeIf { (slopes[diagram.id] as? SlopeState.Ready)?.let { it.boundaryKey == analysis.boundaryKey(diagram) } == true },
         saveContents = saveContentsOf(diagram),
+        target = diagram.target?.let { LatLon(it.lat, it.lon) },
     )
 
     /** What naming the LZ/PZ keeps, as the save dialog lists it: its boundary, target and slope; then its graphics, counted. */
@@ -817,7 +866,7 @@ class DiagramsViewModel @Inject constructor(
 
     private fun DiagramSummary.toRow(isActive: Boolean) = DiagramRow(
         uuid = uuid, name = name, status = status, grid = target?.mgrs?.takeIf { it.isNotBlank() }, sync = sync, conflictOf = conflictOf, isActive = isActive,
-        chips = lzChips(status, sync, conflictOf),
+        chips = lzChips(status, sync, conflictOf), hasTarget = target != null,
     )
 
     internal companion object {
@@ -833,5 +882,7 @@ class DiagramsViewModel @Inject constructor(
 
         /** Said in place of the pack's items while it cannot be reached and the device has no copy of it. */
         const val PACK_UNREACHABLE = "The pack cannot be reached, and this device has no copy of it yet. It is tried again by itself."
+
+        const val NO_TARGET_3D = "Set a target to see this LZ/PZ in 3D."
     }
 }

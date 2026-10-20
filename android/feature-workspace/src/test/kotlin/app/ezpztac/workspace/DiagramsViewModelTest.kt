@@ -3,6 +3,7 @@ package app.ezpztac.workspace
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.BuildOnSave
+import app.ezpztac.data.Viewer3DTarget
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
@@ -1446,6 +1447,85 @@ class DiagramsViewModelTest {
         )
         advanceUntilIdle()
         assertTrue(again.isEmpty())
+    }
+
+    // -- The 3D view ---------------------------------------------------------------------------------------------------------
+
+    private val there = LatLon(34.79, -84.07)
+
+    @Test
+    fun `3D shows the open LZ-PZ with its name, its target and whether it is saved, and closing it lets it go`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val uuid = r.model.state.value.current!!.uuid
+        assertNull(r.model.state.value.viewer3d)
+        r.model.view3d(uuid)
+        advanceUntilIdle()
+        assertEquals(Viewer3DTarget(uuid, "LZ/PZ 1", here.lat, here.lon, saved = false), r.model.state.value.viewer3d)
+        // Saved meanwhile (its title and its build follow it): named and analysed.
+        r.model.analyze()
+        advanceUntilIdle()
+        r.model.saveAs("LZ HAWK")
+        advanceUntilIdle()
+        assertEquals(Viewer3DTarget(uuid, "LZ HAWK", here.lat, here.lon, saved = true), r.model.state.value.viewer3d)
+        r.model.close3d()
+        advanceUntilIdle()
+        assertNull(r.model.state.value.viewer3d)
+    }
+
+    @Test
+    fun `3D on another open LZ-PZ opens it first, as the web's window always shows the open one`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(there)
+        advanceUntilIdle()
+        assertEquals(listOf(true), r.model.state.value.open.map { it.hasTarget })              // the other row has a target, so its 3D is on
+        r.model.view3d(first)
+        advanceUntilIdle()
+        assertEquals(first, r.session.active.value?.id)
+        assertEquals(first, r.model.state.value.viewer3d?.uuid)
+        assertEquals(here.lat, r.model.state.value.viewer3d!!.lat, 0.0)
+    }
+
+    @Test
+    fun `another LZ-PZ opened, or this one closed, lets the 3D view go, and opening this one again does not bring it back`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(there)
+        advanceUntilIdle()
+        val second = r.model.state.value.current!!.uuid
+        r.model.view3d(second)
+        advanceUntilIdle()
+        r.model.open(first)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.viewer3d)
+        r.model.open(second)
+        advanceUntilIdle()
+        assertNull("it is shown in 3D only when asked", r.model.state.value.viewer3d)
+        r.model.view3d(second)
+        advanceUntilIdle()
+        r.model.close(second)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.viewer3d)
+    }
+
+    @Test
+    fun `an LZ-PZ with no target has nothing to see in 3D, and says so`() = runTest(dispatcher) {
+        val r = rig()
+        val made = r.repository.create(DiagramTarget(here.lat, here.lon, grid), "LZ BLANK")
+        r.repository.save(made.copy(target = null))
+        r.model.open(made.id)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.current!!.target)
+        r.model.view3d(made.id)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.viewer3d)
+        assertEquals(DiagramsViewModel.NO_TARGET_3D, r.model.state.value.error)
     }
 
     @Test
