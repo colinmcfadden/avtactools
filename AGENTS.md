@@ -2387,24 +2387,41 @@ client is built around not losing one:
     py3dtiles writes an octree ten or a hundred times smaller with a transform that scales it back, and read unscaled the ring and the cores stopped several levels
     above where the web draws (the review of V3). **A failed tile is never asked for again** (`TileStatus`: only an unloaded one is), and the tile it would replace
     stays drawn, as Cesium keeps it. **Not ported**: the dynamic screen-space error, skipping levels, request volumes, holding requests back while the camera moves
-    fast, and the memory-adjusted error; a point budget stands for the last (`withinBudget`).
+    fast, and the memory-adjusted error; a point budget stands for the last (`withinBudget`). **The error raised for the budget is kept from frame to frame**
+    (`PointCloudScene`, per tileset) and lowered a step a frame only once the view has changed since it was last raised, every tile it draws is in hand, and a step
+    lower would still fit (about 1.5² as many points): started afresh each frame, a still camera whose finest view was over the budget fetched that view, found it
+    too much, let it go and fetched it again for ever (the review of V4). **Not like Cesium**, which raises and lowers its error 2% a frame by its cache's bytes.
   - **The scene is drawn when something changes, never on a clock** (`SceneSurface`, `RENDERMODE_WHEN_DIRTY`): a finger, a tile that came, a flight under way, the
     point size, and the end of a failed tile's pause (`PointCloudScene.failed` says when; a frame must be drawn then, or nothing asks again). Each tileset's points go
     into an offscreen target and are lit by the eye-dome lighting onto the screen at their own depth, the core and then the ring, as Cesium lights each tileset on
     its own. **Depth is logarithmic** (`SceneDepth`, written in the vertex shader, exact for a point), so a 24-bit buffer holds about a millionth of any distance
-    and the lighting reads no relief that is not there. Points are sized by Cesium's attenuation (`PointShading`), at least a pixel.
+    and the lighting reads no relief that is not there. Points are sized by Cesium's attenuation (`PointShading`), at least one dp across: the web's Cesium draws
+    at the browser's own resolution (`useBrowserRecommendedResolution`, a pixel ratio of 1), so its smallest point, a pixel, is a CSS pixel; a point one of the
+    screen's pixels across was a third of that on a dense phone, and far points all but vanished. **Not like the web**: a point with no neighbour at the radius
+    keeps its colour, where Cesium's lighting divides nothing by nothing and draws it black.
   - **Everything is the session's, nothing the GL view's** (`SceneSession`, in the view model): the GL view and its context come and go (a pause, a lost context)
     and the tiles go onto the next context again from the points in hand; the points held stay within a quarter of the app's heap (`SceneBudgets.forHeap`, at 15
-    bytes a point, drawn half that), never more than three million drawn and six held. A frame's fault, or a GPU without room for a tile, is the view's to say in
-    words (`GL_FAILED`; a tile refused stays undrawn), never the app's end: an exception on the GL thread has nothing above it.
+    bytes a point, drawn half that), never more than three million drawn and six held. A frame's fault is the view's to say in words (`GL_FAILED`), never the
+    app's end: an exception on the GL thread has nothing above it; and once said it stands, whatever the tileset does after. A tile the GPU has no room for is
+    left undrawn without a word, and tried again once something is let go of. **A frame goes only to the view that is the session's** (`frame(…, view)`): a GL
+    view going as its activity is made again draws on its own thread a while, and took the tiles let go of (whose buffers it alone then freed) and the imagery
+    meant for the new view's GPU. A device whose EGL lists no OpenGL ES 3.0 surface is told so before the view is made (`SceneConfigChooser.onDevice`):
+    GLSurfaceView can only throw on its thread, which ends the app.
   - **Its surface is above the map's, under the window** (`setZOrderMediaOverlay`): MapLibre draws into a surface of its own, and two plain ones have no order.
     Only a device that says it has OpenGL ES 3.0 makes the view (`canDraw3D`); one without is told so in words.
   - **The fingers move it as Cesium's touch controls move the web's** (`TouchGestures` over `CameraMoves`): one finger drags the ground under it, a pinch goes
-    toward what is between the fingers, a twist turns about the middle, two fingers up or down tilt (never past level or below the ground), a finger on a flight
-    ends it where it got to. The ground the moves hold to is level: the middle height of the first tile's points within 30 m of the LZ (`SceneGround`, an LZ
-    being open ground), the cloud's middle until then. *LZ* flies back to the opening view in 1.2 s, the compass to north about the middle in 0.6 s, as the
-    web's. **Not like the web**: the ground under a finger is that level, not the picked surface (V5's terrain is to give it), and a tile that met no connection is
-    asked for again after 5 s and 10 s (Cesium never asks again; a phone loses its signal more often than a browser).
+    toward what is between the fingers, a twist turns about the middle, two fingers up or down tilt at Cesium's rate (`TILT_PER_HEIGHT`, about 0.44π for the
+    view's height: its pinch reads the fingers' height at a quarter), never past level or below the ground, and a finger on a flight ends it where it got to. A
+    screen reader has the same as the scene's actions, a step at a time about the middle (`SceneStep`: 15° a turn, 10° a tilt, half as near again), and hears
+    the scene said again as it is drawn (a polite live region). The ground the moves hold to is level: the lowest tenth of the points within 30 m of the LZ,
+    from the tile with most of them that has a tenth of them on every side of it (`SceneGround`: their middle was in the trees round the clearing, ten metres up
+    in the fixture's; a tile of py3dtiles' octree near the LZ holds one side of it, or only the canopy over it), the cloud's middle until one does, the terrain's
+    height once it comes. *LZ* flies back to the opening view in 1.2 s, the compass to north about the middle in 0.6 s, eased as Cesium eases a flight that
+    does not come down from high up (`QUINTIC_IN_OUT`). **Not like the web**: the ground under a finger is that level, not the picked surface; a pinch also drags
+    what is between the fingers, which Cesium's does not, and zooms by the spread (the distance over it, where Cesium's moves 1.25 times the height for the
+    spread's change over the view's height: about the same); nothing drifts on after the fingers lift (Cesium's inertia); four tiles are fetched at a time
+    (Cesium's scheduler, 18); and a tile that met no connection is asked for again 5 s and 10 s after it failed (Cesium never asks again; a phone loses its signal
+    more often than a browser).
   - **The ground is Cesium's globe over the server's heightmaps** (`TerrainScene`, `TerrainMeshes`, V5): from level 0's two tiles down, a tile drawn while its error on the
     screen is under 2 pixels or its four children are not all in hand (fetched together, coarse first); heights placed as Cesium places them, a row's first and last on
     the tile's edges (§15); skirts four times the level's error, at most a kilometre. **None is drawn where the server has none** (a 204: nothing there or under it),

@@ -93,7 +93,21 @@ object Viewer3DWords {
     const val FACE_NORTH = "Face north"
     const val POINT_SIZE = "Point size"
 
-    /** What a screen reader hears of the scene itself, and how the fingers move it. */
-    fun scene(name: String): String =
-        "Point cloud of $name. One finger moves the view, two fingers pinch to zoom and twist to turn, and two fingers up or down tilt it."
+    /**
+     * What a screen reader hears of the scene itself: once it is [drawn], that it is, and how the fingers move it and its actions step it (the change
+     * is said as it comes).
+     */
+    fun scene(name: String, drawn: Boolean): String = if (!drawn) "Point cloud of $name." else
+        "Point cloud of $name, drawn. One finger moves the view, two fingers pinch to zoom and twist to turn, and two fingers up or down tilt it; " +
+            "its actions do each a step at a time."
+
+    /** A screen reader's steps of the camera ([SceneSession.step]). */
+    fun step(step: SceneStep): String = when (step) {
+        SceneStep.TURN_LEFT -> "Turn left"
+        SceneStep.TURN_RIGHT -> "Turn right"
+        SceneStep.TILT_UP -> "Tilt toward the horizon"
+        SceneStep.TILT_DOWN -> "Tilt to look down"
+        SceneStep.ZOOM_IN -> "Zoom in"
+        SceneStep.ZOOM_OUT -> "Zoom out"
+    }
 }

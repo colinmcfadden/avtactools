@@ -136,16 +136,28 @@ public class CameraMoves(public val groundZ: Double, public val limits: Limits =
 
 /**
  * The camera on its way from [from] to [to] over [durationMs] (the web's flights: [SceneLook.FRAME_MS] to frame the LZ, [SceneLook.FACE_NORTH_MS]
- * to face north), eased in and out, turning the short way round.
+ * to face north), eased in and out as Cesium eases a flight that does not come down from high up (`EasingFunction.QUINTIC_IN_OUT`, its
+ * default under 11.5 km), turning the short way round. In a straight line: Cesium's goes by longitude, latitude and height, which over the few
+ * hundred metres of these flights is the same line to the millimetre.
  */
 public class CameraFlight(public val from: CameraPose, public val to: CameraPose, public val durationMs: Long) {
     /** Where it is [elapsedMs] after it set off. */
     public fun at(elapsedMs: Long): CameraPose {
         val t = if (durationMs <= 0) 1.0 else (elapsedMs.toDouble() / durationMs).coerceIn(0.0, 1.0)
-        val e = t * t * (3 - 2 * t)
+        val e = easing(t)
         val turn = ((to.heading - from.heading) % (2 * PI) + 3 * PI) % (2 * PI) - PI
         return CameraPose(from.position + (to.position - from.position) * e, from.heading + turn * e, from.pitch + (to.pitch - from.pitch) * e)
     }
 
     public fun done(elapsedMs: Long): Boolean = elapsedMs >= durationMs
+
+    public companion object {
+        /** Tween.js's `Easing.Quintic.InOut`, which Cesium's `QUINTIC_IN_OUT` is. */
+        public fun easing(t: Double): Double {
+            val u = t * 2
+            if (u < 1) return 0.5 * u * u * u * u * u
+            val v = u - 2
+            return 0.5 * (v * v * v * v * v + 2)
+        }
+    }
 }

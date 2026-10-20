@@ -99,6 +99,16 @@ public object TilesetReader {
      * (it would hold itself) are refused.
      */
     public fun read(bytes: ByteArray, path: String, frame: LocalFrame, parent: Tile? = null): TilesetDocument {
+        val document = readApart(bytes, path, frame, parent)
+        if (parent != null) join(parent, document)
+        return document
+    }
+
+    /**
+     * [read] without joining a tileset inside another to its [parent], so it can be read off the thread that walks the tree: [join] joins it
+     * then, under the lock the tree is walked under. Until then the tree is as it was.
+     */
+    public fun readApart(bytes: ByteArray, path: String, frame: LocalFrame, parent: Tile? = null): TilesetDocument {
         if (bytes.size > MAX_BYTES) throw TilesetException("A tileset of ${bytes.size} bytes is more than $MAX_BYTES")
         if (parent != null) {
             if ((parent.content as? TilesetContent)?.path != path) throw TilesetException("The tile does not hold $path")
@@ -117,13 +127,24 @@ public object TilesetReader {
         val geometricError = finite(root["geometricError"], "the tileset's geometricError").also { if (it < 0) throw TilesetException("A negative geometricError") }
         val top = root["root"] as? JsonObject ?: throw TilesetException("No root")
         val tree = parent?.tree ?: TileTree()
-        // Counted on a copy, so a tileset refused part way leaves the tree as it was.
+        // Counted on a copy, so a tileset refused part way leaves the tree as it was; one inside another is counted into its tree as it joins.
         val counter = intArrayOf(tree.tiles)
         val tile = tile(top, path, frame, parent, parent?.world ?: Mat4.IDENTITY, parent?.refine, (parent?.depth ?: -1) + 1, counter, tree)
         val count = counter[0] - tree.tiles
-        tree.tiles = counter[0]
-        parent?.addChild(tile)
+        if (parent == null) tree.tiles = count
         return TilesetDocument(path, geometricError * tile.world.maximumScale, tile, count)
+    }
+
+    /**
+     * Joins [document], read apart for [parent] ([readApart]), as the tile's one child: refused when it was read for another tile, the tile
+     * has joined since, or the tiles joined meanwhile leave no room for its own within [MAX_TILES].
+     */
+    public fun join(parent: Tile, document: TilesetDocument) {
+        if (document.root.parent !== parent) throw TilesetException("${document.path} was not read for this tile")
+        if (parent.children.isNotEmpty()) throw TilesetException("${document.path} has joined already")
+        if (parent.tree.tiles + document.tileCount > MAX_TILES) throw TilesetException("More than $MAX_TILES tiles")
+        parent.tree.tiles += document.tileCount
+        parent.addChild(document.root)
     }
 
     private fun tile(

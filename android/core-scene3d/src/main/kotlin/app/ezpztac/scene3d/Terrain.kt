@@ -219,14 +219,14 @@ public class TerrainScene(
     }
 
     /**
-     * Fetching [tile] failed: for good when its answer could not be read ([again] false), else it is asked for again after a pause, twice. When it
-     * may be asked for again, on the frames' clock, or null for never.
+     * Fetching [tile] failed at [atMs], on the frames' clock: for good when its answer could not be read ([again] false), else it is asked for
+     * again after a pause from then, twice. When it may be asked for again, or null for never.
      */
     @Synchronized
-    public fun failed(tile: TerrainTileId, again: Boolean): Long? {
+    public fun failed(tile: TerrainTileId, again: Boolean, atMs: Long): Long? {
         loading -= tile
         val tries = (failures[tile]?.tries ?: 0) + 1
-        val at = if (again && tries < MAX_TRIES) nowMs + RETRY_MS * tries else null
+        val at = if (again && tries < MAX_TRIES) atMs + RETRY_MS * tries else null
         failures[tile] = Failure(tries, at)
         return at
     }

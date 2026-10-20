@@ -77,6 +77,8 @@ class TileSelectionTest {
         assertTrue(selection.requested.any { it.content?.path == "c0.pnts" }, "the hidden children are wanted before the parent can give way")
         val ready = TileSelector(2.0).pick(doc, c) { true }
         assertEquals(listOf("c2.pnts"), ready.selected.map { it.content!!.path })
+        // In hand, the hidden ones are touched though not drawn, so a cache keeps them: let go of, the root would be drawn again in their place.
+        assertTrue(ready.touched.mapNotNull { it.content?.path }.containsAll(listOf("c0.pnts", "c1.pnts", "c3.pnts")), "${ready.touched}")
     }
 
     @Test
@@ -179,13 +181,27 @@ class TileSelectionTest {
     }
 
     @Test
-    fun `over budget the error allowed is raised until what is drawn fits`() {
+    fun `over budget the error allowed is raised until what is drawn fits, from the raises it is given, and it says how many`() {
         val doc = replaceRoot()
         val points = { tile: Tile -> if (tile === doc.root) 1_000L else 2_000L }
-        val all = TileSelector(2.0).withinBudget(doc, camera(1000.0), ready { true }, budget = 1_000_000, points = points)
-        assertEquals(4, all.selected.size)
-        val tight = TileSelector(2.0).withinBudget(doc, camera(1000.0), ready { true }, budget = 5_000, points = points)
-        assertEquals(listOf(doc.root), tight.selected)
+        val selector = TileSelector(2.0)
+        val all = selector.withinBudget(doc, camera(1000.0), ready { true }, budget = 1_000_000, points = points)
+        assertEquals(4, all.selection.selected.size)
+        assertEquals(0, all.raises)
+        val tight = selector.withinBudget(doc, camera(1000.0), ready { true }, budget = 5_000, points = points)
+        assertEquals(listOf(doc.root), tight.selection.selected)
+        assertTrue(tight.raises > 0)
+        assertEquals(tight.raises, generateSequence(0) { it + 1 }.first { selector.withinBudget(doc, camera(1000.0), ready { true }, 5_000, points, from = it).raises == it })
+        // Started from more raises than it needs, it keeps them: lowering them again is the caller's to decide.
+        val kept = selector.withinBudget(doc, camera(1000.0), ready { true }, budget = 1_000_000, points = points, from = tight.raises + 1)
+        assertEquals(tight.raises + 1, kept.raises)
+        assertEquals(listOf(doc.root), kept.selection.selected)
+        // Never past the most: what is drawn then is over the budget.
+        val over = selector.withinBudget(doc, camera(1000.0), ready { true }, budget = 10, points = points)
+        assertEquals(TileSelector.MAX_RAISES, over.raises)
+        assertEquals(TileSelector.MAX_RAISES, selector.withinBudget(doc, camera(1000.0), ready { true }, budget = 10, points = points, from = 99).raises)
+        assertEquals(2.0 * 1.5 * 1.5, selector.errorAfter(2))
+        assertEquals(2.0, selector.errorAfter(-1))
     }
 
     @Test

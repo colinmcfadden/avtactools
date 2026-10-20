@@ -22,6 +22,7 @@ import app.ezpztac.scene3d.PointCloudScene
 import app.ezpztac.scene3d.SceneDepth
 import app.ezpztac.scene3d.SceneGround
 import app.ezpztac.scene3d.SceneLook
+import app.ezpztac.scene3d.ScreenPoint
 import app.ezpztac.scene3d.Sphere
 import app.ezpztac.scene3d.TerrainDraw
 import app.ezpztac.scene3d.TerrainScene
@@ -44,6 +45,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -105,6 +107,9 @@ class SceneSources(
     val imagery: ImageryTiles? = null,
     val decoder: ImageryDecoder? = null,
 )
+
+/** A step of the camera's that a screen reader's actions take, about the middle of the view: what the fingers do, a set amount at a time. */
+enum class SceneStep { TURN_LEFT, TURN_RIGHT, TILT_UP, TILT_DOWN, ZOOM_IN, ZOOM_OUT }
 
 /** Makes the scene of a point cloud: a [SceneSession] over the server's files in the app; tests give theirs their own dispatchers and clock. */
 fun interface SceneMaker {
@@ -174,6 +179,9 @@ class SceneSession(
     private val _status = MutableStateFlow<SceneStatus>(if (core == null) SceneStatus.Failed(SceneProblem.NOT_A_TILESET) else SceneStatus.Loading)
     val status: StateFlow<SceneStatus> = _status.asStateFlow()
 
+    // Why the GL view cannot draw, once it has said: kept over whatever the tileset does after, since nothing it does can be drawn.
+    @Volatile private var glProblem: SceneProblem? = null
+
     private val _compass = MutableStateFlow<CompassPose?>(null)
 
     /** The compass for the camera as last drawn; null until the first frame. */
@@ -187,7 +195,7 @@ class SceneSession(
 
     /**
      * The level ground the camera's moves hold to: the terrain's own height at the LZ, from the finest of its tiles in hand; until there is
-     * some, the first tile's points round the LZ; until then, the cloud's middle.
+     * some, what the tile with the most points round the LZ says of it ([SceneGround]); until then, the cloud's middle.
      */
     internal val groundZ: Double? get() = synchronized(lock) { moves?.groundZ }
 
@@ -197,8 +205,10 @@ class SceneSession(
     private var flightStart = 0L
     private var lz: Sphere? = null
     private var moves: CameraMoves? = null
-    // Where the moves' ground came from: nothing yet (the cloud's middle), the first tile's points, or the terrain at a level (finer is better).
+    // Where the moves' ground came from: nothing yet (the cloud's middle), a tile's points (from [groundPoints] round the LZ: more is better), or
+    // the terrain at a level (finer is better).
     private var groundFrom = GROUND_FROM_NOTHING
+    private var groundPoints = 0
     private var viewport: Viewport? = null
     private var coreRoot: Tile? = null
     private var ringRoot: Tile? = null
@@ -214,13 +224,19 @@ class SceneSession(
         val address = core ?: return
         val now = _status.value
         if (now !is SceneStatus.Failed || !now.problem.retryable) return
-        _status.value = SceneStatus.Loading
+        say(SceneStatus.Loading)
         scope.launch { loadCore(address) }
     }
 
-    /** The GL view cannot draw it: said once, and kept. */
+    /** The GL view cannot draw it: said once, and kept, whatever the tileset does after. */
     fun cannotDraw(problem: SceneProblem) {
+        glProblem = problem
         _status.value = SceneStatus.Failed(problem)
+    }
+
+    // Where the scene stands, unless the GL view has said it cannot draw it.
+    private fun say(status: SceneStatus) {
+        _status.update { if (glProblem != null) it else status }
     }
 
     /** The view closed: every fetch stops and every point, tile of ground and image is let go of. */
@@ -244,12 +260,12 @@ class SceneSession(
 
     /** The renderer could not put [id] on the GPU (it had no room): not tried again this session. */
     fun notUploaded(id: ImageryTileId) {
-        imagery.failed(id, again = false)
+        imagery.failed(id, again = false, atMs = clock())
     }
 
-    /** The GL context went, and the imagery's textures with it: they are fetched again (the HTTP cache has them). */
-    fun texturesLost() {
-        imagery.lostTextures()
+    /** [view]'s GL context went, and the imagery's textures with it: they are fetched again (the HTTP cache has them). Not another view's. */
+    fun texturesLost(view: () -> Unit) {
+        if (view === listener) imagery.lostTextures()
     }
 
     fun setPointSize(size: Int) {
@@ -259,10 +275,12 @@ class SceneSession(
 
     /**
      * The frame to draw now on a view of [widthPx] by [heightPx] at [pixelRatio] (the GL thread's): the camera where its flight has got to, the
-     * tiles to draw and to let go of; the fetches it wants are started here. Null before the core's tileset is in hand.
+     * tiles to draw and to let go of; the fetches it wants are started here. Null before the core's tileset is in hand, and for a [view] (the
+     * asking view's [listener]) that is no longer the session's: a GL view going as its activity is made again draws on its own thread a while,
+     * and must not take what the new one is to be handed (the tiles let go of, whose buffers it alone would free; the imagery for its GPU).
      */
-    fun frame(widthPx: Int, heightPx: Int, pixelRatio: Double): SceneWork? {
-        if (widthPx <= 0 || heightPx <= 0) return null
+    fun frame(widthPx: Int, heightPx: Int, pixelRatio: Double, view: () -> Unit): SceneWork? {
+        if (view !== listener || widthPx <= 0 || heightPx <= 0) return null
         val now = clock()
         val camera: ViewCamera
         val animating: Boolean
@@ -311,6 +329,30 @@ class SceneSession(
         invalidate()
     }
 
+    /**
+     * A screen reader's action, for whoever cannot use the fingers on the view: [step] about the middle of it, as the fingers would ([STEP_TURN_DEG]
+     * a turn, [STEP_TILT_DEG] a tilt, [STEP_ZOOM] times nearer or further).
+     */
+    fun step(step: SceneStep) {
+        val view = synchronized(lock) { viewport } ?: return
+        val middle = ScreenPoint(view.width / 2.0, view.height / 2.0)
+        val turn = Math.toRadians(STEP_TURN_DEG)
+        val tilt = Math.toRadians(STEP_TILT_DEG)
+        gesture(
+            listOf(
+                when (step) {
+                    // A twist clockwise on the screen turns the view's heading back: to its left.
+                    SceneStep.TURN_LEFT -> CameraGesture.Turn(turn)
+                    SceneStep.TURN_RIGHT -> CameraGesture.Turn(-turn)
+                    SceneStep.TILT_UP -> CameraGesture.Tilt(tilt)
+                    SceneStep.TILT_DOWN -> CameraGesture.Tilt(-tilt)
+                    SceneStep.ZOOM_IN -> CameraGesture.Zoom(middle, STEP_ZOOM)
+                    SceneStep.ZOOM_OUT -> CameraGesture.Zoom(middle, 1 / STEP_ZOOM)
+                },
+            ),
+        )
+    }
+
     /** *LZ*: flies back to the view the scene opened on, the core's sphere framed, in [SceneLook.FRAME_MS]. */
     fun frameLz() {
         synchronized(lock) {
@@ -338,6 +380,9 @@ class SceneSession(
         flight = CameraFlight(from, to, durationMs)
         flightStart = now
     }
+
+    /** The points in hand, for a test. */
+    internal val heldPoints: Long get() = scene.heldPoints
 
     // Under [lock]: the pose now, a flight that has ended landed.
     private fun poseAt(now: Long): CameraPose? {
@@ -373,13 +418,13 @@ class SceneSession(
                 if (moves == null) moves = CameraMoves(sphere.center.z)
             }
             scene.add(doc, SceneLook.CORE_SCREEN_SPACE_ERROR)
-            _status.value = SceneStatus.Drawing
+            say(SceneStatus.Drawing)
             invalidate()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             currentCoroutineContext().ensureActive()
-            _status.value = SceneStatus.Failed(if (retryable(e)) SceneProblem.UNREACHABLE else SceneProblem.UNREADABLE)
+            say(SceneStatus.Failed(if (retryable(e)) SceneProblem.UNREACHABLE else SceneProblem.UNREADABLE))
             return
         }
         ring?.let { loadRing(it) }
@@ -407,7 +452,7 @@ class SceneSession(
     private fun fetch(fetch: TileFetch) {
         val key = keyOf(fetch.tile)
         if (key == null) {
-            scene.failed(fetch.tile, again = false)
+            scene.failed(fetch.tile, again = false, atMs = clock())
             return
         }
         scope.launch {
@@ -418,8 +463,8 @@ class SceneSession(
                 } else {
                     val points = withContext(decode) { PntsReader.read(bytes, fetch.tile.world, frame) }
                     scene.arrived(fetch.tile, points)
-                    if (synchronized(lock) { groundFrom } < GROUND_FROM_POINTS) {
-                        withContext(decode) { SceneGround.of(points) }?.let { holdTo(it, GROUND_FROM_POINTS) }
+                    if (synchronized(lock) { groundFrom } <= GROUND_FROM_POINTS) {
+                        withContext(decode) { SceneGround.of(points) }?.let(::holdToPoints)
                     }
                 }
                 invalidate()
@@ -427,7 +472,7 @@ class SceneSession(
                 throw e
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
-                scene.failed(fetch.tile, retryable(e))?.let(::wake)
+                scene.failed(fetch.tile, retryable(e), clock())?.let(::wake)
             }
         }
     }
@@ -438,6 +483,16 @@ class SceneSession(
             if (from <= groundFrom) return
             moves = CameraMoves(z)
             groundFrom = from
+        }
+    }
+
+    // A tile's points say where the ground is: held to until the terrain says, or a tile that says so from more points round the LZ.
+    private fun holdToPoints(estimate: SceneGround.Estimate) {
+        synchronized(lock) {
+            if (groundFrom > GROUND_FROM_POINTS || (groundFrom == GROUND_FROM_POINTS && estimate.points <= groundPoints)) return
+            moves = CameraMoves(estimate.z)
+            groundFrom = GROUND_FROM_POINTS
+            groundPoints = estimate.points
         }
     }
 
@@ -462,7 +517,7 @@ class SceneSession(
                 throw e
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
-                terrain.failed(tile, retryable(e))?.let(::wake)
+                terrain.failed(tile, retryable(e), clock())?.let(::wake)
             }
         }
     }
@@ -476,7 +531,7 @@ class SceneSession(
                 val bytes = withContext(io) { source.tile(id) }
                 val image = withContext(decode) { reader.decode(bytes) }
                 if (image == null) {
-                    imagery.failed(id, again = false)
+                    imagery.failed(id, again = false, atMs = clock())
                     return@launch
                 }
                 val kept = synchronized(pending) { if (closed) false else true.also { pending[id] = image } }
@@ -486,7 +541,7 @@ class SceneSession(
                 throw e
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
-                imagery.failed(id, again = e !is ImageryRefused && (e is IOException || retryable(e)))?.let(::wake)
+                imagery.failed(id, again = e !is ImageryRefused && (e is IOException || retryable(e)), atMs = clock())?.let(::wake)
             }
         }
     }
@@ -503,18 +558,23 @@ class SceneSession(
         }
     }
 
-    private companion object {
-        const val COMPASS_CHANGE_DEG = 0.1
+    companion object {
+        /** A screen reader's step: a turn the map's held bar turns by, a tilt, and nearer by half as much again. */
+        const val STEP_TURN_DEG = 15.0
+        const val STEP_TILT_DEG = 10.0
+        const val STEP_ZOOM = 1.5
+
+        private const val COMPASS_CHANGE_DEG = 0.1
 
         /** Imagery put on the GPU in a frame at most: each is a few milliseconds of the GL thread. */
-        const val MAX_UPLOADS = 3
+        private const val MAX_UPLOADS = 3
 
-        const val GROUND_FROM_NOTHING = 0
-        const val GROUND_FROM_POINTS = 1
-        const val GROUND_FROM_TERRAIN = 2
+        private const val GROUND_FROM_NOTHING = 0
+        private const val GROUND_FROM_POINTS = 1
+        private const val GROUND_FROM_TERRAIN = 2
 
         // No connection, the server busy or down: worth another try. A refusal (a 404, a file too large) or a file that cannot be read is not.
-        fun retryable(e: Exception): Boolean = when (e) {
+        private fun retryable(e: Exception): Boolean = when (e) {
             is NetworkException, is RateLimitedException -> true
             is ApiException -> e.status >= 500 || e.status == 408
             else -> false

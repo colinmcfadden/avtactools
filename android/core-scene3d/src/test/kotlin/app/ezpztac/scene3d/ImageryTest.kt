@@ -153,9 +153,15 @@ class ImageryTest {
     fun `a tile that could not be read is never asked for again, one that met no connection after a pause`() {
         val scene = ImageryScene()
         val f = scene.frame(listOf(terrain), 0)
-        assertNull(scene.failed(f.fetch.first(), again = false))
-        if (f.fetch.size > 1) assertEquals(ImageryScene.RETRY_MS, scene.failed(f.fetch[1], again = true))
+        assertNull(scene.failed(f.fetch.first(), again = false, atMs = 0))
         repeat(3) { assertTrue(f.fetch.first() !in scene.frame(listOf(terrain), 3_600_000L * it).fetch) }
+        // Asked for at 0, one fails at 30 s: the pause runs from then.
+        val retry = ImageryScene()
+        val g = retry.frame(listOf(straddling), 0)
+        assertEquals(2, g.fetch.size)
+        assertEquals(30_000 + ImageryScene.RETRY_MS, retry.failed(g.fetch[1], again = true, atMs = 30_000))
+        assertTrue(g.fetch[1] !in retry.frame(listOf(straddling), 30_000 + ImageryScene.RETRY_MS - 1).fetch)
+        assertEquals(listOf(g.fetch[1]), retry.frame(listOf(straddling), 30_000 + ImageryScene.RETRY_MS).fetch)
     }
 
     @Test

@@ -2,6 +2,7 @@ package app.ezpztac.viewer3d
 
 import app.ezpztac.data.TerrainHeights
 import app.ezpztac.data.TilesetAddress
+import app.ezpztac.data.TilesetFiles
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.NetworkException
@@ -19,12 +20,16 @@ import app.ezpztac.scene3d.TerrainTileId
 import app.ezpztac.scene3d.TerrainTiling
 import app.ezpztac.scene3d.TilesetReader
 import app.ezpztac.testing.Fixtures
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -50,9 +55,10 @@ class SceneSessionTest {
 
     private class Rig(scope: TestScope, val session: SceneSession, val parent: CoroutineScope) {
         var asked = 0
+        val view: () -> Unit = { asked++ }
 
         init {
-            session.listener = { asked++ }
+            session.listener = view
         }
 
         fun close() {
@@ -62,22 +68,42 @@ class SceneSessionTest {
     }
 
     private fun TestScope.rig(
-        files: FixtureFiles = FixtureFiles(),
+        files: TilesetFiles = FixtureFiles(),
         withRing: Boolean = false,
         address: TilesetAddress? = core,
         size: Int = 5,
         sources: SceneSources = SceneSources(files),
+        io: CoroutineDispatcher? = null,
     ): Rig {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val parent = CoroutineScope(SupervisorJob() + dispatcher)
         val session = SceneSession(
             here, address, if (withRing) ring else null, sources, SceneBudgets.DEFAULT, parent, size,
-            io = dispatcher, decode = dispatcher, clock = { testScheduler.currentTime },
+            io = io ?: dispatcher, decode = dispatcher, clock = { testScheduler.currentTime },
         )
         return Rig(this, session, parent)
     }
 
-    private fun Rig.frame() = session.frame(1080, 2200, 2.75)
+    /** The fixture's files, each [delayMs] of its path in coming (or failing, per [failing]), what was asked for and when on [now]. */
+    private class SlowFiles(val delayMs: (String) -> Long, val failing: (String) -> Exception? = { null }) : TilesetFiles {
+        val asked: MutableList<Pair<Long, String>> = Collections.synchronizedList(mutableListOf())
+        var now: () -> Long = { 0 }
+
+        override suspend fun file(key: String, path: String): ByteArray {
+            asked += now() to path
+            delay(delayMs(path))
+            failing(path)?.let { throw it }
+            return Fixtures.bytes("viewer3d/tileset/$path")
+        }
+    }
+
+    private fun estimate(path: String): SceneGround.Estimate {
+        val doc = TilesetReader.read(Fixtures.bytes("viewer3d/tileset/tileset.json"), "tileset.json", frame)
+        val tile = generateSequence(listOf(doc.root)) { level -> level.flatMap { it.children }.takeIf { it.isNotEmpty() } }.flatten().first { it.content?.path == path }
+        return SceneGround.of(PntsReader.read(Fixtures.bytes("viewer3d/tileset/$path"), tile.world, frame))!!
+    }
+
+    private fun Rig.frame() = session.frame(1080, 2200, 2.75, view)
 
     /** Headings the same way round (a flight may land a turn past north, 370° for 10°). */
     private fun assertSameHeading(expected: Double, actual: Double) = assertEquals(0.0, Math.IEEEremainder(actual - expected, 2 * Math.PI), 1e-9)
@@ -110,7 +136,7 @@ class SceneSessionTest {
     }
 
     @Test
-    fun `tiles are fetched as the frames ask, read off the GL thread and drawn, and the first to come says where the ground is`() = runTest {
+    fun `tiles are fetched as the frames ask, read off the GL thread and drawn, and the one with most points round the LZ says where the ground is`() = runTest {
         val files = FixtureFiles()
         val r = rig(files)
         advanceUntilIdle()
@@ -125,12 +151,38 @@ class SceneSessionTest {
         val drawn = r.frame()!!.clouds.single()
         assertTrue(drawn.isNotEmpty())
         assertTrue(drawn.none { it.tile.content?.path == "preview.pnts" })
-        // The ground the camera holds to is the first tile's (the preview, fetched first), no longer the cloud's middle.
-        val doc = TilesetReader.read(Fixtures.bytes("viewer3d/tileset/tileset.json"), "tileset.json", frame)
-        val preview = PntsReader.read(Fixtures.bytes("viewer3d/tileset/preview.pnts"), doc.root.world, frame)
-        assertEquals(SceneGround.of(preview)!!, r.session.groundZ!!, 1e-9)
+        // The ground the camera holds to is the octree root's (more of its points round the LZ than the preview's), no longer the cloud's middle.
+        assertEquals(estimate("points/r.pnts").z, r.session.groundZ!!, 1e-9)
+        assertTrue(estimate("points/r.pnts").points > estimate("preview.pnts").points)
         assertNotEquals(before, r.session.groundZ!!, 1e-6)
         r.close()
+    }
+
+    @Test
+    fun `the ground does not hang on which tile comes first, and a quarter of the octree come before the rest says nothing of it`() = runTest {
+        // The preview and the octree's root come late; a quarter of the octree, all canopy over the LZ, comes first.
+        val files = SlowFiles({ if (it == "preview.pnts" || it == "points/r.pnts") 500 else 10 })
+        val r = rig(files)
+        advanceUntilIdle()
+        val middle = r.session.groundZ!!
+        r.frame()
+        advanceTimeBy(100)
+        runCurrent()
+        assertTrue(files.asked.toString(), files.asked.any { it.second == "points/r4.pnts" })
+        assertEquals("the cloud's middle still", middle, r.session.groundZ!!, 1e-9)
+        advanceUntilIdle()
+        assertEquals(estimate("points/r.pnts").z, r.session.groundZ!!, 1e-9)
+        r.close()
+        // The preview first, then the octree's root: the root's, from more points.
+        val inTurn = rig(SlowFiles({ if (it == "points/r.pnts") 500 else 10 }))
+        advanceUntilIdle()
+        inTurn.frame()
+        advanceTimeBy(100)
+        runCurrent()
+        assertEquals(estimate("preview.pnts").z, inTurn.session.groundZ!!, 1e-9)
+        advanceUntilIdle()
+        assertEquals(estimate("points/r.pnts").z, inTurn.session.groundZ!!, 1e-9)
+        inTurn.close()
     }
 
     @Test
@@ -197,6 +249,45 @@ class SceneSessionTest {
     }
 
     @Test
+    fun `a GL view that cannot draw is said over whatever the tileset does after, come before it or while it comes`() = runTest {
+        // The page makes the GL view as soon as the session is there: on a device without OpenGL ES 3 it says so at once, before the core comes.
+        val early = rig(SlowFiles({ if (it == "tileset.json") 300 else 0 }))
+        early.session.cannotDraw(SceneProblem.NO_GL)
+        advanceUntilIdle()
+        assertEquals(SceneStatus.Failed(SceneProblem.NO_GL), early.session.status.value)
+        early.close()
+        // OpenGL failing to set up while the core comes.
+        val meanwhile = rig(SlowFiles({ if (it == "tileset.json") 300 else 0 }))
+        advanceTimeBy(50)
+        meanwhile.session.cannotDraw(SceneProblem.GL_FAILED)
+        advanceUntilIdle()
+        assertEquals(SceneStatus.Failed(SceneProblem.GL_FAILED), meanwhile.session.status.value)
+        meanwhile.close()
+        // And over a core that could not be had: Retry, which cannot help it, is not offered.
+        val down = rig(SlowFiles({ 300 }, { NetworkException("no route", requestMayHaveBeenSent = false) }))
+        advanceTimeBy(50)
+        down.session.cannotDraw(SceneProblem.GL_FAILED)
+        advanceUntilIdle()
+        assertEquals(SceneStatus.Failed(SceneProblem.GL_FAILED), down.session.status.value)
+        down.close()
+    }
+
+    @Test
+    fun `a core whose fetch failed as the view closed says nothing of it`() = runTest {
+        // The failure is handed to the session's work just before it is cancelled: it comes as the failure, not as the cancellation (AGENTS.md §14).
+        val answer = CompletableDeferred<ByteArray>()
+        val r = rig(object : TilesetFiles {
+            override suspend fun file(key: String, path: String): ByteArray = answer.await()
+        }, io = UnconfinedTestDispatcher(testScheduler))
+        runCurrent()
+        answer.completeExceptionally(NetworkException("no route", requestMayHaveBeenSent = false))
+        r.session.close()
+        advanceUntilIdle()
+        assertEquals(SceneStatus.Loading, r.session.status.value)
+        r.parent.cancel()
+    }
+
+    @Test
     fun `a tile that met no connection is asked for again after the pause, and a frame is asked for when it is over`() = runTest {
         var down = true
         val files = FixtureFiles(failing = { if (down && it == "preview.pnts") NetworkException("no route", requestMayHaveBeenSent = false) else null })
@@ -217,6 +308,37 @@ class SceneSessionTest {
         r.frame()
         advanceUntilIdle()
         assertEquals(2, files.asked.count { it.endsWith("/preview.pnts") })
+        r.close()
+    }
+
+    @Test
+    fun `the pause before a tile is asked for again runs from when it failed, a read that timed out after 30 s waiting 5 s more`() = runTest {
+        var down = true
+        val files = SlowFiles(
+            { if (it == "preview.pnts" && down) 30_000 else 0 },
+            { if (it == "preview.pnts" && down) NetworkException("timeout", requestMayHaveBeenSent = true) else null },
+        )
+        files.now = { testScheduler.currentTime }
+        val r = rig(files)
+        advanceUntilIdle()
+        r.frame()
+        runCurrent()
+        advanceTimeBy(30_000)
+        runCurrent()
+        down = false
+        advanceTimeBy(PointCloudScene.RETRY_MS - 1)
+        runCurrent()
+        r.frame()
+        runCurrent()
+        assertEquals("not at once", 1, files.asked.count { it.second == "preview.pnts" })
+        // Nothing comes from here to ask for a frame: the pause's end must.
+        val asked = r.asked
+        advanceTimeBy(2)
+        runCurrent()
+        assertTrue("a frame asked for when the pause is over", r.asked > asked)
+        r.frame()
+        runCurrent()
+        assertEquals(listOf(0L, 30_000L + PointCloudScene.RETRY_MS + 1), files.asked.filter { it.second == "preview.pnts" }.map { it.first })
         r.close()
     }
 
@@ -251,6 +373,32 @@ class SceneSessionTest {
         assertSameHeading(halfWay.heading, held.camera.heading)
         advanceTimeBy(SceneLook.FRAME_MS)
         assertSameHeading(halfWay.heading, r.frame()!!.camera.heading)
+        r.close()
+    }
+
+    @Test
+    fun `a screen reader's steps turn, tilt and zoom about the middle of the view as the fingers would`() = runTest {
+        val r = rig()
+        advanceUntilIdle()
+        r.session.step(SceneStep.TURN_LEFT)                                                       // no view yet: nothing to step about
+        val opening = r.frame()!!.camera
+        r.session.step(SceneStep.TURN_LEFT)
+        val left = r.frame()!!.camera
+        assertSameHeading(opening.heading - Math.toRadians(SceneSession.STEP_TURN_DEG), left.heading)
+        r.session.step(SceneStep.TURN_RIGHT)
+        assertSameHeading(opening.heading, r.frame()!!.camera.heading)
+        r.session.step(SceneStep.TILT_UP)
+        assertEquals(opening.pitch + Math.toRadians(SceneSession.STEP_TILT_DEG), r.frame()!!.camera.pitch, 1e-9)
+        r.session.step(SceneStep.TILT_DOWN)
+        assertEquals(opening.pitch, r.frame()!!.camera.pitch, 1e-9)
+        val moves = app.ezpztac.scene3d.CameraMoves(r.session.groundZ!!)
+        val middle = ScreenPoint(540.0, 1100.0)
+        fun range(c: app.ezpztac.scene3d.ViewCamera) = (c.position - moves.ground(c, middle)!!).length
+        val far = range(r.frame()!!.camera)
+        r.session.step(SceneStep.ZOOM_IN)
+        assertEquals(far / SceneSession.STEP_ZOOM, range(r.frame()!!.camera), 1e-6)
+        r.session.step(SceneStep.ZOOM_OUT)
+        assertEquals(far, range(r.frame()!!.camera), 1e-6)
         r.close()
     }
 
@@ -312,6 +460,63 @@ class SceneSessionTest {
     }
 
     @Test
+    fun `LZ flies there in 1,2 s, as the web's`() = runTest {
+        val r = rig()
+        advanceUntilIdle()
+        r.frame()
+        r.session.gesture(listOf(CameraGesture.Turn(Math.toRadians(70.0))))
+        r.frame()
+        r.session.frameLz()
+        advanceTimeBy(SceneLook.FRAME_MS - 1)
+        assertTrue(r.frame()!!.animating)
+        advanceTimeBy(1)
+        assertFalse(r.frame()!!.animating)
+        assertEquals(1_200L, SceneLook.FRAME_MS)
+        r.close()
+    }
+
+    @Test
+    fun `the budgets are a quarter of the heap held at 15 bytes a point and half that drawn, within a million and the scene's own`() {
+        assertEquals(SceneBudgets(2_236_962, 4_473_924), SceneBudgets.forHeap(256))
+        assertEquals(SceneBudgets(500_000, 1_000_000), SceneBudgets.forHeap(32))
+        assertEquals(SceneBudgets(PointCloudScene.DRAW_BUDGET, PointCloudScene.HOLD_BUDGET), SceneBudgets.forHeap(2_048))
+    }
+
+    @Test
+    fun `closing lets go of the points in hand`() = runTest {
+        val r = rig()
+        advanceUntilIdle()
+        settle(r)
+        assertTrue(r.frame()!!.clouds.single().isNotEmpty())
+        assertTrue(r.session.heldPoints > 0)
+        r.session.close()
+        assertEquals(0L, r.session.heldPoints)
+        r.parent.cancel()
+    }
+
+    @Test
+    fun `a view that is no longer the scene's gets no frame, and takes nothing the new one is to be handed`() = runTest {
+        val g = Ground()
+        val r = rig(sources = g.sources)
+        advanceUntilIdle()
+        settleGround(r)
+        // The activity made again: a new GL view takes the scene while the old one's thread still draws.
+        val old = r.view
+        val new: () -> Unit = {}
+        r.session.listener = new
+        r.session.texturesLost(old)
+        assertNull(r.session.frame(1080, 2200, 2.75, old))
+        assertTrue("its textures are not the scene's", r.session.frame(1080, 2200, 2.75, new)!!.uploads.isEmpty())
+        // The new view's context lost: its imagery is fetched again and handed to it alone.
+        r.session.texturesLost(new)
+        r.session.frame(1080, 2200, 2.75, new)
+        advanceUntilIdle()
+        assertNull(r.session.frame(1080, 2200, 2.75, old))
+        assertTrue(r.session.frame(1080, 2200, 2.75, new)!!.uploads.isNotEmpty())
+        r.close()
+    }
+
+    @Test
     fun `closing stops every fetch and lets go of every point`() = runTest {
         val files = FixtureFiles()
         val r = rig(files)
@@ -324,8 +529,8 @@ class SceneSessionTest {
         advanceUntilIdle()
         assertEquals(asked, files.asked.size)
         assertNull(r.session.listener)
-        assertNotNull(r.frame())
-        assertTrue(r.frame()!!.clouds.single().isEmpty())
+        assertNull("no view is the scene's: it draws nothing", r.frame())
+        assertEquals(0L, r.session.heldPoints)
         r.parent.cancel()
     }
 
@@ -469,7 +674,7 @@ class SceneSessionTest {
         advanceUntilIdle()
         settleGround(r)
         val asked = g.imagery.asked.size
-        r.session.texturesLost()
+        r.session.texturesLost(r.view)
         val w = settleGround(r)
         assertTrue(g.imagery.asked.size > asked)
         assertTrue(w.ground.all { it.tile in w.imageryWhole })
@@ -494,7 +699,7 @@ class SceneSessionTest {
         settleGround(r)
         // The textures lost: the next frame asks for the imagery again, which is decoded and waits for a frame that does not come; and
         // a frame whose renderer took what it was handed but never uploaded it.
-        r.session.texturesLost()
+        r.session.texturesLost(r.view)
         val handed = mutableListOf<ImageryImage>()
         r.frame()?.let { w -> handed += w.uploads.map { it.second } }
         advanceUntilIdle()

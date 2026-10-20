@@ -3,6 +3,7 @@ package app.ezpztac.viewer3d
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Typeface
+import android.view.View
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,10 +37,15 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,11 +79,21 @@ internal fun sceneSlots(
     pointSize: Int,
     onPointSize: (Int) -> Unit,
     retry: () -> Unit,
-    surface: @Composable (SceneSession, String) -> Unit,
+    surface: @Composable (SceneSession) -> Unit,
 ): SceneSlots = SceneSlots(
     scene = {
-        Box(Modifier.fillMaxSize()) {
-            surface(session, Viewer3DWords.scene(name))
+        val status by session.status.collectAsStateWithLifecycle()
+        val drawn = status == SceneStatus.Drawing
+        val steps = remember(session) { SceneStep.entries.map { step -> CustomAccessibilityAction(Viewer3DWords.step(step)) { session.step(step); true } } }
+        // The scene as a screen reader has it: what it is, said again as it is drawn, and the camera's steps for whoever cannot use the fingers on it.
+        Box(
+            Modifier.fillMaxSize().semantics {
+                contentDescription = Viewer3DWords.scene(name, drawn)
+                liveRegion = LiveRegionMode.Polite
+                if (drawn) customActions = steps
+            },
+        ) {
+            surface(session)
             if (night) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = SCENE_NIGHT_DIM)))
         }
     },
@@ -85,18 +101,20 @@ internal fun sceneSlots(
     foot = { SceneFoot(session, pointSize, onPointSize) },
 )
 
-/** The scene drawn by OpenGL ([SceneSurface]), where the device can; where it cannot, the session is told, and the page says so in words. */
+/**
+ * The scene drawn by OpenGL ([SceneSurface]), where the device can; where it cannot, the session is told, and the page says so in words. The view
+ * itself says nothing to a screen reader: the scene's slot says what it is and carries its actions.
+ */
 @Composable
-internal fun GlScene(session: SceneSession, description: String) {
+internal fun GlScene(session: SceneSession) {
     val context = LocalContext.current
     val drawable = remember(context) { canDraw3D(context) }
     LaunchedEffect(session, drawable) { if (!drawable) session.cannotDraw(SceneProblem.NO_GL) }
     if (!drawable) return
     key(session) {
         AndroidView(
-            factory = { SceneSurface(it, session).apply { contentDescription = description } },
+            factory = { SceneSurface(it, session).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS } },
             modifier = Modifier.fillMaxSize(),
-            update = { it.contentDescription = description },
             onRelease = { it.release() },
         )
     }
@@ -275,7 +293,11 @@ internal fun PointSizeControl(size: Int, onSize: (Int) -> Unit, modifier: Modifi
             value = size.toFloat(), onValueChange = { onSize(it.roundToInt()) },
             valueRange = SceneLook.MIN_POINT_SIZE.toFloat()..SceneLook.MAX_POINT_SIZE.toFloat(),
             steps = SceneLook.MAX_POINT_SIZE - SceneLook.MIN_POINT_SIZE - 1,
-            modifier = Modifier.weight(1f, fill = false).widthIn(min = 96.dp, max = 160.dp).semantics { contentDescription = Viewer3DWords.POINT_SIZE },
+            modifier = Modifier.weight(1f, fill = false).widthIn(min = 96.dp, max = 160.dp).semantics {
+                contentDescription = Viewer3DWords.POINT_SIZE
+                // The size as it is shown, not the slider's per cent of its range.
+                stateDescription = size.toString()
+            },
         )
         Text(
             size.toString(), style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),

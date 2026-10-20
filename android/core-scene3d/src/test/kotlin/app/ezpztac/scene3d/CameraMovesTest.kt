@@ -84,6 +84,12 @@ class CameraMovesTest {
         val furthest = moves.zoom(c, at, 1e-9)
         assertEquals(moves.limits.maxRange, (furthest.position - target).length, 1e-6)
         assertEquals(c.position, moves.zoom(c, at, Double.NaN).position)
+        // Looking along the ground, three metres from what is between the fingers would be half a metre up it: the camera stops two metres up.
+        val along = camera(moves.orbit(Vec3(0.0, 0.0, ground), 300.0, 0.0, -10 * deg))
+        val middle = ScreenPoint(540.0, 1100.0)
+        val low = moves.zoom(along, middle, 1e6)
+        assertEquals(ground + moves.limits.minAboveGround, low.position.z, 1e-9)
+        assertTrue((low.position - moves.ground(along, middle)!!).length > moves.limits.minRange)
     }
 
     @Test
@@ -104,10 +110,17 @@ class CameraMovesTest {
         assertEquals(300.0, (tilted.position - moves.pivot(tilted)).length, 1e-6)
         assertEquals(moves.limits.maxPitch, moves.tilt(c, PI).pitch, 1e-12)
         assertEquals(-PI / 2, moves.tilt(c, -PI).pitch, 1e-12)
-        // Five metres off the ground, level is as far as leaves it two metres up.
-        val low = camera(moves.orbit(Vec3(0.0, 0.0, ground), 5.0, 0.0, -60 * deg))
-        val lowest = moves.tilt(low, PI)
-        assertTrue(lowest.position.z >= ground + moves.limits.minAboveGround - 1e-9, "${lowest.position.z}")
+        // Five metres off the ground, level is as far as leaves it two metres up; three metres off, the least a pinch leaves it, as much.
+        for (range in listOf(5.0, moves.limits.minRange)) {
+            val low = camera(moves.orbit(Vec3(0.0, 0.0, ground), range, 0.0, -60 * deg))
+            val lowest = moves.tilt(low, PI)
+            assertEquals(ground + moves.limits.minAboveGround, lowest.position.z, 1e-9)
+            assertEquals(-kotlin.math.asin(moves.limits.minAboveGround / range), lowest.pitch, 1e-12)
+        }
+        // Nearer than that to the ground in the middle, no tilt leaves it two metres up: it looks straight down, as near the floor as it can be.
+        val tooLow = camera(moves.orbit(Vec3(0.0, 0.0, ground), 1.5, 0.0, -60 * deg))
+        assertEquals(-PI / 2, moves.tilt(tooLow, PI).pitch, 1e-12)
+        assertEquals(-PI / 2, moves.tilt(tooLow, -PI).pitch, 1e-12)
     }
 
     @Test
@@ -133,6 +146,10 @@ class CameraMovesTest {
         assertNear(to.position, end.position, 1e-9)
         assertEquals(370 * deg, end.heading, 1e-12)
         assertTrue(flight.done(600) && !flight.done(599))
+        // Cesium's quintic in and out: a quarter of the way through the time, a sixty-fourth of the way there; three quarters, all but that.
+        assertNear(Vec3(100.0 / 64, 0.0, 100.0 + 100.0 / 64), flight.at(150).position, 1e-9)
+        assertNear(Vec3(100.0 * 63 / 64, 0.0, 100.0 + 100.0 * 63 / 64), flight.at(450).position, 1e-9)
+        assertEquals(0.5 * 0.2 * 0.2 * 0.2 * 0.2 * 0.2, CameraFlight.easing(0.1), 1e-15)
         assertNotNull(CameraFlight(from, to, 0).at(0).takeIf { it.position == to.position })
     }
 }

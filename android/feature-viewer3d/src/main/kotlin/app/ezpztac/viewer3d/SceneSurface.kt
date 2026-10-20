@@ -13,9 +13,12 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 import app.ezpztac.scene3d.ScreenPoint
 import app.ezpztac.scene3d.TouchGestures
 
-/** Whether this device can draw the 3D view: OpenGL ES 3.0 or later, as it says of itself. Anything that cannot be asked is a no. */
+/**
+ * Whether this device can draw the 3D view: OpenGL ES 3.0 or later, as it says of itself, with a surface EGL can give it
+ * ([SceneConfigChooser.onDevice]). Anything that cannot be asked is a no.
+ */
 internal fun canDraw3D(context: Context): Boolean = try {
-    (context.getSystemService(ActivityManager::class.java)?.deviceConfigurationInfo?.reqGlEsVersion ?: 0) >= GLES_3_0
+    (context.getSystemService(ActivityManager::class.java)?.deviceConfigurationInfo?.reqGlEsVersion ?: 0) >= GLES_3_0 && SceneConfigChooser.onDevice()
 } catch (_: RuntimeException) {
     false
 }

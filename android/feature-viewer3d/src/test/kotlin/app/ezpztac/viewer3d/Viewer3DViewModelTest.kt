@@ -2,6 +2,9 @@ package app.ezpztac.viewer3d
 
 import app.ezpztac.data.LidarPhase
 import app.ezpztac.data.Viewer3DTarget
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import app.ezpztac.scene3d.SceneLook
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -123,10 +126,33 @@ class Viewer3DViewModelTest {
         model.show(hawk.copy(name = "LZ HAWK (ROCK)", saved = true))
         advanceUntilIdle()
         assertTrue("the same scene", scene === model.session.value)
+        scene.listener = {}
         model.close()
         advanceUntilIdle()
         assertNull(model.session.value)
         assertNull("closed: it draws nothing more", scene.listener)
+    }
+
+    @Test
+    fun `a scene is let go when the place moves, and when the view model goes`() = runTest(main) {
+        val model = model()
+        model.show(hawk)
+        advanceUntilIdle()
+        val first = model.session.value!!.apply { listener = {} }
+        model.show(hawk.copy(lat = hawk.lat + 0.01))
+        assertNull("moved: the old scene let go", first.listener)
+        advanceUntilIdle()
+        val second = model.session.value!!.apply { listener = {} }
+        assertTrue(second !== first)
+        // The view model's store cleared (its activity finished) with the page still up.
+        val store = ViewModelStore()
+        ViewModelProvider(store, object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = model as T
+        })[Viewer3DViewModel::class.java]
+        store.clear()
+        assertNull("cleared: the scene let go", second.listener)
+        advanceUntilIdle()
     }
 
     @Test

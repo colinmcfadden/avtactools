@@ -16,7 +16,7 @@ public sealed interface CameraGesture {
     /** A twist by [angle] radians, clockwise on the screen. */
     public data class Turn(val angle: Double) : CameraGesture
 
-    /** Two fingers moved together up the view by [by] radians' worth (Cesium's measure: the view's height is π). */
+    /** Two fingers moved together up the view by [by] radians' worth ([TouchGestures.TILT_PER_HEIGHT] for the view's height, as Cesium's). */
     public data class Tilt(val by: Double) : CameraGesture
 }
 
@@ -102,9 +102,9 @@ public class TouchGestures(private val slopPx: Double) {
 
     private fun gestures(a0: ScreenPoint, b0: ScreenPoint, a1: ScreenPoint, b1: ScreenPoint, viewHeightPx: Double): List<CameraGesture> = when (mode) {
         Mode.TILT -> {
-            // Up the view is toward the horizon: the fingers' mean rise over the view's height, times π (Cesium's rate for a tilt).
+            // Up the view is toward the horizon: the fingers' mean rise over the view's height, at Cesium's rate.
             val rise = -((a1.y - a0.y) + (b1.y - b0.y)) / 2
-            listOf(CameraGesture.Tilt(rise / viewHeightPx * PI))
+            listOf(CameraGesture.Tilt(rise / viewHeightPx * TILT_PER_HEIGHT))
         }
         Mode.PINCH -> buildList {
             val m0 = ScreenPoint((a0.x + b0.x) / 2, (a0.y + b0.y) / 2)
@@ -120,6 +120,15 @@ public class TouchGestures(private val slopPx: Double) {
     }
 
     private fun span(a: ScreenPoint, b: ScreenPoint) = hypot(b.x - a.x, b.y - a.y)
+
+    public companion object {
+        /**
+         * How far a tilt turns for two fingers moved up the whole view, radians: Cesium's, whose pinch reads the fingers' height at a quarter
+         * (`ScreenSpaceEventHandler`: `cY = (y1 + y2) × 0.125`) and whose tilt turns by its fastest rotate rate, 1.77, times π for the view's
+         * height (`rotate3D`, the rate's fastest at any distance past three metres): about 0.44π.
+         */
+        public const val TILT_PER_HEIGHT: Double = 1.77 / 4 * PI
+    }
 
     // Clockwise on the screen is positive: its y runs down.
     private fun angleChange(a0: ScreenPoint, b0: ScreenPoint, a1: ScreenPoint, b1: ScreenPoint): Double {

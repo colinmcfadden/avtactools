@@ -13,6 +13,9 @@ public class Selection(public val selected: List<Tile>, public val requested: Li
     }
 }
 
+/** A selection made within a point budget ([TileSelector.withinBudget]), and how many times the error allowed was raised to make it. */
+public class FittedSelection(public val selection: Selection, public val raises: Int)
+
 /**
  * Where a tile's content stands (Cesium's `Cesium3DTileContentState`, less what it needs for expiry): not asked for, on its way, in hand (its
  * points decoded, or for a tileset in a tile, its root joined), or failed. Only an [UNLOADED] tile is asked for; a [FAILED] one is never asked
@@ -54,19 +57,40 @@ public class TileSelector(public val maximumScreenSpaceError: Double) {
         Traversal(tileset, camera, status, maximumScreenSpaceError).run()
 
     /**
-     * The selection for [camera], made coarser until the points drawn are within [budget]: the error allowed is raised half as much again,
-     * up to eight times, while what is selected holds more than [budget] points ([points] of a tile in hand). What Cesium does with its
-     * cache's bytes, for a phone's memory.
+     * The selection for [camera], made coarser until the points drawn are within [budget]: from the error allowed after [from] raises, it is
+     * raised half as much again ([RAISE]), to at most [MAX_RAISES] raises, while what is selected holds more than [budget] points ([points] of
+     * a tile in hand). What Cesium does with its cache's bytes, for a phone's memory; when to lower it again is the caller's ([PointCloudScene]).
      */
-    public fun withinBudget(tileset: TilesetDocument, camera: ViewCamera, status: (Tile) -> TileStatus, budget: Long, points: (Tile) -> Long): Selection {
-        var sse = maximumScreenSpaceError
-        var selection = Traversal(tileset, camera, status, sse).run()
-        repeat(8) {
-            if (selection.selected.sumOf(points) <= budget) return selection
-            sse *= 1.5
-            selection = Traversal(tileset, camera, status, sse).run()
+    public fun withinBudget(
+        tileset: TilesetDocument,
+        camera: ViewCamera,
+        status: (Tile) -> TileStatus,
+        budget: Long,
+        points: (Tile) -> Long,
+        from: Int = 0,
+    ): FittedSelection {
+        var raises = from.coerceIn(0, MAX_RAISES)
+        var selection = Traversal(tileset, camera, status, errorAfter(raises)).run()
+        while (raises < MAX_RAISES && selection.selected.sumOf(points) > budget) {
+            raises++
+            selection = Traversal(tileset, camera, status, errorAfter(raises)).run()
         }
-        return selection
+        return FittedSelection(selection, raises)
+    }
+
+    /** The screen-space error allowed after [raises] raises for a budget. */
+    public fun errorAfter(raises: Int): Double {
+        var error = maximumScreenSpaceError
+        repeat(raises.coerceIn(0, MAX_RAISES)) { error *= RAISE }
+        return error
+    }
+
+    public companion object {
+        /** How much a raise for a budget multiplies the error allowed by. */
+        public const val RAISE: Double = 1.5
+
+        /** The most raises for a budget: the error allowed then about 26 times the tileset's own. */
+        public const val MAX_RAISES: Int = 8
     }
 
     private class Traversal(val tileset: TilesetDocument, val camera: ViewCamera, val status: (Tile) -> TileStatus, val maximum: Double) {

@@ -96,7 +96,7 @@ fun Viewer3DHost(
     focus: FocusRequester = remember { FocusRequester() },
     viewModel: Viewer3DViewModel = hiltViewModel(),
     /** Draws the scene: OpenGL on a device; a stand-in under test, where there is none. */
-    surface: @Composable (SceneSession, String) -> Unit = { session, description -> GlScene(session, description) },
+    surface: @Composable (SceneSession) -> Unit = { GlScene(it) },
 ) {
     LaunchedEffect(target) { if (target == null) viewModel.close() else viewModel.show(target) }
     // The host can leave with a target still set (a sign-out, an emailed link, *Update required* take the map away): its lookup goes with it, or it

@@ -39,12 +39,41 @@ class SceneDepthTest {
     private fun points(vararg xyz: Double) = ScenePoints(xyz.size / 3, FloatArray(xyz.size) { xyz[it].toFloat() }, ByteArray(xyz.size))
 
     @Test
-    fun `the ground is the middle height of the points round the LZ, else of all of them, and none with no points`() {
-        // Twenty-one points round the LZ at 340 to 360 m, and a tree well away from it.
-        val round = (0..20).flatMap { listOf(it.toDouble(), 0.0, 340.0 + it) } + listOf(100.0, 100.0, 400.0)
-        assertEquals(350.0, SceneGround.of(points(*round.toDoubleArray())))
-        // Too few near it: every point counts, and an even count takes the middle two.
-        assertEquals(355.0, SceneGround.of(points(0.0, 0.0, 340.0, 100.0, 0.0, 350.0, 0.0, 200.0, 360.0, 300.0, 0.0, 400.0)))
+    fun `the ground is the lowest tenth of the points round the LZ, and none from a tile that does not surround it`() {
+        // Forty points round the LZ, ten on each side, at 340 to 379 m, and a tree well away from it: the fifth lowest of the forty, 343 m.
+        val round = (0 until 40).flatMap { i ->
+            val (sx, sy) = listOf(1.0 to 1.0, -1.0 to 1.0, -1.0 to -1.0, 1.0 to -1.0)[i % 4]
+            listOf(sx * (1 + i % 7), sy * (2 + i % 5), 340.0 + i)
+        } + listOf(100.0, 100.0, 300.0)
+        val estimate = SceneGround.of(points(*round.toDoubleArray()))!!
+        assertEquals(343.0, estimate.z)
+        assertEquals(40, estimate.points)
+        // The same with fewer of them south-west of the LZ: none (a quarter of an octree's tile), or under a tenth, says nothing; nor do too few.
+        fun withSouthWest(kept: Int) = points(*round.chunked(3).filterIndexed { i, _ -> i >= 40 || i % 4 != 2 || i / 4 < kept }.flatten().toDoubleArray())
+        assertNull(SceneGround.of(withSouthWest(0)))
+        assertNull(SceneGround.of(withSouthWest(3)), "3 of 33 is under a tenth")
+        assertEquals(34, SceneGround.of(withSouthWest(4))?.points, "4 of 34 is not")
+        assertNull(SceneGround.of(points(*round.take(3 * (SceneGround.ENOUGH - 1)).toDoubleArray())))
         assertNull(SceneGround.of(points()))
+    }
+
+    @Test
+    fun `in the fixture the preview and the octree's root say where the ground is, under the trees, and a quarter of the octree says nothing`() {
+        val frame = LocalFrame(34.591552, -84.128225)
+        val doc = TilesetReader.read(app.ezpztac.testing.Fixtures.bytes("viewer3d/tileset/tileset.json"), "tileset.json", frame)
+        fun of(path: String): SceneGround.Estimate? {
+            val tile = generateSequence(listOf(doc.root)) { level -> level.flatMap { it.children }.takeIf { it.isNotEmpty() } }.flatten().first { it.content?.path == path }
+            return SceneGround.of(PntsReader.read(app.ezpztac.testing.Fixtures.bytes("viewer3d/tileset/$path"), tile.world, frame))
+        }
+        // The finest tile at the LZ, every point of it ground (368.6 to 369.5 m), and the coarse ones' lowest tenth a metre under it; their middle is in the trees.
+        val preview = of("preview.pnts")!!
+        val octree = of("points/r.pnts")!!
+        assertEquals(368.35, preview.z, 0.01)
+        assertEquals(368.02, octree.z, 0.01)
+        assertTrue(octree.points > preview.points)
+        // Two quarters of the octree: one all canopy over the LZ (its lowest tenth 379.5 m), one ground to one side of it, lower (366.3 m), a few
+        // of its points over the lines either side.
+        assertNull(of("points/r4.pnts"))
+        assertNull(of("points/r2.pnts"))
     }
 }

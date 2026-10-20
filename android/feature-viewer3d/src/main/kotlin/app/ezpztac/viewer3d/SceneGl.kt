@@ -1,5 +1,6 @@
 package app.ezpztac.viewer3d
 
+import android.opengl.EGL14
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
@@ -26,7 +27,7 @@ internal class GlException(message: String) : Exception(message)
 
 /**
  * The shaders. Points are sized as Cesium's attenuation sizes them (the tile's geometric error seen from where the point is, in the buffer's
- * pixels, never past the largest size: [app.ezpztac.scene3d.PointShading]), at least a pixel, and write the logarithmic depth
+ * pixels, never past the largest size: [app.ezpztac.scene3d.PointShading]), at least a CSS pixel as the web's, and write the logarithmic depth
  * ([app.ezpztac.scene3d.SceneDepth]). The eye-dome lighting is Cesium's `PointCloudEyeDomeLighting`: four neighbours at the radius, read between
  * the texels either side of it, and the point darkened by how many octaves nearer they are.
  */
@@ -36,8 +37,9 @@ layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_color;
 uniform mat4 u_view;
 uniform mat4 u_projection;
-// x: the largest a point may be, in the buffer's pixels; y: the tile's geometric error, metres; z: the buffer's height over the sseDenominator.
-uniform vec3 u_size;
+// x: the largest a point may be, in the buffer's pixels; y: the tile's geometric error, metres; z: the buffer's height over the sseDenominator;
+// w: the least a point may be, in the buffer's pixels.
+uniform vec4 u_size;
 // x: the near plane, metres; y: one over log2(far / near).
 uniform vec2 u_depth;
 out vec3 v_color;
@@ -48,7 +50,7 @@ void main() {
     vec4 clip = u_projection * eye;
     clip.z = (2.0 * log2(max(distance, u_depth.x) / u_depth.x) * u_depth.y - 1.0) * clip.w;
     gl_Position = clip;
-    gl_PointSize = max(1.0, min(u_size.y / max(distance, u_depth.x) * u_size.z, u_size.x));
+    gl_PointSize = max(u_size.w, min(u_size.y / max(distance, u_depth.x) * u_size.z, u_size.x));
     v_color = a_color;
 }
 """
@@ -289,10 +291,11 @@ internal class PointBuffers {
     }
 
     fun release(tile: Tile) {
-        refused.clear()
         val gone = tiles.remove(tile) ?: return
         GLES30.glDeleteBuffers(1, intArrayOf(gone.buffer), 0)
         GLES30.glDeleteVertexArrays(1, intArrayOf(gone.vertices), 0)
+        // Room made: what was refused may fit now.
+        refused.clear()
     }
 
     /** The context went, and every buffer with it. */
@@ -476,17 +479,21 @@ internal class PointTarget private constructor(val framebuffer: Int, val color: 
 
 /**
  * The window's surface: eight bits of red, green and blue and a depth buffer (24 bits, else 16), which the clouds are laid onto in turn, each at
- * its own depth, from a context that can draw OpenGL ES 3.0. The first such that EGL lists, keeping to eight bits a colour where it can.
+ * its own depth, from a context that can draw OpenGL ES 3.0. The first such that EGL lists, keeping to eight bits a colour where it can; failing
+ * that any with a depth buffer, then any at all (the ground and the clouds then laid on without depth between them, worse but drawn).
  */
 internal object SceneConfigChooser : GLSurfaceView.EGLConfigChooser {
     private const val EGL_OPENGL_ES3_BIT = 0x40
 
+    private val wanted: List<IntArray> = listOf(
+        intArrayOf(EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8, EGL10.EGL_DEPTH_SIZE, 24, EGL10.EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL10.EGL_NONE),
+        intArrayOf(EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8, EGL10.EGL_DEPTH_SIZE, 16, EGL10.EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL10.EGL_NONE),
+        intArrayOf(EGL10.EGL_DEPTH_SIZE, 1, EGL10.EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL10.EGL_NONE),
+        intArrayOf(EGL10.EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL10.EGL_NONE),
+    )
+
     override fun chooseConfig(egl: EGL10, display: EGLDisplay): EGLConfig {
-        for (depth in intArrayOf(24, 16)) {
-            val asked = intArrayOf(
-                EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8, EGL10.EGL_DEPTH_SIZE, depth,
-                EGL10.EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL10.EGL_NONE,
-            )
+        for (asked in wanted) {
             val count = IntArray(1)
             if (!egl.eglChooseConfig(display, asked, null, 0, count) || count[0] <= 0) continue
             val configs = arrayOfNulls<EGLConfig>(count[0])
@@ -496,7 +503,21 @@ internal object SceneConfigChooser : GLSurfaceView.EGLConfigChooser {
             fun red(config: EGLConfig) = if (egl.eglGetConfigAttrib(display, config, EGL10.EGL_RED_SIZE, value)) value[0] else 0
             (found.firstOrNull { red(it) == 8 } ?: found.firstOrNull())?.let { return it }
         }
-        // GLSurfaceView has no way to say this but to throw; the view is only made where the device says it has OpenGL ES 3.0.
+        // GLSurfaceView has no way to say this but to throw, which ends the app: the view is made only where [onDevice] found one.
         throw IllegalArgumentException("No EGL configuration for OpenGL ES 3.0")
+    }
+
+    /**
+     * Whether the device's EGL lists any configuration that draws OpenGL ES 3.0: asked before the view is made, since GLSurfaceView can only
+     * throw on its own thread when there is none. The display is initialised, as GLSurfaceView would, and never terminated: MapLibre draws on it.
+     */
+    fun onDevice(): Boolean {
+        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+        if (display == EGL14.EGL_NO_DISPLAY) return false
+        val version = IntArray(2)
+        if (!EGL14.eglInitialize(display, version, 0, version, 1)) return false
+        val configs = arrayOfNulls<android.opengl.EGLConfig>(1)
+        val count = IntArray(1)
+        return EGL14.eglChooseConfig(display, intArrayOf(EGL14.EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT, EGL14.EGL_NONE), 0, configs, 0, 1, count, 0) && count[0] > 0
     }
 }

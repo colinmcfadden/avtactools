@@ -93,14 +93,17 @@ class SceneLookTest {
     }
 
     @Test
-    fun `a point's size is its error over its depth in the buffer's pixels, never past the cap, and its shade the eye-dome lighting's`() {
+    fun `a point's size is its error over its depth in the buffer's pixels, between a CSS pixel and the cap, and its shade the eye-dome lighting's`() {
         val camera = ViewCamera(Vec3.ZERO, 0.0, 0.0, 1080, 2200, 0.5, 1e5, pixelRatio = 2.75)
         val multiplier = PointShading.depthMultiplier(camera)
         assertEquals(2200 / (2 * tan(PI / 6)), multiplier, 1e-9)                                   // a portrait view: the 60° is up and down
         assertEquals(5 * 2.75, PointShading.maximumPx(5, camera))
         assertEquals(0.5 * 2.75, PointShading.edlRadiusPx(camera))
-        assertEquals(0.3 / 100 * multiplier, PointShading.sizePx(0.3, 100.0, multiplier, 13.75), 1e-12)
-        assertEquals(13.75, PointShading.sizePx(0.3, 5.0, multiplier, 13.75))
+        assertEquals(2.75, PointShading.minimumPx(camera))
+        assertEquals(0.3 / 100 * multiplier, PointShading.sizePx(0.3, 100.0, multiplier, 13.75, 2.75), 1e-12)
+        assertEquals(13.75, PointShading.sizePx(0.3, 5.0, multiplier, 13.75, 2.75))
+        // Far off, a point is a CSS pixel across, as the web's smallest is, not one of the screen's pixels.
+        assertEquals(2.75, PointShading.sizePx(0.3, 5_000.0, multiplier, 13.75, 2.75))
         assertEquals(1.0, PointShading.shade(0.0))
         assertEquals(exp(-0.01 * 300 * 0.5), PointShading.shade(0.01), 1e-15)
     }

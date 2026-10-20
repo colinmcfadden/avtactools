@@ -31,28 +31,43 @@ public object SceneDepth {
 }
 
 /**
- * The level ground the camera's moves hold to ([CameraMoves.groundZ]) until the terrain is drawn, from the first points to come: the middle height
- * of those within [radius] metres of the LZ (a landing zone is open ground, so they are its surface), else of all of them. Null with no points:
- * the camera then holds to the middle of the cloud's volume, never to a height made up.
+ * The level ground the camera's moves hold to ([CameraMoves.groundZ]) until the terrain is drawn, from the points that have come: the lowest
+ * tenth of a tile's points within [RADIUS] metres of the LZ. Not their middle: an LZ is a clearing, and the trees round it put the middle many
+ * metres up (ten in the fixture's, `contracts/fixtures/viewer3d/tileset`), where the lowest tenth is the ground under them, past a few stray
+ * returns below it. Only a tile with a tenth of those points at least on every side of the LZ counts: py3dtiles splits its octree in three
+ * dimensions, so a tile of it near the LZ can hold one side of the ground round it, or only the canopy over it. Null when a tile says nothing
+ * (too few points round the LZ, or not on every side): the camera then holds to what it held to before, the cloud's middle at first, never to
+ * a height made up.
  */
 public object SceneGround {
     public const val RADIUS: Double = 30.0
 
-    /** The fewest points near the LZ that are its ground; fewer, and every point is taken. */
+    /** The fewest points round the LZ that say where its ground is. */
     public const val ENOUGH: Int = 20
 
-    public fun of(points: ScenePoints, radius: Double = RADIUS): Double? {
-        if (points.count == 0) return null
+    /** The share of the points round the LZ under the height taken for its ground. */
+    public const val LOW_SHARE: Double = 0.1
+
+    /** The least share of the points round the LZ on each side of it (east and north of it, west and north, …). */
+    public const val SIDE_SHARE: Double = 0.1
+
+    /** What a tile's points say of the ground at the LZ: its height, and from how many points round it (more is better). */
+    public class Estimate(public val z: Double, public val points: Int)
+
+    public fun of(points: ScenePoints, radius: Double = RADIUS): Estimate? {
         val p = points.positions
         val near = ArrayList<Float>()
+        val sides = IntArray(4)
         for (i in 0 until points.count) {
             val x = p[3 * i]
             val y = p[3 * i + 1]
-            if (x * x + y * y <= radius * radius) near += p[3 * i + 2]
+            if (x * x + y * y > radius * radius) continue
+            near += p[3 * i + 2]
+            sides[(if (x >= 0) 1 else 0) + (if (y >= 0) 2 else 0)]++
         }
-        val heights = if (near.size >= ENOUGH) near.toFloatArray() else FloatArray(points.count) { p[3 * it + 2] }
+        if (near.size < ENOUGH || sides.any { it < near.size * SIDE_SHARE }) return null
+        val heights = near.toFloatArray()
         heights.sort()
-        val n = heights.size
-        return if (n % 2 == 1) heights[n / 2].toDouble() else (heights[n / 2 - 1].toDouble() + heights[n / 2]) / 2
+        return Estimate(heights[((heights.size - 1) * LOW_SHARE).toInt()].toDouble(), heights.size)
     }
 }

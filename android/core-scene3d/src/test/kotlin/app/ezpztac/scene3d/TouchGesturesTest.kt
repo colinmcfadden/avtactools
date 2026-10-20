@@ -39,7 +39,8 @@ class TouchGesturesTest {
         val g = TouchGestures(slopPx = 20.0)
         g.fingers(mapOf(1 to p(400.0, 1000.0), 2 to p(600.0, 1010.0)), height)
         val first = g.fingers(mapOf(1 to p(402.0, 960.0), 2 to p(601.0, 970.0)), height)
-        assertEquals(40.0 / height * PI, (first.single() as CameraGesture.Tilt).by, 1e-12)
+        assertEquals(40.0 / height * TouchGestures.TILT_PER_HEIGHT, (first.single() as CameraGesture.Tilt).by, 1e-12)
+        assertEquals(0.4425 * PI, TouchGestures.TILT_PER_HEIGHT, 1e-12)
         // Once a tilt, a spread is no zoom.
         val next = g.fingers(mapOf(1 to p(380.0, 940.0), 2 to p(640.0, 950.0)), height)
         assertTrue(next.all { it is CameraGesture.Tilt })

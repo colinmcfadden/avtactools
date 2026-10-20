@@ -57,7 +57,9 @@ launch lets go of what the last one waited on, and a live-server test of the LiD
 state, over both frames, closing back to the map as it was, with *3D* on the LZ/PZ panel's card, its plan page and each other open or pack LZ/PZ; its review's
 findings fixed after: Back and a keyboard's focus kept in the page across a frame made again under it, its lookup let go when the map leaves, a failure said to a
 screen reader at once, and 3D asked for during a slow open withdrawn by a close), V4 (the point cloud drawn: OpenGL ES 3.0 with Cesium's attenuation and
-eye-dome lighting, the fingers as Cesium's touch controls, *LZ*, the compass and the point size), and V5 (the ground under it: Cesium's quadtree over the
+eye-dome lighting, the fingers as Cesium's touch controls, *LZ*, the compass and the point size; its review's findings fixed after: a still camera over the
+point budget refetching for ever, the wrong tiles let go of when many went at once, the ground the fingers hold to sitting in the trees, points too small on a
+dense screen, the tilt's rate and the flights' easing, a GL view being replaced taking the new one's frames, and a screen reader's way to move the camera), and V5 (the ground under it: Cesium's quadtree over the
 server's heightmaps, none where the server has none, with Mapbox's satellite imagery laid on as Cesium lays it). **Not verifiable here:** that opening 3D in touch mode drops the
 keyboard of a field left focused under it (Robolectric runs in keyboard mode, where the page takes the focus itself), and anything GL draws. **Next:** the
 owner's device runs (below), V6 (routes) and V7 (lifecycle, memory, the last reviews).

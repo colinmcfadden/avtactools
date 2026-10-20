@@ -273,6 +273,40 @@ class TilesetReaderTest {
     }
 
     @Test
+    fun `a tileset read apart leaves the tree as it was until it is joined, and is refused if the tile joined meanwhile or the tree filled up`() {
+        val m = frame.toEcef.toList().joinToString(",")
+        fun outer() = TilesetReader.read(
+            """{"asset":{"version":"1.0"},"geometricError":100,"root":{"transform":[$m],"geometricError":50,$box,"content":{"uri":"sub/tileset.json"}}}"""
+                .encodeToByteArray(), "tileset.json", frame,
+        )
+        val two = """{"asset":{"version":"1.0"},"geometricError":50,"root":{"geometricError":10,$box,"children":[{"geometricError":0,$box}]}}""".encodeToByteArray()
+        val holder = outer().root
+        val read = TilesetReader.readApart(two, "sub/tileset.json", frame, parent = holder)
+        assertTrue(holder.children.isEmpty())
+        assertEquals(1, holder.tree.tiles)
+        assertEquals(2, read.tileCount)
+        TilesetReader.join(holder, read)
+        assertEquals(listOf(read.root), holder.children)
+        assertEquals(3, holder.tree.tiles)
+        // Read twice apart, the second is refused once the first has joined, and leaves the tree as it was.
+        val again = outer().root
+        val first = TilesetReader.readApart(two, "sub/tileset.json", frame, parent = again)
+        val second = TilesetReader.readApart(two, "sub/tileset.json", frame, parent = again)
+        TilesetReader.join(again, first)
+        assertTrue("has joined already" in assertThrows<TilesetException> { TilesetReader.join(again, second) }.message!!)
+        assertEquals(listOf(first.root), again.children)
+        assertEquals(3, again.tree.tiles)
+        // Read for another tile; or the tree filled up meanwhile.
+        assertTrue("not read for this tile" in assertThrows<TilesetException> { TilesetReader.join(outer().root, read) }.message!!)
+        val full = outer().root
+        val late = TilesetReader.readApart(two, "sub/tileset.json", frame, parent = full)
+        full.tree.tiles = TilesetReader.MAX_TILES - 1
+        assertTrue("More than" in assertThrows<TilesetException> { TilesetReader.join(full, late) }.message!!)
+        assertTrue(full.children.isEmpty())
+        assertEquals(TilesetReader.MAX_TILES - 1, full.tree.tiles)
+    }
+
+    @Test
     fun `a tree too deep or too large is refused before it is all read`() {
         val deep = StringBuilder()
         repeat(TilesetReader.MAX_DEPTH + 2) { deep.append("""{"geometricError":1,$box,"children":[""") }

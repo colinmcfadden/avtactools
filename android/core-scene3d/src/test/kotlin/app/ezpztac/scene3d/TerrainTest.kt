@@ -183,19 +183,20 @@ class TerrainTest {
         val server = Server(lz)
         for (t in scene.frame(c, frame, 0).fetch) scene.arrived(t, server.answer(t), frame)
         val children = scene.frame(c, frame, 0).fetch
-        assertNull(scene.failed(children[0], again = false))
+        assertNull(scene.failed(children[0], again = false, atMs = 0))
         for (t in children.drop(1)) scene.arrived(t, server.answer(t), frame)
         repeat(3) {
             val f = scene.frame(c, frame, 3_600_000L * it)
             assertTrue(children[0] !in f.fetch)
             assertEquals(listOf(TerrainTileId(0, 0, 0)), f.drawn.map { d -> d.tile })
         }
+        // Asked for at 0, it fails at 30 s (a read timing out): the pause runs from then.
         val retry = TerrainScene()
         for (t in retry.frame(c, frame, 0).fetch) {
-            if (t.x == 0) assertEquals(TerrainScene.RETRY_MS, retry.failed(t, again = true)) else retry.arrived(t, null, frame)
+            if (t.x == 0) assertEquals(30_000 + TerrainScene.RETRY_MS, retry.failed(t, again = true, atMs = 30_000)) else retry.arrived(t, null, frame)
         }
-        assertTrue(retry.frame(c, frame, TerrainScene.RETRY_MS - 1).fetch.isEmpty())
-        assertEquals(listOf(TerrainTileId(0, 0, 0)), retry.frame(c, frame, TerrainScene.RETRY_MS).fetch)
+        assertTrue(retry.frame(c, frame, 30_000 + TerrainScene.RETRY_MS - 1).fetch.isEmpty())
+        assertEquals(listOf(TerrainTileId(0, 0, 0)), retry.frame(c, frame, 30_000 + TerrainScene.RETRY_MS).fetch)
     }
 
     @Test

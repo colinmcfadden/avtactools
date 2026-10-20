@@ -26,7 +26,11 @@ public class SceneFrame(
  * Every call takes its lock, so the renderer's thread and the fetches' can call it; the fetches are made elsewhere.
  *
  * - **Drawn within [drawBudget] points**: each tileset's selection is made coarser until it fits ([TileSelector.withinBudget]), the core first and
- *   the ring with what it leaves.
+ *   the ring with what it leaves. The error so raised is kept from frame to frame, and lowered a step a frame only once the view has changed
+ *   since it was last raised, the tiles it draws are all in hand, and a step lower would still fit (it draws about [TileSelector.RAISE] squared
+ *   as many points): a still camera whose finest view is over the budget would otherwise fetch that view, find it too much, let it go and fetch
+ *   it again for ever. **Not like Cesium**, which raises its memory-adjusted error by 2% a frame while its cache is over its bytes and lowers
+ *   it 2% a frame while under, whatever the camera does.
  * - **At most [maxFetches] out at once**, the core's first, coarse before fine, near before far. One out, or in hand, is not asked for again.
  * - **A failed tile**: one whose answer could not be read is never asked for again, as Cesium marks it failed, and the tile it would have replaced
  *   stays drawn; one that met no connection is asked again after a pause ([RETRY_MS]), twice, then not this session. Cesium has no second try;
@@ -38,7 +42,12 @@ public class PointCloudScene(
     public val holdBudget: Long = HOLD_BUDGET,
     public val maxFetches: Int = MAX_FETCHES,
 ) {
-    private class Cloud(val document: TilesetDocument, val selector: TileSelector)
+    private class Cloud(val document: TilesetDocument, val selector: TileSelector) {
+        // The raises of the error allowed for the budget, kept from frame to frame, and the view they were last raised for.
+        var raises = 0
+        var raisedFor: ViewCamera? = null
+    }
+
     private class Held(val points: ScenePoints, var lastFrame: Long)
     private class Failure(val tries: Int, val againAtMs: Long?)
 
@@ -72,14 +81,22 @@ public class PointCloudScene(
         val byCloud = ArrayList<List<DrawnTile>>()
         val wanted = ArrayList<Tile>()
         for (cloud in clouds) {
-            val selection = cloud.selector.withinBudget(cloud.document, camera, ::statusOf, budget.coerceAtLeast(0), ::pointsOf)
+            val room = budget.coerceAtLeast(0)
+            val fitted = cloud.selector.withinBudget(cloud.document, camera, ::statusOf, room, ::pointsOf, cloud.raises)
+            val selection = fitted.selection
+            val points = selection.selected.sumOf(::pointsOf)
+            cloud.raises = when {
+                fitted.raises > cloud.raises -> fitted.raises.also { cloud.raisedFor = camera }
+                fitted.raises > 0 && !sameView(cloud.raisedFor, camera) && complete(selection) && points * LOWERED_DRAWS < room -> fitted.raises - 1
+                else -> fitted.raises
+            }
             val drawn = ArrayList<DrawnTile>()
             for (tile in selection.selected) {
                 val inHand = held[tile] ?: continue
                 drawn += DrawnTile(tile, inHand.points, PointShading.geometricError(tile, inHand.points.estimatedError))
             }
             byCloud += drawn
-            budget -= selection.selected.sumOf(::pointsOf)
+            budget -= points
             wanted += selection.requested
             for (tile in selection.touched) held[tile]?.lastFrame = frameNumber
         }
@@ -104,32 +121,46 @@ public class PointCloudScene(
     }
 
     /**
-     * [tile]'s tileset came as [bytes]: read into the scene's [frame] and joined under it, here, under the lock the traversal takes. One that cannot
-     * be read is a failure for good, and the reason is returned (null when it joined).
+     * [tile]'s tileset came as [bytes]: read into the scene's [frame] on the caller's thread, then joined under it under the lock the traversal
+     * takes. One that cannot be read is a failure for good, and the reason is returned (null when it joined).
      */
-    @Synchronized
     public fun joined(tile: Tile, bytes: ByteArray, frame: LocalFrame): String? {
-        loading -= tile
-        val path = (tile.content as? TilesetContent)?.path ?: return "not a tileset"
-        return try {
-            TilesetReader.read(bytes, path, frame, parent = tile)
-            failures.remove(tile)
-            null
+        val path = (tile.content as? TilesetContent)?.path
+        val read = try {
+            if (path == null) null else TilesetReader.readApart(bytes, path, frame, parent = tile)
         } catch (e: TilesetException) {
-            failures[tile] = Failure(MAX_TRIES, null)
-            e.message ?: "unreadable"
+            return refused(tile, e.message ?: "unreadable")
+        }
+        synchronized(this) {
+            if (read == null) return refused(tile, "not a tileset")
+            loading -= tile
+            return try {
+                TilesetReader.join(tile, read)
+                failures.remove(tile)
+                null
+            } catch (e: TilesetException) {
+                failures[tile] = Failure(MAX_TRIES, null)
+                e.message ?: "unreadable"
+            }
         }
     }
 
+    @Synchronized
+    private fun refused(tile: Tile, reason: String): String {
+        loading -= tile
+        failures[tile] = Failure(MAX_TRIES, null)
+        return reason
+    }
+
     /**
-     * Fetching [tile] failed: for good when its answer could not be read ([again] false), else it is asked for again after a pause, twice. When
-     * it may be asked for again, on the frames' clock (a frame must be drawn then for it to be), or null for never.
+     * Fetching [tile] failed at [atMs], on the frames' clock: for good when its answer could not be read ([again] false), else it is asked for
+     * again after a pause from then, twice. When it may be asked for again (a frame must be drawn then for it to be), or null for never.
      */
     @Synchronized
-    public fun failed(tile: Tile, again: Boolean): Long? {
+    public fun failed(tile: Tile, again: Boolean, atMs: Long): Long? {
         loading -= tile
         val tries = (failures[tile]?.tries ?: 0) + 1
-        val at = if (again && tries < MAX_TRIES) nowMs + RETRY_MS * tries else null
+        val at = if (again && tries < MAX_TRIES) atMs + RETRY_MS * tries else null
         failures[tile] = Failure(tries, at)
         return at
     }
@@ -143,11 +174,10 @@ public class PointCloudScene(
         heldPoints = 0
     }
 
-    /** Every tile in hand, for a renderer putting them on a new GL context. */
-    @Synchronized
-    public fun inHand(): List<Pair<Tile, ScenePoints>> = held.map { (tile, h) -> tile to h.points }
-
     private fun pointsOf(tile: Tile): Long = held[tile]?.points?.count?.toLong() ?: 0
+
+    // Nothing the selection wants is still to come: what it draws is what it will draw.
+    private fun complete(selection: Selection): Boolean = selection.requested.isEmpty() && selection.touched.none { it in loading }
 
     private fun statusOf(tile: Tile): TileStatus = when {
         tile.content is TilesetContent && tile.children.isNotEmpty() -> TileStatus.READY
@@ -156,11 +186,13 @@ public class PointCloudScene(
         else -> failures[tile]?.let { f -> if (f.againAtMs != null && nowMs >= f.againAtMs) TileStatus.UNLOADED else TileStatus.FAILED } ?: TileStatus.UNLOADED
     }
 
-    // Over the budget, the tiles longest unused go first; none the last frame touched.
+    // Over the budget, the tiles longest unused go first; none the last frame touched. An IdentityHashMap's entries read from its table as it is
+    // when they are read, so they are copied out before any is removed: read after, they give another tile's points, or none.
     private fun letGo(): List<Tile> {
         if (heldPoints <= holdBudget) return emptyList()
         val gone = ArrayList<Tile>()
-        for ((tile, h) in held.entries.filter { it.value.lastFrame < frameNumber }.sortedBy { it.value.lastFrame }) {
+        val unused = held.entries.mapNotNull { (tile, h) -> if (h.lastFrame < frameNumber) tile to h else null }
+        for ((tile, h) in unused.sortedBy { it.second.lastFrame }) {
             if (heldPoints <= holdBudget) break
             held.remove(tile)
             heldPoints -= h.points.count
@@ -182,5 +214,12 @@ public class PointCloudScene(
         public const val RETRY_MS: Long = 5_000
 
         private const val MAX_TRIES = 3
+
+        // How many times the points a step lower draws, about: a surface's tiles go as the square of the error allowed.
+        private const val LOWERED_DRAWS = TileSelector.RAISE * TileSelector.RAISE
+
+        private fun sameView(a: ViewCamera?, b: ViewCamera): Boolean =
+            a != null && a.position == b.position && a.heading == b.heading && a.pitch == b.pitch && a.widthPx == b.widthPx && a.heightPx == b.heightPx &&
+                a.pixelRatio == b.pixelRatio && a.fov == b.fov
     }
 }

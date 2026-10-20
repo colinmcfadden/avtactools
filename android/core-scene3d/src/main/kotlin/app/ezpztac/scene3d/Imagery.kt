@@ -165,12 +165,15 @@ public class ImageryScene(public val maxFetches: Int = MAX_FETCHES, public val h
         heldBytes += bytes
     }
 
-    /** Fetching or reading [id] failed: for good when [again] is false, else asked for again after a pause, twice. When, or null for never. */
+    /**
+     * Fetching, reading or uploading [id] failed at [atMs], on the frames' clock: for good when [again] is false, else asked for again after a
+     * pause from then, twice. When, or null for never.
+     */
     @Synchronized
-    public fun failed(id: ImageryTileId, again: Boolean): Long? {
+    public fun failed(id: ImageryTileId, again: Boolean, atMs: Long): Long? {
         loading -= id
         val tries = (failures[id]?.tries ?: 0) + 1
-        val at = if (again && tries < MAX_TRIES) nowMs + RETRY_MS * tries else null
+        val at = if (again && tries < MAX_TRIES) atMs + RETRY_MS * tries else null
         failures[id] = Failure(tries, at)
         return at
     }

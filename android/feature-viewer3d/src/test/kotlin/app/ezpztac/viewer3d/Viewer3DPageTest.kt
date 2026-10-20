@@ -21,8 +21,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -273,11 +271,13 @@ class Viewer3DPageTest {
     }
 
     /** A stand-in for the GL view, which Robolectric cannot draw: one frame of the scene once it draws, as the renderer would. */
-    private val standIn: @Composable (SceneSession, String) -> Unit = { session, description ->
-        Box(Modifier.fillMaxSize().semantics { contentDescription = description })
+    private val standIn: @Composable (SceneSession) -> Unit = { session ->
+        Box(Modifier.fillMaxSize())
         LaunchedEffect(session) {
+            val view: () -> Unit = {}
+            session.listener = view
             session.status.first { it == SceneStatus.Drawing }
-            session.frame(1080, 2200, 2.75)
+            session.frame(1080, 2200, 2.75, view)
         }
     }
 
@@ -290,11 +290,11 @@ class Viewer3DPageTest {
         compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, surface = standIn) } }
         compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
         val scene = model.session.value!!
-        compose.onNode(hasContentDescription(Viewer3DWords.scene("LZ HAWK"))).assertExists()
+        compose.onNode(hasContentDescription(Viewer3DWords.scene("LZ HAWK", drawn = true))).assertExists()
         compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed().performClick()
-        assertTrue("LZ flies back", scene.frame(1080, 2200, 2.75)!!.animating)
+        assertTrue("LZ flies back", scene.frame(1080, 2200, 2.75, scene.listener!!)!!.animating)
         compose.onNode(hasContentDescription("Facing 330 degrees true. Face north")).assertIsDisplayed().performClick()
-        assertTrue("north, flown to", scene.frame(1080, 2200, 2.75)!!.animating)
+        assertTrue("north, flown to", scene.frame(1080, 2200, 2.75, scene.listener!!)!!.animating)
         compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).assertIsDisplayed()
             .performSemanticsAction(SemanticsActions.SetProgress) { it(9f) }
         compose.waitForIdle()
@@ -302,6 +302,32 @@ class Viewer3DPageTest {
         assertEquals(9, sizes.get())
         assertEquals(9, scene.pointSize)
         assertEquals(9f, compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current)
+        assertEquals("9, not the slider's per cent", "9", compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+    }
+
+    @Test
+    fun `a screen reader hears the scene said as it is drawn, and its actions step the camera as the fingers would`() {
+        var down = true
+        val files = FixtureFiles(failing = { if (down && it == "tileset.json") NetworkException("no route", requestMayHaveBeenSent = false) else null })
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), scenes = scenes(files))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, surface = standIn) } }
+        compose.waitUntil(5_000) { model.session.value?.status?.value is SceneStatus.Failed }
+        // Not drawn: what it is, and no steps; the same node, a polite live region, says it is drawn once it is.
+        val notDrawn = compose.onNode(hasContentDescription(Viewer3DWords.scene("LZ HAWK", drawn = false))).fetchSemanticsNode()
+        assertEquals(LiveRegionMode.Polite, notDrawn.config.getOrNull(SemanticsProperties.LiveRegion))
+        assertNull(notDrawn.config.getOrNull(SemanticsActions.CustomActions))
+        down = false
+        compose.onNodeWithText("Retry").performClick()
+        compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
+        val drawn = compose.onNode(hasContentDescription(Viewer3DWords.scene("LZ HAWK", drawn = true))).fetchSemanticsNode()
+        assertEquals(notDrawn.id, drawn.id)
+        val steps = drawn.config[SemanticsActions.CustomActions]
+        assertEquals(SceneStep.entries.map(Viewer3DWords::step), steps.map { it.label })
+        val scene = model.session.value!!
+        val before = scene.frame(1080, 2200, 2.75, scene.listener!!)!!.camera
+        compose.runOnIdle { steps.first { it.label == Viewer3DWords.step(SceneStep.TURN_LEFT) }.action() }
+        val turned = scene.frame(1080, 2200, 2.75, scene.listener!!)!!.camera
+        assertEquals(0.0, Math.IEEEremainder(turned.heading - (before.heading - Math.toRadians(SceneSession.STEP_TURN_DEG)), 2 * Math.PI), 1e-9)
     }
 
     @Test

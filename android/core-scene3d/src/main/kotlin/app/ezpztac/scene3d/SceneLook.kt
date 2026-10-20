@@ -47,12 +47,22 @@ public object PointShading {
     /** The largest a point is drawn, in the buffer's pixels: the person's size times the pixel ratio (`model_pointCloudParameters.x`). */
     public fun maximumPx(size: Int, camera: ViewCamera): Double = size * camera.pixelRatio
 
+    /**
+     * The least a point is drawn, in the buffer's pixels: one of the web's CSS pixels. The web's Cesium draws at the browser's own resolution
+     * (`useBrowserRecommendedResolution`, its default: a pixel ratio of 1), so its smallest point, a pixel, is a CSS pixel across on any screen;
+     * here the buffer has the screen's pixels, and a point one of them across would be a third the size on a dense phone, and all but vanish.
+     */
+    public fun minimumPx(camera: ViewCamera): Double = camera.pixelRatio
+
     /** What turns a geometric error over an eye depth into the buffer's pixels: its height over the frustum's SSE denominator (`.z`). */
     public fun depthMultiplier(camera: ViewCamera): Double = camera.heightPx / camera.sseDenominator
 
-    /** A point's size [depth] metres in front of the eye, in the buffer's pixels (`getPointSizeFromAttenuation`): the shader's, here to be tested. */
-    public fun sizePx(geometricError: Double, depth: Double, depthMultiplier: Double, maximumPx: Double): Double =
-        minOf(geometricError / depth * depthMultiplier, maximumPx)
+    /**
+     * A point's size [depth] metres in front of the eye, in the buffer's pixels (`getPointSizeFromAttenuation`), never less than [minimumPx]
+     * (the least the GL draws a point, in the web's pixels): the shader's, here to be tested.
+     */
+    public fun sizePx(geometricError: Double, depth: Double, depthMultiplier: Double, maximumPx: Double, minimumPx: Double): Double =
+        maxOf(minOf(geometricError / depth * depthMultiplier, maximumPx), minimumPx)
 
     /** The eye-dome lighting's radius in the buffer's pixels (`eyeDomeLightingRadius × pixelRatio`). */
     public fun edlRadiusPx(camera: ViewCamera): Double = SceneLook.EDL_RADIUS * camera.pixelRatio
@@ -70,7 +80,7 @@ public object PointShading {
      * Cesium's guess at a tile's spacing: the cube root of the volume of [sampled] (the box round the points it samples, in the `.pnts`'s own
      * coordinates, before any transform: it measures them there, its node's transform and not the tile's, so a tileset that stores its points
      * scaled down has its leaves drawn as much smaller, and so they are here) over the tile's [count] of points. A sample with no extent gives 0,
-     * as Cesium's does: its points are then drawn a pixel across, the least a point can be.
+     * as Cesium's does: its points are then drawn as small as a point is drawn ([minimumPx]).
      */
     public fun estimate(sampled: Vec3?, count: Int): Double {
         if (sampled == null || count <= 0) return 0.0

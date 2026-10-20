@@ -36,7 +36,7 @@ internal class SceneRenderer(
         buffers.forget()
         ground.forget()
         textures.forget()
-        session.texturesLost()
+        session.texturesLost(again)
         target = null
         programs = try {
             ScenePrograms.build()
@@ -75,7 +75,7 @@ internal class SceneRenderer(
     }
 
     private fun draw(p: ScenePrograms, t: PointTarget) {
-        val work = session.frame(width, height, pixelRatio) ?: return
+        val work = session.frame(width, height, pixelRatio, again) ?: return
         for (gone in work.letGo) buffers.release(gone)
         for (gone in work.groundLetGo) ground.release(gone)
         for (gone in work.imageryLetGo) textures.release(gone)
@@ -92,6 +92,7 @@ internal class SceneRenderer(
         // off), or the ground's own returns would sink into it.
         GLES30.glClear(GLES30.GL_DEPTH_BUFFER_BIT)
         val largest = PointShading.maximumPx(work.pointSize, camera).toFloat()
+        val least = PointShading.minimumPx(camera).toFloat()
         val multiplier = PointShading.depthMultiplier(camera).toFloat()
         val radius = PointShading.edlRadiusPx(camera).toFloat()
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
@@ -109,7 +110,7 @@ internal class SceneRenderer(
             for (drawn in cloud) {
                 val vertices = buffers.of(drawn.tile, drawn.points)
                 if (vertices == 0) continue
-                GLES30.glUniform3f(p.pointsSize, largest, drawn.geometricError.toFloat(), multiplier)
+                GLES30.glUniform4f(p.pointsSize, largest, drawn.geometricError.toFloat(), multiplier, least)
                 GLES30.glBindVertexArray(vertices)
                 GLES30.glDrawArrays(GLES30.GL_POINTS, 0, drawn.points.count)
             }

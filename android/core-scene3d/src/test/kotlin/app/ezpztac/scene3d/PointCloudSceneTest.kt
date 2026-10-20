@@ -85,7 +85,7 @@ class PointCloudSceneTest {
         val camera = looking(doc)
         scene.frame(camera, 0)
         scene.arrived(doc.root, points(doc.root))
-        assertNull(scene.failed(octree, again = false))
+        assertNull(scene.failed(octree, again = false, atMs = 0))
         for (ms in listOf(0L, 60_000L, 3_600_000L)) {
             val f = scene.frame(camera, ms)
             assertTrue(f.fetch.none { it.tile === octree }, "at $ms")
@@ -106,7 +106,7 @@ class PointCloudSceneTest {
             for (fetch in scene.frame(camera, ms).fetch) {
                 if (fetch.tile === doc.root) {
                     asked = true
-                    again += scene.failed(fetch.tile, again = true)
+                    again += scene.failed(fetch.tile, again = true, atMs = ms)
                 } else {
                     scene.arrived(fetch.tile, points(fetch.tile))
                 }
@@ -121,6 +121,24 @@ class PointCloudSceneTest {
         assertTrue(askedAt(PointCloudScene.RETRY_MS * 3))
         assertFalse(askedAt(10_000_000))
         assertEquals(listOf(PointCloudScene.RETRY_MS, PointCloudScene.RETRY_MS * 3, null), again)
+    }
+
+    @Test
+    fun `the pause before a tile is asked for again runs from when its fetch failed, not from when it was asked for`() {
+        val doc = core()
+        val scene = PointCloudScene().apply { add(doc, 2.0) }
+        val camera = looking(doc)
+        // Whether the preview was asked for at [ms]; everything else asked for comes.
+        fun previewAskedAt(ms: Long): Boolean {
+            val fetch = scene.frame(camera, ms).fetch
+            for (f in fetch) if (f.tile !== doc.root) scene.arrived(f.tile, points(f.tile))
+            return fetch.any { it.tile === doc.root }
+        }
+        assertTrue(previewAskedAt(0))
+        // Its read times out 30 s after it was asked for.
+        assertEquals(30_000 + PointCloudScene.RETRY_MS, scene.failed(doc.root, again = true, atMs = 30_000))
+        assertFalse(previewAskedAt(30_000 + PointCloudScene.RETRY_MS - 1))
+        assertTrue(previewAskedAt(30_000 + PointCloudScene.RETRY_MS))
     }
 
     @Test
@@ -146,6 +164,82 @@ class PointCloudSceneTest {
         val fitted = tight.frame(camera, 0)
         assertEquals(core, fitted.points("tileset.json"))
         assertTrue(fitted.points("context/tileset.json") < ring, "${fitted.points("context/tileset.json")} of $ring")
+    }
+
+    /** The points drawn by each of [frames] frames for [camera], everything asked for arriving before the next; and how many tiles each asked for. */
+    private fun PointCloudScene.run(camera: ViewCamera, frames: Int): List<Pair<Long, Int>> = List(frames) {
+        val f = frame(camera, 0)
+        for (fetch in f.fetch) arrived(fetch.tile, points(fetch.tile))
+        f.drawn.sumOf { it.points.count.toLong() } to f.fetch.size
+    }
+
+    @Test
+    fun `a still camera whose finest view is over the budgets settles on a coarser one, and asks for nothing more once it has`() {
+        val doc = core()
+        val camera = looking(doc, 30.0)
+        val everything = PointCloudScene().apply { add(doc, 2.0) }
+        everything.settle(camera)
+        val finest = everything.frame(camera, 0).drawn.sumOf { it.points.count.toLong() }
+        // What the review found: drawing half the finest view and holding no more than it, the scene asked for two tiles every other frame for ever,
+        // the finest view's error fitting while its tiles were not in hand, and its tiles let go of once the coarser one was drawn.
+        val scene = PointCloudScene(drawBudget = finest / 2, holdBudget = finest).apply { add(doc, 2.0) }
+        val frames = scene.run(camera, 60)
+        assertEquals(0, frames.drop(10).sumOf { it.second }, "$frames")
+        assertTrue(frames.last().first in 1..finest / 2, "$frames")
+        assertEquals(1, frames.drop(10).map { it.first }.distinct().size, "$frames")
+    }
+
+    @Test
+    fun `what is let go of is what was in hand, each tile once, and the points held are counted right however many go in a frame`() {
+        // Four hundred tiles of ten points, added to a root with none, all in view, then none: three hundred and ninety go in one frame. Removing
+        // that many from the IdentityHashMap they are held in moves entries about its table, which a slip in reading them would show.
+        val children = (0 until 400).joinToString(",") { i ->
+            """{"geometricError":0,"boundingVolume":{"box":[${(i % 20) * 10 - 95},${(i / 20) * 10 - 95},0,5,0,0,0,5,0,0,0,5]},"content":{"uri":"c$i.pnts"}}"""
+        }
+        val m = frame.toEcef.toList().joinToString(",")
+        val doc = TilesetReader.read(
+            """{"asset":{"version":"1.0"},"geometricError":10000,"root":{"transform":[$m],"geometricError":1000,"refine":"ADD",
+                "boundingVolume":{"box":[0,0,0,100,0,0,0,100,0,0,0,10]},"children":[$children]}}""".encodeToByteArray(),
+            "tileset.json", frame,
+        )
+        val (position, heading, pitch) = lookAt(frame, Vec3.ZERO, 0.0, -60 * deg, 400.0)
+        val looking = ViewCamera(position, heading, pitch, 1080, 2200, 0.5, 1e5, pixelRatio = 2.75)
+        val away = looking.copy(heading = heading + PI, pitch = 60 * deg)
+        fun tenPoints(tile: Tile): ScenePoints = tile.volume.center.let { c ->
+            ScenePoints(10, FloatArray(30) { (if (it % 3 == 0) c.x else if (it % 3 == 1) c.y else c.z).toFloat() }, ByteArray(30))
+        }
+        val scene = PointCloudScene(holdBudget = 100, maxFetches = 1_000).apply { add(doc, 2.0) }
+        val inHand = java.util.IdentityHashMap<Tile, Int>()
+        for (camera in List(3) { listOf(looking, away) }.flatten()) {
+            repeat(3) {
+                val f = scene.frame(camera, 0)
+                for (gone in f.letGo) assertTrue(inHand.remove(gone) != null, "$gone let go of, not in hand")
+                for (fetch in f.fetch) tenPoints(fetch.tile).let { scene.arrived(fetch.tile, it); inHand[fetch.tile] = it.count }
+                assertEquals(inHand.values.sumOf { it.toLong() }, scene.heldPoints)
+            }
+            if (camera === looking) assertEquals(400, inHand.size, "all of it touched while in view, so none let go")
+            if (camera === away) assertEquals(10, inHand.size)
+        }
+    }
+
+    @Test
+    fun `an error raised for the budget is lowered again only once the view has changed, as far as the budget allows`() {
+        val doc = core()
+        val near = looking(doc, 30.0)
+        val far = looking(doc, 480.0)
+        val unbudgeted = PointCloudScene().apply { add(doc, 2.0) }
+        unbudgeted.settle(near)
+        val finest = unbudgeted.frame(near, 0).drawn.sumOf { it.points.count.toLong() }
+        unbudgeted.settle(far)
+        val fromAfar = unbudgeted.frame(far, 0).drawn.map { it.tile }
+        val scene = PointCloudScene(drawBudget = finest - 1).apply { add(doc, 2.0) }
+        val close = scene.run(near, 20)
+        assertTrue(close.last().first < finest, "raised close in: $close")
+        // From afar the error raised close in draws less than the budget allows; it comes down a step a frame to what is drawn with no budget.
+        val away = scene.run(far, 20)
+        assertTrue(away.first().first < away.last().first, "$away")
+        assertEquals(fromAfar, scene.frame(far, 0).drawn.map { it.tile })
+        assertEquals(0, away.sumOf { it.second }, "every tile already in hand")
     }
 
     @Test
@@ -222,10 +316,9 @@ class PointCloudSceneTest {
         val camera = looking(doc)
         val first = scene.frame(camera, 0).fetch
         scene.arrived(first[0].tile, points(first[0].tile))
-        scene.failed(first[1].tile, again = false)
+        scene.failed(first[1].tile, again = false, atMs = 0)
         scene.clear()
         assertEquals(0, scene.heldPoints)
-        assertTrue(scene.inHand().isEmpty())
         assertEquals(first.map { it.tile }, scene.frame(camera, 0).fetch.map { it.tile })
     }
 }
