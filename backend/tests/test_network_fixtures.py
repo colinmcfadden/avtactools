@@ -13,11 +13,14 @@ different, and with it rewrites ``contracts/fixtures/network/responses.json``.
     cd backend; $env:UPDATE_CONTRACTS="1"; python -m pytest tests/test_network_fixtures.py
 """
 
+import base64
+import hashlib
 import io
 import json
 import math
 import os
 import re
+import shutil
 import sys
 import tempfile
 import uuid
@@ -38,12 +41,16 @@ import rasterio  # noqa: E402
 from rasterio.transform import from_origin  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 
+import lidar_builder  # noqa: E402
 import refresh_tokens  # noqa: E402
+import terrain_tiles  # noqa: E402
 from auth_harness import ANDROID, PASSWORD, NativeAuthCase  # noqa: E402
+from lidar import catalog, worker  # noqa: E402
 from models import LocalCredential, MissionPackInvite, User, db  # noqa: E402
 from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
+from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
 from routes.pack_routes import pack_bp  # noqa: E402
 from routes.point_sets import point_sets_bp  # noqa: E402
@@ -51,7 +58,7 @@ from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
 from routes.team_routes import team_bp  # noqa: E402
 from routes.weather_routes import weather_bp  # noqa: E402
-from terrain_provider import LocalRasterCatalog  # noqa: E402
+from terrain_provider import LocalRasterCatalog, RasterEntry  # noqa: E402
 
 # The terrain blueprint loads the SAM model when it is imported, which downloads 350 MB when the weights are missing. The model is
 # stood in for below, where the route is asked; none of the weights are needed to import it.
@@ -61,6 +68,10 @@ from routes.terrain_routes import terrain_bp  # noqa: E402
 from routes.threat_routes import threat_bp  # noqa: E402
 
 FIXTURE = BACKEND_DIR.parent / "contracts" / "fixtures" / "network" / "responses.json"
+# A real tileset py3dtiles made (contracts/scripts/tileset_fixture.py), which the 3D view's recordings serve.
+TILESET = BACKEND_DIR.parent / "contracts" / "fixtures" / "viewer3d" / "tileset"
+# A binary body this short is kept whole (base64) so the apps can decode exactly what was sent; a longer one by its size and hash.
+BINARY_KEPT_BYTES = 16384
 UPDATE = os.environ.get("UPDATE_CONTRACTS") == "1"
 FLOAT_TOLERANCE = 1e-12
 
@@ -109,7 +120,8 @@ def normalise(value, key=None):
 
 
 SPEC = load_spec()
-SPEC_PATHS = [(re.compile("^" + re.sub(r"\\\{[^}]+\\\}", "[^/]+", re.escape(template)) + "$"), template) for template in SPEC["paths"]]
+SPEC_PATHS = [(re.compile("^" + re.sub(r"\\\{[^}]+\\\}", "[^/]+", re.escape(template).replace(r"\{file\}", ".+")) + "$"), template)
+              for template in SPEC["paths"]]
 
 
 def documented(method, path, status):
@@ -125,7 +137,7 @@ def documented(method, path, status):
 
 class NetworkFixtureTests(NativeAuthCase):
     extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp,
-                        pack_bp, team_bp)
+                        pack_bp, team_bp, lidar_bp)
 
     def setUp(self):
         super().setUp()
@@ -148,6 +160,12 @@ class NetworkFixtureTests(NativeAuthCase):
         if kept:
             entry["headers"] = kept
         entry["body"] = normalise(response.get_json(silent=True))
+        if response.mimetype == "application/octet-stream" and response.get_data():
+            data = response.get_data()
+            entry["bytes"] = len(data)
+            entry["sha256"] = hashlib.sha256(data).hexdigest()
+            if len(data) <= BINARY_KEPT_BYTES:
+                entry["base64"] = base64.b64encode(data).decode("ascii")
         self.recorded.append(entry)
         # A recorded response of a route the contract describes must be one the contract describes: the apps decode
         # what the spec says, so a status or a body it does not cover is a gap in the spec (or a change in the server).
@@ -831,6 +849,158 @@ class NetworkFixtureTests(NativeAuthCase):
         self.assertEqual(ask(colin, "put", f"{members}/{sam['id']}", json={"role": "viewer"}).status_code, 200)
         self.rec("ops: a batch the pack took, sent again by someone who may now only view", ask(sam, "post", ops, json=lost))
 
+    def viewer3d(self):
+        """The 3D view: finding an LZ's point cloud or having it built, its files, and the ground under it.
+
+        The tileset is a real one py3dtiles made (TILESET), in a store of its own. The build service is its real queue
+        (lidar.worker.Builder) on a clock of the test's, in place of the HTTP hop to it, with only the build itself stood in for: it reports
+        the stages a build reports and then puts the fixture where a build puts its tileset. The terrain is a synthetic GeoTIFF over the
+        place, and the geoid separation is north Georgia's -30.35 m stood in for, so the recording does not depend on whether a machine has
+        PROJ's grids."""
+        self.make_account(email="viewer@example.com")
+        head = self.bearer(self.login(ANDROID, "viewer@example.com")["access_token"])
+        watching = {"watcher": "android-recording-1"}
+
+        store = Path(tempfile.mkdtemp(prefix="tiles-"))
+        self.addCleanup(shutil.rmtree, store, True)
+        clock = [1_000_000.0]
+        here = {"lat": 34.591552, "lon": -84.128225}                  # where the fixture's points are
+        elsewhere = {"lat": 34.7, "lon": -84.3}
+        further = {"lat": 34.8, "lon": -84.4}
+        key = catalog.key_for(**here, radius_m=500)
+
+        def build(request, staging, *, stage, runner):
+            """What a build does, as far as anyone waiting can see: its stages, and then its tileset where the store will serve it."""
+            del runner
+            if (request.lat, request.lon) == (further["lat"], further["lon"]):
+                stage("locating survey")
+                raise worker.BuildError("No LiDAR survey covers this place.")
+            stage("locating survey")
+            clock[0] += 12
+            stage("processing points")
+            clock[0] += 30
+            self.rec("lidar: a build under way", self.client.get(f"/api/lidar/build/{key}", headers=head, query_string=watching))
+            stage("building tiles")
+            clock[0] += 20
+            shutil.copytree(TILESET, staging)
+            catalog.write_manifest(staging, request.lat, request.lon, radius_m=request.radius_m)
+
+        builder = worker.Builder(store, make_request=lambda lat, lon, radius: worker.BuildRequest(lat=lat, lon=lon, radius_m=radius),
+                                 build=build, clock=lambda: clock[0])
+
+        def service(configured=True, **failing):
+            """The API's hop to the build service, answered by the queue above (or failing as it can)."""
+            def call(name):
+                if name in failing:
+                    def refuse(*_args, **_kwargs):
+                        raise failing[name]
+                    return refuse
+                return getattr(builder, name)
+            return [patch("lidar.catalog.tiles_dir", return_value=store),
+                    patch.object(lidar_builder, "configured", return_value=configured),
+                    patch.object(lidar_builder, "submit", side_effect=call("submit")),
+                    patch.object(lidar_builder, "status", side_effect=call("status")),
+                    patch.object(lidar_builder, "release", side_effect=call("release"))]
+
+        def using(patches):
+            for item in patches:
+                item.start()
+                self.addCleanup(item.stop)
+            return patches
+
+        def done(patches):
+            for item in patches:
+                item.stop()
+
+        lidar = using(service())
+        self.rec("lidar: resolve, nothing built here", self.client.post("/api/lidar/resolve", headers=head, json=here))
+        self.rec("lidar: resolve, not a place", self.client.post("/api/lidar/resolve", headers=head, json={"lat": "x", "lon": 1}))
+        self.rec("lidar: resolve, a radius too wide", self.client.post("/api/lidar/resolve", headers=head, json={**here, "radius_m": 5000}))
+        self.rec("lidar: build", self.client.post("/api/lidar/build", headers=head, json={**here, "keep": False, **watching}))
+        self.rec("lidar: build, asked for again", self.client.post("/api/lidar/build", headers=head, json={**here, "keep": False, **watching}))
+        self.rec("lidar: build of a saved LZ/PZ, nobody waiting", self.client.post("/api/lidar/build", headers=head, json={**elsewhere, "keep": True}))
+        self.rec("lidar: progress, queued", self.client.get(f"/api/lidar/build/{key}", headers=head, query_string=watching))
+        other = catalog.key_for(**elsewhere, radius_m=500)
+        self.rec("lidar: progress, queued behind another", self.client.get(f"/api/lidar/build/{other}", headers=head, query_string={**watching, "keep": "1"}))
+        builder.process(key, here["lat"], here["lon"], 500.0)
+        self.rec("lidar: progress, done", self.client.get(f"/api/lidar/build/{key}", headers=head, query_string=watching))
+        self.rec("lidar: resolve, built", self.client.post("/api/lidar/resolve", headers=head, json=here))
+        self.rec("lidar: build, built already", self.client.post("/api/lidar/build", headers=head, json={**here, **watching}))
+        failing = catalog.key_for(**further, radius_m=500)
+        self.client.post("/api/lidar/build", headers=head, json={**further, **watching})
+        clock[0] += 1
+        builder.process(failing, further["lat"], further["lon"], 500.0)
+        self.rec("lidar: progress, failed", self.client.get(f"/api/lidar/build/{failing}", headers=head, query_string=watching))
+        dropped = catalog.key_for(lat=34.9, lon=-84.5, radius_m=500)
+        self.client.post("/api/lidar/build", headers=head, json={"lat": 34.9, "lon": -84.5, **watching})
+        clock[0] += worker.ABANDON_AFTER_S + 1
+        self.rec("lidar: release", self.client.delete(f"/api/lidar/build/{dropped}", headers=head, query_string=watching))
+        self.rec("lidar: progress, dropped once nobody waited", self.client.get(f"/api/lidar/build/{dropped}", headers=head, query_string=watching))
+        self.rec("lidar: release, a build the service never had", self.client.delete("/api/lidar/build/0123456789abcdef", headers=head, query_string=watching))
+        self.rec("lidar: progress, a build the service does not know", self.client.get("/api/lidar/build/0123456789abcdef", headers=head, query_string=watching))
+        self.rec("lidar: progress, not a key", self.client.get("/api/lidar/build/not-a-key", headers=head))
+
+        self.rec("lidar: the tileset's root", self.client.get(f"/api/lidar/tilesets/{key}/tileset.json", headers=head), "Cache-Control")
+        self.rec("lidar: a tile", self.client.get(f"/api/lidar/tilesets/{key}/points/r0.pnts", headers=head), "Cache-Control")
+        self.rec("lidar: the ring's root", self.client.get(f"/api/lidar/tilesets/{key}/context/tileset.json", headers=head), "Cache-Control")
+        self.rec("lidar: a file the tileset does not have", self.client.get(f"/api/lidar/tilesets/{key}/points/r99.pnts", headers=head))
+        self.rec("lidar: a tileset that is not there", self.client.get("/api/lidar/tilesets/0123456789abcdef/tileset.json", headers=head))
+        self.rec("lidar: a tileset, not a key", self.client.get("/api/lidar/tilesets/not-a-key/tileset.json", headers=head))
+        done(lidar)
+
+        lidar = using(service(submit=lidar_builder.BuilderBusy("The build queue is full. Try again in a few minutes.")))
+        self.rec("lidar: build, the queue full", self.client.post("/api/lidar/build", headers=head, json={**elsewhere, **watching}))
+        done(lidar)
+        down = lidar_builder.BuilderUnavailable("The build service is not reachable.")
+        lidar = using(service(submit=down, status=down))
+        self.rec("lidar: build, the service down", self.client.post("/api/lidar/build", headers=head, json={**elsewhere, **watching}))
+        self.rec("lidar: progress, the service down", self.client.get(f"/api/lidar/build/{other}", headers=head, query_string=watching))
+        done(lidar)
+        lidar = using(service(configured=False))
+        self.rec("lidar: resolve, on a server that cannot build", self.client.post("/api/lidar/resolve", headers=head, json=elsewhere))
+        self.rec("lidar: build, on a server that cannot build", self.client.post("/api/lidar/build", headers=head, json={**elsewhere, **watching}))
+        self.rec("lidar: progress, on a server that cannot build", self.client.get(f"/api/lidar/build/{other}", headers=head, query_string=watching))
+        self.rec("lidar: release, on a server that cannot build", self.client.delete(f"/api/lidar/build/{other}", headers=head, query_string=watching))
+        done(lidar)
+
+        # The ground: a DEM at 1/1200 degree (the size of the analysis's) over the place, a ramp rising east with a hill on it.
+        class Geoid:
+            """North Georgia's separation, for scalars (a tile's centre) and arrays (the heights' points) alike."""
+            def transform(self, lons, lats, heights):
+                del heights
+                return lons, lats, np.full(np.shape(lons), -30.35)
+
+        directory = Path(tempfile.mkdtemp(prefix="dem-"))
+        self.addCleanup(shutil.rmtree, directory, True)
+        pixel = 1.0 / 1200
+        west, north, size = -84.15, 34.61, 60
+        rows, cols = np.mgrid[0:size, 0:size]
+        dem = (380.0 + 0.8 * cols + 9.0 * np.exp(-(((rows - 22) ** 2) + ((cols - 21) ** 2)) / 60.0)).astype(np.float32)
+        with rasterio.open(directory / "lz.tif", "w", driver="GTiff", height=size, width=size, count=1, dtype="float32", crs="EPSG:4269",
+                           transform=from_origin(west, north, pixel, pixel), nodata=-999999.0) as out:
+            out.write(dem, 1)
+        entry = RasterEntry(path=str(directory / "lz.tif"), kind="geotiff", bounds_latlon=(north - size * pixel, west, north, west + size * pixel),
+                            resolution_m=pixel * 111_000, vertical_datum="NAVD88")
+        covered = lambda bounds: [entry] if bounds[0] <= entry.bounds_latlon[2] and bounds[2] >= entry.bounds_latlon[0] \
+            and bounds[1] <= entry.bounds_latlon[3] and bounds[3] >= entry.bounds_latlon[1] else []     # noqa: E731
+        # The level-14 tile under the place (Cesium's geographic tiling: two tiles across at level 0): wholly inside the DEM, about 13 of
+        # its cells across, with the hill in it, so its heights say something.
+        level = 14
+        x = math.floor((here["lon"] + 180) / (360 / (2 << level)))
+        y = math.floor((90 - here["lat"]) / (180 / (1 << level)))
+        with patch.dict(os.environ, {"TERRAIN_TILE_CACHE_DIR": "none"}), patch.object(terrain_tiles, "_sources_for", side_effect=covered), \
+                patch.object(terrain_tiles, "_geoid_transformer", return_value=Geoid()):
+            self.rec("terrain: heightmap", self.client.get(f"/api/terrain/heightmap/{level}/{x}/{y}", headers=head), "X-Terrain-Samples", "Cache-Control")
+            self.rec("terrain: heightmap where no DEM reaches", self.client.get("/api/terrain/heightmap/12/100/100", headers=head))
+            self.rec("terrain: heightmap, a level too deep", self.client.get("/api/terrain/heightmap/23/0/0", headers=head))
+            self.rec("terrain: heightmap, a tile outside the world", self.client.get("/api/terrain/heightmap/1/9/0", headers=head))
+            points = [here, {"lat": 34.6, "lon": -84.14}, {"lat": 35.5, "lon": -83.0}]          # the last where no DEM is
+            self.rec("terrain: heights", self.client.post("/api/terrain/heights", headers=head, json={"points": points}))
+            self.rec("terrain: heights, no points", self.client.post("/api/terrain/heights", headers=head, json={"points": []}))
+            self.rec("terrain: heights, too many", self.client.post("/api/terrain/heights", headers=head,
+                                                                   json={"points": [here] * (terrain_tiles.MAX_POINTS + 1)}))
+            self.rec("terrain: heights, not points", self.client.post("/api/terrain/heights", headers=head, json={"points": [{"lat": "x"}]}))
+
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
         self.accounts()
@@ -839,6 +1009,7 @@ class NetworkFixtureTests(NativeAuthCase):
         self.planning()
         self.weather_summary()
         self.packs()
+        self.viewer3d()                                     # last: its account would move every user id the packs' responses hold
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "
                            "generated ids and the server version replaced by placeholders. The native apps decode each body "

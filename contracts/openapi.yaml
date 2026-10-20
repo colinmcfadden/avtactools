@@ -1304,6 +1304,275 @@ paths:
         "500":
           $ref: "#/components/responses/SimpleError"
 
+  # -- The 3D LZ view (docs/ANDROID_3D_PLAN.md) -------------------------------------------
+  # Coordinates only ever travel in POST bodies. A build's progress and a tileset's files are
+  # addressed by an opaque key, so where an LZ is never lands in a URL or a request log.
+
+  /api/lidar/resolve:
+    post:
+      operationId: lidarResolve
+      summary: The point cloud that covers a place, and whether it is built
+      description: |
+        The key of a built tileset whose area holds the place (nearest centre first), else the key a
+        build of it would have. Built: `available` is true, `url` is the tileset's root and `contextUrl`
+        a thinned ring round it (null when none was built). Both are relative to the API's root, as
+        `/lidar/tilesets/<key>/tileset.json`: the app puts its own base in front (the web's base ends in
+        `/api`, so these must not repeat it). Not built: `available` is false, `canBuild` says whether
+        `POST /api/lidar/build` can do anything on this server, and `target` echoes the caller's own
+        place, so a client can say what to build. `radius_m` is 50 to 2,000 (default 500).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LidarTarget"
+      responses:
+        "200":
+          description: The key, and the tileset's place when it is built.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarResolve"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/build:
+    post:
+      operationId: lidarBuild
+      summary: Ask for a point cloud to be built
+      description: |
+        Idempotent: asking again while a build is queued or running answers that build, and a place
+        already built answers 200 with `state: done` and the tileset's place (as `resolve` gives it).
+        Otherwise the build service queues it and the answer is 202 with the job. `watcher` is an
+        opaque id of whoever waits (`^[A-Za-z0-9_-]{8,64}$`; anything else is dropped): the service
+        drops a build nobody has asked after for 90 s, unless `keep` (a saved LZ/PZ) asks it to finish
+        regardless. Builds someone is watching run first. `radius_m` is 50 to 1,000 here. Without a
+        build service: 503 `builder_not_configured`; the service unreachable: 503 `builder_unavailable`;
+        its queue full: 429 `builder_busy`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+                radius_m: { type: number, minimum: 50, maximum: 1000 }
+                keep: { type: boolean, description: "Finish the build even once nobody waits for it." }
+                watcher: { type: string }
+      responses:
+        "200":
+          description: The place is built already.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "202":
+          description: The build, queued or under way.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "429":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/build/{key}:
+    get:
+      operationId: lidarBuildStatus
+      summary: How a build is going
+      description: |
+        Asking counts as still waiting for it (polled every 3 s while someone waits). `keep=1` marks it
+        to be finished regardless, as when the LZ/PZ was saved while it built. A build the service has
+        no record of is 404 `no_build` (a restarted service forgets its queue: ask for the build again).
+        Done: `state: done` with the tileset's place.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - $ref: "#/components/parameters/LidarWatcher"
+        - name: keep
+          in: query
+          required: false
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          description: The build.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+    delete:
+      operationId: lidarBuildRelease
+      summary: Stop waiting for a build
+      description: |
+        The service drops the build if nobody else is waiting and it was not kept. A build the service
+        never had, or a server without a build service, answers 204. Nothing to read in a 200 that the
+        app needs: it is sent when the view closes and its answer is not waited for.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - $ref: "#/components/parameters/LidarWatcher"
+      responses:
+        "200":
+          description: The build as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "204":
+          description: Nothing to release.
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/tilesets/{key}/{file}:
+    get:
+      operationId: lidarTilesetFile
+      summary: One file of a tileset, its root or one of its tiles
+      description: |
+        A 3D Tiles 1.0 tileset as py3dtiles 12.1.1 writes it, unchanged (backend/lidar/tiles.py): the
+        root `tileset.json`, and `.pnts` tiles (`POSITION` float32 and `RGB` uint8, in the tile's frame:
+        each tile's `transform`, translation then scale, composed down from the root). `file` is a path
+        inside the tileset and may hold slashes (`points/r0.pnts`, `context/tileset.json`); a tile's
+        `content.uri` is relative to the tileset.json that names it. A file that is not there is 404
+        (Flask's own page, not JSON). Private and cached a week: a key's content never changes.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - name: file
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: "private, max-age=604800" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tileset"
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          description: No such tileset (`{error}`), or no such file in it (Flask's own page, not JSON).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleError"
+
+  /api/terrain/heightmap/{level}/{x}/{y}:
+    get:
+      operationId: terrainHeightmap
+      summary: The ground of one terrain tile, from the local DEMs
+      description: |
+        65 × 65 heights in metres above the WGS84 ellipsoid (the geoid separation added, as the LiDAR's
+        is), little-endian Int16, rows from north to south and each row west to east: 8,450 bytes. The
+        tiling is Cesium's geographic one: two tiles at level 0, each 180° wide, quartered at every
+        level; tile `x` counts from 180° W, `y` from 90° N. A tile no DEM reaches answers 204: no data,
+        never sea level. Levels above 22 are refused.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - { name: level, in: path, required: true, schema: { type: integer, minimum: 0, maximum: 22 } }
+        - { name: x, in: path, required: true, schema: { type: integer, minimum: 0 } }
+        - { name: y, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: The heights.
+          headers:
+            X-Terrain-Samples:
+              schema: { type: string, example: "65" }
+            Cache-Control:
+              schema: { type: string, example: "private, max-age=604800" }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "204":
+          description: No DEM reaches this tile.
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/terrain/heights:
+    post:
+      operationId: terrainHeights
+      summary: Ground and geoid at points, for placing a route in 3D
+      description: |
+        For each point in the order sent: `groundM`, the ground in metres above the ellipsoid from the
+        same DEMs and correction as the heightmap tiles (null where no DEM covers it, never made up),
+        and `geoidM`, the geoid separation there, which turns an MSL height into one above the
+        ellipsoid (`mslFt × 0.3048 + geoidM`). Not `/api/elevations`, which feeds the route planner and
+        the AMPS export. At most 5,000 points. Never cached: it says where someone means to fly.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points:
+                  type: array
+                  items:
+                    type: object
+                    required: [lat, lon]
+                    properties:
+                      lat: { type: number }
+                      lon: { type: number }
+      responses:
+        "200":
+          description: Heights, one of each for every point.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groundM, geoidM]
+                properties:
+                  groundM:
+                    type: array
+                    items: { type: number, nullable: true }
+                  geoidM:
+                    type: array
+                    items: { type: number }
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
   # -- Mission packs (docs/MISSION_PACKS.md) ---------------------------------------------
   # Every pack route needs the `mission_packs` entitlement (403 `feature_disabled` without it)
   # and is never cached. A pack the caller is not in is a 404, so its existence is not revealed.
@@ -2333,6 +2602,23 @@ components:
         maxLength: 64
         pattern: '^(android|ios|web)/\d{1,4}\.\d{1,4}\.\d{1,4}(-[0-9A-Za-z.]{1,20})?( \(\d{1,9}\))?$'
 
+    LidarKey:
+      name: key
+      in: path
+      required: true
+      description: A tileset's or a build's opaque key, as `resolve` and `build` give it; anything else is 400.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{16}$'
+
+    LidarWatcher:
+      name: watcher
+      in: query
+      required: false
+      description: The waiter's opaque id, as sent with the build (`^[A-Za-z0-9_-]{8,64}$`; anything else is dropped).
+      schema:
+        type: string
+
     IfMatch:
       name: If-Match
       in: header
@@ -2518,6 +2804,97 @@ components:
             $ref: "#/components/schemas/PackError"
 
   schemas:
+    LidarTarget:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+        radius_m: { type: number, minimum: 50, maximum: 2000 }
+
+    LidarResolve:
+      type: object
+      required: [key, available, url, contextUrl]
+      properties:
+        key: { type: string, pattern: '^[0-9a-f]{16}$' }
+        available: { type: boolean }
+        url: { type: string, nullable: true, description: "The tileset's root, relative to the API's root; null when it is not built." }
+        contextUrl: { type: string, nullable: true, description: "The thinned ring round it, relative to the API's root; null when none was built." }
+        canBuild: { type: boolean, description: "Not built only: whether this server can build it." }
+        target:
+          description: "Not built only: the caller's own place, echoed."
+          type: object
+          required: [lat, lon, radius_m]
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            radius_m: { type: number }
+
+    LidarBuild:
+      type: object
+      description: |
+        A build as the service reports it, or a place already built (`state: done` with the tileset's
+        place, and no `stage`). `state` is `queued`, `running`, `done`, `failed` or `cancelled` (dropped
+        because nobody waited); `stage` a word for what it is doing (`waiting`, `starting`, `locating
+        survey`, `processing points`, `building tiles`, `building context`, `done`, `cancelled`; a new
+        one may come, so show what is not known as it is); `position` how many builds are ahead of a
+        queued one; `elapsed_s` how long a started one has run; `error` why one failed.
+      required: [key, state]
+      properties:
+        key: { type: string, pattern: '^[0-9a-f]{16}$' }
+        state: { type: string }
+        stage: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        position: { type: integer, nullable: true }
+        elapsed_s: { type: integer, nullable: true }
+        available: { type: boolean }
+        url: { type: string, nullable: true }
+        contextUrl: { type: string, nullable: true }
+
+    Tileset:
+      type: object
+      description: |
+        The parts of a 3D Tiles 1.0 tileset.json the apps read (the format is the Open Geospatial
+        Consortium's; this is py3dtiles's use of it). Anything else in it is passed over.
+      required: [asset, geometricError, root]
+      properties:
+        asset:
+          type: object
+          required: [version]
+          properties:
+            version: { type: string }
+        geometricError: { type: number }
+        root:
+          $ref: "#/components/schemas/Tile"
+
+    Tile:
+      type: object
+      description: |
+        `transform` is a column-major 4 × 4 matrix from this tile's frame to its parent's (the root's to
+        WGS84 geocentric metres). `refine` is `ADD` (drawn with its children) or `REPLACE` (drawn until
+        they are); a tile without one refines as its parent does. A `content.uri` ending in `.json` is
+        a tileset of its own.
+      required: [boundingVolume, geometricError]
+      properties:
+        boundingVolume:
+          type: object
+          properties:
+            box: { type: array, items: { type: number }, description: "Centre, then the three half-axes, in the tile's frame." }
+            sphere: { type: array, items: { type: number } }
+            region: { type: array, items: { type: number } }
+        geometricError: { type: number }
+        refine: { type: string, enum: [ADD, REPLACE] }
+        transform: { type: array, items: { type: number } }
+        content:
+          type: object
+          required: [uri]
+          properties:
+            uri: { type: string }
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tile"
+
     PointWind:
       type: object
       required: [dirTrue, speedKts, variable, station, source, distanceMiles]
