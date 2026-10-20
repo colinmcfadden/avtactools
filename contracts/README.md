@@ -26,6 +26,7 @@ contracts/
 │  ├─ packs/        ops.json, diff.json, edit.json, shared.json, describe.json, session.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
 │  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json   reference: the web app (feature/viewer3d/)
+│  │                geodesy.json   geodetic to geocentric points               reference: PROJ (scripts/geodesy_fixtures.py)
 │  │                tileset/   a LiDAR tileset as the server serves it        reference: py3dtiles 12.1.1 (scripts/tileset_fixture.py)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
 └─ scripts/         generators: the fixtures PyGeodesy owns, tokens.py, and the LiDAR tileset (tileset_fixture.py)
@@ -76,6 +77,7 @@ reference is.
 | `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | `core-missionpacks` (`PackSessions`: every scenario step by step, with the whole session, what is visible, each answer and the `dropped_versions`, strictly: null kept apart from absent, keys in JavaScript's order; `PackSessionFixtureTest`) |
 | `viewer3d/*.json` | `frontend/src/contracts/viewer3dFixtures.test.js` | — | `core-scene3d` (the route scene, the compass, the terrain tiles), `core-data` (the build flow) |
 | `viewer3d/tileset/` | — (py3dtiles's own output, by `contracts/scripts/tileset_fixture.py`) | `backend/tests/test_network_fixtures.py` (served as the recorded tileset) | `core-scene3d` (`TilesetReader`, `PntsReader`) |
+| `viewer3d/geodesy.json` | — (PROJ's own transform, by `contracts/scripts/geodesy_fixtures.py`) | — | `core-scene3d` (`geodeticToEcef`, `ecefToGeodetic`, `LocalFrame`) |
 
 iOS joins this table when it starts; it reads the same files.
 
@@ -106,6 +108,10 @@ shows can:
 build image's version, with `context/` beside it as the thinned ring. Regenerate with `python contracts/scripts/tileset_fixture.py` in the
 LiDAR image or a venv with that version; py3dtiles stamps the time it was made, and its previews are random, so a regenerated tileset
 differs there and nowhere else.
+
+`geodesy.json` is the earth's frame the 3D view puts everything in: latitude, longitude and height above the ellipsoid to geocentric metres,
+from PROJ (pyproj, as the backend pins it; EPSG:4979 to EPSG:4978) at the LZ, the poles, the antimeridian, below the ellipsoid and far above
+it. `python contracts/scripts/geodesy_fixtures.py` writes it with the backend's Python, and `... check` fails if the committed file differs.
 
 ### The `packs/` fixtures
 
