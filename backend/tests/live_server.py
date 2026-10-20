@@ -23,15 +23,21 @@ Test-only routes, under ``/__test__`` (they exist only here):
     POST /__test__/age-refresh  {seconds, user_id?} moves every spent refresh token that far into the
                                 past, standing in for time passing (the 30 s grace period)
     POST /__test__/clear-rate-limits  forgets the sign-in rate limiter's counts (every client here shares one address)
+    POST /__test__/lidar/run    builds every point cloud queued, one at a time, as the build service's worker would: a build is the
+                                3D view's fixture tileset (contracts/fixtures/viewer3d/tileset) put where a build puts one
+    POST /__test__/lidar/later  {seconds} moves the build service's clock on and drops what nobody has asked after since, standing in
+                                for time passing (a build nobody waits for is dropped after 90 s)
     GET  /__test__/email?kind=&to=   the newest link token (kind verify, reset, pack_invite or team_invite) or .mil code (kind mil) "sent" to an address.
                                 Email is captured, never sent: the routes run as they do in production up to the mail call.
     POST /__test__/stop         ends the process
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -47,13 +53,16 @@ from flask_jwt_extended import JWTManager  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 from werkzeug.serving import make_server  # noqa: E402
 
+import lidar_builder  # noqa: E402
 from affiliation_gate import enforce_affiliation_gate  # noqa: E402
 from database_url import database_uri  # noqa: E402
+from lidar import catalog as lidar_catalog, worker as lidar_worker  # noqa: E402
 from auth_rate_limit import clear_rate_limits  # noqa: E402
 from models import AccountToken, LocalCredential, User, db  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.auth import auth_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
+from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
 from routes.pack_routes import pack_bp  # noqa: E402
 from routes.point_sets import point_sets_bp  # noqa: E402
@@ -65,6 +74,42 @@ from token_revocation import is_revoked  # noqa: E402
 
 # What the routes "emailed", newest last: (kind, address, secret). The mail functions are replaced; nothing else is.
 EMAILS = []
+
+TILESET = BACKEND_DIR.parent / "contracts" / "fixtures" / "viewer3d" / "tileset"
+
+
+def _lidar(app):
+    """A tileset store of its own and the build service's real queue (lidar.worker.Builder) in this process, in place of the HTTP hop to
+    it, on a clock the test can move on. A build is the fixture tileset put where a build puts one; it runs when the test says."""
+    store = Path(tempfile.mkdtemp(prefix="ezpz-live-tiles-"))
+    os.environ["LIDAR_TILES_DIR"] = str(store)
+    offset = [0.0]
+
+    def build(request, staging, *, stage, runner):
+        del runner
+        stage("processing points")
+        shutil.copytree(TILESET, staging)
+        lidar_catalog.write_manifest(staging, request.lat, request.lon, radius_m=request.radius_m)
+
+    builder = lidar_worker.Builder(store, make_request=lambda lat, lon, radius: lidar_worker.BuildRequest(lat=lat, lon=lon, radius_m=radius),
+                                   build=build, clock=lambda: time.time() + offset[0])
+    patch.object(lidar_builder, "configured", return_value=True).start()
+    for name in ("submit", "status", "release"):
+        patch.object(lidar_builder, name, side_effect=getattr(builder, name)).start()
+
+    @app.post("/__test__/lidar/run")
+    def run_builds():
+        built = []
+        while (job := builder.next_job(block=False)) is not None:
+            builder.process(job["key"], *job["target"])
+            built.append(job["key"])
+        return jsonify({"built": built})
+
+    @app.post("/__test__/lidar/later")
+    def later():
+        offset[0] += float(request.get_json()["seconds"])
+        builder.reap()
+        return jsonify({"status": "moved"})
 
 
 def _capture_email():
@@ -106,8 +151,9 @@ def create_app():
         return is_revoked(payload)
 
     app.before_request(enforce_affiliation_gate)
-    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, sync_bp, aircraft_bp, pack_bp, team_bp):
+    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, sync_bp, aircraft_bp, pack_bp, team_bp, lidar_bp):
         app.register_blueprint(blueprint)
+    _lidar(app)
 
     @app.post("/__test__/account")
     def make_account():
