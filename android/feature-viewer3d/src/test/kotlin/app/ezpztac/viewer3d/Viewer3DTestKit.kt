@@ -73,7 +73,7 @@ internal fun scenes(
     files: TilesetFiles = FixtureFiles(),
     dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
     clock: () -> Long = { System.nanoTime() / 1_000_000 },
-) = SceneMaker { target, core, ring, parent, size -> SceneSession(target, core, ring, files, SceneBudgets.DEFAULT, parent, size, dispatcher, dispatcher, clock) }
+) = SceneMaker { target, core, ring, parent, size -> SceneSession(target, core, ring, SceneSources(files), SceneBudgets.DEFAULT, parent, size, dispatcher, dispatcher, clock) }
 
 /** The view model over stand-ins: a lookup over [api], the probe, scenes over the fixture's files, and the point size kept in memory. */
 internal fun viewModel(

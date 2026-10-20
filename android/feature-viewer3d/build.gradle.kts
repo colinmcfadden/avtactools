@@ -13,6 +13,7 @@ android {
 dependencies {
     implementation(project(":core-designsystem"))
     api(project(":core-data"))
+    implementation(project(":feature-map"))                         // the 2D map's Mapbox token, which the imagery is fetched with
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -21,4 +22,5 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     testImplementation(project(":core-testing"))
+    testImplementation(libs.okhttp.mockwebserver)
 }

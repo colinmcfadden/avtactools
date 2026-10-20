@@ -3,6 +3,7 @@ package app.ezpztac.data
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.terrainHeightmap
+import app.ezpztac.scene3d.TerrainTileId
 import app.ezpztac.scene3d.TerrainTiling
 import kotlinx.coroutines.CancellationException
 
@@ -29,4 +30,18 @@ public class ApiClientTerrainProbe(private val client: ApiClient) : TerrainProbe
             null
         }
     }
+}
+
+/**
+ * The terrain's heights, a tile at a time (Cesium's geographic tiling): its 65 × 65 heights, rows from the north, metres above the ellipsoid; or
+ * null where the server has no DEM (204), which is never read as ground. [ApiClient] in the app: background work, held while an analysis, a
+ * viewshed or an export runs.
+ */
+public fun interface TerrainHeights {
+    public suspend fun tile(tile: TerrainTileId): ShortArray?
+}
+
+/** [TerrainHeights] over the real client. */
+public class ApiClientTerrainHeights(private val client: ApiClient) : TerrainHeights {
+    override suspend fun tile(tile: TerrainTileId): ShortArray? = client.terrainHeightmap(tile.level, tile.x, tile.y)
 }

@@ -2,21 +2,43 @@ package app.ezpztac.viewer3d
 
 import android.app.ActivityManager
 import android.content.Context
+import app.ezpztac.data.ApiClientTerrainHeights
 import app.ezpztac.data.ApiClientTilesetFiles
+import app.ezpztac.data.TerrainHeights
 import app.ezpztac.data.TilesetFiles
+import app.ezpztac.map.MapTokenSource
 import app.ezpztac.network.ApiClient
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import okhttp3.Cache
+import okhttp3.OkHttpClient
+import java.io.File
+import javax.inject.Singleton
 
-/** What the 3D view's scene needs from the app: the tilesets' files from the server, the point size kept on the device, and the points it may hold. */
+/**
+ * What the 3D view's scene needs from the app: the point cloud's files and the ground's heights from the server, the satellite imagery from
+ * Mapbox with the 2D map's token, the point size kept on the device, and the points it may hold.
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 internal object Viewer3DModule {
+    /** The imagery's own disk cache, in the app's cache (the system may clear it): about a thousand of Mapbox's tiles. */
+    private const val IMAGERY_CACHE_BYTES = 256L * 1024 * 1024
+
     @Provides
     fun tilesetFiles(client: ApiClient): TilesetFiles = ApiClientTilesetFiles(client)
+
+    @Provides
+    fun terrainHeights(client: ApiClient): TerrainHeights = ApiClientTerrainHeights(client)
+
+    // One for the process: two caches over one directory would spoil each other.
+    @Provides
+    @Singleton
+    fun imagery(http: OkHttpClient, tokens: MapTokenSource, @ApplicationContext context: Context): ImageryTiles =
+        MapboxImagery(http.newBuilder().cache(Cache(File(context.cacheDir, "viewer3d-imagery"), IMAGERY_CACHE_BYTES)).build(), token = { tokens.token.value })
 
     @Provides
     fun pointSizes(impl: PointSizePreferences): PointSizeMemory = impl
@@ -26,6 +48,8 @@ internal object Viewer3DModule {
         SceneBudgets.forHeap(context.getSystemService(ActivityManager::class.java)?.memoryClass ?: 0)
 
     @Provides
-    fun scenes(files: TilesetFiles, budgets: SceneBudgets): SceneMaker =
-        SceneMaker { target, core, ring, parent, pointSize -> SceneSession(target, core, ring, files, budgets, parent, pointSize) }
+    fun scenes(files: TilesetFiles, heights: TerrainHeights, imagery: ImageryTiles, budgets: SceneBudgets): SceneMaker =
+        SceneMaker { target, core, ring, parent, pointSize ->
+            SceneSession(target, core, ring, SceneSources(files, heights, imagery, BitmapDecoder), budgets, parent, pointSize)
+        }
 }

@@ -2,7 +2,13 @@ package app.ezpztac.viewer3d
 
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
+import android.opengl.GLUtils
+import app.ezpztac.scene3d.ImageryTileId
+import app.ezpztac.scene3d.LocalFrame
 import app.ezpztac.scene3d.ScenePoints
+import app.ezpztac.scene3d.TerrainDraw
+import app.ezpztac.scene3d.TerrainMeshes
+import app.ezpztac.scene3d.TerrainTileId
 import app.ezpztac.scene3d.Tile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -68,6 +74,52 @@ void main() {
 }
 """
 
+    // The ground: its vertex's place in the scene and in its tile's Mercator rectangle; the distance kept for the depth, written per fragment,
+    // since a triangle's depth does not interpolate logarithmically.
+    const val TERRAIN_VS = """#version 300 es
+layout(location = 0) in vec3 a_position;
+layout(location = 1) in vec2 a_place;
+uniform mat4 u_view;
+uniform mat4 u_projection;
+out vec2 v_place;
+out float v_distance;
+
+void main() {
+    vec4 eye = u_view * vec4(a_position, 1.0);
+    v_distance = -eye.z;
+    v_place = a_place;
+    gl_Position = u_projection * eye;
+}
+"""
+
+    // The imagery laid by the vertex's Mercator place (scale then offset into the imagery tile, nothing outside it), or the ground's own colour.
+    const val TERRAIN_FS = """#version 300 es
+precision highp float;
+uniform sampler2D u_imagery;
+// x, y: the scale into the imagery tile; z, w: the offset.
+uniform vec4 u_uv;
+// rgb: the ground's colour; a: 1 to draw that, 0 to lay the imagery.
+uniform vec4 u_ground;
+// x: the near plane, metres; y: one over log2(far / near).
+uniform vec2 u_depth;
+in vec2 v_place;
+in float v_distance;
+layout(location = 0) out vec4 o_color;
+
+void main() {
+    vec3 color;
+    if (u_ground.a > 0.5) {
+        color = u_ground.rgb;
+    } else {
+        vec2 uv = v_place * u_uv.xy + u_uv.zw;
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) discard;
+        color = texture(u_imagery, uv).rgb;
+    }
+    o_color = vec4(color, 1.0);
+    gl_FragDepth = log2(max(v_distance, u_depth.x) / u_depth.x) * u_depth.y;
+}
+"""
+
     const val EDL_FS = """#version 300 es
 precision highp float;
 uniform sampler2D u_color;
@@ -111,11 +163,19 @@ internal class ScenePrograms private constructor(
     val edlParameters: Int,
     val edlTexel: Int,
     val emptyVertices: Int,
+    val terrain: Int,
+    val terrainView: Int,
+    val terrainProjection: Int,
+    val terrainImagery: Int,
+    val terrainUv: Int,
+    val terrainGround: Int,
+    val terrainDepth: Int,
 ) {
     companion object {
         fun build(): ScenePrograms {
             val points = link(SceneShaders.POINTS_VS, SceneShaders.POINTS_FS)
             val edl = link(SceneShaders.FULL_VS, SceneShaders.EDL_FS)
+            val terrain = link(SceneShaders.TERRAIN_VS, SceneShaders.TERRAIN_FS)
             val vao = IntArray(1)
             GLES30.glGenVertexArrays(1, vao, 0)
             fun uniform(program: Int, name: String) = GLES30.glGetUniformLocation(program, name).also {
@@ -125,6 +185,8 @@ internal class ScenePrograms private constructor(
                 points, uniform(points, "u_view"), uniform(points, "u_projection"), uniform(points, "u_size"), uniform(points, "u_depth"),
                 edl, uniform(edl, "u_color"), uniform(edl, "u_depth"), uniform(edl, "u_edl"), uniform(edl, "u_texel"),
                 vao[0],
+                terrain, uniform(terrain, "u_view"), uniform(terrain, "u_projection"), uniform(terrain, "u_imagery"), uniform(terrain, "u_uv"),
+                uniform(terrain, "u_ground"), uniform(terrain, "u_depth"),
             )
         }
 
@@ -241,6 +303,134 @@ internal class PointBuffers {
 
     private companion object {
         const val STRIDE = 16
+    }
+}
+
+/**
+ * The ground's tiles on the GPU: one index buffer for all of them (every tile has the same triangles, [TerrainMeshes.INDICES]) and a vertex
+ * buffer for each, built from its heights the first time it is drawn (at most [MAX_BUILDS] a frame: each is a few milliseconds of the GL
+ * thread). Let go of with the tile; forgotten without a call when the context went.
+ */
+internal class GroundBuffers {
+    private class OnGpu(val vertices: Int, val buffer: Int)
+
+    private val tiles = HashMap<TerrainTileId, OnGpu>()
+    private var indices = 0
+    private var staging: ByteBuffer = ByteBuffer.allocateDirect(TerrainMeshes.VERTICES * TerrainMeshes.FLOATS * 4).order(ByteOrder.nativeOrder())
+    private var built = 0
+
+    /** A new frame: its builds are counted afresh. */
+    fun startFrame() {
+        built = 0
+    }
+
+    /** Whether a tile was left unbuilt this frame for want of time: another frame is wanted. */
+    val behind: Boolean get() = built > MAX_BUILDS
+
+    /** The vertex array [draw] is drawn with, built now if it is not; 0 when this frame has built enough, or the GPU would not take it. */
+    fun of(draw: TerrainDraw, frame: LocalFrame): Int {
+        tiles[draw.tile]?.let { return it.vertices }
+        if (++built > MAX_BUILDS) return 0
+        if (indices == 0) indices = indexBuffer()
+        val vertices = TerrainMeshes.vertices(draw.tile, draw.heights, frame)
+        staging.clear()
+        staging.asFloatBuffer().put(vertices)
+        staging.limit(vertices.size * 4)
+        val ids = IntArray(2)
+        GLES30.glGenVertexArrays(1, ids, 0)
+        GLES30.glGenBuffers(1, ids, 1)
+        GLES30.glBindVertexArray(ids[0])
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, ids[1])
+        var stale = GLES30.glGetError()
+        while (stale != GLES30.GL_NO_ERROR) stale = GLES30.glGetError()
+        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, vertices.size * 4, staging, GLES30.GL_STATIC_DRAW)
+        if (GLES30.glGetError() == GLES30.GL_OUT_OF_MEMORY) {
+            GLES30.glBindVertexArray(0)
+            GLES30.glDeleteBuffers(1, ids, 1)
+            GLES30.glDeleteVertexArrays(1, ids, 0)
+            return 0
+        }
+        val stride = TerrainMeshes.FLOATS * 4
+        GLES30.glEnableVertexAttribArray(0)
+        GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
+        GLES30.glEnableVertexAttribArray(1)
+        GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, stride, 12)
+        GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, indices)
+        GLES30.glBindVertexArray(0)
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+        tiles[draw.tile] = OnGpu(ids[0], ids[1])
+        return ids[0]
+    }
+
+    fun release(tile: TerrainTileId) {
+        val gone = tiles.remove(tile) ?: return
+        GLES30.glDeleteBuffers(1, intArrayOf(gone.buffer), 0)
+        GLES30.glDeleteVertexArrays(1, intArrayOf(gone.vertices), 0)
+    }
+
+    /** The context went, and every buffer with it. */
+    fun forget() {
+        tiles.clear()
+        indices = 0
+    }
+
+    private fun indexBuffer(): Int {
+        val ids = IntArray(1)
+        GLES30.glGenBuffers(1, ids, 0)
+        val data = ByteBuffer.allocateDirect(TerrainMeshes.INDICES.size * 2).order(ByteOrder.nativeOrder())
+        data.asShortBuffer().put(TerrainMeshes.INDICES)
+        GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, ids[0])
+        GLES30.glBufferData(GLES30.GL_ELEMENT_ARRAY_BUFFER, TerrainMeshes.INDICES.size * 2, data, GLES30.GL_STATIC_DRAW)
+        GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, 0)
+        return ids[0]
+    }
+
+    companion object {
+        const val MAX_BUILDS = 8
+    }
+}
+
+/**
+ * The imagery's textures: each tile put on the GPU once it is decoded, mipmapped (the ground is seen at a slant), and let go of with the
+ * tile; forgotten without a call when the context went.
+ */
+internal class ImageryTextures {
+    private val textures = HashMap<ImageryTileId, Int>()
+
+    operator fun get(id: ImageryTileId): Int? = textures[id]
+
+    /** Puts [image] on the GPU as [id]'s texture; false when it could not be (the GPU had no room, or the image was not a bitmap). */
+    fun upload(id: ImageryTileId, image: ImageryImage): Boolean {
+        val bitmap = (image as? BitmapImage)?.bitmap ?: return false
+        val ids = IntArray(1)
+        GLES30.glGenTextures(1, ids, 0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, ids[0])
+        var stale = GLES30.glGetError()
+        while (stale != GLES30.GL_NO_ERROR) stale = GLES30.glGetError()
+        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bitmap, 0)
+        if (GLES30.glGetError() != GLES30.GL_NO_ERROR) {
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
+            GLES30.glDeleteTextures(1, ids, 0)
+            return false
+        }
+        GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR_MIPMAP_LINEAR)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
+        textures.put(id, ids[0])?.let { GLES30.glDeleteTextures(1, intArrayOf(it), 0) }
+        return true
+    }
+
+    fun release(id: ImageryTileId) {
+        val gone = textures.remove(id) ?: return
+        GLES30.glDeleteTextures(1, intArrayOf(gone), 0)
+    }
+
+    /** The context went, and every texture with it. */
+    fun forget() {
+        textures.clear()
     }
 }
 

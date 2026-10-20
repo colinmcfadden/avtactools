@@ -205,31 +205,31 @@ public object TilesetReader {
         }
         throw TilesetException("A bounding volume that is not a box, a sphere or a region")
     }
+}
 
-    /**
-     * A region (radians west, south, east and north, and metres above the ellipsoid; a tile's transform does not apply to it) as a box along the
-     * scene's axes that holds it: its corners, edges' middles and centre at both heights, and the bulge of the earth between them. Coarser than
-     * Cesium's own box for a region, and only ever larger, so it culls nothing that should show.
-     */
-    private fun regionBox(west: Double, south: Double, east0: Double, north: Double, low: Double, high: Double, frame: LocalFrame): OrientedBox {
-        val east = if (east0 < west) east0 + 2 * Math.PI else east0
-        var lo = Vec3(Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE)
-        var hi = Vec3(-Double.MAX_VALUE, -Double.MAX_VALUE, -Double.MAX_VALUE)
-        for (i in 0..4) for (j in 0..4) for (h in listOf(low, high)) {
-            val lon = west + (east - west) * i / 4.0
-            val lat = south + (north - south) * j / 4.0
-            val p = frame.fromGeodetic(Math.toDegrees(lat), Math.toDegrees(lon), h)
-            lo = Vec3(min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z))
-            hi = Vec3(max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z))
-        }
-        // Between the samples the ground bulges up by at most the sagitta of the widest span.
-        val span = maxOf(hi.x - lo.x, hi.y - lo.y)
-        val sagitta = span * span / (8 * Wgs84.A)
-        hi = Vec3(hi.x, hi.y, hi.z + sagitta)
-        val center = (lo + hi) * 0.5
-        val half = (hi - lo) * 0.5
-        return OrientedBox(center, listOf(Vec3(half.x, 0.0, 0.0), Vec3(0.0, half.y, 0.0), Vec3(0.0, 0.0, half.z)))
+/**
+ * A region (radians west, south, east and north, and metres above the ellipsoid; a tile's transform does not apply to it) as a box along the
+ * scene's axes that holds it: its corners, edges' middles and centre at both heights, and the bulge of the earth between them. Coarser than
+ * Cesium's own box for a region, and only ever larger, so it culls nothing that should show.
+ */
+internal fun regionBox(west: Double, south: Double, east0: Double, north: Double, low: Double, high: Double, frame: LocalFrame): OrientedBox {
+    val east = if (east0 < west) east0 + 2 * Math.PI else east0
+    var lo = Vec3(Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE)
+    var hi = Vec3(-Double.MAX_VALUE, -Double.MAX_VALUE, -Double.MAX_VALUE)
+    for (i in 0..4) for (j in 0..4) for (h in listOf(low, high)) {
+        val lon = west + (east - west) * i / 4.0
+        val lat = south + (north - south) * j / 4.0
+        val p = frame.fromGeodetic(Math.toDegrees(lat), Math.toDegrees(lon), h)
+        lo = Vec3(min(lo.x, p.x), min(lo.y, p.y), min(lo.z, p.z))
+        hi = Vec3(max(hi.x, p.x), max(hi.y, p.y), max(hi.z, p.z))
     }
+    // Between the samples the ground bulges up by at most the sagitta of the widest span.
+    val span = maxOf(hi.x - lo.x, hi.y - lo.y)
+    val sagitta = span * span / (8 * Wgs84.A)
+    hi = Vec3(hi.x, hi.y, hi.z + sagitta)
+    val center = (lo + hi) * 0.5
+    val half = (hi - lo) * 0.5
+    return OrientedBox(center, listOf(Vec3(half.x, 0.0, 0.0), Vec3(0.0, half.y, 0.0), Vec3(0.0, 0.0, half.z)))
 }
 
 /**

@@ -1,11 +1,13 @@
 package app.ezpztac.viewer3d
 
+import app.ezpztac.data.TerrainHeights
 import app.ezpztac.data.TilesetAddress
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.NetworkException
 import app.ezpztac.scene3d.CameraGesture
 import app.ezpztac.scene3d.CameraPose
+import app.ezpztac.scene3d.ImageryTileId
 import app.ezpztac.scene3d.LocalFrame
 import app.ezpztac.scene3d.PntsReader
 import app.ezpztac.scene3d.PointCloudScene
@@ -13,6 +15,8 @@ import app.ezpztac.scene3d.SceneGround
 import app.ezpztac.scene3d.SceneLook
 import app.ezpztac.scene3d.ScreenPoint
 import app.ezpztac.scene3d.Sphere
+import app.ezpztac.scene3d.TerrainTileId
+import app.ezpztac.scene3d.TerrainTiling
 import app.ezpztac.scene3d.TilesetReader
 import app.ezpztac.testing.Fixtures
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +36,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.util.Collections
 
 /** One LZ's scene over the tileset py3dtiles made: how it opens, fetches and draws, what a failure does, the camera's moves and flights, and closing. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -55,11 +61,17 @@ class SceneSessionTest {
         }
     }
 
-    private fun TestScope.rig(files: FixtureFiles = FixtureFiles(), withRing: Boolean = false, address: TilesetAddress? = core, size: Int = 5): Rig {
+    private fun TestScope.rig(
+        files: FixtureFiles = FixtureFiles(),
+        withRing: Boolean = false,
+        address: TilesetAddress? = core,
+        size: Int = 5,
+        sources: SceneSources = SceneSources(files),
+    ): Rig {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val parent = CoroutineScope(SupervisorJob() + dispatcher)
         val session = SceneSession(
-            here, address, if (withRing) ring else null, files, SceneBudgets.DEFAULT, parent, size,
+            here, address, if (withRing) ring else null, sources, SceneBudgets.DEFAULT, parent, size,
             io = dispatcher, decode = dispatcher, clock = { testScheduler.currentTime },
         )
         return Rig(this, session, parent)
@@ -314,6 +326,185 @@ class SceneSessionTest {
         assertNull(r.session.listener)
         assertNotNull(r.frame())
         assertTrue(r.frame()!!.clouds.single().isEmpty())
+        r.parent.cancel()
+    }
+
+    // -- The ground and its imagery -----------------------------------------------------------------------------------------------------
+
+    /** A server with DEMs for half a degree round the LZ, flat at [height] m; a 204 everywhere else. */
+    private class FakeHeights(val height: Short = 340) : TerrainHeights {
+        val asked: MutableList<TerrainTileId> = Collections.synchronizedList(mutableListOf())
+        var failing: (TerrainTileId) -> Exception? = { null }
+
+        fun covers(tile: TerrainTileId): Boolean {
+            val b = TerrainTiling.bounds(tile)
+            return b.west < -83.6 && b.east > -84.6 && b.south < 35.1 && b.north > 34.1
+        }
+
+        override suspend fun tile(tile: TerrainTileId): ShortArray? {
+            asked += tile
+            failing(tile)?.let { throw it }
+            return if (covers(tile)) ShortArray(65 * 65) { height } else null
+        }
+    }
+
+    /** Mapbox, answering every tile with a byte for its level; [failing] says what to throw instead. */
+    private class FakeImagery : ImageryTiles {
+        val asked: MutableList<ImageryTileId> = Collections.synchronizedList(mutableListOf())
+        var failing: (ImageryTileId) -> Exception? = { null }
+
+        override suspend fun tile(id: ImageryTileId): ByteArray {
+            asked += id
+            failing(id)?.let { throw it }
+            return byteArrayOf(id.level.toByte())
+        }
+    }
+
+    private class FakeImage : ImageryImage {
+        var released = false
+        override val bytesOnGpu: Long = 1_000
+
+        override fun release() {
+            released = true
+        }
+    }
+
+    private class FakeDecoder : ImageryDecoder {
+        val made: MutableList<FakeImage> = Collections.synchronizedList(mutableListOf())
+
+        override fun decode(bytes: ByteArray): ImageryImage? = if (bytes.isEmpty()) null else FakeImage().also { made += it }
+    }
+
+    private class Ground(val heights: FakeHeights = FakeHeights(), val imagery: FakeImagery = FakeImagery(), val decoder: FakeDecoder = FakeDecoder()) {
+        val sources = SceneSources(FixtureFiles(), heights, imagery, decoder)
+    }
+
+    /** A frame as the renderer draws it: what is decoded put on the GPU, and said so. */
+    private fun Rig.render(): SceneWork? = frame()?.also { w ->
+        for ((id, image) in w.uploads) {
+            session.uploaded(id, image.bytesOnGpu)
+            image.release()
+        }
+    }
+
+    private fun TestScope.settleGround(r: Rig): SceneWork {
+        var last: SceneWork? = null
+        repeat(400) {
+            last = r.render()
+            advanceUntilIdle()
+        }
+        return last!!
+    }
+
+    @Test
+    fun `the ground is fetched coarse first round the LZ and drawn, none where the server has none`() = runTest {
+        val g = Ground()
+        val r = rig(sources = g.sources)
+        advanceUntilIdle()
+        val w = settleGround(r)
+        assertTrue(w.ground.isNotEmpty())
+        assertTrue(w.ground.all { g.heights.covers(it.tile) })
+        assertTrue(TerrainTileId(0, 1, 0) in g.heights.asked)
+        assertTrue(w.ground.none { it.tile.level == 0 && it.tile.x == 1 })
+        assertTrue("fine tiles at the LZ", w.ground.first().tile.level >= 14)
+        val order = g.heights.asked.withIndex().associate { (i, t) -> t to i }
+        for (t in g.heights.asked) if (t.level > 0) assertTrue(order.getValue(TerrainTileId(t.level - 1, t.x / 2, t.y / 2)) < order.getValue(t))
+        r.close()
+    }
+
+    @Test
+    fun `imagery is fetched for the ground drawn, decoded off the GL thread, put on the GPU a few a frame, and laid on`() = runTest {
+        val g = Ground()
+        val r = rig(sources = g.sources)
+        advanceUntilIdle()
+        var mostAFrame = 0
+        repeat(400) {
+            val w = r.render()
+            mostAFrame = maxOf(mostAFrame, w?.uploads?.size ?: 0)
+            advanceUntilIdle()
+        }
+        assertTrue(mostAFrame in 1..3)
+        val w = r.render()!!
+        assertTrue(w.ground.isNotEmpty())
+        for (d in w.ground) {
+            assertTrue("${d.tile}", w.imagery.getValue(d.tile).isNotEmpty())
+            assertTrue("${d.tile}", d.tile in w.imageryWhole)
+        }
+        r.close()
+    }
+
+    @Test
+    fun `imagery Mapbox refuses is never asked for again, while one that met no connection is after a pause, the ground bare meanwhile`() = runTest {
+        val g = Ground()
+        g.imagery.failing = { ImageryRefused("401") }
+        val r = rig(sources = g.sources)
+        advanceUntilIdle()
+        val w = settleGround(r)
+        assertTrue(w.ground.isNotEmpty())
+        assertTrue(w.ground.all { it.tile !in w.imageryWhole })
+        val asked = g.imagery.asked.size
+        advanceTimeBy(3_600_000)
+        settleGround(r)
+        assertEquals("refused for good", asked, g.imagery.asked.size)
+        r.close()
+
+        // Each tile meets no connection the first time it is asked for, and comes the second, after the pause (the clock runs on through it).
+        val h = Ground()
+        val failedOnce = Collections.synchronizedSet(HashSet<ImageryTileId>())
+        h.imagery.failing = { id -> if (failedOnce.add(id)) IOException("no route") else null }
+        val s = rig(sources = h.sources)
+        advanceUntilIdle()
+        val after = settleGround(s)
+        // Those still wanted after the pause were asked for again and came (a coarse one the ground had refined past by then is not wanted).
+        assertTrue(failedOnce.any { id -> h.imagery.asked.count { it == id } == 2 })
+        assertTrue(h.imagery.asked.none { id -> h.imagery.asked.count { it == id } > 2 })
+        assertTrue(after.ground.all { it.tile in after.imageryWhole })
+        s.close()
+    }
+
+    @Test
+    fun `a lost GL context fetches the imagery again`() = runTest {
+        val g = Ground()
+        val r = rig(sources = g.sources)
+        advanceUntilIdle()
+        settleGround(r)
+        val asked = g.imagery.asked.size
+        r.session.texturesLost()
+        val w = settleGround(r)
+        assertTrue(g.imagery.asked.size > asked)
+        assertTrue(w.ground.all { it.tile in w.imageryWhole })
+        r.close()
+    }
+
+    @Test
+    fun `the moves hold to the terrain's height at the LZ once it comes, over the points' guess`() = runTest {
+        val g = Ground(FakeHeights(height = 412))
+        val r = rig(sources = g.sources)
+        advanceUntilIdle()
+        settleGround(r)
+        assertEquals(frame.fromGeodetic(here.lat, here.lon, 412.0).z, r.session.groundZ!!, 1e-6)
+        r.close()
+    }
+
+    @Test
+    fun `closing lets go of the imagery decoded and still waiting for the GPU, and the renderer of what it was handed`() = runTest {
+        val g = Ground()
+        val r = rig(sources = g.sources)
+        advanceUntilIdle()
+        settleGround(r)
+        // The textures lost: the next frame asks for the imagery again, which is decoded and waits for a frame that does not come; and
+        // a frame whose renderer took what it was handed but never uploaded it.
+        r.session.texturesLost()
+        val handed = mutableListOf<ImageryImage>()
+        r.frame()?.let { w -> handed += w.uploads.map { it.second } }
+        advanceUntilIdle()
+        r.frame()?.let { w -> handed += w.uploads.map { it.second } }
+        advanceUntilIdle()
+        val waiting = g.decoder.made.filter { made -> !made.released && handed.none { it === made } }
+        assertTrue(waiting.isNotEmpty())
+        r.close()
+        assertTrue(waiting.all { it.released })
+        assertTrue(handed.none { (it as FakeImage).released })
         r.parent.cancel()
     }
 }
