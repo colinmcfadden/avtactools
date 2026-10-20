@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -65,6 +66,16 @@ import kotlinx.coroutines.delay
 /** What the page can ask for. */
 class Viewer3DActions(val close: () -> Unit = {}, val retry: () -> Unit = {})
 
+/**
+ * What the scene puts on the page once its point cloud is in hand: [scene] under everything (the whole page, under the bar), [over] in the area below
+ * the bar (how the scene stands, the camera's controls), and [foot] along its foot (the point size), under the words for no terrain.
+ */
+class SceneSlots(
+    val scene: @Composable () -> Unit = {},
+    val over: @Composable BoxScope.() -> Unit = {},
+    val foot: @Composable () -> Unit = {},
+)
+
 /** The scene's own background: the web's `#05080d`, whatever the app's palette. */
 internal val SCENE_BACKGROUND = Color(0xFF05080D)
 
@@ -84,7 +95,8 @@ fun Viewer3DHost(
     snackbars: SnackbarHostState? = null,
     focus: FocusRequester = remember { FocusRequester() },
     viewModel: Viewer3DViewModel = hiltViewModel(),
-    scene: @Composable (Viewer3DUi) -> Unit = { ReadyForNow() },
+    /** Draws the scene: OpenGL on a device; a stand-in under test, where there is none. */
+    surface: @Composable (SceneSession, String) -> Unit = { session, description -> GlScene(session, description) },
 ) {
     LaunchedEffect(target) { if (target == null) viewModel.close() else viewModel.show(target) }
     // The host can leave with a target still set (a sign-out, an emailed link, *Update required* take the map away): its lookup goes with it, or it
@@ -92,6 +104,8 @@ fun Viewer3DHost(
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     if (target == null) return
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val session by viewModel.session.collectAsStateWithLifecycle()
+    val pointSize by viewModel.pointSize.collectAsStateWithLifecycle()
     BackHandler(onBack = onClose)
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) {
@@ -99,8 +113,9 @@ fun Viewer3DHost(
         focus.requestFocus()                                                                 // a keyboard starts on the page's first control
     }
     EzpzTheme(pageTheme(night)) {
+        val slots = session?.let { sceneSlots(it, target.name, night, pointSize, viewModel::setPointSize, viewModel::retryScene, surface) } ?: SceneSlots()
         Viewer3DPage(
-            state ?: Viewer3DUi(target.name, LidarPhase.RESOLVING, saved = target.saved), Viewer3DActions(onClose, viewModel::retry), modifier, snackbars, scene,
+            state ?: Viewer3DUi(target.name, LidarPhase.RESOLVING, saved = target.saved), Viewer3DActions(onClose, viewModel::retry), modifier, snackbars, slots,
             focus = focus,
         )
     }
@@ -120,7 +135,7 @@ fun Viewer3DPage(
     actions: Viewer3DActions,
     modifier: Modifier = Modifier,
     snackbars: SnackbarHostState? = null,
-    scene: @Composable (Viewer3DUi) -> Unit = { ReadyForNow() },
+    slots: SceneSlots = SceneSlots(),
     focus: FocusRequester = remember { FocusRequester() },
 ) {
     // A Surface takes the touches nothing on it takes (Material's own), where a plain background would let them fall through to the map.
@@ -131,7 +146,7 @@ fun Viewer3DPage(
             .focusRequester(focus).focusProperties { onExit = { cancelFocusChange() } }.focusGroup(),
     ) {
         Box(Modifier.fillMaxSize()) {
-            if (ui.phase == LidarPhase.AVAILABLE) scene(ui)
+            if (ui.phase == LidarPhase.AVAILABLE) slots.scene()
             Column(Modifier.fillMaxSize()) {
                 Bar(ui.title, actions.close)
                 Box(
@@ -139,8 +154,15 @@ fun Viewer3DPage(
                     contentAlignment = Alignment.Center,
                 ) {
                     when (ui.phase) {
-                        LidarPhase.AVAILABLE -> if (ui.noGround) {
-                            Banner(Viewer3DWords.NO_GROUND, BannerKind.Warning, modifier = Modifier.align(Alignment.TopCenter).padding(Tokens.Spacing.md.dp).widthIn(max = 560.dp))
+                        LidarPhase.AVAILABLE -> {
+                            slots.over(this)
+                            Column(
+                                Modifier.align(Alignment.BottomStart).padding(Tokens.Spacing.md.dp),
+                                verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+                            ) {
+                                if (ui.noGround) Banner(Viewer3DWords.NO_GROUND, BannerKind.Warning, modifier = Modifier.widthIn(max = 560.dp))
+                                slots.foot()
+                            }
                         }
                         LidarPhase.IDLE -> Unit
                         else -> Status(ui, actions)
@@ -149,17 +171,6 @@ fun Viewer3DPage(
                 }
             }
         }
-    }
-}
-
-/** What the scene's area says while the point cloud is in hand and nothing draws it yet (V2 of docs/ANDROID_3D_PLAN.md; V4 draws it). */
-@Composable
-fun ReadyForNow() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            Viewer3DWords.READY, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-        )
     }
 }
 

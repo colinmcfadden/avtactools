@@ -3,8 +3,11 @@ package app.ezpztac.scene3d
 import java.util.IdentityHashMap
 import kotlin.math.max
 
-/** What to draw this frame, nearest first, and what to fetch, most wanted first. */
-public class Selection(public val selected: List<Tile>, public val requested: List<Tile>) {
+/**
+ * What to draw this frame, nearest first, and what to fetch, most wanted first; and every tile the traversal touched (Cesium's `touchTile`: those
+ * it went through, and those it asked for), which a cache keeps over the rest, since a tile in hand but not drawn may be what lets its parent give way.
+ */
+public class Selection(public val selected: List<Tile>, public val requested: List<Tile>, public val touched: Set<Tile> = emptySet()) {
     public companion object {
         public val NONE: Selection = Selection(emptyList(), emptyList())
     }
@@ -70,6 +73,7 @@ public class TileSelector(public val maximumScreenSpaceError: Double) {
         private val visits = IdentityHashMap<Tile, Visit>()
         private val selected = ArrayList<Tile>()
         private val requested = LinkedHashSet<Tile>()
+        private val touched = java.util.Collections.newSetFromMap(IdentityHashMap<Tile, Boolean>())
 
         fun run(): Selection {
             val root = tileset.root
@@ -78,7 +82,7 @@ public class TileSelector(public val maximumScreenSpaceError: Double) {
             if (screenSpaceError(root, visit.distance, useParent = true) <= maximum) return Selection.NONE
             traverse(root)
             val byWant = requested.sortedWith(compareBy<Tile> { it.depth }.thenBy { visits[it]?.distance ?: Double.MAX_VALUE })
-            return Selection(selected.sortedBy { visits[it]?.distance ?: 0.0 }, byWant)
+            return Selection(selected.sortedBy { visits[it]?.distance ?: 0.0 }, byWant, touched)
         }
 
         private fun visitOf(tile: Tile): Visit = visits.getOrPut(tile) { Visit() }
@@ -119,6 +123,7 @@ public class TileSelector(public val maximumScreenSpaceError: Double) {
 
         /** Asks for a tile's content if it has some to fetch that has not been asked for: Cesium's `loadTile`. */
         private fun load(tile: Tile) {
+            touched += tile
             when (tile.content) {
                 null, is OtherContent -> return
                 is PointsContent, is TilesetContent -> if (status(tile) == TileStatus.UNLOADED) requested += tile
@@ -137,6 +142,7 @@ public class TileSelector(public val maximumScreenSpaceError: Double) {
             stack.addLast(root)
             while (stack.isNotEmpty()) {
                 val tile = stack.removeLast()
+                touched += tile
                 val visit = visitOf(tile)
                 val parentRefines = tile.parent?.let { visits[it]?.refines } ?: true
                 visit.refines = if (canTraverse(tile)) pushChildren(tile, stack) && parentRefines else false
@@ -191,6 +197,7 @@ public class TileSelector(public val maximumScreenSpaceError: Double) {
             stack.addLast(root)
             while (stack.isNotEmpty()) {
                 val tile = stack.removeLast()
+                touched += tile
                 val traverse = !tile.hasRenderableContent && canTraverseEmpty(tile)
                 if (!traverse && !contentAvailable(tile)) allLoaded = false
                 val visit = update(tile)

@@ -12,8 +12,11 @@ import java.nio.ByteOrder
 /** A `.pnts` tile that cannot be read, in words for a log. */
 public class PntsException(message: String) : Exception(message)
 
-/** A tile's points in the scene's frame, ready for the GPU: [positions] x, y, z each (metres from the LZ), [rgb] three bytes each. */
-public class ScenePoints(public val count: Int, public val positions: FloatArray, public val rgb: ByteArray) {
+/**
+ * A tile's points in the scene's frame, ready for the GPU: [positions] x, y, z each (metres from the LZ), [rgb] three bytes each, and
+ * [estimatedError], Cesium's guess at their spacing ([PointShading.estimate]), which sizes the points of a tile with no geometric error of its own.
+ */
+public class ScenePoints(public val count: Int, public val positions: FloatArray, public val rgb: ByteArray, public val estimatedError: Double = 0.0) {
     /** What it holds, for a cache measured in bytes. */
     public val bytes: Long get() = positions.size * 4L + rgb.size
 }
@@ -71,6 +74,7 @@ public object PntsReader {
         val rtc = table["RTC_CENTER"]?.let { vector(it, body, "RTC_CENTER") } ?: Vec3.ZERO
         // Each point's place: decoded in doubles, moved by the tile's frame and the RTC centre into the scene, and only then made a float.
         val toScene = frame.fromEcef * world * Mat4.translation(rtc)
+        var quantizedScale: Vec3? = null
         val read: (Int) -> Vec3 = when {
             table["POSITION"] != null -> {
                 val offset = body.offset(table["POSITION"], 12L * count, "POSITION")
@@ -81,6 +85,7 @@ public object PntsReader {
                 val offset = body.offset(table["POSITION_QUANTIZED"], 6L * count, "POSITION_QUANTIZED")
                 val origin = vector(table["QUANTIZED_VOLUME_OFFSET"] ?: throw PntsException("No QUANTIZED_VOLUME_OFFSET"), body, "QUANTIZED_VOLUME_OFFSET")
                 val scale = vector(table["QUANTIZED_VOLUME_SCALE"] ?: throw PntsException("No QUANTIZED_VOLUME_SCALE"), body, "QUANTIZED_VOLUME_SCALE")
+                quantizedScale = scale
                 val quantized: (Int) -> Vec3 = { i ->
                     Vec3(
                         origin.x + body.ushort(offset + 6 * i) * scale.x / 65535.0,
@@ -140,7 +145,21 @@ public object PntsReader {
             colour(i, rgb, 3 * kept)
             kept++
         }
-        return if (kept == count) ScenePoints(count, positions, rgb) else ScenePoints(kept, positions.copyOf(3 * kept), rgb.copyOf(3 * kept))
+        // Cesium measures twenty of the file's points where the file has them (a quantized tile: its whole volume), and divides by all of them.
+        val sampled = quantizedScale ?: extent(PointShading.sampleIndices(count).map(read))
+        val estimated = PointShading.estimate(sampled, count)
+        return if (kept == count) {
+            ScenePoints(count, positions, rgb, estimated)
+        } else {
+            ScenePoints(kept, positions.copyOf(3 * kept), rgb.copyOf(3 * kept), estimated)
+        }
+    }
+
+    /** The size of the box round [points] (the finite ones), or null for none. */
+    private fun extent(points: List<Vec3>): Vec3? {
+        val finite = points.filter { it.isFinite }
+        if (finite.isEmpty()) return null
+        return Vec3(finite.maxOf { it.x } - finite.minOf { it.x }, finite.maxOf { it.y } - finite.minOf { it.y }, finite.maxOf { it.z } - finite.minOf { it.z })
     }
 
     private fun integer(element: JsonElement?, what: String): Int {

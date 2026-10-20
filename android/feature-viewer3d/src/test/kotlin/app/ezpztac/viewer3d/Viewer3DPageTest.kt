@@ -7,15 +7,22 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -26,6 +33,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -39,9 +47,11 @@ import app.ezpztac.data.LidarProblem
 import app.ezpztac.data.Viewer3DTarget
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
+import app.ezpztac.network.NetworkException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -112,10 +122,22 @@ class Viewer3DPageTest {
     }
 
     @Test
-    fun `with the cloud in hand the scene's area says so, and no terrain there is said over it`() {
-        show(Viewer3DUi("LZ HAWK", LidarPhase.AVAILABLE, noGround = true, tileset = "/lidar/tilesets/k/tileset.json"))
-        compose.onNodeWithText("Point cloud ready").assertIsDisplayed()
+    fun `with the cloud in hand the scene and its controls are drawn, and no terrain there is said above the point size`() {
+        val drawn = mutableListOf<String>()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                Viewer3DPage(
+                    Viewer3DUi("LZ HAWK", LidarPhase.AVAILABLE, noGround = true, tileset = "/lidar/tilesets/k/tileset.json"), actions,
+                    slots = SceneSlots(scene = { drawn += "scene" }, over = { Text("The camera", Modifier.align(Alignment.TopEnd)) }, foot = { Text("The point size") }),
+                )
+            }
+        }
+        assertTrue("scene" in drawn)
+        compose.onNodeWithText("The camera").assertIsDisplayed()
         compose.onNodeWithText(Viewer3DWords.NO_GROUND).assertIsDisplayed()
+        val words = compose.onNodeWithText(Viewer3DWords.NO_GROUND).fetchSemanticsNode().boundsInRoot
+        val foot = compose.onNodeWithText("The point size").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue("$words over $foot", words.bottom <= foot.top)
     }
 
     @Test
@@ -135,7 +157,7 @@ class Viewer3DPageTest {
 
     @Test
     fun `Back closes it before anything under it hears it, and with no LZ-PZ it is not there at all`() {
-        val model = Viewer3DViewModel(lidarBuilds(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)), FakeProbe())
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
         var target by mutableStateOf<Viewer3DTarget?>(Viewer3DTarget("lz-1", "LZ HAWK", 34.59, -84.13, saved = false))
         compose.setContent {
             EzpzTheme(ThemeMode.Dark) {
@@ -192,7 +214,7 @@ class Viewer3DPageTest {
 
     @Test
     fun `opening it takes the focus from a field under it, so no keyboard stays up for what it covers`() {
-        val model = Viewer3DViewModel(lidarBuilds(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)), FakeProbe())
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
         var target by mutableStateOf<Viewer3DTarget?>(null)
         var fieldFocused = false
         compose.setContent {
@@ -235,7 +257,7 @@ class Viewer3DPageTest {
     @Test
     fun `the page leaving with its LZ-PZ still set lets go of the build it was waiting on`() {
         val lidar = FakeLidar(built = false)
-        val model = Viewer3DViewModel(lidarBuilds(lidar, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)), FakeProbe())
+        val model = viewModel(lidar, CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
         var here by mutableStateOf(true)
         compose.setContent {
             EzpzTheme(ThemeMode.Dark) {
@@ -248,5 +270,76 @@ class Viewer3DPageTest {
         compose.waitForIdle()
         assertTrue(lidar.calls.toString(), "release ${FakeLidar.KEY}" in lidar.calls)
         assertNull(model.state.value)
+    }
+
+    /** A stand-in for the GL view, which Robolectric cannot draw: one frame of the scene once it draws, as the renderer would. */
+    private val standIn: @Composable (SceneSession, String) -> Unit = { session, description ->
+        Box(Modifier.fillMaxSize().semantics { contentDescription = description })
+        LaunchedEffect(session) {
+            session.status.first { it == SceneStatus.Drawing }
+            session.frame(1080, 2200, 2.75)
+        }
+    }
+
+    private val hawk = Viewer3DTarget("lz-1", "LZ HAWK", 34.591552, -84.128225, saved = false)
+
+    @Test
+    fun `with the cloud drawn, LZ, the compass and the point size are over it, each doing what it says`() {
+        val sizes = InMemoryPointSizes()
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), sizes = sizes)
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, surface = standIn) } }
+        compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
+        val scene = model.session.value!!
+        compose.onNode(hasContentDescription(Viewer3DWords.scene("LZ HAWK"))).assertExists()
+        compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed().performClick()
+        assertTrue("LZ flies back", scene.frame(1080, 2200, 2.75)!!.animating)
+        compose.onNode(hasContentDescription("Facing 330 degrees true. Face north")).assertIsDisplayed().performClick()
+        assertTrue("north, flown to", scene.frame(1080, 2200, 2.75)!!.animating)
+        compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(9f) }
+        compose.waitForIdle()
+        assertEquals(9, model.pointSize.value)
+        assertEquals(9, sizes.get())
+        assertEquals(9, scene.pointSize)
+        assertEquals(9f, compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current)
+    }
+
+    @Test
+    fun `a point cloud whose tileset cannot be fetched says so, and Retry fetches it`() {
+        var down = true
+        val files = FixtureFiles(failing = { if (down && it == "tileset.json") NetworkException("no route", requestMayHaveBeenSent = false) else null })
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), scenes = scenes(files))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, surface = standIn) } }
+        compose.waitUntil(5_000) { model.session.value?.status?.value is SceneStatus.Failed }
+        compose.onNodeWithText(Viewer3DWords.SCENE_FAILED, substring = true).assertIsDisplayed()
+        compose.onNodeWithText(Viewer3DWords.sceneProblem(SceneProblem.UNREACHABLE), substring = true).assertIsDisplayed()
+        assertEquals(LiveRegionMode.Assertive, compose.onNode(hasText(Viewer3DWords.SCENE_FAILED, substring = true)).fetchSemanticsNode().config.getOrNull(SemanticsProperties.LiveRegion))
+        down = false
+        compose.onNodeWithText("Retry").performClick()
+        compose.waitUntil(5_000) { model.session.value?.status?.value == SceneStatus.Drawing }
+        compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed()
+    }
+
+    @Test
+    fun `a device without OpenGL ES 3_0 is told so in words, with no Retry`() {
+        // Robolectric's device has none (reqGlEsVersion 0), so this is the real view's own test.
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model) } }
+        compose.waitUntil(5_000) { model.session.value?.status?.value == SceneStatus.Failed(SceneProblem.NO_GL) }
+        compose.onNodeWithText(Viewer3DWords.sceneProblem(SceneProblem.NO_GL), substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Retry").assertDoesNotExist()
+        compose.onNodeWithText(Viewer3DWords.LZ).assertDoesNotExist()
+    }
+
+    @Test
+    fun `at night the scene is dimmed as the map is`() {
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
+        var night by mutableStateOf(false)
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = night, onClose = {}, viewModel = model, surface = standIn) } }
+        compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
+        assertEquals(0.45f, SCENE_NIGHT_DIM)
+        compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed()
+        compose.runOnIdle { night = true }
+        compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed()
     }
 }

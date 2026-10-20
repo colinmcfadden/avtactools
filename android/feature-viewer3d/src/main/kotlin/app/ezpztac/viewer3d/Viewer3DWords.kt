@@ -74,5 +74,26 @@ object Viewer3DWords {
 
     const val NO_GROUND = "No terrain here: the server has no ground for this place, so the points have nothing drawn under them."
 
-    const val READY = "Point cloud ready"
+    // The scene, once its point cloud is in hand (the web's `Viewer3D.jsx`).
+    const val SCENE_LOADING = "Loading"
+    const val SCENE_LOADING_BODY = "Preparing point cloud…"
+    const val SCENE_FAILED = "3D view failed"
+
+    /** Why the scene is not drawn, in the app's words (the web shows the error's own text). */
+    fun sceneProblem(problem: SceneProblem): String = when (problem) {
+        SceneProblem.UNREACHABLE -> "The point cloud could not be fetched. Check the connection and try again."
+        SceneProblem.UNREADABLE -> "The point cloud's files could not be read."
+        SceneProblem.NOT_A_TILESET -> "The server named a point cloud this version of the app cannot open."
+        SceneProblem.NO_GL -> "This device cannot draw the 3D view: it needs OpenGL ES 3.0."
+        SceneProblem.GL_FAILED -> "This device could not set up the 3D view."
+    }
+
+    const val LZ = "LZ"
+    const val FRAME_LZ = "Frame the landing zone"
+    const val FACE_NORTH = "Face north"
+    const val POINT_SIZE = "Point size"
+
+    /** What a screen reader hears of the scene itself, and how the fingers move it. */
+    fun scene(name: String): String =
+        "Point cloud of $name. One finger moves the view, two fingers pinch to zoom and twist to turn, and two fingers up or down tilt it."
 }

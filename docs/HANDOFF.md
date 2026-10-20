@@ -56,9 +56,15 @@ bounded, `LidarBuilds` held to the build-flow fixture scenario by scenario, buil
 launch lets go of what the last one waited on, and a live-server test of the LiDAR routes and the build service's queue), and V2 (the full-screen page in every
 state, over both frames, closing back to the map as it was, with *3D* on the LZ/PZ panel's card, its plan page and each other open or pack LZ/PZ; its review's
 findings fixed after: Back and a keyboard's focus kept in the page across a frame made again under it, its lookup let go when the map leaves, a failure said to a
-screen reader at once, and 3D asked for during a slow open withdrawn by a close). **Not verifiable here:** that opening 3D in touch mode drops the keyboard of a
-field left focused under it (Robolectric runs in keyboard mode, where the page takes the focus itself). **Next:** V4 (the
-points on the screen, ending in the owner's first device run), V5 (terrain and imagery), V6 (routes) and V7 (lifecycle, memory, the last reviews).
+screen reader at once, and 3D asked for during a slow open withdrawn by a close), and V4 (the point cloud drawn: OpenGL ES 3.0 with Cesium's attenuation and
+eye-dome lighting, the fingers as Cesium's touch controls, *LZ*, the compass and the point size). **Not verifiable here:** that opening 3D in touch mode drops the
+keyboard of a field left focused under it (Robolectric runs in keyboard mode, where the page takes the focus itself), and anything GL draws. **Next:** the
+owner's first device run (below), V5 (terrain and imagery), V6 (routes) and V7 (lifecycle, memory, the last reviews).
+
+**Owner device run 1** (V4): open a built LZ/PZ's *3D* on a phone and the same LZ in the web's 3D window, and compare screenshots from the same view (*LZ* on
+both): the points' size and density as the camera comes in, the outlines the eye-dome lighting draws, the background. Then try one finger, a pinch, a twist
+and two fingers up and down, *LZ* and the compass; the point size at 2 and 16; the app sent to the back and brought again (the cloud should come back at once,
+nothing fetched again); a phone turned; airplane mode while the tiles come (the preview stays, the rest come once the signal does). Say what differs.
 
 **For the owner** (AGENTS.md §15): the server's heightmap samples sit half a cell from where Cesium draws them; a tileset's key can be turned back into its
 place; the web shows a failed build's raw text, with the place in it.

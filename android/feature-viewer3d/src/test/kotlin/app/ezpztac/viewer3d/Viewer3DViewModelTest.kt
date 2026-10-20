@@ -2,6 +2,7 @@ package app.ezpztac.viewer3d
 
 import app.ezpztac.data.LidarPhase
 import app.ezpztac.data.Viewer3DTarget
+import app.ezpztac.scene3d.SceneLook
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -32,8 +33,8 @@ class Viewer3DViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun TestScope.model(api: FakeLidar = FakeLidar(), probe: FakeProbe = FakeProbe()) =
-        Viewer3DViewModel(lidarBuilds(api, backgroundScope), probe)
+    private fun TestScope.model(api: FakeLidar = FakeLidar(), probe: FakeProbe = FakeProbe(), sizes: PointSizeMemory = InMemoryPointSizes()) =
+        viewModel(api, backgroundScope, probe, scenes(dispatcher = main, clock = { testScheduler.currentTime }), sizes)
 
     @Test
     fun `shown, it looks up the point cloud and asks after the ground, and closed it lets both go`() = runTest(main) {
@@ -109,5 +110,50 @@ class Viewer3DViewModelTest {
         assertFalse(unknown.state.value!!.noGround)
         listOf(built, building, unknown).forEach { it.close() }
         advanceUntilIdle()
+    }
+
+    @Test
+    fun `the cloud in hand, its scene is made for where the lookup found it, kept while the same LZ-PZ is shown, and let go with it`() = runTest(main) {
+        val model = model()
+        model.show(hawk)
+        advanceUntilIdle()
+        val scene = model.session.value!!
+        assertEquals(SceneStatus.Drawing, scene.status.value)
+        assertEquals(hawk.lat, scene.frame.lat, 0.0)
+        model.show(hawk.copy(name = "LZ HAWK (ROCK)", saved = true))
+        advanceUntilIdle()
+        assertTrue("the same scene", scene === model.session.value)
+        model.close()
+        advanceUntilIdle()
+        assertNull(model.session.value)
+        assertNull("closed: it draws nothing more", scene.listener)
+    }
+
+    @Test
+    fun `while the cloud is built there is no scene yet`() = runTest(main) {
+        val model = model(FakeLidar(built = false))
+        model.show(hawk)
+        runCurrent()
+        assertNull(model.session.value)
+        model.close()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `the point size is the person's, kept for next time and given to the scene`() = runTest(main) {
+        val sizes = InMemoryPointSizes(9)
+        val model = model(sizes = sizes)
+        assertEquals(9, model.pointSize.value)
+        model.show(hawk)
+        advanceUntilIdle()
+        assertEquals(9, model.session.value!!.pointSize)
+        model.setPointSize(12)
+        assertEquals(12, model.pointSize.value)
+        assertEquals(12, sizes.get())
+        assertEquals(12, model.session.value!!.pointSize)
+        model.close()
+        advanceUntilIdle()
+        // One a later version kept out of this one's range is the first size.
+        assertEquals(SceneLook.DEFAULT_POINT_SIZE, model(sizes = InMemoryPointSizes(40)).pointSize.value)
     }
 }

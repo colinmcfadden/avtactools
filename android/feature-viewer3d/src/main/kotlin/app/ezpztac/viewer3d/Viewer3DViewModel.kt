@@ -8,15 +8,18 @@ import app.ezpztac.data.LidarLookupRun
 import app.ezpztac.data.LidarPhase
 import app.ezpztac.data.LidarProblem
 import app.ezpztac.data.TerrainProbe
+import app.ezpztac.data.TilesetAddress
 import app.ezpztac.data.Viewer3DTarget
 import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.model.LatLon
+import app.ezpztac.scene3d.SceneLook
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -63,20 +66,32 @@ data class Viewer3DUi(
 }
 
 /**
- * The 3D view's state: one lookup (core-data's [LidarBuilds]) for each LZ/PZ it is shown on, and the web's probe for ground there. The view
- * model outlives the page (it is the activity's), so [show] starts what an opening needs and [close] lets go of it; a new target, or the same
- * one moved, starts again, and only its being saved changes on the run.
+ * The 3D view's state: one lookup (core-data's [LidarBuilds]) for each LZ/PZ it is shown on, the web's probe for ground there, and once the point
+ * cloud is in hand its scene ([SceneSession]: the tiles, the camera). The view model outlives the page (it is the activity's), so [show] starts
+ * what an opening needs and [close] lets go of it; a new target, or the same one moved, starts again, and only its being saved changes on the run.
+ * The point size is the person's, kept on the device ([PointSizeMemory]).
  */
 @HiltViewModel
 class Viewer3DViewModel @Inject constructor(
     private val lidar: LidarBuilds,
     private val probe: TerrainProbe,
+    private val scenes: SceneMaker,
+    private val pointSizes: PointSizeMemory,
 ) : ViewModel() {
     private val target = MutableStateFlow<Viewer3DTarget?>(null)
     private val lookup = MutableStateFlow(LidarLookup())
     private val ground = MutableStateFlow<Boolean?>(null)
     private var run: LidarLookupRun? = null
     private var jobs: List<Job> = emptyList()
+    private val _session = MutableStateFlow<SceneSession?>(null)
+    private var sceneOf: Pair<String?, String?>? = null
+    private val _pointSize = MutableStateFlow(SceneLook.pointSizeOrDefault(pointSizes.get()))
+
+    /** The scene of the point cloud being shown; null until it is in hand. */
+    val session: StateFlow<SceneSession?> = _session.asStateFlow()
+
+    /** The point size the person chose, 2 to 16. */
+    val pointSize: StateFlow<Int> = _pointSize.asStateFlow()
 
     /** What the page shows; null while it is closed. */
     val state: StateFlow<Viewer3DUi?> = combine(target, lookup, ground) { t, l, g -> t?.let { Viewer3DUi.of(it, l, g) } }
@@ -96,9 +111,37 @@ class Viewer3DViewModel @Inject constructor(
         val started = lidar.start(viewModelScope, at, keep = shown.saved)
         run = started
         jobs = listOf(
-            viewModelScope.launch { started.state.collect { lookup.value = it } },
+            viewModelScope.launch {
+                started.state.collect {
+                    lookup.value = it
+                    if (it.phase == LidarPhase.AVAILABLE) scene(shown, it)
+                }
+            },
             viewModelScope.launch { ground.value = probe.hasGround(at) },
         )
+    }
+
+    // The cloud is in hand: its scene, made once for where it is (the core and the ring the lookup named).
+    private fun scene(target: Viewer3DTarget, found: LidarLookup) {
+        val at = found.url to found.contextUrl
+        if (_session.value != null && sceneOf == at) return
+        _session.value?.close()
+        sceneOf = at
+        _session.value = scenes.make(LatLon(target.lat, target.lon), TilesetAddress.of(found.url), TilesetAddress.of(found.contextUrl), viewModelScope, _pointSize.value)
+    }
+
+    /** The point size, 2 to 16, kept for next time. */
+    fun setPointSize(size: Int) {
+        val chosen = SceneLook.pointSizeOrDefault(size)
+        if (chosen == _pointSize.value) return
+        _pointSize.value = chosen
+        pointSizes.set(chosen)
+        _session.value?.setPointSize(chosen)
+    }
+
+    /** The scene's *Retry*, when its tileset could not be had. */
+    fun retryScene() {
+        _session.value?.retry()
     }
 
     /** *Retry* and *Check again*. */
@@ -112,6 +155,9 @@ class Viewer3DViewModel @Inject constructor(
         jobs = emptyList()
         run?.close()
         run = null
+        _session.value?.close()
+        _session.value = null
+        sceneOf = null
         target.value = null
         lookup.value = LidarLookup()
         ground.value = null
@@ -119,5 +165,6 @@ class Viewer3DViewModel @Inject constructor(
 
     override fun onCleared() {
         run?.close()
+        _session.value?.close()
     }
 }
