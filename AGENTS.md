@@ -500,6 +500,14 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
   the comparison while CI passes. And Windows and Linux maths libraries can differ
   in a double's last digit, so a recorded number is compared with a tolerance
   (`test_network_fixtures.settle_floats`), never exactly.
+- **So can Node on x86-64 and on an Apple-silicon Mac**: an arm64 build of V8 evaluates
+  its Math routines (fdlibm) with fused multiply-adds, which round once where x86-64
+  rounds twice (`Math.sin` differs at about 2% of arguments, `Math.exp` at 0.05%). The web's
+  fixtures are written and checked on x86-64 (CI), so one compared exactly can fail on a Mac
+  alone: `mgrs/grid.json` did, its searches turning a last digit into a millimetre. Its test
+  settles numbers to a tolerance and labels as a set (`settled` in `mgrsGridFixtures.test.js`),
+  and keeps the committed digits when regenerating, so a regenerated file changes only where
+  the grid did.
 - `frontend/package-lock.json` is out of sync under npm 10 (`npm ci` reports
   `Missing: yaml@2.9.1`), so install with `npm install` and restore the lockfile
   (`git checkout frontend/package-lock.json`) if you only needed `node_modules`.
