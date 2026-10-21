@@ -3,7 +3,8 @@
 Status (2026-10-20): **V0 to V7 done**, each step reviewed independently and the whole by three final reviews (parity, lifecycle and concurrency, the screens),
 their findings fixed with tests (branch `claude/android-3d-view-e38b76`; V3 was built before V1, since the build flow's probe uses its tiling). What is left
 is the owner's: the device runs (`docs/HANDOFF.md`) and one question (AGENTS.md §15: the web's sky). The two others the final reviews raised, the portrait
-framing and following the open LZ/PZ, the owner settled on 2026-10-20 (§9, decisions 4 and 5).
+framing and following the open LZ/PZ, the owner settled on 2026-10-20 (§9, decisions 4 and 5). The first device run (2026-10-21) failed as the
+point cloud came, Android's GL binding refusing the routes' empty buffers; fixed, with the renderer's GL calls now held to the binding's checks (§7).
 The owner chose the native renderer (A) and the full screen's details on 2026-10-20 (§9). Each step is built as the screens
 and the brief were: implemented with its tests, reviewed independently (parity with the web, lifecycle and concurrency, the screens), its
 findings fixed with tests, committed only with the full build green and AGENTS.md and `docs/HANDOFF.md` updated in the same commit. **Where
@@ -166,7 +167,9 @@ the owner want it: the LZ/PZ's graphics in 3D (`3D_PLANNING_GRAPHICS_PLAN.md`, P
 ## 7. What cannot be verified in an agent session
 
 Anything OpenGL draws (there is no GPU here, and Roborazzi draws no GL): the point cloud's look, the terrain and imagery, the routes and
-their labels in 3D, frame rate and GPU memory. Gestures on a real screen. The build service end to end (it runs on the VM). Mapbox
+their labels in 3D, frame rate and GPU memory. What the renderer asks of Android's GL binding is tested (`SceneRendererTest`, over shadows that
+refuse what the binding's JNI refuses): Robolectric's own GL checks nothing, and the first device run (2026-10-21) found the routes' empty
+buffers refused by the binding, which the JVM tests had passed. Gestures on a real screen. The build service end to end (it runs on the VM). Mapbox
 imagery with the app's token on a device. Each wants the owner's device run, named in its step.
 
 ---

@@ -1,5 +1,6 @@
 package app.ezpztac.viewer3d
 
+import android.graphics.Bitmap
 import android.opengl.EGL14
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
@@ -19,11 +20,62 @@ import javax.microedition.khronos.egl.EGL10
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.egl.EGLDisplay
 
-// The 3D view's OpenGL ES 3.0 (docs/ANDROID_3D_PLAN.md, V4): compile-only here, since nothing in an agent session draws GL; what is drawn and
-// with which numbers is decided in core-scene3d and the session, where it is tested.
+// The 3D view's OpenGL ES 3.0 (docs/ANDROID_3D_PLAN.md, V4): what is drawn and with which numbers is decided in core-scene3d and the session,
+// where it is tested; the calls here are held to Android's GL binding's own checks (SceneRendererTest), and nothing in an agent session draws GL.
 
 /** A GL call that did not do what it should (a shader that would not compile, a target the driver refused), in words for the log. */
 internal class GlException(message: String) : Exception(message)
+
+/**
+ * What goes into a GL buffer, and the one way it goes there. Android's binding refuses a size past what a buffer holds from its position to its
+ * limit (`IllegalArgumentException: remaining() < size < needed`), where the C call it wraps would read past it, so [upload] sizes each buffer by
+ * what it holds and asks nothing of the driver for an empty one. Sized by their capacity, the routes' buffers of an LZ/PZ with no routes were
+ * refused on the owner's first device runs, and with them the whole scene (AGENTS.md §14).
+ */
+internal object BufferData {
+    /** [values] in the platform's byte order, from position 0 to the last of them: none for an empty list. */
+    fun floats(values: List<Float>): ByteBuffer {
+        val b = direct(values.size * 4)
+        for (v in values) b.putFloat(v)
+        b.flip()
+        return b
+    }
+
+    fun ints(values: List<Int>): ByteBuffer {
+        val b = direct(values.size * 4)
+        for (v in values) b.putInt(v)
+        b.flip()
+        return b
+    }
+
+    fun shorts(values: ShortArray): ByteBuffer {
+        val b = direct(values.size * 2)
+        b.asShortBuffer().put(values)
+        return b
+    }
+
+    /** [data], from its position to its limit, into the buffer bound at [target]; one that holds nothing asks nothing of the driver. */
+    fun upload(target: Int, data: ByteBuffer) {
+        if (data.hasRemaining()) GLES30.glBufferData(target, data.remaining(), data, GLES30.GL_STATIC_DRAW)
+    }
+
+    private fun direct(bytes: Int): ByteBuffer = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
+}
+
+/**
+ * [bitmap] into the texture bound at `GL_TEXTURE_2D`, or false where it could not go: the GPU had no room (an error after it), or the binding
+ * refused the bitmap (recycled, or of a kind it has no format for: an IllegalArgumentException, which would otherwise be the scene's).
+ */
+internal fun texImage(bitmap: Bitmap): Boolean {
+    var stale = GLES30.glGetError()
+    while (stale != GLES30.GL_NO_ERROR) stale = GLES30.glGetError()
+    return try {
+        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bitmap, 0)
+        GLES30.glGetError() == GLES30.GL_NO_ERROR
+    } catch (_: IllegalArgumentException) {
+        false
+    }
+}
 
 /**
  * The shaders. Points are sized as Cesium's attenuation sizes them (the tile's geometric error seen from where the point is, in the buffer's
@@ -272,7 +324,7 @@ internal class PointBuffers {
         // Errors left from before, so that the one read after the upload is the upload's.
         var stale = GLES30.glGetError()
         while (stale != GLES30.GL_NO_ERROR) stale = GLES30.glGetError()
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, bytes, staging, GLES30.GL_STATIC_DRAW)
+        BufferData.upload(GLES30.GL_ARRAY_BUFFER, staging)
         if (GLES30.glGetError() == GLES30.GL_OUT_OF_MEMORY) {
             GLES30.glBindVertexArray(0)
             GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
@@ -347,7 +399,7 @@ internal class GroundBuffers {
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, ids[1])
         var stale = GLES30.glGetError()
         while (stale != GLES30.GL_NO_ERROR) stale = GLES30.glGetError()
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, vertices.size * 4, staging, GLES30.GL_STATIC_DRAW)
+        BufferData.upload(GLES30.GL_ARRAY_BUFFER, staging)
         if (GLES30.glGetError() == GLES30.GL_OUT_OF_MEMORY) {
             GLES30.glBindVertexArray(0)
             GLES30.glDeleteBuffers(1, ids, 1)
@@ -381,10 +433,8 @@ internal class GroundBuffers {
     private fun indexBuffer(): Int {
         val ids = IntArray(1)
         GLES30.glGenBuffers(1, ids, 0)
-        val data = ByteBuffer.allocateDirect(TerrainMeshes.INDICES.size * 2).order(ByteOrder.nativeOrder())
-        data.asShortBuffer().put(TerrainMeshes.INDICES)
         GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, ids[0])
-        GLES30.glBufferData(GLES30.GL_ELEMENT_ARRAY_BUFFER, TerrainMeshes.INDICES.size * 2, data, GLES30.GL_STATIC_DRAW)
+        BufferData.upload(GLES30.GL_ELEMENT_ARRAY_BUFFER, BufferData.shorts(TerrainMeshes.INDICES))
         GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, 0)
         return ids[0]
     }
@@ -409,10 +459,7 @@ internal class ImageryTextures {
         val ids = IntArray(1)
         GLES30.glGenTextures(1, ids, 0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, ids[0])
-        var stale = GLES30.glGetError()
-        while (stale != GLES30.GL_NO_ERROR) stale = GLES30.glGetError()
-        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bitmap, 0)
-        if (GLES30.glGetError() != GLES30.GL_NO_ERROR) {
+        if (!texImage(bitmap)) {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
             GLES30.glDeleteTextures(1, ids, 0)
             return false

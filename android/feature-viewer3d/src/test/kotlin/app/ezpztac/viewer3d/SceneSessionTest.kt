@@ -682,34 +682,6 @@ class SceneSessionTest {
     // -- The ground and its imagery -----------------------------------------------------------------------------------------------------
 
     /** A server with DEMs for half a degree round the LZ, flat at [height] m; a 204 everywhere else. */
-    private class FakeHeights(val height: Short = 340) : TerrainHeights {
-        val asked: MutableList<TerrainTileId> = Collections.synchronizedList(mutableListOf())
-        var failing: (TerrainTileId) -> Exception? = { null }
-
-        fun covers(tile: TerrainTileId): Boolean {
-            val b = TerrainTiling.bounds(tile)
-            return b.west < -83.6 && b.east > -84.6 && b.south < 35.1 && b.north > 34.1
-        }
-
-        override suspend fun tile(tile: TerrainTileId): ShortArray? {
-            asked += tile
-            failing(tile)?.let { throw it }
-            return if (covers(tile)) ShortArray(65 * 65) { height } else null
-        }
-    }
-
-    /** Mapbox, answering every tile with a byte for its level; [failing] says what to throw instead. */
-    private class FakeImagery : ImageryTiles {
-        val asked: MutableList<ImageryTileId> = Collections.synchronizedList(mutableListOf())
-        var failing: (ImageryTileId) -> Exception? = { null }
-
-        override suspend fun tile(id: ImageryTileId): ByteArray {
-            asked += id
-            failing(id)?.let { throw it }
-            return byteArrayOf(id.level.toByte())
-        }
-    }
-
     private class FakeImage : ImageryImage {
         var released = false
         override val bytesOnGpu: Long = 1_000

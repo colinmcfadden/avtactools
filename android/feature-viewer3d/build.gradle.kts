@@ -9,7 +9,8 @@ android {
 }
 
 // The 3D LZ view (docs/ANDROID_3D_PLAN.md): the page that takes the whole screen, the point cloud's lookup and build over core-data, and the
-// OpenGL ES renderer that draws core-scene3d's scene. What is drawn is decided in core-scene3d, where it is tested; the GL here is compile-only.
+// OpenGL ES renderer that draws core-scene3d's scene. What is drawn is decided in core-scene3d, where it is tested; the GL calls here are held to
+// Android's binding's own checks in a JVM test (SceneRendererTest), and what they draw is seen only on a device.
 dependencies {
     implementation(project(":core-designsystem"))
     api(project(":core-data"))

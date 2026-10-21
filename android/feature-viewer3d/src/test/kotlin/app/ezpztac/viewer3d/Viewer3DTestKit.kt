@@ -4,6 +4,7 @@ import app.ezpztac.data.GroundUnder
 import app.ezpztac.data.InMemoryLidarWaiting
 import app.ezpztac.data.LidarApi
 import app.ezpztac.data.LidarBuilds
+import app.ezpztac.data.TerrainHeights
 import app.ezpztac.data.TerrainProbe
 import app.ezpztac.data.TilesetFiles
 import app.ezpztac.model.AltitudeSetting
@@ -13,7 +14,10 @@ import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.SketchRoute
 import app.ezpztac.network.LidarBuildDto
 import app.ezpztac.network.LidarResolveDto
+import app.ezpztac.scene3d.ImageryTileId
 import app.ezpztac.scene3d.RouteHeights
+import app.ezpztac.scene3d.TerrainTileId
+import app.ezpztac.scene3d.TerrainTiling
 import app.ezpztac.testing.Fixtures
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -126,3 +130,32 @@ internal fun viewModel(
     routes: ShownRoutes = FakeRoutes(),
     ground: GroundUnder = FakeGround(),
 ) = Viewer3DViewModel(lidarBuilds(api, scope), probe, scenes, sizes, routes, ground)
+
+/** The server's heightmaps round the fixture's LZ: level ground [height] metres up where it [covers], none elsewhere, every ask written down. */
+internal class FakeHeights(val height: Short = 340) : TerrainHeights {
+    val asked: MutableList<TerrainTileId> = Collections.synchronizedList(mutableListOf())
+    var failing: (TerrainTileId) -> Exception? = { null }
+
+    fun covers(tile: TerrainTileId): Boolean {
+        val b = TerrainTiling.bounds(tile)
+        return b.west < -83.6 && b.east > -84.6 && b.south < 35.1 && b.north > 34.1
+    }
+
+    override suspend fun tile(tile: TerrainTileId): ShortArray? {
+        asked += tile
+        failing(tile)?.let { throw it }
+        return if (covers(tile)) ShortArray(65 * 65) { height } else null
+    }
+}
+
+/** Mapbox, answering every tile with a byte for its level; [failing] says what to throw instead. */
+internal class FakeImagery : ImageryTiles {
+    val asked: MutableList<ImageryTileId> = Collections.synchronizedList(mutableListOf())
+    var failing: (ImageryTileId) -> Exception? = { null }
+
+    override suspend fun tile(id: ImageryTileId): ByteArray {
+        asked += id
+        failing(id)?.let { throw it }
+        return byteArrayOf(id.level.toByte())
+    }
+}

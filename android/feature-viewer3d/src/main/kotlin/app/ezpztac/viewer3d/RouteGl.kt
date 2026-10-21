@@ -7,7 +7,6 @@ import android.graphics.Typeface
 import android.text.TextPaint
 import android.text.TextUtils
 import android.opengl.GLES30
-import android.opengl.GLUtils
 import androidx.core.graphics.createBitmap
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.scene3d.RouteGeometry
@@ -15,11 +14,11 @@ import app.ezpztac.scene3d.SceneDepth
 import app.ezpztac.scene3d.Vec3
 import app.ezpztac.scene3d.ViewCamera
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import kotlin.math.ceil
 
-// The routes in 3D (docs/ANDROID_3D_PLAN.md, V6), drawn as the web's Cesium entities are (`routeEntities.js`): compile-only here, like all the
-// GL; what is drawn, where and with which words is RouteScene3D's and RouteGeometry's, where it is tested.
+// The routes in 3D (docs/ANDROID_3D_PLAN.md, V6), drawn as the web's Cesium entities are (`routeEntities.js`): what is drawn, where and with
+// which words is RouteScene3D's and RouteGeometry's, where it is tested; the calls here are held to Android's GL binding's own checks
+// (SceneRendererTest), and what they draw is seen only on a device.
 
 /** The routes' shaders. Every depth is the scene's logarithmic one ([SceneDepth]), written per fragment, so a line is hidden by the points exactly. */
 internal object RouteShaders {
@@ -188,6 +187,11 @@ void main() {
 /** The routes' programs and their uniforms, for one context. */
 internal class RoutePrograms private constructor(val handles: Map<String, Int>) {
     operator fun get(name: String): Int = handles.getValue(name)
+
+    /** Its programs let go of (the routes failed on this context); the uniforms' names hold a dot. */
+    fun release() {
+        for ((name, id) in handles) if ('.' !in name) GLES30.glDeleteProgram(id)
+    }
 
     companion object {
         fun build(link: (String, String) -> Int): RoutePrograms {
@@ -367,22 +371,23 @@ internal class RouteDrawing {
         curtainVao = vaos[1]
         dotVao = vaos[2]
         quadVao = vaos[3]
+        // Each buffer as long as what is in it: an LZ/PZ with no routes has nothing in any but the quad (BufferData).
         GLES30.glBindVertexArray(ribbonVao)
-        upload(GLES30.GL_ARRAY_BUFFER, buffers[0], floats(ribbon))
+        upload(GLES30.GL_ARRAY_BUFFER, buffers[0], BufferData.floats(ribbon))
         attribute(0, 3, 32, 0)
         attribute(1, 3, 32, 12)
         attribute(2, 2, 32, 24)
-        upload(GLES30.GL_ELEMENT_ARRAY_BUFFER, buffers[1], ints(indices))
+        upload(GLES30.GL_ELEMENT_ARRAY_BUFFER, buffers[1], BufferData.ints(indices))
         GLES30.glBindVertexArray(curtainVao)
-        upload(GLES30.GL_ARRAY_BUFFER, buffers[2], floats(curtain))
+        upload(GLES30.GL_ARRAY_BUFFER, buffers[2], BufferData.floats(curtain))
         attribute(0, 3, 12, 0)
         GLES30.glBindVertexArray(dotVao)
-        upload(GLES30.GL_ARRAY_BUFFER, buffers[3], floats(dot))
+        upload(GLES30.GL_ARRAY_BUFFER, buffers[3], BufferData.floats(dot))
         attribute(0, 3, 32, 0)
         attribute(1, 4, 32, 12)
         attribute(2, 1, 32, 28)
         GLES30.glBindVertexArray(quadVao)
-        upload(GLES30.GL_ARRAY_BUFFER, buffers[4], floats(listOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f)))
+        upload(GLES30.GL_ARRAY_BUFFER, buffers[4], BufferData.floats(listOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f)))
         attribute(0, 2, 8, 0)
         GLES30.glBindVertexArray(0)
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
@@ -505,6 +510,20 @@ internal class RouteDrawing {
         version = -1
     }
 
+    /**
+     * The routes failed on this context: what they hold on its GPU let go of, as far as it will let go (it may be what failed), and nothing
+     * kept, so a context that draws them again builds them afresh.
+     */
+    fun drop() {
+        try {
+            release()
+            for (picture in pictures.values) picture?.let { GLES30.glDeleteTextures(1, intArrayOf(it.texture), 0) }
+        } catch (_: RuntimeException) {
+            // Left for the context to take with it.
+        }
+        forget()
+    }
+
     private fun release() {
         if (buffers.isNotEmpty()) GLES30.glDeleteBuffers(buffers.size, buffers, 0)
         val vaos = intArrayOf(ribbonVao, curtainVao, dotVao, quadVao).filter { it != 0 }.toIntArray()
@@ -512,15 +531,12 @@ internal class RouteDrawing {
         buffers = IntArray(0)
     }
 
-    // [bitmap] on the GPU, or null where the GPU would not take it (a refused upload samples black, and would draw a black band).
+    // [bitmap] on the GPU, or null where the GPU or the binding would not take it (a refused upload samples black, and would draw a black band).
     private fun picture(bitmap: Bitmap): Picture? {
         val ids = IntArray(1)
         GLES30.glGenTextures(1, ids, 0)
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, ids[0])
-        var stale = GLES30.glGetError()
-        while (stale != GLES30.GL_NO_ERROR) stale = GLES30.glGetError()
-        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bitmap, 0)
-        if (GLES30.glGetError() != GLES30.GL_NO_ERROR) {
+        if (!texImage(bitmap)) {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
             GLES30.glDeleteTextures(1, ids, 0)
             bitmap.recycle()
@@ -543,23 +559,10 @@ internal class RouteDrawing {
         /** The labels painted at most in a frame. */
         const val PAINT_PER_FRAME = 8
 
-        fun floats(values: List<Float>): ByteBuffer {
-            val b = ByteBuffer.allocateDirect(maxOf(values.size, 1) * 4).order(ByteOrder.nativeOrder())
-            for (v in values) b.putFloat(v)
-            b.flip()
-            return b
-        }
-
-        fun ints(values: List<Int>): ByteBuffer {
-            val b = ByteBuffer.allocateDirect(maxOf(values.size, 1) * 4).order(ByteOrder.nativeOrder())
-            for (v in values) b.putInt(v)
-            b.flip()
-            return b
-        }
-
+        // The buffer bound for the vertex array's pointers even when nothing goes in it.
         fun upload(target: Int, buffer: Int, data: ByteBuffer) {
             GLES30.glBindBuffer(target, buffer)
-            GLES30.glBufferData(target, data.capacity(), data, GLES30.GL_STATIC_DRAW)
+            BufferData.upload(target, data)
         }
 
         fun attribute(index: Int, size: Int, stride: Int, offset: Int) {

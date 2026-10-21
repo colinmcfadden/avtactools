@@ -7,6 +7,7 @@ import app.ezpztac.scene3d.PointShading
 import app.ezpztac.scene3d.SceneDepth
 import app.ezpztac.scene3d.SceneLook
 import app.ezpztac.scene3d.TerrainMeshes
+import app.ezpztac.scene3d.ViewCamera
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -15,7 +16,8 @@ import javax.microedition.khronos.opengles.GL10
  * tile, a flight, the point size, the routes), never on a clock. Each tileset's points go into the [PointTarget], sized as Cesium's attenuation
  * sizes them, then are lit by the eye-dome lighting onto the screen at their own depth, the core first and the ring after it, over the scene's
  * `#05080d`, as Cesium lights each tileset on its own; the routes over them ([RouteDrawing]). A context that is lost takes every buffer with it; the next is set up afresh, and the tiles go onto
- * it again from the session, which keeps them. Compile-only: nothing here can be seen from an agent session.
+ * it again from the session, which keeps them. Its calls are held to Android's GL binding's own checks (SceneRendererTest); what they draw cannot
+ * be seen from an agent session.
  */
 internal class SceneRenderer(
     private val session: SceneSession,
@@ -33,6 +35,8 @@ internal class SceneRenderer(
     private var height = 0
     private var failed = false
 
+    // Every call in from the GL thread is guarded: an exception there has nothing above it, and would end the app. A RuntimeException is what
+    // Android's binding throws for a call it refuses (a buffer shorter than its size, an array shorter than its count).
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         // A new context: whatever the last one held went with it. The imagery is fetched again (the HTTP cache has it); the rest is in hand.
         buffers.forget()
@@ -46,11 +50,16 @@ internal class SceneRenderer(
         } catch (_: GlException) {
             fail()
             null
+        } catch (_: RuntimeException) {
+            fail()
+            null
         }
         // The routes have programs of their own: ones that will not build cost the routes, never the scene.
         routePrograms = if (programs == null) null else try {
             RoutePrograms.build(ScenePrograms::link)
         } catch (_: GlException) {
+            null
+        } catch (_: RuntimeException) {
             null
         }
     }
@@ -58,10 +67,14 @@ internal class SceneRenderer(
     override fun onSurfaceChanged(gl: GL10?, w: Int, h: Int) {
         width = w
         height = h
-        target?.release()
-        target = null
-        if (programs == null || w <= 0 || h <= 0) return
-        target = PointTarget.create(w, h)
+        try {
+            target?.release()
+            target = null
+            if (programs == null || w <= 0 || h <= 0) return
+            target = PointTarget.create(w, h)
+        } catch (_: RuntimeException) {
+            target = null
+        }
         if (target == null) fail()
     }
 
@@ -149,13 +162,40 @@ internal class SceneRenderer(
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
         }
         // The routes over the points, against their depth: a leg flown through the canopy is dashed across it, as the web's is.
-        if (r != null) {
-            routes.update(work.routes, work.routesVersion, pixelRatio.toFloat(), work.routeLook)
-            routes.draw(r, camera, view, projection, width, height)
-        }
+        val drawn = r != null && drawRoutes(r, work, camera, view, projection)
         // A flight is drawn frame by frame until it lands; imagery just put on the GPU, ground left unbuilt, or labels left unpainted, want
         // another frame.
-        if (work.animating || work.uploads.isNotEmpty() || ground.behind || (r != null && routes.behind)) again()
+        if (work.animating || work.uploads.isNotEmpty() || ground.behind || (drawn && routes.behind)) again()
+    }
+
+    /**
+     * The routes, made again when they changed and drawn; false when they failed. A fault in them costs the routes, never the scene (on the
+     * owner's first device runs it was the scene's): they are not drawn again on this context (a new one tries afresh), what they had on its
+     * GPU is let go of, and the state they may have left half set (blending, depth writes off, a vertex array bound) is put back as the next
+     * frame expects it.
+     */
+    private fun drawRoutes(r: RoutePrograms, work: SceneWork, camera: ViewCamera, view: FloatArray, projection: FloatArray): Boolean {
+        try {
+            routes.update(work.routes, work.routesVersion, pixelRatio.toFloat(), work.routeLook)
+            routes.draw(r, camera, view, projection, width, height)
+            return true
+        } catch (_: RuntimeException) {
+            // Below.
+        } catch (_: OutOfMemoryError) {
+            // Below.
+        }
+        routePrograms = null
+        routes.drop()
+        r.release()
+        GLES30.glBindVertexArray(0)
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
+        GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glDepthMask(true)
+        GLES30.glEnable(GLES30.GL_DEPTH_TEST)
+        GLES30.glDepthFunc(GLES30.GL_LESS)
+        return false
     }
 
     // The ground, nearest tiles first, each with its imagery laid on coarse to fine, or in its own colour where it has none yet.
@@ -192,14 +232,21 @@ internal class SceneRenderer(
         GLES30.glDepthFunc(GLES30.GL_LESS)
     }
 
-    // Said once, in words on the page; nothing is logged (the app logs nothing).
-    /** On the GL thread, as the app goes to the back and before the thread pauses: frees on the GPU what the session let go of ([SceneSession.trim]). */
+    /**
+     * On the GL thread, as the app goes to the back and before the thread pauses: frees on the GPU what the session let go of ([SceneSession.trim]).
+     * What will not be freed is left for the context to take with it.
+     */
     fun releaseTrimmed() {
         val gone = session.takeTrimmed(again) ?: return
-        for (tile in gone.tiles) buffers.release(tile)
-        for (id in gone.imagery) textures.release(id)
+        try {
+            for (tile in gone.tiles) buffers.release(tile)
+            for (id in gone.imagery) textures.release(id)
+        } catch (_: RuntimeException) {
+            // Left for the context.
+        }
     }
 
+    // Said once, in words on the page; nothing is logged (the app logs nothing).
     private fun fail() {
         if (failed) return
         failed = true

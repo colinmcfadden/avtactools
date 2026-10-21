@@ -5,7 +5,7 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-20 (the 3D LZ view, §0a, on `claude/android-3d-view-e38b76`). Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
+Last refreshed: 2026-10-21 (the 3D LZ view's first device run, §0a, on `claude/android-3d-view-e38b76`). Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
 S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, P3c Teams, P4a copies into a pack, P4b updating a copy and copies to the Library, P4c the edits a pack would not take, every review's fixes in: S1–S9 and P1–P4 are built, and the owner's device run is next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
@@ -75,7 +75,17 @@ that opening 3D in touch mode drops the keyboard of a field left focused under i
 and anything GL draws. **The owner's decisions after the reviews** (2026-10-20): the opening view, *LZ* and *Routes* frame their sphere across the narrower side
 of the view, so a phone held upright no longer cuts an LZ's sides off (the web first, `framing.js`, held to `scene.json`'s `framing`, then Android,
 `SceneLook.framingRange`; a view at least as wide as tall is framed as before, 2.2 radii back); and Android's view closes when the open LZ/PZ changes under it,
-on purpose unlike the web's window, which follows the active LZ. **Next:** the owner's device runs (below) and the question for the owner.
+on purpose unlike the web's window, which follows the active LZ.
+
+**The first device run** (2026-10-21, a staging build on the owner's Galaxy Tab Active5, Mali, and Galaxy S948U, Adreno on Android 17): the build service
+built the point cloud in 4 to 6 minutes and a second open drew at once, but the view said *3D view failed* ("This device could not set up the 3D view")
+on both the moment the cloud came. Android's GL binding refused the routes' upload (`glBufferData`: `remaining() < size < needed`): an LZ/PZ with no
+routes had empty buffers sized by their capacity, and the routes' fault was taken as the scene's. Fixed: every buffer goes up sized by what it holds
+(`BufferData`), a route fault costs the routes on that context, a bitmap the binding refuses costs its tile or label, and every call in from the GL
+thread is guarded. Robolectric's GL had checked nothing, so the renderer's whole sequence of calls now runs in a JVM test against shadows that refuse
+what the binding refuses (`SceneRendererTest`, `GlBinding`); with the old sizing every scene there fails as the devices did. **Not done**, the
+owner's call since the app logs nothing: in debug builds, logging the exceptions the renderer swallows (this one took a diagnostic build to see).
+**Next:** device run 1 again on a staging build, then the other runs (below), and the question for the owner.
 
 **Owner device run 1** (V4): open a built LZ/PZ's *3D* on a phone and the same LZ in the web's 3D window, and compare screenshots from the same view (*LZ* on
 both): the points' size and density as the camera comes in, the outlines the eye-dome lighting draws, the background. Then try one finger, a pinch, a twist
