@@ -42,9 +42,15 @@ internal class SceneRenderer(
         session.texturesLost(again)
         target = null
         programs = try {
-            ScenePrograms.build().also { routePrograms = RoutePrograms.build(ScenePrograms::link) }
+            ScenePrograms.build()
         } catch (_: GlException) {
             fail()
+            null
+        }
+        // The routes have programs of their own: ones that will not build cost the routes, never the scene.
+        routePrograms = if (programs == null) null else try {
+            RoutePrograms.build(ScenePrograms::link)
+        } catch (_: GlException) {
             null
         }
     }
@@ -66,26 +72,31 @@ internal class SceneRenderer(
         GLES30.glClearDepthf(1f)
         GLES30.glDepthMask(true)
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
+        // Once the view could not draw, nothing is drawn behind the words that say so, though a new context might build its programs.
+        if (session.cannotBeDrawn) return
         val p = programs ?: return
-        val r = routePrograms ?: return
         val t = target ?: return
-        // A fault in drawing is the 3D view's to say, never the app's end: an exception on the GL thread has nothing above it to catch it.
+        // A fault in drawing (or no memory to draw with) is the 3D view's to say, never the app's end: an exception on the GL thread has nothing
+        // above it to catch it.
         try {
-            draw(p, r, t)
+            draw(p, routePrograms, t)
         } catch (_: RuntimeException) {
+            fail()
+            programs = null
+        } catch (_: OutOfMemoryError) {
             fail()
             programs = null
         }
     }
 
-    private fun draw(p: ScenePrograms, r: RoutePrograms, t: PointTarget) {
+    private fun draw(p: ScenePrograms, r: RoutePrograms?, t: PointTarget) {
         val work = session.frame(width, height, pixelRatio, again) ?: return
         for (gone in work.letGo) buffers.release(gone)
         for (gone in work.groundLetGo) ground.release(gone)
         for (gone in work.imageryLetGo) textures.release(gone)
         // The imagery decoded since the last frame, onto the GPU (a few a frame).
         for ((id, image) in work.uploads) {
-            if (textures.upload(id, image)) session.uploaded(id, image.bytesOnGpu) else session.notUploaded(id)
+            if (textures.upload(id, image)) session.uploaded(id, image.bytesOnGpu, again) else session.notUploaded(id, again)
             image.release()
         }
         val camera = work.camera
@@ -138,10 +149,13 @@ internal class SceneRenderer(
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, 0)
         }
         // The routes over the points, against their depth: a leg flown through the canopy is dashed across it, as the web's is.
-        routes.update(work.routes, work.routesVersion, pixelRatio.toFloat())
-        routes.draw(r, camera, view, projection, width, height)
-        // A flight is drawn frame by frame until it lands; imagery just put on the GPU, or ground left unbuilt, wants another frame.
-        if (work.animating || work.uploads.isNotEmpty() || ground.behind) again()
+        if (r != null) {
+            routes.update(work.routes, work.routesVersion, pixelRatio.toFloat(), work.routeLook)
+            routes.draw(r, camera, view, projection, width, height)
+        }
+        // A flight is drawn frame by frame until it lands; imagery just put on the GPU, ground left unbuilt, or labels left unpainted, want
+        // another frame.
+        if (work.animating || work.uploads.isNotEmpty() || ground.behind || (r != null && routes.behind)) again()
     }
 
     // The ground, nearest tiles first, each with its imagery laid on coarse to fine, or in its own colour where it has none yet.
@@ -179,6 +193,13 @@ internal class SceneRenderer(
     }
 
     // Said once, in words on the page; nothing is logged (the app logs nothing).
+    /** On the GL thread, as the app goes to the back and before the thread pauses: frees on the GPU what the session let go of ([SceneSession.trim]). */
+    fun releaseTrimmed() {
+        val gone = session.takeTrimmed(again) ?: return
+        for (tile in gone.tiles) buffers.release(tile)
+        for (id in gone.imagery) textures.release(id)
+    }
+
     private fun fail() {
         if (failed) return
         failed = true

@@ -11,8 +11,11 @@ import kotlin.math.sin
  * never past [MAX_TILT_DEG], where it is too edge-on to read), with the heading under it in degrees true ([headingText], `330°T`).
  */
 public data class CompassPose(val rotateDeg: Double, val tiltDeg: Double, val headingText: String) {
-    /** What a screen reader says of the compass button: "Facing 330 degrees true. Face north" (the web's). */
-    public val spoken: String get() = "Facing ${headingText.removeSuffix("°T")} degrees true. Face north"
+    /**
+     * What a screen reader says of the compass button: "Facing 330 degrees true", the web's label less its "Face north", which the button's own
+     * action says ("double-tap to face north"), where a web button has none.
+     */
+    public val spoken: String get() = "Facing ${headingText.removeSuffix("°T")} degrees true"
 
     /**
      * Where the dial's points land on the screen, as the web draws it: its SVG (a viewBox [DIAL_UNITS] across, centred on 0, y down) turned by

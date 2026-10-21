@@ -540,6 +540,55 @@ class SceneSessionTest {
     }
 
     @Test
+    fun `imagery a view that is not the session's says it put on its GPU is fetched again for the session's`() = runTest {
+        val g = Ground()
+        val r = rig(sources = g.sources)
+        advanceUntilIdle()
+        settleGround(r)
+        // Every texture to fetch again, as after a lost context: the next uploads are of imagery the settled view wants.
+        r.session.texturesLost(r.view)
+        var w: SceneWork? = null
+        repeat(100) {
+            if (w?.uploads?.isNotEmpty() != true) {
+                w = r.frame()
+                advanceUntilIdle()
+            }
+        }
+        val uploads = w!!.uploads
+        val (id, image) = uploads.first()
+        val asked = g.imagery.asked.count { it == id }
+        val stale: () -> Unit = {}
+        r.session.uploaded(id, image.bytesOnGpu, stale)
+        image.release()
+        for ((other, picture) in uploads.drop(1)) {
+            r.session.uploaded(other, picture.bytesOnGpu, r.view)
+            picture.release()
+        }
+        repeat(50) {
+            r.render()
+            advanceUntilIdle()
+        }
+        assertTrue("asked again", g.imagery.asked.count { it == id } > asked)
+        r.close()
+    }
+
+    @Test
+    fun `what went in the back is taken by the session's view to free before it pauses, never by a view that is not the session's`() = runTest {
+        val r = rig()
+        advanceUntilIdle()
+        settle(r)
+        r.session.gesture(listOf(CameraGesture.Zoom(ScreenPoint(540.0, 1100.0), 0.01)))
+        r.frame()
+        r.session.trim()
+        val stale: () -> Unit = {}
+        assertNull(r.session.takeTrimmed(stale))
+        val taken = r.session.takeTrimmed(r.session.listener!!)!!
+        assertTrue(taken.tiles.isNotEmpty())
+        assertTrue("not said again", r.frame()!!.letGo.isEmpty())
+        r.close()
+    }
+
+    @Test
     fun `closing lets go of the points in hand`() = runTest {
         val r = rig()
         advanceUntilIdle()
@@ -644,7 +693,7 @@ class SceneSessionTest {
     /** A frame as the renderer draws it: what is decoded put on the GPU, and said so. */
     private fun Rig.render(): SceneWork? = frame()?.also { w ->
         for ((id, image) in w.uploads) {
-            session.uploaded(id, image.bytesOnGpu)
+            session.uploaded(id, image.bytesOnGpu, view)
             image.release()
         }
     }

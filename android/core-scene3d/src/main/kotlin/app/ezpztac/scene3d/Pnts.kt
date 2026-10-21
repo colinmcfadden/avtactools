@@ -40,6 +40,9 @@ public object PntsReader {
     internal const val TABLE_NESTING: Int = 8
     private const val HEADER = 28
 
+    // Cesium's default colour for points with none (`Color.DARKGRAY`), a channel.
+    private const val NO_COLOUR: Byte = 169.toByte()
+
     private val json = Json { isLenient = false }
 
     /** The points of [bytes], a tile whose frame is [world] (to geocentric), moved into [frame]. */
@@ -119,11 +122,11 @@ public object PntsReader {
                 rgb565
             }
             else -> {
-                // One colour for every point, else Cesium's white.
+                // One colour for every point, else Cesium's dark grey (`PntsLoader`'s default colour, `Color.DARKGRAY`, #A9A9A9).
                 val constant = (table["CONSTANT_RGBA"] as? JsonArray)?.let { a ->
                     if (a.size != 4) throw PntsException("CONSTANT_RGBA has ${a.size} values")
                     a.map { (it as? JsonPrimitive)?.doubleOrNull?.takeIf { v -> v in 0.0..255.0 }?.toInt()?.toByte() ?: throw PntsException("CONSTANT_RGBA is not bytes") }
-                } ?: listOf(255.toByte(), 255.toByte(), 255.toByte(), 255.toByte())
+                } ?: listOf(NO_COLOUR, NO_COLOUR, NO_COLOUR, 255.toByte())
                 val fixed: (Int, ByteArray, Int) -> Unit = { _, out, at -> for (k in 0..2) out[at + k] = constant[k] }
                 fixed
             }

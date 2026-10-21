@@ -1,6 +1,7 @@
 package app.ezpztac.viewer3d
 
 import app.ezpztac.data.LidarProblem
+import app.ezpztac.data.RoutesPlacing
 
 /**
  * What the 3D view says, in the web's words where it has them (`Lz3DWindow.jsx`) and the app's own for a failure: the server's own text
@@ -20,7 +21,11 @@ object Viewer3DWords {
     const val BUILDING = "Building point cloud"
     const val BUILDING_HINT = "Takes several minutes the first time; opens at once after that."
     const val BUILDING_SAVED = "This LZ/PZ is saved, so you may close this and the build finishes in the background."
-    const val BUILDING_UNSAVED = "Closing this stops the build. Save the LZ/PZ to keep it building."
+    /**
+     * The web's "Save the LZ/PZ to keep it building" cannot be followed here: the page covers the panel's *Save*, and closing to reach it stops the
+     * build. What is true: a saved LZ/PZ is built in the background (*build on save*), so its point cloud is there the next time.
+     */
+    const val BUILDING_UNSAVED = "Closing this stops the build. A saved LZ/PZ is built in the background, ready the next time it is opened."
     const val BUILDING_IN_PACK = "Closing this stops the build."
 
     /**
@@ -55,7 +60,7 @@ object Viewer3DWords {
     }
 
     const val MISSING = "Not generated"
-    const val MISSING_BODY = "This server can’t build point clouds. Whoever runs it can set up the build service (backend/lidar/SERVER_SETUP.md)."
+    const val MISSING_BODY = "This server can’t build point clouds. Ask whoever runs it to set up the build service."
     const val CHECK_AGAIN = "Check again"
 
     const val RETRY = "Retry"
@@ -93,16 +98,52 @@ object Viewer3DWords {
     const val ROUTES = "Routes"
     const val FRAME_ROUTES = "Frame the visible routes"
     const val NO_ROUTES = "No visible routes to show"
+    const val TRY_AGAIN = "Try again"
+
+    /**
+     * Why *Routes* has nothing to frame: the web's words when there is no route to draw, and the app's own when there are routes it could not
+     * place (**not like the web**, which says "No visible routes to show" whatever the reason).
+     */
+    fun noRoutes(standing: RoutesPlacing): String = when (standing) {
+        RoutesPlacing.NONE -> NO_ROUTES
+        RoutesPlacing.PLACING -> "Placing the routes on the ground…"
+        RoutesPlacing.PLACED -> "The server has no heights under the routes, so they cannot be drawn here."
+        RoutesPlacing.FAILED -> "The routes could not be placed on the ground. Check the connection."
+    }
+
+    /** What a tap on *Routes* with nothing to frame says: why, and that it tries again where that may help. */
+    fun noRoutesTapped(standing: RoutesPlacing): String =
+        if (standing == RoutesPlacing.FAILED) "The routes could not be placed on the ground. Trying again…" else noRoutes(standing)
     const val FACE_NORTH = "Face north"
+
+    /** The imagery's credit, the web's `MAPBOX_ATTRIBUTION`: its words, and where its link goes. */
+    const val MAPBOX_CREDIT = "© Mapbox"
+    const val MAPBOX_ABOUT = "https://www.mapbox.com/about/maps/"
+    const val MAPBOX_CREDIT_OPEN = "Open Mapbox's page about its maps"
     const val POINT_SIZE = "Point size"
 
     /**
      * What a screen reader hears of the scene itself: once it is [drawn], that it is, and how the fingers move it and its actions step it (the change
      * is said as it comes).
      */
-    fun scene(name: String, drawn: Boolean): String = if (!drawn) "Point cloud of $name." else
-        "Point cloud of $name, drawn. One finger moves the view, two fingers pinch to zoom and twist to turn, and two fingers up or down tilt it; " +
-            "its actions do each a step at a time."
+    fun scene(name: String, drawn: Boolean, facing: String? = null): String = when {
+        !drawn -> "Point cloud of $name."
+        // After a step: where the camera then looks, said as it changes.
+        facing != null -> "Point cloud of $name: $facing"
+        // A screen reader's finger explores the screen rather than moving the view: its actions are what move it.
+        else -> "Point cloud of $name, drawn. Its actions turn, tilt and zoom the view a step at a time."
+    }
+
+    /**
+     * Where the camera looks after a screen reader's step: its heading in degrees true ([headingText], the compass's `330°T`), how far down it
+     * looks, and how far off the ground is along the view, when it meets it.
+     */
+    fun facing(headingText: String, downDeg: Int, groundM: Int?): String =
+        "facing ${headingText.removeSuffix("°T")} degrees true, looking $downDeg degrees down" + (groundM?.let { ", the ground ${distance(it)} away" } ?: "") + "."
+
+    // Metres to 10 km, in whole metres with thousands set off by commas; kilometres beyond. By hand, with no locale.
+    private fun distance(m: Int): String =
+        if (m < 10_000) "${m.toString().reversed().chunked(3).joinToString(",").reversed()} metres" else "${(m + 500) / 1_000} kilometres"
 
     /** A screen reader's steps of the camera ([SceneSession.step]). */
     fun step(step: SceneStep): String = when (step) {

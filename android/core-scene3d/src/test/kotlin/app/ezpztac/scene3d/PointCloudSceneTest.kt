@@ -331,6 +331,22 @@ class PointCloudSceneTest {
     }
 
     @Test
+    fun `what a trim let go of can be taken at once, for the GPU to free it before its thread pauses, and is then said by no frame`() {
+        val doc = core()
+        val scene = PointCloudScene().apply { add(doc, 2.0) }
+        scene.settle(looking(doc, 30.0))
+        val far = looking(doc, 20_000.0)
+        scene.frame(far, 0)
+        val before = scene.heldPoints
+        scene.trim()
+        val taken = scene.takeTrimmed()
+        assertTrue(taken.isNotEmpty())
+        assertEquals(before - scene.heldPoints, taken.sumOf { points(it).count.toLong() })
+        assertTrue(scene.frame(far, 0).letGo.isEmpty())
+        assertTrue(scene.takeTrimmed().isEmpty(), "taken once")
+    }
+
+    @Test
     fun `clearing lets go of everything, and what was out is asked for afresh`() {
         val doc = core()
         val scene = PointCloudScene().apply { add(doc, 2.0) }

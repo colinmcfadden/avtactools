@@ -177,6 +177,30 @@ class TerrainTest {
     }
 
     @Test
+    fun `a tile gives way once its children in view are in hand, those out of view not asked for, and is drawn again while one coming into view comes`() {
+        val server = Server(lz)
+        val scene = TerrainScene()
+        fun looking(headingDeg: Double): ViewCamera {
+            val (p, h, pt) = lookAt(frame, frame.fromGeodetic(lz.lat, lz.lon, 340.0), headingDeg * deg, -8 * deg, 150.0)
+            return ViewCamera(p, h, pt, 1080, 2200, SceneDepth.NEAR, SceneDepth.FAR, pixelRatio = 2.75)
+        }
+        val north = looking(0.0)
+        scene.settle(server, north)
+        // A tile that gave way with some of its children never asked for: those behind the camera.
+        val asked = server.asked.toSet()
+        val parents = asked.filter { t -> TerrainScene.childrenOf(t).let { c -> c.any { it in asked } && c.any { it !in asked } } }
+        assertTrue(parents.isNotEmpty(), "some tile refined without all four")
+        // Turned to the south, a child never asked for comes into view: its parent is drawn in its place while it is fetched.
+        val south = scene.frame(looking(180.0), frame, 0)
+        val newly = south.fetch.filter { it !in asked }
+        assertTrue(newly.isNotEmpty())
+        val drawn = south.drawn.map { it.tile }
+        for (child in newly) {
+            assertTrue(drawn.any { it == child || isAncestor(it, child) }, "something drawn where $child will be")
+        }
+    }
+
+    @Test
     fun `a tile whose answer could not be read is never asked for again, its parent drawn in its place, and one that met no connection is, after a pause`() {
         val scene = TerrainScene()
         val c = camera(500.0)

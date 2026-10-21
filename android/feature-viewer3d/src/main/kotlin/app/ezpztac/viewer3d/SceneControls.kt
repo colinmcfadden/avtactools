@@ -8,12 +8,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -25,9 +27,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,22 +43,30 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.withMatrix
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.ezpztac.data.RoutesPlacing
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.Tokens
@@ -67,6 +82,9 @@ internal const val SCENE_NIGHT_DIM = 0.45f
 /** The controls' own ground over the scene: the scene's dark, nearly opaque (the web's `rgba(12, 18, 27, 0.86)`). */
 private val CONTROL_GROUND = SCENE_BACKGROUND.copy(alpha = 0.86f)
 
+/** The routes' labels' words: the web's 12 pixels, at the person's text size. */
+private val LABEL_TEXT = 12.sp
+
 /** The web's compass is 72 px across. */
 private val DIAL_SIZE = 72.dp
 
@@ -80,16 +98,49 @@ internal fun sceneSlots(
     onPointSize: (Int) -> Unit,
     retry: () -> Unit,
     surface: @Composable (SceneSession) -> Unit,
+    routes: RoutesPlacing = RoutesPlacing.NONE,
+    onRoutesUnavailable: () -> Unit = {},
+): SceneSlots {
+    val endWidth = remember(session) { mutableIntStateOf(0) }
+    return sceneSlotsOf(session, name, night, pointSize, onPointSize, retry, surface, routes, onRoutesUnavailable, endWidth)
+}
+
+private fun sceneSlotsOf(
+    session: SceneSession,
+    name: String,
+    night: Boolean,
+    pointSize: Int,
+    onPointSize: (Int) -> Unit,
+    retry: () -> Unit,
+    surface: @Composable (SceneSession) -> Unit,
+    routes: RoutesPlacing,
+    onRoutesUnavailable: () -> Unit,
+    endWidth: MutableIntState,
 ): SceneSlots = SceneSlots(
     scene = {
+        // The routes' labels in the palette (red at night) and at the person's text size, as the 2D map's are.
+        val labelPx = with(LocalDensity.current) { LABEL_TEXT.toPx() }
+        LaunchedEffect(session, night, labelPx) { session.setRouteLook(RouteLook(night, labelPx)) }
         val status by session.status.collectAsStateWithLifecycle()
         val drawn = status == SceneStatus.Drawing
-        val steps = remember(session) { SceneStep.entries.map { step -> CustomAccessibilityAction(Viewer3DWords.step(step)) { session.step(step); true } } }
-        // The scene as a screen reader has it: what it is, said again as it is drawn, and the camera's steps for whoever cannot use the fingers on it.
+        // Where a step left the camera, said as it changes; nothing until the first.
+        var facing by remember(session) { mutableStateOf<String?>(null) }
+        val steps = remember(session) {
+            SceneStep.entries.map { step ->
+                CustomAccessibilityAction(Viewer3DWords.step(step)) {
+                    session.step(step)
+                    facing = session.facing()
+                    true
+                }
+            }
+        }
+        // The scene as a screen reader has it: what it is, said again as it is drawn and after each step, and the camera's steps for whoever cannot
+        // use the fingers on it; after the bar and the controls over it, which it would otherwise come before, being the whole page.
         Box(
             Modifier.fillMaxSize().semantics {
-                contentDescription = Viewer3DWords.scene(name, drawn)
+                contentDescription = Viewer3DWords.scene(name, drawn, facing)
                 liveRegion = LiveRegionMode.Polite
+                traversalIndex = 1f
                 if (drawn) customActions = steps
             },
         ) {
@@ -97,8 +148,9 @@ internal fun sceneSlots(
             if (night) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = SCENE_NIGHT_DIM)))
         }
     },
-    over = { SceneOver(session, retry) },
+    over = { SceneOver(session, retry, routes, onRoutesUnavailable) { endWidth.intValue = it } },
     foot = { SceneFoot(session, pointSize, onPointSize) },
+    endWidthPx = { endWidth.intValue },
 )
 
 /**
@@ -121,16 +173,16 @@ internal fun GlScene(session: SceneSession) {
 }
 
 @Composable
-private fun BoxScope.SceneOver(session: SceneSession, retry: () -> Unit) {
+private fun BoxScope.SceneOver(session: SceneSession, retry: () -> Unit, routes: RoutesPlacing, onRoutesUnavailable: () -> Unit, onEndWidth: (Int) -> Unit) {
     val status by session.status.collectAsStateWithLifecycle()
     val pose by session.compass.collectAsStateWithLifecycle()
     val hasRoutes by session.hasRoutes.collectAsStateWithLifecycle()
-    SceneOverContent(status, pose, session::frameLz, session::faceNorth, retry, hasRoutes, session::frameRoutes)
+    SceneOverContent(status, pose, session::frameLz, session::faceNorth, retry, hasRoutes, session::frameRoutes, routes, onRoutesUnavailable, onEndWidth)
 }
 
 /**
  * Over the scene: how it stands while it is not drawn (at the start), or the camera's *LZ* and *Routes* and the compass (at the end), as the
- * web's; *Routes* is there with no routes to frame, unavailable, as the web's is.
+ * web's; *Routes* is there with no routes to frame, unavailable, as the web's is, and says why ([routes]).
  */
 @Composable
 internal fun BoxScope.SceneOverContent(
@@ -141,16 +193,21 @@ internal fun BoxScope.SceneOverContent(
     retry: () -> Unit,
     hasRoutes: Boolean = false,
     onRoutes: () -> Unit = {},
+    routes: RoutesPlacing = RoutesPlacing.NONE,
+    onRoutesUnavailable: () -> Unit = {},
+    /** How wide the camera's controls and the compass are, with their margin, as they are laid out. */
+    onEndWidth: (Int) -> Unit = {},
 ) {
     if (status == SceneStatus.Drawing) {
         Column(
-            Modifier.align(Alignment.TopEnd).padding(Tokens.Spacing.md.dp),
+            Modifier.align(Alignment.TopEnd).onSizeChanged { onEndWidth(it.width) }.padding(Tokens.Spacing.md.dp),
             horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
         ) {
-            CameraButtons(onLz, hasRoutes, onRoutes)
+            CameraButtons(onLz, hasRoutes, onRoutes, routes, onRoutesUnavailable)
             pose?.let { Compass(it, onFaceNorth) }
         }
     } else {
+        LaunchedEffect(Unit) { onEndWidth(0) }
         SceneState(status, retry, Modifier.align(Alignment.TopStart).padding(Tokens.Spacing.md.dp))
     }
 }
@@ -158,13 +215,37 @@ internal fun BoxScope.SceneOverContent(
 @Composable
 private fun SceneFoot(session: SceneSession, pointSize: Int, onPointSize: (Int) -> Unit) {
     val status by session.status.collectAsStateWithLifecycle()
-    SceneFootContent(status, pointSize, onPointSize)
+    SceneFootContent(status, pointSize, onPointSize, credit = session.hasImagery)
 }
 
-/** Along the scene's foot while it is drawn: the point size. */
+/** Along the scene's foot while it is drawn: the point size, and under it the imagery's [credit] when there is imagery. */
 @Composable
-internal fun SceneFootContent(status: SceneStatus, pointSize: Int, onPointSize: (Int) -> Unit) {
-    if (status == SceneStatus.Drawing) PointSizeControl(pointSize, onPointSize)
+internal fun SceneFootContent(status: SceneStatus, pointSize: Int, onPointSize: (Int) -> Unit, credit: Boolean = false) {
+    if (status != SceneStatus.Drawing) return
+    Column {
+        PointSizeControl(pointSize, onPointSize)
+        if (credit) MapboxCredit()
+    }
+}
+
+/**
+ * The imagery's credit, as the web's Cesium shows it (`MAPBOX_IMAGERY.attribution`) and as the 2D map keeps its own on (Mapbox's terms require
+ * it): "© Mapbox", its link to Mapbox's page about its maps.
+ */
+@Composable
+private fun MapboxCredit() {
+    val uri = LocalUriHandler.current
+    Box(
+        Modifier.clip(RoundedCornerShape(50))
+            .clickable(onClickLabel = Viewer3DWords.MAPBOX_CREDIT_OPEN, role = Role.Button) { runCatching { uri.openUri(Viewer3DWords.MAPBOX_ABOUT) } }
+            .heightIn(min = 48.dp).padding(horizontal = Tokens.Spacing.sm.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            Viewer3DWords.MAPBOX_CREDIT, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.background(CONTROL_GROUND, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+    }
 }
 
 /** The web's status box: *Loading* while the tileset comes, or *3D view failed* and why, with *Retry* where trying again may help. */
@@ -189,33 +270,57 @@ internal fun SceneState(status: SceneStatus, retry: () -> Unit, modifier: Modifi
 
 /**
  * The camera's buttons, side by side in one pill as the web's are: *LZ*, back to the view the scene opened on, and *Routes*, the routes drawn
- * framed; unavailable, and saying why, with none to frame.
+ * framed; unavailable with none to frame, saying why ([routes]: none to draw, or ones that could not be placed): a screen reader hears it at once,
+ * and a tap says it in a toast ([onRoutesUnavailable], where the web shows its title on hover), trying again where that may help.
  */
 @Composable
-internal fun CameraButtons(onLz: () -> Unit, hasRoutes: Boolean, onRoutes: () -> Unit) {
+internal fun CameraButtons(
+    onLz: () -> Unit,
+    hasRoutes: Boolean,
+    onRoutes: () -> Unit,
+    routes: RoutesPlacing = RoutesPlacing.NONE,
+    onRoutesUnavailable: () -> Unit = {},
+) {
     Row(
         Modifier.clip(RoundedCornerShape(50)).background(CONTROL_GROUND)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50)).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        CameraButton(Viewer3DWords.LZ, Viewer3DWords.FRAME_LZ, enabled = true, onClick = onLz)
-        CameraButton(Viewer3DWords.ROUTES, Viewer3DWords.FRAME_ROUTES, enabled = hasRoutes, onClick = onRoutes, why = Viewer3DWords.NO_ROUTES)
+        CameraButton(Viewer3DWords.LZ, Viewer3DWords.FRAME_LZ, onClick = onLz)
+        CameraButton(
+            Viewer3DWords.ROUTES, Viewer3DWords.FRAME_ROUTES, onClick = onRoutes,
+            unavailable = if (hasRoutes) null else Unavailable(Viewer3DWords.noRoutes(routes), routes == RoutesPlacing.FAILED, onRoutesUnavailable),
+        )
     }
 }
 
-// One of the camera's buttons: its word, what it does for a screen reader, and why it is unavailable ([why]) when it is.
+/** Why a camera button cannot be used now, whether trying again may help, and what a tap on it does instead. */
+private class Unavailable(val why: String, val tryAgain: Boolean, val tapped: () -> Unit)
+
+// One of the camera's buttons: drawn in capitals, as the web's are (`text-transform: uppercase`), and heard as its word (a description is said in
+// place of a text), with what it does; or,
+// [unavailable], greyed, heard with why, its taps saying why, and *Try again* among a screen reader's actions where that may help.
 @Composable
-private fun CameraButton(word: String, doing: String, enabled: Boolean, onClick: () -> Unit, why: String? = null) {
+private fun CameraButton(word: String, doing: String, onClick: () -> Unit, unavailable: Unavailable? = null) {
     val ink = MaterialTheme.colorScheme.onSurface
+    val current by rememberUpdatedState(unavailable)
+    val acts = if (unavailable == null) {
+        Modifier.clickable(onClickLabel = doing, role = Role.Button, onClick = onClick)
+    } else {
+        Modifier.pointerInput(Unit) { detectTapGestures { current?.tapped?.invoke() } }.semantics {
+            role = Role.Button
+            disabled()
+            stateDescription = unavailable.why
+            if (unavailable.tryAgain) customActions = listOf(CustomAccessibilityAction(Viewer3DWords.TRY_AGAIN) { unavailable.tapped(); true })
+        }
+    }
     Box(
-        Modifier.clip(RoundedCornerShape(50))
-            .clickable(enabled = enabled, onClickLabel = doing, role = Role.Button, onClick = onClick)
-            .semantics { if (!enabled && why != null) stateDescription = why }
+        Modifier.clip(RoundedCornerShape(50)).then(acts).semantics(mergeDescendants = true) { contentDescription = word }
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            word, color = if (enabled) ink else ink.copy(alpha = DISABLED_ALPHA),
+            word.uppercase(), color = if (unavailable == null) ink else ink.copy(alpha = DISABLED_ALPHA),
             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
         )
     }
@@ -328,7 +433,8 @@ internal fun PointSizeControl(size: Int, onSize: (Int) -> Unit, modifier: Modifi
             value = size.toFloat(), onValueChange = { onSize(it.roundToInt()) },
             valueRange = SceneLook.MIN_POINT_SIZE.toFloat()..SceneLook.MAX_POINT_SIZE.toFloat(),
             steps = SceneLook.MAX_POINT_SIZE - SceneLook.MIN_POINT_SIZE - 1,
-            modifier = Modifier.weight(1f, fill = false).widthIn(min = 96.dp, max = 160.dp).semantics {
+            // As tall as a gloved finger needs, the app's least target.
+            modifier = Modifier.weight(1f, fill = false).widthIn(min = 96.dp, max = 160.dp).heightIn(min = 48.dp).semantics {
                 contentDescription = Viewer3DWords.POINT_SIZE
                 // The size as it is shown, not the slider's per cent of its range.
                 stateDescription = size.toString()

@@ -1,9 +1,11 @@
 package app.ezpztac.viewer3d
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -31,14 +33,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -46,7 +54,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -62,6 +69,7 @@ import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.designsystem.ToastHost
 import app.ezpztac.designsystem.Tokens
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** What the page can ask for. */
 class Viewer3DActions(val close: () -> Unit = {}, val retry: () -> Unit = {})
@@ -74,6 +82,8 @@ class SceneSlots(
     val scene: @Composable () -> Unit = {},
     val over: @Composable BoxScope.() -> Unit = {},
     val foot: @Composable () -> Unit = {},
+    /** How wide, in pixels, the controls at the top end of [over] are (the camera's and the compass): the foot keeps clear of them sideways. */
+    val endWidthPx: () -> Int = { 0 },
 )
 
 /** The scene's own background: the web's `#05080d`, whatever the app's palette. */
@@ -100,12 +110,24 @@ fun Viewer3DHost(
 ) {
     LaunchedEffect(target) { if (target == null) viewModel.close() else viewModel.show(target) }
     // The host can leave with a target still set (a sign-out, an emailed link, *Update required* take the map away): its lookup goes with it, or it
-    // would go on asking after the build, and let go of it, under whoever signs in next.
-    DisposableEffect(viewModel) { onDispose { viewModel.close() } }
+    // would go on asking after the build, and let go of it, under whoever signs in next. An activity made again for a new configuration (a font
+    // size, a keyboard attached) is not the host leaving: the view model outlives it, so the view goes on as it was, its build not let go of and
+    // its camera where it was.
+    val activity = LocalActivity.current
+    DisposableEffect(viewModel) { onDispose { if (activity?.isChangingConfigurations != true) viewModel.close() } }
     if (target == null) return
     val state by viewModel.state.collectAsStateWithLifecycle()
     val session by viewModel.session.collectAsStateWithLifecycle()
     val pointSize by viewModel.pointSize.collectAsStateWithLifecycle()
+    val routes by viewModel.routes.collectAsStateWithLifecycle()
+    // The frame's toasts, or the page's own where there are none (a test), which *Routes* says why it is unavailable in.
+    val toasts = snackbars ?: remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val routesUnavailable = {
+        val words = Viewer3DWords.noRoutesTapped(viewModel.routes.value)
+        viewModel.retryRoutes()
+        if (toasts.currentSnackbarData?.visuals?.message != words) scope.launch { toasts.showSnackbar(words, withDismissAction = true) }
+    }
     BackHandler(onBack = onClose)
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) {
@@ -113,9 +135,11 @@ fun Viewer3DHost(
         focus.requestFocus()                                                                 // a keyboard starts on the page's first control
     }
     EzpzTheme(pageTheme(night)) {
-        val slots = session?.let { sceneSlots(it, target.name, night, pointSize, viewModel::setPointSize, viewModel::retryScene, surface) } ?: SceneSlots()
+        val slots = session?.let {
+            sceneSlots(it, target.name, night, pointSize, viewModel::setPointSize, viewModel::retryScene, surface, routes, routesUnavailable)
+        } ?: SceneSlots()
         Viewer3DPage(
-            state ?: Viewer3DUi(target.name, LidarPhase.RESOLVING, saved = target.saved), Viewer3DActions(onClose, viewModel::retry), modifier, snackbars, slots,
+            state ?: Viewer3DUi(target.name, LidarPhase.RESOLVING, saved = target.saved), Viewer3DActions(onClose, viewModel::retry), modifier, toasts, slots,
             focus = focus,
         )
     }
@@ -143,31 +167,49 @@ fun Viewer3DPage(
     Surface(
         color = SCENE_BACKGROUND, contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.fillMaxSize().semantics { paneTitle = Viewer3DWords.pane(ui.name) }
-            .focusRequester(focus).focusProperties { onExit = { cancelFocusChange() } }.focusGroup(),
+            .focusRequester(focus).focusProperties {
+                // The keyboard's focus never leaves the page: past its last control it comes round to the first, and back past the first to the
+                // lowest (entered moving up, as from below the page: a focus request takes no direction along the order).
+                onExit = {
+                    cancelFocusChange()
+                    when (requestedFocusDirection) {
+                        FocusDirection.Next -> focus.requestFocus()
+                        FocusDirection.Previous -> focus.requestFocus(FocusDirection.Up)
+                        else -> Unit
+                    }
+                }
+            }.focusGroup(),
     ) {
         Box(Modifier.fillMaxSize()) {
             if (ui.phase == LidarPhase.AVAILABLE) slots.scene()
             Column(Modifier.fillMaxSize()) {
                 Bar(ui.title, actions.close)
-                Box(
+                BoxWithConstraints(
                     Modifier.weight(1f).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)),
                     contentAlignment = Alignment.Center,
                 ) {
+                    // Wider than tall (a phone on its side), the foot rises into the height of the controls at the top end: it stops short of them.
+                    val clear = if (maxWidth > maxHeight) with(LocalDensity.current) { slots.endWidthPx().toDp() } else 0.dp
+                    // What stands along the foot (the point size, the notice of no terrain), which the toasts are drawn above rather than over.
+                    var footHeight by remember { mutableIntStateOf(0) }
                     when (ui.phase) {
                         LidarPhase.AVAILABLE -> {
                             slots.over(this)
-                            Column(
-                                Modifier.align(Alignment.BottomStart).padding(Tokens.Spacing.md.dp),
-                                verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
-                            ) {
-                                if (ui.noGround) Banner(Viewer3DWords.NO_GROUND, BannerKind.Warning, modifier = Modifier.widthIn(max = 560.dp))
+                            Column(Modifier.align(Alignment.BottomStart).padding(end = clear).onSizeChanged { footHeight = it.height }.padding(Tokens.Spacing.md.dp)) {
+                                // A polite live region that stays whether or not there is a notice in it, so the notice is heard as it comes.
+                                Box(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+                                    if (ui.noGround) {
+                                        Banner(Viewer3DWords.NO_GROUND, BannerKind.Warning, modifier = Modifier.widthIn(max = 560.dp).padding(bottom = Tokens.Spacing.sm.dp))
+                                    }
+                                }
                                 slots.foot()
                             }
                         }
                         LidarPhase.IDLE -> Unit
                         else -> Status(ui, actions)
                     }
-                    snackbars?.let { ToastHost(it, Modifier.align(Alignment.BottomCenter).padding(Tokens.Spacing.md.dp)) }
+                    val above = if (ui.phase == LidarPhase.AVAILABLE) with(LocalDensity.current) { footHeight.toDp() } else 0.dp
+                    snackbars?.let { ToastHost(it, Modifier.align(Alignment.BottomCenter).padding(bottom = above).padding(Tokens.Spacing.md.dp)) }
                 }
             }
         }
@@ -204,39 +246,36 @@ private fun Status(ui: Viewer3DUi, actions: Viewer3DActions) {
             Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
         ) {
-            when (ui.phase) {
-                LidarPhase.RESOLVING -> Said {
-                    Heading(Viewer3DWords.LOOKING_UP)
-                    Body(Viewer3DWords.LOOKING_UP_BODY)
+            val (title, body) = when (ui.phase) {
+                LidarPhase.RESOLVING -> Viewer3DWords.LOOKING_UP to Viewer3DWords.LOOKING_UP_BODY
+                LidarPhase.BUILDING -> Viewer3DWords.BUILDING to null
+                LidarPhase.MISSING -> Viewer3DWords.MISSING to Viewer3DWords.MISSING_BODY
+                LidarPhase.ERROR -> Viewer3DWords.failedTitle(ui.buildFailed) to Viewer3DWords.problem(ui.problem)
+                else -> null to null
+            }
+            // One node for every phase, its words changed, so a screen reader hears each as it comes: one made anew with its words is not
+            // announced. A failure is said at once, as the web's role="alert" says a build that failed after minutes of waiting.
+            if (title != null) {
+                Said(urgent = ui.phase == LidarPhase.ERROR) {
+                    Heading(title)
+                    body?.let { Body(it) }
                 }
+            }
+            when (ui.phase) {
                 LidarPhase.BUILDING -> {
-                    Said { Heading(Viewer3DWords.BUILDING) }
                     Text(
                         Viewer3DWords.progress(ui.stage, ui.ahead), style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                     LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = Tokens.Spacing.xs.dp))
                     Text(
-                        Viewer3DWords.elapsed(buildClock(ui.elapsedS)), style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                        Viewer3DWords.elapsed(buildClock(ui.elapsedS)), style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Body(Viewer3DWords.BUILDING_HINT + " " + Viewer3DWords.closing(ui.saved, ui.inPack))
                 }
-                LidarPhase.MISSING -> {
-                    Said {
-                        Heading(Viewer3DWords.MISSING)
-                        Body(Viewer3DWords.MISSING_BODY)
-                    }
-                    PillButton(Viewer3DWords.CHECK_AGAIN, onClick = actions.retry, icon = EzpzIcons.refresh)
-                }
-                LidarPhase.ERROR -> {
-                    // As the web's role="alert": a build that failed after minutes of waiting is said at once.
-                    Said(urgent = true) {
-                        Heading(Viewer3DWords.failedTitle(ui.buildFailed))
-                        Body(Viewer3DWords.problem(ui.problem))
-                    }
-                    PillButton(Viewer3DWords.RETRY, onClick = actions.retry, icon = EzpzIcons.refresh)
-                }
+                LidarPhase.MISSING -> PillButton(Viewer3DWords.CHECK_AGAIN, onClick = actions.retry, icon = EzpzIcons.refresh)
+                LidarPhase.ERROR -> PillButton(Viewer3DWords.RETRY, onClick = actions.retry, icon = EzpzIcons.refresh)
                 else -> Unit
             }
         }

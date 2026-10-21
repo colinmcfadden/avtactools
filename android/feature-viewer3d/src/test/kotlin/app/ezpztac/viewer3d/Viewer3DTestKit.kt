@@ -96,8 +96,12 @@ internal class FakeRoutes(initial: List<SketchRoute> = emptyList()) : ShownRoute
 internal class FakeGround(var groundM: Double = 340.0) : GroundUnder {
     val asked: MutableList<List<LatLon>> = Collections.synchronizedList(mutableListOf())
 
+    /** Thrown by every ask while set. */
+    @Volatile var failing: Exception? = null
+
     override suspend fun at(points: List<LatLon>): RouteHeights {
         asked += points
+        failing?.let { throw it }
         return RouteHeights(points.map { groundM }, points.map { -30.35 })
     }
 }

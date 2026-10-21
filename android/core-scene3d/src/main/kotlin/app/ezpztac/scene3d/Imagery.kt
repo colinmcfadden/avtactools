@@ -171,6 +171,10 @@ public class ImageryScene(public val maxFetches: Int = MAX_FETCHES, public val h
         }
     }
 
+    /** What [trim] let go of that no frame has said yet, taken now (for the textures to be freed before the GL thread pauses); not said again. */
+    @Synchronized
+    public fun takeTrimmed(): List<ImageryTileId> = ArrayList(trimmed).also { trimmed.clear() }
+
     /** [id] is on the GPU, taking [bytes]. */
     @Synchronized
     public fun arrived(id: ImageryTileId, bytes: Long) {
@@ -178,6 +182,12 @@ public class ImageryScene(public val maxFetches: Int = MAX_FETCHES, public val h
         failures.remove(id)
         held.put(id, Held(bytes, frameNumber))?.let { heldBytes -= it.bytes }
         heldBytes += bytes
+    }
+
+    /** [id] went to a GPU that is no longer the scene's (a view going as its activity is made again): it is fetched again for the one that is. */
+    @Synchronized
+    public fun notOnGpu(id: ImageryTileId) {
+        loading -= id
     }
 
     /**

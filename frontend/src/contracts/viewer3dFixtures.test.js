@@ -3,12 +3,17 @@ import api from "../feature/auth/api";
 import { MAX_TILT_DEG, compassPose } from "../feature/viewer3d/compass";
 import * as sceneSettings from "../feature/viewer3d/sceneSettings";
 import { AGL_MISMATCH_FT, FT_TO_M, MAX_SAMPLES, SAMPLE_STEP_M, placeRoutes, prepareRoutes } from "../feature/viewer3d/routeScene";
+import { routePositions } from "../feature/viewer3d/routeEntities";
 import { PROBE_LEVEL, TERRAIN_MAX_LEVEL, TERRAIN_SAMPLES, terrainTileAt } from "../feature/viewer3d/terrainProvider";
 import { useLidarTileset } from "../feature/viewer3d/useLidarTileset";
 
 const fs = require("fs");
 // The twister Cesium's PntsLoader samples a tile's points with (a dependency of @cesium/engine).
 const MersenneTwister = require("mersenne-twister");
+// Cesium itself, from its CommonJS build (never through webpack: AGENTS.md §14), for the sphere the web frames the routes in. It reads
+// TextDecoder as it loads, which Jest's jsdom has not got: Node's own stands in.
+if (typeof global.TextDecoder === "undefined") global.TextDecoder = require("util").TextDecoder;
+const Cesium = require("cesium/Build/Cesium/index.cjs");
 const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 
 jest.mock("../feature/auth/api", () => ({
@@ -89,20 +94,38 @@ const digest = (samples) => ({
   every500: samples.filter((_s, i) => i % 500 === 0),
 });
 
+/**
+ * What *Routes* frames (Viewer3D.jsx's `frameRoutes`): Cesium's own `BoundingSphere.fromPoints` of every place the lines pass, its centre in
+ * geocentric metres; null with none to frame.
+ */
+const framing = (placedRoutes) => {
+  const positions = routePositions(Cesium, placedRoutes);
+  if (positions.length === 0) return null;
+  const sphere = Cesium.BoundingSphere.fromPoints(positions);
+  return { center: [sphere.center.x, sphere.center.y, sphere.center.z], radius: sphere.radius };
+};
+
 const sceneCase = (name, routes, answers = [], { long = false } = {}) => {
   const prepared = prepareRoutes(routes);
   const placed = answers.map(([label, makeAnswer]) => {
     const answer = makeAnswer(prepared);
-    return { answer: label, ...(long ? {} : { heights: saved(answer) }), routes: saved(placeRoutes(prepared, answer)) };
+    const placedRoutes = placeRoutes(prepared, answer);
+    return { answer: label, ...(long ? {} : { heights: saved(answer) }), routes: saved(placedRoutes), framing: framing(placedRoutes) };
   });
   return {
     name,
     routes: saved(routes ?? null),
     prepared: long ? { routes: saved(prepared.routes.map(({ distances, ...rest }) => ({ ...rest, distances: distances.length }))), samples: digest(prepared.samples) }
       : saved(prepared),
-    placed: long ? placed.map(({ answer, routes: placedRoutes }) => ({ answer, routes: placedRoutes.map((r) => ({ id: r.id, markers: r.markers, lines: r.lines.length, walls: r.walls.length })) })) : placed,
+    placed: long ? placed.map(({ answer, routes: placedRoutes, framing: sphere }) => ({ answer, routes: placedRoutes.map((r) => ({ id: r.id, markers: r.markers, lines: r.lines.length, walls: r.walls.length })), framing: sphere })) : placed,
   };
 };
+
+const COLORS = [
+  "#22c55e", "#38bdf8", "#F97316", "#0af", "#0AF8", "#00aaff80", "  teal\u00a0", "TEAL", "DarkGrey", "darkgray", "transparent",
+  "rgb(255, 0, 0)", "rgba(0,128,255,0.5)", "RGB(50%, 25%, 100%)", "rgb(12 34 56 / 0.25)", "rgb(1.5.2, 3, 4)", "hsl(120, 100%, 50%)",
+  "hsla(240,50%,25%,0.3)", "hsl(400, 30%, 70%)", "#12345", "#ggg", "rgb(1, 2)", "notacolor", "",
+];
 
 const middle = (prepared) => Math.floor(prepared.samples.length / 2);
 const anchorSample = (prepared, routeIndex, anchorIndex) => prepared.routes[routeIndex].anchors[anchorIndex].sample;
@@ -116,6 +139,12 @@ const routeSceneFixture = () => {
     id: "n1",
     points: [amps("a", 34.6, -84.1, "..DOUBLE", "ip"), amps("b", 34.61, -84.09, ""), amps("c", 34.62, -84.08, "PLAIN", "ip")],
   };
+  const vee = {
+    ...ROUTE,
+    id: "vee",
+    points: [amps("a", 34.65, -84.1, ".SP", "ip"), amps("b", 34.6, -84.075, ".CP1"), amps("c", 34.65, -84.05, ".RP", "ip")],
+    elevations: {},
+  };
   const long = {
     ...ROUTE,
     id: "long",
@@ -125,6 +154,12 @@ const routeSceneFixture = () => {
   return {
     generatedBy: GENERATED_BY,
     constants: { FT_TO_M, SAMPLE_STEP_M, MAX_SAMPLES, AGL_MISMATCH_FT },
+    // A route's colour as Cesium reads it (routeEntities.js hands it `route.color || "#38bdf8"`): red, green, blue and alpha, or null for one
+    // it cannot read, which stops the web's routes being drawn.
+    colors: COLORS.map((css) => {
+      const color = Cesium.Color.fromCssColorString(css);
+      return { css, rgba: color ? [color.red, color.green, color.blue, color.alpha] : null };
+    }),
     cases: [
       sceneCase("a route at MSL with a shaping point", [ROUTE], [
         ["flat ground", (p) => heights(p, 300)],
@@ -155,6 +190,9 @@ const routeSceneFixture = () => {
       ], [["flat ground", (p) => heights(p, 300)]]),
       sceneCase("two routes", [ROUTE, { ...ZONE_TO_ZONE, color: "#f97316" }], [["flat ground", (p) => heights(p, 300)]]),
       sceneCase("names as AMPS writes them", [names], [["flat ground", (p) => heights(p, 300)]]),
+      // Framed as Cesium frames it, in geocentric coordinates, Ritter's sphere round a V starts from another pair of places, and comes out
+      // another size, than it would in the LZ's own frame (a straight route's ends are the farthest apart either way).
+      sceneCase("a route in a V", [vee], [["flat ground", (p) => heights(p, 300)]]),
       sceneCase("no routes", [], [["nothing", () => ({ groundM: [], geoidM: [] })]]),
       sceneCase("long routes, sampled more coarsely", [long, { ...long, id: "long2" }], [["flat ground", (p) => heights(p, 300)]], { long: true }),
     ],

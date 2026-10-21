@@ -168,6 +168,30 @@ class ImageryTest {
     }
 
     @Test
+    fun `a tile that went to a GPU no longer the scene's is asked for again`() {
+        val scene = ImageryScene()
+        val id = scene.frame(listOf(terrain), 0).fetch.first()
+        assertTrue(id !in scene.frame(listOf(terrain), 0).fetch, "out, not asked again")
+        scene.notOnGpu(id)
+        assertTrue(id in scene.frame(listOf(terrain), 0).fetch)
+    }
+
+    @Test
+    fun `what a trim let go of can be taken at once, and is then said by no frame`() {
+        val scene = ImageryScene()
+        val elsewhere = TerrainTiling.tileAt(lat + 1.0, lon + 1.0, 14)
+        for (t in listOf(elsewhere, terrain)) {
+            for (id in scene.frame(listOf(t), 0).fetch) scene.arrived(id, ImageryScene.TILE_BYTES)
+        }
+        val laid = scene.frame(listOf(terrain), 0).byTerrain.getValue(terrain).map { it.imagery }
+        scene.trim()
+        val taken = scene.takeTrimmed()
+        assertTrue(taken.isNotEmpty() && taken.none { it in laid })
+        assertTrue(scene.frame(listOf(terrain), 0).letGo.isEmpty())
+        assertTrue(scene.takeTrimmed().isEmpty())
+    }
+
+    @Test
     fun `a tile that could not be read is never asked for again, one that met no connection after a pause`() {
         val scene = ImageryScene()
         val f = scene.frame(listOf(terrain), 0)

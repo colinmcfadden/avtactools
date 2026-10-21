@@ -92,6 +92,17 @@ class CachedTilesetFilesTest {
     }
 
     @Test
+    fun `a tileset's folder goes with its last file`() = runTest {
+        val server = Server()
+        val cache = cache(server, maxBytes = 150)
+        cache.file(key, "points/a.pnts")
+        now += 1_000
+        cache.file("fedcba9876543210", "points/b.pnts")
+        assertFalse(File(folder.root, key).exists())
+        assertTrue(File(folder.root, "fedcba9876543210/points/b.pnts").isFile)
+    }
+
+    @Test
     fun `a file larger than any is kept is fetched each time, and one that fails is not kept`() = runTest {
         val server = Server()
         val cache = cache(server, maxFile = 50)
@@ -108,13 +119,13 @@ class CachedTilesetFilesTest {
     @Test
     fun `a path it will not hold is passed to the server as it is, and nothing is written outside its folder`() = runTest {
         val server = Server()
-        val dir = File(folder.root, "tiles")
+        val dir = File(folder.root, "tiles").apply { mkdirs() }
         val cache = cache(server, dir)
-        for ((k, path) in listOf("../escape0123456" to "tileset.json", key to "../outside.pnts", key to ".hidden", key to "a//b.pnts", key to "a.part-1")) {
+        for ((k, path) in listOf(".." to "outside.pnts", "../escape0123456" to "tileset.json", key to "../outside.pnts", key to ".hidden", key to "a//b.pnts", key to "a.part-1")) {
             cache.file(k, path)
             cache.file(k, path)
         }
-        assertEquals(10, server.asked.size)
+        assertEquals(12, server.asked.size)
         assertFalse(File(folder.root, "outside.pnts").exists())
         assertTrue(!dir.exists() || dir.walkTopDown().none { it.isFile })
     }
@@ -133,6 +144,7 @@ class CachedTilesetFilesTest {
         inFlight.await()
         assertEquals(0L, cache.heldBytes)
         assertTrue(!folder.root.exists() || folder.root.walkTopDown().none { it.isFile })
+        assertFalse("no folder named for the key", File(folder.root, key).exists())
         server.gate = null
         cache.file(key, "tileset.json")
         assertEquals(4, server.asked.size)

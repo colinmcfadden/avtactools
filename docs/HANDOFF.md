@@ -49,7 +49,7 @@ Branch `claude/android-3d-view-e38b76` (from `develop` at `85a54cd`), committed 
 and the owner's decisions (a native OpenGL ES renderer of our own, the whole screen with the system bars left see-through, the title `3D · NAME`). What each
 piece holds and the rules it keeps are AGENTS.md §17, *The 3D view*.
 
-**Done**, each reviewed independently and its findings fixed with tests: V0 (the six routes the app calls, in `contracts/openapi.yaml` with recorded
+**Done**, each step reviewed independently (V7 by the three final reviews) and its findings fixed with tests: V0 (the six routes the app calls, in `contracts/openapi.yaml` with recorded
 responses; the web's fixtures for the build flow, the route scene, the compass and the terrain's tiling; a small tileset py3dtiles itself made, by a script),
 V3 (`core-scene3d`: the earth's frame held to PROJ, the tileset and `.pnts` readers, the camera, Cesium's choice of tiles) and V1 (the calls with every read
 bounded, `LidarBuilds` held to the build-flow fixture scenario by scenario, build on save from the LZ/PZ panel, the watcher kept on the device so the next
@@ -61,10 +61,18 @@ eye-dome lighting, the fingers as Cesium's touch controls, *LZ*, the compass and
 point budget refetching for ever, the wrong tiles let go of when many went at once, the ground the fingers hold to sitting in the trees, points too small on a
 dense screen, the tilt's rate and the flights' easing, a GL view being replaced taking the new one's frames, and a screen reader's way to move the camera), and V5 (the ground under it: Cesium's quadtree over the
 server's heightmaps, none where the server has none, with Mapbox's satellite imagery laid on as Cesium lays it), and V6 (the routes the map shows, at their
-planned MSL with their curtains, drop lines, dots and labels as the web's, and *Routes* to frame them), and V7 (the 2D map paused while 3D covers it, the
-point clouds' files kept on the device for a week and cleared at sign-out, and what is not drawn let go of in the back). **Not verifiable here:** that opening 3D in touch mode drops the
-keyboard of a field left focused under it (Robolectric runs in keyboard mode, where the page takes the focus itself), and anything GL draws. **Next:** the
-owner's device runs (below) and V7's three last reviews.
+planned MSL with their curtains, drop lines, dots and labels as the web's, and *Routes* to frame them; its review's findings fixed after: the heights asked
+again after a failure that may pass, *Routes* saying why it has nothing to frame, the labels bounded and painted a few a frame, on Cesium's curve with distance,
+red at night and at the person's text size, the dash's angle quantized as Cesium's, the colours read as Cesium reads them, and the framing held to Cesium's
+own sphere), and V7 (the 2D map stopped while 3D covers it, the point clouds' files kept on the device for a week and cleared at sign-out, and what is not drawn
+let go of in the back). **The three final reviews** (parity with the web and Cesium, lifecycle and concurrency, the screens) found nothing severe; their findings
+were fixed with tests: an activity made again (a font size, a keyboard) no longer closes the view and drops an unsaved build; MapLibre is stopped, not paused,
+under the page (its pause did nothing); the GPU copies trimmed in the back are freed before the GL thread pauses; a pinch no longer snaps a far camera in to
+30 km; Mapbox is credited; the terrain fetches only the children in view, as Cesium's; one live region that stays says each state; the keyboard's focus goes
+round the page; the scene's side edges pan rather than go Back; the toasts and the foot keep clear of the controls; the steps are said; and smaller ones (an
+uncoloured `.pnts` in Cesium's grey, the tileset count read once, the cache's empty folders, an `Error` on the GL and fetch threads). **Not verifiable here:**
+that opening 3D in touch mode drops the keyboard of a field left focused under it (Robolectric runs in keyboard mode, where the page takes the focus itself),
+and anything GL draws. **Next:** the owner's device runs (below) and the questions for the owner.
 
 **Owner device run 1** (V4): open a built LZ/PZ's *3D* on a phone and the same LZ in the web's 3D window, and compare screenshots from the same view (*LZ* on
 both): the points' size and density as the camera comes in, the outlines the eye-dome lighting draws, the background. Then try one finger, a pinch, a twist
@@ -80,11 +88,18 @@ labels (name, MSL, AGL measured; amber where the AGL is more than 50 ft off the 
 *Routes* framing them; a route hidden on the map not drawn; and the same in the web's 3D window beside it.
 
 **Owner device run 4** (V7): Android Studio's profiler with an LZ/PZ open in 3D for a while (turning, zooming, *LZ*, *Routes*): memory under 600 MB, the frame
-rate, and nothing growing without end; the app sent to the back and brought again (the view as it was); the map under it after closing 3D (where it was, no
-flash); an LZ/PZ opened in 3D a second time with no signal (it should come from the device).
+rate, and nothing growing without end; the app sent to the back and brought again (the view as it was, and the GPU's memory down while it was in the back); the
+map under it after closing 3D (where it was, no flash: MapLibre is now stopped while covered, so this is where a lost context would show); an LZ/PZ opened in 3D
+a second time with no signal (it should come from the device); the system font size changed with 3D open on an unsaved LZ/PZ that is building (the build goes
+on, the view as it was).
+
+**Owner device run 5** (the final reviews): with TalkBack, open 3D and hear each state as it comes (looking up, building, failed), the scene's steps and where
+each leaves the camera, and *Routes* with no routes; with a keyboard, Tab round the page; at night, the routes' labels and dots red; a pan from the scene's left
+or right edge (it should pan, not close the view); a phone on its side at the largest text (the notice of no terrain clear of the compass).
 
 **For the owner** (AGENTS.md §15): the server's heightmap samples sit half a cell from where Cesium draws them; a tileset's key can be turned back into its
-place; the web shows a failed build's raw text, with the place in it.
+place; the web shows a failed build's raw text, with the place in it; the web's 3D view shows Cesium's daylight sky and fog where Android's (and the plan's) is
+dark; the opening view crops an LZ's sides on a portrait phone, as the web's rule would; and the web's 3D window follows the active LZ where Android's closes.
 
 ---
 

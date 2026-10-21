@@ -75,7 +75,7 @@ class CompassTest {
 
     @Test
     fun `a screen reader hears the heading in words and what the button does`() {
-        assertEquals("Facing 330 degrees true. Face north", CompassPose.of(Math.toRadians(-30.0), Math.toRadians(-35.0)).spoken)
-        assertEquals("Facing 000 degrees true. Face north", CompassPose.of(Math.toRadians(359.6), 0.0).spoken)
+        assertEquals("Facing 330 degrees true", CompassPose.of(Math.toRadians(-30.0), Math.toRadians(-35.0)).spoken)
+        assertEquals("Facing 000 degrees true", CompassPose.of(Math.toRadians(359.6), 0.0).spoken)
     }
 }

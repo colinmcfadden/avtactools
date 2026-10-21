@@ -1,7 +1,8 @@
 # Android 3D LZ view — plan
 
-Status (2026-10-20): **V0 to V7 done**, V7's three reviews under way (branch `claude/android-3d-view-e38b76`; V3 was built before V1, since the build flow's
-probe uses its tiling); V6 next.
+Status (2026-10-20): **V0 to V7 done**, each step reviewed independently and the whole by three final reviews (parity, lifecycle and concurrency, the screens),
+their findings fixed with tests (branch `claude/android-3d-view-e38b76`; V3 was built before V1, since the build flow's probe uses its tiling). What is left
+is the owner's: the device runs (`docs/HANDOFF.md`) and three questions (AGENTS.md §15: the web's sky, the portrait framing, following the active LZ/PZ).
 The owner chose the native renderer (A) and the full screen's details on 2026-10-20 (§9). Each step is built as the screens
 and the brief were: implemented with its tests, reviewed independently (parity with the web, lifecycle and concurrency, the screens), its
 findings fixed with tests, committed only with the full build green and AGENTS.md and `docs/HANDOFF.md` updated in the same commit. **Where
@@ -48,8 +49,9 @@ backend change 9, with the map packs of P3/P4).
   when the page loads again (`releaseAbandonedBuilds`).
 - **Build on save** (`useBuildOnSave.js`): an LZ/PZ saved in this session (not one that arrived saved) asks for a kept build, with no
   watcher. A pack's LZ/PZ is never "saved" in this sense (`packLz.js` gives it `savedId: null`), so it is neither kept nor built on save.
-- **The scene** (`Viewer3D.jsx`): background `#05080d`; Mapbox satellite imagery (`satellite-v9`, 1024-pixel tiles, to level 20) on
-  terrain from `GET /api/terrain/heightmap/<level>/<x>/<y>` (65 × 65 little-endian Int16 metres above the ellipsoid, Cesium's geographic
+- **The scene** (`Viewer3D.jsx`): background `#05080d`, though hidden above the horizon by the sky, sun, atmosphere and fog Cesium's widget
+  adds by default, which `Viewer3D.jsx` does not turn off (the final parity review; Android draws the flat dark: AGENTS.md §15); Mapbox
+  satellite imagery (`satellite-v9`, 1024-pixel tiles, to level 20) on terrain from `GET /api/terrain/heightmap/<level>/<x>/<y>` (65 × 65 little-endian Int16 metres above the ellipsoid, Cesium's geographic
   tiling, two tiles at level 0; 204 where there is no DEM); depth testing against terrain **off** (points sit on the surface, and a
   route at 50 ft AGL hides under coarse distant terrain: `3D_PLANNING_GRAPHICS_PLAN.md`, the depth-test result); the core tileset at
   screen-space error 2, the ring at 8; point-cloud shading with attenuation, eye-dome lighting at strength 0.5 and radius 0.5 pixel, the

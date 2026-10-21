@@ -53,6 +53,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /** Why the scene is not drawn, for the page to say in the app's own words, and whether trying again may help. */
 enum class SceneProblem(val retryable: Boolean) {
@@ -140,6 +142,8 @@ class SceneWork(
     /** The routes, in the scene's frame, and how many times they have changed: the renderer makes their buffers again when it has. */
     val routes: RouteGeometry = RouteGeometry.NONE,
     val routesVersion: Int = 0,
+    /** How their labels and dots are drawn: night, the person's text size. */
+    val routeLook: RouteLook = RouteLook(),
 )
 
 /**
@@ -204,6 +208,15 @@ class SceneSession(
     @Volatile var pointSize: Int = SceneLook.pointSizeOrDefault(pointSize)
         private set
 
+    @Volatile internal var routeLook: RouteLook = RouteLook()
+        private set
+
+    /** Whether the ground has Mapbox's imagery laid on it, which the view credits (as the web's Cesium does, and Mapbox's terms ask). */
+    val hasImagery: Boolean get() = imageryTiles != null && decoder != null
+
+    /** Whether the GL view could not draw (it said so, [cannotDraw]): nothing is drawn behind the words that say it, on any context after. */
+    internal val cannotBeDrawn: Boolean get() = glProblem != null
+
     /**
      * The level ground the camera's moves hold to: the terrain's own height at the LZ, from the finest of its tiles in hand; until there is
      * some, what the tile with the most points round the LZ says of it ([SceneGround]); until then, the cloud's middle.
@@ -266,14 +279,17 @@ class SceneSession(
         }
     }
 
-    /** The renderer put [id] on the GPU, where it takes [bytes]. */
-    fun uploaded(id: ImageryTileId, bytes: Long) {
-        imagery.arrived(id, bytes)
+    /**
+     * [view]'s renderer put [id] on its GPU, where it takes [bytes]. A view that is no longer the session's (one going as its activity is made again,
+     * whose frame began before the new one took the scene) put it on a GPU the scene no longer draws on: it is fetched again for the new one.
+     */
+    fun uploaded(id: ImageryTileId, bytes: Long, view: () -> Unit) {
+        if (view === listener) imagery.arrived(id, bytes) else imagery.notOnGpu(id)
     }
 
-    /** The renderer could not put [id] on the GPU (it had no room): not tried again this session. */
-    fun notUploaded(id: ImageryTileId) {
-        imagery.failed(id, again = false, atMs = clock())
+    /** [view]'s renderer could not put [id] on its GPU (it had no room): not tried again this session; another view's GPU is not the scene's. */
+    fun notUploaded(id: ImageryTileId, view: () -> Unit) {
+        if (view === listener) imagery.failed(id, again = false, atMs = clock()) else imagery.notOnGpu(id)
     }
 
     /**
@@ -285,6 +301,18 @@ class SceneSession(
         imagery.trim()
     }
 
+    /** What [trim] let go of, from the points and the imagery, for a view's GPU to free. */
+    internal class Trimmed(val tiles: List<Tile>, val imagery: List<ImageryTileId>)
+
+    /**
+     * What [trim] let go of, taken by [view] (the asking view's [listener]) to free on its GPU now, before its thread pauses: a paused thread draws no
+     * frame to free it in. Null for a view that is no longer the session's, whose GPU is not the one that holds them.
+     */
+    internal fun takeTrimmed(view: () -> Unit): Trimmed? {
+        if (view !== listener) return null
+        return Trimmed(scene.takeTrimmed(), imagery.takeTrimmed())
+    }
+
     /** [view]'s GL context went, and the imagery's textures with it: they are fetched again (the HTTP cache has them). Not another view's. */
     fun texturesLost(view: () -> Unit) {
         if (view === listener) imagery.lostTextures()
@@ -292,6 +320,13 @@ class SceneSession(
 
     fun setPointSize(size: Int) {
         pointSize = SceneLook.pointSizeOrDefault(size)
+        invalidate()
+    }
+
+    /** How the routes' labels and dots are drawn ([RouteLook]: night, the person's text size), from the next frame on. */
+    internal fun setRouteLook(look: RouteLook) {
+        if (look == routeLook) return
+        routeLook = look
         invalidate()
     }
 
@@ -330,7 +365,7 @@ class SceneSession(
             camera, work.byCloud, work.letGo, pointSize, animating,
             ground = ground?.drawn.orEmpty(), groundLetGo = ground?.letGo.orEmpty(),
             imagery = laid?.byTerrain.orEmpty(), imageryWhole = laid?.complete.orEmpty(), uploads = uploads, imageryLetGo = laid?.letGo.orEmpty(),
-            routes = drawnRoutes, routesVersion = drawnRoutesVersion,
+            routes = drawnRoutes, routesVersion = drawnRoutesVersion, routeLook = routeLook,
         )
     }
 
@@ -378,6 +413,18 @@ class SceneSession(
                 },
             ),
         )
+    }
+
+    /**
+     * Where the camera looks now, in words ([Viewer3DWords.facing]: its heading, how far down, how far off the ground is along the view), for a
+     * screen reader after a [step]; null before there is a view.
+     */
+    internal fun facing(): String? = synchronized(lock) {
+        val at = poseAt(clock()) ?: return null
+        val heading = CompassPose.of(at.heading, at.pitch).headingText
+        val ground = moves?.groundZ
+        val ahead = if (ground != null && at.pitch < 0) (at.position.z - ground) / sin(-at.pitch) else null
+        Viewer3DWords.facing(heading, Math.toDegrees(-at.pitch).roundToInt(), ahead?.takeIf { it.isFinite() && it > 0 }?.roundToInt())
     }
 
     /** The routes placed on the ground ([app.ezpztac.data.SceneHeights]), drawn from the next frame on. */
@@ -508,8 +555,8 @@ class SceneSession(
                 if (fetch.isTileset) {
                     withContext(decode) { scene.joined(fetch.tile, bytes, frame) }
                 } else {
-                    val points = withContext(decode) { PntsReader.read(bytes, fetch.tile.world, frame) }
-                    scene.arrived(fetch.tile, points)
+                    // Read and handed over off the main thread: the scene's lock is held by a frame's traversal for as long as it takes.
+                    val points = withContext(decode) { PntsReader.read(bytes, fetch.tile.world, frame).also { scene.arrived(fetch.tile, it) } }
                     if (synchronized(lock) { groundFrom } <= GROUND_FROM_POINTS) {
                         withContext(decode) { SceneGround.of(points) }?.let(::holdToPoints)
                     }
@@ -520,6 +567,9 @@ class SceneSession(
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
                 scene.failed(fetch.tile, retryable(e), clock())?.let(::wake)
+            } catch (_: OutOfMemoryError) {
+                // A tile there is no memory to read is left undrawn, never the app's end.
+                scene.failed(fetch.tile, again = false, atMs = clock())
             }
         }
     }
@@ -565,6 +615,8 @@ class SceneSession(
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
                 terrain.failed(tile, retryable(e), clock())?.let(::wake)
+            } catch (_: OutOfMemoryError) {
+                terrain.failed(tile, again = false, atMs = clock())
             }
         }
     }
@@ -589,6 +641,8 @@ class SceneSession(
             } catch (e: Exception) {
                 currentCoroutineContext().ensureActive()
                 imagery.failed(id, again = e !is ImageryRefused && (e is IOException || retryable(e)), atMs = clock())?.let(::wake)
+            } catch (_: OutOfMemoryError) {
+                imagery.failed(id, again = false, atMs = clock())
             }
         }
     }

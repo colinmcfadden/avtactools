@@ -3,6 +3,8 @@ package app.ezpztac.viewer3d
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -70,6 +72,7 @@ class Viewer3DScreenshotTest {
         routes: Boolean = true,
     ) {
         compose.setContent {
+            val endWidth = remember { mutableIntStateOf(0) }
             EzpzTheme(mode) {
                 Viewer3DPage(
                     Viewer3DUi(name, LidarPhase.AVAILABLE, noGround = noGround), Viewer3DActions(),
@@ -79,8 +82,10 @@ class Viewer3DScreenshotTest {
                             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(SCENE_BACKGROUND, Color(0xFF2C3A24), Color(0xFF5B6B3C)))))
                             if (mode == ThemeMode.Night) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = SCENE_NIGHT_DIM)))
                         },
-                        over = { SceneOverContent(status, pose, {}, {}, {}, hasRoutes = routes) },
-                        foot = { SceneFootContent(status, 5, {}) },
+                        over = { SceneOverContent(status, pose, {}, {}, {}, hasRoutes = routes, onEndWidth = { endWidth.intValue = it }) },
+                        // The app's scene always has Mapbox's imagery, and so its credit.
+                        foot = { SceneFootContent(status, 5, {}, credit = true) },
+                        endWidthPx = { endWidth.intValue },
                     ),
                 )
             }
@@ -105,6 +110,10 @@ class Viewer3DScreenshotTest {
     @Test
     @Config(qualifiers = "w360dp-h740dp-xxhdpi", fontScale = 1.3f)
     fun sceneNarrowLarge() = scene("360-1.3")
+
+    @Test
+    @Config(qualifiers = "w640dp-h360dp-xxhdpi", fontScale = 2.0f)
+    fun sceneSidewaysLargest() = scene("640x360-2.0", noGround = true)
 
     @Test
     @Config(qualifiers = "w1280dp-h800dp-xhdpi")

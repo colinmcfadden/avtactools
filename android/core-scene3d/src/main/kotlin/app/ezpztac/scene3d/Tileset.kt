@@ -128,9 +128,11 @@ public object TilesetReader {
         val top = root["root"] as? JsonObject ?: throw TilesetException("No root")
         val tree = parent?.tree ?: TileTree()
         // Counted on a copy, so a tileset refused part way leaves the tree as it was; one inside another is counted into its tree as it joins.
-        val counter = intArrayOf(tree.tiles)
+        // The tree's count is read once: another tileset may join it meanwhile (reading apart takes no lock), and [join] counts again under one.
+        val start = tree.tiles
+        val counter = intArrayOf(start)
         val tile = tile(top, path, frame, parent, parent?.world ?: Mat4.IDENTITY, parent?.refine, (parent?.depth ?: -1) + 1, counter, tree)
-        val count = counter[0] - tree.tiles
+        val count = counter[0] - start
         if (parent == null) tree.tiles = count
         return TilesetDocument(path, geometricError * tile.world.maximumScale, tile, count)
     }

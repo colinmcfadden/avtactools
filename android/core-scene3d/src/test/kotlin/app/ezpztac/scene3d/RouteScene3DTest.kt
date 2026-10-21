@@ -3,6 +3,7 @@ package app.ezpztac.scene3d
 import app.ezpztac.model.RouteSets
 import app.ezpztac.testing.Fixtures
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -56,9 +57,30 @@ class RouteScene3DTest {
                         (h["geoidM"] as? JsonArray)?.map { (it as? JsonPrimitive)?.doubleOrNull },
                     )
                 }
-                checkPlaced(label, answer.getValue("routes").jsonArray, RouteScene3D.place(prepared, heights))
+                val placed = RouteScene3D.place(prepared, heights)
+                checkPlaced(label, answer.getValue("routes").jsonArray, placed)
+                checkFraming(label, answer["framing"], placed)
             }
         }
+    }
+
+    // What *Routes* frames: Cesium's own sphere (its `BoundingSphere.fromPoints`, recorded by the web), held to the port's, worked out in an LZ's
+    // frame from the lines' places and taken back to geocentric metres.
+    private fun checkFraming(label: String, expected: JsonElement?, placed: List<PlacedRoute>) {
+        val frame = LocalFrame(34.6, -84.1)
+        val sphere = BoundingSpheres.fromPoints(RouteGeometry.of(placed, frame).positions, frame)
+        if (expected == null || expected is JsonNull) {
+            assertEquals(null, sphere, "$label: nothing to frame")
+            return
+        }
+        val e = expected.jsonObject
+        val center = e.getValue("center").jsonArray.map { it.jsonPrimitive.double }
+        assertTrue(sphere != null, "$label: a sphere")
+        val at = frame.toEcef(sphere!!.center)
+        assertEquals(center[0], at.x, 1e-3, "$label: centre x")
+        assertEquals(center[1], at.y, 1e-3, "$label: centre y")
+        assertEquals(center[2], at.z, 1e-3, "$label: centre z")
+        assertEquals(e.getValue("radius").jsonPrimitive.double, sphere.radius, 1e-3, "$label: radius")
     }
 
     private fun checkSample(name: String, expected: JsonObject, actual: GroundSample) {
@@ -94,7 +116,7 @@ class RouteScene3DTest {
             when (val distances = route.getValue("distances")) {
                 is JsonArray -> {
                     assertEquals(distances.size, a.distances.size, name)
-                    for ((i, d) in distances.withIndex()) assertEquals(d.jsonPrimitive.double, a.distances[i], 1e-9, "$name: distance $i")
+                    for ((i, d) in distances.withIndex()) assertEquals(d.jsonPrimitive.double, a.distances[i], "$name: distance $i")
                 }
                 else -> assertEquals(distances.jsonPrimitive.int, a.distances.size, "$name: distances")
             }
@@ -103,7 +125,7 @@ class RouteScene3DTest {
             for ((i, anchor) in anchors.withIndex()) {
                 val b = a.anchors[i]
                 assertEquals(anchor.getValue("sample").jsonPrimitive.int, b.sample, "$name: anchor $i")
-                assertEquals(anchor.getValue("distance").jsonPrimitive.double, b.distance, 1e-9, "$name: anchor $i")
+                assertEquals(anchor.getValue("distance").jsonPrimitive.double, b.distance, "$name: anchor $i")
                 assertEquals(anchor.text("name"), b.name, "$name: anchor $i")
                 assertEquals(anchor.text("ptType"), b.ptType, "$name: anchor $i")
                 assertEquals(anchor.getValue("touchdown").jsonPrimitive.boolean, b.touchdown, "$name: anchor $i")

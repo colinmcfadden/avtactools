@@ -131,8 +131,8 @@ public class TerrainFrame(public val drawn: List<TerrainDraw>, public val fetch:
 
 /**
  * The ground under the point cloud as Cesium's globe chooses it (`QuadtreePrimitive`): from the two tiles of level 0 down, a tile in view is
- * drawn when its error on the screen is small enough, or while its four children are not all in hand, which are then fetched; when all four
- * are, they stand in its place. **None is drawn where the server has none** (a 204: nothing there or under it), where the web lays the globe
+ * drawn when its error on the screen is small enough, or while its children in view are not all in hand, which are then fetched (one out of
+ * view counts as ready and is not, as Cesium's culled tile); when they are, its children stand in its place. **None is drawn where the server has none** (a 204: nothing there or under it), where the web lays the globe
  * flat at sea level (AGENTS.md §14: never invent a height); a tile that is only partly covered comes filled by the server, which spreads its
  * neighbouring heights. At most [maxFetches] out at once, coarse first and then nearest; [holdTiles] in hand at most, the longest unused let
  * go of first, never one the frame needed. A tile that met no connection is asked for again after a pause, twice; one whose answer could
@@ -183,11 +183,14 @@ public class TerrainScene(
                 return
             }
             val children = childrenOf(tile)
-            // Every child is needed before this tile gives way, in view or not: kept, and fetched together.
             for (child in children) held[child]?.lastFrame = frameNumber
-            if (children.any { it !in held }) {
+            // As Cesium's quadtree: this tile gives way once every child in view is in hand, fetched together; one out of view counts as ready
+            // and is not fetched (`visitIfVisible`: a culled tile is renderable, and loaded only at level 0). One that comes into view later has
+            // this tile drawn in its place again until it comes.
+            val missing = children.filter { it !in held && inView(it, TerrainMeshes.volume(it, h.low, h.high, frame), camera) }
+            if (missing.isNotEmpty()) {
                 drawn += TerrainDraw(tile, heights) to distance
-                for (child in children) if (child !in held) want(child, distance)
+                for (child in missing) want(child, distance)
                 return
             }
             for (child in children) visit(child, h.low, h.high)

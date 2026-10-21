@@ -36,6 +36,7 @@ import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -45,15 +46,18 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import app.ezpztac.data.LidarPhase
 import app.ezpztac.data.LidarProblem
+import app.ezpztac.data.RoutesPlacing
 import app.ezpztac.data.SceneHeights
 import app.ezpztac.data.Viewer3DTarget
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
+import app.ezpztac.network.ApiException
 import app.ezpztac.network.NetworkException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -100,7 +104,7 @@ class Viewer3DPageTest {
         compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DPage(ui, actions) } }
         compose.onNodeWithText("Building point cloud").assertIsDisplayed()
         compose.onNodeWithText("Queued — 2 ahead in the queue").assertIsDisplayed()
-        compose.onNodeWithText("Closing this stops the build. Save the LZ/PZ to keep it building.", substring = true).assertIsDisplayed()
+        compose.onNodeWithText(Viewer3DWords.BUILDING_UNSAVED, substring = true).assertIsDisplayed()
         ui = Viewer3DUi("LZ HAWK", LidarPhase.BUILDING, stage = "building tiles", elapsedS = 247, saved = true)
         compose.waitForIdle()
         compose.onNodeWithText("Building 3D tiles").assertIsDisplayed()
@@ -192,22 +196,44 @@ class Viewer3DPageTest {
     }
 
     @Test
-    fun `each state is said to a screen reader as it comes, and a failure at once`() {
+    fun `each state is said to a screen reader as it comes, in one live region that stays, and a failure at once`() {
         var ui by mutableStateOf(Viewer3DUi("LZ HAWK", LidarPhase.RESOLVING))
         compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DPage(ui, actions) } }
-        fun said(text: String) = compose.onNode(hasText(text, substring = true)).fetchSemanticsNode().config.getOrNull(SemanticsProperties.LiveRegion)
+        fun node(text: String) = compose.onNode(hasText(text, substring = true)).fetchSemanticsNode()
+        fun said(text: String) = node(text).config.getOrNull(SemanticsProperties.LiveRegion)
         assertEquals(LiveRegionMode.Polite, said(Viewer3DWords.LOOKING_UP))
+        // The same node each time, its words changed: a screen reader is told of a change only to a node that was there before it.
+        val region = node(Viewer3DWords.LOOKING_UP).id
         ui = Viewer3DUi("LZ HAWK", LidarPhase.BUILDING, stage = "waiting")
         compose.waitForIdle()
         assertEquals(LiveRegionMode.Polite, said(Viewer3DWords.BUILDING))
+        assertEquals(region, node(Viewer3DWords.BUILDING).id)
         assertEquals(LiveRegionMode.Polite, said("Queued"))
         ui = Viewer3DUi("LZ HAWK", LidarPhase.MISSING)
         compose.waitForIdle()
         assertEquals(LiveRegionMode.Polite, said(Viewer3DWords.MISSING))
+        assertEquals(region, node(Viewer3DWords.MISSING).id)
         ui = Viewer3DUi("LZ HAWK", LidarPhase.ERROR, problem = LidarProblem.BUILD_FAILED, buildFailed = true)
         compose.waitForIdle()
         assertEquals(LiveRegionMode.Assertive, said("Build failed"))
+        assertEquals(region, node("Build failed").id)
         compose.onNode(hasText("Build failed", substring = true) and hasText("could not be built", substring = true)).assertExists()
+    }
+
+    @Test
+    fun `no terrain is said in a live region that was there before it`() {
+        var ui by mutableStateOf(Viewer3DUi("LZ HAWK", LidarPhase.AVAILABLE))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DPage(ui, actions) } }
+        val regions = compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)).fetchSemanticsNodes().map { it.id }
+        ui = ui.copy(noGround = true)
+        compose.waitForIdle()
+        val notice = compose.onNode(hasText(Viewer3DWords.NO_GROUND)).fetchSemanticsNode()
+        var at: androidx.compose.ui.semantics.SemanticsNode? = notice
+        while (at != null && at.config.getOrNull(SemanticsProperties.LiveRegion) == null) at = at.parent
+        // The banner's own region is new with it; the one round it stayed.
+        var outer = at?.parent
+        while (outer != null && outer.config.getOrNull(SemanticsProperties.LiveRegion) == null) outer = outer.parent
+        assertTrue("a live region round the notice that was there before it", outer != null && outer.id in regions)
     }
 
     @Test
@@ -256,6 +282,17 @@ class Viewer3DPageTest {
         repeat(6) { compose.onRoot().performKeyInput { pressKey(Key.Tab) } }
         compose.onNode(isFocused()).assertExists()
         assertEquals(emptyList<String>(), under)
+        // Round and round: Close, Retry, and Close again; back from Close to Retry.
+        compose.runOnIdle { focus.requestFocus() }
+        compose.waitForIdle()
+        compose.onNode(isFocused()).assert(hasContentDescription(Viewer3DWords.CLOSE))
+        compose.onRoot().performKeyInput { pressKey(Key.Tab) }
+        compose.onNode(isFocused()).assert(hasText(Viewer3DWords.RETRY))
+        compose.onRoot().performKeyInput { pressKey(Key.Tab) }
+        compose.onNode(isFocused()).assert(hasContentDescription(Viewer3DWords.CLOSE))
+        compose.onRoot().performKeyInput { withKeyDown(Key.ShiftLeft) { pressKey(Key.Tab) } }
+        compose.onNode(isFocused()).assert(hasText(Viewer3DWords.RETRY))
+        assertEquals(emptyList<String>(), under)
     }
 
     @Test
@@ -297,9 +334,9 @@ class Viewer3DPageTest {
         compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
         val scene = model.session.value!!
         compose.onNode(hasContentDescription(Viewer3DWords.scene("LZ HAWK", drawn = true))).assertExists()
-        compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription(Viewer3DWords.LZ).assertIsDisplayed().performClick()
         assertTrue("LZ flies back", scene.frame(1080, 2200, 2.75, scene.listener!!)!!.animating)
-        compose.onNode(hasContentDescription("Facing 330 degrees true. Face north")).assertIsDisplayed().performClick()
+        compose.onNode(hasContentDescription("Facing 330 degrees true")).assertIsDisplayed().performClick()
         assertTrue("north, flown to", scene.frame(1080, 2200, 2.75, scene.listener!!)!!.animating)
         compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).assertIsDisplayed()
             .performSemanticsAction(SemanticsActions.SetProgress) { it(9f) }
@@ -312,22 +349,56 @@ class Viewer3DPageTest {
     }
 
     @Test
-    fun `Routes is there with no routes, unavailable and saying why, and with them it frames them`() {
+    fun `Routes is there with no routes, unavailable and saying why, a tap saying it too, and with them it frames them`() {
         val routes = FakeRoutes()
         val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), routes = routes)
         compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, surface = standIn) } }
         compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
-        compose.onNodeWithText(Viewer3DWords.ROUTES).assertIsDisplayed().assertIsNotEnabled()
+        // Drawn in capitals, as the web's; heard as the word.
+        compose.onNodeWithText("ROUTES").assertIsDisplayed()
+        compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).assertIsDisplayed().assertIsNotEnabled()
         assertEquals(Viewer3DWords.NO_ROUTES, routesState())
+        assertNull("nothing to try again", compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).fetchSemanticsNode().config.getOrNull(SemanticsActions.CustomActions))
+        compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).performClick()
+        compose.onNodeWithText(Viewer3DWords.NO_ROUTES).assertIsDisplayed()
         compose.runOnIdle { routes.shown.value = listOf(lzRoute()) }
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(SceneHeights.PAUSE_MS + 1))
         compose.waitUntil(5_000) { model.session.value!!.hasRoutes.value }
-        compose.onNodeWithText(Viewer3DWords.ROUTES).assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).assertIsEnabled().performClick()
         val scene = model.session.value!!
         assertTrue("Routes flies to them", scene.frame(1080, 2200, 2.75, scene.listener!!)!!.animating)
     }
 
-    private fun routesState(): String? = compose.onNodeWithText(Viewer3DWords.ROUTES).fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
+    @Test
+    fun `routes that could not be placed are not said to be none, and Try again or a tap asks for them again`() {
+        val routes = FakeRoutes()
+        val ground = FakeGround().apply { failing = ApiException(400, "bad_request", "no") }
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), routes = routes, ground = ground)
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, surface = standIn) } }
+        compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
+        compose.runOnIdle { routes.shown.value = listOf(lzRoute()) }
+        assertEquals(Viewer3DWords.noRoutes(RoutesPlacing.PLACING), routesState())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(SceneHeights.PAUSE_MS + 1))
+        compose.waitUntil(5_000) { model.routes.value == RoutesPlacing.FAILED }
+        assertEquals(Viewer3DWords.noRoutes(RoutesPlacing.FAILED), routesState())
+        assertEquals(1, ground.asked.size)
+        val tryAgain = compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        assertEquals(listOf(Viewer3DWords.TRY_AGAIN), tryAgain.map { it.label })
+        compose.runOnIdle { tryAgain.single().action() }
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(SceneHeights.PAUSE_MS + 1))
+        compose.waitUntil(5_000) { ground.asked.size == 2 && model.routes.value == RoutesPlacing.FAILED }
+        // A tap says so, and asks again.
+        compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).performClick()
+        compose.onNodeWithText(Viewer3DWords.noRoutesTapped(RoutesPlacing.FAILED)).assertIsDisplayed()
+        ground.failing = null
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(SceneHeights.PAUSE_MS + 1))
+        compose.waitUntil(5_000) { model.session.value!!.hasRoutes.value }
+        assertEquals(3, ground.asked.size)
+        compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).assertIsEnabled()
+    }
+
+    private fun routesState(): String? =
+        compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
 
     @Test
     fun `a screen reader hears the scene said as it is drawn, and its actions step the camera as the fingers would`() {
@@ -345,6 +416,8 @@ class Viewer3DPageTest {
         compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
         val drawn = compose.onNode(hasContentDescription(Viewer3DWords.scene("LZ HAWK", drawn = true))).fetchSemanticsNode()
         assertEquals(notDrawn.id, drawn.id)
+        // Read after the bar and the controls over it, which it would otherwise come before, being the whole page.
+        assertEquals(1f, drawn.config[SemanticsProperties.TraversalIndex])
         val steps = drawn.config[SemanticsActions.CustomActions]
         assertEquals(SceneStep.entries.map(Viewer3DWords::step), steps.map { it.label })
         val scene = model.session.value!!
@@ -352,6 +425,10 @@ class Viewer3DPageTest {
         compose.runOnIdle { steps.first { it.label == Viewer3DWords.step(SceneStep.TURN_LEFT) }.action() }
         val turned = scene.frame(1080, 2200, 2.75, scene.listener!!)!!.camera
         assertEquals(0.0, Math.IEEEremainder(turned.heading - (before.heading - Math.toRadians(SceneSession.STEP_TURN_DEG)), 2 * Math.PI), 1e-9)
+        // The step is said, on the same node: where the camera now looks (15° left of 330°).
+        val said = compose.onNode(hasContentDescription("Point cloud of LZ HAWK: facing 315 degrees true, looking 35 degrees down", substring = true)).fetchSemanticsNode()
+        assertEquals(drawn.id, said.id)
+        assertTrue(said.config[SemanticsProperties.ContentDescription].single().contains(Regex("the ground [0-9,]+ metres away\\.$")))
     }
 
     @Test
@@ -367,7 +444,7 @@ class Viewer3DPageTest {
         down = false
         compose.onNodeWithText("Retry").performClick()
         compose.waitUntil(5_000) { model.session.value?.status?.value == SceneStatus.Drawing }
-        compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed()
+        compose.onNodeWithContentDescription(Viewer3DWords.LZ).assertIsDisplayed()
     }
 
     @Test
@@ -378,7 +455,57 @@ class Viewer3DPageTest {
         compose.waitUntil(5_000) { model.session.value?.status?.value == SceneStatus.Failed(SceneProblem.NO_GL) }
         compose.onNodeWithText(Viewer3DWords.sceneProblem(SceneProblem.NO_GL), substring = true).assertIsDisplayed()
         compose.onNodeWithText("Retry").assertDoesNotExist()
-        compose.onNodeWithText(Viewer3DWords.LZ).assertDoesNotExist()
+        compose.onNodeWithContentDescription(Viewer3DWords.LZ).assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "w640dp-h360dp", fontScale = 2.0f)
+    fun `on a small phone on its side at large text, the notice of no terrain stops short of the compass`() {
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined), probe = FakeProbe(ground = false))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, surface = standIn) } }
+        compose.waitUntil(5_000) { model.session.value?.compass?.value != null && model.state.value?.noGround == true }
+        compose.waitForIdle()
+        val notice = compose.onNodeWithText(Viewer3DWords.NO_GROUND).fetchSemanticsNode().boundsInRoot
+        val compass = compose.onNode(hasContentDescription("Facing", substring = true)).fetchSemanticsNode().boundsInRoot
+        val camera = compose.onNodeWithContentDescription(Viewer3DWords.ROUTES).fetchSemanticsNode().boundsInRoot
+        for (control in listOf(compass, camera)) assertFalse("$notice over $control", notice.overlaps(control))
+    }
+
+    @Test
+    fun `with imagery drawn, Mapbox is credited as the web's Cesium credits it, its link opening Mapbox's page`() {
+        val opened = mutableListOf<String>()
+        val handler = object : androidx.compose.ui.platform.UriHandler {
+            override fun openUri(uri: String) {
+                opened += uri
+            }
+        }
+        var credit by mutableStateOf(true)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalUriHandler provides handler) {
+                    SceneFootContent(SceneStatus.Drawing, 5, {}, credit = credit)
+                }
+            }
+        }
+        compose.onNodeWithText(Viewer3DWords.MAPBOX_CREDIT).assertIsDisplayed().performClick()
+        assertEquals(listOf(Viewer3DWords.MAPBOX_ABOUT), opened)
+        assertTrue(compose.onNodeWithText(Viewer3DWords.MAPBOX_CREDIT).fetchSemanticsNode().boundsInRoot.height >= 48 * compose.density.density - 0.5f)
+        compose.runOnIdle { credit = false }
+        compose.onNodeWithText(Viewer3DWords.MAPBOX_CREDIT).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a toast is drawn above the point size, not over it`() {
+        val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
+        val toasts = androidx.compose.material3.SnackbarHostState()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = false, onClose = {}, viewModel = model, snackbars = toasts, surface = standIn) } }
+        compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
+        CoroutineScope(Dispatchers.Main).launch { toasts.showSnackbar("Saved to OP DK") }
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Saved to OP DK")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitForIdle()
+        val toast = compose.onNodeWithText("Saved to OP DK").fetchSemanticsNode().boundsInRoot
+        val size = compose.onNode(hasContentDescription(Viewer3DWords.POINT_SIZE)).fetchSemanticsNode().boundsInRoot
+        assertTrue("$toast over $size", toast.bottom <= size.top)
     }
 
     @Test
@@ -388,8 +515,8 @@ class Viewer3DPageTest {
         compose.setContent { EzpzTheme(ThemeMode.Dark) { Viewer3DHost(hawk, night = night, onClose = {}, viewModel = model, surface = standIn) } }
         compose.waitUntil(5_000) { model.session.value?.compass?.value != null }
         assertEquals(0.45f, SCENE_NIGHT_DIM)
-        compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed()
+        compose.onNodeWithContentDescription(Viewer3DWords.LZ).assertIsDisplayed()
         compose.runOnIdle { night = true }
-        compose.onNodeWithText(Viewer3DWords.LZ).assertIsDisplayed()
+        compose.onNodeWithContentDescription(Viewer3DWords.LZ).assertIsDisplayed()
     }
 }

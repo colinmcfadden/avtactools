@@ -129,6 +129,13 @@ public class PointCloudScene(
         }
     }
 
+    /**
+     * What [trim] let go of that no frame has said yet, taken now (for the GPU copies to be freed before the GL thread pauses, while its context
+     * is current: a paused thread draws no frame to free them in); the next frame does not say it again.
+     */
+    @Synchronized
+    public fun takeTrimmed(): List<Tile> = ArrayList(trimmed).also { trimmed.clear() }
+
     /** [tile]'s points came, and are in hand. */
     @Synchronized
     public fun arrived(tile: Tile, points: ScenePoints) {

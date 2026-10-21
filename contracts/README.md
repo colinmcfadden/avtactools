@@ -99,7 +99,7 @@ shows can:
 
 | File | What it pins | Web code |
 |---|---|---|
-| `routeScene.json` | Where each route's line, curtain, drop lines and labels go, in metres above the ellipsoid: the samples asked for, and the shapes made from each answer (hidden routes, touchdowns, AGL with no MSL, the 50 ft mismatch, missing ground and geoid, a long route sampled coarsely, the labels' text) | `routeScene.js` |
+| `routeScene.json` | Where each route's line, curtain, drop lines and labels go, in metres above the ellipsoid: the samples asked for, and the shapes made from each answer (hidden routes, touchdowns, AGL with no MSL, the 50 ft mismatch, missing ground and geoid, a long route sampled coarsely, the labels' text); for each answer the sphere *Routes* frames, and a route's colours as Cesium reads them, both from Cesium itself (its CommonJS build, required by the test: never through webpack) | `routeScene.js`, `routeEntities.js`, Cesium's `BoundingSphere.fromPoints` and `Color.fromCssColorString` |
 | `compass.json` | How the compass turns and tilts for a camera's heading and pitch, and the heading it shows (`330°T`) | `compass.js` |
 | `terrain.json` | Which terrain tile holds a place at each level (Cesium's geographic tiling), and the tiles' size | `terrainProvider.js` |
 | `lidarFlow.json` | Finding or building a point cloud while someone waits: every request, how long after the last answer it came, the answer, and what the view shows then, through every answer the server can give | `useLidarTileset.js` |

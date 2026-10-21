@@ -2,8 +2,10 @@ package app.ezpztac.scene3d
 
 import app.ezpztac.model.RouteSets
 import app.ezpztac.testing.Fixtures
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -81,17 +83,44 @@ class RouteGeometryTest {
     }
 
     @Test
-    fun `a colour that is not one is the web's own blue`() {
-        assertArrayEquals(RouteColors3D.rgba("#38bdf8"), RouteColors3D.rgba("teal"))
-        assertArrayEquals(RouteColors3D.rgba("#38bdf8"), RouteColors3D.rgba(null))
-        assertArrayEquals(floatArrayOf(1f, 0f, 0f, 0.6f), RouteColors3D.rgba("#FF0000", 0.6))
+    fun `a route's colour is read as Cesium reads it, every case of routeScene json's colors`() {
+        val colors = Fixtures.load("viewer3d/routeScene.json").getValue("colors").jsonArray.map { it.jsonObject }
+        assertTrue(colors.size >= 20)
+        for (c in colors) {
+            val css = c.getValue("css").jsonPrimitive.content
+            val expected = (c["rgba"] as? JsonArray)?.map { it.jsonPrimitive.double }
+            val read = RouteColors3D.read(css)
+            if (expected == null) {
+                assertNull(read, css)
+            } else {
+                assertTrue(read != null, css)
+                for (i in 0..3) assertEquals(expected[i], read!![i], 1e-15, "$css: channel $i")
+            }
+        }
     }
 
     @Test
-    fun `labels are full size to a kilometre and a half, then smaller to 55 percent at 60 km`() {
+    fun `none is the web's own blue, and so (not like the web) is one Cesium cannot read, and an alpha given stands for the colour's own`() {
+        val blue = RouteColors3D.rgba("#38bdf8")
+        assertArrayEquals(blue, RouteColors3D.rgba(null))
+        assertArrayEquals(blue, RouteColors3D.rgba(""))
+        assertArrayEquals(blue, RouteColors3D.rgba("notacolor"))
+        // A channel that is not a number (JavaScript's parseFloat of a lone point) is a colour that cannot be drawn.
+        assertNull(RouteColors3D.read("rgb(., 3, 4)"))
+        assertArrayEquals(floatArrayOf(1f, 0f, 0f, 0.6f), RouteColors3D.rgba("#FF0000", 0.6))
+        assertArrayEquals(floatArrayOf(0f, 2f / 3, 1f, 0.2f), RouteColors3D.rgba("#0af8", 0.2))
+        assertEquals(0x80 / 255f, RouteColors3D.rgba("#00aaff80")[3])
+    }
+
+    @Test
+    fun `labels are full size to a kilometre and a half, then smaller along Cesium's curve to 55 percent at 60 km`() {
         assertEquals(1.0, RouteGeometry.labelScale(0.0))
         assertEquals(1.0, RouteGeometry.labelScale(1_500.0))
-        assertEquals(0.775, RouteGeometry.labelScale(30_750.0), 1e-12)
+        // czm_nearFarScalar: t = ((d² − 1500²) / (60000² − 1500²)) ^ 0.2, mixed from 1 to 0.55.
+        assertEquals(0.9021380360592277, RouteGeometry.labelScale(2_000.0), 1e-12)
+        assertEquals(0.836543348616133, RouteGeometry.labelScale(5_000.0), 1e-12)
+        assertEquals(0.7812088904992798, RouteGeometry.labelScale(10_000.0), 1e-12)
+        assertEquals(0.655699672916993, RouteGeometry.labelScale(30_750.0), 1e-12)
         assertEquals(0.55, RouteGeometry.labelScale(60_000.0), 1e-12)
         assertEquals(0.55, RouteGeometry.labelScale(500_000.0), 1e-12)
     }

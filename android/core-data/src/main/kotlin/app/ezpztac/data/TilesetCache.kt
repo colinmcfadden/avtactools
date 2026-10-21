@@ -94,6 +94,7 @@ public class CachedTilesetFiles(
         synchronized(this) {
             if (generation != started || !part.renameTo(file)) {
                 part.delete()
+                prune(file)
                 return
             }
             val index = indexed()
@@ -119,6 +120,17 @@ public class CachedTilesetFiles(
         val gone = indexed().remove(file) ?: return
         held -= gone.bytes
         file.delete()
+        prune(file)
+    }
+
+    // Under [this]: the folders [file] was in that are left empty, up to the cache's own, so no folder named for a tileset's key (a place, AGENTS.md
+    // §15) outlasts its files: one let go of, or one fetched across a clear, which made its folders again before it found it was not to be kept.
+    private fun prune(file: File) {
+        var at = file.parentFile
+        while (at != null && at != dir && at.startsWith(dir)) {
+            if (at.list()?.isEmpty() != true || !at.delete()) return
+            at = at.parentFile
+        }
     }
 
     // Under [this]: the files on disk the first time they are wanted, the oldest first; a half-written one left by a process that ended is removed.

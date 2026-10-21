@@ -44,7 +44,9 @@ public data class CameraPose(val position: Vec3, val heading: Double, val pitch:
 public class CameraMoves(public val groundZ: Double, public val limits: Limits = Limits()) {
     /**
      * How far it may go: [minRange] to [maxRange] metres from the ground it moves about, pitched no flatter than [maxPitch] (just under level, so
-     * the ground stays in view), and never nearer than [minAboveGround] metres above the ground.
+     * the ground stays in view), and never nearer than [minAboveGround] metres above the ground. A camera already further than [maxRange] (*Routes*
+     * framing routes tens of kilometres across, which Cesium frames whatever their size: its `maximumZoomDistance` is unbounded) is never pulled in
+     * to it by a pinch; it may only come nearer.
      */
     public data class Limits(
         val minRange: Double = 3.0,
@@ -59,7 +61,7 @@ public class CameraMoves(public val groundZ: Double, public val limits: Limits =
         val ray = camera.rayThrough(at.x, at.y)
         if (ray.z > -RAY_EPSILON) return null
         val t = (groundZ - camera.position.z) / ray.z
-        if (t <= 0 || t > limits.maxRange * REACH) return null
+        if (t <= 0 || t > maxOf(limits.maxRange, camera.position.z - groundZ) * REACH) return null
         return camera.position + ray * t
     }
 
@@ -88,7 +90,7 @@ public class CameraMoves(public val groundZ: Double, public val limits: Limits =
         if (!(factor > 0) || !factor.isFinite()) return pose(camera)
         val target = ground(camera, at) ?: (camera.position + camera.rayThrough(at.x, at.y) * (pivot(camera) - camera.position).length)
         val away = camera.position - target
-        val range = (away.length / factor).coerceIn(limits.minRange, limits.maxRange)
+        val range = (away.length / factor).coerceIn(limits.minRange, maxOf(limits.maxRange, away.length))
         var position = target + away.normalized() * range
         if (position.z < groundZ + limits.minAboveGround) position = Vec3(position.x, position.y, groundZ + limits.minAboveGround)
         return CameraPose(position, camera.heading, camera.pitch)

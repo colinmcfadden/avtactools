@@ -58,7 +58,7 @@ class PntsReaderTest {
         assertEquals(first.x, points.positions[0].toDouble(), 1e-4)
         assertEquals(first.z, points.positions[2].toDouble(), 1e-4)
         assertEquals(second.y, points.positions[4].toDouble(), 1e-4)
-        assertArrayEquals(byteArrayOf(-1, -1, -1, -1, -1, -1), points.rgb)                           // no colour: Cesium's white
+        assertArrayEquals(ByteArray(6) { 169.toByte() }, points.rgb)                                  // no colour: Cesium's dark grey
     }
 
     @Test

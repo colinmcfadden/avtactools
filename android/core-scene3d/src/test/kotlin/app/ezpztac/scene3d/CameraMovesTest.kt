@@ -79,6 +79,33 @@ class CameraMovesTest {
     }
 
     @Test
+    fun `a camera framing routes further than the limit is never pulled in to it by a pinch, and may come nearer`() {
+        // *Routes* framing routes about 60 km across: 2.2 radii back, 66 km.
+        val far = camera(moves.orbit(Vec3(0.0, 0.0, ground), 66_000.0, -30 * deg, -35 * deg))
+        val middle = ScreenPoint(540.0, 1100.0)
+        val target = moves.ground(far, middle)!!
+        assertEquals(66_000.0, (far.position - target).length, 1e-3)
+        for (factor in listOf(0.95, 1e-9)) {
+            val out = moves.zoom(far, middle, factor)
+            assertEquals(66_000.0, (out.position - target).length, 1e-3, "a pinch of $factor")
+        }
+        for (factor in listOf(1.0001, 1.05)) {
+            val nearer = moves.zoom(far, middle, factor)
+            assertEquals(66_000.0 / factor, (nearer.position - target).length, 1e-3, "a pinch of $factor")
+        }
+        // Routes two hundred kilometres across are framed from further than the ground's usual reach (four times the limit): the ground in the
+        // middle of the view is still found, so a pinch goes toward it rather than toward a point in the air.
+        val farther = camera(moves.orbit(Vec3(0.0, 0.0, ground), 240_000.0, -30 * deg, -35 * deg))
+        val below = moves.ground(farther, middle)
+        assertTrue(below != null && below.z == ground, "$below")
+        assertEquals(240_000.0 / 2, (moves.zoom(farther, middle, 2.0).position - below!!).length, 1e-3)
+        // And once within the limit, it stays within it.
+        val within = camera(moves.zoom(far, middle, 3.0))
+        val back = moves.zoom(within, middle, 1e-9)
+        assertEquals(moves.limits.maxRange, (back.position - moves.ground(within, middle)!!).length, 1e-3)
+    }
+
+    @Test
     fun `a pinch goes toward what is between the fingers by as much as they spread, and no nearer than the limit`() {
         val c = camera(start)
         val at = ScreenPoint(300.0, 1400.0)

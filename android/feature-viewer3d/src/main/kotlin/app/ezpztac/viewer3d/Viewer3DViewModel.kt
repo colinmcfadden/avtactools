@@ -8,6 +8,7 @@ import app.ezpztac.data.LidarLookup
 import app.ezpztac.data.LidarLookupRun
 import app.ezpztac.data.LidarPhase
 import app.ezpztac.data.LidarProblem
+import app.ezpztac.data.RoutesPlacing
 import app.ezpztac.data.SceneHeights
 import app.ezpztac.data.TerrainProbe
 import app.ezpztac.data.TilesetAddress
@@ -99,12 +100,16 @@ class Viewer3DViewModel @Inject constructor(
     private var sceneOf: Pair<String?, String?>? = null
     private var heights: SceneHeights? = null
     private val _pointSize = MutableStateFlow(SceneLook.pointSizeOrDefault(pointSizes.get()))
+    private val _routes = MutableStateFlow(RoutesPlacing.NONE)
 
     /** The scene of the point cloud being shown; null until it is in hand. */
     val session: StateFlow<SceneSession?> = _session.asStateFlow()
 
     /** The point size the person chose, 2 to 16. */
     val pointSize: StateFlow<Int> = _pointSize.asStateFlow()
+
+    /** How the routes stand ([SceneHeights.standing]), for *Routes* to say why it has nothing to frame when it has not. */
+    val routes: StateFlow<RoutesPlacing> = _routes.asStateFlow()
 
     /** What the page shows; null while it is closed. */
     val state: StateFlow<Viewer3DUi?> = combine(target, lookup, ground) { t, l, g -> t?.let { Viewer3DUi.of(it, l, g) } }
@@ -134,6 +139,7 @@ class Viewer3DViewModel @Inject constructor(
             viewModelScope.launch { ground.value = probe.hasGround(at) },
             viewModelScope.launch { shownRoutes.routes().collect(placing::routes) },
             viewModelScope.launch { placing.placed.collect { _session.value?.setRoutes(it) } },
+            viewModelScope.launch { placing.standing.collect { _routes.value = it } },
         )
     }
 
@@ -167,6 +173,11 @@ class Viewer3DViewModel @Inject constructor(
         run?.retry()
     }
 
+    /** *Routes* pressed with nothing to frame: routes whose ground could not be had are asked for again. */
+    fun retryRoutes() {
+        heights?.retry()
+    }
+
     /** The page closed: the lookup lets go of its build (unless the LZ/PZ is saved, which the service keeps building). */
     fun close() {
         jobs.forEach { it.cancel() }
@@ -175,6 +186,7 @@ class Viewer3DViewModel @Inject constructor(
         run = null
         heights?.close()
         heights = null
+        _routes.value = RoutesPlacing.NONE
         _session.value?.close()
         _session.value = null
         sceneOf = null
