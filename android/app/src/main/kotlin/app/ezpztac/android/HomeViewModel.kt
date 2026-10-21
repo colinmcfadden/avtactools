@@ -36,7 +36,6 @@ import app.ezpztac.map.CornerHitTest
 import app.ezpztac.map.DragHitTest
 import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
-import app.ezpztac.map.GraphicsScene
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapPointer
 import app.ezpztac.map.MapProjection
@@ -44,6 +43,7 @@ import app.ezpztac.map.PersonColors
 import app.ezpztac.map.PointHitTest
 import app.ezpztac.map.PointScene
 import app.ezpztac.map.RouteHitTest
+import app.ezpztac.map.GraphicsScene
 import app.ezpztac.map.RouteScene
 import app.ezpztac.map.ContourPiece
 import app.ezpztac.map.SlopeImage
@@ -528,18 +528,70 @@ class HomeViewModel @Inject constructor(
     // -- Picking something up with a long press and dragging it ---------------------------------------------------------------
 
     /**
-     * A long press at [at]: if there is something there that can be moved (a planning graphic, the tip of a PZ marker's arrow, a threat, a point of a route: what
-     * [DragHitTest] finds), it is picked up, and this answers true so the finger drags it and the map does not pan. **Nothing is held or opened by a long press**: the bar with
-     * the object's information is for a tap. False for anything else (the line between two points, the ground, a local point), and while a boundary or a route is being drawn:
-     * taps are corners then.
+     * A long press at [at] on something that can be moved (a planning graphic, the tip of a PZ marker's arrow, a threat, a point of a route: what [DragHitTest] finds):
+     * it is held as a tap would hold it, so its bar is over the map and nothing else opens (the owner's request, 2026-10-21: no going into the panel to turn it), and it
+     * is picked up, so the finger drags it and the map does not pan; a press that does not move leaves it where it is, held. One of a read-only pack's LZ/PZ or set of
+     * routes is held and not picked up: the finger moves nothing. Answers true for all of these, so the map's menu does not open; false for anything else (the line
+     * between two points, the ground, a local point), and while a boundary or a route is being drawn: taps are corners then.
      */
     fun dragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
         if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null) return false
-        // Nothing of a read-only pack's LZ/PZ or set of routes is picked up: a press there opens the map's menu, as on the ground. A threat (the person's own) still is.
+        press = null
+        // What can be moved comes first: a read-only pack's LZ/PZ or set of routes is left out, so the person's own threat under one of its graphics is still picked up.
         val graphics = if (lzLocked() != null) GraphicsScene.EMPTY else scene.value.graphics
         val routeScene = if (routesLocked() != null) RouteScene.EMPTY else routes.value
-        val target = DragHitTest.pick(graphics, threatScene.value, routeScene, view, at, touchRadiusPx, unitFootprints) ?: return false
-        return mapDrag.start(target, at)
+        DragHitTest.pick(graphics, threatScene.value, routeScene, view, at, touchRadiusPx, unitFootprints)?.let { target ->
+            hold(target)
+            if (mapDrag.start(target, at)) press = Press(at, view, touchRadiusPx * PRESS_SLOP)
+            return true
+        }
+        // Then what can only be looked at: held, to be seen in its bar (not the map's menu), and nothing picked up.
+        val lookedAt = DragHitTest.pick(scene.value.graphics, threatScene.value, routes.value, view, at, touchRadiusPx, unitFootprints) ?: return false
+        hold(lookedAt)
+        return true
+    }
+
+    /**
+     * The long press that picked something up: where, seen through the projection of the moment, and how far the finger may roll before it moves the thing. A press meant
+     * only to hold it ([dragStarted]) is not a move: under the slop nothing is moved, and lifting there ends the drag with no edit (a route point keeps its fetched ground, a
+     * threat its terrain mask, and no step is left to undo).
+     */
+    private class Press(val at: LatLon, val view: MapProjection, val slopPx: Double) {
+        var moved = false
+
+        /** Whether the finger at [to] is far enough from the press to move the thing; once it has been, it always is. */
+        fun moves(to: LatLon): Boolean {
+            if (!moved && view.pixelsBetween(at, to) >= slopPx) moved = true
+            return moved
+        }
+    }
+
+    private var press: Press? = null
+
+    /** What a long press found, held as a tap on it holds it (`mapTapped`): its bar over the map, and what else was held put down. A threat is held, never let go of, by it. */
+    private fun hold(target: DragTarget) {
+        boundaryCorners.clear()
+        pointSelection.clear()
+        when (target) {
+            is DragTarget.Graphic -> {
+                threatSelection.clear()
+                selection.select(target.ref)
+            }
+            is DragTarget.PzTip -> {
+                threatSelection.clear()
+                selection.select(target.ref)
+            }
+            is DragTarget.Threat -> {
+                selection.clear()
+                routeSelection.releasePoint()
+                threatSelection.select(target.id)
+            }
+            is DragTarget.RoutePoint -> {
+                selection.clear()
+                threatSelection.clear()
+                routeSelection.select(target.routeId, target.pointId)
+            }
+        }
     }
 
     /**
@@ -563,8 +615,9 @@ class HomeViewModel @Inject constructor(
         routeSelection.releasePoint()
     }
 
-    /** The finger holding what was picked up is now at [at]. */
+    /** The finger holding what was picked up is now at [at]: within the slop of the press it stays where it was. */
     fun dragMoved(at: LatLon) {
+        if (press?.moves(at) == false) return
         mapDrag.move(at)
         // The finger is the pointer while it moves something (the design's: Sam B.'s pointer is on the aircraft he is moving).
         if (mapDrag.active.value != null) {
@@ -573,16 +626,20 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** The finger lifted at [at]: what was picked up is put down there. */
+    /** The finger lifted at [at]: what was picked up is put down there, or, never moved past the slop, left where it was with no edit at all. */
     fun dragEnded(at: LatLon) {
-        mapDrag.end(at)
+        val p = press
+        press = null
+        if (p != null && !p.moves(at)) mapDrag.abandon() else mapDrag.end(at)
         finger = null
         sayPointer()
     }
 
-    /** The touch was taken from the drag: what was picked up goes back where it was. */
+    /** The touch was taken from the drag: what was picked up goes back where it was (never moved, it is simply let go of, with no edit). */
     fun dragCancelled() {
-        mapDrag.cancel()
+        val p = press
+        press = null
+        if (p != null && !p.moved) mapDrag.abandon() else mapDrag.cancel()
         finger = null
         sayPointer()
     }
@@ -590,6 +647,9 @@ class HomeViewModel @Inject constructor(
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */
     fun baseMapChosen(id: String) = session.setQuietly { it.copy(view = it.view.copy(mapStyle = id)) }
 }
+
+/** How far a finger may roll after a long press before it moves what it picked up, as a share of the touch radius (24 dp: 8 dp, the platform's touch slop). */
+private const val PRESS_SLOP = 1.0 / 3
 
 /** Where a long press opened the map menu, and its grid (degrees where MGRS has none, at the poles), as the web's menu heads itself. */
 data class MapMenuPlace(val at: LatLon, val grid: String)

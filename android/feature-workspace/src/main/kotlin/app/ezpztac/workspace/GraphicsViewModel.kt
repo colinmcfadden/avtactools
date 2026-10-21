@@ -85,7 +85,17 @@ data class InspectorUi(
     val doghouse: DoghouseUi? = null,
     /** The held unit as the unit builder shows it, and null for anything else. */
     val unit: UnitDraft? = null,
-)
+    /** The LZ/PZ it is on: with [ref], what a field typed for it names, so it lands on it and on nothing held or opened since ([GraphicOf]). */
+    val diagramId: String = "",
+) {
+    val of: GraphicOf get() = GraphicOf(diagramId, ref)
+}
+
+/**
+ * One graphic of one LZ/PZ: what a field of the held bar was typed for. A field is left (and so takes what was typed) as another graphic is held or another LZ/PZ opened,
+ * and the standard doghouses have the same ids on every LZ/PZ, so what it takes is put on this graphic, or on nothing if that LZ/PZ is no longer the one open.
+ */
+data class GraphicOf(val diagramId: String, val ref: GraphicRef)
 
 /** A planning tool's mode under way, for its toolbar over the map: which tool, how many it has placed, and what went wrong if anything did. */
 data class PlacementUi(val tool: PlaceTool, val placed: Int, val error: String?)
@@ -204,9 +214,10 @@ class GraphicsViewModel @Inject constructor(
 
     // -- Editing the one that is held --------------------------------------------------------------------------------------
 
-    private fun edit(label: String, refusal: String = "That cannot be done to this graphic.", patch: (String, JsonObject) -> JsonObject?) {
-        val ref = selection.selected.value ?: return
+    private fun edit(label: String, refusal: String = "That cannot be done to this graphic.", on: GraphicOf? = null, patch: (String, JsonObject) -> JsonObject?) {
         val diagram = session.active.value ?: return
+        if (on != null && on.diagramId != diagram.id) return                                    // typed for an LZ/PZ no longer open: nothing of it lands on this one
+        val ref = on?.ref ?: selection.selected.value ?: return
         val graphic = DiagramOps.graphic(diagram, ref.collection, ref.key) ?: return
         locked()?.let { return fail(it) }
         val changes = patch(ref.collection, graphic) ?: return fail(refusal)
@@ -233,7 +244,8 @@ class GraphicsViewModel @Inject constructor(
 
     fun rotateBy(degrees: Double) = edit("Turn") { c, g -> GraphicEdits.rotateBy(c, g, degrees) }
 
-    fun setRotation(degrees: Double) = edit("Turn") { c, g -> GraphicEdits.setRotation(c, g, degrees) }
+    /** Turns the held graphic to [degrees], or graphic [on] (a field of the held bar's) wherever the selection is now. */
+    fun setRotation(degrees: Double, on: GraphicOf? = null) = edit("Turn", on = on) { c, g -> GraphicEdits.setRotation(c, g, degrees) }
 
     /** Lengthens or shortens the held PZ marker by [deltaFt] feet. */
     fun changeReach(deltaFt: Double) = edit("PZ reach") { c, g ->
@@ -250,21 +262,25 @@ class GraphicsViewModel @Inject constructor(
     // The held doghouse's own fields. What is typed is checked for what the field is and stored as the web stores it; when it is not what the
     // field is for, the answer is the words to show under the field (not the panel's banner, which may be scrolled out of sight).
 
-    private fun editDoghouse(label: String, refusal: String, patch: JsonObject?): String? {
+    // [on]: the doghouse a field of the held bar was typed for, wherever the selection is now; null, the held one (the panel's inspector).
+    private fun editDoghouse(label: String, refusal: String, patch: JsonObject?, on: GraphicOf?): String? {
         locked()?.let { return it }
         if (patch == null) return refusal
-        edit(label) { c, _ -> if (c == "doghouses") patch else null }
+        edit(label, on = on) { c, _ -> if (c == "doghouses") patch else null }
         return null
     }
 
-    fun setDoghouseLabel(typed: String): String? =
-        editDoghouse("Doghouse label", "Enter a label of up to ${Doghouses.MAX_LABEL} characters, such as [SP1].", Doghouses.labelPatch(typed))
+    fun setDoghouseLabel(typed: String, on: GraphicOf? = null): String? =
+        editDoghouse("Doghouse label", "Enter a label of up to ${Doghouses.MAX_LABEL} characters, such as [SP1].", Doghouses.labelPatch(typed), on)
 
-    fun setDoghouseTime(typed: String): String? = editDoghouse("Doghouse time", "Enter a time as minutes and seconds, such as 03+20.", Doghouses.timePatch(typed))
+    fun setDoghouseTime(typed: String, on: GraphicOf? = null): String? =
+        editDoghouse("Doghouse time", "Enter a time as minutes and seconds, such as 03+20.", Doghouses.timePatch(typed), on)
 
-    fun setDoghouseDistance(typed: String): String? = editDoghouse("Doghouse distance", "Enter a distance in kilometres, such as 3.1.", Doghouses.distancePatch(typed))
+    fun setDoghouseDistance(typed: String, on: GraphicOf? = null): String? =
+        editDoghouse("Doghouse distance", "Enter a distance in kilometres, such as 3.1.", Doghouses.distancePatch(typed), on)
 
-    fun setDoghouseAirspeed(typed: String): String? = editDoghouse("Doghouse airspeed", "Enter an airspeed in knots, such as 60.", Doghouses.airspeedPatch(typed))
+    fun setDoghouseAirspeed(typed: String, on: GraphicOf? = null): String? =
+        editDoghouse("Doghouse airspeed", "Enter an airspeed in knots, such as 60.", Doghouses.airspeedPatch(typed), on)
 
     /** Removes the held graphic. It can be brought back with undo. */
     fun delete() {
@@ -327,6 +343,7 @@ class GraphicsViewModel @Inject constructor(
                 direction = if (row.kind == GraphicKind.GO_AROUND) (o["direction"] as? JsonPrimitive)?.content else null,
                 doghouse = if (row.kind == GraphicKind.DOGHOUSE) doghouseUi(o) else null,
                 unit = if (row.kind == GraphicKind.UNIT) UnitDraft.of(o) else null,
+                diagramId = diagram.id,
             )
         }
         return GraphicsUiState(

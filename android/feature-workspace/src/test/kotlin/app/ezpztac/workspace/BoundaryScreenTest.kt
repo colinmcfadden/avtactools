@@ -32,6 +32,7 @@ class BoundaryScreenTest {
         val actions = BoundaryActions(
             start = { log += "start" }, addAtCrosshair = { log += "add" }, undoPoint = { log += "undo" },
             finish = { log += "finish" }, cancel = { log += "cancel" }, dismissError = { log += "dismiss" },
+            analyze = { log += "analyze" }, stopAnalysis = { log += "stop" }, dismissOffer = { log += "not now" },
         )
     }
 
@@ -168,5 +169,48 @@ class BoundaryScreenTest {
         compose.onNodeWithText("Move the map to where the corner should go first.").assertIsDisplayed()
         compose.onNodeWithText("Dismiss").performClick()
         assertEquals(listOf("dismiss"), r.log)
+    }
+
+    // -- The bar that follows Finish ------------------------------------------------------------------------------------
+
+    private fun afterFinish(state: BoundaryUiState): Recorder {
+        val r = Recorder()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { BoundaryToolbarWhileDrawing(state, r.actions) } } }
+        return r
+    }
+
+    @Test
+    fun `once finished, the bar over the map offers the analysis there and then, or not now`() {
+        val r = afterFinish(BoundaryUiState(analyzeOffer = AnalyzeOfferUi(points = 5)))
+        compose.onNodeWithText("Boundary drawn: 5 points").assertIsDisplayed()
+        assertEquals("no drawing toolbar", 0, count("Add here"))
+        compose.onNodeWithText("Analyze LZ/PZ").assertIsEnabled().performClick()
+        compose.onNodeWithText("Not now").performClick()
+        assertEquals(listOf("analyze", "not now"), r.log)
+    }
+
+    @Test
+    fun `while the analysis runs the bar says which part it is on and offers Stop, not Not now`() {
+        val r = afterFinish(BoundaryUiState(analyzeOffer = AnalyzeOfferUi(points = 4, stage = "Measuring the slope…")))
+        compose.onNodeWithText("Measuring the slope…").assertIsDisplayed()
+        compose.onNodeWithText("Analyzing…").assertIsDisplayed()
+        assertEquals(0, count("Not now"))
+        compose.onNodeWithText("Stop").performClick()
+        assertEquals(listOf("stop"), r.log)
+    }
+
+    @Test
+    fun `a failure is said in words, with Try again`() {
+        val r = afterFinish(BoundaryUiState(analyzeOffer = AnalyzeOfferUi(points = 4, failed = "No landing area was found here.")))
+        compose.onNodeWithText("No landing area was found here.").assertIsDisplayed()
+        compose.onNodeWithText("Try again").performClick()
+        assertEquals(listOf("analyze"), r.log)
+    }
+
+    @Test
+    fun `with nothing finished and nothing being drawn the bar takes no room`() {
+        afterFinish(BoundaryUiState(canStart = true))
+        assertEquals(0, count("Analyze LZ/PZ"))
+        assertEquals(0, count("Add here"))
     }
 }

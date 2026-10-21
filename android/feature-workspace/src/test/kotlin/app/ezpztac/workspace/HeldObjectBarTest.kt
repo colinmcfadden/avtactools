@@ -1,12 +1,18 @@
 package app.ezpztac.workspace
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextReplacement
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.GraphicRef
@@ -165,4 +171,116 @@ class HeldObjectBarTest {
 
     private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.onAllNodesWithContentDescriptionSubstring(text: String) =
         onAllNodesWithContentDescription(text, substring = true).fetchSemanticsNodes()
+
+    // -- A doghouse's own fields (the owner's request, 2026-10-21) ------------------------------------------------------
+
+    private val doghouse = DoghouseUi(label = "[RP1]", time = "03+20", distanceKm = "3.1", airspeedKts = "60", feeds = "Sets the takeoff heading on the LZ card")
+    private val doghouseHeld = HeldObjectUi(
+        "Doghouse · [RP1]", "16S GD 66993 52949", heading = 105.0, doghouse = doghouse, graphic = GraphicOf("lz-1", GraphicRef("doghouses", "dh2")),
+    )
+
+    @Test
+    fun `a held doghouse brings its fields to the bar, and other graphics none`() {
+        val held = heldObjectOf(GraphicsUiState(inspector = inspector.copy(kind = GraphicKind.DOGHOUSE, doghouse = doghouse, diagramId = "lz-1")), ThreatsUiState(), RoutesUiState())!!
+        assertEquals(doghouse, held.doghouse)
+        assertEquals(GraphicOf("lz-1", GraphicRef("helicopters", "1")), held.graphic)
+        assertNull(heldObjectOf(GraphicsUiState(inspector = inspector), ThreatsUiState(), RoutesUiState())!!.doghouse)
+    }
+
+    @Test
+    fun `a doghouse's bar has its fields, each holding its value, and still its turn buttons`() {
+        show(doghouseHeld)
+        listOf("[RP1]", "105", "03+20", "3.1", "60").forEach { assertTrue("$it is in a field", present(it)) }
+        assertTrue(present("Sets the takeoff heading on the LZ card"))
+        assertFalse("its heading is a field, not a line of words", present("Heading 105°"))
+        compose.onNodeWithContentDescription("Turn right 15 degrees").assertIsDisplayed()
+        // Up beside Done, an icon: the bar is tall enough with its fields.
+        compose.onNodeWithContentDescription("More options").assertIsDisplayed().performClick()
+        assertEquals(listOf("options"), log)
+    }
+
+    @Test
+    fun `what is typed is taken on Done, and a refusal is said with what was typed kept to be put right`() {
+        val typed = mutableListOf<String>()
+        val refusal = "Enter a time as minutes and seconds, such as 03+20."
+        val bar = HeldObjectActions(
+            setDoghouseTime = { typed += "time $it"; if (it == "soon") refusal else null },
+            setHeading = { typed += "heading $it"; null },
+            setDoghouseLabel = { typed += "label $it"; null },
+        )
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { HeldObjectBar(doghouseHeld, bar) } }
+        compose.onNodeWithText("03+20").performTextReplacement("soon")
+        compose.onNodeWithText("soon").performImeAction()
+        assertTrue(present(refusal))
+        assertTrue("what was typed stays", present("soon"))
+        compose.onNodeWithText("soon").performTextReplacement("04+00")
+        compose.onNodeWithText("04+00").performImeAction()
+        assertFalse("taken: the words go", present(refusal))
+        compose.onNodeWithText("105").performTextReplacement("120")
+        compose.onNodeWithText("120").performImeAction()
+        compose.onNodeWithText("[RP1]").performTextReplacement("[RP2]")
+        compose.onNodeWithText("[RP2]").performImeAction()
+        assertEquals(listOf("time soon", "time 04+00", "heading 120", "label [RP2]"), typed)
+    }
+
+    @Test
+    fun `a field shows a value changed under it, and another doghouse held shows its own`() {
+        var shown by mutableStateOf(doghouseHeld)
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { HeldObjectBar(shown, actions) } }
+        shown = doghouseHeld.copy(doghouse = doghouse.copy(time = "05+00"))                     // an undo, or someone else's change in a pack
+        compose.waitForIdle()
+        assertTrue(present("05+00"))
+        compose.onNodeWithText("[RP1]").performTextReplacement("XX")                             // typed, not taken
+        shown = doghouseHeld.copy(
+            title = "Doghouse · [SP1]", doghouse = doghouse.copy(label = "[SP1]"), graphic = GraphicOf("lz-1", GraphicRef("doghouses", "dh1")),
+        )
+        compose.waitForIdle()
+        assertTrue(present("[SP1]"))
+        assertFalse("what was typed for one is never shown in another's", present("XX"))
+    }
+
+    @Test
+    fun `a doghouse of a finished pack says its values and offers no field`() {
+        show(doghouseHeld.copy(locked = "OP DK is finished: nothing in it can be changed."))
+        assertTrue(present("Label [RP1] · Time 03+20 · 3.1 km · 60 kts"))
+        assertTrue(present("Heading 105°"))
+        assertEquals(0, compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `a heading is typed in degrees or refused in words`() {
+        var set: Double? = null
+        assertEquals("Enter degrees, such as 270.", headingTyped("west") { set = it })
+        assertNull(set)
+        assertNull(headingTyped(" 270 ") { set = it })
+        assertEquals(270.0, set!!, 0.0)
+    }
+
+    @Test
+    fun `a field with focus follows a value changed under it until the person types, and never puts the old one back`() {
+        val typed = mutableListOf<String>()
+        var shown by mutableStateOf(doghouseHeld)
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { HeldObjectBar(shown, HeldObjectActions(setHeading = { typed += "heading $it"; null })) } }
+        compose.onNodeWithText("105").performClick()                                             // in the field, nothing typed
+        shown = doghouseHeld.copy(heading = 135.0)                                              // turned from the bar's own buttons
+        compose.waitForIdle()
+        assertTrue(present("135"))
+        compose.onNodeWithText("135").performImeAction()
+        assertTrue("nothing typed, nothing taken: the turn stands", typed.isEmpty())
+    }
+
+    @Test
+    fun `a refusal goes once its field is left holding its value, and only its own`() {
+        val refusal = "Enter a time as minutes and seconds, such as 03+20."
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { HeldObjectBar(doghouseHeld, HeldObjectActions(setDoghouseTime = { if (it == "soon") refusal else null })) } }
+        compose.onNodeWithText("03+20").performTextReplacement("soon")
+        compose.onNodeWithText("soon").performImeAction()
+        assertTrue(present(refusal))
+        compose.onNodeWithText("3.1").performClick()                                             // another field: the refusal is the time's
+        compose.onNodeWithText("3.1").performImeAction()
+        assertTrue(present(refusal))
+        compose.onNodeWithText("03+20").performTextReplacement("03+20")
+        compose.onNodeWithText("03+20").performImeAction()
+        assertFalse(present(refusal))
+    }
 }

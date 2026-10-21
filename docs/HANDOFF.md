@@ -17,6 +17,24 @@ stands said on its chip.
 
 ---
 
+## 0. Analyze after Finish, and objects edited from their bar (2026-10-21)
+
+Branch `feat/android-quick-edits` (from `develop`). The owner's requests from a phone run (AGENTS.md §17, *Boundary drawing* and *Dragging and turning on the map*):
+- **Finish offers the analysis there and then**: the drawing toolbar gives way to *Analyze LZ/PZ* over the map (then its stage with *Stop*, then *Try again* on a failure, and
+  *Not now*), so a boundary just drawn is not three steps from its analysis (`BoundaryViewModel.analyzeOffer`, `AnalyzeOfferBar`; `AnalyzeOfferTest`).
+- **A long press holds what it is on, as a tap does**: its bar over the map and nothing else (no panel), and still picks it up to drag; a press that does not move leaves it where
+  it was. A read-only pack's object is held, not picked up, so its bar answers the press rather than the map's menu (`HomeViewModel.dragStarted`).
+- **A doghouse's fields are in its bar**: label, heading, time, distance and airspeed, with the turn buttons; *More options* is an icon beside *Done*. What a field takes lands on the
+  doghouse it was typed for (`GraphicOf`), never on one held or an LZ/PZ opened since; the bar scrolls past 60% of the window, and what floats over the map stands on the
+  keyboard's top when that is higher than the sheet (`MapScreen.standingBottom`).
+
+An independent review's findings are fixed, each with a test (mutation-checked): a field with focus wrote its old value back over a turn or an undo made meanwhile; the
+offer came back for a later *Re-analyze* and showed an earlier failure; it lay over the held bar or a route's toolbar; the doghouse's bar could reach above the screen over a
+sheet at half (what floats is now measured into the room under the row); and a finger's roll after a long press moved what it only held (now an 8 dp slop, and no edit at all
+when the finger never passed it).
+
+**Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, and TalkBack on the new fields. A device run on the owner's phone is next.
+
 ## 0. The slope tile, contour lines and the slope profile (2026-10-13/14)
 
 Branch `feat/slope-landing-heading` (on `feat/android-screens`). The owner's rules (UH-60 limits 6° nose down, 15° nose up, 15° across, less

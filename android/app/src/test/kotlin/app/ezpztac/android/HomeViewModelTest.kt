@@ -1581,7 +1581,7 @@ class HomeViewModelTest {
     // -- Long press and drag ------------------------------------------------------------------------------------------
 
     @Test
-    fun `a long press on a graphic picks it up without holding it or opening anything, and the finger moves it as one undo step`() = runTest(dispatcher) {
+    fun `a long press on a graphic holds it, opening nothing else, and the finger moves it as one undo step`() = runTest(dispatcher) {
         val r = Rig(this)
         advanceUntilIdle()
         r.session.open(r.analysed())
@@ -1592,7 +1592,7 @@ class HomeViewModelTest {
 
         val finger = LatLon(34.7838, -84.0822)
         assertTrue(r.model.dragStarted(finger, view(), touchRadiusPx = 24.0))
-        assertNull(r.selection.selected.value)                                                // nothing is held: the information bar is for a tap
+        assertEquals("held as a tap holds it: its bar, and nothing else", GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
         repeat(10) { i -> r.model.dragMoved(LatLon(34.7838 + i * 0.00002, -84.0822)) }
         r.model.dragEnded(LatLon(34.7842, -84.0822))
         advanceUntilIdle()
@@ -1660,6 +1660,39 @@ class HomeViewModelTest {
 
     private fun Rig.mapDragActive() = mapDrag.active.value
 
+    @Test
+    fun `a long press that does not move holds what it is on and leaves it where it was`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val graphics = r.session.active.value!!.graphics
+        val steps = r.session.undoDepth.value
+        val finger = LatLon(34.7838, -84.0822)
+        assertTrue(r.model.dragStarted(finger, view(), touchRadiusPx = 24.0))
+        r.model.dragEnded(finger)
+        advanceUntilIdle()
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+        assertEquals("no step to undo", steps, r.session.undoDepth.value)
+        assertEquals(graphics, r.session.active.value!!.graphics)
+    }
+
+    @Test
+    fun `a long press on a threat holds it, and one already held stays held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val at = LatLon(34.7838, -84.0822)
+        val id = r.threat(at)
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(at, view(), touchRadiusPx = 24.0))
+        assertEquals(id, r.threatSelection.held.value)
+        r.model.dragEnded(at)
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(at, view(), touchRadiusPx = 24.0))
+        assertEquals("a long press never lets go, as a second tap would", id, r.threatSelection.held.value)
+    }
+
     // -- A pack that turns read-only (P2c) -----------------------------------------------------------------------------------
 
     /** The analysed LZ/PZ of pack p (item lz-1), with a PZ marker on it, open; the pack live until a test says otherwise. */
@@ -1688,12 +1721,21 @@ class HomeViewModelTest {
         assertEquals("what was placed stays: ending is not taking back", placed, r.session.active.value!!.graphics.helicopters.size)
         assertEquals(listOf("OP DK was finished: placing stopped."), said)
         assertTrue(r.model.scene.value.locked)
-        // Nothing of it is picked up now: the press opens the map's menu instead.
-        assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        // Nothing of it is picked up now: the press holds what it is on (the helicopter placed over the marker), to be looked at in its bar (not the map's menu), and the
+        // finger moves nothing.
+        val graphics = r.session.active.value!!.graphics
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals("helicopters", r.selection.selected.value?.collection)
+        assertNull(r.mapDragActive())
+        r.model.dragMoved(LatLon(34.7900, -84.0822))
+        r.model.dragEnded(LatLon(34.7900, -84.0822))
+        advanceUntilIdle()
+        assertEquals("not moved", graphics, r.session.active.value!!.graphics)
         r.packs.open.value = pack()                                                              // reopened: it can be moved again
         advanceUntilIdle()
         assertFalse(r.model.scene.value.locked)
         assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertNotNull(r.mapDragActive())
     }
 
     @Test
@@ -1752,6 +1794,7 @@ class HomeViewModelTest {
         r.routeSession.open("pack:p:rt-1")
         advanceUntilIdle()
         assertTrue(r.model.dragStarted(here, view(), touchRadiusPx = 24.0))
+        assertEquals("the point is held as a tap holds it", "p1", r.routeSelection.held.value?.pointId)
         r.model.dragMoved(LatLon(34.7840, -84.0822))
         val moved = r.routeSession.active.value
         assertEquals(mapOf("p2" to 1300.0), moved!!.routes.single().elevations)              // moving forgot the old place's ground
@@ -2092,5 +2135,39 @@ class HomeViewModelTest {
         assertEquals(Panel.Lz, r.model.heldPanel())
         r.threatSelection.select(id)
         assertEquals(Panel.Threats, r.model.heldPanel())
+    }
+
+    @Test
+    fun `a finger's roll under the slop moves nothing, and lifting there leaves no edit at all`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val line = route("r1", point("p1", here), point("p2", north)).copy(elevations = mapOf("p1" to 1200.0, "p2" to 1300.0))
+        r.routePacks.docs["pack:p:rt-1"] = app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = listOf(line))
+        r.packs.open.value = pack()
+        r.routeSession.open("pack:p:rt-1")
+        advanceUntilIdle()
+        val before = r.routeSession.active.value
+        val steps = r.routeSession.undoDepth.value
+        assertTrue(r.model.dragStarted(here, view(), touchRadiusPx = 24.0))
+        val rolled = LatLon(here.lat + 0.00001, here.lon)                                       // about 4 px at zoom 18: a finger's roll, under the 8 px slop
+        r.model.dragMoved(rolled)
+        r.model.dragEnded(rolled)
+        advanceUntilIdle()
+        assertEquals("p1", r.routeSelection.held.value?.pointId)
+        assertSame("no edit: the point keeps its fetched ground", before, r.routeSession.active.value)
+        assertEquals(steps, r.routeSession.undoDepth.value)
+    }
+
+    @Test
+    fun `in a finished pack the person's own threat under one of its graphics is still picked up`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        packLz(r)
+        val id = r.threat(LatLon(34.7838, -84.0822))
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.model.DragTarget.Threat(id), r.mapDragActive())
+        assertEquals(id, r.threatSelection.held.value)
     }
 }

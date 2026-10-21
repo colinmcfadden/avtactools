@@ -562,7 +562,7 @@ fun MapHome(
                     overlay = {
                         // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).
                         Box(Modifier.onSizeChanged { floating = it.height }) {
-                            BoundaryToolbarHost(crosshair = state.center)
+                            BoundaryToolbarHost(crosshair = state.center, offerAllowed = !drawing)
                             RouteToolbarHost(crosshair = state.center)
                             PlacementToolbarHost(crosshair = state.center)
                             // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
@@ -607,7 +607,7 @@ fun MapHome(
                                 }
                             }
                         },
-                        // A long press on a graphic, a threat or a point of a route picks it up; the finger then moves it, and lifting puts it down.
+                        // A long press on a graphic, a threat or a point of a route holds it (its bar, nothing else) and picks it up; the finger then moves it, and lifting puts it down.
                         onPickUp = { at ->
                             host.camera?.let { camera -> home.dragStarted(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) } ?: false
                         },

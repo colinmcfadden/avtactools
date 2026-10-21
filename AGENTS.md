@@ -1485,6 +1485,13 @@ client is built around not losing one:
     because the sheet's Finish button would be out of reach with the sheet down; starting drawing lowers the sheet to its header.
   - **Drawing cannot start while an analysis of that diagram is running** (it would finish over the new boundary); one running for another diagram does not
     hold it back.
+  - **Finish offers the analysis there and then** (the owner's request, 2026-10-21; `BoundaryViewModel.analyzeOffer`, `AnalyzeOfferBar`): the drawing toolbar gives way to a bar
+    over the map, *Analyze LZ/PZ*, then the stage in words with *Stop*, then a failure in the app's words with *Try again*; *Not now* puts it away (*Analyze* is still in the panel).
+    It is the boundary finished last's (open another LZ/PZ and it is not shown; back, and it is, while that boundary still waits; drawing elsewhere does not end it, finishing
+    there does), is spent once an analysis of that LZ/PZ has run and taken the drawn boundary as its own (a later *Re-analyze* in the panel is not its: `Finished.ran`), counts
+    the corners there now, starts with an earlier failure of that LZ/PZ's analysis put away, says so in words when another LZ/PZ's analysis is under way (one runs at a time), gives
+    way to whatever else floats over the map (the held object's bar, a route drawn, a tool's mode: they would lie over each other), and is never shown in a read-only pack, where
+    analysing is refused in words as the panel's is.
   - **Not verifiable here:** the dots and dashed line on the map (`DiagramOverlay`'s vertex layer: compile-only, like every GL layer), the sheet going down
     when drawing starts, and that MapLibre's click listener fires for every tap while drawing (it already does for selecting graphics).
 - **Routes** (started: `core-model`: `SketchRoute`, `RoutePlan`, `Mission`; `core-planning`: `SketchOps`, `RouteCalc`, `RoutePlans`; `core-formats`: `MsnxReader`).
@@ -1644,7 +1651,7 @@ client is built around not losing one:
     before the work finishes. And never `runBlocking` inside such a test: it blocks the thread the work is waiting for.
 - **Dragging and turning on the map** (`core-data`: `MapDrag`, `DocumentSession.edit(coalesce)`; `core-model`: `DragTarget`; `feature-map`: `DragHitTest`, `DragMapView`; `app`: `HomeViewModel`;
   `feature-workspace`: `HeldObjectBar`). A **tap holds** a graphic, a threat or a point of a route (its halo, and the bar over the map: its name, where it is, how to turn it, a way to the sheet's
-  other options); a **long press picks it up** and the finger moves it until it lifts. Things worth knowing:
+  other options); a **long press holds it the same way and picks it up**, and the finger moves it until it lifts. Things worth knowing:
   - **The touch is taken from the map, not fought for.** `DragMapView` is MapLibre's view handing every touch to `LongPressTouches` (a gesture detector, apart from the view so a
     test can drive it): a long press is asked about (`HomeViewModel.dragStarted` → `DragHitTest`, the same things in the same order a tap holds); if something is there the map is sent a
     cancel (so it neither pans nor flings) and the rest of that touch is the drag's. A press on nothing opens the map's menu (*The map's long press*, below); while a boundary or a route is
@@ -1654,11 +1661,21 @@ client is built around not losing one:
     takes the step away. The document is changed at once, so the map and what depends on it (aircraft separation) follow the finger, and it is **saved once**, after the pause.
   - **A route point forgets the ground elevation fetched for the old place** (as a nudge does). In an imported mission its twin in another route moves with it.
   - **A threat is shown at once but written to its sealed file when the finger lifts** (`ThreatStore.previewMove`/`settle`): that file is rewritten whole for every change.
-  - **A long press holds and opens nothing**: the bar with an object's information is for a tap. A press on a unit is tested against where its **picture** is drawn, not only its point: a hostile unit
+  - **A long press holds what it is on, as a tap does, and opens nothing else** (the owner's request, 2026-10-21: not the panel, to turn it or type its values): its bar shows at once,
+    and a press that does not move leaves it where it was, held: **a finger's roll under the slop (8 dp) moves nothing, and lifting there makes no edit at all** (`MapDrag.abandon`:
+    a route point keeps its fetched ground, a threat its terrain mask, no step is left to undo). One of a read-only pack's LZ/PZ or set of routes is held and not picked up (the
+    finger moves nothing), so its bar, not the map's menu, answers the press; what can be moved under it (the person's own threat) is picked up first. A press on a unit is tested against where its **picture** is drawn, not only its point: a hostile unit
     stands on the end of a staff under its frame, so the frame a person presses is well away from the point (`UnitFootprints`, reported by the Compose layer that draws each symbol, in pixels). The end of
     a PZ marker's **arrow is its own handle** (a blue ring on the tip): a long press there drags the tip alone, so the marker's reach and bearing change and its anchor stays
     (`DragTarget.PzTip`, `GraphicEdits.setPzTip`); a press anywhere else on the marker moves it whole.
-  - **Turning** is the bar's: −15°, −1°, +1°, +15° for what turns (an aircraft, a go-around, a doghouse, a PZ marker); the sheet's inspector has the typed heading. Local points are imported data and
+  - **Turning** is the bar's: −15°, −1°, +1°, +15° for what turns (an aircraft, a go-around, a doghouse, a PZ marker); the sheet's inspector has the typed heading. **A doghouse's fields are
+    in its bar** (the owner's request, 2026-10-21): label, heading, time, distance and airspeed, taken on the keyboard's Done or as a field is left, as the inspector takes them, a refusal said
+    under them (its own words, put away when that field is done); a field follows a value changed under it (an undo, a turn from the bar's buttons, someone else's change) until the
+    person types in it, even with the keyboard up, and only what was typed is ever taken, never what the field showed when it was entered (§14, a form that keeps what it opened with). What a field takes is put on the doghouse **it was typed for** (`GraphicOf`: its LZ/PZ and graphic), because a
+    field is left as another graphic is held or another LZ/PZ opened, and the standard doghouses have the same ids on every LZ/PZ: written to whatever was held then, it would land on the
+    wrong one. **What floats over the map stands on the keyboard's top** where that is higher than the sheet's edge (`standingBottom` in `MapScreen`), so a field of the bar is never under
+    the keyboard, and is **measured into the room under the row** (a tablet's search bar; the status bar alone with the frame hidden), the bar scrolling before the readout pill
+    gives way: a doghouse's bar over a sheet at half would otherwise reach above the screen, its *Done* with it. Local points are imported data and
     are not dragged. Tried on an emulator against a real mission: a long press and a drag moved a route point (its grid changed, the map did not pan) and the move reached the file on the server. A
     boundary's corners are still not draggable.
 - **Mission packs in the editors** (`core-data`: `PackItemStore`, `PackEditorSync`, `PackWorkspace`, `DocumentSession.document`/`owe`/`closeIfOpen`; docs/MISSION_PACKS.md §5a and

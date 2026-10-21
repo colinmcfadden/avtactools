@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -221,13 +223,19 @@ fun MapScreen(
             camera?.takeIf { abs(it.bearingDegrees) >= 0.5 }?.let { CompassButton(it.bearingDegrees, onFaceNorth) }
         }
 
-        // The pill and whatever tool floats above it ride on the sheet's edge.
+        // The pill and whatever tool floats above it ride on the sheet's edge, or on the keyboard's top where that is higher (a field in the held bar typed into), and are
+        // never taller than the room under the row (a tablet's search bar): what floats gives way, and scrolls, before the pill does.
+        val keyboard = WindowInsets.ime
+        val statusBar = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+        val chromeBottom = if (buttonsAtFoot) MapChrome.SEARCH_BOTTOM else MapChrome.ROW_BOTTOM
         Column(
-            Modifier.fillMaxSize().standingOn(controlsBottom, MapChrome.PILL_GAP),
+            Modifier.fillMaxSize().standingOn(controlsBottom, MapChrome.PILL_GAP, keyboard) {
+                statusBar.getTop(this) + chromeBottom.toPx() * (1f - hiding.fraction()) + MapChrome.PILL_GAP.toPx()
+            },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(MapChrome.PILL_GAP),
         ) {
-            Box(Modifier.chromeBox(chrome, "overlay")) { overlay() }
+            Box(Modifier.weight(1f, fill = false).chromeBox(chrome, "overlay")) { overlay() }
             state.readout?.let { Box(Modifier.chromeBox(chrome, "readout")) { ReadoutPill(it, onCopyReadout) } }
         }
 
@@ -274,13 +282,22 @@ fun MapScreen(
  * Lays its content out at its natural size, centred across, with its bottom [gap] above [edge] (pixels from the top; the bottom of the space
  * when null). The edge is read only when placing, so a sheet being dragged moves what stands on it without measuring it again.
  */
-private fun Modifier.standingOn(edge: () -> Float?, gap: Dp): Modifier = layout { measurable, constraints ->
-    val content = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+private fun Modifier.standingOn(edge: () -> Float?, gap: Dp, keyboard: WindowInsets, ceiling: Density.() -> Float): Modifier = layout { measurable, constraints ->
+    val bottom = standingBottom(edge(), constraints.maxHeight, keyboard.getBottom(this))
+    val foot = (bottom - gap.toPx()).roundToInt()
+    // Measured into the room between the ceiling and where it stands, so what does not fit is cut to it (and scrolls) rather than pushed off the top of the screen.
+    val room = (foot - ceiling().roundToInt()).coerceIn(0, constraints.maxHeight)
+    val content = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0, maxHeight = room))
     layout(constraints.maxWidth, constraints.maxHeight) {
-        val bottom = edge() ?: constraints.maxHeight.toFloat()
-        content.placeRelative((constraints.maxWidth - content.width) / 2, (bottom - gap.toPx()).roundToInt() - content.height)
+        content.placeRelative((constraints.maxWidth - content.width) / 2, foot - content.height)
     }
 }
+
+/**
+ * Where what floats over the map stands, in pixels from the top of a view [height] tall: on the sheet's [edge] (the foot of the view with none), or on the
+ * keyboard's top where the keyboard, [keyboard] pixels up from the foot (the map is drawn to the window's foot), comes higher, so a field typed into is not under it.
+ */
+internal fun standingBottom(edge: Float?, height: Int, keyboard: Int): Float = minOf(edge ?: height.toFloat(), (height - keyboard).toFloat())
 
 /**
  * A chip on the phone's row (the design's workspace, Import and Library): [MapChrome.CHIPS_HEIGHT] tall (a 48 dp touch target), its icon in the accent,

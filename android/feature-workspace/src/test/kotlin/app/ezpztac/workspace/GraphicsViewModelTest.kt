@@ -756,6 +756,32 @@ class GraphicsViewModelTest {
     }
 
     @Test
+    fun `what a field of the held bar takes lands on the doghouse it was typed for, not one held or an LZ-PZ opened since`() = runTest(dispatcher) {
+        val r = opened(doghouses = true)
+        r.model.select(r.doghouseRef("takeoff"))
+        advanceUntilIdle()
+        val sp = r.state.inspector!!.of
+        r.model.select(r.doghouseRef("landing"))                                               // another held as the field is left
+        advanceUntilIdle()
+        assertNull(r.model.setDoghouseTime("04+00", sp))
+        r.model.setRotation(90.0, sp)
+        advanceUntilIdle()
+        assertEquals("090° · 04+00 · 3.13 km · 60 kts", r.state.rows.first { it.ref == r.doghouseRef("takeoff") }.detail)
+        assertEquals("000° · 02+10 · 5.2 km · 40 kts", r.state.rows.first { it.ref == r.doghouseRef("landing") }.detail)
+
+        val other = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
+        r.session.open(other.id)
+        r.session.setQuietly { DiagramOps.afterAnalysis(it, null) }                              // its own SP1 and RP1, with the same ids
+        advanceUntilIdle()
+        val steps = r.state.undoDepth
+        assertNull(r.model.setDoghouseTime("05+00", sp))
+        r.model.setRotation(180.0, sp)
+        advanceUntilIdle()
+        assertEquals("nothing of it lands on this LZ/PZ", steps, r.state.undoDepth)
+        assertTrue(r.state.rows.none { it.detail?.contains("05+00") == true || it.detail?.startsWith("180°") == true })
+    }
+
+    @Test
     fun `a doghouse is moved like any graphic`() = runTest(dispatcher) {
         val r = opened(doghouses = true)
         val ref = r.doghouseRef("takeoff")

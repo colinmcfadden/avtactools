@@ -45,4 +45,30 @@ class BoundaryScreenshotTest {
     @Test fun toolbarError() = shot("toolbar-error", ThemeMode.Light) {
         BoundaryToolbar(BoundaryUiState(drawing = true, points = 1, error = "Move the map to where the corner should go first."), BoundaryActions())
     }
+
+    @Test fun offerReady() = shot("offer-ready") { AnalyzeOfferBar(AnalyzeOfferUi(points = 5), null, BoundaryActions()) }
+
+    @Test fun offerRunning() = shot("offer-running", ThemeMode.Light) { AnalyzeOfferBar(AnalyzeOfferUi(points = 5, stage = "Finding the landing area…"), null, BoundaryActions()) }
+
+    @Test fun offerFailed() = shot("offer-failed", ThemeMode.Night) {
+        AnalyzeOfferBar(AnalyzeOfferUi(points = 5, failed = "The analysis service could not be reached. Try again."), null, BoundaryActions())
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi", fontScale = 1.3f)
+    fun offerNarrowLargeText() = shot("offer-narrow-large") { AnalyzeOfferBar(AnalyzeOfferUi(points = 12), null, BoundaryActions()) }
+
+    // The doghouse's bar, where its fields now are.
+    private val doghouseHeld = HeldObjectUi(
+        "Doghouse · [RP1]", "16S GD 66993 52949", heading = 105.0,
+        doghouse = DoghouseUi(label = "[RP1]", time = "02+10", distanceKm = "5.2", airspeedKts = "40", feeds = "Sets the landing heading on the LZ card"),
+        graphic = GraphicOf("lz-1", app.ezpztac.model.GraphicRef("doghouses", "dh2")),
+    )
+
+    @Test fun doghouseBar() = shot("held-doghouse") { HeldObjectBar(doghouseHeld, HeldObjectActions()) }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi", fontScale = 1.3f)
+    fun doghouseBarNarrowLargeText() = shot("held-doghouse-narrow-large", ThemeMode.Light) { HeldObjectBar(doghouseHeld, HeldObjectActions()) }
 }
+
