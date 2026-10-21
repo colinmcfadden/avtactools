@@ -941,9 +941,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   *The 3D view*).
 - **The web's 3D view shows Cesium's default sky, sun and atmosphere, and fog on far ground** (`Viewer3D.jsx` turns none of `CesiumWidget`'s defaults off): a
   daylight sky above the horizon, where Android's scene (and the web's own `backgroundColor`, which the sky hides) is a flat `#05080d`, the dark the 3D plan
-  means. Turn the web's off, or draw a sky and haze on Android: owner to decide, web first. Two more for the owner from the same review: the opening view
-  frames the LZ at 2.2 radii as the web's landscape window does, which crops its sides on a portrait phone (Cesium's own default fits the narrower field);
-  and the web's 3D window follows whichever LZ becomes active, where Android's lets the view go (§17, *The 3D view*).
+  means. Turn the web's off, or draw a sky and haze on Android: owner to decide, web first.
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -2360,9 +2358,9 @@ client is built around not losing one:
     what was held is put down, as opening it does, and closing 3D shows that); another opened, or this one closed (a delete, a sign-out, a pack left, which close it),
     lets the view go, and it does not come back by itself, not even for a frame (a test records every state); one with no target has nothing to look at and its *3D*
     is off. One asked for while its LZ/PZ opens is withdrawn by a close or another ask meanwhile. Its title and whether it is saved follow the LZ/PZ while it is
-    shown, and a target moved under it (someone else in a pack) looks again. **Not like the web**, whose window stays open on whichever LZ becomes active and
-    comes back by itself for one with a target (`App.js`): here another LZ/PZ can be opened only in code under the page (a delete, a pack's removal synced from
-    another device), and that lets the view go (owner to decide whether it should follow).
+    shown, and a target moved under it (someone else in a pack) looks again. **Not like the web, on purpose** (the owner's decision of 2026-10-20): the web's
+    window stays open on whichever LZ becomes active and comes back by itself for one with a target (`App.js`); here another LZ/PZ can be opened only in code
+    under the page (a delete, a pack's removal synced from another device), and that lets the view go.
   - **The whole screen, over everything** (the owner's, 2026-10-20): `MapHome` draws it last, over either frame; the frame stays composed and untouched under it, out
     of a screen reader's reach, of the keyboard's (`underPage`: a focus search into it goes to the page, whose focus does not leave it) and of touch (the page is a
     `Surface`, which takes what nothing on it takes), so closing shows the sheet, the panel, the page, what is held and what was typed as they were under it
@@ -2440,19 +2438,23 @@ client is built around not losing one:
     toward what is between the fingers, a twist turns about the middle, two fingers up or down tilt at Cesium's rate (`TILT_PER_HEIGHT`, about 0.44π for the
     view's height: its pinch reads the fingers' height at a quarter), never past level or below the ground, and a finger on a flight ends it where it got to. A
     screen reader has the same as the scene's actions, a step at a time about the middle (`SceneStep`: 15° a turn, 10° a tilt, half as near again), and hears
-    the scene said again as it is drawn and after each step (a polite live region). A pinch never pulls a camera that is further off than the 30 km limit in to it
-    (*Routes* frames routes tens of kilometres across from further, and Cesium has no limit, `maximumZoomDistance`): it may only bring it nearer. The ground the moves hold to is level: the lowest tenth of the points within 30 m of the LZ,
-    from the tile with most of them that has a tenth of them on every side of it (`SceneGround`: their middle was in the trees round the clearing, ten metres up
-    in the fixture's; a tile of py3dtiles' octree near the LZ holds one side of it, or only the canopy over it), the cloud's middle until one does, the terrain's
-    height once it comes. *LZ* flies back to the opening view in 1.2 s, the compass to north about the middle in 0.6 s, eased as Cesium eases a flight that
-    does not come down from high up (`QUINTIC_IN_OUT`). **Not like the web**: the ground under a finger is that level, not the picked surface; a pinch also drags
+    the scene said again as it is drawn and after each step (a polite live region). A pinch never pulls a camera that is further off than the 30 km limit in to
+    it (*Routes* frames routes tens of kilometres across from further, and Cesium has no limit, `maximumZoomDistance`): it may only bring it nearer. The ground
+    the moves hold to is level: the lowest tenth of the points within 30 m of the LZ, from the tile with most of them that has a tenth of them on every side of
+    it (`SceneGround`: their middle was in the trees round the clearing, ten metres up in the fixture's; a tile of py3dtiles' octree near the LZ holds one side
+    of it, or only the canopy over it), the cloud's middle until one does, the terrain's height once it comes. **The opening view, *LZ* and *Routes* frame their
+    sphere across the narrower side of the view** (the owner's decision of 2026-10-20; `SceneLook.framingRange`, the web's `framing.js`, held to `scene.json`'s
+    `framing`): 2.2 radii back on a view at least as wide as tall, as the web always framed it, and on one narrower than tall (a phone held upright), where 2.2
+    radii cut the LZ's sides off, further back until the sphere fits across the width with the same margin (Cesium's field of view runs across the wider side).
+    The opening view is framed at the first frame, for that frame's shape, and a turn of the phone moves no camera, as a resize moves none on the web. *LZ*
+    flies back to it, framed for the shape the view has then, in 1.2 s, the compass to north about the middle in 0.6 s, eased as Cesium eases a flight that does
+    not come down from high up (`QUINTIC_IN_OUT`). **Not like the web**: the ground under a finger is that level, not the picked surface; a pinch also drags
     what is between the fingers, which Cesium's does not, and zooms by the spread (the distance over the spread's ratio), where Cesium's moves five times the
-    distance by a quarter of the spread's change over the view's height, at most a tenth a frame (`ScreenSpaceCameraController`): the same where the fingers
-    are about four-fifths of the view's height apart, faster nearer together (four times at 150 points); a twist and a tilt turn about the ground at the middle of
+    distance by a quarter of the spread's change over the view's height, at most a tenth a frame (`ScreenSpaceCameraController`): the same where the fingers are
+    about four-fifths of the view's height apart, faster nearer together (four times at 150 points); a twist and a tilt turn about the ground at the middle of
     the view, where Cesium's turn about the ground under where the pinch began, and a gesture is a tilt or a pinch, never both at once as Cesium's can be;
-    nothing drifts on after the fingers lift (Cesium's inertia); four tiles are fetched at a time
-    (Cesium's scheduler, 18); and a tile that met no connection is asked for again 5 s and 10 s after it failed (Cesium never asks again; a phone loses its signal
-    more often than a browser).
+    nothing drifts on after the fingers lift (Cesium's inertia); four tiles are fetched at a time (Cesium's scheduler, 18); and a tile that met no connection is
+    asked for again 5 s and 10 s after it failed (Cesium never asks again; a phone loses its signal more often than a browser).
   - **The ground is Cesium's globe over the server's heightmaps** (`TerrainScene`, `TerrainMeshes`, V5): from level 0's two tiles down, a tile drawn while its error on the
     screen is under 2 pixels or its children in view are not all in hand (fetched together, coarse first; one out of view counts as ready and is not fetched, as
     Cesium's culled tile, so the ground at the view's edges asks the server nothing it will not draw); heights placed as Cesium places them, a row's first and last on

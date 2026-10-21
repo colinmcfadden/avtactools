@@ -109,6 +109,9 @@ class SceneSessionTest {
 
     private fun Rig.frame() = session.frame(1080, 2200, 2.75, view)
 
+    // The rig's view, a phone held upright: narrower than tall, so a sphere is framed from further back than 2.2 radii.
+    private val upright = 1080.0 / 2200
+
     /** Headings the same way round (a flight may land a turn past north, 370° for 10°). */
     private fun assertSameHeading(expected: Double, actual: Double) = assertEquals(0.0, Math.IEEEremainder(actual - expected, 2 * Math.PI), 1e-9)
 
@@ -129,13 +132,49 @@ class SceneSessionTest {
         assertEquals(SceneStatus.Drawing, r.session.status.value)
         assertTrue("a frame is asked for", r.asked > 0)
         val doc = TilesetReader.read(Fixtures.bytes("viewer3d/tileset/tileset.json"), "tileset.json", frame)
-        val opening = CameraPose.framing(frame, Sphere(doc.root.volume.center, doc.root.volume.radius))
+        val opening = CameraPose.framing(frame, Sphere(doc.root.volume.center, doc.root.volume.radius), upright)
         val camera = r.frame()!!.camera
         assertEquals(opening.position.x, camera.position.x, 1e-9)
         assertEquals(opening.position.y, camera.position.y, 1e-9)
         assertEquals(opening.position.z, camera.position.z, 1e-9)
         assertEquals(opening.heading, camera.heading, 1e-12)
         assertEquals(opening.pitch, camera.pitch, 1e-12)
+        r.close()
+    }
+
+    @Test
+    fun `the opening view and LZ are framed for the view's shape, 2_2 radii wider than tall, further back upright so the sphere fits across`() = runTest {
+        val r = rig()
+        advanceUntilIdle()                                                                       // the core in hand before any frame
+        val doc = TilesetReader.read(Fixtures.bytes("viewer3d/tileset/tileset.json"), "tileset.json", frame)
+        val sphere = Sphere(doc.root.volume.center, doc.root.volume.radius)
+        // The first frame is a tablet's, wider than tall: it opens 2.2 radii back, as the web's view always has.
+        val wide = r.session.frame(2200, 1080, 2.0, r.view)!!.camera
+        assertEquals(sphere.radius * SceneLook.CAMERA_RANGE_FACTOR, (wide.position - sphere.center).length, 1e-6)
+        // Turned upright, LZ frames it for that shape: further back, the sphere across the narrower width.
+        r.session.frame(1080, 2200, 2.75, r.view)
+        r.session.frameLz()
+        advanceTimeBy(SceneLook.FRAME_MS + 1)
+        val upright = r.frame()!!.camera
+        val range = (upright.position - sphere.center).length
+        assertEquals(SceneLook.framingRange(sphere.radius, 1080.0 / 2200), range, 1e-6)
+        assertTrue(range > sphere.radius * SceneLook.CAMERA_RANGE_FACTOR * 1.5)
+        r.close()
+    }
+
+    @Test
+    fun `a view drawn before the cloud comes has its opening view framed for its shape once the cloud does`() = runTest {
+        val r = rig(SlowFiles({ if (it == "tileset.json") 1_000 else 10 }))
+        runCurrent()
+        assertNull("nothing to look at before the cloud", r.frame())
+        advanceUntilIdle()
+        val doc = TilesetReader.read(Fixtures.bytes("viewer3d/tileset/tileset.json"), "tileset.json", frame)
+        val sphere = Sphere(doc.root.volume.center, doc.root.volume.radius)
+        val opening = CameraPose.framing(frame, sphere, upright)
+        val camera = r.frame()!!.camera
+        assertEquals(opening.position.x, camera.position.x, 1e-9)
+        assertEquals(opening.position.y, camera.position.y, 1e-9)
+        assertEquals(opening.position.z, camera.position.z, 1e-9)
         r.close()
     }
 
@@ -485,7 +524,7 @@ class SceneSessionTest {
         assertTrue(r.frame()!!.animating)
         advanceTimeBy(SceneLook.FRAME_MS)
         val framed = r.frame()!!.camera
-        val expected = CameraPose.framing(frame, BoundingSpheres.fromPoints(work.routes.positions, frame)!!)
+        val expected = CameraPose.framing(frame, BoundingSpheres.fromPoints(work.routes.positions, frame)!!, upright)
         assertEquals(expected.position.x, framed.position.x, 1e-6)
         assertEquals(expected.position.y, framed.position.y, 1e-6)
         assertEquals(expected.position.z, framed.position.z, 1e-6)

@@ -18,12 +18,13 @@ public data class CameraPose(val position: Vec3, val heading: Double, val pitch:
 
     public companion object {
         /**
-         * The web's view of a [sphere] (`frameSphere` in `Viewer3D.jsx`): looking down at 35° from 30° west of north, 2.2 radii back. How the view
-         * opens on the core's sphere, and where the *LZ* and *Routes* buttons fly to. A sphere with no size is looked at from [POINT_RANGE], as Cesium
-         * looks at one (`adjustBoundingSphereOffset`: a range of 0 is none given).
+         * The web's view of a [sphere] (`frameSphere` in `Viewer3D.jsx`): looking down at 35° from 30° west of north, far enough back to hold it
+         * across a view of [aspect], its width over its height ([SceneLook.framingRange]: 2.2 radii, or further on a view narrower than tall).
+         * How the view opens on the core's sphere, and where the *LZ* and *Routes* buttons fly to. A sphere with no size is looked at from
+         * [POINT_RANGE], as Cesium looks at one (`adjustBoundingSphereOffset`: a range of 0 is none given).
          */
-        public fun framing(frame: LocalFrame, sphere: Sphere): CameraPose {
-            val range = (sphere.radius * SceneLook.CAMERA_RANGE_FACTOR).takeIf { it != 0.0 } ?: POINT_RANGE
+        public fun framing(frame: LocalFrame, sphere: Sphere, aspect: Double = 1.0): CameraPose {
+            val range = SceneLook.framingRange(sphere.radius, aspect).takeIf { it != 0.0 } ?: POINT_RANGE
             val (position, heading, pitch) = lookAt(
                 frame, sphere.center, Math.toRadians(SceneLook.CAMERA_HEADING_DEG), Math.toRadians(SceneLook.CAMERA_PITCH_DEG), range,
             )

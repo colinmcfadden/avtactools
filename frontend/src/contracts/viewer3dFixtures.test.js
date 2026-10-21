@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import api from "../feature/auth/api";
 import { MAX_TILT_DEG, compassPose } from "../feature/viewer3d/compass";
+import { framingRange } from "../feature/viewer3d/framing";
 import * as sceneSettings from "../feature/viewer3d/sceneSettings";
 import { AGL_MISMATCH_FT, FT_TO_M, MAX_SAMPLES, SAMPLE_STEP_M, placeRoutes, prepareRoutes } from "../feature/viewer3d/routeScene";
 import { routePositions } from "../feature/viewer3d/routeEntities";
@@ -430,20 +431,27 @@ afterEach(() => {
 
 // -- How the view looks and moves ----------------------------------------------------------------------------------------------------------------
 
+// How far back a sphere is framed (framing.js) for views of each shape: wider than tall, square, and narrower than tall (an upright phone),
+// at Cesium's default field of view.
+const FRAMING_FOV = Math.PI / 3;
+const framingCases = () => [0, 150, 30750, 107881.2].flatMap((radius) => [16 / 9, 2.2, 1, 0.75, 412 / 915, 360 / 740, 0.3]
+  .map((aspectRatio) => ({ radius, aspectRatio, range: framingRange(radius, aspectRatio, FRAMING_FOV) })));
+
 // The settings the web's view is drawn with (sceneSettings.js), and the draws Cesium sizes a leaf's points from: a tile with no geometric error of
 // its own is given one from the box round twenty of its points, picked by these twenty draws of its twister from seed 0, made once for every tile
-// (PntsLoader.computeApproximateExtrema and getRandomValues; PointCloudStylingPipelineStage.getGeometricError).
+// (PntsLoader.computeApproximateExtrema and getRandomValues; PointCloudStylingPipelineStage.getGeometricError); and the framings.
 const sceneFixture = () => {
   const twister = new MersenneTwister(0);
   return {
     generatedBy: GENERATED_BY,
     settings: saved({ ...sceneSettings }),
     pointSample: { seed: 0, draws: Array.from({ length: 20 }, () => twister.random()) },
+    framing: { fov: FRAMING_FOV, cases: framingCases() },
   };
 };
 
 test("viewer3d/routeScene.json is what the web places", () => settle("viewer3d/routeScene.json", routeSceneFixture()));
-test("viewer3d/scene.json is how the web's view looks and moves, and how Cesium samples a tile to size its points", () => settle("viewer3d/scene.json", sceneFixture()));
+test("viewer3d/scene.json is how the web's view looks and moves, and how Cesium samples a tile to size its points and how far back a sphere is framed", () => settle("viewer3d/scene.json", sceneFixture()));
 test("viewer3d/compass.json is how the web's compass turns and tilts", () => settle("viewer3d/compass.json", compassFixture()));
 test("viewer3d/terrain.json is which terrain tile holds a place", () => settle("viewer3d/terrain.json", terrainFixture()));
 test("viewer3d/lidarFlow.json is how the web finds or builds a point cloud", async () => settle("viewer3d/lidarFlow.json", await flowFixture()));

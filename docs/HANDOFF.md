@@ -72,12 +72,16 @@ under the page (its pause did nothing); the GPU copies trimmed in the back are f
 round the page; the scene's side edges pan rather than go Back; the toasts and the foot keep clear of the controls; the steps are said; and smaller ones (an
 uncoloured `.pnts` in Cesium's grey, the tileset count read once, the cache's empty folders, an `Error` on the GL and fetch threads). **Not verifiable here:**
 that opening 3D in touch mode drops the keyboard of a field left focused under it (Robolectric runs in keyboard mode, where the page takes the focus itself),
-and anything GL draws. **Next:** the owner's device runs (below) and the questions for the owner.
+and anything GL draws. **The owner's decisions after the reviews** (2026-10-20): the opening view, *LZ* and *Routes* frame their sphere across the narrower side
+of the view, so a phone held upright no longer cuts an LZ's sides off (the web first, `framing.js`, held to `scene.json`'s `framing`, then Android,
+`SceneLook.framingRange`; a view at least as wide as tall is framed as before, 2.2 radii back); and Android's view closes when the open LZ/PZ changes under it,
+on purpose unlike the web's window, which follows the active LZ. **Next:** the owner's device runs (below) and the question for the owner.
 
 **Owner device run 1** (V4): open a built LZ/PZ's *3D* on a phone and the same LZ in the web's 3D window, and compare screenshots from the same view (*LZ* on
 both): the points' size and density as the camera comes in, the outlines the eye-dome lighting draws, the background. Then try one finger, a pinch, a twist
 and two fingers up and down, *LZ* and the compass; the point size at 2 and 16; the app sent to the back and brought again (the cloud should come back at once,
-nothing fetched again); a phone turned; airplane mode while the tiles come (the preview stays, the rest come once the signal does). Say what differs.
+nothing fetched again); a phone held upright (*LZ* should hold the whole LZ across the screen with a margin, as the web now does in a window narrower than
+tall) and turned; airplane mode while the tiles come (the preview stays, the rest come once the signal does). Say what differs.
 
 **Owner device run 2** (V5): the same LZ: the points should sit on the ground (the shared geoid correction), the imagery should line up with the points'
 own colours, and the ground should end where the DEMs do (nothing drawn past them, where the web shows a flat plain). If the imagery never comes, the
@@ -98,8 +102,8 @@ each leaves the camera, and *Routes* with no routes; with a keyboard, Tab round 
 or right edge (it should pan, not close the view); a phone on its side at the largest text (the notice of no terrain clear of the compass).
 
 **For the owner** (AGENTS.md §15): the server's heightmap samples sit half a cell from where Cesium draws them; a tileset's key can be turned back into its
-place; the web shows a failed build's raw text, with the place in it; the web's 3D view shows Cesium's daylight sky and fog where Android's (and the plan's) is
-dark; the opening view crops an LZ's sides on a portrait phone, as the web's rule would; and the web's 3D window follows the active LZ where Android's closes.
+place; the web shows a failed build's raw text, with the place in it; and the web's 3D view shows Cesium's daylight sky and fog where Android's (and the
+plan's) is dark.
 
 ---
 

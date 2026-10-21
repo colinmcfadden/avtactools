@@ -2,7 +2,8 @@
 
 Status (2026-10-20): **V0 to V7 done**, each step reviewed independently and the whole by three final reviews (parity, lifecycle and concurrency, the screens),
 their findings fixed with tests (branch `claude/android-3d-view-e38b76`; V3 was built before V1, since the build flow's probe uses its tiling). What is left
-is the owner's: the device runs (`docs/HANDOFF.md`) and three questions (AGENTS.md §15: the web's sky, the portrait framing, following the active LZ/PZ).
+is the owner's: the device runs (`docs/HANDOFF.md`) and one question (AGENTS.md §15: the web's sky). The two others the final reviews raised, the portrait
+framing and following the open LZ/PZ, the owner settled on 2026-10-20 (§9, decisions 4 and 5).
 The owner chose the native renderer (A) and the full screen's details on 2026-10-20 (§9). Each step is built as the screens
 and the brief were: implemented with its tests, reviewed independently (parity with the web, lifecycle and concurrency, the screens), its
 findings fixed with tests, committed only with the full build green and AGENTS.md and `docs/HANDOFF.md` updated in the same commit. **Where
@@ -56,7 +57,8 @@ backend change 9, with the map packs of P3/P4).
   route at 50 ft AGL hides under coarse distant terrain: `3D_PLANNING_GRAPHICS_PLAN.md`, the depth-test result); the core tileset at
   screen-space error 2, the ring at 8; point-cloud shading with attenuation, eye-dome lighting at strength 0.5 and radius 0.5 pixel, the
   largest point the size the person chose (2 to 16, default 5, remembered); the camera opens at heading −30° (it looks north-north-west),
-  pitch −35°, at 2.2 times the core's bounding-sphere radius, then is free.
+  pitch −35°, at 2.2 times the core's bounding-sphere radius on a view at least as wide as tall and further back on one narrower than tall, so the sphere
+  fits across it (`framing.js`, the owner's decision of 2026-10-20: §9, decision 4), then is free. *LZ* and *Routes* frame theirs the same way.
 - **Routes** (`routeScene.js`, `routeEntities.js`, `useRouteScene.js`): every route the 2D map draws, sampled every 50 m (coarser past
   4,500 samples), with ground and geoid from `POST /api/terrain/heights` asked 400 ms after the routes last changed, the last placed
   routes kept while the next answer is on its way. A named point is at the planner's MSL plus the geoid (the AMPS `CmdAlt`); a target at
@@ -187,6 +189,17 @@ Asked and answered 2026-10-20:
    as 3D closed.
 3. **The title is `3D · NAME`**: the LZ/PZ's name as the LZ/PZ panel shows it, on one line, cut with an ellipsis if it is too long, no
    grid.
+
+Asked after the final reviews and answered the same day:
+
+4. **The framing fits the narrower side of the view.** 2.2 radii of the sphere, the web's rule, hold it across a view at least as wide as tall
+   (Cesium's field of view, 60°, runs across the wider side); on a phone held upright they cut the LZ's sides off. On a view narrower than tall the
+   camera now stands back until the sphere fits across the width with the same margin, for the opening view, *LZ* and *Routes*: changed on the web
+   first (`framing.js`), held to `viewer3d/scene.json`'s `framing`, then on Android (`SceneLook.framingRange`). A view at least as wide as tall is
+   framed as before.
+5. **The 3D view closes when the open LZ/PZ changes under it**, on purpose unlike the web's window, which follows whichever LZ becomes active and
+   comes back by itself for one with a target. On Android another LZ/PZ can be opened only in code under the page (a delete, a pack's item removed on
+   another device), and the view lets go.
 
 Decisions made for this plan (the owner may overturn any): *3D* where the web and the design boards put it; opening 3D from a row opens
 that LZ/PZ first, as on the web; a pack's LZ/PZ is not kept or built on save, as on the web; no operator's build command on Android.

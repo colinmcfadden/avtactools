@@ -1,18 +1,36 @@
 package app.ezpztac.scene3d
 
+import kotlin.math.PI
+import kotlin.math.atan
 import kotlin.math.cbrt
 import kotlin.math.exp
 import kotlin.math.floor
+import kotlin.math.sin
+import kotlin.math.tan
 
 /** How the web's 3D view looks and moves (`sceneSettings.js`, held to `contracts/fixtures/viewer3d/scene.json`). */
 public object SceneLook {
     /** The scene's background, `#05080d`, as ARGB. */
     public const val BACKGROUND: Int = 0xFF05080D.toInt()
 
-    /** The opening view, and the *LZ* button's: from 30° west of north, 35° down, 2.2 times the cloud's radius back. */
+    /** The opening view, and the *LZ* button's: from 30° west of north, 35° down, 2.2 times the cloud's radius back ([framingRange]). */
     public const val CAMERA_HEADING_DEG: Double = -30.0
     public const val CAMERA_PITCH_DEG: Double = -35.0
     public const val CAMERA_RANGE_FACTOR: Double = 2.2
+
+    /**
+     * How far back the camera stands to frame a sphere of [radius] (the opening view, *LZ* and *Routes*) on a view of [aspect], its width over
+     * its height, whose field of view [fov] runs across its wider side, as Cesium's does: the web's `framingRange` (`framing.js`), held to
+     * `viewer3d/scene.json`'s `framing`. [CAMERA_RANGE_FACTOR] radii on a view at least as wide as tall, which hold the sphere across it
+     * with a tenth to spare; on a view narrower than tall (a phone held upright), further back, until the sphere fits across the narrower
+     * width with the same margin, where 2.2 radii cut its sides off (the owner's decision of 2026-10-20).
+     */
+    public fun framingRange(radius: Double, aspect: Double, fov: Double = PI / 3): Double {
+        val range = radius * CAMERA_RANGE_FACTOR
+        if (!(aspect > 0 && aspect < 1)) return range
+        val across = atan(tan(fov / 2) * aspect)
+        return range * sin(fov / 2) / sin(across)
+    }
 
     /** The largest a point is drawn, in dp as the web's in CSS pixels: the person's to choose, 2 to 16, 5 at first. */
     public const val DEFAULT_POINT_SIZE: Int = 5

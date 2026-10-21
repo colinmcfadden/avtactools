@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -36,6 +37,22 @@ class SceneLookTest {
         assertEquals(s.getValue("EDL_RADIUS").jsonPrimitive.double, SceneLook.EDL_RADIUS)
         assertEquals((s.getValue("FRAME_SECONDS").jsonPrimitive.double * 1000).toLong(), SceneLook.FRAME_MS)
         assertEquals((s.getValue("FACE_NORTH_SECONDS").jsonPrimitive.double * 1000).toLong(), SceneLook.FACE_NORTH_MS)
+    }
+
+    @Test
+    fun `a sphere is framed from as far back as the web frames it, for every shape of view`() {
+        val framing = fixture.getValue("framing").jsonObject
+        val fov = framing.getValue("fov").jsonPrimitive.double
+        assertEquals(PI / 3, fov)
+        val cases = framing.getValue("cases").jsonArray.map { it.jsonObject }
+        assertTrue(cases.size >= 20)
+        for (c in cases) {
+            val radius = c.getValue("radius").jsonPrimitive.double
+            val aspect = c.getValue("aspectRatio").jsonPrimitive.double
+            val expected = c.getValue("range").jsonPrimitive.double
+            assertEquals(expected, SceneLook.framingRange(radius, aspect, fov), 1e-9 * maxOf(1.0, expected), "$radius at $aspect")
+            if (aspect >= 1) assertEquals(radius * SceneLook.CAMERA_RANGE_FACTOR, SceneLook.framingRange(radius, aspect), "unchanged wider than tall")
+        }
     }
 
     @Test

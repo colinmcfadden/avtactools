@@ -5,8 +5,9 @@ import { MAPBOX_IMAGERY } from "../mapStyles/mapStyles";
 import { createTerrainProvider } from "./terrainProvider";
 import { drawRoutes, routePositions } from "./routeEntities";
 import Compass3D from "./Compass3D";
+import { framingRange } from "./framing";
 import {
-  BACKGROUND, CAMERA_HEADING_DEG, CAMERA_PITCH_DEG, CAMERA_RANGE_FACTOR, CONTEXT_SCREEN_SPACE_ERROR, CORE_SCREEN_SPACE_ERROR,
+  BACKGROUND, CAMERA_HEADING_DEG, CAMERA_PITCH_DEG, CONTEXT_SCREEN_SPACE_ERROR, CORE_SCREEN_SPACE_ERROR,
   DEFAULT_POINT_SIZE_PX, EDL_RADIUS, EDL_STRENGTH, FRAME_SECONDS, POINT_SIZE_RANGE,
 } from "./sceneSettings";
 // Cesium's own stylesheet sizes .cesium-widget to fill its container. Without
@@ -24,12 +25,15 @@ import "./viewer3d.css";
 // through to the fallback colour. The only other thing a style set was
 // pointSize, which attenuation below overrides anyway.
 
-/** Frame a bounding sphere the way the view opens: oblique, from the north-west. */
+/**
+ * Frame a bounding sphere the way the view opens: oblique, from the north-west, far enough back to hold it across the view however narrow
+ * the view is (framing.js).
+ */
 const frameSphere = (Cesium, camera, sphere, { duration } = {}) => {
   const offset = new Cesium.HeadingPitchRange(
     Cesium.Math.toRadians(CAMERA_HEADING_DEG),
     Cesium.Math.toRadians(CAMERA_PITCH_DEG),
-    sphere.radius * CAMERA_RANGE_FACTOR,
+    framingRange(sphere.radius, camera.frustum.aspectRatio, camera.frustum.fov),
   );
   if (duration === undefined) {
     camera.lookAt(sphere.center, offset);

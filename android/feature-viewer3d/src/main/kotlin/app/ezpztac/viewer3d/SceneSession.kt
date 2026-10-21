@@ -239,7 +239,9 @@ class SceneSession(
     private var routes: RouteGeometry = RouteGeometry.NONE
     private var routesVersion = 0
 
-    private class Viewport(val width: Int, val height: Int, val pixelRatio: Double)
+    private class Viewport(val width: Int, val height: Int, val pixelRatio: Double) {
+        val aspect: Double get() = width.toDouble() / height
+    }
 
     init {
         if (core != null) scope.launch { loadCore(core) }
@@ -345,6 +347,8 @@ class SceneSession(
         val drawnRoutesVersion: Int
         synchronized(lock) {
             viewport = Viewport(widthPx, heightPx, pixelRatio)
+            // The opening view, framed for this view's shape once there is one to frame for (the core came before the first frame).
+            if (pose == null) lz?.let { pose = CameraPose.framing(frame, it, widthPx.toDouble() / heightPx) }
             val at = poseAt(now) ?: return null
             camera = at.camera(widthPx, heightPx, pixelRatio, SceneDepth.NEAR, SceneDepth.FAR)
             animating = flight != null
@@ -442,7 +446,7 @@ class SceneSession(
     fun frameRoutes() {
         synchronized(lock) {
             val sphere = BoundingSpheres.fromPoints(routes.positions, frame) ?: return
-            fly(CameraPose.framing(frame, sphere), SceneLook.FRAME_MS)
+            fly(CameraPose.framing(frame, sphere, viewport?.aspect ?: 1.0), SceneLook.FRAME_MS)
         }
         invalidate()
     }
@@ -451,7 +455,7 @@ class SceneSession(
     fun frameLz() {
         synchronized(lock) {
             val sphere = lz ?: return
-            fly(CameraPose.framing(frame, sphere), SceneLook.FRAME_MS)
+            fly(CameraPose.framing(frame, sphere, viewport?.aspect ?: 1.0), SceneLook.FRAME_MS)
         }
         invalidate()
     }
@@ -507,7 +511,8 @@ class SceneSession(
             synchronized(lock) {
                 coreRoot = doc.root
                 lz = sphere
-                if (pose == null) pose = CameraPose.framing(frame, sphere)
+                // Framed for the view's shape: until a frame says it, at the first frame (frame).
+                if (pose == null) pose = viewport?.let { CameraPose.framing(frame, sphere, it.aspect) }
                 // Until a tile's points say where the ground is, the middle of the cloud.
                 if (moves == null) moves = CameraMoves(sphere.center.z)
             }
