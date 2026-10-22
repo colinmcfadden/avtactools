@@ -49,7 +49,7 @@ class BoundaryActions(
 private fun actionsOf(viewModel: BoundaryViewModel, crosshair: LatLon?) = BoundaryActions(
     start = viewModel::start, addAtCrosshair = { viewModel.addAtCrosshair(crosshair) }, undoPoint = viewModel::undoPoint,
     finish = viewModel::finish, cancel = viewModel::cancel, dismissError = viewModel::dismissError,
-    analyze = viewModel::analyzeDrawn, stopAnalysis = viewModel::stopAnalysis, dismissOffer = viewModel::dismissOffer,
+    analyze = viewModel::analyzeOpen, stopAnalysis = viewModel::stopAnalysis, dismissOffer = viewModel::dismissOffer,
 )
 
 /** The sheet's part: how to start drawing. While drawing, the toolbar over the map is where the corners are added; this says so. */
@@ -151,23 +151,31 @@ fun BoundaryToolbar(state: BoundaryUiState, actions: BoundaryActions, modifier: 
 }
 
 /**
- * Where the drawing toolbar was, once *Finish* is pressed: the boundary's analysis offered there and then, so it is not three steps away in the panel's plan.
- * While it runs it says which part it is on and offers *Stop*; a failure is said in the app's words with *Try again*. *Not now* puts the bar away, and *Analyze*
- * stays where it always is, in the panel.
+ * An LZ/PZ's next step offered over the map, so it is not three steps away in the panel's plan: once *Finish* is pressed, the boundary's analysis; for an LZ/PZ just
+ * made (from the map's long press or the panel), its analysis or its boundary drawn by hand. While it runs it says which part it is on and offers *Stop*; a failure
+ * is said in the app's words with *Try again* (and, for a new LZ/PZ, drawing it by hand, the way on where no area was found). *Not now* puts the bar away; *Analyze*
+ * and *Draw LZ* stay where they always are, in the panel.
  */
 @Composable
 fun AnalyzeOfferBar(offer: AnalyzeOfferUi, error: String?, actions: BoundaryActions, modifier: Modifier = Modifier) {
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 6.dp,
-        modifier = modifier.padding(horizontal = Tokens.Spacing.md.dp).semantics { contentDescription = "Boundary drawn" },
+        modifier = modifier.padding(horizontal = Tokens.Spacing.md.dp).semantics { contentDescription = if (offer.fresh) "New LZ/PZ" else "Boundary drawn" },
     ) {
         Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
-                    Text("Boundary drawn: ${pointsText(offer.points)}", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        offer.stage ?: if (offer.failed != null) "The analysis did not finish." else "Analyze it to measure its area and slope and unlock planning.",
+                        if (offer.fresh) offer.name ?: "New LZ/PZ" else "Boundary drawn: ${pointsText(offer.points)}",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        offer.stage ?: when {
+                            offer.failed != null -> "The analysis did not finish."
+                            offer.fresh -> "Find its landing area automatically, or draw it yourself."
+                            else -> "Analyze it to measure its area and slope and unlock planning."
+                        },
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
@@ -180,6 +188,11 @@ fun AnalyzeOfferBar(offer: AnalyzeOfferUi, error: String?, actions: BoundaryActi
                 Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically) {
                     PrimaryButton("Analyze LZ/PZ", onClick = {}, busy = true, busyText = "Analyzing…", modifier = Modifier.weight(1f))
                     SecondaryButton("Stop", onClick = actions.stopAnalysis, modifier = Modifier.weight(0.5f))
+                }
+            } else if (offer.fresh) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically) {
+                    PrimaryButton(if (offer.failed != null) "Try again" else "Analyze", onClick = actions.analyze, modifier = Modifier.weight(1f))
+                    SecondaryButton("Draw boundary", onClick = actions.start, modifier = Modifier.weight(1f))
                 }
             } else {
                 PrimaryButton(if (offer.failed != null) "Try again" else "Analyze LZ/PZ", onClick = actions.analyze)

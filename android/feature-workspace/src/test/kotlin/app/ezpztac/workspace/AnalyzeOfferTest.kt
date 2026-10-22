@@ -6,6 +6,7 @@ import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.FreshDiagrams
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.model.DiagramStatus
@@ -33,6 +34,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -73,7 +75,8 @@ class AnalyzeOfferTest {
         val analysis = AnalysisService(terrain, session, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
         val drawing = BoundaryDrawing(session)
         val corners = BoundaryCorners(session)
-        val model = BoundaryViewModel(drawing, session, analysis, corners, pack)
+        val fresh = FreshDiagrams()
+        val model = BoundaryViewModel(drawing, session, analysis, corners, pack, fresh)
         val offer get() = model.state.value.analyzeOffer
     }
 
@@ -110,7 +113,7 @@ class AnalyzeOfferTest {
         val r = Rig(this)
         r.open()
         draw(r, a, b, c, d)
-        r.model.analyzeDrawn()
+        r.model.analyzeOpen()
         advanceUntilIdle()
         assertEquals(AnalyzeOfferUi(points = 4, stage = "Finding the landing area…"), r.offer)
         r.terrain.find.complete(found)
@@ -126,12 +129,12 @@ class AnalyzeOfferTest {
         val r = Rig(this)
         r.open()
         draw(r, a, b, c)
-        r.model.analyzeDrawn()
+        r.model.analyzeOpen()
         advanceUntilIdle()
         r.model.stopAnalysis()
         advanceUntilIdle()
         assertEquals(AnalyzeOfferUi(points = 3), r.offer)
-        r.model.analyzeDrawn()
+        r.model.analyzeOpen()
         advanceUntilIdle()
         r.terrain.find.completeExceptionally(ApiException(400, null, "No field found"))
         advanceUntilIdle()
@@ -139,7 +142,7 @@ class AnalyzeOfferTest {
         assertEquals(AnalyzeOfferUi(points = 3, failed = failed.message), r.offer)
         // Try again: the same action, with the server answering this time.
         r.terrain.find = CompletableDeferred()
-        r.model.analyzeDrawn()
+        r.model.analyzeOpen()
         advanceUntilIdle()
         assertEquals("Finding the landing area…", r.offer?.stage)
         r.terrain.find.complete(found)
@@ -187,7 +190,7 @@ class AnalyzeOfferTest {
         r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished())
         advanceUntilIdle()
         assertNull(r.offer)
-        r.model.analyzeDrawn()
+        r.model.analyzeOpen()
         advanceUntilIdle()
         assertEquals("OP DK is finished: nothing in it can be changed.", r.model.state.value.error)
         assertEquals(AnalysisStatus.Idle, r.analysis.status.value)
@@ -198,7 +201,7 @@ class AnalyzeOfferTest {
         val r = Rig(this)
         val id = r.open()
         draw(r, a, b, c)
-        r.model.analyzeDrawn()
+        r.model.analyzeOpen()
         advanceUntilIdle()
         r.terrain.find.complete(found)
         advanceUntilIdle()
@@ -232,7 +235,7 @@ class AnalyzeOfferTest {
         advanceUntilIdle()
         r.open()
         draw(r, a, b, c)
-        r.model.analyzeDrawn()
+        r.model.analyzeOpen()
         advanceUntilIdle()
         assertEquals("Another LZ/PZ is being analysed. Wait for it to finish, or stop it in its panel.", r.model.state.value.error)
         assertEquals(AnalyzeOfferUi(points = 3), r.offer)
@@ -261,4 +264,87 @@ class AnalyzeOfferTest {
         advanceUntilIdle()
         assertEquals(AnalyzeOfferUi(points = 3), r.offer)
     }
+
+    // -- An LZ/PZ just made (the map's long press, New LZ/PZ here; or the panel's) -----------------------------------------------
+
+    private fun hawkFresh(stage: String? = null, failed: String? = null) = AnalyzeOfferUi(points = 0, stage = stage, failed = failed, fresh = true, name = "LZ HAWK")
+
+    @Test
+    fun `an LZ-PZ just made is offered its analysis or its boundary drawn, and drawing it hands over to Finish's offer`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val id = r.open()
+        r.fresh.made(id)
+        advanceUntilIdle()
+        assertEquals(hawkFresh(), r.offer)
+        r.model.start()                                                                          // Draw boundary
+        advanceUntilIdle()
+        assertNull("the drawing toolbar takes its place", r.offer)
+        assertNull("its first step is taken", r.fresh.made.value)
+        r.model.addAtCrosshair(a); r.model.addAtCrosshair(b); r.model.addAtCrosshair(c)
+        r.model.finish()
+        advanceUntilIdle()
+        assertEquals("then the boundary drawn is offered its analysis", AnalyzeOfferUi(points = 3), r.offer)
+    }
+
+    @Test
+    fun `an LZ-PZ just made is analysed from the offer, which goes once it is analysed`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val id = r.open()
+        r.fresh.made(id)
+        r.model.analyzeOpen()
+        advanceUntilIdle()
+        assertEquals(hawkFresh(stage = "Finding the landing area…"), r.offer)
+        r.terrain.find.complete(found)
+        advanceUntilIdle()
+        assertNull(r.offer)
+        assertNull("spent", r.fresh.made.value)
+    }
+
+    @Test
+    fun `where no landing area is found, the offer says so and still offers drawing it by hand`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val id = r.open()
+        r.fresh.made(id)
+        r.model.analyzeOpen()
+        advanceUntilIdle()
+        r.terrain.find.completeExceptionally(ApiException(400, null, "No field found"))
+        advanceUntilIdle()
+        val failed = r.analysis.status.value as AnalysisStatus.Failed
+        assertEquals(hawkFresh(failed = failed.message), r.offer)
+        r.model.start()
+        advanceUntilIdle()
+        assertTrue(r.model.state.value.drawing)
+        assertNull(r.offer)
+    }
+
+    @Test
+    fun `not now puts a new LZ-PZ's offer away, and it is shown only while that LZ-PZ is open`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val hawk = r.open()
+        r.fresh.made(hawk)
+        r.open("LZ CROW", DiagramTarget(35.0, -85.0, "16S GD 1 1"))
+        advanceUntilIdle()
+        assertNull(r.offer)
+        r.session.open(hawk)
+        advanceUntilIdle()
+        assertEquals(hawkFresh(), r.offer)
+        r.model.dismissOffer()
+        advanceUntilIdle()
+        assertNull(r.offer)
+        assertNull(r.fresh.made.value)
+    }
+
+    @Test
+    fun `a new LZ-PZ of a read-only pack is offered nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.open()
+        advanceUntilIdle()
+        val item = FakeOpenPack.lzOf("lz-1", checkNotNull(r.session.active.value).copy(id = "pack:p:lz-1"))
+        r.pack.state.value = FakeOpenPack.open(listOf(item), session = FakeOpenPack.finished())
+        r.session.open("pack:p:lz-1")
+        r.fresh.made("pack:p:lz-1")
+        advanceUntilIdle()
+        assertNull(r.offer)
+    }
 }
+

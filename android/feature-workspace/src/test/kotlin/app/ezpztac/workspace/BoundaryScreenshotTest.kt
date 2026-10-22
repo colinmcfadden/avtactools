@@ -70,5 +70,13 @@ class BoundaryScreenshotTest {
     @Test
     @Config(qualifiers = "w360dp-h640dp-xxhdpi", fontScale = 1.3f)
     fun doghouseBarNarrowLargeText() = shot("held-doghouse-narrow-large", ThemeMode.Light) { HeldObjectBar(doghouseHeld, HeldObjectActions()) }
+
+    @Test fun offerFresh() = shot("offer-fresh") { AnalyzeOfferBar(AnalyzeOfferUi(points = 0, fresh = true, name = "LZ/PZ 3"), null, BoundaryActions()) }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi", fontScale = 1.3f)
+    fun offerFreshFailedNarrow() = shot("offer-fresh-failed-narrow", ThemeMode.Light) {
+        AnalyzeOfferBar(AnalyzeOfferUi(points = 0, fresh = true, name = "LZ/PZ 3", failed = "No distinct landing area was found here."), null, BoundaryActions())
+    }
 }
 

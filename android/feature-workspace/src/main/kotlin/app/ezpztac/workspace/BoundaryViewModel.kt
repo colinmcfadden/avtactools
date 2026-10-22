@@ -7,6 +7,8 @@ import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.FreshDiagrams
+import app.ezpztac.data.PackLock
 import app.ezpztac.data.OpenPack
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.model.BoundaryCornerRef
@@ -48,10 +50,17 @@ data class BoundaryUiState(
 )
 
 /**
- * The bar that takes the drawing toolbar's place once *Finish* is pressed (the owner's request, 2026-10-21: no going into the panel and its plan to analyse a
- * boundary just drawn): the corners drawn, and the analysis offered, under way ([stage], in words) or failed ([failed], in words).
+ * The bar over the map that offers an LZ/PZ's next step there and then (the owner's requests, 2026-10-21: no going into the panel and its plan for it): once *Finish*
+ * is pressed, the analysis of the boundary drawn ([points] corners); for an LZ/PZ just made ([fresh], called [name]), its analysis or its boundary drawn by hand.
+ * Under way it says which part ([stage], in words); failed, why ([failed], in words).
  */
-data class AnalyzeOfferUi(val points: Int, val stage: String? = null, val failed: String? = null)
+data class AnalyzeOfferUi(
+    val points: Int,
+    val stage: String? = null,
+    val failed: String? = null,
+    val fresh: Boolean = false,
+    val name: String? = null,
+)
 
 /**
  * A corner of the boundary held on the map: what it is (`Boundary corner 3 of 6`), where, and whether it can be deleted (a boundary keeps three), or why
@@ -71,6 +80,8 @@ class BoundaryViewModel @Inject constructor(
     private val corners: BoundaryCorners,
     /** The open Mission Pack: a read-only one's boundary is looked at, never drawn again or cut (P2c). */
     private val pack: OpenPack = OpenPack.None,
+    /** The LZ/PZ just made, whose first step the bar offers: analysed, or drawn. */
+    private val fresh: FreshDiagrams = FreshDiagrams(),
 ) : ViewModel() {
     private val error = MutableStateFlow<String?>(null)
 
@@ -82,10 +93,12 @@ class BoundaryViewModel @Inject constructor(
 
     private val finished = MutableStateFlow<Finished?>(null)
 
-    private val held = combine(corners.held, pack.lock, finished) { corner, lock, finished -> Triple(corner, lock, finished) }
+    private data class Around(val corner: BoundaryCornerRef?, val lock: PackLock?, val finished: Finished?, val made: String?)
+
+    private val held = combine(corners.held, pack.lock, finished, fresh.made) { corner, lock, finished, made -> Around(corner, lock, finished, made) }
 
     val state: StateFlow<BoundaryUiState> = combine(drawing.draft, session.active, analysis.status, error, held) { draft, diagram, status, error, held ->
-        val (heldCorner, lock, finished) = held
+        val (heldCorner, lock, finished, made) = held
         val locked = lock?.reasonFor(diagram?.id)
         val running = status is AnalysisStatus.Running && status.diagramId == diagram?.id
         val startable = diagram != null && diagram.target != null
@@ -105,7 +118,7 @@ class BoundaryViewModel @Inject constructor(
             drawnPoints = diagram?.let { DiagramGeometry.drawn(it).size } ?: 0,
             error = error,
             heldCorner = diagram?.let { d -> heldCorner?.let { cornerOf(d, it)?.copy(locked = locked) } },
-            analyzeOffer = offerOf(finished, diagram, status).takeIf { draft == null && locked == null },
+            analyzeOffer = (offerOf(finished, diagram, status) ?: freshOfferOf(made, diagram, status)).takeIf { draft == null && locked == null },
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, BoundaryUiState())
 
@@ -122,6 +135,31 @@ class BoundaryViewModel @Inject constructor(
                 }
             }
         }
+        // An LZ/PZ just made is offered its first step until it is analysed (the analysis over), or a boundary is begun on it, or the offer is put off.
+        viewModelScope.launch {
+            combine(fresh.made, session.active, analysis.status) { m, d, s -> Triple(m, d, s) }.collect { (made, diagram, status) ->
+                if (made == null || diagram == null || made != diagram.id) return@collect
+                val running = (status as? AnalysisStatus.Running)?.diagramId == diagram.id
+                if (!running && diagram.status == DiagramStatus.ANALYZED) fresh.forget(made)
+            }
+        }
+    }
+
+    /**
+     * The offer for the LZ/PZ just made, while it is the one open: its analysis or a boundary drawn by hand, until it is analysed. Under way and failed as the other's.
+     */
+    private fun freshOfferOf(made: String?, diagram: app.ezpztac.model.Diagram?, status: AnalysisStatus): AnalyzeOfferUi? {
+        if (made == null || diagram == null || made != diagram.id) return null
+        val running = (status as? AnalysisStatus.Running)?.takeIf { it.diagramId == diagram.id }
+        val failed = (status as? AnalysisStatus.Failed)?.takeIf { it.diagramId == diagram.id }
+        if (running == null && failed == null && (diagram.status == DiagramStatus.ANALYZED || DiagramGeometry.drawn(diagram).isNotEmpty())) return null
+        return AnalyzeOfferUi(
+            points = 0,
+            stage = running?.let { if (it.stage == AnalysisStatus.Running.Stage.FINDING_AREA) "Finding the landing area…" else "Measuring the slope…" },
+            failed = failed?.message,
+            fresh = true,
+            name = diagram.name,
+        )
     }
 
     /**
@@ -162,6 +200,8 @@ class BoundaryViewModel @Inject constructor(
         fail(problem)
         // This LZ/PZ's boundary drawn again: its offer comes with the new one. Another LZ/PZ's waits until a boundary is finished here, which takes its place.
         if (problem == null && finished.value?.diagramId == open) finished.value = null
+        // A new LZ/PZ's first step taken: drawn by hand (Finish offers the analysis then).
+        if (problem == null) fresh.forget(open)
     }
 
     /** Puts a corner down at the crosshair, [at]. */
@@ -187,8 +227,8 @@ class BoundaryViewModel @Inject constructor(
         }
     }
 
-    /** Analyses the open LZ/PZ from the bar over the map, as the panel's *Analyze* does: never in a read-only pack, whose result would be put back. */
-    fun analyzeDrawn() {
+    /** Analyses the open LZ/PZ from the bar over the map (a boundary just drawn, or an LZ/PZ just made), as the panel's *Analyze* does: never in a read-only pack. */
+    fun analyzeOpen() {
         val open = session.active.value ?: return
         locked()?.let { return fail(it) }
         // One analysis at a time: another LZ/PZ's under way would make this press do nothing at all.
@@ -201,9 +241,10 @@ class BoundaryViewModel @Inject constructor(
     /** Stops waiting for the server; the boundary is still drawn, and offered again. */
     fun stopAnalysis() = analysis.cancel()
 
-    /** *Not now*: the bar goes, and the boundary waits in the panel, where *Analyze* is. */
+    /** *Not now*: the bar goes, and the LZ/PZ waits in the panel, where *Analyze* and *Draw LZ* are. */
     fun dismissOffer() {
         finished.value = null
+        fresh.forget(session.active.value?.id)
     }
 
     fun cancel() {

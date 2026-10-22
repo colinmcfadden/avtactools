@@ -167,10 +167,11 @@ class DiagramsViewModelTest {
         val openStore = InMemoryOpenDiagramStore()
         val open = OpenDiagrams(openStore)
         val slopeVisibility = SlopeVisibility()
+        val fresh = app.ezpztac.data.FreshDiagrams()
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            analysis, aircraft, weather, open, slopeVisibility, pack,
+            analysis, aircraft, weather, open, slopeVisibility, pack, fresh,
         )
         val rows get() = model.state.value.rows
 
@@ -904,6 +905,18 @@ class DiagramsViewModelTest {
     // -- The LZ/PZ panel: the open LZ/PZs, naming, closing (S3) ---------------------------------------------------------------
 
     private val here = LatLon(34.783817, -84.08219)
+
+    @Test
+    fun `an LZ-PZ just made is noted, so the bar over the map offers its first step`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)                                                                      // the map's long press, New LZ/PZ here; or the panel's
+        advanceUntilIdle()
+        val made = checkNotNull(r.session.active.value).id
+        assertEquals(made, r.fresh.made.value)
+        r.model.create("", "16S GD 66993 52949")                                                 // the form with a typed target
+        advanceUntilIdle()
+        assertEquals(checkNotNull(r.session.active.value).id, r.fresh.made.value)
+    }
 
     // -- In a Mission Pack (P2b) ------------------------------------------------------------------------------------------------
 

@@ -8,6 +8,7 @@ import app.ezpztac.data.AnalysisService
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.FreshDiagrams
 import app.ezpztac.data.DiagramSummary
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenPack
@@ -318,6 +319,8 @@ class DiagramsViewModel @Inject constructor(
     private val slopeVisibility: SlopeVisibility,
     /** The open Mission Pack: while one is open its LZ/PZs are the panel's, and a new one goes into it. */
     private val pack: OpenPack = OpenPack.None,
+    /** A new LZ/PZ is noted there, so the bar over the map offers its first step (analyse it, or draw its boundary). */
+    private val fresh: FreshDiagrams = FreshDiagrams(),
 ) : ViewModel() {
     private val local = MutableStateFlow(DiagramsUiState())
     private val page = MutableStateFlow(LzPage.HOME)
@@ -425,7 +428,7 @@ class DiagramsViewModel @Inject constructor(
         if (pack.state.value != null) {
             if (pack.lockNow() != null) return fail(PackFacts.NOTHING_NEW)
             return run("The LZ/PZ could not be made.") {
-                pack.createLz(DiagramTarget(at.lat, at.lon, grid))
+                pack.createLz(DiagramTarget(at.lat, at.lon, grid))?.let(fresh::made)
                 page.value = LzPage.HOME
             }
         }
@@ -434,6 +437,7 @@ class DiagramsViewModel @Inject constructor(
             val made = repository.create(DiagramTarget(at.lat, at.lon, grid), name)
             openSet.add(made.id)
             session.open(made.id)
+            fresh.made(made.id)
             page.value = LzPage.HOME
         }
     }
@@ -546,6 +550,7 @@ class DiagramsViewModel @Inject constructor(
         run("The diagram could not be made.") {
             val made = repository.create(target, title)
             session.open(made.id)
+            fresh.made(made.id)
             local.update { it.copy(creating = false) }
         }
     }

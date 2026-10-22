@@ -1491,7 +1491,9 @@ client is built around not losing one:
     there does), is spent once an analysis of that LZ/PZ has run and taken the drawn boundary as its own (a later *Re-analyze* in the panel is not its: `Finished.ran`), counts
     the corners there now, starts with an earlier failure of that LZ/PZ's analysis put away, says so in words when another LZ/PZ's analysis is under way (one runs at a time), gives
     way to whatever else floats over the map (the held object's bar, a route drawn, a tool's mode: they would lie over each other), and is never shown in a read-only pack, where
-    analysing is refused in words as the panel's is.
+    analysing is refused in words as the panel's is. **A new LZ/PZ is offered its first step the same way** (the owner's request, 2026-10-21; `FreshDiagrams`, noted by the panel's
+    `newAt` and `create`, so the map's long press *New LZ/PZ here* and the panel's alike): *Analyze* or *Draw boundary*, and where no area was found *Try again* or *Draw boundary*,
+    until it is analysed, a boundary is begun (then *Finish* offers that boundary's analysis), it is put off, or another LZ/PZ is open.
   - **Not verifiable here:** the dots and dashed line on the map (`DiagramOverlay`'s vertex layer: compile-only, like every GL layer), the sheet going down
     when drawing starts, and that MapLibre's click listener fires for every tap while drawing (it already does for selecting graphics).
 - **Routes** (started: `core-model`: `SketchRoute`, `RoutePlan`, `Mission`; `core-planning`: `SketchOps`, `RouteCalc`, `RoutePlans`; `core-formats`: `MsnxReader`).

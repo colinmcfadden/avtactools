@@ -213,4 +213,25 @@ class BoundaryScreenTest {
         assertEquals(0, count("Analyze LZ/PZ"))
         assertEquals(0, count("Add here"))
     }
+
+    @Test
+    fun `a new LZ-PZ's bar offers its analysis or its boundary drawn, and a failure keeps the drawing`() {
+        val r = afterFinish(BoundaryUiState(analyzeOffer = AnalyzeOfferUi(points = 0, fresh = true, name = "LZ/PZ 3")))
+        compose.onNodeWithText("LZ/PZ 3").assertIsDisplayed()
+        compose.onNodeWithText("Find its landing area automatically, or draw it yourself.").assertIsDisplayed()
+        compose.onNodeWithText("Analyze").performClick()
+        compose.onNodeWithText("Draw boundary").performClick()
+        compose.onNodeWithText("Not now").performClick()
+        assertEquals(listOf("analyze", "start", "not now"), r.log)
+    }
+
+    @Test
+    fun `a new LZ-PZ whose area was not found offers Try again and drawing it by hand`() {
+        val r = afterFinish(BoundaryUiState(analyzeOffer = AnalyzeOfferUi(points = 0, fresh = true, name = "LZ/PZ 3", failed = "No landing area was found here.")))
+        compose.onNodeWithText("No landing area was found here.").assertIsDisplayed()
+        compose.onNodeWithText("Try again").performClick()
+        compose.onNodeWithText("Draw boundary").performClick()
+        assertEquals(listOf("analyze", "start"), r.log)
+    }
 }
+

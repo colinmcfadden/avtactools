@@ -33,6 +33,9 @@ offer came back for a later *Re-analyze* and showed an earlier failure; it lay o
 sheet at half (what floats is now measured into the room under the row); and a finger's roll after a long press moved what it only held (now an 8 dp slop, and no edit at all
 when the finger never passed it).
 
+A new LZ/PZ (the map's long press *New LZ/PZ here*, or the panel's) is offered its first step in the same bar: *Analyze* or *Draw boundary*, and *Draw boundary* again where no
+area was found (`FreshDiagrams`).
+
 **Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, and TalkBack on the new fields. A device run on the owner's phone is next.
 
 ## 0. The slope tile, contour lines and the slope profile (2026-10-13/14)
