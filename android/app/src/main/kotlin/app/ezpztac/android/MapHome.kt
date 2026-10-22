@@ -210,6 +210,7 @@ fun MapHome(
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val drawingWhat by home.drawingWhat.collectAsStateWithLifecycle()
     val slopeToggle by home.slopeToggle.collectAsStateWithLifecycle()
+    val slopeOpacity by home.slopeOpacity.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     // The phone's search, folded into the row or open across it, and what was typed (a tablet's bar is always open): the frame folds it.
     val search = rememberMapSearchState()
@@ -623,7 +624,7 @@ fun MapHome(
                         },
                     )
                     MgrsGridLayer(host, state.grid, chrome = chrome)        // its lines under everything planned, its labels under every other label
-                    DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
+                    DiagramLayer(host, scene, slopeOpacity / 100f)  // under the routes and the GPS dot, which stays on top
                     PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's
                     RouteLayer(host, routeScene)
                     ThreatLayer(host, threatScene)                  // range rings; symbols and names are Compose below

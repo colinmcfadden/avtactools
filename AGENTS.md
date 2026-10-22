@@ -913,6 +913,12 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   from true by the grid convergence (about 1.7° at a zone's edge in north Georgia). Nothing corrects either (owner to decide).
 - Until the server with `byHeading` reaches staging and production, every analysis there has no table: the apps say HEADING REQUIRED at
   15° and "Heading limits not checked (server not updated)".
+- **The web's slope map has no opacity setting** (Android's has, the owner's request of 2026-10-21; §17, *How the slope map and the LZ box are drawn*): the web
+  draws the raster at a fixed 0.55 (`SLOPE_OVERLAY_OPACITY`, `feature/terrain/SlopeLayer.jsx`), Android at what the person sets, 10 to 100% in steps of 5 from the web's
+  55%, kept on the device and never with a plan. To give the web one (web first, owner to decide), make it a per-browser setting (`localStorage`, as `ezpz.mgrsGrid`),
+  not a field of the diagram's `view`: the web's `normalizeView` and Android's `DiagramNormalizer` both keep the view to its three fields, so a fourth would be dropped
+  by whichever saved the diagram next. (The slope map's switch already differs: the web's is the diagram's `view.showHeatmap`, off by default; Android's is a device
+  choice, drawn at launch.)
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -1417,7 +1423,7 @@ client is built around not losing one:
     is listening to `opened` (a `SharedFlow` with no replay: an event nobody hears is lost, and it is what takes the map to the diagram and restores its base
     map), does nothing if the person has already opened something, and treats a diagram that is gone (deleted, another account's) or will not open as
     "start from the list". It comes back only if it is still among the open LZ/PZs (`OpenDiagrams`): the last one closed stays closed.
-  - **Not done:** moving a corner of a boundary once drawn (draw it again). **Deleting a corner is built** (`BoundaryCorners`, `CornerHitTest`): a tap holds a corner of the analysis or the drawn boundary (after graphics, routes and their points, before local points), the held-object bar offers *Delete corner*, it is one undo step, and a boundary keeps three corners (the button is disabled and says so). Deleting from the analysis boundary makes the slope be measured again. **The slope heat map has a button** (`SlopeVisibility`, `SlopeToggleUi`): it only hides the raster, the slope is still measured and the tiles still say it; it is a view choice, on at each launch and not saved with the diagram. Neither is seen on a device yet. (Dragging and turning on the map are *Dragging and
+  - **Not done:** moving a corner of a boundary once drawn (draw it again). **Deleting a corner is built** (`BoundaryCorners`, `CornerHitTest`): a tap holds a corner of the analysis or the drawn boundary (after graphics, routes and their points, before local points), the held-object bar offers *Delete corner*, it is one undo step, and a boundary keeps three corners (the button is disabled and says so). Deleting from the analysis boundary makes the slope be measured again. **The slope heat map has a button** (`SlopeVisibility`, `SlopeToggleUi`): it only hides the raster, the slope is still measured and the tiles still say it; it is a view choice, on at each launch and not saved with the diagram (its opacity and the LZ box: *How the slope map and the LZ box are drawn*, below). Neither is seen on a device yet. (Dragging and turning on the map are *Dragging and
     turning on the map*, below; the inspector still does all of it and works with gloves and a screen reader.)
 - **The LZ/PZ panel** (S3; `feature-workspace`: `LzPanel.kt`, `SaveLzSheet`, `PlacementToolbar`, `LzNames`; `core-data`: `OpenDiagrams`,
   `GraphicPlacement`; the steps and their amendments in `docs/ANDROID_SCREENS_PLAN.md`). Things to keep true:
@@ -1445,7 +1451,25 @@ client is built around not losing one:
   - **The tools are under the open LZ/PZ's card too** (the owner's request of 2026-10-15; `LzToolsSection`, `LzHomeContent(tools)`): the panel's first page has the plan's
     tool grid, with its unit builder and its question before a boundary clears an analysis, so a tool is a tap away whenever the panel shows an LZ/PZ. Each place keeps its
     own builder and question. Not on a tablet while the LZ/PZ's plan stands in its pane beside the list (the plan has them), and not in a read-only pack.
-  - **Not offered, because Android does not have them yet:** 3D, the LZ card export and its capture area, *Sketch a route* from the plan, the LZ box.
+  - **How the slope map and the LZ box are drawn** (the owner's request of 2026-10-21; `core-data`: `SlopeOpacity`, `SlopeVisibility`, `SlopeOpacityMemory`; `app`:
+    `MapPreferences`; `feature-map`: `LzScene.boundaryShown`, `CornerHitTest`, `DiagramOverlay.setSlopeOpacity`; `feature-workspace`: the plan's `AnalysisSection`). Under the
+    plan's *Slope map* switch, while the heat map is drawn, an *Opacity* slider (the design's overlay opacity, docs/native-design Imports), and under that the *LZ box* switch,
+    which the design's LzPlan and AT-Home put beside *Slope map*, as the web's sidebar does. Not in the Layers menu: that is the map's, the same over every LZ/PZ (base maps,
+    the grid), and the LZ box is the open LZ/PZ's own. Things to keep true:
+    - **The opacity is this device's, not the diagram's**: a whole percentage of the raster's own alpha, 10 to 100 in steps of 5 (`SlopeOpacity.of`), kept in a preference
+      (`MapPreferences`, `slopeOpacity`) and the same for every LZ/PZ, never saved with a plan or synced (the web has no setting: §15). It starts at the web's 0.55
+      (`SLOPE_OVERLAY_OPACITY`); Android drew 0.85 before. It is the raster's alone (the contour lines keep theirs), and the map is told it apart from the scene
+      (`DiagramLayer(slopeOpacity)`), so a slider being dragged sets one property of the raster layer, at once (no transition), and never adds the bitmap or the vector
+      scene again. The slider is said as "Slope map opacity" with its value in words (`stateDescription`): read as a share of its range, 55 would be said as 50 percent.
+      It stops at every 5 but draws no tick for each (nineteen dots were noise under the number).
+    - **The LZ box is the diagram's own view, `view.showLZOutline`, as on the web** (its *LZ Box*, on by default): a quiet change (`setQuietly`, as the base map is), saved
+      with the LZ/PZ so the web and the person's other devices show it as they left it, and never a step to undo; in a Mission Pack each person's own (`PackLz`'s view
+      names), so it is offered in a read-only one. Hidden, the analysis boundary's fill, outline and corner dots are not drawn, and a tap does not hold a corner that is not
+      drawn (`LzScene.boundaryCornersShown`); while one of its corners is held they are drawn, and in reach, until it is put down. A boundary drawn by hand, and one being
+      drawn, are drawn whatever it says, as on the web, and it stays as set through a new analysis (a boundary drawn and then analysed is hidden too while it is off).
+      Nothing measured or kept changes: capacity, area and the slope are the boundary's, shown or not.
+    - **Not verifiable here:** the raster at each opacity over real imagery and in sunlight, the slider under a glove, and the boundary's layers gone from the GL map.
+  - **Not offered, because Android does not have them yet:** 3D, the LZ card export and its capture area, *Sketch a route* from the plan.
 - **The Routes panel** (S4; `feature-workspace`: `RoutesPanel.kt`, `RoutePlanPage.kt`, `SaveRoutesSheet`, `RouteSetNames`, `PlanDates`, over `RoutesViewModel`; `core-data`: `OpenRouteSets`;
   `app`: `OpenRouteSetPreferences`, `MapHome`; the steps and their amendments in `docs/ANDROID_SCREENS_PLAN.md`). Things to keep true:
   - **The open route sets are a working set** (`OpenRouteSets`, kept by `OpenRouteSetPreferences`) under the open LZ/PZs' rules: record ids only, at most 20, never a mission pack's set, not
@@ -1731,8 +1755,8 @@ client is built around not losing one:
     go-around's side, a doghouse's label, time, distance, airspeed and heading (and the flight data it gives), a unit's symbol and labels, an aircraft's airframe, the target, a
     boundary drawn and a corner deleted, an analysis come back (a quiet change, sent though another LZ/PZ is open by then), the name: each found identical on the other device's open
     LZ/PZ and in the pack, on its copy while it is closed and once opened there, undone as a change of its own, and made by two people at once (two settings of one graphic both stand;
-    one setting stands whole as the later made it). What stays each person's: the base map, the LZ outline and the slope map (an LZ/PZ's `view`), and on Android the slope switch,
-    a device choice. **An aircraft carries only its airframe's slug** (`profileId`), so one placed as a person's own airframe is drawn and measured as each device's mission aircraft
+    one setting stands whole as the later made it). What stays each person's: the base map, the LZ outline and the slope map (an LZ/PZ's `view`), and on Android the slope switch
+    and its opacity, device choices. **An aircraft carries only its airframe's slug** (`profileId`), so one placed as a person's own airframe is drawn and measured as each device's mission aircraft
     where that profile is not (§15).
   - **A route's plan values go whole, and a point's first values go apart** (`RoutePackKind.keepWhole`): each altitude (its number and what it is measured from), speed (its number
     and kind) and wind (its direction and speed), the route's and each point's, is sent whole, so 500 typed here and MSL chosen there never make 500 MSL; and a point given its first

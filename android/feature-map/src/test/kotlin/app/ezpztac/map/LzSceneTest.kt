@@ -1,9 +1,11 @@
 package app.ezpztac.map
 
+import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramAnalysis
 import app.ezpztac.model.DiagramStatus
 import app.ezpztac.model.DiagramTarget
+import app.ezpztac.model.DiagramView
 import app.ezpztac.model.LatLon
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -24,8 +26,8 @@ import org.junit.Test
 class LzSceneTest {
     private fun ring(vararg points: Pair<Double, Double>) = JsonArray(points.map { (a, b) -> JsonArray(listOf(JsonPrimitive(a), JsonPrimitive(b))) })
 
-    private fun diagram(target: DiagramTarget? = DiagramTarget(34.78, -84.08, "16S GD 1 2"), analysis: DiagramAnalysis = DiagramAnalysis()) = Diagram(
-        id = "d", createdAt = "t", updatedAt = "t", status = DiagramStatus.TARGETED, target = target, analysis = analysis,
+    private fun diagram(target: DiagramTarget? = DiagramTarget(34.78, -84.08, "16S GD 1 2"), analysis: DiagramAnalysis = DiagramAnalysis(), view: DiagramView = DiagramView()) = Diagram(
+        id = "d", createdAt = "t", updatedAt = "t", status = DiagramStatus.TARGETED, target = target, analysis = analysis, view = view,
     )
 
     private fun features(scene: LzScene) = Json.parseToJsonElement(scene.geoJson()).jsonObject.getValue("features").jsonArray.map { it.jsonObject }
@@ -83,6 +85,46 @@ class LzSceneTest {
         assertEquals("Polygon", geometry(features(polygon).single { role(it) == "drawn" }).getValue("type").jsonPrimitive.content)
 
         assertEquals(emptyList<LatLon>(), LzScene.of(diagram(analysis = DiagramAnalysis(customLZ = ring(34.7 to -84.1)))).drawn)
+    }
+
+    // -- The LZ box hidden (the diagram's view, the web's *LZ Box*) ---------------------------------------------------
+
+    private val detected = DiagramAnalysis(detectedLZ = ring(34.71 to -84.09, 34.71 to -84.01, 34.79 to -84.01))
+    private val hidden = DiagramView(showLZOutline = false)
+
+    @Test
+    fun `an outline the view hides is not drawn, nor its corners, and is still the scene's boundary`() {
+        val scene = LzScene.of(diagram(analysis = detected, view = hidden))
+        assertEquals(false, scene.boundaryShown)
+        assertEquals(3, scene.boundary.size)                                                          // still the diagram's: measured, saved, kept
+        assertEquals(listOf("target"), features(scene).map(::role))
+        val shown = LzScene.of(diagram(analysis = detected))
+        assertEquals(true, shown.boundaryShown)
+        assertEquals(listOf("boundary", "corner", "corner", "corner", "target"), features(shown).map(::role))
+    }
+
+    @Test
+    fun `while a corner of it is held its corners are drawn, the held one marked, and the outline still is not`() {
+        val held = LzScene.of(diagram(analysis = detected, view = hidden), heldCorner = BoundaryCornerRef(false, 1))
+        assertEquals(true, held.boundaryCornersShown)
+        assertEquals(listOf("corner", "corner", "corner", "target"), features(held).map(::role))
+        assertEquals(listOf(false, true, false), features(held).filter { role(it) == "corner" }.map { it.getValue("properties").jsonObject.getValue("held").jsonPrimitive.boolean })
+        // A corner of the boundary drawn by hand is not one of the analysis boundary's.
+        assertEquals(false, LzScene.of(diagram(analysis = detected, view = hidden), heldCorner = BoundaryCornerRef(true, 1)).boundaryCornersShown)
+    }
+
+    @Test
+    fun `a boundary drawn by hand, and one being drawn, are drawn whatever the view says, as on the web`() {
+        val drawn = LzScene.of(diagram(analysis = DiagramAnalysis(customLZ = ring(34.7 to -84.1, 34.8 to -84.0, 34.8 to -84.1)), view = hidden))
+        assertEquals(listOf("drawn", "corner", "corner", "corner", "target"), features(drawn).map(::role))
+        val drawing = LzScene.of(diagram(analysis = detected, view = hidden), draft = listOf(LatLon(34.70, -84.10), LatLon(34.80, -84.00)))
+        assertEquals(listOf("drawn", "vertex", "vertex", "target"), features(drawing).map(::role))
+    }
+
+    @Test
+    fun `the slope and the graphics are drawn with the outline hidden`() {
+        val slope = SlopeImage(34.7, -84.1, 34.8, -84.0, "data:image/png;base64,AA==")
+        assertEquals(slope, LzScene.of(diagram(analysis = detected, view = hidden), slope).slope)
     }
 
     // -- The boundary being drawn ---------------------------------------------------------------------------------

@@ -84,8 +84,16 @@ data class LzScene(
     val locked: Boolean = false,
     /** The corner of the boundary the person is holding (to delete it), if one is: drawn larger, in amber. */
     val heldCorner: BoundaryCornerRef? = null,
+    /**
+     * Whether the analysis boundary is drawn: the diagram's own view (`view.showLZOutline`, the web's *LZ Box*). Hidden, it is still the diagram's, measured
+     * and saved as ever; a boundary drawn by hand and one being drawn are drawn all the same, as on the web.
+     */
+    val boundaryShown: Boolean = true,
 ) {
     val isEmpty: Boolean get() = target == null && boundary.isEmpty() && drawn.isEmpty() && slope == null && graphics.isEmpty && draft.isEmpty()
+
+    /** Whether the analysis boundary's corners are drawn, and can be held: with its outline, or while one of them is held (the person is working on it). */
+    val boundaryCornersShown: Boolean get() = boundaryShown || heldCorner?.drawn == false
 
     /**
      * The vector part as GeoJSON, for the map's source. Coordinates are `[longitude, latitude]`, as GeoJSON has them (the diagram stores
@@ -94,13 +102,13 @@ data class LzScene(
     fun geoJson(): String = buildJsonObject {
         put("type", "FeatureCollection")
         putJsonArray("features") {
-            if (boundary.size >= 3) add(feature("boundary", polygon(boundary)))
+            if (boundary.size >= 3 && boundaryShown) add(feature("boundary", polygon(boundary)))
             when {
                 drawn.size >= 3 -> add(feature("drawn", polygon(drawn)))
                 drawn.size == 2 -> add(feature("drawn", line(drawn)))
             }
             // A dot at each corner of a boundary that is a polygon, so a corner can be seen and held; the held one is marked.
-            if (boundary.size >= 3) boundary.forEachIndexed { i, p -> add(feature("corner", point(p), "held" to JsonPrimitive(heldCorner == BoundaryCornerRef(false, i)))) }
+            if (boundary.size >= 3 && boundaryCornersShown) boundary.forEachIndexed { i, p -> add(feature("corner", point(p), "held" to JsonPrimitive(heldCorner == BoundaryCornerRef(false, i)))) }
             if (drawn.size >= 3) drawn.forEachIndexed { i, p -> add(feature("corner", point(p), "held" to JsonPrimitive(heldCorner == BoundaryCornerRef(true, i)))) }
             if (draft.size >= 2) add(feature("drawn", line(draft)))
             draft.forEach { add(feature("vertex", point(it))) }
@@ -177,7 +185,8 @@ data class LzScene(
 
         /**
          * The scene of [diagram] (nothing for none), with [slope] if it has been measured. [profiles] and [active] say what each placed
-         * aircraft is, [selected] is the graphic the person is holding, and [draft] the points of a boundary being drawn.
+         * aircraft is, [selected] is the graphic the person is holding, and [draft] the points of a boundary being drawn. Its analysis boundary is
+         * drawn as its view says ([boundaryShown]).
          */
         fun of(
             diagram: Diagram?,
@@ -199,6 +208,7 @@ data class LzScene(
                 draft = draft,
                 heldCorner = heldCorner,
                 locked = locked,
+                boundaryShown = diagram.view.showLZOutline,
             )
         }
     }

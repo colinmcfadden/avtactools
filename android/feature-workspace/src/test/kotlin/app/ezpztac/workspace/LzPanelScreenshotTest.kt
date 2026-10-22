@@ -63,6 +63,16 @@ class LzPanelScreenshotTest {
         )
     }
 
+    /** The analysis's view switches (the design's LzPlan): the slope map with its opacity, and the LZ box, in each palette. */
+    private fun viewShot(name: String, mode: ThemeMode, current: ActiveDiagramUi) = shot(name, mode) {
+        LzPlanContent(current, GraphicsUiState(listed = true, canEdit = true), BoundaryUiState(canStart = true, clears = true), null, LzPanelActions(), GraphicsActions(), GRID)
+    }
+
+    @Test fun planView() = viewShot("plan-view", ThemeMode.Dark, activeLz().copy(slopeOpacity = 30))
+    @Test fun planViewNight() = viewShot("plan-view-night", ThemeMode.Night, activeLz().copy(slopeOpacity = 30))
+    @Test fun planViewLight() = viewShot("plan-view-light", ThemeMode.Light, activeLz(outlineShown = false))
+    @Test fun planViewSlopeOff() = viewShot("plan-view-slope-off", ThemeMode.Dark, activeLz(slopeShown = false, outlineShown = false))
+
     @Test
     fun planNotAnalysed() = shot("plan-not-analysed") {
         LzPlanContent(activeLz(status = DiagramStatus.TARGETED), GraphicsUiState(), BoundaryUiState(canStart = true), null, LzPanelActions(), GraphicsActions(), GRID)

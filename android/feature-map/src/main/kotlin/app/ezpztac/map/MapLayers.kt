@@ -13,12 +13,16 @@ fun GpsLayer(host: MapHost, gps: GpsState) {
     LaunchedEffect(overlay, gps) { overlay.show((gps as? GpsState.Tracking)?.fix) }
 }
 
-/** Draws the open diagram on [host]'s map: its boundary, target and slope raster. An empty scene takes the diagram off. */
+/**
+ * Draws the open diagram on [host]'s map: its boundary, target and slope raster, the raster at [slopeOpacity] (0 to 1, of its own alpha). An empty scene
+ * takes the diagram off. The opacity is told apart from the scene, so moving its slider changes one property of the raster and nothing else.
+ */
 @Composable
-fun DiagramLayer(host: MapHost, scene: LzScene) {
+fun DiagramLayer(host: MapHost, scene: LzScene, slopeOpacity: Float) {
     val assets = LocalContext.current.assets
     val screenDensity = LocalDensity.current.density
-    val overlay = remember(host) { DiagramOverlay(assets, screenDensity).also { host.onStyle(it::install) } }
+    val overlay = remember(host) { DiagramOverlay(assets, screenDensity, slopeOpacity).also { host.onStyle(it::install) } }
+    LaunchedEffect(overlay, slopeOpacity) { overlay.setSlopeOpacity(slopeOpacity) }
     LaunchedEffect(overlay, scene) { overlay.show(scene) }
 }
 

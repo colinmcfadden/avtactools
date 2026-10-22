@@ -47,6 +47,7 @@ import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.data.OpenRouteSetStore
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetViewStore
+import app.ezpztac.data.SlopeOpacityMemory
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.data.ThreatMaskApi
 import app.ezpztac.data.ThreatStore
@@ -283,4 +284,7 @@ interface AppBindings {
 
     @Binds
     fun gridMemory(impl: MapPreferences): GridMemory
+
+    @Binds
+    fun slopeOpacityMemory(impl: MapPreferences): SlopeOpacityMemory
 }

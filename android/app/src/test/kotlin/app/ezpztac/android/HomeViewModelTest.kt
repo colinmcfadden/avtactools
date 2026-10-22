@@ -15,6 +15,7 @@ import app.ezpztac.data.InMemoryAircraftChoice
 import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.InMemoryOpenDiagramStore
 import app.ezpztac.data.InMemoryOpenRouteSetStore
+import app.ezpztac.data.InMemorySlopeOpacity
 import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
 import app.ezpztac.data.MapFocus
@@ -288,9 +289,11 @@ class HomeViewModelTest {
         val placement = GraphicPlacement(session, aircraft, mode)
         val packs = NoPacks()
         val mapDrag = MapDrag(session, routeSession, threats)
+        val slopeOpacity = InMemorySlopeOpacity()
+        val slopeVisibility = SlopeVisibility(slopeOpacity)
         val model = HomeViewModel(
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, openSet, lastSet, openRouteSets, localPoints, pointSelection,
-            threats, threatSelection, weather, mapDrag, SlopeVisibility(), corners, masks, placement, packs, mapFocus,
+            threats, threatSelection, weather, mapDrag, slopeVisibility, corners, masks, placement, packs, mapFocus,
             symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
         )
         val seen = mutableListOf<OpenedDiagram>()
@@ -1002,6 +1005,47 @@ class HomeViewModelTest {
         assertEquals(null, r.selection.selected.value)
         r.model.mapTapped(LatLon(34.75, -84.05), camera, touchRadiusPx = 24.0)                    // empty ground
         assertEquals(null, r.corners.held.value)
+    }
+
+    @Test
+    fun `an outline the LZ-PZ's view hides is not drawn, nor held by a tap, and a corner held already keeps its corners drawn until put down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        val camera = view(LatLon(34.75, -84.05))
+        fun outline(shown: Boolean) = r.session.setQuietly { it.copy(view = it.view.copy(showLZOutline = shown)) }
+        outline(false)
+        advanceUntilIdle()
+        assertEquals(false, r.model.scene.value.boundaryShown)
+        assertEquals("still the diagram's", 4, r.model.scene.value.boundary.size)
+        // Where a corner is, but not drawn: the tap holds nothing, and is the frame's.
+        assertTrue(r.model.mapTapped(LatLon(34.71, -84.09), camera, touchRadiusPx = 24.0))
+        assertNull(r.corners.held.value)
+        outline(true)
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.71, -84.09), camera, touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.model.BoundaryCornerRef(false, 0), r.corners.held.value)
+        // Hidden while one is held: the corners stay drawn, and in reach, while the person works on them.
+        outline(false)
+        advanceUntilIdle()
+        assertTrue(r.model.scene.value.boundaryCornersShown)
+        r.model.mapTapped(LatLon(34.79, -84.01), camera, touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.model.BoundaryCornerRef(false, 2), r.corners.held.value)
+        r.model.mapTapped(LatLon(34.75, -84.05), camera, touchRadiusPx = 24.0)                       // empty ground: put down
+        assertNull(r.corners.held.value)
+        advanceUntilIdle()
+        assertFalse(r.model.scene.value.boundaryCornersShown)
+    }
+
+    @Test
+    fun `the map draws the slope at the opacity this device keeps`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertEquals(55, r.model.slopeOpacity.value)
+        r.slopeVisibility.setOpacity(25)
+        assertEquals(25, r.model.slopeOpacity.value)
+        assertEquals(25, r.slopeOpacity.kept)
     }
 
     @Test

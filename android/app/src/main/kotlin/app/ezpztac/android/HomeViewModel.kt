@@ -223,6 +223,9 @@ class HomeViewModel @Inject constructor(
     /** The person pressed the slope button: the heat map goes on or off. */
     fun toggleSlope() = slopeVisibility.toggle()
 
+    /** How opaque the heat map is drawn, a percentage of its own ([app.ezpztac.data.SlopeOpacity]): this device's, the same for every LZ/PZ, set from the LZ/PZ's plan. */
+    val slopeOpacity: StateFlow<Int> = slopeVisibility.opacity
+
     /**
      * What the map draws for the open set of routes: each visible route as a line with its named points, the one being worked on heavier, and a route
      * being drawn. A selection that names a route no longer there is not drawn, and a draft belongs to the set it was started on.

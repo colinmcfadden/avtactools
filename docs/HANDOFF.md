@@ -17,7 +17,7 @@ stands said on its chip.
 
 ---
 
-## 0. Analyze after Finish, and objects edited from their bar (2026-10-21)
+## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity and the LZ box (2026-10-21)
 
 Branch `feat/android-quick-edits` (from `develop`). The owner's requests from a phone run (AGENTS.md §17, *Boundary drawing* and *Dragging and turning on the map*):
 - **Finish offers the analysis there and then**: the drawing toolbar gives way to *Analyze LZ/PZ* over the map (then its stage with *Stop*, then *Try again* on a failure, and
@@ -36,7 +36,14 @@ when the finger never passed it).
 A new LZ/PZ (the map's long press *New LZ/PZ here*, or the panel's) is offered its first step in the same bar: *Analyze* or *Draw boundary*, and *Draw boundary* again where no
 area was found (`FreshDiagrams`).
 
-**Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, and TalkBack on the new fields. A device run on the owner's phone is next.
+**The slope map's opacity and the LZ box** (the owner's request from the tablet run; AGENTS.md §17, *How the slope map and the LZ box are drawn*): in the plan's analysis
+section, under *Slope map*, an *Opacity* slider while it is drawn (10 to 100% in steps of 5, from the web's 55% where Android drew 85%; this device's, kept between launches,
+never saved with a plan), then an *LZ box* switch that hides the analysis boundary, its fill and its corner dots (the diagram's own `view.showLZOutline`, the web's *LZ Box*;
+a corner held keeps its corners drawn, a boundary drawn by hand is drawn as ever). Both offered in a read-only pack. Looked at as Roborazzi pictures in dark, night and light,
+and on a 360 dp phone at 1.3 and 2.0. The web has no opacity setting (AGENTS.md §15, web first if wanted).
+
+**Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, TalkBack on the new fields, and the slope raster at each opacity and the
+outline hidden on the real map. A device run on the owner's phone is next.
 
 ## 0. The slope tile, contour lines and the slope profile (2026-10-13/14)
 
