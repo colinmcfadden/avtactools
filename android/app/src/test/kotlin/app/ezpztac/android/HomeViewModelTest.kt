@@ -971,6 +971,21 @@ class HomeViewModelTest {
         assertEquals(null, r.model.heldOther.value)
     }
 
+    @Test
+    fun `closing the one worked on, as a sign-out does, puts down an LZ PZ held beside it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val hawk = r.opened("LZ HAWK", LatLon(34.7838, -84.0822))
+        r.opened("LZ DOVE", LatLon(34.80, -84.10))
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        advanceUntilIdle()
+        assertEquals(hawk, r.model.heldOther.value?.id)
+        r.session.close()
+        advanceUntilIdle()
+        assertEquals(null, r.model.heldOther.value)
+    }
+
     // -- Which tap is the frame's (it hides the phone's frame, or shows it again) ------------------------------------------------
 
     private val ground = LatLon(34.7800, -84.0900)                                              // nothing of the rigs' graphics, routes or threats is near

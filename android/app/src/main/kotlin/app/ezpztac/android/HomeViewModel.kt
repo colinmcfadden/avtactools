@@ -397,9 +397,14 @@ class HomeViewModel @Inject constructor(
                 sayPointer()
             }
         }
-        // An LZ/PZ closed (and none opened in its place) takes a tool's mode with it.
+        // An LZ/PZ closed (and none opened in its place: a sign-out closes it) takes a tool's mode with it, and an LZ/PZ held beside it.
         viewModelScope.launch {
-            session.active.collect { diagram -> if (diagram == null) placement.end() }
+            session.active.collect { diagram ->
+                if (diagram == null) {
+                    placement.end()
+                    onMap.release()
+                }
+            }
         }
         // The pack turned read-only (finished by its owner, or this person made a viewer) while something was under way on its LZ/PZ: it ends, keeping only
         // what the pack already has (a tool's mode ends rather than cancels, whose taking back would itself be a change), and the person is told what stopped.
