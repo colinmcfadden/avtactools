@@ -1596,8 +1596,17 @@ client is built around not losing one:
       trimmed and upper-cased as the web does; its id is `sketch-<millis>-<random>` (the prefix is how the web tells a sketch from an imported route).
     - **Drawing is a draft held outside the set** (`RouteSketching`, like `BoundaryDrawing`): abandoning it leaves no trace, a draft belongs to the set it was
       started on and is refused (and dropped) if another is open when it is finished, and finishing is one undo step. A route is planned for the mission aircraft.
-    - **The map draws a route as one line through every point**, a named (AMPS) point as a dot, and the shaping points only on the route being worked on
+    - **The map draws a route as one line through every point**, a named (AMPS) point as its type's shape, and the shaping points only on the route being worked on
       (`RouteScene`); names are Compose overlays, as the separation labels are, because the style has no glyphs. `RouteOverlay` is GL and compile-only.
+    - **A named point's shape is its AMPS type, as the web draws it** (`MsnxRouteLayer`'s `createIcon`; the owner's rule of 2026-10-21: an RP a square, a target a
+      triangle, a checkpoint a circle; `PinShape`, `RoutePinImages`): an IP point (the SP and the RP are both IP points, told apart by name) a square, a target a
+      triangle pointing up, a turn point (a checkpoint), or a type this version does not know, a circle; a shaping point stays a small dot. Each is a bitmap in the
+      route's colour with a white edge over a thin dark one (amber, and larger, while held), 32 points square with the shape's box in its middle as the web centres
+      its icons, its density saying how many points it is (§14), made once for each shape, colour and whether it is held; a colour that cannot be read is grey. The
+      triangle stays upright however the map turns. The route's plan draws the same shapes beside each point's name (`PointGlyph`). **Not like the web**, which draws
+      an imported point whose file gives it no type by the old name rules (a release point a triangle, a target a diamond): here such a point is drawn as it always
+      was, as a shaping point, since those rules would draw an RP as a triangle. **Not verifiable here:** the shapes on the GL map (`RoutePinImagesTest` draws the
+      bitmaps for real and its contact sheet can be looked at; `route-pins.png` with `-Pezpz.screenshots`).
     - **What a tap on the map does** (`HomeViewModel.mapTapped`, in this order): a boundary being drawn takes it as a corner; a route being drawn takes it as a
       point; a planning graphic is held if the tap is on one; else a route or one of its points (`RouteHitTest`, plain geometry on `MapProjection`: a named
       point within a finger's reach, the nearest wins and a named point beats a shaping point at the same distance; shaping points only on the route being

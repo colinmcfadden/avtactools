@@ -17,7 +17,7 @@ stands said on its chip.
 
 ---
 
-## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity, the LZ box, and every open LZ/PZ on the map (2026-10-21)
+## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity, the LZ box, every open LZ/PZ on the map, and route points by type (2026-10-21)
 
 Branch `feat/android-quick-edits` (from `develop`). The owner's requests from a phone run (AGENTS.md §17, *Boundary drawing* and *Dragging and turning on the map*):
 - **Finish offers the analysis there and then**: the drawing toolbar gives way to *Analyze LZ/PZ* over the map (then its stage with *Stop*, then *Try again* on a failure, and
@@ -49,8 +49,13 @@ hides it from the map and shows it again (this device's own, never sent); a tap 
 (AGENTS.md §15). Only the open ones' records are read for it (a Room query of their uuids), each again only when it changed, off the main thread. Looked at as Roborazzi
 pictures (the eyes and the bar, at 412 dp and on a 360 dp phone at 1.3).
 
+**Route points are drawn by their type** (the owner's rule: an RP a square, a target a triangle, a checkpoint a circle; AGENTS.md §17, *A named point's shape is its
+AMPS type*): as the web draws them, an IP point (the SP and the RP) a square, a target a triangle pointing up, a turn point a circle, shaping points small dots as before.
+Bitmaps in the route's colour sized in points (`RoutePinImages`), drawn for real in `RoutePinImagesTest` (its contact sheet looked at over grass, the topographic map and
+the chart).
+
 **Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, TalkBack on the new fields, the slope raster at each opacity and the
-outline hidden on the real map, and the faded LZ/PZs over imagery with twenty open. A device run on the owner's phone is next.
+outline hidden on the real map, the faded LZ/PZs over imagery with twenty open, and the point shapes on the GL map. A device run on the owner's phone is next.
 
 ## 0. The slope tile, contour lines and the slope profile (2026-10-13/14)
 
