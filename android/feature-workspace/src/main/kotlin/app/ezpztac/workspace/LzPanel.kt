@@ -172,14 +172,7 @@ fun LzPanelHost(
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
         addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy, toggleOnMap = onToggleOnMap,
     )
-    val graphicsActions = GraphicsActions(
-        select = graphics::select, deselect = graphics::deselect, nudge = graphics::nudge, moveToCrosshair = { graphics.moveToCrosshair(crosshair) },
-        moveToText = graphics::moveToText, rotateBy = graphics::rotateBy, setRotation = graphics::setRotation, changeReach = graphics::changeReach,
-        tipToCrosshair = { graphics.tipToCrosshair(crosshair) }, setDirection = graphics::setDirection, updateUnit = graphics::updateUnit,
-        setDoghouseLabel = graphics::setDoghouseLabel, setDoghouseTime = graphics::setDoghouseTime, setDoghouseDistance = graphics::setDoghouseDistance,
-        setDoghouseAirspeed = graphics::setDoghouseAirspeed, delete = graphics::delete, undo = graphics::undo, redo = graphics::redo,
-        dismissError = graphics::dismissError,
-    )
+    val graphicsActions = graphicsActionsOf(graphics, crosshair)
     when (pane.shows(state.page)) {
         LzPage.HOME -> LzHomeContent(
             state, actions, crosshairGrid, modifier, hidden = hiddenOnMap,

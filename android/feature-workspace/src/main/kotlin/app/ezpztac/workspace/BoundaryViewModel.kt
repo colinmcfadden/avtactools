@@ -47,6 +47,8 @@ data class BoundaryUiState(
     val locked: String? = null,
     /** A boundary was just finished on the open LZ/PZ: the bar over the map offers its analysis there and then, until it is analysed, dismissed or drawn again. */
     val analyzeOffer: AnalyzeOfferUi? = null,
+    /** The LZ/PZ open, if one is: a question asked about it (whether to draw over its analysis) is its own, and goes when another opens. */
+    val diagramId: String? = null,
 )
 
 /**
@@ -119,6 +121,7 @@ class BoundaryViewModel @Inject constructor(
             error = error,
             heldCorner = diagram?.let { d -> heldCorner?.let { cornerOf(d, it)?.copy(locked = locked) } },
             analyzeOffer = (offerOf(finished, diagram, status) ?: freshOfferOf(made, diagram, status)).takeIf { draft == null && locked == null },
+            diagramId = diagram?.id,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, BoundaryUiState())
 
@@ -193,8 +196,11 @@ class BoundaryViewModel @Inject constructor(
     /** Deletes the corner held on the map (one undo step). Its refusal, if any, is in words in [BoundaryUiState.error]. */
     fun deleteCorner() = fail(locked() ?: corners.deleteHeld())
 
-    /** Starts drawing the open LZ/PZ's boundary (which clears the one there: a change, so never in a read-only pack). A boundary drawn again is offered again when it is finished. */
-    fun start() {
+    /**
+     * Starts drawing the open LZ/PZ's boundary (which clears the one there: a change, so never in a read-only pack). A boundary drawn again is offered again when it is
+     * finished. Null once drawing has started, else why not, in words that are also [BoundaryUiState.error] (the map's tools say them where the person is).
+     */
+    fun start(): String? {
         val open = session.active.value?.id
         val problem = locked() ?: drawing.start()
         fail(problem)
@@ -202,6 +208,7 @@ class BoundaryViewModel @Inject constructor(
         if (problem == null && finished.value?.diagramId == open) finished.value = null
         // A new LZ/PZ's first step taken: drawn by hand (Finish offers the analysis then).
         if (problem == null) fresh.forget(open)
+        return problem
     }
 
     /** Puts a corner down at the crosshair, [at]. */

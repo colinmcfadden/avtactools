@@ -14,6 +14,7 @@ import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
+import app.ezpztac.model.AircraftName
 import app.ezpztac.model.Doghouses
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -87,6 +89,8 @@ data class InspectorUi(
     val unit: UnitDraft? = null,
     /** The LZ/PZ it is on: with [ref], what a field typed for it names, so it lands on it and on nothing held or opened since ([GraphicOf]). */
     val diagramId: String = "",
+    /** A helicopter's name (a chalk or tail number, the owner's request of 2026-10-22): "" with none; null for anything else. */
+    val name: String? = null,
 ) {
     val of: GraphicOf get() = GraphicOf(diagramId, ref)
 }
@@ -262,6 +266,24 @@ class GraphicsViewModel @Inject constructor(
     // The held doghouse's own fields. What is typed is checked for what the field is and stored as the web stores it; when it is not what the
     // field is for, the answer is the words to show under the field (not the panel's banner, which may be scrolled out of sight).
 
+    /**
+     * Names the held helicopter, or helicopter [on] (a field of the held bar's): a chalk or tail number, in capitals less the spaces round it, as a route's name
+     * is kept, at most [AircraftName.MAX] characters (counted as characters, an emoji one); blank takes the name away. Stored as its `label`, which the web keeps
+     * with the rest of the aircraft and does not show yet (AGENTS.md §15). Null once it is taken, else the words for why not.
+     */
+    fun setAircraftName(typed: String, on: GraphicOf? = null): String? {
+        locked()?.let { return it }
+        val name = typed.trim().uppercase()
+        if (name.codePointCount(0, name.length) > AircraftName.MAX) return "Enter a name of up to ${AircraftName.MAX} characters, such as CHALK 1."
+        if ((on?.ref ?: selection.selected.value)?.let { it.collection != "helicopters" } == true) return "Only a helicopter has a name."
+        edit("Aircraft name", on = on) { _, g ->
+            // The name it has (none for none) is no change and no step to undo; a name taken away is null, as a pack sends a field that went.
+            if (AircraftName.of(g).orEmpty() == name) JsonObject(emptyMap())
+            else JsonObject(mapOf(AircraftName.FIELD to (if (name.isEmpty()) JsonNull else JsonPrimitive(name))))
+        }
+        return null
+    }
+
     // [on]: the doghouse a field of the held bar was typed for, wherever the selection is now; null, the held one (the panel's inspector).
     private fun editDoghouse(label: String, refusal: String, patch: JsonObject?, on: GraphicOf?): String? {
         locked()?.let { return it }
@@ -344,6 +366,7 @@ class GraphicsViewModel @Inject constructor(
                 doghouse = if (row.kind == GraphicKind.DOGHOUSE) doghouseUi(o) else null,
                 unit = if (row.kind == GraphicKind.UNIT) UnitDraft.of(o) else null,
                 diagramId = diagram.id,
+                name = if (row.kind == GraphicKind.HELICOPTER) AircraftName.of(o).orEmpty() else null,
             )
         }
         return GraphicsUiState(
@@ -397,7 +420,8 @@ class GraphicsViewModel @Inject constructor(
         GraphicKind.HELICOPTER -> {
             val key = DiagramOps.idText(saved["id"])
             val own = aircraft.firstOrNull { DiagramOps.idText(it.id) == key }
-            "Helicopter · ${own?.let { resolve(it).designation } ?: active.designation}"
+            // Its name first, where it has one (a chalk or tail number): that is what a crew calls it.
+            "${AircraftName.of(saved) ?: "Helicopter"} · ${own?.let { resolve(it).designation } ?: active.designation}"
         }
         else -> kind.label
     }

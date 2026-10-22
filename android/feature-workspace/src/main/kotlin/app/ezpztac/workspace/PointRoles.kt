@@ -3,14 +3,14 @@ package app.ezpztac.workspace
 import app.ezpztac.model.RoutePoint
 
 /**
- * What a point of a route is to a crew, as its bar's dialog offers it (the owner's request of 2026-10-21): a checkpoint, the SP, the RP, the target, or a point
+ * What a point of a route is to a crew, as its bar's chips offer it (the owner's requests of 2026-10-21 and -22): a checkpoint, the SP, the RP, the target, or a point
  * that only bends the line. AMPS knows three types of named point (turn, IP, target), and the SP and the RP are both IP points, told apart by their names (`.SP`
  * and `.RP`, what the web's attack profile calls them: `SketchOps.autoDesignation`). The web's own menu offers the IP type once, as "RP / IP" (AGENTS.md §15).
  */
 enum class PointRole(
-    /** Its word, in the dialog and on the bar. */
+    /** Its word, on its chip (a shaping point's chip says *Shaping*), and to a screen reader. */
     val label: String,
-    /** What it is, in the dialog's words. */
+    /** What it is, said with its word to a screen reader. */
     val meaning: String,
     /** Its AMPS type; none for a shaping point. */
     val ptType: String?,

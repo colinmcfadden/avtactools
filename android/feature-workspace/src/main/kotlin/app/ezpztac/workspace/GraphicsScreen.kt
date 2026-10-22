@@ -23,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -83,6 +85,8 @@ class GraphicsActions(
     val setDoghouseTime: (String) -> String? = { null },
     val setDoghouseDistance: (String) -> String? = { null },
     val setDoghouseAirspeed: (String) -> String? = { null },
+    /** A helicopter's name typed: the words for what is wrong with it, or null when it was taken. */
+    val setAircraftName: (String) -> String? = { null },
     val delete: () -> Unit = {},
     val undo: () -> Unit = {},
     val redo: () -> Unit = {},
@@ -96,19 +100,23 @@ class GraphicsActions(
 @Composable
 fun GraphicsHost(crosshair: LatLon?, crosshairGrid: String?, modifier: Modifier = Modifier, viewModel: GraphicsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    GraphicsContent(
-        state = state, crosshairGrid = crosshairGrid, modifier = modifier,
-        actions = GraphicsActions(
-            place = { kind -> viewModel.place(kind, crosshair) }, select = viewModel::select, deselect = viewModel::deselect, nudge = viewModel::nudge,
-            moveToCrosshair = { viewModel.moveToCrosshair(crosshair) }, moveToText = viewModel::moveToText, rotateBy = viewModel::rotateBy,
-            setRotation = viewModel::setRotation, changeReach = viewModel::changeReach, tipToCrosshair = { viewModel.tipToCrosshair(crosshair) },
-            setDirection = viewModel::setDirection, addUnit = { draft -> viewModel.addUnit(draft, crosshair) }, updateUnit = viewModel::updateUnit,
-            setDoghouseLabel = viewModel::setDoghouseLabel, setDoghouseTime = viewModel::setDoghouseTime,
-            setDoghouseDistance = viewModel::setDoghouseDistance, setDoghouseAirspeed = viewModel::setDoghouseAirspeed,
-            delete = viewModel::delete, undo = viewModel::undo, redo = viewModel::redo, dismissError = viewModel::dismissError,
-        ),
-    )
+    GraphicsContent(state = state, crosshairGrid = crosshairGrid, modifier = modifier, actions = graphicsActionsOf(viewModel, crosshair))
 }
+
+/**
+ * What the panel's graphics do, through [viewModel], [crosshair] being where the map looks: the one place they are named for every screen that shows them (this
+ * host, and the LZ/PZ panel's plan), so one added to [GraphicsActions] cannot be left out of a screen, where its default would do nothing.
+ */
+fun graphicsActionsOf(viewModel: GraphicsViewModel, crosshair: LatLon?): GraphicsActions = GraphicsActions(
+    place = { kind -> viewModel.place(kind, crosshair) }, select = viewModel::select, deselect = viewModel::deselect, nudge = viewModel::nudge,
+    moveToCrosshair = { viewModel.moveToCrosshair(crosshair) }, moveToText = viewModel::moveToText, rotateBy = viewModel::rotateBy,
+    setRotation = { viewModel.setRotation(it) }, changeReach = viewModel::changeReach, tipToCrosshair = { viewModel.tipToCrosshair(crosshair) },
+    setDirection = viewModel::setDirection, addUnit = { draft -> viewModel.addUnit(draft, crosshair) }, updateUnit = viewModel::updateUnit,
+    setDoghouseLabel = { viewModel.setDoghouseLabel(it) }, setDoghouseTime = { viewModel.setDoghouseTime(it) },
+    setDoghouseDistance = { viewModel.setDoghouseDistance(it) }, setDoghouseAirspeed = { viewModel.setDoghouseAirspeed(it) },
+    setAircraftName = { viewModel.setAircraftName(it) },
+    delete = viewModel::delete, undo = viewModel::undo, redo = viewModel::redo, dismissError = viewModel::dismissError,
+)
 
 /**
  * The list of the open diagram's graphics, the inspector for the one held, undo and redo, and the separation alerts. [placeButtons] adds the buttons that put
@@ -266,6 +274,17 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions, locked: 
             SecondaryButton("Put at the crosshair", onClick = actions.moveToCrosshair)
             EntryRow("Move to a grid", "16S GD 66993 52949", "Go", KeyboardType.Ascii, onSubmit = { actions.moveToText(it); null })
 
+            // A helicopter's name: a chalk or tail number (the owner's request, 2026-10-22).
+            // Keyed by the helicopter held: what was typed for one is never set on another held next. Go with nothing typed sets nothing (Remove name takes it away).
+            inspector.name?.let { name ->
+                key(inspector.ref) {
+                    EntryRow(
+                        if (name.isEmpty()) "Name · none" else "Name · $name", "Chalk or tail number, such as CHALK 1", "Set name", KeyboardType.Text,
+                        KeyboardCapitalization.Characters, onSubmit = { typed -> if (typed.isBlank()) null else actions.setAircraftName(typed) },
+                    )
+                }
+                if (name.isNotEmpty()) TextAction("Remove name", onClick = { actions.setAircraftName("") })
+            }
             inspector.rotation?.let { heading -> HeadingControls(heading, actions) }
             inspector.doghouse?.let { doghouse -> DoghouseControls(doghouse, actions) }
             inspector.unit?.let { unit -> UnitControls(inspector.ref, unit, actions) }
@@ -282,6 +301,7 @@ private fun Inspector(inspector: InspectorUi, actions: GraphicsActions, locked: 
 private fun ReadOnlyValues(inspector: InspectorUi, locked: String) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Text(locked, style = MaterialTheme.typography.bodyMedium, color = muted)
+    inspector.name?.takeIf { it.isNotEmpty() }?.let { Text("Name $it", style = MaterialTheme.typography.labelLarge, color = muted) }
     inspector.rotation?.let { Text("Heading ${it.toLong()}°", style = MaterialTheme.typography.labelLarge, color = muted) }
     inspector.reachFt?.let { Text("Reach ${withCommas(it)} ft", style = MaterialTheme.typography.labelLarge, color = muted) }
     inspector.direction?.let { Text("Pattern: ${if (it == "right") "Right" else "Left"}", style = MaterialTheme.typography.labelLarge, color = muted) }
@@ -403,7 +423,14 @@ private fun DirectionControls(direction: String, setDirection: (String) -> Unit)
 
 /** A line to type into and a button to send it. [onSubmit] answers with what is wrong with the entry, or null when it was taken. */
 @Composable
-internal fun EntryRow(label: String, hint: String, action: String, keyboardType: KeyboardType, onSubmit: (String) -> String?) {
+internal fun EntryRow(
+    label: String,
+    hint: String,
+    action: String,
+    keyboardType: KeyboardType,
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
+    onSubmit: (String) -> String?,
+) {
     var text by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     val submit = {
@@ -414,7 +441,7 @@ internal fun EntryRow(label: String, hint: String, action: String, keyboardType:
         Box(Modifier.weight(1f)) {
             EzpzTextField(
                 value = text, onValueChange = { text = it; problem = null }, label = label, hint = hint, error = problem,
-                keyboardType = keyboardType, imeAction = ImeAction.Go, onImeAction = { submit() },
+                keyboardType = keyboardType, capitalization = capitalization, imeAction = ImeAction.Go, onImeAction = { submit() },
             )
         }
         TextAction(action, onClick = submit, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp), enabled = text.isNotBlank())

@@ -49,12 +49,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -72,6 +76,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.ezpztac.designsystem.Banner
@@ -128,6 +133,12 @@ object MapChrome {
 
     /** A tablet's map buttons stand this far above the map's foot (the design's AT screens). */
     val FOOT_GAP: Dp = 24.dp
+
+    /** How far the LZ/PZ tools stand apart from the map's own buttons: a group of their own (the owner's request, 2026-10-22). */
+    val TOOLS_APART: Dp = 24.dp
+
+    /** The room the tools keep from what ends theirs: the sheet's edge, the keyboard, a tablet's search bar or its buttons. */
+    val TOOLS_GAP: Dp = 16.dp
 }
 
 /**
@@ -191,6 +202,12 @@ fun MapScreen(
     search: MapSearchState = rememberMapSearchState(),
     /** The phone's frame hiding (a tap on the map): the row, what is said under it and the search go with it, up off the screen; the rest stays. */
     hiding: FrameHiding = FrameHiding.SHOWN,
+    /**
+     * Tools of the panel chosen, on the map's buttons' edge and apart from them (the LZ/PZ panel's, the owner's request of 2026-10-22): under them on a phone, down
+     * to the sheet's edge or the keyboard; on a tablet, whose buttons are at the foot, from under the search bar down to them; and above what floats over the
+     * readout (a held object's bar, a drawing's buttons) where that reaches their edge. Given that room, it decides how much of itself fits; null: none.
+     */
+    tools: (@Composable () -> Unit)? = null,
     map: @Composable () -> Unit,
 ) {
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
@@ -210,7 +227,12 @@ fun MapScreen(
         } else {
             Modifier.align(Alignment.TopEnd).windowInsetsPadding(top).padding(top = MapChrome.BUTTONS_TOP, end = Tokens.Spacing.lg.dp)
         }
-        Column(buttons.chromeBox(chrome, "buttons"), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+        // Where the buttons are, for the tools that stand apart from them.
+        var buttonsBox by remember { mutableStateOf<Rect?>(null) }
+        Column(
+            buttons.chromeBox(chrome, "buttons").onGloballyPositioned { buttonsBox = it.boundsInParent() },
+            verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+        ) {
             LayersButton(state, onSelectStyle, onToggleGrid)
             GpsButton(gps, onToggleGps, onGpsPermissionResult, onLocateMe)
             slope?.let {
@@ -228,10 +250,45 @@ fun MapScreen(
         val keyboard = WindowInsets.ime
         val statusBar = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
         val chromeBottom = if (buttonsAtFoot) MapChrome.SEARCH_BOTTOM else MapChrome.ROW_BOTTOM
+        // How much the readout and what floats over it take, standing on the sheet's edge: the tools keep above them where they reach the tools' edge.
+        var floats by remember { mutableStateOf(IntSize.Zero) }
+        // Where a tablet's search bar, and what is said under it (a search refused, how a pack stands), ends: the tools start below it.
+        var searchBottom by remember { mutableStateOf<Float?>(null) }
+        tools?.let { rail ->
+            val end = WindowInsets.safeDrawing.only(WindowInsetsSides.End)
+            Box(
+                Modifier.fillMaxSize().layout { measurable, constraints ->
+                    val gap = MapChrome.TOOLS_GAP.toPx()
+                    val box = buttonsBox
+                    val standing = standingBottom(controlsBottom(), constraints.maxHeight, keyboard.getBottom(this))
+                    val topPx: Float
+                    var bottomPx: Float
+                    if (buttonsAtFoot) {
+                        topPx = maxOf(statusBar.getTop(this) + MapChrome.SEARCH_BOTTOM.toPx() + gap, (searchBottom ?: 0f) + Tokens.Spacing.sm.dp.toPx())
+                        bottomPx = (box?.top ?: constraints.maxHeight.toFloat()) - gap
+                    } else {
+                        topPx = (box?.bottom ?: (statusBar.getTop(this) + MapChrome.BUTTONS_TOP.toPx())) + MapChrome.TOOLS_APART.toPx()
+                        bottomPx = standing - gap
+                    }
+                    val inset = end.getRight(this, layoutDirection) + end.getLeft(this, layoutDirection)
+                    val endPad = Tokens.Spacing.lg.dp.roundToPx()
+                    // What floats is centred across: it reaches the tools where its far side passes their near one (the readout alone on a 360 dp phone does not).
+                    val toolsStart = constraints.maxWidth - inset - endPad - MapChrome.BUTTON.toPx()
+                    if (floats.height > 0 && (constraints.maxWidth + floats.width) / 2f > toolsStart) {
+                        bottomPx = minOf(bottomPx, standing - MapChrome.PILL_GAP.toPx() - floats.height - gap)
+                    }
+                    val room = (bottomPx - topPx).roundToInt().coerceIn(0, constraints.maxHeight)
+                    val placeable = measurable.measure(Constraints(maxWidth = constraints.maxWidth, maxHeight = room))
+                    layout(constraints.maxWidth, constraints.maxHeight) {
+                        placeable.placeRelative(constraints.maxWidth - inset - endPad - placeable.width, topPx.roundToInt())
+                    }
+                },
+            ) { Box(Modifier.chromeBox(chrome, "tools")) { rail() } }
+        }
         Column(
             Modifier.fillMaxSize().standingOn(controlsBottom, MapChrome.PILL_GAP, keyboard) {
                 statusBar.getTop(this) + chromeBottom.toPx() * (1f - hiding.fraction()) + MapChrome.PILL_GAP.toPx()
-            },
+            }.onSizeChanged { floats = it },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(MapChrome.PILL_GAP),
         ) {
@@ -249,7 +306,10 @@ fun MapScreen(
 
         // Reported from the top of the window: the status bar over the map is as covered as the row (the map is drawn edge to edge).
         if (buttonsAtFoot) {
-            Column(Modifier.fillMaxWidth().chromeBox(chrome, "search").windowInsetsPadding(top).padding(top = MapChrome.SEARCH_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp)) {
+            Column(
+                Modifier.fillMaxWidth().onGloballyPositioned { searchBottom = it.boundsInParent().bottom }.chromeBox(chrome, "search").windowInsetsPadding(top)
+                    .padding(top = MapChrome.SEARCH_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp),
+            ) {
                 SearchBar(search, state.searchError, onSearch, onClearSearchError, account)
                 // On its own surface: red text straight on imagery cannot be read.
                 state.searchError?.let { Banner(it, BannerKind.Error, Modifier.padding(top = Tokens.Spacing.sm.dp)) }

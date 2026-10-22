@@ -812,6 +812,9 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   made earlier stays under one made later: the copy dialog, asked from the Library, lay under the Library's own window once that window was made again (a font
   change recreating the activity, a foldable opened into the tablet's frame). Draw a dialog that may be asked from another window after it, and make it again
   with that window (`key(...)`, as `MapHome` does for `AddToPackHost`).
+- **Material's `Surface` takes the touches on it, even with no `onClick`** (it ends in an empty `pointerInput`, so nothing under it is hit). The feet between two
+  aircraft, written over the map on one, swallowed a tap meant for what was under them, though their layer said it took no touches; a label over the map is drawn on a
+  `Box` with a background, as the contours' pills always were (`GraphicLabelsTouchTest`, which a pill with any pointer input fails).
 - **A test cannot hide a measured-but-unplaced copy.** `clearAndSetSemantics` on a subcomposition measured off screen still left its text for `onNodeWithText` to find;
   measure words as text (`rememberTextMeasurer`) instead of composing them twice (`ChipsThatFit`). And Robolectric reads a method's `@Config(fontScale = 1.0f)` as unset,
   so a class's 1.3 stands: put the larger scales on the methods.
@@ -908,6 +911,9 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   geometry with the aircraft (rotor diameter, tip clearance, picture) would change the shared shape: owner to decide, web first.
 - **Two devices that open at once an LZ/PZ an older client wrote without the headings its doghouses give each send them** (`LzPackSettingsTest`): two lines of the
   history, in two names, for one heading.
+- **A helicopter's name (`label`) is Android's alone so far** (§17, *A helicopter has a name*): the web keeps the field with the aircraft but neither shows nor sets
+  it (its map, the inspector, the LZ card), and a pack's history names an aircraft by its place in the list (`Chalk 2`, `packLz.js`'s `helicopters`), not its name, on
+  both platforms. Showing and setting it on the web, and naming it in the history, is web first, the history through `contracts/fixtures/packs/describe.json`.
 - The Android manifest's verified link filter names only `ezpztac.app`, while `AuthLinks.SITE_HOSTS` also takes `www.ezpztac.app`: a `www.`
   link opens the browser, not the app. Left so (the owner's call, 2026-10-10); add the host to the filter (and to the site's
   `assetlinks.json`) if emails or shared links ever use it.
@@ -1405,6 +1411,17 @@ client is built around not losing one:
       are, because one up the nose and its twin down the tail would hide the fuselage under lines that bold (an odd count keeps one up the nose, as on the
       web). **Not like the web**, which still draws white silhouettes.
     - The list runs aircraft first, then PZ markers, sectors, go-arounds, doghouses, units, whatever was placed first.
+    - **A helicopter has a name** (the owner's request of 2026-10-22; `core-model`: `AircraftName`; `GraphicsViewModel.setAircraftName`; `feature-map`:
+      `MapLabels.aircraftNames`): a chalk or tail number, typed in the inspector (*Set name*, and *Remove name* for one it has) or in its held bar (a field taken on Done or
+      as it is left, as a doghouse's are, and put on the helicopter it was typed for, `GraphicOf`). Kept in capitals as the aircraft's `label`, at most 20 characters
+      (counted as characters, an emoji one), refused in words past that or for anything but a helicopter; blank takes it away as JSON null, as a pack sends a field that
+      went; the name it has already (none for none) is no change and no step to undo. The inspector's field is keyed by the helicopter held, so what was typed for one is
+      never set on the next, and Go with nothing typed sets nothing. The actions every screen of the graphics is given are built in one place (`graphicsActionsOf`): the
+      LZ/PZ panel's plan built its own and left the name out, so *Set name* did nothing in the app while every test of the screen passed (the review's). It comes first
+      in the helicopter's title (`CHALK 1 · UH-60L`) and is written under the aircraft on the map, centred just under the whole of its picture (half its frame, as far
+      as the tail reaches) whichever way it faces or the map is turned, on a pill that takes no touches (§14). **The web keeps the field** (it copies an aircraft whole:
+      `cloneArray`, and `{...helicopter, ...newProps}` for a change) and a pack carries it as any field of a graphic (held on two devices, `LzPackSettingsTest`), but
+      **the web neither shows nor sets it yet** (§15).
     - **Doghouses** (`Doghouses`, `DoghouseBox`, the `DOGHOUSE` kind). The web's maths was extracted from `Doghouse.jsx` / `useDoghouses.js` into
       `feature/doghouses/doghouseFields.js` (no behaviour change) and pinned in `contracts/fixtures/workspace/doghouses.json`. Things that are
       easy to get wrong:
@@ -1466,6 +1483,26 @@ client is built around not losing one:
   - **The tools are under the open LZ/PZ's card too** (the owner's request of 2026-10-15; `LzToolsSection`, `LzHomeContent(tools)`): the panel's first page has the plan's
     tool grid, with its unit builder and its question before a boundary clears an analysis, so a tool is a tap away whenever the panel shows an LZ/PZ. Each place keeps its
     own builder and question. Not on a tablet while the LZ/PZ's plan stands in its pane beside the list (the plan has them), and not in a read-only pack.
+  - **And on the map's right edge** (the owner's request of 2026-10-22: no going into the panel and its plan to add an object; `feature-workspace`: `LzToolRail`,
+    `railTools`, `LzToolRailHost`; `feature-map`: `MapScreen(tools)`; `app`: `MapHome`): while the LZ/PZ panel is the one chosen, its tools stand in a column of 48 dp
+    buttons on the map's edge, a group of their own apart from the map's buttons (24 dp under them on a phone; on a tablet from under the search bar down to its buttons
+    at the foot), each the tool grid's symbol, named for what it does: *Draw LZ* (asking first where it would clear an analysis), the four placing modes, and a unit,
+    which is friendly infantry at the crosshair, held, to be changed from its options, as the map menu's *Add object* makes one. Things to keep true:
+    - **The grid's rules** (`railTools`, tested without a screen): no rail where no tool could be used (no LZ/PZ open, a read-only pack's); the placing tools and the unit
+      off until the LZ/PZ is analysed; *Draw LZ* off while a boundary is drawn; what is off says why to a screen reader. The tool whose mode is on is marked, and
+      **tapped again finishes it**, keeping what it placed (the placing bar's *Done*; the grid's tile does nothing then); another starts its own mode.
+    - **A refusal is said where the person is** (`LzToolRailContent`, a toast): a placing tool's or the unit's, and *Draw LZ*'s, which `BoundaryViewModel.start` now
+      returns, and which the rail puts away from the panel's banner, where, out of sight, it would show later for no reason (*Draw LZ* while a tool's mode is on). The
+      question before a boundary clears an analysis is the open LZ/PZ's (`BoundaryUiState.diagramId`) and goes when drawing can no longer start there (a pack finished,
+      an analysis begun), never to come back by itself, nor to clear another LZ/PZ's analysis (§17, *A read-only pack*: hidden is not enough).
+    - **What fits** (`LzToolRail`, `railFits`, `railSplit`): the column where the room it is given holds all seven (a phone with its sheet lowered); where it does not,
+      as many as fit, the last place a *More* button that lists the rest, **never the tool whose mode is on**, which takes the last place shown (ticked in the list
+      where only the list fits); nothing where not even one button fits. The room ends 16 dp above the sheet's edge, or the keyboard's top, and above what floats over
+      the readout (a held object's bar, a drawing's or a tool's buttons) **only where that reaches the tools' edge**: it is centred across, so the readout alone stands
+      beside the column even on a 360 dp phone (14 dp short of it), while a bar the width of the screen cuts it short. What floats is measured as it lays out
+      (`onSizeChanged`), so the rail follows a frame late when it changes size. On a tablet it starts below what is said under the search bar (a search refused, how a
+      pack stands). It stays when the frame is hidden by a tap on the map, as the map's buttons do; under a sheet at full height it is covered, as the readout is.
+    - **Not verifiable here:** the column over the real map and under a glove, and TalkBack on it (each button is named for what it does, the one on is selected).
   - **How the slope map and the LZ box are drawn** (the owner's request of 2026-10-21; `core-data`: `SlopeOpacity`, `SlopeVisibility`, `SlopeOpacityMemory`; `app`:
     `MapPreferences`; `feature-map`: `LzScene.boundaryShown`, `CornerHitTest`, `DiagramOverlay.setSlopeOpacity`; `feature-workspace`: the plan's `AnalysisSection`). Under the
     plan's *Slope map* switch, while the heat map is drawn, an *Opacity* slider (the design's overlay opacity, docs/native-design Imports), and under that the *LZ box* switch,
@@ -1750,17 +1787,19 @@ client is built around not losing one:
     gives way: a doghouse's bar over a sheet at half would otherwise reach above the screen, its *Done* with it. Local points are imported data and
     are not dragged. Tried on an emulator against a real mission: a long press and a drag moved a route point (its grid changed, the map did not pan) and the move reached the file on the server. A
     boundary's corners are still not draggable.
-  - **A route point's type is in its bar** (the owner's request of 2026-10-21; `feature-workspace`: `PointRole`, `PointRoles`, `PointTypeUi`, `PointTypeDialog`,
-    `RoutesViewModel.setPointRole`): a held point's bar says what it is (its symbol and *Checkpoint*, *SP*, *RP*, *TGT* or *Shaping point*; an IP point named neither SP
-    nor RP says *IP point*), and a tap opens a small dialog of the five, each with its symbol and what it does to the point's name, made as it is tapped. Things to keep true:
+  - **A route point's type is in its bar** (the owner's requests of 2026-10-21 and 2026-10-22; `feature-workspace`: `PointRole`, `PointRoles`, `PointTypeUi`, `PointTypeChips`,
+    `RoutesViewModel.setPointRole`): a held point's bar has a chip for each of *Checkpoint*, *SP*, *RP*, *TGT* and *Shaping*, each with its symbol, the one it is selected (an IP
+    point named neither SP nor RP has none selected, and the bar says *an IP point*), and a tap on another makes it that there and then. No dialog: the owner's of 2026-10-22,
+    in place of the first version's dialog of the five. A screen reader hears them as one choice of five (`Role.RadioButton` over the filter chip's check box), each with
+    what it does to the point's name (`SP: Start point, named .SP`), which the dialog said and a tap now changes at once. Things to keep true:
     - **The route's plan's rules, and no others**: `SketchOps.designate`, held to `routes/sketch.json`, in one undo step; what it is already changes nothing. The SP and the
       RP are both AMPS IP points, told apart by nothing but their names, so they take theirs (`.SP`, `.RP`); a checkpoint or the target keeps a name of the person's own (a
       place's, a local point's) and takes its own (`.CP`, `.TGT`) in place of none, or of a name that only said what the point was (`.SP`, `.LZ`, `.CP3`...; a checkpoint
       keeps a checkpoint's). **Not like the web**, whose right-click menu offers the IP type once and asks for the name (§15).
-    - **Refused in words, where the person is**: a mission's points keep the types their file gives them (the control is off, the reason under it); one of a route's last
-      two named points cannot only bend the line (that choice is off, the reason in its place); a read-only pack's cannot be changed (the control is off, the bar's foot says
-      why), and a choice made as the pack is finished is refused in the dialog, which stays. The dialog goes with the point held, and when its type can no longer be changed.
-    - **Not verifiable here:** the dialog on a device and under a glove, and TalkBack reading its choices.
+    - **Refused in words, where the person is**: a mission's points keep the types their file gives them (the chips are off, the reason under them); one of a route's last
+      two named points cannot only bend the line (*Shaping* is off, the reason under the chips); a read-only pack's cannot be changed (the chips are off, the bar's foot says
+      why), and a choice refused as the pack is finished is said under the chips. The chips are keyed by the point held, so a refusal said for one is never shown for another.
+    - **Not verifiable here:** the chips on a device and under a glove, and TalkBack reading them.
 - **Mission packs in the editors** (`core-data`: `PackItemStore`, `PackEditorSync`, `PackWorkspace`, `DocumentSession.document`/`owe`/`closeIfOpen`; docs/MISSION_PACKS.md §5a and
   `docs/ANDROID_MISSION_PACKS_PLAN.md`, *Joining the editors to a pack*). A pack's LZ/PZ opens in the one `DiagramSession` and its route set in the one `RouteSession`, under `pack:<pack>:<item>`
   (`PackRef`), so every editor (graphics, drag, boundary, sketching, analysis, route planning) works on it unchanged; the decisions are `PackItemSync`'s, the web's `usePackItemSync`. Things worth keeping true:

@@ -135,6 +135,7 @@ import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.GraphicKind
 import app.ezpztac.workspace.GraphicsViewModel
 import app.ezpztac.workspace.HeldObjectBarHost
+import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.ImportReviewHost
 import app.ezpztac.workspace.ImportSheet
 import app.ezpztac.workspace.ImportSheetContent
@@ -564,6 +565,12 @@ fun MapHome(
                     buttonsAtFoot = tablet,
                     search = search,
                     hiding = frame.hiding,
+                    // The LZ/PZ tools on the map's edge while its panel is the one chosen: no going into the panel's plan to add an object (the owner's, 2026-10-22).
+                    tools = if (current == Panel.Lz) {
+                        { LzToolRailHost(crosshair = state.center, onSaid = { said -> scope.launch { snackbars.showSnackbar(said, withDismissAction = true) } }) }
+                    } else {
+                        null
+                    },
                     // Over the readout, above the sheet: only there while a boundary or a route is being drawn (never both), or something on the map is held.
                     overlay = {
                         // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).

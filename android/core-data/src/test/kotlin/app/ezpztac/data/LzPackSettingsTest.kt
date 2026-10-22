@@ -11,6 +11,7 @@ import app.ezpztac.geo.PlaceResult
 import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.missionpacks.PackDiff
 import app.ezpztac.missionpacks.PackLz
+import app.ezpztac.model.AircraftName
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.BoundaryCornerRef
 import app.ezpztac.model.Diagram
@@ -80,7 +81,7 @@ class LzPackSettingsTest {
                     {"id": "dh-sp", "role": "takeoff", "lat": 34.5, "lon": -84.103, "id_val": "[SP1]", "heading": "270°", "time": "01+57", "dist": "3.13km", "airspeed": "60 KIAS"},
                     {"id": "dh-rp", "role": "landing", "lat": 34.4985, "lon": -84.103, "id_val": "[RP1]", "heading": "090°", "time": "02+10", "dist": "5.20km", "airspeed": "40 KIAS"}],
                   "helicopters": [{"id": 101, "lat": 34.5, "lon": -84.1, "rotation": 90, "type": "helo", "profileId": "uh60l"},
-                                  {"id": 102, "lat": 34.501, "lon": -84.1, "rotation": 90, "type": "helo", "profileId": "uh60l"}],
+                                  {"id": 102, "lat": 34.501, "lon": -84.1, "rotation": 90, "type": "helo", "profileId": "uh60l", "label": "CHALK 2"}],
                   "pzMarkers": [{"id": "pz-1", "lat": 34.502, "lon": -84.102, "tipLat": 34.502, "tipLon": -84.104}],
                   "sectorsOfFire": [{"id": "sec-1", "points": [{"lat": 34.503, "lng": -84.1}, {"lat": 34.501, "lng": -84.099}, {"lat": 34.501, "lng": -84.101}]}],
                   "goArounds": [{"id": "ga-1", "lat": 34.499, "lon": -84.1, "direction": "left", "rotation": 0}],
@@ -170,6 +171,8 @@ class LzPackSettingsTest {
         inspect(UNIT, "Unit") { _, g -> edit(shown).patchOver(shown, UnitDraft.hasCode(g)) }
     }
 
+    private fun named(name: String) = JsonObject(mapOf(AircraftName.FIELD to JsonPrimitive(name)))
+
     /** What an analysis writes into a diagram (AnalysisService.patch), applied as one comes back: through the session's update, quietly. */
     private suspend fun PackEditorRig.analysed(area: Int, capacity: Int, elevation: String, boundary: String = "[[34.5, -84.1], [34.512, -84.1], [34.512, -84.088], [34.5, -84.088]]") {
         val patch = json(
@@ -208,6 +211,9 @@ class LzPackSettingsTest {
         Setting("an aircraft dragged", fields(CHALK_1, "lat", "lon")) { drag(DragTarget.Graphic(CHALK_1), LatLon(34.5, -84.1), northM = 40.0, eastM = 25.0) },
         Setting("an aircraft turned", fields(CHALK_1, "rotation")) { inspect(CHALK_1, "Turn") { c, g -> GraphicEdits.rotateBy(c, g, 15.0) } },
         Setting("an aircraft's heading typed", fields(CHALK_1, "rotation")) { inspect(CHALK_1, "Turn") { c, g -> GraphicEdits.setRotation(c, g, 200.0) } },
+        // As GraphicsViewModel.setAircraftName writes a name (the owner's request of 2026-10-22), and takes one away: null, as a pack sends a field that went.
+        Setting("an aircraft's name", fields(CHALK_1, AircraftName.FIELD)) { inspect(CHALK_1, "Aircraft name") { _, _ -> named("CHALK 1") } },
+        Setting("an aircraft's name taken away", fields(CHALK_2, AircraftName.FIELD)) { inspect(CHALK_2, "Aircraft name") { _, _ -> JsonObject(mapOf(AircraftName.FIELD to JsonNull)) } },
         Setting("an aircraft deleted", graphic(CHALK_2)) { diagrams.edit("Delete helicopter") { DiagramOps.removeGraphic(it, "helicopters", held(CHALK_2)["id"]) } },
         Setting("a PZ marker's reach", fields(PZ, "lat", "lon", "tipLat", "tipLon")) {
             inspect(PZ, "PZ reach") { _, g -> GraphicEdits.setPzReach(g, checkNotNull(GraphicEdits.pzReachM(g)) + 30.0) }
@@ -358,6 +364,7 @@ class LzPackSettingsTest {
     fun `two settings of one graphic made at once both stand`() {
         for ((first, second) in listOf(
             "an aircraft nudged north" to "an aircraft turned",
+            "an aircraft's name" to "an aircraft turned",
             "a doghouse's label" to "a doghouse's time",
             "a go-around's side" to "a go-around moved",
             "a unit moved" to "a unit's symbol and labels, the builder applied",
@@ -386,6 +393,11 @@ class LzPackSettingsTest {
         atOnce(
             setting("an aircraft's heading typed"),
             Setting("an aircraft's heading typed elsewhere", fields(CHALK_1, "rotation")) { inspect(CHALK_1, "Turn") { c, g -> GraphicEdits.setRotation(c, g, 45.0) } },
+            both = false,
+        )
+        atOnce(
+            setting("an aircraft's name"),
+            Setting("an aircraft's name typed elsewhere", fields(CHALK_1, AircraftName.FIELD)) { inspect(CHALK_1, "Aircraft name") { _, _ -> named("20-27345") } },
             both = false,
         )
         atOnce(

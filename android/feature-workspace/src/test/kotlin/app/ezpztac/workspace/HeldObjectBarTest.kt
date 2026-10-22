@@ -3,7 +3,12 @@ package app.ezpztac.workspace
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
@@ -62,12 +67,12 @@ class HeldObjectBarTest {
         facts = "", elapsed = "", held = held, grid = "16S GD 66900 52900",
     )
 
-    // -- A point's type, from its bar (the owner's request of 2026-10-21) ---------------------------------------------------------
+    // -- A point's type, chosen in its bar (the owner's requests of 2026-10-21 and 2026-10-22) -----------------------------------------
 
     private fun named(name: String, ptType: String) = point(held = true, name = name).copy(ptType = ptType)
 
     @Test
-    fun `a held point of a route says what it is, and its dialog makes it something else`() {
+    fun `a held point of a route says what it is in its bar, and a chip there makes it something else, with no dialog`() {
         val held = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named(".RP", "ip"))))!!
         val type = held.pointType!!
         assertEquals(PointRole.RP, type.role)
@@ -76,36 +81,45 @@ class HeldObjectBarTest {
         compose.setContent {
             EzpzTheme(ThemeMode.Dark) { HeldObjectBar(held, HeldObjectActions(setPointRole = { r, p, role -> asked += "$r $p $role"; null })) }
         }
-        compose.onNodeWithContentDescription("Point type: RP").assertIsEnabled().performClick()
-        compose.onNodeWithText("Start point · named .SP").assertIsDisplayed()
+        compose.onNodeWithText("RP").assertIsSelected()
+        listOf("Checkpoint", "SP", "TGT").forEach { compose.onNodeWithText(it).assertIsEnabled().assertIsNotSelected() }
+        compose.onNodeWithText("Shaping").assertIsNotSelected()                                    // off on this route of one named point: the test below
         compose.onNodeWithText("Checkpoint").performClick()
         assertEquals(listOf("r1 p1 CHECKPOINT"), asked)
-        compose.onNodeWithText("Cancel").assertDoesNotExist()                                     // done: the dialog is put away
     }
 
     @Test
-    fun `a choice refused while the dialog was open is said in it, and it stays`() {
+    fun `the chips are one choice of five, each saying what it does to the point's name`() {
+        show(heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named("HAWK", "turn")).copy(points = listOf(named("HAWK", "turn"), point(false, ".TGT").copy(id = "p2")))))!!)
+        val radio = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)
+        listOf(
+            "Checkpoint: A turn point",                                                         // what it is: alone
+            "SP: Start point, named .SP",
+            "RP: Release point, named .RP",
+            "TGT: Target: the LZ or PZ",                                                        // keeps a name of the person's own
+        ).forEach { compose.onNodeWithContentDescription(it).assert(radio) }
+        assertTrue(compose.onAllNodesWithContentDescription("Shaping point: Only bends the line", substring = true).fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test
+    fun `a choice refused is said under the chips`() {
         val held = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named(".RP", "ip"))))!!
         compose.setContent {
             EzpzTheme(ThemeMode.Dark) { HeldObjectBar(held, HeldObjectActions(setPointRole = { _, _, _ -> "OP DK is finished: nothing in it can be changed." })) }
         }
-        compose.onNodeWithContentDescription("Point type: RP").performClick()
         compose.onNodeWithText("TGT").performClick()
         compose.onNodeWithText("OP DK is finished: nothing in it can be changed.").assertIsDisplayed()
-        compose.onNodeWithText("Cancel").performClick()
-        compose.onNodeWithText("Cancel").assertDoesNotExist()
     }
 
     @Test
-    fun `one of a route's last two named points cannot be made a shaping point, and the dialog says why`() {
-        val type = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named(".TGT", "target"))))!!.pointType!!
-        assertEquals(RoutesViewModel.TWO_NAMED_POINTS, type.shapingOff)
+    fun `one of a route's last two named points cannot be made a shaping point, and the bar says why`() {
+        val held = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named(".TGT", "target"))))!!
+        assertEquals(RoutesViewModel.TWO_NAMED_POINTS, held.pointType!!.shapingOff)
         val chosen = mutableListOf<PointRole>()
-        compose.setContent { EzpzTheme(ThemeMode.Dark) { PointTypeContent(type, refusal = null) { chosen += it } } }
-        compose.onNodeWithText("Shaping point").assertIsNotEnabled()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { HeldObjectBar(held, HeldObjectActions(setPointRole = { _, _, role -> chosen += role; null })) } }
+        compose.onNodeWithText("Shaping").assertIsNotEnabled()
         compose.onNodeWithText(RoutesViewModel.TWO_NAMED_POINTS).assertIsDisplayed()
         compose.onNodeWithText("TGT").assertIsSelected()
-        compose.onNodeWithText("Target: the LZ or PZ").assertIsDisplayed()                          // the one it is: what it is, alone
         compose.onNodeWithText("RP").performClick()
         assertEquals(listOf(PointRole.RP), chosen)
     }
@@ -115,7 +129,8 @@ class HeldObjectBarTest {
         val mission = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named("HAWK", "turn")).copy(isMission = true)))!!
         assertEquals(RoutesViewModel.MISSION_POINT_TYPES_ARE_THE_FILES, mission.pointType!!.fixed)
         show(mission)
-        compose.onNodeWithContentDescription("Point type: Checkpoint").assertIsNotEnabled()
+        compose.onNodeWithText("Checkpoint").assertIsSelected().assertIsNotEnabled()
+        compose.onNodeWithText("RP").assertIsNotEnabled()
         assertTrue(present(RoutesViewModel.MISSION_POINT_TYPES_ARE_THE_FILES))
     }
 
@@ -134,7 +149,8 @@ class HeldObjectBarTest {
         )!!
         assertEquals(reason, locked.locked)
         show(locked)
-        compose.onNodeWithContentDescription("Point type: SP").assertIsNotEnabled()
+        compose.onNodeWithText("SP").assertIsSelected().assertIsNotEnabled()
+        compose.onNodeWithText("TGT").assertIsNotEnabled()
         assertTrue(present(reason))
     }
 
@@ -145,7 +161,7 @@ class HeldObjectBarTest {
         assertEquals(PointRole.SHAPING, type.role)
         assertNull("a shaping point is not refused being one", type.shapingOff)
         show(held)
-        compose.onNodeWithContentDescription("Point type: Shaping point").assertIsEnabled()
+        compose.onNodeWithText("Shaping").assertIsSelected().assertIsEnabled()
     }
 
     @Test
@@ -396,4 +412,45 @@ class HeldObjectBarTest {
         compose.onNodeWithText("03+20").performImeAction()
         assertFalse(present(refusal))
     }
+
+    // -- A helicopter's name (the owner's request of 2026-10-22) ---------------------------------------------------------------------
+
+    private val heloInspector = inspector.copy(name = "CHALK 1", diagramId = "lz-1")
+
+    @Test
+    fun `a held helicopter brings its name to the bar, and other graphics none`() {
+        val held = heldObjectOf(GraphicsUiState(inspector = heloInspector), ThreatsUiState(), RoutesUiState())!!
+        assertEquals("CHALK 1", held.aircraftName)
+        assertEquals(GraphicOf("lz-1", GraphicRef("helicopters", "1")), held.graphic)
+        val unnamed = heldObjectOf(GraphicsUiState(inspector = heloInspector.copy(name = "")), ThreatsUiState(), RoutesUiState())!!
+        assertEquals("", unnamed.aircraftName)
+        val pz = heldObjectOf(GraphicsUiState(inspector = inspector.copy(kind = GraphicKind.PZ_MARKER, name = null)), ThreatsUiState(), RoutesUiState())!!
+        assertNull(pz.aircraftName)
+        assertNull("nothing typed into, so nothing to aim at", pz.graphic)
+    }
+
+    @Test
+    fun `a helicopter's name is typed in its bar, taken on Done, and a refusal said under it`() {
+        val typed = mutableListOf<String>()
+        val refusal = "Enter a name of up to 20 characters, such as CHALK 1."
+        val held = heldObjectOf(GraphicsUiState(inspector = heloInspector), ThreatsUiState(), RoutesUiState())!!
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { HeldObjectBar(held, HeldObjectActions(setAircraftName = { typed += it; if (it.length > 20) refusal else null })) }
+        }
+        compose.onNodeWithText("CHALK 1").performTextReplacement("TAIL 20-27345 AND MUCH MORE")
+        compose.onNodeWithText("TAIL 20-27345 AND MUCH MORE").performImeAction()
+        assertTrue(present(refusal))
+        compose.onNodeWithText("TAIL 20-27345 AND MUCH MORE").performTextReplacement("20-27345")
+        compose.onNodeWithText("20-27345").performImeAction()
+        assertFalse(present(refusal))
+        assertEquals(listOf("TAIL 20-27345 AND MUCH MORE", "20-27345"), typed)
+    }
+
+    @Test
+    fun `a helicopter of a read-only pack says its name and offers no field`() {
+        show(HeldObjectUi("CHALK 1 · UH-60L", "16S GD 1 2", 90.0, locked = "OP DK is finished: nothing in it can be changed.", aircraftName = "CHALK 1"))
+        assertTrue(present("Name: CHALK 1"))
+        assertEquals(0, compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size)
+    }
 }
+

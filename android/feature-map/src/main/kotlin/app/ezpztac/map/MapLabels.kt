@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -80,6 +79,24 @@ object MapLabels {
         MapLabel(text = piece.elevationFt.toString(), at = at, violating = false, description = "Contour ${piece.elevationFt} feet")
     }
 
+    /** How far under an aircraft's picture its name sits, in points. */
+    private const val NAME_GAP_PT = 4.0
+
+    /**
+     * The aircraft that have a name (a chalk or tail number), each with where it goes: the middle of its top edge, just under the whole of the aircraft's picture
+     * (the frame round it, [AircraftIcons.frame], whose half is as far as the tail reaches from the mast) whichever way it faces or the map is turned, so a name
+     * never sits on the rotor or the tail, nor turns with them.
+     */
+    fun aircraftNames(graphics: GraphicsScene, view: MapProjection): List<MapLabel> = graphics.aircraft.mapNotNull { a ->
+        val name = a.name ?: return@mapNotNull null
+        val centre = view.toScreen(a.at)
+        if (!centre.x.isFinite() || !centre.y.isFinite()) return@mapNotNull null
+        val reachM = a.diameterM * AircraftIcons.frame(a.iconKey).widthPerRotorDiameter / 2
+        val at = ScreenPoint(centre.x, centre.y + view.metersToPixels(reachM, a.at.lat) + NAME_GAP_PT * view.density)
+        if (at.x < -MARGIN_PX || at.x > view.widthPx + MARGIN_PX || at.y < -MARGIN_PX || at.y > view.heightPx + MARGIN_PX) return@mapNotNull null
+        MapLabel(text = name, at = at, violating = false, description = name)
+    }
+
     /** The feet between each pair of aircraft's rotor edges, at the middle of the line between them. */
     fun separations(graphics: GraphicsScene, view: MapProjection): List<MapLabel> = graphics.separations.mapNotNull { line ->
         if (view.pixelsBetween(line.from, line.to) < MIN_LINE_PX) return@mapNotNull null
@@ -92,18 +109,46 @@ object MapLabels {
     }
 }
 
-/** Draws what is written over the map: units' symbols, the doghouse boxes and the feet between aircraft. It takes no touches: what is under one is still tapped. */
+/**
+ * Draws what is written over the map: units' symbols, the doghouse boxes, the feet between aircraft and the aircraft's names. It takes no touches: what is under one is
+ * still tapped.
+ */
 @Composable
-fun GraphicLabelsLayer(host: MapHost, graphics: GraphicsScene, modifier: Modifier = Modifier, footprints: UnitFootprints? = null) {
-    val camera = host.camera
+fun GraphicLabelsLayer(host: MapHost, graphics: GraphicsScene, modifier: Modifier = Modifier, footprints: UnitFootprints? = null) =
+    GraphicLabels({ host.camera }, graphics, modifier, footprints)
+
+@Composable
+internal fun GraphicLabels(camera: () -> CameraState?, graphics: GraphicsScene, modifier: Modifier = Modifier, footprints: UnitFootprints? = null) {
+    val camera = camera()
     val density = LocalDensity.current.density.toDouble()
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
-        if (camera == null || size == IntSize.Zero || (graphics.separations.isEmpty() && graphics.doghouses.isEmpty() && graphics.units.isEmpty())) return@Box
+        if (camera == null || size == IntSize.Zero) return@Box
+        if (graphics.separations.isEmpty() && graphics.doghouses.isEmpty() && graphics.units.isEmpty() && graphics.aircraft.none { it.name != null }) return@Box
         val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density)
         MapLabels.units(graphics, view).forEach { placed -> UnitMarker(placed, footprints) }
         MapLabels.doghouses(graphics, view).forEach { placed -> PlacedDoghouse(placed, camera.bearingDegrees) }
         MapLabels.separations(graphics, view).forEach { label -> SeparationBadge(label) }
+        MapLabels.aircraftNames(graphics, view).forEach { label -> AircraftNameTag(label) }
+    }
+}
+
+/**
+ * An aircraft's name under it ([MapLabels.aircraftNames]): a pill whose top edge is centred on its place. Drawn on a Box, not a Surface, so it takes no touches, as the
+ * contours' pills do: it is within a finger's reach of the aircraft at a far zoom, and a tap or a press there is the map's, to hold or pick up the aircraft.
+ */
+@Composable
+private fun AircraftNameTag(label: MapLabel) {
+    Box(
+        Modifier
+            .offset { IntOffset(label.at.x.roundToInt(), label.at.y.roundToInt()) }
+            .graphicsLayer { translationX = -size.width / 2f }                           // centred under the aircraft, whatever its width
+            .alpha(0.92f)
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(Tokens.Radius.sm.dp))
+            .padding(horizontal = Tokens.Spacing.sm.dp, vertical = 2.dp)
+            .semantics { contentDescription = label.description },
+    ) {
+        Text(label.text, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
     }
 }
 
@@ -124,20 +169,20 @@ private fun PlacedDoghouse(placed: PlacedDoghouse, bearingDegrees: Double) {
 @Composable
 private fun SeparationBadge(label: MapLabel) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        shape = RoundedCornerShape(Tokens.Radius.sm.dp),
-        color = if (label.violating) scheme.error else scheme.surface,
-        contentColor = if (label.violating) scheme.onError else scheme.onSurface,
-        modifier = Modifier
+    // A Box, not a Surface, which would take the touches on it: a tap there is the map's, on whatever is under the line.
+    Box(
+        Modifier
             .offset { IntOffset(label.at.x.roundToInt(), label.at.y.roundToInt()) }
             .graphicsLayer {
                 translationX = -size.width / 2f                                     // centred on its place, whatever its width
                 translationY = -size.height / 2f
             }
             .alpha(0.92f)
+            .background(if (label.violating) scheme.error else scheme.surface, RoundedCornerShape(Tokens.Radius.sm.dp))
+            .padding(horizontal = Tokens.Spacing.sm.dp, vertical = Tokens.Spacing.xs.dp)
             .semantics { contentDescription = label.description },
     ) {
-        Text(label.text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(horizontal = Tokens.Spacing.sm.dp, vertical = Tokens.Spacing.xs.dp))
+        Text(label.text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold), color = if (label.violating) scheme.onError else scheme.onSurface)
     }
 }
 

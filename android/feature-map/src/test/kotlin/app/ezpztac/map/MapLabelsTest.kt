@@ -155,4 +155,50 @@ class MapLabelsTest {
         assertEquals("Contour 1520 feet", label.description)
         assertEquals(emptyList<MapLabel>(), MapLabels.contours(null, view()))
     }
+
+    // -- Aircraft names (the owner's request of 2026-10-22) --------------------------------------------------------------
+
+    private fun aircraft(name: String?, at: LatLon = here, rotation: Double = 90.0) = SceneAircraft(
+        ref = GraphicRef("helicopters", "1"), at = at, rotationDeg = rotation, diameterM = 16.36, clearanceM = 60.0, iconKey = "uh60", designation = "UH-60L",
+        violating = false, selected = false, name = name,
+    )
+
+    /** How many pixels [metres] on the ground are at [zoom], at [here]'s latitude, on MapLibre's 512-point tiles. */
+    private fun pixels(metres: Double, zoom: Double = 18.0) = metres / (78271.517 * Math.cos(Math.toRadians(here.lat)) / Math.pow(2.0, zoom))
+
+    /** How far the UH-60's picture reaches from its mast: half its frame, 236.6 of the 163.6 its rotor is across (`uh60.svg`), at a 16.36 m rotor. */
+    private val reach = 16.36 * 236.6 / 163.6 / 2
+
+    @Test
+    fun `an aircraft's name sits just under its picture, tail and all, centred under it, and one with none has no label`() {
+        val labels = MapLabels.aircraftNames(GraphicsScene(aircraft = listOf(aircraft("CHALK 1"), aircraft(null, LatLon(here.lat + 0.0003, here.lon)))), view())
+        val label = labels.single()
+        assertEquals("CHALK 1", label.text)
+        assertEquals("CHALK 1", label.description)
+        assertEquals(500.0, label.at.x, 0.5)
+        assertEquals(1000.0 + pixels(reach) + 4.0, label.at.y, 0.5)
+    }
+
+    @Test
+    fun `under it on the screen whichever way it faces or the map is turned, further off as the map zooms in, and the gap in points`() {
+        val turned = MapProjection(CameraState(here, 18.0, bearingDegrees = 120.0), 1000.0, 2000.0, 1.0)
+        val label = MapLabels.aircraftNames(GraphicsScene(aircraft = listOf(aircraft("CHALK 1", rotation = 200.0))), turned).single()
+        assertEquals(500.0, label.at.x, 0.5)
+        assertEquals(1000.0 + pixels(reach) + 4.0, label.at.y, 0.5)
+        val closer = MapLabels.aircraftNames(GraphicsScene(aircraft = listOf(aircraft("CHALK 1"))), view(zoom = 19.0)).single()
+        assertEquals(1000.0 + pixels(reach, 19.0) + 4.0, closer.at.y, 0.5)
+        val dense = MapProjection(CameraState(here, 18.0), 3000.0, 6000.0, 3.0)
+        assertEquals(3000.0 + 3 * (pixels(reach) + 4.0), MapLabels.aircraftNames(GraphicsScene(aircraft = listOf(aircraft("CHALK 1"))), dense).single().at.y, 1.0)
+    }
+
+    @Test
+    fun `a name off the screen has no label, one just off it is kept, and names are placed for the view above the sheet`() {
+        val v = view()
+        fun at(x: Double, y: Double) = GraphicsScene(aircraft = listOf(aircraft("CHALK 1", v.toLatLon(x, y))))
+        assertEquals(1, MapLabels.aircraftNames(at(1030.0, 800.0), v).size)
+        assertTrue(MapLabels.aircraftNames(at(1070.0, 800.0), v).isEmpty())
+        assertTrue(MapLabels.aircraftNames(at(500.0, 2200.0), v).isEmpty())
+        assertEquals(800.0 + pixels(reach) + 4.0, MapLabels.aircraftNames(GraphicsScene(aircraft = listOf(aircraft("CHALK 1"))), view(inset = 400.0)).single().at.y, 0.5)
+    }
 }
+

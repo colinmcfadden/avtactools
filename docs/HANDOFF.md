@@ -17,7 +17,7 @@ stands said on its chip.
 
 ---
 
-## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity, the LZ box, every open LZ/PZ on the map, and route points by type (2026-10-21)
+## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity, the LZ box, every open LZ/PZ on the map, route points by type, helicopter names and the tools on the map's edge (2026-10-21/22)
 
 Branch `feat/android-quick-edits` (from `develop`). The owner's requests from a phone run (AGENTS.md §17, *Boundary drawing* and *Dragging and turning on the map*):
 - **Finish offers the analysis there and then**: the drawing toolbar gives way to *Analyze LZ/PZ* over the map (then its stage with *Stop*, then *Try again* on a failure, and
@@ -54,15 +54,30 @@ AMPS type*): as the web draws them, an IP point (the SP and the RP) a square, a 
 Bitmaps in the route's colour sized in points (`RoutePinImages`), drawn for real in `RoutePinImagesTest` (its contact sheet looked at over grass, the topographic map and
 the chart).
 
-**A route point's type from its bar** (the owner's request; AGENTS.md §17, *A route point's type is in its bar*): a held point's bar shows what it is, and a tap opens a small
-dialog of *Checkpoint*, *SP*, *RP*, *TGT* and *Shaping point*, made as it is tapped, by the route's plan's rules (`SketchOps.designate`, one undo step). The SP and the RP take
-their names (`.SP`, `.RP`: AMPS calls both IP points); a checkpoint or the target keeps a name of the person's own. Refused in words: a mission's points (the file's), one of the
-last two named points as a shaping point, a read-only pack. The web's menu offers "RP / IP" once and asks for a name (AGENTS.md §15). Looked at as Roborazzi pictures (the bar,
-a mission's bar, the dialog in dark, night and light, and on a 360 dp phone at 1.3).
+**A route point's type from its bar** (the owner's requests; AGENTS.md §17, *A route point's type is in its bar*): a held point's bar has a chip for each of *Checkpoint*,
+*SP*, *RP*, *TGT* and *Shaping*, the one it is selected, and a tap on another makes it that, by the route's plan's rules (`SketchOps.designate`, one undo step). The first
+version opened a dialog of the five; the owner asked on 2026-10-22 for the choices in the bar itself. The SP and the RP take their names (`.SP`, `.RP`: AMPS calls both IP
+points); a checkpoint or the target keeps a name of the person's own. Refused in words: a mission's points (the file's), one of the last two named points as a shaping point,
+a read-only pack. The web's menu offers "RP / IP" once and asks for a name (AGENTS.md §15). Looked at as Roborazzi pictures (the bar, a mission's bar, a route of two named
+points, in dark, night and light, and on a 360 dp phone at 1.3).
+
+**A helicopter's name** (the owner's request of 2026-10-22; AGENTS.md §17, *A helicopter has a name*): a chalk or tail number, set in the inspector and in the held bar,
+kept in capitals as the aircraft's `label` (20 characters at most), first in its title and written under it on the map. The web keeps the field but does not show it yet
+(AGENTS.md §15).
+
+**The LZ/PZ tools on the map's edge** (the owner's request of 2026-10-22; AGENTS.md §17, *And on the map's right edge*): while the LZ/PZ panel is chosen, *Draw LZ*, the four
+placing modes and a unit stand as a column of buttons under the map's own; where not all fit, as many as do and a *More* button for the rest, the tool in use always
+shown; kept above a held object's or a tool's bar. Looked at in the phone's frame (sheet lowered and at half, a held helicopter at night, a 360 dp phone).
+
+An independent review of these three found, each now fixed with a test (mutation-checked): *Set name* in the options panel did nothing in the app (the panel built its
+own actions and left the name out; one builder now serves every screen); a refused *Draw LZ* from the map's edge was silent and later showed in the panel; its question
+could come back by itself after a pack was finished and reopened, or apply to another LZ/PZ; the column collapsed to one button as soon as a tool's bar came up; a name
+typed for one helicopter carried over to the next; Go on an empty name field took the name away; a tablet's search error covered the first tool; the name sat on a
+north-facing UH-60's tail; and the feet between two aircraft, like the new name pill, swallowed a tap meant for the map.
 
 **Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, TalkBack on the new fields, the slope raster at each opacity and the
-outline hidden on the real map, the faded LZ/PZs over imagery with twenty open, the point shapes on the GL map, and the type dialog under a glove. A device run on the owner's
-phone is next.
+outline hidden on the real map, the faded LZ/PZs over imagery with twenty open, the point shapes on the GL map, the type chips and the tools on the map's edge under a glove,
+and the names under the aircraft over imagery. A device run on the owner's phone is next.
 
 ## 0. The slope tile, contour lines and the slope profile (2026-10-13/14)
 

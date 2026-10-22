@@ -143,6 +143,8 @@ class GraphicsViewModelTest {
         assertEquals(locked, r.model.beginPlacing(PlaceTool.HELICOPTER))
         assertNull(r.placement.placing.value)
         assertEquals(locked, r.model.setDoghouseLabel("[SP1]"))
+        assertEquals(locked, r.model.setAircraftName("CHALK 1", GraphicOf(r.diagram.id, row.ref)))
+        assertEquals("nothing named", before, r.diagram)
     }
 
     @Test
@@ -1267,4 +1269,111 @@ class GraphicsViewModelTest {
         advanceUntilIdle()
         assertEquals("Move the map to where it should go first.", r.model.placing.value?.error)
     }
+
+    // -- A helicopter's name (the owner's request of 2026-10-22) -------------------------------------------------------------
+
+    @Test
+    fun `a helicopter is named in capitals, said first in its title, kept as its label, one step to undo, and has none when blank`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        val ref = r.state.rows.single().ref
+        assertEquals("a helicopter with none", "", r.state.inspector!!.name)
+        assertNull(r.model.setAircraftName(""))                                                // none for one that never had one: no step, no field
+        advanceUntilIdle()
+        assertEquals(1, r.state.undoDepth)
+        assertFalse(r.graphic(ref).containsKey("label"))
+        assertNull(r.model.setAircraftName("  chalk 1 "))
+        advanceUntilIdle()
+        assertEquals("CHALK 1", text(r.graphic(ref), "label"))
+        assertEquals("CHALK 1", r.state.inspector!!.name)
+        assertEquals("CHALK 1 · UH-60L", r.state.rows.single().title)
+        assertEquals(2, r.state.undoDepth)
+        assertNull(r.model.setAircraftName("Chalk 1"))                                         // the name it has: no step
+        advanceUntilIdle()
+        assertEquals(2, r.state.undoDepth)
+        assertNull(r.model.setAircraftName(" "))
+        advanceUntilIdle()
+        assertEquals(kotlinx.serialization.json.JsonNull, r.graphic(ref)["label"])                 // as a pack sends a field that went
+        assertEquals("", r.state.inspector!!.name)
+        assertEquals("Helicopter · UH-60L", r.state.rows.single().title)
+        assertEquals(3, r.state.undoDepth)
+        assertNull(r.model.setAircraftName(""))                                                // none for none: no step
+        advanceUntilIdle()
+        assertEquals(3, r.state.undoDepth)
+        r.model.undo()
+        advanceUntilIdle()
+        assertEquals("CHALK 1", r.state.inspector!!.name)
+    }
+
+    @Test
+    fun `a name longer than twenty characters is refused in words and changes nothing, an emoji counting as one`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        val ref = r.state.rows.single().ref
+        val before = r.diagram
+        assertEquals("Enter a name of up to 20 characters, such as CHALK 1.", r.model.setAircraftName("A".repeat(21)))
+        advanceUntilIdle()
+        assertEquals(before, r.diagram)
+        assertNull("a banner is not where a field's words go", r.state.error)
+        assertNull(r.model.setAircraftName("\uD83D\uDE81".repeat(20)))                           // twenty helicopters, forty UTF-16 units
+        advanceUntilIdle()
+        assertEquals("\uD83D\uDE81".repeat(20), text(r.graphic(ref), "label"))
+    }
+
+    @Test
+    fun `only a helicopter has a name`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.PZ_MARKER, crosshair)
+        advanceUntilIdle()
+        assertNull(r.state.inspector!!.name)
+        val before = r.diagram
+        assertEquals("Only a helicopter has a name.", r.model.setAircraftName("CHALK 1"))
+        advanceUntilIdle()
+        assertEquals(before, r.diagram)
+    }
+
+    @Test
+    fun `a name typed in the held bar lands on the helicopter it was typed for, not one held or an LZ-PZ opened since`() = runTest(dispatcher) {
+        val r = opened()
+        r.model.place(GraphicKind.HELICOPTER, crosshair)
+        advanceUntilIdle()
+        val first = r.state.inspector!!.of
+        r.model.place(GraphicKind.HELICOPTER, crosshair)                                       // the second is held as the first's field is left
+        advanceUntilIdle()
+        val second = r.state.inspector!!.ref
+        assertNull(r.model.setAircraftName("chalk 1", first))
+        advanceUntilIdle()
+        assertEquals("CHALK 1", text(r.graphic(first.ref), "label"))
+        assertNull(r.graphic(second)["label"])
+
+        val named = r.graphic(first.ref)
+        val other = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
+        r.session.open(other.id)
+        r.session.setQuietly { DiagramOps.completeAnalysis(it, null) }
+        r.session.edit("Place") { DiagramOps.upsertGraphic(it, "helicopters", named) }        // one with the same id on this LZ/PZ
+        advanceUntilIdle()
+        val steps = r.state.undoDepth
+        assertNull(r.model.setAircraftName("CHALK 9", first))
+        advanceUntilIdle()
+        assertEquals("nothing of it lands on this LZ/PZ", steps, r.state.undoDepth)
+        assertEquals("CHALK 1", text(checkNotNull(DiagramOps.graphic(r.diagram, first.ref.collection, first.ref.key)), "label"))
+    }
+
+    @Test
+    fun `the actions every screen of the graphics is given reach the view model, a name from the inspector among them`() = runTest(dispatcher) {
+        val r = opened()
+        val actions = graphicsActionsOf(r.model, crosshair)
+        actions.place(GraphicKind.HELICOPTER)
+        advanceUntilIdle()
+        val ref = r.state.rows.single().ref
+        assertNull(actions.setAircraftName("chalk 1"))
+        actions.rotateBy(15.0)
+        advanceUntilIdle()
+        assertEquals("CHALK 1", text(r.graphic(ref), "label"))
+        assertEquals("CHALK 1 · UH-60L", r.state.rows.single().title)
+        assertEquals("heading 15°", r.state.rows.single().detail)
+    }
 }
+

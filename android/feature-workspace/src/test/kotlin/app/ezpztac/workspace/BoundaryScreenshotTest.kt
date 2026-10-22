@@ -2,6 +2,7 @@ package app.ezpztac.workspace
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -91,28 +92,40 @@ class BoundaryScreenshotTest {
         HeldObjectBar(heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = routeWith(pointOf("HAWK", "turn"), mission = true)))!!, HeldObjectActions())
     }
 
-    /** The dialog's content as the dialog draws it: its title over the choices, on the dialog's colour. */
-    @androidx.compose.runtime.Composable
-    private fun TypeDialog(type: PointTypeUi, refusal: String? = null) {
-        Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-            Column(Modifier.padding(24.dp)) {
-                androidx.compose.material3.Text("Point type", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 16.dp))
-                PointTypeContent(type, refusal) {}
-            }
-        }
-    }
-
-    @Test fun pointTypeDialog() = shot("point-type-dialog") { TypeDialog(spHeld.pointType!!) }
-
-    @Test fun pointTypeDialogNight() = shot("point-type-dialog-night", ThemeMode.Night) { TypeDialog(spHeld.pointType!!) }
+    @Test fun pointTypeBarNight() = shot("held-point-type-night", ThemeMode.Night) { HeldObjectBar(spHeld, HeldObjectActions()) }
 
     @Test
     @Config(qualifiers = "w360dp-h800dp-xxhdpi", fontScale = 1.3f)
-    fun pointTypeDialogNarrowLargeText() = shot("point-type-dialog-narrow-large", ThemeMode.Light) {
-        // A route of two named points: the shaping choice is off, with the reason; the point named for a place keeps its name as a checkpoint or the target.
-        val two = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route2()))!!.pointType!!
-        TypeDialog(two, refusal = "OP DK is finished: nothing in it can be changed.")
+    fun pointTypeBarTwoPointsNarrow() = shot("held-point-type-two-points-narrow", ThemeMode.Light) {
+        // A route of two named points: the shaping choice is off, with the reason.
+        HeldObjectBar(heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route2()))!!, HeldObjectActions())
     }
+
+    private val heloHeld = HeldObjectUi("CHALK 1 · UH-60L", "16S GD 66993 52949", heading = 90.0, aircraftName = "CHALK 1",
+        graphic = GraphicOf("lz-1", app.ezpztac.model.GraphicRef("helicopters", "1")))
+
+    @Test fun helicopterBar() = shot("held-helicopter") { HeldObjectBar(heloHeld, HeldObjectActions()) }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi", fontScale = 1.3f)
+    fun helicopterBarUnnamedNarrow() = shot("held-helicopter-unnamed-narrow", ThemeMode.Light) {
+        HeldObjectBar(heloHeld.copy(title = "Helicopter · UH-60L", aircraftName = ""), HeldObjectActions())
+    }
+
+    // The LZ/PZ tools on the map's edge, alone: in a column, and the one Add button where they do not fit.
+    private val railTools = listOf(
+        RailTool(ToolSymbol.Boundary, "Draw LZ", "Draw the LZ/PZ boundary", enabled = true, on = false) {},
+        RailTool(ToolSymbol.Helicopter, "Helicopter", "Place helicopters", enabled = false, on = false) {},
+        RailTool(ToolSymbol.Pz, "PZ marker", "Place PZ markers", enabled = false, on = false) {},
+        RailTool(ToolSymbol.Sector, "Sector of fire", "Place sectors of fire", enabled = false, on = false) {},
+        RailTool(ToolSymbol.Unit, "Unit", "Add a unit at the crosshair", enabled = false, on = false) {},
+        RailTool(ToolSymbol.GoAroundLeft, "Left go-around", "Place left go-arounds", enabled = false, on = false) {},
+        RailTool(ToolSymbol.GoAroundRight, "Right go-around", "Place right go-arounds", enabled = false, on = false) {},
+    )
+
+    @Test fun railNotAnalysed() = shot("rail-not-analysed", ThemeMode.Light) { LzToolRail(railTools) }
+
+    @Test fun railCompact() = shot("rail-compact") { Box(Modifier.height(60.dp)) { LzToolRail(railTools) } }
 
     private fun route2() = routeWith(pointOf("HAWK", "turn")).let { it.copy(points = it.points.take(2)) }
 
