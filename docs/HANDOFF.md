@@ -40,7 +40,7 @@ area was found (`FreshDiagrams`).
 section, under *Slope map*, an *Opacity* slider while it is drawn (10 to 100% in steps of 5, from the web's 55% where Android drew 85%; this device's, kept between launches,
 never saved with a plan), then an *LZ box* switch that hides the analysis boundary, its fill and its corner dots (the diagram's own `view.showLZOutline`, the web's *LZ Box*;
 a corner held keeps its corners drawn, a boundary drawn by hand is drawn as ever). Both offered in a read-only pack. Looked at as Roborazzi pictures in dark, night and light,
-and on a 360 dp phone at 1.3 and 2.0. The web has no opacity setting (AGENTS.md §15, web first if wanted).
+and on a 360 dp phone at 1.3 and 2.0. The web has the same slider, in the sidebar under *Slope Map*, remembered per browser (AGENTS.md §13, *The slope map's opacity*).
 
 **Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, TalkBack on the new fields, and the slope raster at each opacity and the
 outline hidden on the real map. A device run on the owner's phone is next.

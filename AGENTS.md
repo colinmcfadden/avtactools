@@ -88,7 +88,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Admin dashboard** | Users, roles, entitlements, access approval, password resets, master aircraft list | — (Jinja) | `routes/admin_routes.py`, `templates/admin/` |
 | **App frame** (menu redesign, `docs/MENU_REDESIGN.md`) | Top bar (workspace, Import, Library, account); a right dock of panels (LZ/PZ, Routes, Threats, Imports) picked from an icon rail, a bottom sheet below 1100 px; the shared dialogs, menus and toasts. No browser `prompt`/`confirm`/`alert` on these paths | `feature/shell/`, `feature/ui/` | — |
 | **LZ/PZ workspace** | Several LZ diagrams per session; target by MGRS; switch between them in the LZ/PZ panel | `feature/lzWorkspace/`, `feature/shell/LzPanel.jsx`, `components/MapView.jsx`, `App.js` | — |
-| **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM, with contour lines of the ground in and round the LZ, and a slope profile along and across the landing heading | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
+| **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM, with contour lines of the ground in and round the LZ, and a slope profile along and across the landing heading; how opaque the slope map is drawn is the person's (§13) | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
 | **Planning graphics** | Helicopters, PZ markers, sectors of fire, go-arounds, doghouses, units, LZ box | `feature/{helicopters,pzMarker,sectorsOfFire,goAround,doghouses,unit}/` | — |
 | **MIL-STD symbology** | MIL-STD-2525C symbols for units and threats (milsymbol) | `feature/symbols/` | — |
 | **LZ card export** | Card image and Excel card | `feature/export/` | `routes/export_routes.py`, `export_service.py`, `lz_template.xlsx` |
@@ -616,6 +616,13 @@ each height's label goes on its longest piece inside the LZ where it keeps 40 m 
 slope map. They are drawn near-black over a light halo, the other way about from the MGRS grid, and the ring outside the LZ faded. A
 server from before them sends none, and the slope map is the raster alone.
 
+**The slope map's opacity** (the owner, 2026-10-21; the web's `feature/terrain/slopeOpacity.js` and `SlopeOpacityControl.jsx`, Android's `SlopeOpacity`
+and `SlopeVisibility`, the same steps). A slider under the Slope Map switch while the slope map is drawn: 10 to 100% of the raster's own alpha (its
+bands are 145 to 185 of 255) in steps of 5, from 55. It is the person's, how they like the slope map over the imagery: remembered per browser
+(`ezpz.slopeOpacity`) and on Android per device, never saved with a plan or synced, so not a field of the diagram's `view` (both normalizers keep it to
+three). It is the raster's alone; the contour lines keep theirs. A new value is set on the raster drawn (`attachSlope`'s `setOpacity`, Android's
+`DiagramOverlay.setSlopeOpacity`), never a reason to draw the slope map again. The LZ card shows it as the screen does.
+
 **The slope profile** (`profiles` of `/api/terrain-analysis`, `terrain_provider._slope_profiles`; the web's `feature/terrain/groundProfile.js`
 and `SlopeProfile.jsx`, Android's `SlopeProfile` in core-planning and `SlopeProfileTile`; held to `contracts/fixtures/planning/profile.json`).
 Under the slope tile, two small graphs of the ground: along the landing doghouse's heading (approach to departure) and across it (left to
@@ -913,12 +920,8 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   from true by the grid convergence (about 1.7° at a zone's edge in north Georgia). Nothing corrects either (owner to decide).
 - Until the server with `byHeading` reaches staging and production, every analysis there has no table: the apps say HEADING REQUIRED at
   15° and "Heading limits not checked (server not updated)".
-- **The web's slope map has no opacity setting** (Android's has, the owner's request of 2026-10-21; §17, *How the slope map and the LZ box are drawn*): the web
-  draws the raster at a fixed 0.55 (`SLOPE_OVERLAY_OPACITY`, `feature/terrain/SlopeLayer.jsx`), Android at what the person sets, 10 to 100% in steps of 5 from the web's
-  55%, kept on the device and never with a plan. To give the web one (web first, owner to decide), make it a per-browser setting (`localStorage`, as `ezpz.mgrsGrid`),
-  not a field of the diagram's `view`: the web's `normalizeView` and Android's `DiagramNormalizer` both keep the view to its three fields, so a fourth would be dropped
-  by whichever saved the diagram next. (The slope map's switch already differs: the web's is the diagram's `view.showHeatmap`, off by default; Android's is a device
-  choice, drawn at launch.)
+- **The slope map's switch differs between the apps**: the web's is the diagram's `view.showHeatmap`, off by default and saved with it; Android's is a device
+  choice, drawn at launch (`SlopeVisibility`). Its opacity is the same on both (§13, *The slope map's opacity*). Which the switch should be is the owner's to say.
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -1456,9 +1459,9 @@ client is built around not losing one:
     plan's *Slope map* switch, while the heat map is drawn, an *Opacity* slider (the design's overlay opacity, docs/native-design Imports), and under that the *LZ box* switch,
     which the design's LzPlan and AT-Home put beside *Slope map*, as the web's sidebar does. Not in the Layers menu: that is the map's, the same over every LZ/PZ (base maps,
     the grid), and the LZ box is the open LZ/PZ's own. Things to keep true:
-    - **The opacity is this device's, not the diagram's**: a whole percentage of the raster's own alpha, 10 to 100 in steps of 5 (`SlopeOpacity.of`), kept in a preference
-      (`MapPreferences`, `slopeOpacity`) and the same for every LZ/PZ, never saved with a plan or synced (the web has no setting: §15). It starts at the web's 0.55
-      (`SLOPE_OVERLAY_OPACITY`); Android drew 0.85 before. It is the raster's alone (the contour lines keep theirs), and the map is told it apart from the scene
+    - **The opacity is this device's, not the diagram's**: a whole percentage of the raster's own alpha, 10 to 100 in steps of 5 (`SlopeOpacity.of`, the web's
+      `slopeOpacityOf`: §13, *The slope map's opacity*), kept in a preference (`MapPreferences`, `slopeOpacity`) and the same for every LZ/PZ, never saved with a plan
+      or synced, as the web keeps it per browser. It starts at the web's 0.55; Android drew 0.85 before. It is the raster's alone (the contour lines keep theirs), and the map is told it apart from the scene
       (`DiagramLayer(slopeOpacity)`), so a slider being dragged sets one property of the raster layer, at once (no transition), and never adds the bitmap or the vector
       scene again. The slider is said as "Slope map opacity" with its value in words (`stateDescription`): read as a share of its range, 55 would be said as 50 percent.
       It stops at every 5 but draws no tick for each (nineteen dots were noise under the number).

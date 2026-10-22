@@ -29,6 +29,7 @@ import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
 import MgrsGridLayer from "../feature/mgrsGrid/MgrsGridLayer";
 import SlopeLayer from "../feature/terrain/SlopeLayer";
+import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
 import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
 
 // Fix for default Leaflet marker icons in React
@@ -190,6 +191,8 @@ const MapView = ({
   setContextMenu,
   mapStyle,
   showMgrsGrid,
+  // The slope map's opacity, a percentage of its own: this browser's (slopeOpacity.js).
+  slopeOpacity = SLOPE_OPACITY.DEFAULT,
   localPointSets,
   onAddLocalPointToRoute,
   threats,
@@ -364,7 +367,7 @@ const MapView = ({
         />
       )}
 
-      <SlopeLayer terrainData={terrainData} shown={showHeatmap} />
+      <SlopeLayer terrainData={terrainData} shown={showHeatmap} opacity={slopeOpacity / 100} />
 
       {doghouses.map((dh) => (
         <Doghouse

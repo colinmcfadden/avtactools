@@ -27,8 +27,8 @@ object SlopeOpacity {
 }
 
 /**
- * Where the slope map's opacity is kept between launches: on this device, how this person likes the slope map over the imagery. Never saved with an
- * LZ/PZ or synced: the web has no such setting (its raster is drawn at a fixed 0.55), and a field it does not know in a diagram's view is dropped the
+ * Where the slope map's opacity is kept between launches: on this device, how this person likes the slope map over the imagery, as the web keeps it per
+ * browser (`feature/terrain/slopeOpacity.js`). Never saved with an LZ/PZ or synced: a field the web does not know in a diagram's view is dropped the
  * first time the web saves the diagram. A seam: the app keeps it in a preference, a test in memory.
  */
 interface SlopeOpacityMemory {
