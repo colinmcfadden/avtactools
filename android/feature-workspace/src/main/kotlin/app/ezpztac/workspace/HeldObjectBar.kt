@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.designsystem.EzpzIcons
+import app.ezpztac.designsystem.PillButton
+import app.ezpztac.designsystem.PillStyle
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
@@ -70,13 +72,21 @@ data class HeldObjectUi(
     val doghouse: DoghouseUi? = null,
     /** Which graphic of which LZ/PZ it is: what its fields take lands on it alone, and what is typed for one is never shown in another's. */
     val graphic: GraphicOf? = null,
+    /** An open LZ/PZ that is not the one being worked on: its bar offers to open it, or to hide it from the map. */
+    val alsoOpen: AlsoOpenUi? = null,
 )
 
 /**
- * What is held, from what the sheet's own screens already know of it: a planning graphic first, then a threat, then a point of a route, which is the order a tap on the map
- * takes. Null when nothing is held.
+ * An open LZ/PZ that is not the one being worked on, held after a tap on it (drawn faded under that one, the owner's request of 2026-10-21): its [name], its [grid],
+ * and [where] it is open ("Also open", or "In OP DK" for a Mission Pack's).
  */
-fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: RoutesUiState, corner: HeldCornerUi? = null): HeldObjectUi? {
+data class AlsoOpenUi(val id: String, val name: String, val grid: String?, val where: String)
+
+/**
+ * What is held, from what the sheet's own screens already know of it: a planning graphic first, then a threat, then a point of a route, then a corner of the boundary,
+ * then an open LZ/PZ not being worked on ([alsoOpen]), which is the order a tap on the map takes. Null when nothing is held.
+ */
+fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: RoutesUiState, corner: HeldCornerUi? = null, alsoOpen: AlsoOpenUi? = null): HeldObjectUi? {
     graphics.inspector?.let { held ->
         return HeldObjectUi(held.title, held.grid, held.rotation, locked = graphics.locked, doghouse = held.doghouse, graphic = held.of.takeIf { held.doghouse != null })
     }
@@ -91,6 +101,8 @@ fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: Rou
             deleteNote = if (it.canDelete || it.locked != null) null else "A boundary needs at least 3 corners.", locked = it.locked,
         )
     }
+    // The grid breaks only between its halves, never inside one, where the line is too long (a narrow phone, large text).
+    alsoOpen?.let { return HeldObjectUi(it.name, listOfNotNull(it.where, it.grid?.let(::gridBreakingBetweenHalves)).joinToString(" · "), heading = null, alsoOpen = it) }
     return null
 }
 
@@ -110,6 +122,10 @@ class HeldObjectActions(
     val setDoghouseTime: (String) -> String? = { null },
     val setDoghouseDistance: (String) -> String? = { null },
     val setDoghouseAirspeed: (String) -> String? = { null },
+    /** An open LZ/PZ not being worked on is opened, to be worked on ([AlsoOpenUi.id]). */
+    val openOther: (String) -> Unit = {},
+    /** An open LZ/PZ not being worked on is hidden from the map. */
+    val hideOther: (String) -> Unit = {},
 )
 
 /** A heading typed in degrees, as the panel's inspector reads one: a number, or the words for what is wrong. */
@@ -125,6 +141,10 @@ fun HeldObjectBarHost(
     onOptions: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The open LZ/PZ not being worked on that a tap on the map holds, if one is: last in the bar's order. */
+    alsoOpen: AlsoOpenUi? = null,
+    onOpenOther: (String) -> Unit = {},
+    onHideOther: (String) -> Unit = {},
     graphics: GraphicsViewModel = hiltViewModel(),
     threats: ThreatsViewModel = hiltViewModel(),
     routes: RoutesViewModel = hiltViewModel(),
@@ -134,7 +154,7 @@ fun HeldObjectBarHost(
     val t by threats.state.collectAsStateWithLifecycle()
     val r by routes.state.collectAsStateWithLifecycle()
     val b by boundary.state.collectAsStateWithLifecycle()
-    val held = heldObjectOf(g, t, r, b.heldCorner) ?: return
+    val held = heldObjectOf(g, t, r, b.heldCorner, alsoOpen) ?: return
     HeldObjectBar(
         held,
         HeldObjectActions(
@@ -143,6 +163,7 @@ fun HeldObjectBarHost(
             setHeading = { typed -> headingTyped(typed) { graphics.setRotation(it, held.graphic) } },
             setDoghouseLabel = { graphics.setDoghouseLabel(it, held.graphic) }, setDoghouseTime = { graphics.setDoghouseTime(it, held.graphic) },
             setDoghouseDistance = { graphics.setDoghouseDistance(it, held.graphic) }, setDoghouseAirspeed = { graphics.setDoghouseAirspeed(it, held.graphic) },
+            openOther = onOpenOther, hideOther = onHideOther,
         ),
         modifier,
     )
@@ -191,13 +212,29 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
                 SecondaryButton(label, onClick = actions.delete, enabled = held.deleteEnabled)
                 held.deleteNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            // A boundary corner has no options of its own to open in the sheet; a doghouse's are beside Done.
-            if (held.deleteLabel == null && editable == null) SecondaryButton("More options", onClick = actions.options)
+            held.alsoOpen?.let { other -> AlsoOpenActions(other, actions) }
+            // A boundary corner has no options of its own to open in the sheet; a doghouse's are beside Done; an LZ/PZ also open is opened to be worked on.
+            if (held.deleteLabel == null && editable == null && held.alsoOpen == null) SecondaryButton("More options", onClick = actions.options)
             Text(
-                held.locked ?: "Press and hold to move it.",
+                held.locked ?: if (held.alsoOpen != null) "Drawn faded while another LZ/PZ is open." else "Press and hold to move it.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * What can be done to an open LZ/PZ that is not the one being worked on, from its bar: open it (the one being worked on goes faded in its place), or hide it from
+ * the map (the eye on its row in the LZ/PZ panel shows it again). Side by side, each half the bar.
+ */
+@Composable
+private fun AlsoOpenActions(other: AlsoOpenUi, actions: HeldObjectActions) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+        PillButton("Open", onClick = { actions.openOther(other.id) }, icon = EzpzIcons.flightLand, modifier = Modifier.weight(1f).semantics { contentDescription = "Open ${other.name}" })
+        PillButton(
+            "Hide", onClick = { actions.hideOther(other.id) }, icon = EzpzIcons.visibilityOff, style = PillStyle.Tonal,
+            modifier = Modifier.weight(1f).semantics { contentDescription = "Hide ${other.name} on the map" },
+        )
     }
 }
 

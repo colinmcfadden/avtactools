@@ -67,6 +67,14 @@ class BoundaryScreenshotTest {
 
     @Test fun doghouseBar() = shot("held-doghouse") { HeldObjectBar(doghouseHeld, HeldObjectActions()) }
 
+    private val alsoOpenHeld = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(), alsoOpen = AlsoOpenUi("lz-2", "LZ HAWK (ROCK)", "16S GC 31204 58811", "Also open"))!!
+
+    @Test fun alsoOpenBar() = shot("held-also-open") { HeldObjectBar(alsoOpenHeld, HeldObjectActions()) }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-xxhdpi", fontScale = 1.3f)
+    fun alsoOpenBarNarrowLargeText() = shot("held-also-open-narrow-large", ThemeMode.Light) { HeldObjectBar(alsoOpenHeld, HeldObjectActions()) }
+
     @Test
     @Config(qualifiers = "w360dp-h640dp-xxhdpi", fontScale = 1.3f)
     fun doghouseBarNarrowLargeText() = shot("held-doghouse-narrow-large", ThemeMode.Light) { HeldObjectBar(doghouseHeld, HeldObjectActions()) }

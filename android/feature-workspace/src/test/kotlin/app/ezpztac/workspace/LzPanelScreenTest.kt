@@ -121,6 +121,24 @@ class LzPanelScreenTest {
     }
 
     @Test
+    fun `each LZ PZ also open has an eye that hides it from the map and shows it again, and the one worked on has none`() {
+        val toggled = mutableListOf<String>()
+        show { LzHomeContent(homeState(), LzPanelActions(toggleOnMap = { toggled += it }), GRID, hidden = setOf("lz-3")) }
+        compose.onNodeWithContentDescription("Hide LZ HAWK (ROCK) on the map").performClick()
+        compose.onNodeWithContentDescription("Show LZ/PZ 3 on the map").performClick()
+        compose.onNodeWithContentDescription("Hide LZ/PZ 1 on the map").assertDoesNotExist()      // always drawn while it is worked on
+        assertEquals(listOf("lz-2", "lz-3"), toggled)
+        // The row is still opened by a tap on it: the eye is a button of its own.
+        compose.onNodeWithText("LZ HAWK (ROCK)").assertIsDisplayed()
+    }
+
+    @Test
+    fun `without a toggle from the host there are no eyes`() {
+        show { LzHomeContent(homeState(), actions, GRID) }
+        compose.onNodeWithContentDescription("Hide LZ HAWK (ROCK) on the map").assertDoesNotExist()
+    }
+
+    @Test
     fun `one already named says it is saved, and cannot be saved again`() {
         show { LzHomeContent(homeState(activeLz(name = "LZ HAWK (BETA)")), actions, GRID) }
         compose.onNodeWithText("Saved").assertIsNotEnabled()

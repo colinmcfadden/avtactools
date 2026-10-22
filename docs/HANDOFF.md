@@ -17,7 +17,7 @@ stands said on its chip.
 
 ---
 
-## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity and the LZ box (2026-10-21)
+## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity, the LZ box, and every open LZ/PZ on the map (2026-10-21)
 
 Branch `feat/android-quick-edits` (from `develop`). The owner's requests from a phone run (AGENTS.md §17, *Boundary drawing* and *Dragging and turning on the map*):
 - **Finish offers the analysis there and then**: the drawing toolbar gives way to *Analyze LZ/PZ* over the map (then its stage with *Stop*, then *Try again* on a failure, and
@@ -42,8 +42,15 @@ never saved with a plan), then an *LZ box* switch that hides the analysis bounda
 a corner held keeps its corners drawn, a boundary drawn by hand is drawn as ever). Both offered in a read-only pack. Looked at as Roborazzi pictures in dark, night and light,
 and on a 360 dp phone at 1.3 and 2.0. The web has the same slider, in the sidebar under *Slope Map*, remembered per browser (AGENTS.md §13, *The slope map's opacity*).
 
-**Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, TalkBack on the new fields, and the slope raster at each opacity and the
-outline hidden on the real map. A device run on the owner's phone is next.
+**Every open LZ/PZ stays on the map** (the owner's request from the tablet run; AGENTS.md §17, *The open LZ/PZs stay on the map*): a new LZ/PZ no longer takes the last one
+off the map. Every open one but the one being worked on is drawn faded under it (target and name, boundary, aircraft, PZ arrows, sectors, go-arounds; not its slope map,
+doghouses, units or separation lines), the person's own open set in the Library and the pack's LZ/PZs in a pack. Each row of *Also open* (and of a pack's list) has an eye that
+hides it from the map and shows it again (this device's own, never sent); a tap on a faded one holds it, its bar offering *Open* and *Hide*. The web draws the open one alone
+(AGENTS.md §15). Only the open ones' records are read for it (a Room query of their uuids), each again only when it changed, off the main thread. Looked at as Roborazzi
+pictures (the eyes and the bar, at 412 dp and on a 360 dp phone at 1.3).
+
+**Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, TalkBack on the new fields, the slope raster at each opacity and the
+outline hidden on the real map, and the faded LZ/PZs over imagery with twenty open. A device run on the owner's phone is next.
 
 ## 0. The slope tile, contour lines and the slope profile (2026-10-13/14)
 

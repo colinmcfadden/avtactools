@@ -48,6 +48,15 @@ class LzPanelScreenshotTest {
     @Test fun homeNight() = shot("home-night", ThemeMode.Night) { LzHomeContent(homeState(), LzPanelActions(), GRID) }
     @Test fun empty() = shot("empty") { LzHomeContent(DiagramsUiState(), LzPanelActions(), GRID) }
 
+    // The eye on each LZ/PZ also open, one of them hidden from the map (the owner's request of 2026-10-21).
+    @Test fun homeEyes() = shot("home-eyes") { LzHomeContent(homeState(), LzPanelActions(toggleOnMap = {}), GRID, hidden = setOf("lz-3")) }
+
+    @Test fun homeEyesLight() = shot("home-eyes-light", ThemeMode.Light) { LzHomeContent(homeState(), LzPanelActions(toggleOnMap = {}), GRID, hidden = setOf("lz-3")) }
+
+    @Test
+    @Config(qualifiers = "w360dp-h915dp-xxhdpi", fontScale = 1.3f)
+    fun homeEyesNarrowLarge() = shot("home-eyes-narrow-large") { LzHomeContent(homeState(), LzPanelActions(toggleOnMap = {}), GRID, hidden = setOf("lz-3")) }
+
     @Test fun homeWithTools() = shot("home-tools") {
         val current = activeLz()
         LzHomeContent(homeState(current), LzPanelActions(), GRID, tools = {

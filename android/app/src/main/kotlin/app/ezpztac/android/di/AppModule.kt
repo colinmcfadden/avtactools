@@ -16,6 +16,7 @@ import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.MinimumVersionPreferences
+import app.ezpztac.android.HiddenDiagramPreferences
 import app.ezpztac.android.OpenDiagramPreferences
 import app.ezpztac.android.OpenRouteSetPreferences
 import app.ezpztac.android.PointSetViewPreferences
@@ -43,6 +44,7 @@ import app.ezpztac.data.ApiClientWeatherApi
 import app.ezpztac.data.EncryptedThreatVault
 import app.ezpztac.data.FileMasterProfileStore
 import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.HiddenDiagramStore
 import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.data.OpenRouteSetStore
 import app.ezpztac.data.PlanningApi
@@ -266,6 +268,9 @@ interface AppBindings {
 
     @Binds
     fun openDiagrams(impl: OpenDiagramPreferences): OpenDiagramStore
+
+    @Binds
+    fun hiddenDiagrams(impl: HiddenDiagramPreferences): HiddenDiagramStore
 
     @Binds
     fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore

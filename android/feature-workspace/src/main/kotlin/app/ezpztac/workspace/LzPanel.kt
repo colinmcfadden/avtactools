@@ -127,6 +127,8 @@ class LzPanelActions(
     val addToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of the open pack's LZ/PZ ([uuid], the editor's id) saved to this person's Library; none: not offered. */
     val saveCopy: ((uuid: String) -> Unit)? = null,
+    /** The eye on an open LZ/PZ's row: hidden from the map, or drawn again ([uuid]); none: no eye. */
+    val toggleOnMap: ((uuid: String) -> Unit)? = null,
 )
 
 /**
@@ -147,6 +149,9 @@ fun LzPanelHost(
     onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of a pack's LZ/PZ open here, saved to the Library: given while a pack is open. */
     onSaveCopy: ((uuid: String) -> Unit)? = null,
+    /** The open LZ/PZs hidden from the map ([LzHomeContent]'s eyes), and the eye's toggle; none: no eyes. */
+    hiddenOnMap: Set<String> = emptySet(),
+    onToggleOnMap: ((uuid: String) -> Unit)? = null,
     viewModel: DiagramsViewModel = hiltViewModel(),
     graphics: GraphicsViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
@@ -165,7 +170,7 @@ fun LzPanelHost(
         selectAircraft = viewModel::selectAircraft, refreshWeather = viewModel::refreshWeather, toggleSlope = viewModel::toggleSlope,
         setSlopeOpacity = viewModel::setSlopeOpacity, showOutline = viewModel::showOutline,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
-        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy,
+        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy, toggleOnMap = onToggleOnMap,
     )
     val graphicsActions = GraphicsActions(
         select = graphics::select, deselect = graphics::deselect, nudge = graphics::nudge, moveToCrosshair = { graphics.moveToCrosshair(crosshair) },
@@ -177,7 +182,7 @@ fun LzPanelHost(
     )
     when (pane.shows(state.page)) {
         LzPage.HOME -> LzHomeContent(
-            state, actions, crosshairGrid, modifier,
+            state, actions, crosshairGrid, modifier, hidden = hiddenOnMap,
             // The open LZ/PZ's tools under its card, unless its plan, which has them, stands beside the list (a tablet's pane); none in a read-only pack.
             tools = state.current?.takeIf { it.locked == null && (pane == LzPane.WHOLE || state.page != LzPage.PLAN) }?.let { current ->
                 { LzToolsSection(current, graphicsState, boundaryState, placing, actions, crosshairGrid) }
@@ -221,7 +226,8 @@ enum class LzPane {
 
 /**
  * The open LZ/PZs (the design's Home): the one on the map as a card with its [tools] under it, the others "Also open", a new one at the crosshair, and the most
- * recent of the rest of the Library. A conflict waiting for a choice is said at the top, because it is easy to miss on the list of everything.
+ * recent of the rest of the Library. A conflict waiting for a choice is said at the top, because it is easy to miss on the list of everything. Every open one but
+ * the one being worked on is drawn faded on the map, unless it is [hidden]: the eye at the end of its row says which, and changes it.
  */
 @Composable
 fun LzHomeContent(
@@ -229,6 +235,8 @@ fun LzHomeContent(
     actions: LzPanelActions,
     crosshairGrid: String?,
     modifier: Modifier = Modifier,
+    /** The open LZ/PZs hidden from the map, by id: this device's own. */
+    hidden: Set<String> = emptySet(),
     /** The open LZ/PZ's tools, drawn under its card (the host's [LzToolsSection]); none: not drawn. */
     tools: (@Composable () -> Unit)? = null,
 ) {
@@ -266,7 +274,7 @@ fun LzHomeContent(
                                     row.presence?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                                 }
                             },
-                        )
+                        ) { RowEye(row, row.uuid in hidden, actions) }
                     }
                 }
                 current?.inPack == null -> Text(
@@ -281,7 +289,7 @@ fun LzHomeContent(
                 ListRow(
                     EzpzIcons.flightLand, row.name, emphasis = true, onClick = { actions.open(row.uuid) }, onClickLabel = "Open",
                     supporting = { RowState(row.grid, row.chips.lastOrNull()) },
-                )
+                ) { RowEye(row, row.uuid in hidden, actions) }
             }
         }
         // Nothing new goes into a read-only pack, so it is not offered (the web's foot says why).
@@ -320,6 +328,22 @@ fun LzHomeContent(
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Tokens.Spacing.sm.dp),
+        )
+    }
+}
+
+/**
+ * The eye at the end of an open LZ/PZ's row (the owner's request of 2026-10-21): the LZ/PZ is drawn faded on the map while another is worked on, or [hidden] from
+ * it. The one being worked on has none: it is always drawn. Nothing when the host gives no toggle.
+ */
+@Composable
+private fun RowEye(row: DiagramRow, hidden: Boolean, actions: LzPanelActions) {
+    val toggle = actions.toggleOnMap ?: return
+    IconButton(onClick = { toggle(row.uuid) }, modifier = Modifier.size(48.dp)) {
+        Icon(
+            painterResource(if (hidden) EzpzIcons.visibilityOff else EzpzIcons.visibility),
+            contentDescription = (if (hidden) "Show " else "Hide ") + row.name + " on the map",
+            tint = if (hidden) MaterialTheme.colorScheme.onSurfaceVariant else EzpzTheme.status.accent,
         )
     }
 }

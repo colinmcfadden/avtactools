@@ -80,6 +80,7 @@ import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
 import app.ezpztac.map.DiagramLayer
+import app.ezpztac.map.OtherLzLayer
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.ContourLabelsLayer
@@ -203,6 +204,10 @@ fun MapHome(
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
+    // The open LZ/PZs not being worked on, drawn faded; those hidden with the eye on their rows; and the one a tap holds.
+    val others by home.others.collectAsStateWithLifecycle()
+    val hiddenOnMap by home.hiddenOnMap.collectAsStateWithLifecycle()
+    val heldOther by home.heldOther.collectAsStateWithLifecycle()
     val threatScene by home.threatScene.collectAsStateWithLifecycle()
     val threatCounts by home.counts.collectAsStateWithLifecycle()
     val night by display.night.collectAsStateWithLifecycle()
@@ -507,7 +512,7 @@ fun MapHome(
                         Panel.Lz -> LzPanelHost(
                             crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
                             onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
-                            onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
+                            onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy, hiddenOnMap = hiddenOnMap, onToggleOnMap = home::toggleOnMap,
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
@@ -588,6 +593,14 @@ fun MapHome(
                                     },
                                     onDone = home::releaseHeld,
                                     modifier = Modifier.widthIn(max = HELD_BAR_MAX_WIDTH).fillMaxWidth(),
+                                    alsoOpen = heldOther,
+                                    // Opened from the map: the LZ/PZ panel shows it, as opening it from its row does.
+                                    onOpenOther = { id ->
+                                        home.releaseHeld()
+                                        diagrams.open(id)
+                                        frameState.choose(Panel.Lz)
+                                    },
+                                    onHideOther = home::hideOther,
                                 )
                             }
                         }
@@ -624,6 +637,7 @@ fun MapHome(
                         },
                     )
                     MgrsGridLayer(host, state.grid, chrome = chrome)        // its lines under everything planned, its labels under every other label
+                    OtherLzLayer(host, others)                      // the open LZ/PZs not being worked on, faded, under the one that is
                     DiagramLayer(host, scene, slopeOpacity / 100f)  // under the routes and the GPS dot, which stays on top
                     PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's
                     RouteLayer(host, routeScene)
@@ -631,7 +645,7 @@ fun MapHome(
                     GpsLayer(host, state.gps)
                     ContourLabelsLayer(host, scene.slope)          // the slope map's heights, under every other label
                     GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
-                    PinLabelsLayer(host, routeScene, pointScene)
+                    PinLabelsLayer(host, routeScene, pointScene, others = others)
                     ThreatLabelsLayer(host, threatScene)
                     PackPointers(host, home)
                     // At night the imagery is dimmed with the rest of the screen (docs/NATIVE_APPS_PLAN.md, "Night mode"); a tap goes through to the map.

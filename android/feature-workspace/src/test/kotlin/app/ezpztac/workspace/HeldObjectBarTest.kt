@@ -60,6 +60,25 @@ class HeldObjectBarTest {
     )
 
     @Test
+    fun `an LZ PZ also open, held from the map, is opened or hidden from its bar, and comes after everything else held`() {
+        val other = AlsoOpenUi("lz-2", "LZ HAWK", "16S GD 66993 52949", "Also open")
+        val held = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(), alsoOpen = other)!!
+        assertEquals("LZ HAWK", held.title)
+        assertEquals("Also open · 16S\u00A0GD 66993\u00A052949", held.subtitle)                     // a grid breaks only between its halves
+        assertEquals("a graphic held first", "Helicopter 1", heldObjectOf(GraphicsUiState(inspector = inspector), ThreatsUiState(), RoutesUiState(), alsoOpen = other)!!.title)
+        val asked = mutableListOf<String>()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { HeldObjectBar(held, HeldObjectActions(openOther = { asked += "open $it" }, hideOther = { asked += "hide $it" })) }
+        }
+        compose.onNodeWithContentDescription("Open LZ HAWK").performClick()
+        compose.onNodeWithContentDescription("Hide LZ HAWK on the map").performClick()
+        assertEquals(listOf("open lz-2", "hide lz-2"), asked)
+        assertTrue(present("Drawn faded while another LZ/PZ is open."))
+        assertFalse("nothing to move it with: it is not the one worked on", present("Press and hold to move it."))
+        compose.onNodeWithText("More options").assertDoesNotExist()
+    }
+
+    @Test
     fun `something held of a finished pack can be looked at, not turned, moved or deleted, and the bar says why`() {
         val reason = "OP DK is finished: nothing in it can be changed."
         val graphic = heldObjectOf(GraphicsUiState(locked = reason, inspector = inspector), ThreatsUiState(), RoutesUiState())!!

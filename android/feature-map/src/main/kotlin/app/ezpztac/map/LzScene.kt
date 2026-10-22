@@ -127,13 +127,10 @@ data class LzScene(
                 add(feature("ga", point(ga.at), "icon" to JsonPrimitive(if (ga.direction == "right") "ga-right" else "ga-left"), "rotation" to JsonPrimitive(ga.rotationDeg)))
             }
             graphics.aircraft.forEach { a ->
-                // The rotor is what is to scale, and the picture is wider than it (the tail, and room round the mast): this many metres across on the ground.
-                val pictureM = a.diameterM * AircraftIcons.frame(a.iconKey).widthPerRotorDiameter
-                val k0 = pictureM / (METERS_PER_POINT_AT_ZOOM_0 * cos(Math.toRadians(a.at.lat))) / AIRCRAFT_ICON_PT
                 add(
                     feature(
                         "heli", point(a.at),
-                        "icon" to JsonPrimitive(aircraftImage(a.iconKey, a.violating)), "rotation" to JsonPrimitive(a.rotationDeg), "k0" to JsonPrimitive(k0),
+                        "icon" to JsonPrimitive(aircraftImage(a.iconKey, a.violating)), "rotation" to JsonPrimitive(a.rotationDeg), "k0" to JsonPrimitive(aircraftK0(a)),
                         "selected" to JsonPrimitive(a.selected),
                     ),
                 )
@@ -182,6 +179,15 @@ data class LzScene(
 
         /** The name an aircraft's picture is added to the style under, per silhouette and state. */
         fun aircraftImage(iconKey: String, violating: Boolean): String = "ac-$iconKey-${if (violating) "violation" else "normal"}"
+
+        /**
+         * How large [a]'s picture is drawn at zoom 0, as a share of its [AIRCRAFT_ICON_PT] points: the rotor is what is to scale, and the picture is wider than it
+         * (the tail, and room round the mast), this many metres across on the ground.
+         */
+        internal fun aircraftK0(a: SceneAircraft): Double {
+            val pictureM = a.diameterM * AircraftIcons.frame(a.iconKey).widthPerRotorDiameter
+            return pictureM / (METERS_PER_POINT_AT_ZOOM_0 * cos(Math.toRadians(a.at.lat))) / AIRCRAFT_ICON_PT
+        }
 
         /**
          * The scene of [diagram] (nothing for none), with [slope] if it has been measured. [profiles] and [active] say what each placed

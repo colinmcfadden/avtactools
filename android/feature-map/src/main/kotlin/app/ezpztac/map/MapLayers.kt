@@ -26,6 +26,18 @@ fun DiagramLayer(host: MapHost, scene: LzScene, slopeOpacity: Float) {
     LaunchedEffect(overlay, scene) { overlay.show(scene) }
 }
 
+/**
+ * Draws the open LZ/PZs not being worked on, faded ([OtherLzOverlay]). Composed before [DiagramLayer], so its layers are put under the open one's; an empty scene
+ * takes them off.
+ */
+@Composable
+fun OtherLzLayer(host: MapHost, scene: OtherLzScene) {
+    val assets = LocalContext.current.assets
+    val screenDensity = LocalDensity.current.density
+    val overlay = remember(host) { OtherLzOverlay(assets, screenDensity).also { host.onStyle(it::install) } }
+    LaunchedEffect(overlay, scene) { overlay.show(scene) }
+}
+
 /** Draws the open set of routes on [host]'s map: each route's line and named points, and a route being drawn. An empty scene takes them off. */
 @Composable
 fun RouteLayer(host: MapHost, scene: RouteScene) {
