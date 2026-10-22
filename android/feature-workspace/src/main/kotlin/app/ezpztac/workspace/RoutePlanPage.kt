@@ -576,15 +576,19 @@ private fun CrosshairLine(grid: String?) {
     }
 }
 
-/** A named point's symbol, as the map draws it: a target a triangle, an IP a square, a turn a dot; in the route's colour. */
+/**
+ * A point's symbol, as the map draws it (`PinShape`): a target a triangle, an IP point (the SP, the RP) a square, a turn point a circle, in the route's colour; a
+ * [shaping] point a small dot.
+ */
 @Composable
-private fun PointGlyph(ptType: String?, color: Color) {
+internal fun PointGlyph(ptType: String?, color: Color, shaping: Boolean = false) {
     Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(14.dp)) {
             val u = size.width / 14f
-            when (ptType) {
-                "target" -> drawPath(Path().apply { moveTo(7f * u, 1.5f * u); lineTo(13f * u, 12f * u); lineTo(1f * u, 12f * u); close() }, color)
-                "ip" -> drawRect(color, topLeft = Offset(2f * u, 2f * u), size = androidx.compose.ui.geometry.Size(10f * u, 10f * u))
+            when {
+                shaping -> drawCircle(color, radius = 2.5f * u)
+                ptType == "target" -> drawPath(Path().apply { moveTo(7f * u, 1.5f * u); lineTo(13f * u, 12f * u); lineTo(1f * u, 12f * u); close() }, color)
+                ptType == "ip" -> drawRect(color, topLeft = Offset(2f * u, 2f * u), size = androidx.compose.ui.geometry.Size(10f * u, 10f * u))
                 else -> drawCircle(color, radius = 5f * u)
             }
         }

@@ -1,6 +1,8 @@
 package app.ezpztac.workspace
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -9,16 +11,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,12 +35,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -49,6 +58,7 @@ import app.ezpztac.designsystem.PillStyle
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
+import app.ezpztac.model.RoutePoint
 
 /**
  * What is held on the map, for the bar over it: a tap or a long press holds a graphic, a threat or a point of a route, and this is what is then within reach of a thumb without
@@ -74,7 +84,28 @@ data class HeldObjectUi(
     val graphic: GraphicOf? = null,
     /** An open LZ/PZ that is not the one being worked on: its bar offers to open it, or to hide it from the map. */
     val alsoOpen: AlsoOpenUi? = null,
+    /** A point of a route: what it is, and whether it can be made something else from the bar. */
+    val pointType: PointTypeUi? = null,
 )
+
+/**
+ * A held point of a route as its bar's type control and dialog show it (the owner's request of 2026-10-21): which point of which route, its [name], what it is
+ * ([role]; none for an IP point named neither SP nor RP), its AMPS type and its route's colour for its symbol, and why it cannot be changed, if it cannot: [fixed],
+ * a mission's (its points' types are its file's), and [shapingOff], one of the route's last two named points, which a leg needs, cannot only bend the line.
+ */
+data class PointTypeUi(
+    val routeId: String,
+    val pointId: String,
+    val name: String,
+    val role: PointRole?,
+    val ptType: String?,
+    val color: String,
+    val fixed: String? = null,
+    val shapingOff: String? = null,
+) {
+    /** What it is, in a word: an IP point named neither SP nor RP is said as one. */
+    val word: String get() = role?.label ?: "IP point"
+}
 
 /**
  * An open LZ/PZ that is not the one being worked on, held after a tap on it (drawn faded under that one, the owner's request of 2026-10-21): its [name], its [grid],
@@ -93,8 +124,18 @@ fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: Rou
     threats.held?.let { return HeldObjectUi(it.name.ifBlank { "Threat" }, it.grid, heading = null) }
     val detail = routes.detail
     val routeLocked = routes.open?.inPack?.reason
-    detail?.points?.firstOrNull { it.held }?.let { return HeldObjectUi(it.name.ifBlank { "Route point" }, "${detail.name} · ${it.grid}", heading = null, locked = routeLocked) }
-    detail?.heldShaping?.let { return HeldObjectUi("Shaping point", "${detail.name} · ${it.grid}", heading = null, locked = routeLocked) }
+    val fixed = RoutesViewModel.MISSION_POINT_TYPES_ARE_THE_FILES.takeIf { detail?.isMission == true }
+    detail?.points?.firstOrNull { it.held }?.let {
+        val type = PointTypeUi(
+            detail.routeId, it.id, it.name, PointRoles.roleOf(RoutePoint.KIND_AMPS, it.ptType, it.name), it.ptType, detail.color, fixed,
+            shapingOff = RoutesViewModel.TWO_NAMED_POINTS.takeIf { detail.points.size <= 2 },
+        )
+        return HeldObjectUi(it.name.ifBlank { "Route point" }, "${detail.name} · ${it.grid}", heading = null, locked = routeLocked, pointType = type)
+    }
+    detail?.heldShaping?.let {
+        val type = PointTypeUi(detail.routeId, it.id, "", PointRole.SHAPING, null, detail.color, fixed)
+        return HeldObjectUi("Shaping point", "${detail.name} · ${it.grid}", heading = null, locked = routeLocked, pointType = type)
+    }
     corner?.let {
         return HeldObjectUi(
             it.title, it.grid, heading = null, deleteLabel = "Delete corner", deleteEnabled = it.canDelete && it.locked == null,
@@ -126,6 +167,8 @@ class HeldObjectActions(
     val openOther: (String) -> Unit = {},
     /** An open LZ/PZ not being worked on is hidden from the map. */
     val hideOther: (String) -> Unit = {},
+    /** A point of a route is made what a role says ([PointTypeUi]): null once it is, else the words for why not. */
+    val setPointRole: (routeId: String, pointId: String, role: PointRole) -> String? = { _, _, _ -> null },
 )
 
 /** A heading typed in degrees, as the panel's inspector reads one: a number, or the words for what is wrong. */
@@ -163,7 +206,7 @@ fun HeldObjectBarHost(
             setHeading = { typed -> headingTyped(typed) { graphics.setRotation(it, held.graphic) } },
             setDoghouseLabel = { graphics.setDoghouseLabel(it, held.graphic) }, setDoghouseTime = { graphics.setDoghouseTime(it, held.graphic) },
             setDoghouseDistance = { graphics.setDoghouseDistance(it, held.graphic) }, setDoghouseAirspeed = { graphics.setDoghouseAirspeed(it, held.graphic) },
-            openOther = onOpenOther, hideOther = onHideOther,
+            openOther = onOpenOther, hideOther = onHideOther, setPointRole = routes::setPointRole,
         ),
         modifier,
     )
@@ -177,6 +220,11 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
     ) {
         // A doghouse's fields are typed into here, its heading among them; in a read-only pack they are said.
         val editable = held.doghouse?.takeIf { held.locked == null }
+        // The type dialog of the point held: it goes with the point, and when its type can no longer be changed (a pack finished meanwhile).
+        val typeOf = held.pointType?.let { it.routeId to it.pointId }
+        var choosingType by remember(typeOf) { mutableStateOf(false) }
+        val typeChangeable = held.pointType != null && held.locked == null && held.pointType.fixed == null
+        LaunchedEffect(typeChangeable) { if (!typeChangeable) choosingType = false }
         // Never taller than most of the window: what does not fit scrolls (a doghouse's bar at large text, over a sheet at half).
         val tallest = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.height.toDp() } * 0.6f
         Column(
@@ -213,6 +261,13 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
                 held.deleteNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             held.alsoOpen?.let { other -> AlsoOpenActions(other, actions) }
+            held.pointType?.let { type ->
+                PointTypeControl(type, enabled = typeChangeable) { choosingType = true }
+                type.fixed?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                if (choosingType && typeChangeable) {
+                    PointTypeDialog(type, onChoose = { role -> actions.setPointRole(type.routeId, type.pointId, role) }, onDismiss = { choosingType = false })
+                }
+            }
             // A boundary corner has no options of its own to open in the sheet; a doghouse's are beside Done; an LZ/PZ also open is opened to be worked on.
             if (held.deleteLabel == null && editable == null && held.alsoOpen == null) SecondaryButton("More options", onClick = actions.options)
             Text(
@@ -221,6 +276,100 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
             )
         }
     }
+}
+
+/**
+ * The held point's type, and the way to change it from the bar (the owner's request of 2026-10-21: no trip into the route's plan for it): its symbol and word, which
+ * open [PointTypeDialog]. Off in a mission, whose points' types are its file's (the bar says so under it), and in a read-only pack (the bar says why at its foot).
+ */
+@Composable
+private fun PointTypeControl(type: PointTypeUi, enabled: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick, enabled = enabled, shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surface,
+        // What cannot be changed is still said, quieter: no arrow, a fainter edge.
+        border = BorderStroke(1.dp, if (enabled) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics { contentDescription = "Point type: ${type.word}" },
+    ) {
+        Row(
+            Modifier.padding(start = Tokens.Spacing.sm.dp, end = Tokens.Spacing.md.dp, top = Tokens.Spacing.xs.dp, bottom = Tokens.Spacing.xs.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+        ) {
+            PointGlyph(type.ptType, routeColor(type.color), shaping = type.role == PointRole.SHAPING)
+            Column(Modifier.weight(1f)) {
+                Text("Point type", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(type.word, style = MaterialTheme.typography.titleSmall, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (enabled) Icon(painterResource(EzpzIcons.arrowDropDown), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/**
+ * The point's type, chosen in a small dialog (the owner's request of 2026-10-21): a checkpoint, the SP, the RP, the target, or a shaping point, each with its symbol and
+ * what it does to the point's name. A choice is made as it is tapped; one refused (the pack turned read-only meanwhile) is said in the dialog.
+ */
+@Composable
+internal fun PointTypeDialog(type: PointTypeUi, onChoose: (PointRole) -> String?, onDismiss: () -> Unit) {
+    var refusal by remember(type.routeId, type.pointId) { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Point type") },
+        text = {
+            PointTypeContent(type, refusal) { role ->
+                val said = onChoose(role)
+                if (said == null) onDismiss() else refusal = said
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    )
+}
+
+/**
+ * The dialog's choices (apart from its window, so a test and a picture can have them): the one it is now marked, a shaping point off with the reason where it cannot
+ * be one, and under each what it does to the point's name ([PointRoles.nameFor]).
+ */
+@Composable
+internal fun PointTypeContent(type: PointTypeUi, refusal: String?, onChoose: (PointRole) -> Unit) {
+    val color = routeColor(type.color)
+    Column(Modifier.verticalScroll(rememberScrollState()).selectableGroup(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+        // Which point it is: its name, else what it is; an IP point named neither SP nor RP, which no choice marks, says so.
+        Text(
+            listOfNotNull(type.name.ifBlank { if (type.role == PointRole.SHAPING) "Shaping point" else "Unnamed point" }, "an IP point".takeIf { type.role == null })
+                .joinToString(" · "),
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        PointRole.entries.forEach { role ->
+            val off = type.shapingOff.takeIf { role == PointRole.SHAPING && type.role != PointRole.SHAPING }
+            val selected = role == type.role
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    .selectable(selected = selected, enabled = off == null, role = Role.RadioButton) { onChoose(role) },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+            ) {
+                RadioButton(selected = selected, onClick = null, enabled = off == null)
+                Box(Modifier.alpha(if (off == null) 1f else 0.38f)) { PointGlyph(role.ptType, color, shaping = role == PointRole.SHAPING) }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        role.label, style = MaterialTheme.typography.bodyLarge,
+                        color = if (off == null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    )
+                    Text(off ?: givesName(role, type, selected), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        refusal?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        }
+    }
+}
+
+/** What a choice is, and what it does to the point's name: `Release point · named .RP`, `Target: the LZ or PZ · keeps its name`; for the one it is now, what it is alone. */
+private fun givesName(role: PointRole, type: PointTypeUi, selected: Boolean): String {
+    if (selected) return role.meaning
+    if (role == PointRole.SHAPING) return "${role.meaning}, and has no name"
+    val name = PointRoles.nameFor(role, type.name)
+    return if (name == type.name) "${role.meaning} · keeps its name" else "${role.meaning} · named $name"
 }
 
 /**

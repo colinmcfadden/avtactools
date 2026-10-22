@@ -54,8 +54,15 @@ AMPS type*): as the web draws them, an IP point (the SP and the RP) a square, a 
 Bitmaps in the route's colour sized in points (`RoutePinImages`), drawn for real in `RoutePinImagesTest` (its contact sheet looked at over grass, the topographic map and
 the chart).
 
+**A route point's type from its bar** (the owner's request; AGENTS.md §17, *A route point's type is in its bar*): a held point's bar shows what it is, and a tap opens a small
+dialog of *Checkpoint*, *SP*, *RP*, *TGT* and *Shaping point*, made as it is tapped, by the route's plan's rules (`SketchOps.designate`, one undo step). The SP and the RP take
+their names (`.SP`, `.RP`: AMPS calls both IP points); a checkpoint or the target keeps a name of the person's own. Refused in words: a mission's points (the file's), one of the
+last two named points as a shaping point, a read-only pack. The web's menu offers "RP / IP" once and asks for a name (AGENTS.md §15). Looked at as Roborazzi pictures (the bar,
+a mission's bar, the dialog in dark, night and light, and on a 360 dp phone at 1.3).
+
 **Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, TalkBack on the new fields, the slope raster at each opacity and the
-outline hidden on the real map, the faded LZ/PZs over imagery with twenty open, and the point shapes on the GL map. A device run on the owner's phone is next.
+outline hidden on the real map, the faded LZ/PZs over imagery with twenty open, the point shapes on the GL map, and the type dialog under a glove. A device run on the owner's
+phone is next.
 
 ## 0. The slope tile, contour lines and the slope profile (2026-10-13/14)
 

@@ -4,6 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -58,6 +61,92 @@ class HeldObjectBarTest {
         id = "p1", name = name, ptType = "target", first = false, values = app.ezpztac.planning.PointDraft.of(app.ezpztac.model.RoutePlan(), "p1"), clock = "--:--:--", hasClock = false,
         facts = "", elapsed = "", held = held, grid = "16S GD 66900 52900",
     )
+
+    // -- A point's type, from its bar (the owner's request of 2026-10-21) ---------------------------------------------------------
+
+    private fun named(name: String, ptType: String) = point(held = true, name = name).copy(ptType = ptType)
+
+    @Test
+    fun `a held point of a route says what it is, and its dialog makes it something else`() {
+        val held = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named(".RP", "ip"))))!!
+        val type = held.pointType!!
+        assertEquals(PointRole.RP, type.role)
+        assertEquals("r1" to "p1", type.routeId to type.pointId)
+        val asked = mutableListOf<String>()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { HeldObjectBar(held, HeldObjectActions(setPointRole = { r, p, role -> asked += "$r $p $role"; null })) }
+        }
+        compose.onNodeWithContentDescription("Point type: RP").assertIsEnabled().performClick()
+        compose.onNodeWithText("Start point · named .SP").assertIsDisplayed()
+        compose.onNodeWithText("Checkpoint").performClick()
+        assertEquals(listOf("r1 p1 CHECKPOINT"), asked)
+        compose.onNodeWithText("Cancel").assertDoesNotExist()                                     // done: the dialog is put away
+    }
+
+    @Test
+    fun `a choice refused while the dialog was open is said in it, and it stays`() {
+        val held = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named(".RP", "ip"))))!!
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { HeldObjectBar(held, HeldObjectActions(setPointRole = { _, _, _ -> "OP DK is finished: nothing in it can be changed." })) }
+        }
+        compose.onNodeWithContentDescription("Point type: RP").performClick()
+        compose.onNodeWithText("TGT").performClick()
+        compose.onNodeWithText("OP DK is finished: nothing in it can be changed.").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Cancel").assertDoesNotExist()
+    }
+
+    @Test
+    fun `one of a route's last two named points cannot be made a shaping point, and the dialog says why`() {
+        val type = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named(".TGT", "target"))))!!.pointType!!
+        assertEquals(RoutesViewModel.TWO_NAMED_POINTS, type.shapingOff)
+        val chosen = mutableListOf<PointRole>()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { PointTypeContent(type, refusal = null) { chosen += it } } }
+        compose.onNodeWithText("Shaping point").assertIsNotEnabled()
+        compose.onNodeWithText(RoutesViewModel.TWO_NAMED_POINTS).assertIsDisplayed()
+        compose.onNodeWithText("TGT").assertIsSelected()
+        compose.onNodeWithText("Target: the LZ or PZ").assertIsDisplayed()                          // the one it is: what it is, alone
+        compose.onNodeWithText("RP").performClick()
+        assertEquals(listOf(PointRole.RP), chosen)
+    }
+
+    @Test
+    fun `a mission's point says its type and that the file fixes it, and a read-only pack's cannot be changed either`() {
+        val mission = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(named("HAWK", "turn")).copy(isMission = true)))!!
+        assertEquals(RoutesViewModel.MISSION_POINT_TYPES_ARE_THE_FILES, mission.pointType!!.fixed)
+        show(mission)
+        compose.onNodeWithContentDescription("Point type: Checkpoint").assertIsNotEnabled()
+        assertTrue(present(RoutesViewModel.MISSION_POINT_TYPES_ARE_THE_FILES))
+    }
+
+    @Test
+    fun `a read-only pack's point says its type and cannot be changed`() {
+        val reason = "OP DK is finished: nothing in it can be changed."
+        val locked = heldObjectOf(
+            GraphicsUiState(), ThreatsUiState(),
+            RoutesUiState(
+                open = OpenSetUi(
+                    "pack:p:rt-1", "OP DK", emptyList(), false, false, null, null,
+                    inPack = InPackUi("OP DK", "", null, true, app.ezpztac.data.PackLock("p", "OP DK", reason, "Off in a finished pack", finished = true)),
+                ),
+                detail = route(named(".SP", "ip")),
+            ),
+        )!!
+        assertEquals(reason, locked.locked)
+        show(locked)
+        compose.onNodeWithContentDescription("Point type: SP").assertIsNotEnabled()
+        assertTrue(present(reason))
+    }
+
+    @Test
+    fun `a held shaping point is one, and can be made a named point`() {
+        val held = heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(shaping = ShapingPointUi("s1", held = true, grid = "16S GD 1 2"))))!!
+        val type = held.pointType!!
+        assertEquals(PointRole.SHAPING, type.role)
+        assertNull("a shaping point is not refused being one", type.shapingOff)
+        show(held)
+        compose.onNodeWithContentDescription("Point type: Shaping point").assertIsEnabled()
+    }
 
     @Test
     fun `an LZ PZ also open, held from the map, is opened or hidden from its bar, and comes after everything else held`() {
@@ -138,14 +227,19 @@ class HeldObjectBarTest {
     @Test
     fun `a held point of a route says which route it is on`() {
         val state = RoutesUiState(detail = route(point = point(held = true)))
-        assertEquals(HeldObjectUi(".LZ", "ROUTE 1 · 16S GD 66900 52900", null), heldObjectOf(GraphicsUiState(), ThreatsUiState(), state))
+        val held = heldObjectOf(GraphicsUiState(), ThreatsUiState(), state)!!
+        assertEquals(HeldObjectUi(".LZ", "ROUTE 1 · 16S GD 66900 52900", null), held.copy(pointType = null))
+        assertEquals(PointTypeUi("r1", "p1", ".LZ", PointRole.TARGET, "target", "", shapingOff = RoutesViewModel.TWO_NAMED_POINTS), held.pointType)
         assertNull(heldObjectOf(GraphicsUiState(), ThreatsUiState(), RoutesUiState(detail = route(point = point(held = false)))))      // the route is held, no point of it
     }
 
     @Test
     fun `a held shaping point, and a point with no name`() {
         val shaping = RoutesUiState(detail = route(shaping = ShapingPointUi("s1", held = true, grid = "16S GD 1 2")))
-        assertEquals(HeldObjectUi("Shaping point", "ROUTE 1 · 16S GD 1 2", null), heldObjectOf(GraphicsUiState(), ThreatsUiState(), shaping))
+        assertEquals(
+            HeldObjectUi("Shaping point", "ROUTE 1 · 16S GD 1 2", null, pointType = PointTypeUi("r1", "s1", "", PointRole.SHAPING, null, "")),
+            heldObjectOf(GraphicsUiState(), ThreatsUiState(), shaping),
+        )
         val unnamed = RoutesUiState(detail = route(point = point(held = true, name = "")))
         assertEquals("Route point", heldObjectOf(GraphicsUiState(), ThreatsUiState(), unnamed)!!.title)
     }

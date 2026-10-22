@@ -926,6 +926,14 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   eye on each row of the LZ/PZ panel to hide one from the map, and a tap on one holds it with *Open* and *Hide* (the owner's request of 2026-10-21; §17, *The open
   LZ/PZs stay on the map*). To give the web the same (web first, owner to decide): draw the workspace's other diagrams faded under the active one, and keep which are
   hidden per browser (`localStorage`, as `ezpz.mgrsGrid`), never in a diagram's `view`, which every client saves with the plan.
+- **The web's point menu offers the IP type once and keeps the point's name** (`App.js`, "Designate point as:": Checkpoint, "RP / IP", "LZ / PZ (Target)", Shaping point; then
+  "Name the point", filled with the point's own name, else `.CP`, `.RP` or `.LZ`). Android's bar offers the SP and the RP apart, both AMPS IP points, and gives an SP or an RP
+  its name, a target `.TGT` in place of a name that only said what the point was, with nothing to type (the owner's request of 2026-10-21; §17, *A route point's type is in its
+  bar*). Web first, owner to decide: the same five choices and names on the web, or a name asked for on Android as the web asks for it.
+- **A point's type changed on two devices at once can mix in a Mission Pack**: a point's `kind`, `ptType` and `name` go as fields of their own (`PackDiff`), so making the
+  SP the RP (its name alone) as someone else makes it the target leaves a target named `.RP`, and a point made a shaping point can keep the name another device gave it.
+  Each field is valid and the later stands; the route's plan has always sent them so, the bar's dialog only makes it quicker. Keeping them whole (`RoutePackKind.keepWhole`)
+  would also send a rename's type, so a rename could undo someone else's type change: the owner's call, web first.
 - The Mapbox token is hardcoded in three places.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
@@ -1742,6 +1750,17 @@ client is built around not losing one:
     gives way: a doghouse's bar over a sheet at half would otherwise reach above the screen, its *Done* with it. Local points are imported data and
     are not dragged. Tried on an emulator against a real mission: a long press and a drag moved a route point (its grid changed, the map did not pan) and the move reached the file on the server. A
     boundary's corners are still not draggable.
+  - **A route point's type is in its bar** (the owner's request of 2026-10-21; `feature-workspace`: `PointRole`, `PointRoles`, `PointTypeUi`, `PointTypeDialog`,
+    `RoutesViewModel.setPointRole`): a held point's bar says what it is (its symbol and *Checkpoint*, *SP*, *RP*, *TGT* or *Shaping point*; an IP point named neither SP
+    nor RP says *IP point*), and a tap opens a small dialog of the five, each with its symbol and what it does to the point's name, made as it is tapped. Things to keep true:
+    - **The route's plan's rules, and no others**: `SketchOps.designate`, held to `routes/sketch.json`, in one undo step; what it is already changes nothing. The SP and the
+      RP are both AMPS IP points, told apart by nothing but their names, so they take theirs (`.SP`, `.RP`); a checkpoint or the target keeps a name of the person's own (a
+      place's, a local point's) and takes its own (`.CP`, `.TGT`) in place of none, or of a name that only said what the point was (`.SP`, `.LZ`, `.CP3`...; a checkpoint
+      keeps a checkpoint's). **Not like the web**, whose right-click menu offers the IP type once and asks for the name (§15).
+    - **Refused in words, where the person is**: a mission's points keep the types their file gives them (the control is off, the reason under it); one of a route's last
+      two named points cannot only bend the line (that choice is off, the reason in its place); a read-only pack's cannot be changed (the control is off, the bar's foot says
+      why), and a choice made as the pack is finished is refused in the dialog, which stays. The dialog goes with the point held, and when its type can no longer be changed.
+    - **Not verifiable here:** the dialog on a device and under a glove, and TalkBack reading its choices.
 - **Mission packs in the editors** (`core-data`: `PackItemStore`, `PackEditorSync`, `PackWorkspace`, `DocumentSession.document`/`owe`/`closeIfOpen`; docs/MISSION_PACKS.md §5a and
   `docs/ANDROID_MISSION_PACKS_PLAN.md`, *Joining the editors to a pack*). A pack's LZ/PZ opens in the one `DiagramSession` and its route set in the one `RouteSession`, under `pack:<pack>:<item>`
   (`PackRef`), so every editor (graphics, drag, boundary, sketching, analysis, route planning) works on it unchanged; the decisions are `PackItemSync`'s, the web's `usePackItemSync`. Things worth keeping true:
