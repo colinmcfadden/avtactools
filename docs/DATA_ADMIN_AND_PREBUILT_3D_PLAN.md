@@ -1,7 +1,9 @@
 # Plan: 3D in seconds, data on the server, prebuilt areas and organizations
 
 Status: proposed 2026-10-22, and reworked the same day around streaming 3D from USGS's own octree (Part C), which
-measured about fifty times faster than building. Waiting on the owner's decisions (§9). Nothing is built yet.
+measured about fifty times faster than building. **Decided 2026-10-23:** the owner answered all 20 decisions on the
+decisions page, with no notes, so none is open (§9). Eighteen follow the recommendation; two do not: D1 (MapLibre GL JS
+for the admin map) and D13 (several AOs per organization). Nothing is built yet; Phase 0 is next.
 
 The request, in the owner's words: an admin page with a CONUS map showing where the server holds terrain and LiDAR
 itself (not what comes from outside services); drag-and-drop uploads into the server's volumes; areas chosen on the
@@ -100,12 +102,17 @@ only for the map and writable for uploads (Part B). The alternative is to ask th
 keeps the mounts as they are but puts a new endpoint on the builder for every layer. Mounting is simpler, and the paths
 in `tile_index.json` are absolute, so **both containers must mount it at the same path** (D2).
 
-**The library (D1).** A map in the admin needs a map library, which is a new dependency for the backend. Proposed:
-- **Leaflet 1.9.4**, the version the web app already ships (BSD-2), copied into `backend/static/vendor/leaflet/`
-  (about 150 KB) so the admin needs no CDN.
-- No drawing plugin: the rectangle and polygon tools Part C needs are about 150 lines of plain JavaScript.
-- **Base map: the USGS National Map** (topo and imagery). Public domain, keyless, CONUS-wide. The Mapbox token is
-  URL-restricted and may refuse the admin host.
+**The library (D1, decided: MapLibre GL JS).** A map in the admin needs a map library, a new dependency for the
+backend. The owner chose MapLibre GL JS (BSD-3) over the recommended Leaflet; it is the web counterpart of the MapLibre
+Native the Android app draws with.
+- One exact version, copied with its CSS into `backend/static/vendor/maplibre-gl/` so the admin needs no CDN (about
+  800 KB, loaded only by the admin's Data and Orgs pages). It needs WebGL, which every desktop browser has.
+- No drawing plugin: the rectangle and polygon tools Part C needs are plain JavaScript over a GeoJSON source.
+  (`mapbox-gl-draw` would be a second dependency, so it is not used.)
+- **Base map: the USGS National Map** (topo and imagery) as raster sources. Public domain, keyless, CONUS-wide. The
+  Mapbox token is URL-restricted and may refuse the admin host.
+- The layers are GeoJSON sources drawn on the GPU, so thousands of LiDAR tiles draw easily; the 0.05° cells above
+  are kept only to keep the download small.
 
 **Endpoints.** All are admin session plus CSRF, JSON, `Cache-Control: private, no-store`:
 - `GET /admin/data/coverage.json?layers=…&bbox=…` (the bbox for zoomed-in LiDAR tiles);
@@ -272,8 +279,8 @@ Not measured: the VM's link to AWS, and the tunnel's speed to a viewer. Phase 1 
    - A piece is mostly waiting on AWS, and decoding is Rust and numpy, so a first view costs the interpreter about
      0.3 s of CPU.
    - Pieces asked for while an analysis runs wait, as terrain tiles do (`requestPriority` on the client).
-   - The new dependency is `laspy` (BSD) with `lazrs` (MIT and Apache), the decoder. py3dtiles' extra brings `laspy`
-     to the build image but no decoder, so `lazrs` is new wherever this runs.
+   - The new dependencies are `laspy` (BSD) and `lazrs` (MIT and Apache), the decoder, approved with D21.
+     py3dtiles' extra brings `laspy` to the build image but no decoder, so `lazrs` would have been new wherever this ran.
 7. **The cache.**
    - `LIDAR_STREAM_CACHE_DIR` sits on a persistent, writable mount (e.g. `/data/cache/lidar`).
    - A survey is never republished under the same name, so nothing in it goes stale.
@@ -293,7 +300,7 @@ AWS sees requests from our server only. The browser never talks to AWS for point
 
 **Point colour (D22).** Today's builds colour every point from Mapbox imagery, which is most of what makes them slow,
 and USGS's copy has no colour of its own.
-- **Proposed:** colour every streamed piece at once by **height above ground**, using today's bands: surface, grass,
+- **Decided (D22):** colour every streamed piece at once by **height above ground**, using today's bands: surface, grass,
   brush, canopy, and above 15 m in orange. It is worked out from the piece's own ground points, as builds do
   (`filters.hag_nn`), and it is the obstruction reading the build's own code calls the more direct one for an LZ.
 - **Photographic colour** is added only where an area is warmed (below). One imagery request per piece would about
@@ -338,11 +345,24 @@ about half an hour instead of about 15 hours.
 ### Local LiDAR (D24)
 
 Plain LAZ tiles have no levels of detail, so they cannot stream as they are.
-- **Proposed:** index the downloaded collection once with Entwine (`entwine build`, the tool USGS used; hours, in a
-  Docker image of its own) into a local EPT in `/data/lidar/ept/`. It then streams exactly like AWS, from files instead
-  of URLs.
+- **Decided (D24):** index the downloaded collection once with Entwine (`entwine build`, the tool USGS used; hours, in
+  a Docker image of its own) into a local EPT in `/data/lidar/ept/`. It then streams exactly like AWS, from files
+  instead of URLs.
 - Uploaded LAZ is added to that index after validation (Entwine continues a build with new files).
 - A target the local index covers streams from it first, as builds prefer the collection today; AWS otherwise.
+
+### For the Android 3D branch
+
+The Android 3D view (branch `claude/android-3d-view-e38b76`, not merged) reads tilesets as the web does, so streaming
+reaches it with four things to keep true:
+- **A streamed tileset is a whole survey's octree**, joined as external tilesets every 4 levels. Its `TilesetReader`
+  already reads external tilesets.
+- **URLs keep the shape its loader parses** (`TilesetAddress`): `/lidar/tilesets/<16 hex>/<path>`, with the survey's
+  key and each piece's name opaque.
+- **It must frame on `resolve`'s `frame`** for the opening view and the *LZ* button (`SceneSession`,
+  `CameraPose.framing`), not on the root's sphere, or the view opens on the whole state.
+- **Pieces come with quantized positions** (`POSITION_QUANTIZED`), which its `PntsReader` reads. A paid piece the
+  account may not have answers `403 not_entitled`, and `resolve` never hands out such a URL.
 
 ---
 
@@ -352,24 +372,24 @@ Plain LAZ tiles have no levels of detail, so they cannot stream as they are.
 
 - **Individual accounts** stay as they are: Google or email, and the `.mil` gate or an admin's approval.
 - **An organization is not a login.** It is a group of individual accounts, made by the super-admin, with a plan,
-  seats, members and one AO. Nobody shares an account.
+  seats, members and its AOs (D13: one or more). Nobody shares an account.
 
 **Organizations and Teams (D11): kept apart.**
 - Teams are made by users, for mission packs and finding people.
-- An organization is made by the admin, for entitlements, billing and the AO.
+- An organization is made by the admin, for entitlements, billing and its AOs.
 - Linking them (an org team that follows the org's members) would mean managed teams that members cannot leave or
   change. That changes `team_routes` and the Android Teams screens, which are contracts now.
 - An org's admin can make an ordinary team whenever they want one. Linking can come later if units ask for it.
 
 **One organization per person** (D12). An aviator in two units at once is rare. Leaving one (a PCS) and joining
-another is a change of membership, and the AO rule stays unambiguous.
+another is a change of membership, and whose AOs a person's access comes from stays unambiguous.
 
 ### What is paid, now that 3D is fast for everyone (D23)
 
-Streaming gives everyone 3D in seconds, so speed alone stops being the upgrade. Proposed:
+Streaming gives everyone 3D in seconds, so speed alone stops being the upgrade. Decided (D23):
 - **Free:** streamed 3D anywhere USGS has LiDAR, at full density, coloured by height above ground.
 - **Paid, in warmed areas:** photographic colour, the organization's own or newer LiDAR, and offline 3D in the apps
-  later. For a unit, its AO. For a person, a catalogue of training areas the owner warms (D14).
+  later. For a unit, its AOs. For a person, a catalogue of training areas the owner warms (D14).
 
 Warming also makes the free version of an area instant and independent of AWS, for everyone who views it. That is not
 held back: refusing cached data to free accounts would only make 3D worse for them.
@@ -384,7 +404,7 @@ pay, which sits badly in a safety tool.
 |---|---|
 | `organization` | `id`, `name` (100), `status` (active, suspended), `plan`, `seats`, `plan_started_at`, `plan_ends_at`, `comped`, `billing_ref` (a provider's customer id, null until there is a provider), `notes` (admin only), `created_at`, `updated_at` |
 | `organization_member` | `id`, `org_id` (cascade), `user_id` (cascade, **unique**: one org each), `role` (owner, admin, member), `added_by`, `added_at` |
-| `area_of_operation` | `id`, `org_id` (cascade, **unique**: one AO each), `name`, `geometry` (GeoJSON Polygon or MultiPolygon, WGS84), `bbox`, `area_km2`, `updated_by`, `updated_at` |
+| `area_of_operation` | `id`, `org_id` (cascade; several per org, D13), `name` (each AO named), `geometry` (GeoJSON Polygon or MultiPolygon, WGS84), `bbox`, `area_km2`, `updated_by`, `updated_at` |
 | `warmed_area` | `id`, `name`, `geometry`, `bbox`, `area_km2`, `audience` (admins, catalogue, org), `org_id` (null unless audience is org), `status`, `pieces_total`, `pieces_done`, `colour_done`, `terrain_level`, `terrain_done`, `bytes`, `created_by`, `created_at`, `warmed_at`, `removed_at` |
 | `user_plan` | `user_id` (unique), `plan`, `status`, `ends_at`, `comped`, `provider`, `provider_ref`, `updated_at`: a person's own plan, apart from any org |
 
@@ -393,12 +413,13 @@ pay, which sits badly in a safety tool.
 - an org's last owner cannot be deleted until an admin names another owner, as `pack_support.release_account` does for
   packs. Both deletion paths call it.
 
-### The AO, and where access is enforced (D13)
+### The AOs, and where access is enforced (D13)
 
-An AO is one polygon (or multipolygon), set by the super-admin in the org's page:
+An organization has **one or more AOs** (D13, decided: several, where the recommendation was one). Each is a named
+polygon (or multipolygon), set by the super-admin in the org's page:
 - drawn on the map, or loaded from a GeoJSON file;
-- its size is capped by the plan;
-- org admins can see it but not change it (v1).
+- the plan caps their total area, and so how much is warmed;
+- org admins can see them but not change them (v1).
 
 AO outlines are training areas. A unit's AO for a real operation would be the kind of aggregation the "unclassified
 only" rule forbids, so the org page says so. The outline is shown only to the super-admin and that org's admins, and is
@@ -407,7 +428,7 @@ never logged.
 **Who gets a warmed area's paid version of a piece:**
 - admins: everywhere warmed;
 - a person with a plan that includes it: pieces inside a `catalogue` area;
-- an org member with a plan that includes it: pieces inside their org's AO;
+- an org member with a plan that includes it: pieces inside any of their org's AOs;
 - union of the above.
 
 Everyone else gets the free version of the same piece.
@@ -416,12 +437,12 @@ Enforced in `lidar_access.py`, one module, each case with a test:
 
 | Where | Check |
 |---|---|
-| `POST /api/lidar/resolve` | Returns the tileset of the version the caller may have at that target: paid inside their AO or a catalogue area, free elsewhere. |
+| `POST /api/lidar/resolve` | Returns the tileset of the version the caller may have at that target: paid inside one of their AOs or a catalogue area, free elsewhere. |
 | `GET /api/lidar/tilesets/<key>/<path>` | A paid piece goes only to those who may have it. Others get `403 not_entitled`, which never happens from a URL `resolve` gave them. Free pieces go to any signed-in user. |
-| The org's own LiDAR (D24) | Served only inside its AO, to its members. |
+| The org's own LiDAR (D24) | Served only inside its AOs, to its members. |
 
 **Speed.** Every piece request is checked. So:
-- a person's access (admin, plans, org, the AO prepared for point-in-polygon) is held in memory for 60 s;
+- a person's access (admin, plans, org, the org's AOs prepared for point-in-polygon) is held in memory for 60 s;
 - the warmed areas' index is reloaded when its table changes;
 - the API is one process (§9), so the caches agree;
 - point-in-polygon uses matplotlib's `Path`, already a dependency.
@@ -443,12 +464,10 @@ Plans (names and prices are the owner's; D14, D23):
 |---|---|---|
 | Free | everyone | Everything there is now, and streamed 3D in seconds wherever USGS has LiDAR. |
 | Pro | a person | Photographic colour in the warmed catalogue areas. |
-| Organization | a unit, by seats | Its AO warmed, with photographic colour and its own LiDAR; offline 3D for it later. A size of AO in km² is included. |
+| Organization | a unit, by seats | Its AOs warmed, with photographic colour and its own LiDAR; offline 3D for them later. A total AO area in km² is included. |
 
-During the beta, before anyone pays (D9), the paid version of warmed areas could be:
-- for admins and the testers an admin ticks (as `mission_packs` is now). **Recommended:** nobody loses something they
-  had when plans start;
-- or for everyone, as a preview.
+During the beta, before anyone pays, the paid version of warmed areas is for admins and the testers an admin ticks, as
+`mission_packs` is now (D9, decided), so nobody loses something they had when plans start.
 
 Streaming itself is for everyone from the day it ships.
 
@@ -458,7 +477,7 @@ Any payment provider is a new dependency. Options:
 
 | Option | Fits | Notes |
 |---|---|---|
-| **Manual first** (no provider) | The beta, and units that pay by invoice | The admin sets a plan, its end date and "comped"; payment is arranged outside the app. Nothing to integrate; it tests demand. **Recommended to start.** |
+| **Manual first** (no provider) | The beta, and units that pay by invoice | The admin sets a plan, its end date and "comped"; payment is arranged outside the app. Nothing to integrate; it tests demand. **Decided to start (D15).** |
 | Stripe (Checkout, Customer Portal, webhooks) | Individuals by card; units by Government Purchase Card or by Stripe invoice | `stripe` on the server only. Secret key and webhook secret stay server-side. Sales tax is the owner's to register and file, or Stripe Tax for a fee. |
 | A merchant of record (Paddle, Lemon Squeezy) | A sole developer who does not want to handle sales tax | It is the seller and handles tax. Its fees are higher, and invoicing a government unit is less usual. |
 
@@ -472,12 +491,12 @@ Two things that hold whichever is chosen:
 ### Admin screens
 
 - **Orgs** tab:
-  - the list: name, plan and end date, seats used out of seats, AO in km², its warmed area's state;
+  - the list: name, plan and end date, seats used out of seats, its AOs and their total km², their warmed areas' state;
   - **an org's page:**
     - members: add by email, set the role, remove; a person is in one org at most;
     - plan: plan, seats, dates, comped, the billing reference, notes;
-    - **the AO**: the map, draw or load, area in km², and the estimate of warming it;
-    - its warmed area, with "warm the AO" (Part C's estimate and confirm);
+    - **its AOs**: each named, drawn or loaded on the map, with its area in km² and the estimate of warming it;
+    - their warmed areas, with "warm this AO" on each (Part C's estimate and confirm, D19);
     - a history of every change, with who made it.
 - **User page:** their org and role, their own plan, and where each feature comes from.
 - **Data tab** (Parts A–C): warmed areas show their audience. A catalogue area can be marked `catalogue`.
@@ -492,7 +511,7 @@ owner runs every deploy and every Coolify change.
 | **0. Close the exposure** (small, on its own) | §2.1: tile files only, the list admin-only, HMAC for any new key. AGENTS.md §13 and §15. | Set `LIDAR_KEY_SECRET` (`openssl rand -hex 32`) on the API and the build service, then deploy both. |
 | **1. Streamed 3D** | Part C's streaming: the tileset from USGS's index, pieces converted and cached, opaque names, quantized positions, height colour, the `frame` hint in the web's viewer. Builds stop for new views. Tests hold the conversion to PROJ with grids, the geoid guard, the class rules by survey year and the names. | Set `LIDAR_STREAM_CACHE_DIR` on a persistent, writable mount, then deploy. Open 3D somewhere new and time it; the page logs its first picture's time. |
 | **2. Terrain cache per tile** | §2.2 (the key per tile, a sweep for orphans), `warm_area`. | None. The first start after it rewarms levels 0–9 once (about 1 minute). |
-| **3. The coverage map** (read only) | §2.3 (the index written by rename, the scan in subfolders), §2.5, Leaflet vendored, `/admin/data` with its layers and numbers, `DATA_ADMIN`. | Mount `/data/lidar` (read only for now) into the API at the same path. Set `LIDAR_COLLECTION=/data/lidar` and `DATA_ADMIN=read` on the API. |
+| **3. The coverage map** (read only) | §2.3 (the index written by rename, the scan in subfolders), §2.5, MapLibre GL JS vendored, `/admin/data` with its layers and numbers, `DATA_ADMIN`. | Mount `/data/lidar` (read only for now) into the API at the same path. Set `LIDAR_COLLECTION=/data/lidar` and `DATA_ADMIN=read` on the API. |
 | **4. Uploads** | Part B: chunked uploads, validation, the move into place, refreshes, the sweep. Fetching DEMs from USGS (D4). | Mount `/data/topo` and `/data/lidar` writable into the production API. Set `DATA_ADMIN=write` there only. Upload one file over 100 MB to confirm the tunnel takes 64 MB chunks. |
 | **5. Warmed areas** | Part C's warming: areas drawn and estimated, pieces and terrain warmed, NAIP colour, progress, pinning in the cache. For admins and ticked testers. | Warm one 10 × 10 km area and compare the estimate with what it took. |
 | **6. Local LiDAR streams** (D24) | The Entwine index of `/data/lidar`, uploads added to it, local first in `resolve`. The build service retired after. | Run the one-off Entwine build on the VM (commands supplied). |
@@ -500,8 +519,7 @@ owner runs every deploy and every Coolify change.
 | **8. Plans and billing** | Manual plans first. A provider only if the owner approves one (a new dependency; asked then). | The provider's account and keys, if one is chosen. |
 | **9. Launch** | Catalogue areas warmed, org onboarding, the user guide. | Pricing, the terms of sale, the stores' rules. |
 
-The Android branch's 3D view needs the `frame` hint too when it is merged; it already reads external tilesets and
-quantized positions.
+What the Android branch's 3D view needs when it is merged is in Part C, *For the Android 3D branch*.
 
 ---
 
@@ -525,31 +543,43 @@ Each has a step above where the owner checks it.
 
 ---
 
-## 9. Decisions for the owner
+## 9. Decisions
 
-The recommendation comes first in each. Reworking the plan around streaming retired D6, D7, D8 and D10 (region blocks,
-their colour, their scheduling, access inside a region). It changed D4, D9, D13, D14, D16 and D19, and added D20–D24.
-No answers had been saved on the decisions page yet, so none were lost.
+**Decided by the owner on 2026-10-23**, on the decisions page (`https://claude.ai/artifact/RU8RPViDvj2qjpP7UGLT4R`,
+which keeps each answer): all 20 answered, with no notes, so **none is open**. Eighteen follow the recommendation. Two
+do not, and the parts above follow them:
+- **D1:** MapLibre GL JS for the admin map, not Leaflet (Part A).
+- **D13:** several AOs per organization, not one, still set by the super-admin (Part D's data model, access and screens).
 
-| # | Decision | Recommended | Other choices |
-|---|---|---|---|
-| D17 | Phase 0 first, on its own | Yes, before anything else | With the streaming change |
-| D20 *(new)* | Stream 3D from USGS's octree | Yes: every new view streams, existing per-LZ tilesets still answer, builds stop and the build service retires once local LiDAR streams | Stream, but keep builds as a fallback when AWS is down; or keep building, made faster (still tens of seconds) |
-| D21 *(new)* | Where streaming runs | In the API, with `laspy` and `lazrs` (a small LAZ decoder written in Rust): new dependencies | In the build service, which the API asks for missing pieces (`lazrs` added there; an extra hop, and 3D then needs that service up) |
-| D22 *(new)* | Colour of streamed points | Height above ground at once; photographic colour (NAIP) only in warmed areas | By class at once; or photographic for every piece as it streams (first views about twice as slow) |
-| D23 *(new)* | The paid 3D upgrade | In warmed areas: photographic colour, the org's own LiDAR, offline later (warming makes an area instant for everyone) | Full density only for paid (free capped at about 3 m spacing); or no 3D upgrade, sell organization features only |
-| D24 *(new)* | Local LiDAR for streaming | Index the downloaded collection once with Entwine, and add uploads to that index | AWS only (local LiDAR not used for 3D); or COPC per file (each file its own octree, seams between files) |
-| D1 | Map library for the admin | Leaflet 1.9.4, the web's version, copied into `backend/static`; hand-written drawing tools; USGS National Map base | Leaflet from a CDN; MapLibre GL; Mapbox base (token restrictions) |
-| D2 | How the API reaches `/data/lidar` | Mount it into the API at the same path (read only for the map, writable for uploads, production only) | A summary endpoint and an upload relay on the build service |
-| D16 *(changed)* | Streamed views and old per-LZ tilesets on the admin map | Counts per 10 km cell | Exact places |
-| D3 | Upload protocol | Chunked and resumable, written here, no library | tus (`tus-js-client` and a server for it) |
-| D4 *(changed)* | The server fetching DEMs from USGS | Yes (LiDAR streams from AWS, so only DEMs need it) | Uploads and rsync only |
-| D5 | DEM datum policy | NAVD88 only (stated or ticked), inside the geoid grids, checked against Terrarium; new DTED refused | Accept other datums and convert them per DEM in `terrain_tiles` (a change of its own) |
-| D18 | Terrain warming depth in warmed areas | Level 16 | 17 (four times the tiles); 18 |
-| D19 *(changed)* | Warming an AO when it is set | Only after the admin confirms the estimate (about half an hour and 6 GB for 20 × 20 km) | Automatically |
-| D9 *(changed)* | The paid version of warmed areas during the beta | Admins and ticked testers | Everyone as a preview |
-| D11 | Organizations and Teams | Apart | An org team that follows the org |
-| D12 | Organizations per person | One | Several |
-| D13 *(changed)* | AO and access | One polygon per org, set by the super-admin; members get the paid version of pieces inside it | Several AOs per org; org admins editing their AO |
-| D14 *(changed)* | What individuals buy | Pro: warmed catalogue areas with photographic colour | A small AO of their own; no individual plan |
-| D15 | Billing | Manual plans first; ask about a provider at Phase 8 | Stripe now; a merchant of record |
+Some choices carry an approval the house rules ask for: D21 approves `laspy` and `lazrs` in the API, D24 approves
+Entwine (a Docker image run on the VM) for local LiDAR, and D1 approves MapLibre GL JS, copied into the backend. D15
+leaves any payment provider to be asked about at Phase 8.
+
+Reworking the plan around streaming retired D6, D7, D8 and D10 (region blocks, their colour, their scheduling, access
+inside a region) before any were answered.
+
+Still the owner's, outside these decisions: prices and plan names, the terms of sale, the app stores' current rules
+before launch, a SAM.gov registration for selling to units, and the measurements only the VM can give (§8).
+
+| # | Decision | Decided 2026-10-23 | Recommended | Other choices |
+|---|---|---|---|---|
+| D17 | Phase 0 first, on its own | As recommended | Yes, before anything else | With the streaming change |
+| D20 | Stream 3D from USGS's octree | As recommended | Yes: every new view streams, existing per-LZ tilesets still answer, builds stop and the build service retires once local LiDAR streams | Stream, but keep builds as a fallback when AWS is down; or keep building, made faster (still tens of seconds) |
+| D21 | Where streaming runs | As recommended | In the API, with `laspy` and `lazrs` (a small LAZ decoder written in Rust): new dependencies | In the build service, which the API asks for missing pieces (`lazrs` added there; an extra hop, and 3D then needs that service up) |
+| D22 | Colour of streamed points | As recommended | Height above ground at once; photographic colour (NAIP) only in warmed areas | By class at once; or photographic for every piece as it streams (first views about twice as slow) |
+| D23 | The paid 3D upgrade | As recommended | In warmed areas: photographic colour, the org's own LiDAR, offline later (warming makes an area instant for everyone) | Full density only for paid (free capped at about 3 m spacing); or no 3D upgrade, sell organization features only |
+| D24 | Local LiDAR for streaming | As recommended | Index the downloaded collection once with Entwine, and add uploads to that index | AWS only (local LiDAR not used for 3D); or COPC per file (each file its own octree, seams between files) |
+| D1 | Map library for the admin | **MapLibre GL JS** | Leaflet 1.9.4, the web's version, copied into `backend/static`; hand-written drawing tools; USGS National Map base | Leaflet from a CDN; MapLibre GL; Mapbox base (token restrictions) |
+| D2 | How the API reaches `/data/lidar` | As recommended | Mount it into the API at the same path (read only for the map, writable for uploads, production only) | A summary endpoint and an upload relay on the build service |
+| D16 | Streamed views and old per-LZ tilesets on the admin map | As recommended | Counts per 10 km cell | Exact places |
+| D3 | Upload protocol | As recommended | Chunked and resumable, written here, no library | tus (`tus-js-client` and a server for it) |
+| D4 | The server fetching DEMs from USGS | As recommended | Yes (LiDAR streams from AWS, so only DEMs need it) | Uploads and rsync only |
+| D5 | DEM datum policy | As recommended | NAVD88 only (stated or ticked), inside the geoid grids, checked against Terrarium; new DTED refused | Accept other datums and convert them per DEM in `terrain_tiles` (a change of its own) |
+| D18 | Terrain warming depth in warmed areas | As recommended | Level 16 | 17 (four times the tiles); 18 |
+| D19 | Warming an AO when it is set | As recommended | Only after the admin confirms the estimate (about half an hour and 6 GB for 20 × 20 km) | Automatically |
+| D9 | The paid version of warmed areas during the beta | As recommended | Admins and ticked testers | Everyone as a preview |
+| D11 | Organizations and Teams | As recommended | Apart | An org team that follows the org |
+| D12 | Organizations per person | As recommended | One | Several |
+| D13 | AOs and access | **Several AOs per org**, set by the super-admin | One polygon per org, set by the super-admin; members get the paid version of pieces inside it | Several AOs per org; org admins editing their AO |
+| D14 | What individuals buy | As recommended | Pro: warmed catalogue areas with photographic colour | A small AO of their own; no individual plan |
+| D15 | Billing | As recommended | Manual plans first; ask about a provider at Phase 8 | Stripe now; a merchant of record |
