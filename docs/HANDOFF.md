@@ -5,7 +5,8 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
+Last refreshed: 2026-10-23 (the owner moves to a new computer: every branch with work is pushed, and what is not in git is listed in *Moving to a new
+computer*, below; the device-run work of 2026-10-21/22 is §0). Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
 S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, P3c Teams, P4a copies into a pack, P4b updating a copy and copies to the Library, P4c the edits a pack would not take, every review's fixes in: S1–S9 and P1–P4 are built, and the owner's device run is next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
@@ -16,6 +17,50 @@ from the same day's device run (§1): the search, the workspace, Import and the 
 stands said on its chip.
 
 ---
+
+## Moving to a new computer (2026-10-23)
+
+**Every branch with work is on GitHub** (pushed 2026-10-23); nothing was left uncommitted or stashed. Where each stands:
+
+| Branch | What it holds | Where it stands |
+|---|---|---|
+| `feat/mission-brief` | The mission brief, web, server and Android B0–B8 (`docs/MISSION_BRIEF.md`) | PR #99 to `develop`, open, Auto-fix on. Staging has none of the brief's routes until it is merged (and so deployed there) |
+| `claude/festive-dijkstra-79b32b` | B9, the brief as a live sandtable on an Android tablet, on top of `feat/mission-brief` | pushed, no PR: into `feat/mission-brief`, or its own PR after #99 |
+| `feat/android-quick-edits` | The owner's device-run requests of 2026-10-21/22 (§0 below), from `develop` | pushed, no PR |
+| `claude/android-3d-view-e38b76` | The 3D LZ view on Android (`docs/ANDROID_3D_PLAN.md`), from `develop` | pushed, no PR. Tried on the tablet merged with `feat/android-quick-edits`: they conflict in `DiagramsViewModel`, `LzPanel` and their tests, and both sides are kept (a 3D test then needs `FreshDiagrams()` before its `BuildOnSave`) |
+| `claude/competent-noether-5cc4f7` | The MGRS grid fixture compared to a tolerance (a contracts test) | pushed, no PR |
+| `fix/window-stacking` | The web's floating windows and alerts stacked under menus, dialogs and toasts | pushed, no PR |
+| `fix/mobile-analyze-boundary` | The phone web's *Analyze* and *Draw boundary*, and capture and export above the sheet | PR #98 |
+| `claude/admin-coverage-prebuild-efcef7` | Docs only: the plan for the admin's data coverage map, uploads, 3D streamed from USGS, and organizations with an area of operation (`docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`; the owner's answers on its decisions page, https://claude.ai/artifact/RU8RPViDvj2qjpP7UGLT4R, recorded in the doc) | pushed, no PR. All 20 decisions answered on 2026-10-23, none open; D1 (MapLibre GL JS for the admin map) and D13 (several AOs per organization) differ from its recommendations. Nothing built: Phase 0 is next. It found that any signed-in user can list every place a 3D view was built, with its coordinates (`GET /api/lidar/tilesets` and each tileset's `area.json`); Phase 0 closes that |
+| `test/quick-edits-3d` | A throwaway merge of quick edits and 3D, built for staging and put on the tablet | never committed or pushed: remake it from the two branches |
+
+**Not in git: bring it, or make it again.**
+- **The debug signing key** (`~/.android/debug.keystore`). A debug APK built with another key will not install over the tablet's or the phone's (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), and
+  uninstalling it first deletes what the app holds on the device (changes not yet synced, the threat picture, the session). Copy the file to the same place on the new
+  machine. Google sign-in's Android OAuth client is tied to its SHA-1 too (§4).
+- `android/local.properties` (`sdk.dir`), `frontend/.env` (from `.env.example`), the backend's venv, and `backend/ezpz.db` (local accounts: `dev_user.py` makes them again). SAM's
+  `sam_b.pt` downloads itself on the backend's first start (358 MB). The setup for each is AGENTS.md §11 and §3 below.
+- **The mission packet's sources**, outside the repo on purpose: `~/Downloads/ABOS Annex A AV Handbook 15July2024.pdf` (its cover is marked CUI, so it never goes into the repo,
+  AGENTS.md §2), `~/Downloads/DOORKICKER_PACKET.pdf` (another unit's packet with real names: a layout reference only), and `2023 Mission packet - WILSON.pptx` in Keynote's iCloud
+  folder, which iCloud brings along.
+- Claude's notes for this project (`~/.claude/projects/<project>/memory/`) and the agent sessions' transcripts stay on the old Mac. What they held that matters is in this
+  section and AGENTS.md. Each branch's worktree under `.claude/worktrees/` is local too; the branches are what matter, and they are pushed.
+
+**Trying a build on a device from a Mac, against staging.**
+- **For 3D, build for staging**: `./gradlew assembleDebug -Pezpz.apiUrl=https://dev-ezpz-api.mcfadd.in/`. A machine with no DEMs, LiDAR or build service answers only "Not generated"
+  locally, while staging shares the build service and the tiles with production. It is HTTPS, so no `adb reverse`.
+- **Staging's email does not arrive** (verification, password reset), and `dev_user.py` writes only a local SQLite database. A verified staging account is made in the staging
+  Supabase project's SQL editor: an upsert into `"user"` (role, `is_active`, `access_approved`) and `local_credential` (a werkzeug scrypt hash made locally from a password asked
+  with `getpass`, `email_verified_at`, status `active`, `session_version` moved on). Never paste staging's `DATABASE_URL`, or a password, into a chat (AGENTS.md §2: a secret
+  shown in a chat is rotated).
+- In an agent session, the Bash sandbox has no USB: run `adb` with the sandbox off. Each time the adb server starts again, the tablet asks again to allow USB debugging.
+
+**Designed, not built: the mission packet export** (started 2026-10-21). The owner's kneeboard packet (ABOS Part Nine, *Kneeboard Products*) as an EZ/PZ-styled PDF with
+clickable navigation. The design canvas, in the owner's claude.ai account: https://claude.ai/artifact/Phz2jDxwu5wcUejiqaYGq3 (eleven Letter sheets: a cover with the inventory,
+crew and commo, timeline, EXCHECK, concept sketch, PZ, TDH, LZ, FARP, approach plate, IIMC). Decided so far, the owner's to change: Letter portrait, one sheet a page, a
+right-hand tab rail with IIMC pinned last in red (as the owner's packets have it), the EZ/PZ light palette, Roboto Flex with Roboto Mono for numbers, UNCLASSIFIED top and
+bottom, a "V2 · n of N" footer, and fictional sample data. Next, the owner said: the screens of the dialog that builds the packet. It overlaps the mission brief's setup and
+PDF, so it reuses their compile and print path rather than making a second one. The ABOS handbook's item lists and field names are put in the app's own words, never its text.
 
 ## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity, the LZ box, every open LZ/PZ on the map, route points by type, helicopter names and the tools on the map's edge (2026-10-21/22)
 
