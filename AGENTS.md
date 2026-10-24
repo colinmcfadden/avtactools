@@ -86,7 +86,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 |---|---|---|---|
 | **Auth & access** | Google or email/password; email verification; `.mil` affiliation gate; per-user feature entitlements | `feature/auth/` | `routes/auth.py`, `entitlements.py`, `security_config.py`, `auth_rate_limit.py`, `email_service.py` |
 | **Admin dashboard** | Users, roles, entitlements, access approval, password resets, master aircraft list | — (Jinja) | `routes/admin_routes.py`, `templates/admin/` |
-| **App frame** (menu redesign, `docs/MENU_REDESIGN.md`) | Top bar (workspace, Import, Library, account); a right dock of panels (LZ/PZ, Routes, Threats, Imports) picked from an icon rail, a bottom sheet below 1100 px; the shared dialogs, menus and toasts. No browser `prompt`/`confirm`/`alert` on these paths | `feature/shell/`, `feature/ui/` | — |
+| **App frame** (menu redesign, `docs/MENU_REDESIGN.md`) | Top bar (workspace, Import, Library, account); a right dock of panels (LZ/PZ, Routes, Threats, Imports) picked from an icon rail, a bottom sheet below 1100 px; the shared dialogs, menus and toasts. No browser `prompt`/`confirm`/`alert` on these paths. At 850 px and below the left sidebar is a full-screen menu behind the top bar's ☰, so the map's tool rail (`MobileQuickAccess`) offers Analyze and Draw LZ itself, in words: without them a phone had no visible way to analyse a target (the owner, 2026-10-19) | `feature/shell/`, `feature/ui/`, `components/MobileQuickAccess.jsx` | — |
 | **LZ/PZ workspace** | Several LZ diagrams per session; target by MGRS; switch between them in the LZ/PZ panel | `feature/lzWorkspace/`, `feature/shell/LzPanel.jsx`, `components/MapView.jsx`, `App.js` | — |
 | **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM, with contour lines of the ground in and round the LZ, and a slope profile along and across the landing heading | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
 | **Planning graphics** | Helicopters, PZ markers, sectors of fire, go-arounds, doghouses, units, LZ box | `feature/{helicopters,pzMarker,sectorsOfFire,goAround,doghouses,unit}/` | — |
@@ -781,6 +781,10 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   (`TabletFrameTest`), and the phone frame now draws its sheet itself. Keep movable contents side by side, never one inside another while both move.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
+- **A child's z-index counts only inside its parent's stacking context.** The phone's Capture and Export were `position: fixed; z-index: 9999`
+  inside the map's tool rail (`z-index: 1000`), so the bottom sheet (1050) covered them at every height and nobody could export an LZ card
+  from a phone. What floats on the phone's map goes in `.shell-map`, positioned from its edges (as the Layers button is): the map ends where
+  the sheet begins, so it is never under the sheet. `MobileQuickAccess.test.jsx` holds the pills out of the rail.
 - **A queued test dispatcher hides what the main thread does.** A view model's coroutines run on `Dispatchers.Main.immediate`, which runs
   work resumed on the main thread at once, inside whatever resumed it; `StandardTestDispatcher` as Main runs each in turn. The shell's pack
   gate passed every test so, and an independent review then proved four ordering bugs with `UnconfinedTestDispatcher` as Main and writes that
