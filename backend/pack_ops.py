@@ -22,7 +22,7 @@ import copy
 import math
 import re
 
-ITEM_KINDS = ('lz', 'route', 'pointset')
+ITEM_KINDS = ('lz', 'route', 'pointset', 'brief')
 # What a client may send. ``item.replace`` is the server's own (update from original).
 CLIENT_OP_TYPES = ('item.create', 'item.delete', 'item.rename', 'set', 'patch', 'upsert', 'insert', 'remove')
 SERVER_OP_TYPES = ('item.replace',)

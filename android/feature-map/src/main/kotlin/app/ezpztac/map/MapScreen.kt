@@ -208,6 +208,8 @@ fun MapScreen(
      * readout (a held object's bar, a drawing's buttons) where that reaches their edge. Given that room, it decides how much of itself fits; null: none.
      */
     tools: (@Composable () -> Unit)? = null,
+    /** Whether anything is drawn over the map: not while a brief is presented on the live sandtable (feature-brief), which draws its own. */
+    controls: Boolean = true,
     map: @Composable () -> Unit,
 ) {
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
@@ -215,6 +217,7 @@ fun MapScreen(
     LaunchedEffect(hiding.hidden) { if (hiding.hidden) search.close() }
     Box(modifier.fillMaxSize()) {
         map()
+        if (!controls) return@Box
 
         // The crosshair is the middle of the map that shows: between the row and the sheet, moving with the map when the sheet comes to rest.
         val crossTop by animateDpAsState(padding.top, tween(PanelSheetDefaults.SettleMillis), label = "crosshair top")

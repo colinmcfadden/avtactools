@@ -53,6 +53,7 @@ from auth_rate_limit import clear_rate_limits  # noqa: E402
 from models import AccountToken, LocalCredential, User, db  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.auth import auth_bp  # noqa: E402
+from routes.brief_routes import brief_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
 from routes.pack_routes import pack_bp  # noqa: E402
@@ -106,7 +107,7 @@ def create_app():
         return is_revoked(payload)
 
     app.before_request(enforce_affiliation_gate)
-    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, sync_bp, aircraft_bp, pack_bp, team_bp):
+    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, brief_bp, sync_bp, aircraft_bp, pack_bp, team_bp):
         app.register_blueprint(blueprint)
 
     @app.post("/__test__/account")

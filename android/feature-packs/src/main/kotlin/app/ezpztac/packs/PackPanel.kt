@@ -202,6 +202,7 @@ object PackPanelWords {
         "loading" to "the pack is still opening",
         "closed" to "no pack is open",
         "empty_point_set" to "a point set needs at least one point",
+        "mission_brief_off" to "mission briefs are not turned on for your account",
         "paused" to "sending to the pack is paused for now",
         "missing" to "it is no longer in the pack",
     )

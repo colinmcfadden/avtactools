@@ -190,6 +190,22 @@ class PackFactsTest {
     }
 
     @Test
+    fun `a read-only pack's lock lets its briefs through, and nothing else of it`() {
+        // A brief is open to every member in every state of the pack (docs/MISSION_BRIEF.md §3).
+        val brief = PackItemView("br-1", "brief", "OP DK BRIEF", JsonObject(emptyMap()))
+        val route = PackItemView("rt-1", "route", "ROUTES 1", JsonObject(emptyMap()))
+        listOf(finished(), viewing).forEach { state ->
+            val lock = checkNotNull(PackLock.of(state.copy(items = listOf(lz, route, brief))))
+            assertEquals(setOf("br-1"), lock.briefs)
+            assertNull(lock.reasonFor("pack:p:br-1"))
+            assertEquals(lock.reason, lock.reasonFor("pack:p:lz-1"))                                  // an LZ/PZ and a route set in the same pack still refused
+            assertEquals(lock.reason, lock.reasonFor("pack:p:rt-1"))
+            assertEquals(lock.reason, lock.reasonFor("pack:p:br-2"))                                  // an item the pack does not hold as a brief
+            assertNull(lock.reasonFor("pack:q:lz-1"))
+        }
+    }
+
+    @Test
     fun `a finished pack's item says who finished it and when, and a viewer's that it can only be looked at`() {
         val utc = java.time.ZoneOffset.UTC
         val now = java.time.Instant.parse("2026-10-12T09:00:00Z")

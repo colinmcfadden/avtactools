@@ -310,6 +310,36 @@ public suspend fun ApiClient.threatMask(at: LatLon, radars: List<Radar>): Threat
 public suspend fun ApiClient.weather(at: LatLon): WeatherReportDto =
     decode(execute(ApiClient.Call("GET", "/api/weather", query = mapOf("lat" to at.lat.toString(), "lng" to at.lon.toString()))))
 
+/**
+ * The weather a brief is briefed with (docs/MISSION_BRIEF.md §2.5): the report or forecast for [place] at the planned instant [at] (ISO, with its offset), the TAF
+ * period covering it (`kind: "forecast"`) or the latest METAR (`kind: "observation"`); with no [at], the report now. The body whole, as JSON: the brief's compiler
+ * reads it as the web passes it (core-brief), so nothing it reads is lost to a type and a field a newer server adds rides along.
+ */
+public suspend fun ApiClient.weatherAt(place: LatLon, at: String?): JsonObject =
+    decode(
+        execute(
+            ApiClient.Call(
+                "GET", "/api/weather",
+                query = buildMap {
+                    put("lat", place.lat.toString())
+                    put("lng", place.lon.toString())
+                    if (at != null) put("at", at)
+                },
+            ),
+        ),
+    )
+
+// -- The brief's PDF ------------------------------------------------------------------
+
+/**
+ * A mission brief printed (`POST /api/brief/pdf`, docs/MISSION_BRIEF.md §2.7): the compiled model, sent once with its strip charts' grid added (core-brief's
+ * `StripGrid.withStripGrids`), and the PDF's bytes back; the server keeps neither. A heavy call (every figure drawn from map tiles, then printed), so it waits
+ * behind nothing, holds off the background sync and is given the long read timeout. A refusal carries the server's `code`: `pdf_unavailable` (503: no printer on
+ * this server), `pdf_failed` (502), `invalid_brief` (400), `too_large` (413) or `feature_disabled` (403).
+ */
+public suspend fun ApiClient.printBrief(model: JsonObject): ByteArray =
+    execute(ApiClient.Call("POST", "/api/brief/pdf", body = buildJsonObject { put("model", model) }, binary = true)).bytes
+
 // -- Saved point sets -------------------------------------------------------------
 //
 // A saved point set is the points of one `.LPS` import under a name. The server takes JSON, never looks inside the points, and refuses a set with
@@ -366,6 +396,67 @@ public suspend fun ApiClient.deletePointSet(id: Int, baseRevision: Int? = null, 
     execute(
         ApiClient.Call(
             "DELETE", "/api/pointsets/$id",
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+}
+
+// -- Saved mission briefs -----------------------------------------------------------
+//
+// A brief kept in the Library, outside a mission pack (docs/MISSION_BRIEF.md §3): the person's answers, as a document the server does not look inside.
+// Every route needs the `mission_brief` entitlement (403 `feature_disabled` without it), and a create or an edit `cloud_save` too.
+
+public suspend fun ApiClient.listBriefs(): List<BriefSummary> =
+    decode(execute(ApiClient.Call("GET", "/api/briefs")))
+
+public suspend fun ApiClient.getBrief(id: Int): BriefFull =
+    decode(execute(ApiClient.Call("GET", "/api/briefs/$id")))
+
+/**
+ * Saves a new brief. Pass the [clientUuid] the device chose and a retry after a lost response returns the first record ([Saved.created] false)
+ * instead of making a second.
+ */
+public suspend fun ApiClient.createBrief(
+    name: String,
+    data: JsonObject,
+    clientUuid: String,
+    idempotencyKey: String = newKey(),
+): Saved<BriefSummary> {
+    val response = execute(
+        ApiClient.Call(
+            "POST", "/api/briefs",
+            body = buildJsonObject { put("name", name); put("data", data); put("client_uuid", clientUuid) },
+            headers = mapOf("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+    return Saved(decode(response), created = response.status == 201)
+}
+
+/**
+ * Edits a brief on top of [baseRevision], the revision the edit was made against. Only what is given is sent and changed. If the server has moved on,
+ * nothing is overwritten and [RevisionConflictException] carries the server's copy.
+ */
+public suspend fun ApiClient.updateBrief(
+    id: Int,
+    baseRevision: Int?,
+    name: String? = null,
+    data: JsonObject? = null,
+    idempotencyKey: String = newKey(),
+): BriefSummary = decode(
+    execute(
+        ApiClient.Call(
+            "PUT", "/api/briefs/$id",
+            body = buildJsonObject { if (name != null) put("name", name); if (data != null) put("data", data) },
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    ),
+)
+
+/** Deletes a brief. The server keeps a tombstone so other devices learn of it. Deleting twice is not an error. */
+public suspend fun ApiClient.deleteBrief(id: Int, baseRevision: Int? = null, idempotencyKey: String = newKey()) {
+    execute(
+        ApiClient.Call(
+            "DELETE", "/api/briefs/$id",
             headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
         ),
     )

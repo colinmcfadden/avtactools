@@ -22,6 +22,7 @@ object EzpzIcons {
     @DrawableRes val calendarMonth: Int = R.drawable.ic_calendar_month
     @DrawableRes val cancel: Int = R.drawable.ic_cancel
     @DrawableRes val check: Int = R.drawable.ic_check
+    @DrawableRes val chevronLeft: Int = R.drawable.ic_chevron_left
     @DrawableRes val chevronRight: Int = R.drawable.ic_chevron_right
     @DrawableRes val close: Int = R.drawable.ic_close
     @DrawableRes val cloudDone: Int = R.drawable.ic_cloud_done
@@ -52,6 +53,7 @@ object EzpzIcons {
     @DrawableRes val flight: Int = R.drawable.ic_flight
     @DrawableRes val flightLand: Int = R.drawable.ic_flight_land
     @DrawableRes val folder: Int = R.drawable.ic_folder
+    @DrawableRes val formatListNumbered: Int = R.drawable.ic_format_list_numbered
     @DrawableRes val group: Int = R.drawable.ic_group
     @DrawableRes val groupAdd: Int = R.drawable.ic_group_add
     @DrawableRes val groups: Int = R.drawable.ic_groups
@@ -82,6 +84,7 @@ object EzpzIcons {
     @DrawableRes val personRemove: Int = R.drawable.ic_person_remove
     @DrawableRes val personSearch: Int = R.drawable.ic_person_search
     @DrawableRes val pinDrop: Int = R.drawable.ic_pin_drop
+    @DrawableRes val playArrow: Int = R.drawable.ic_play_arrow
     @DrawableRes val refresh: Int = R.drawable.ic_refresh
     @DrawableRes val replay: Int = R.drawable.ic_replay
     @DrawableRes val rightPanelOpen: Int = R.drawable.ic_right_panel_open

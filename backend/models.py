@@ -363,6 +363,22 @@ class SavedLZ(SyncMixin, db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SavedBrief(SyncMixin, db.Model):
+    """A mission brief outside a pack: the person's answers, never a copy of the plan (docs/MISSION_BRIEF.md §2.2).
+
+    ``brief_data`` is the brief document the web writes (template id and version, references to the LZ/PZs and
+    route sets, the flow, constants, answers, edited scripts, options); the server does not look inside it.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+
+    brief_data = db.Column(db.JSON, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # -- Mission packs -------------------------------------------------------------
 #
 # A pack is a shared container of LZs, route sets and point sets that every member

@@ -1,0 +1,729 @@
+{
+  "description": "packs/session.json's format and rules (read its description), for the brief item kind (docs/MISSION_BRIEF.md §3): an edit whose every operation is on a brief (an item this session knows as one, or one an item.create earlier in the same edit makes) is taken in a read-only pack, where any other is refused as read_only; nextBatch sends the longest run of queued edits, from the oldest, that are all on briefs or all on anything else (MAX_BATCH at most), so the two never share a batch; and a pack that turns read-only (an event, 423 or 403 pack_read_only) drops what waits as it always has, except brief edits still queued, which stay to be sent. A port that has not reached briefs is held to session.json alone.",
+  "generatedBy": "frontend/src/contracts/packSessionFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "max_batch": 200,
+  "scenarios": [
+    {
+      "name": "a finished pack takes a brief edit and refuses any other as read_only",
+      "me": 2,
+      "pack": {
+        "uuid": "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31",
+        "name": "OP DK",
+        "description": "Practice air assault, phase 2.",
+        "status": "finished",
+        "role": "editor",
+        "owner": {"id":1,"name":"Colin"},
+        "team": null,
+        "head_seq": 4,
+        "seen_seq": 0,
+        "member_count": 2,
+        "audience_count": 2,
+        "item_count": 2,
+        "item_counts": {"lz":1,"route":0,"pointset":0},
+        "finished_at": "2026-10-05T13:00:04",
+        "finished_by": {"id":1,"name":"Colin"},
+        "created_at": "2026-10-05T13:00:01",
+        "updated_at": "2026-10-05T13:00:04",
+        "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+        "items": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}}},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}}}],
+        "live_url": null
+      },
+      "steps": [
+        {
+          "do": "open",
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:04","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:04","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [],
+            "dropped": [],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"}},
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:04","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:04","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-1"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90},
+          "result": {"refused":"read_only"},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:04","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:04","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-1"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": [{"type":"set","item":"br-1","path":["answers","2.d"],"value":{"value":"11:15"}},{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90}],
+          "result": {"refused":"read_only"},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:04","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:04","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-1"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "nextBatch",
+          "result": {"batch":{"ops":[{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-1"}],"base_seq":4}},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:04","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:04","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-1"},"state":"sent"}],
+            "dropped": [],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        }
+      ],
+      "dropped_versions": []
+    },
+    {
+      "name": "a viewer makes a brief and edits it",
+      "me": 2,
+      "pack": {
+        "uuid": "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31",
+        "name": "OP DK",
+        "description": "Practice air assault, phase 2.",
+        "status": "active",
+        "role": "viewer",
+        "owner": {"id":1,"name":"Colin"},
+        "team": null,
+        "head_seq": 3,
+        "seen_seq": 0,
+        "member_count": 2,
+        "audience_count": 2,
+        "item_count": 2,
+        "item_counts": {"lz":1,"route":0,"pointset":1},
+        "finished_at": null,
+        "finished_by": null,
+        "created_at": "2026-10-05T13:00:01",
+        "updated_at": "2026-10-05T13:00:03",
+        "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"viewer","added_at":"2026-10-05T13:00:01","seen_at":null}],
+        "items": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}}},{"uuid":"ps-1","kind":"pointset","name":"LOCAL","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}]}],
+        "live_url": null
+      },
+      "steps": [
+        {
+          "do": "open",
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"viewer","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":1},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"viewer","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"ps-1":{"kind":"pointset","name":"LOCAL","data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"ps-1":{"uuid":"ps-1","kind":"pointset","name":"LOCAL","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","ps-1"],
+            "seq": 3,
+            "pending": [],
+            "dropped": [],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"ps-1":{"kind":"pointset","name":"LOCAL","data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"ps-1","kind":"pointset","name":"LOCAL","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": [{"type":"item.create","item":"br-2","kind":"brief","name":"OP DK HASTY","data":{"version":1,"template":{"id":"hasty","version":1}}},{"type":"set","item":"br-2","path":["answers","8.a"],"value":{"value":"12:45"}}],
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"viewer","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":1},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"viewer","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"ps-1":{"kind":"pointset","name":"LOCAL","data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"ps-1":{"uuid":"ps-1","kind":"pointset","name":"LOCAL","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","ps-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"item.create","item":"br-2","kind":"brief","name":"OP DK HASTY","data":{"version":1,"template":{"id":"hasty","version":1}},"client_op_id":"op-1"},"state":"queued"},{"op":{"type":"set","item":"br-2","path":["answers","8.a"],"value":{"value":"12:45"},"client_op_id":"op-2"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"ps-1":{"kind":"pointset","name":"LOCAL","data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false},"br-2":{"kind":"brief","name":"OP DK HASTY","data":{"version":1,"template":{"id":"hasty","version":1},"answers":{"8.a":{"value":"12:45"}}},"deleted":false}}
+          },
+          "visible": [
+            {"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},
+            {"uuid":"ps-1","kind":"pointset","name":"LOCAL","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false},
+            {"uuid":"br-2","pendingCreate":true,"kind":"brief","name":"OP DK HASTY","data":{"version":1,"template":{"id":"hasty","version":1},"answers":{"8.a":{"value":"12:45"}}},"deleted":false}
+          ]
+        },
+        {
+          "do": "nextBatch",
+          "result": {"batch":{"ops":[{"type":"item.create","item":"br-2","kind":"brief","name":"OP DK HASTY","data":{"version":1,"template":{"id":"hasty","version":1}},"client_op_id":"op-1"},{"type":"set","item":"br-2","path":["answers","8.a"],"value":{"value":"12:45"},"client_op_id":"op-2"}],"base_seq":3}},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"viewer","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":1},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"viewer","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"ps-1":{"kind":"pointset","name":"LOCAL","data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"ps-1":{"uuid":"ps-1","kind":"pointset","name":"LOCAL","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","ps-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"item.create","item":"br-2","kind":"brief","name":"OP DK HASTY","data":{"version":1,"template":{"id":"hasty","version":1}},"client_op_id":"op-1"},"state":"sent"},{"op":{"type":"set","item":"br-2","path":["answers","8.a"],"value":{"value":"12:45"},"client_op_id":"op-2"},"state":"sent"}],
+            "dropped": [],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"ps-1":{"kind":"pointset","name":"LOCAL","data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false},"br-2":{"kind":"brief","name":"OP DK HASTY","data":{"version":1,"template":{"id":"hasty","version":1},"answers":{"8.a":{"value":"12:45"}}},"deleted":false}}
+          },
+          "visible": [
+            {"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},
+            {"uuid":"ps-1","kind":"pointset","name":"LOCAL","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":[{"id":"lps-0","name":"ALPHA","lat":34.5,"lon":-84.1,"elevationFt":1730}],"deleted":false},
+            {"uuid":"br-2","pendingCreate":true,"kind":"brief","name":"OP DK HASTY","data":{"version":1,"template":{"id":"hasty","version":1},"answers":{"8.a":{"value":"12:45"}}},"deleted":false}
+          ]
+        }
+      ],
+      "dropped_versions": []
+    },
+    {
+      "name": "brief edits go in batches of their own, each run in the order made",
+      "me": 2,
+      "pack": {
+        "uuid": "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31",
+        "name": "OP DK",
+        "description": "Practice air assault, phase 2.",
+        "status": "active",
+        "role": "editor",
+        "owner": {"id":1,"name":"Colin"},
+        "team": null,
+        "head_seq": 3,
+        "seen_seq": 0,
+        "member_count": 2,
+        "audience_count": 2,
+        "item_count": 2,
+        "item_counts": {"lz":1,"route":0,"pointset":0},
+        "finished_at": null,
+        "finished_by": null,
+        "created_at": "2026-10-05T13:00:01",
+        "updated_at": "2026-10-05T13:00:03",
+        "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+        "items": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}}},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}}}],
+        "live_url": null
+      },
+      "steps": [
+        {
+          "do": "open",
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90},
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"}},
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"queued"},{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"lz-1","path":["flightData","callSign"],"value":"HAWK 7"},
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"queued"},{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"queued"},{"op":{"type":"set","item":"lz-1","path":["flightData","callSign"],"value":"HAWK 7","client_op_id":"op-3"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "nextBatch",
+          "result": {"batch":{"ops":[{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"}],"base_seq":3}},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"sent"},{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"queued"},{"op":{"type":"set","item":"lz-1","path":["flightData","callSign"],"value":"HAWK 7","client_op_id":"op-3"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "batchAnswered",
+          "answer": {"head_seq":4,"results":[{"client_op_id":"op-1","seq":4,"status":"applied","reason":null}],"events":[{"seq":4,"type":"set","item":"lz-1","actor":{"id":2,"name":"Sam"},"summary":"Sam edited \"LZ HAWK\".","status":"applied","reason":null,"client_op_id":"op-1","op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90},"created_at":"2026-10-05T13:00:04"}],"has_more":false},
+          "result": {"catchUp":false},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":2,"seq":4,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:04","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"queued"},{"op":{"type":"set","item":"lz-1","path":["flightData","callSign"],"value":"HAWK 7","client_op_id":"op-3"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":2,"seq":4,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:04","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "nextBatch",
+          "result": {"batch":{"ops":[{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"}],"base_seq":4}},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":2,"seq":4,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:04","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"sent"},{"op":{"type":"set","item":"lz-1","path":["flightData","callSign"],"value":"HAWK 7","client_op_id":"op-3"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":2,"seq":4,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:04","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "batchAnswered",
+          "answer": {"head_seq":5,"results":[{"client_op_id":"op-2","seq":5,"status":"applied","reason":null}],"events":[{"seq":5,"type":"set","item":"br-1","actor":{"id":2,"name":"Sam"},"summary":"Sam edited \"OP DK BRIEF\".","status":"applied","reason":null,"client_op_id":"op-2","op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"}},"created_at":"2026-10-05T13:00:05"}],"has_more":false},
+          "result": {"catchUp":false},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":5,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":2,"seq":4,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:04","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":2,"seq":5,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:05","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 5,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","callSign"],"value":"HAWK 7","client_op_id":"op-3"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":2,"seq":4,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:04","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":2,"seq":5,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:05","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "nextBatch",
+          "result": {"batch":{"ops":[{"type":"set","item":"lz-1","path":["flightData","callSign"],"value":"HAWK 7","client_op_id":"op-3"}],"base_seq":5}},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":5,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":2,"seq":4,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:04","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":2,"seq":5,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:05","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 5,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","callSign"],"value":"HAWK 7","client_op_id":"op-3"},"state":"sent"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":2,"seq":4,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:04","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 7","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":2,"seq":5,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":2,"name":"Sam"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:05","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        }
+      ],
+      "dropped_versions": []
+    },
+    {
+      "name": "a pack finished while brief and other edits wait keeps the brief edits and drops the rest",
+      "me": 2,
+      "pack": {
+        "uuid": "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31",
+        "name": "OP DK",
+        "description": "Practice air assault, phase 2.",
+        "status": "active",
+        "role": "editor",
+        "owner": {"id":1,"name":"Colin"},
+        "team": null,
+        "head_seq": 3,
+        "seen_seq": 0,
+        "member_count": 2,
+        "audience_count": 2,
+        "item_count": 2,
+        "item_counts": {"lz":1,"route":0,"pointset":0},
+        "finished_at": null,
+        "finished_by": null,
+        "created_at": "2026-10-05T13:00:01",
+        "updated_at": "2026-10-05T13:00:03",
+        "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+        "items": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}}},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}}}],
+        "live_url": null
+      },
+      "steps": [
+        {
+          "do": "open",
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90},
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"}},
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"queued"},{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "receive",
+          "events": [{"seq":4,"type":"pack.finish","item":null,"actor":{"id":1,"name":"Colin"},"summary":"Colin finished the pack. It is read-only for everyone.","status":"applied","reason":null,"client_op_id":null,"op":{"type":"pack.finish"},"created_at":"2026-10-05T13:00:04"}],
+          "result": {"gap":false},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:04","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"queued"}],
+            "dropped": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"reason":"pack_finished"}],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "nextBatch",
+          "result": {"batch":{"ops":[{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"}],"base_seq":4}},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":4,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:04","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 4,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"sent"}],
+            "dropped": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"reason":"pack_finished"}],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        }
+      ],
+      "dropped_versions": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}}}]
+    },
+    {
+      "name": "a batch refused with 423 is dropped, and a brief edit queued behind it stays to be sent",
+      "me": 2,
+      "pack": {
+        "uuid": "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31",
+        "name": "OP DK",
+        "description": "Practice air assault, phase 2.",
+        "status": "active",
+        "role": "editor",
+        "owner": {"id":1,"name":"Colin"},
+        "team": null,
+        "head_seq": 3,
+        "seen_seq": 0,
+        "member_count": 2,
+        "audience_count": 2,
+        "item_count": 2,
+        "item_counts": {"lz":1,"route":0,"pointset":0},
+        "finished_at": null,
+        "finished_by": null,
+        "created_at": "2026-10-05T13:00:01",
+        "updated_at": "2026-10-05T13:00:03",
+        "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+        "items": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}}},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}}}],
+        "live_url": null
+      },
+      "steps": [
+        {
+          "do": "open",
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90},
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}]
+        },
+        {
+          "do": "nextBatch",
+          "result": {"batch":{"ops":[{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"}],"base_seq":3}},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"sent"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}]
+        },
+        {
+          "do": "edit",
+          "ops": {"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"}},
+          "result": {"refused":null},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"active","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":null,"finished_by":null,"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"state":"sent"},{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"queued"}],
+            "dropped": [],
+            "readOnly": false,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "batchFailed",
+          "failure": {"status":423,"code":"pack_finished","finished_at":"2026-10-05T13:00:08","finished_by":{"id":1,"name":"Colin"},"taken":[]},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:08","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"queued"}],
+            "dropped": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"reason":"pack_finished"}],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        },
+        {
+          "do": "nextBatch",
+          "result": {"batch":{"ops":[{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"}],"base_seq":3}},
+          "session": {
+            "me": 2,
+            "pack": {"uuid":"6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31","name":"OP DK","description":"Practice air assault, phase 2.","status":"finished","role":"editor","owner":{"id":1,"name":"Colin"},"team":null,"head_seq":3,"seen_seq":0,"member_count":2,"audience_count":2,"item_count":2,"item_counts":{"lz":1,"route":0,"pointset":0},"finished_at":"2026-10-05T13:00:08","finished_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:01","updated_at":"2026-10-05T13:00:03","live_url":null},
+            "members": [{"user_id":1,"name":"Colin","email":"colin@unit.example","role":"owner","added_at":"2026-10-05T13:00:01","seen_at":null},{"user_id":2,"name":"Sam","email":"sam@unit.example","role":"editor","added_at":"2026-10-05T13:00:01","seen_at":null}],
+            "confirmed": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{}},"deleted":false}},
+            "info": {"lz-1":{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null},"br-1":{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null}},
+            "order": ["lz-1","br-1"],
+            "seq": 3,
+            "pending": [{"op":{"type":"set","item":"br-1","path":["answers","2.b"],"value":{"value":"500-1 day"},"client_op_id":"op-2"},"state":"sent"}],
+            "dropped": [{"op":{"type":"set","item":"lz-1","path":["flightData","landingHeading"],"value":90,"client_op_id":"op-1"},"reason":"pack_finished"}],
+            "readOnly": true,
+            "gone": null,
+            "diverged": false,
+            "view": {"lz-1":{"kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},"br-1":{"kind":"brief","name":"OP DK BRIEF","data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}}
+          },
+          "visible": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","revision":1,"seq":2,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:02","updated_at":"2026-10-05T13:00:02","source":null,"data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":270},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}},"deleted":false},{"uuid":"br-1","kind":"brief","name":"OP DK BRIEF","revision":1,"seq":3,"created_by":{"id":1,"name":"Colin"},"updated_by":{"id":1,"name":"Colin"},"created_at":"2026-10-05T13:00:03","updated_at":"2026-10-05T13:00:03","source":null,"data":{"version":1,"template":{"id":"amb","version":1},"answers":{"2.b":{"value":"500-1 day"}}},"deleted":false}]
+        }
+      ],
+      "dropped_versions": [{"uuid":"lz-1","kind":"lz","name":"LZ HAWK","data":{"schemaVersion":2,"id":"d-1","name":"LZ HAWK","status":"analyzed","flightData":{"callSign":"HAWK 6","landingHeading":90},"graphics":{"helicopters":[{"id":"h-1","lat":34.5,"lon":-84.1,"heading":270}]}}}]
+    }
+  ]
+}

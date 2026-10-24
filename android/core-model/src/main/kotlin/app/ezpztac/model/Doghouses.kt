@@ -1,6 +1,7 @@
 package app.ezpztac.model
 
 import app.ezpztac.model.JsValue.truthy
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -17,12 +18,16 @@ import kotlin.math.floor
 public object Doghouses {
     private fun text(value: JsonElement?): String? = (value as? JsonPrimitive)?.takeIf { it !is JsonNull }?.let { JsValue.string(it) }
 
-    /** `String(value)`, with an absent value as `"undefined"` and null as `"null"`, which is what `parseInt` and `parseFloat` are given. */
+    /**
+     * `String(value)`, with an absent value as `"undefined"` and null as `"null"`, which is what `parseInt` and `parseFloat` are given: a list by its
+     * elements joined by commas (`[306]` is `"306"`), an object as `"[object Object]"`.
+     */
     private fun jsString(value: JsonElement?): String = when (value) {
         null -> "undefined"
         is JsonNull -> "null"
         is JsonPrimitive -> JsValue.string(value) ?: value.content
-        else -> value.toString()
+        is JsonArray -> JsNumber.joined(value)
+        is JsonObject -> "[object Object]"
     }
 
     private fun orZero(value: Double) = if (value.isNaN() || value == 0.0) 0.0 else value

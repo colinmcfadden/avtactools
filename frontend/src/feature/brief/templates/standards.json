@@ -1,0 +1,112 @@
+{
+  "format": "ezpz-brief-standards",
+  "version": 1,
+  "source": "Aviation Branch Handbook (Annex A to the Aviation Branch Operations SOP), 15 July 2024, Parts 3 and 4, in the app's own words",
+  "values": {
+    "commoCheckMinutes": { "value": 25, "unit": "min", "label": "Commo check before takeoff" },
+    "taxiLoadMinutes": { "value": 15, "unit": "min", "label": "Taxi and load before takeoff" },
+    "lineupMinutes": { "value": 5, "unit": "min", "label": "Lineup before takeoff" },
+    "takeoffWarningSeconds": { "value": 5, "unit": "s", "label": "Lead's warning before takeoff, at least" },
+    "spOutboundAirspeed": { "value": 60, "unit": "KIAS", "label": "Lead departs to the SP at" },
+    "departureClimbFpm": { "value": 500, "unit": "fpm", "label": "Departure climb, less than" },
+    "joinClosureKnots": { "value": 10, "unit": "KIAS", "label": "Closure when joining, not more than this above the briefed airspeed" },
+    "joinCallDisks": { "value": 10, "unit": "disks", "label": "\"Closing\" called at" },
+    "leadChangeTurn": { "value": "30–90", "unit": "°", "label": "Lead's heading change to leave the formation" },
+    "leadChangeDisks": { "value": 8, "unit": "disks", "label": "Old lead's separation before it parallels the flight" },
+    "leadChangeSlow": { "value": 10, "unit": "KIAS", "label": "Old lead slows by" },
+    "lostCommoDisksDay": { "value": 3, "unit": "disks", "label": "Separation while signalling lost commo, day" },
+    "lostCommoDisksNight": { "value": 5, "unit": "disks", "label": "Separation while signalling lost commo, night" },
+    "lostVisualSlow": { "value": 10, "unit": "KIAS", "label": "Aircraft that lost visual slows by" },
+    "lostVisualAltitude": { "value": 200, "unit": "ft", "label": "Aircraft that lost visual climbs or descends by" },
+    "linkUpAltitude": { "value": 200, "unit": "ft", "label": "Vertical separation at a link-up point, at least" },
+    "iimcClearanceFt": { "value": 1000, "unit": "ft", "label": "Added to the highest terrain or obstacle for the base altitude" },
+    "iimcClearanceMountainFt": { "value": 2000, "unit": "ft", "label": "Added in mountainous terrain" },
+    "iimcAltitudeStep": { "value": 500, "unit": "ft", "label": "Base altitude adjustment for subsequent chalks" },
+    "iimcHeadingStep": { "value": 10, "unit": "°", "label": "Base heading adjustment, times the chalk number, to the clear side" },
+    "iimcAirspeedStep": { "value": 10, "unit": "KIAS", "label": "Base airspeed less this for subsequent chalks" },
+    "downedSecurityMeters": { "value": 2000, "unit": "m", "label": "Wingman's air security around a downed aircraft" },
+    "downedMoveMeters": { "value": 1000, "unit": "m", "label": "Crew moves within this of the aircraft if the site is not secure" },
+    "separationDayDisks": { "value": "2 / 3 / 2 / 1", "unit": "disks", "label": "Rotor disk separation by day: SP inbound / enroute / RP inbound / landing" },
+    "separationNightDisks": { "value": "3 / 3 / 3 / 3", "unit": "disks", "label": "Rotor disk separation at night or on NVG: SP inbound / enroute / RP inbound / landing" }
+  },
+  "procedures": {
+    "redcon1": {
+      "title": "REDCON-1 procedures",
+      "summary": "Anti-collision lights off at REDCON 1 except trail; trail starts the report in reverse chalk order; lead calls the flight REDCON 1, warns at least 5 s ahead and takes off on time.",
+      "script": [
+        "Every aircraft but trail turns its anti-collision light off at REDCON 1.",
+        "Trail starts the REDCON 1 report in reverse chalk order; when lead reports REDCON 1 the flight is ready.",
+        "Lead warns at least {value:takeoffWarningSeconds} seconds before departure and takes off on time, accelerating to {value:spOutboundAirspeed} knots and climbing at less than {value:departureClimbFpm} feet a minute.",
+        "Anyone who cannot make the takeoff time tells lead."
+      ]
+    },
+    "leadChange": {
+      "title": "Lead change procedures",
+      "summary": "Lead calls the side, the flight acknowledges in chalk order; old lead turns out {value:leadChangeTurn}°, opens to {value:leadChangeDisks} disks, slows {value:leadChangeSlow} KIAS and takes trail unless the AMC places it.",
+      "script": [
+        "Lead change: lead calls \"lead change\" and the side, and the flight acknowledges in chalk order.",
+        "Lead turns {value:leadChangeTurn} degrees out of the formation to at least {value:leadChangeDisks} rotor disks, then parallels the flight and slows {value:leadChangeSlow} knots.",
+        "Each aircraft calls clear as it passes; the old lead takes trail unless the AMC places it, and trail calls saddled."
+      ]
+    },
+    "lostCommo": {
+      "title": "Lost communication procedures",
+      "summary": "Show the lost-commo signal until acknowledged; the next aircraft moves where it can be seen at {value:lostCommoDisksDay} disks ({value:lostCommoDisksNight} at night); stay in chalk order; a lead with lost commo hands over the lead.",
+      "script": [
+        "Lost commo: work the PACE plan first.",
+        "Still lost, show the lost-commo signal until it is answered with the same signal; the adjacent aircraft moves where it can be seen, at least {value:lostCommoDisksDay} rotor disks by day and {value:lostCommoDisksNight} at night.",
+        "Stay in chalk order and in sight of an aircraft that has comms; changes of position are made on the ground.",
+        "If lead has lost commo, we change lead once it is acknowledged. The AMC decides whether to continue or abort; an abort flies the briefed return route."
+      ]
+    },
+    "lostVisual": {
+      "title": "Loss of visual contact",
+      "summary": "Call blind; the aircraft lost gives heading, airspeed, altitude and position from a common point; slow {value:lostVisualSlow} KIAS and move {value:lostVisualAltitude} ft; rejoin at no more than {value:joinClosureKnots} KIAS above. Rally points: {bind:rally.points}.",
+      "script": [
+        "Lost visual: use every digital aid, then call blind on internal.",
+        "The aircraft you lost gives its heading, airspeed, MSL altitude, and bearing and distance from a common point, and shows trail lighting.",
+        "You slow {value:lostVisualSlow} knots below its airspeed and climb or descend {value:lostVisualAltitude} feet.",
+        "Once visual, close at no more than {value:joinClosureKnots} knots above it and call closing; trail calls saddled.",
+        "Not visual: continue as two flights in radio contact and link up on the ground at the next landing zone. Rally points are {bind:rally.points}."
+      ]
+    },
+    "actionsOnContact": {
+      "title": "Actions on contact",
+      "summary": "Evade, suppress if able, get to cover or out of contact, develop the situation and decide, and report.",
+      "script": [
+        "Actions on contact: evasive maneuver for the kind of contact, suppress immediately if able and announce it, break contact to cover or out of the threat's reach, then the AMC decides on a course of action and reports."
+      ]
+    },
+    "iimc": {
+      "title": "IIMC",
+      "summary": "Base {field:baseAltitude}, heading {field:baseHeading}, airspeed {field:baseAirspeed}; subsequent chalks ±{value:iimcAltitudeStep} ft, {value:iimcHeadingStep}° × chalk to the clear side, less {value:iimcAirspeedStep} KIAS. Recover {field:recovery}.",
+      "fields": [
+        { "id": "baseAltitude", "label": "Base altitude" },
+        { "id": "baseHeading", "label": "Base heading" },
+        { "id": "baseAirspeed", "label": "Base airspeed" },
+        { "id": "recovery", "label": "Recovery airfield and approach" }
+      ],
+      "script": [
+        "IIMC: announce it with your chalk and heading, go to instruments, never descend.",
+        "Base altitude {field:baseAltitude}, adjusted {value:iimcAltitudeStep} feet for each subsequent chalk; base heading {field:baseHeading}, plus {value:iimcHeadingStep} degrees times your chalk number to the clear side; base airspeed {field:baseAirspeed}, less {value:iimcAirspeedStep} knots for subsequent chalks.",
+        "Contact the controlling agency. Recovery is {field:recovery}."
+      ]
+    },
+    "downedAircraft": {
+      "title": "Downed aircraft plan",
+      "summary": "Crew secures the site or moves within {value:downedMoveMeters} m and reports; wingman secures out to {value:downedSecurityMeters} m, establishes comms, calls for help and reports to higher.",
+      "script": [
+        "Downed aircraft: the crew zeroizes as required, gives first aid, and secures the aircraft or moves within {value:downedMoveMeters} meters to a better place, then reports.",
+        "The wingman provides security out to {value:downedSecurityMeters} meters if the mission allows, establishes comms with the crew on the briefed frequency, calls for other aircraft and the ground commander, and reports to higher."
+      ]
+    },
+    "goAround": {
+      "title": "Go-around",
+      "summary": "As a flight when lead or the AMC calls it, everyone following lead; single ship when one crew judges it unsafe, calling chalk and direction.",
+      "script": [
+        "Go-around as a flight: lead or the AMC calls \"flight, go-around\" and everyone follows lead, {bind:stop.goAround}.",
+        "Single ship: call your chalk, go-around and direction, then land behind the last aircraft or in your position as briefed."
+      ]
+    }
+  }
+}

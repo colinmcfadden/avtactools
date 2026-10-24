@@ -52,6 +52,9 @@ include(":core-sync")
 // Mission packs (docs/MISSION_PACKS.md): pure, held to contracts/fixtures/packs; not map packs.
 include(":core-missionpacks")
 
+// The mission brief (docs/MISSION_BRIEF.md): its formats, compileBrief and the light data; pure, held to contracts/fixtures/brief.
+include(":core-brief")
+
 // Android Gradle Plugin modules. The domain stays in the core modules above; these hold what needs the Android
 // framework (UI, the database, the app itself). Feature modules never depend on each other, `app` wires them.
 include(":core-designsystem")
@@ -65,6 +68,7 @@ include(":feature-auth")
 include(":feature-map")
 include(":feature-workspace")
 include(":feature-packs")                                     // the mission-pack screens (P1-P4)
+include(":feature-brief")                                     // the mission brief's screens (B8, B9)
 
 // Test support: reads ../contracts/fixtures. Not part of the shipped app.
 include(":core-testing")

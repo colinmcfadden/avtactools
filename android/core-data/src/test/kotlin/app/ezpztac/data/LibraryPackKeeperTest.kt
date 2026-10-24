@@ -91,6 +91,25 @@ class LibraryPackKeeperTest {
     }
 
     @Test
+    fun `a brief is kept as a brief, its document whole`() = runBlocking<Unit> {
+        // Not like the web, whose saveVersionToLibrary would save a brief as an empty set of routes.
+        val brief = KeptVersion(
+            "p-1:br-1:op-8", "brief", "OP DK BRIEF (my edits)",
+            json("""{"version": 1, "template": {"id": "amb", "version": 1}, "answers": {"2.b": {"value": "500-1 day"}}, "newer": 1}"""),
+        )
+        // Only for an account with mission briefs: /api/briefs refuses one without, and the record would wait in the outbox for good, unseen.
+        assertEquals(listOf(KeptOutcome.NothingToKeep(brief.key, "mission_brief_off")), keeper.keep("p-1", listOf(brief)))
+        assertTrue(store.transaction { outbox() }.isEmpty())
+        keeper = LibraryPackKeeper(store, keepsBriefs = { true })
+        assertEquals(listOf(KeptOutcome.Saved(brief.key, "brief", LibraryPackKeeper.uuidFor(brief.key), "OP DK BRIEF (my edits)")), keeper.keep("p-1", listOf(brief)))
+        val kept = store.transaction { record(RecordKind.BRIEF, LibraryPackKeeper.uuidFor(brief.key)) }!!
+        assertEquals(brief.data.toString(), kept.data.toString())
+        assertEquals(listOf(RecordKind.BRIEF to Operation.CREATE), store.transaction { outbox() }.map { it.kind to it.operation })
+        val list = KeptVersion("p-1:br-2:op-9", "brief", "X (my edits)", json("[]"))
+        assertEquals(KeptOutcome.NothingToKeep(list.key, "unreadable"), keeper.keep("p-1", listOf(list)).single())
+    }
+
+    @Test
     fun `a copy saved as it is keeps a route set's own fields and version, as the server's save to the library does`() = runBlocking<Unit> {
         val copy = routes.copy(key = "copy:p-1:1", name = "MISSION 1 copy", asIs = true)
         keeper.keep("p-1", listOf(copy, lz.copy(key = "copy:p-1:2", asIs = true), points.copy(key = "copy:p-1:3", asIs = true)))
