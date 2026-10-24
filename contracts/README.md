@@ -30,8 +30,11 @@ contracts/
 │  │                strip-grid.json (reference: the web, feature/brief/stripGrid.js over mgrsGrid.js, the strips' MGRS grid)
 │  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
+│  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json, scene.json   reference: the web app (feature/viewer3d/)
+│  │                geodesy.json   geodetic to geocentric points               reference: PROJ (scripts/geodesy_fixtures.py)
+│  │                tileset/   a LiDAR tileset as the server serves it        reference: py3dtiles 12.1.1 (scripts/tileset_fixture.py)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
-└─ scripts/         generators: the fixtures PyGeodesy owns, and tokens.py
+└─ scripts/         generators: the fixtures PyGeodesy owns, tokens.py, and the LiDAR tileset (tileset_fixture.py)
 ```
 
 ## Who is the reference
@@ -84,6 +87,9 @@ reference is.
 | `packs/settings.json` | `frontend/src/contracts/packSettingsFixtures.test.js` | — | `core-missionpacks` (`LzPackKind`, `RoutePackKind`, `PackDiff`: each setting's item read and written back unchanged, the web's operations for it strictly and in order, and what the port sends instead, kept whole, rebuilding the same item; `PackSettingsFixtureTest`) |
 | `packs/history.json` | `frontend/src/contracts/packHistoryFixtures.test.js` | — | `core-missionpacks` (`PackHistory`: a pack's log read as the history's lines, every case, its events read strictly as the server's; `PackHistoryFixtureTest`) |
 | `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | `core-missionpacks` (`PackSessions`: every scenario step by step, with the whole session, what is visible, each answer and the `dropped_versions`, strictly: null kept apart from absent, keys in JavaScript's order; `PackSessionFixtureTest`) |
+| `viewer3d/*.json` | `frontend/src/contracts/viewer3dFixtures.test.js` | — | `core-scene3d` (the route scene, the compass, the terrain tiles), `core-data` (the build flow) |
+| `viewer3d/tileset/` | — (py3dtiles's own output, by `contracts/scripts/tileset_fixture.py`) | `backend/tests/test_network_fixtures.py` (served as the recorded tileset) | `core-scene3d` (`TilesetReader`, `PntsReader`) |
+| `viewer3d/geodesy.json` | — (PROJ's own transform, by `contracts/scripts/geodesy_fixtures.py`) | — | `core-scene3d` (`geodeticToEcef`, `ecefToGeodetic`, `LocalFrame`) |
 
 iOS joins this table when it starts; it reads the same files.
 
@@ -97,6 +103,28 @@ are fixtures too: the web suite fails if a rebuild differs from what is committe
 the Kotlin reader is always tested on the files the web would produce today.
 Everything inside is invented; no file from a real mission. A real, unclassified AMPS
 export from the owner would be added as a further case, and is the better test.
+
+### The `viewer3d/` fixtures
+
+The 3D LZ view (`docs/ANDROID_3D_PLAN.md`). The web draws it with Cesium, which cannot be a fixture; everything that decides what it
+shows can:
+
+| File | What it pins | Web code |
+|---|---|---|
+| `routeScene.json` | Where each route's line, curtain, drop lines and labels go, in metres above the ellipsoid: the samples asked for, and the shapes made from each answer (hidden routes, touchdowns, AGL with no MSL, the 50 ft mismatch, missing ground and geoid, a long route sampled coarsely, the labels' text); for each answer the sphere *Routes* frames, and a route's colours as Cesium reads them, both from Cesium itself (its CommonJS build, required by the test: never through webpack) | `routeScene.js`, `routeEntities.js`, Cesium's `BoundingSphere.fromPoints` and `Color.fromCssColorString` |
+| `compass.json` | How the compass turns and tilts for a camera's heading and pitch, and the heading it shows (`330°T`) | `compass.js` |
+| `terrain.json` | Which terrain tile holds a place at each level (Cesium's geographic tiling), and the tiles' size | `terrainProvider.js` |
+| `lidarFlow.json` | Finding or building a point cloud while someone waits: every request, how long after the last answer it came, the answer, and what the view shows then, through every answer the server can give | `useLidarTileset.js` |
+| `scene.json` | How the view looks and moves (the opening pose, the point sizes, the screen-space errors, the eye-dome lighting, the flights' lengths), the twenty draws Cesium sizes a leaf's points from (`PntsLoader`'s twister from seed 0, from the `mersenne-twister` package Cesium itself uses), and how far back a sphere is framed for views of each shape, wider than tall to an upright phone (`framing`) | `sceneSettings.js`, `framing.js` |
+
+`tileset/` is a LiDAR tileset as the server serves it (`backend/lidar/tiles.py`): a synthetic point cloud converted by py3dtiles 12.1.1, the
+build image's version, with `context/` beside it as the thinned ring. Regenerate with `python contracts/scripts/tileset_fixture.py` in the
+LiDAR image or a venv with that version; py3dtiles stamps the time it was made, and its previews are random, so a regenerated tileset
+differs there and nowhere else.
+
+`geodesy.json` is the earth's frame the 3D view puts everything in: latitude, longitude and height above the ellipsoid to geocentric metres,
+from PROJ (pyproj, as the backend pins it; EPSG:4979 to EPSG:4978) at the LZ, the poles, the antimeridian, below the ellipsoid and far above
+it. `python contracts/scripts/geodesy_fixtures.py` writes it with the backend's Python, and `... check` fails if the committed file differs.
 
 ### The `packs/` fixtures
 

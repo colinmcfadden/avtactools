@@ -234,6 +234,11 @@ fun TabletFrame(
     /** Across the top beside the rail, over the panes and the map (a finished pack's, the design's AT Finished): it takes the window's top inset itself. */
     band: (@Composable () -> Unit)? = null,
     /**
+     * Whether Back puts away the supporting pane that stands: not while a page is drawn over the frame, whose own Back comes first. The frame is made again
+     * when the window crosses into a tablet's (a turn, a foldable opened), and a handler made later is asked first.
+     */
+    backEnabled: Boolean = true,
+    /**
      * While a brief is presented on the live sandtable (feature-brief's `SandtableFrame`): the rail, the panes and the band are put away, kept composed as they were
      * (their scroll, what was typed in them, what they listen for), as the web keeps its planning frame; the map takes the whole window where it is, with no padding of
      * its own and none of its controls (it never moves: MapLibre's surface is not taken off the screen and put back), and the presentation is drawn over it. [toasts]
@@ -263,7 +268,7 @@ fun TabletFrame(
         // Back puts away the supporting pane that stands, as its close button does; one waiting out of sight is not taken away unseen. Not while presenting: Back is
         // the sandtable's then.
         val presenting = presentation != null
-        BackHandler(enabled = standing != null && panes.support && !presenting) { standing?.onClose?.invoke() }
+        BackHandler(enabled = backEnabled && standing != null && panes.support && !presenting) { standing?.onClose?.invoke() }
         // When a brief ends the keyboard's focus goes back to the rail's Brief, as the web gives it back to its Brief button (the setup the sandtable was begun
         // from is gone by then), once the rail is laid out again. A button takes the focus only from someone using keys (`Focusability.SystemDefined`), so after a
         // touch nothing is focused, as before.

@@ -310,6 +310,8 @@ public class ApiClient(
         val file: FormFile? = null,
         /** The answer is a file: its bytes are kept as they came, instead of being read as text. */
         val binary: Boolean = false,
+        /** The most a file's answer may hold; one longer is refused as it arrives (`too_large`), never read whole first. None: no bound. */
+        val maxBytes: Long? = null,
         /** Whether the call needs the access token. */
         val auth: Boolean = true,
         val headers: Map<String, String> = emptyMap(),
@@ -401,7 +403,9 @@ public class ApiClient(
             client.newCall(request).exchange { response ->
                 if (!call.binary) return@exchange Raw(response.code, response.headers, response.body?.string().orEmpty())
                 // A file is read as bytes; an error's body is still text, which is what the error mapping reads.
-                val bytes = response.body?.bytes() ?: ByteArray(0)
+                // An error's page (a proxy's, Flask's own 404) may be longer than the file would have been, and is read for its words, so it has a bound of its own.
+                val max = if (response.code in 200..299) call.maxBytes else call.maxBytes?.let { maxOf(it, ERROR_BODY_MAX_BYTES) }
+                val bytes = response.body?.let { body -> bounded(body, max, response.code) } ?: ByteArray(0)
                 if (response.code in 200..299) Raw(response.code, response.headers, "", bytes) else Raw(response.code, response.headers, String(bytes, Charsets.UTF_8))
             }
         } catch (e: IOException) {
@@ -410,6 +414,19 @@ public class ApiClient(
     }
 
     private fun networkFailure(e: IOException): NetworkException = classify(e)
+
+    /**
+     * A file's body, read only as far as [max] allows: a length declared over it is refused before anything is read, and one that runs over it is
+     * refused once a byte too many has come. Refused as an [ApiException], not an IOException, so it is not taken for the network failing.
+     */
+    private fun bounded(body: okhttp3.ResponseBody, max: Long?, status: Int): ByteArray {
+        if (max == null) return body.bytes()
+        val declared = body.contentLength()
+        if (declared > max) throw ApiException(status, "too_large", "An answer of $declared bytes is more than the $max it may be.")
+        val source = body.source()
+        if (source.request(max + 1)) throw ApiException(status, "too_large", "An answer of more than the $max bytes it may be.")
+        return source.buffer.readByteArray()
+    }
 
     // -- Live streams ------------------------------------------------------------------
 
@@ -461,6 +478,9 @@ public class ApiClient(
         if (text.isBlank()) null else runCatching { JSON.parseToJsonElement(text) }.getOrNull() as? JsonObject
 
     internal companion object {
+        /** The most of an error's body a bounded file call reads ([Call.maxBytes]). */
+        const val ERROR_BODY_MAX_BYTES: Long = 64L * 1024
+
         /**
          * Whether the server could have seen the request that failed. A failure before it was sent (no route, no DNS, a
          * refused connection, a failed handshake, a connect timeout) cannot have changed anything there; one after it

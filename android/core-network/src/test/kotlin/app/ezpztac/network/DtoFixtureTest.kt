@@ -143,7 +143,26 @@ class DtoFixtureTest {
         "team invites" to InvitesBody.serializer(),
         "users: search" to UsersBody.serializer(),
         "users: search finds only teammates" to UsersBody.serializer(),
+        "lidar: resolve, nothing built here" to LidarResolveDto.serializer(),
+        "lidar: resolve, built" to LidarResolveDto.serializer(),
+        "lidar: resolve, on a server that cannot build" to LidarResolveDto.serializer(),
+        "lidar: build" to LidarBuildDto.serializer(),
+        "lidar: build, asked for again" to LidarBuildDto.serializer(),
+        "lidar: build of a saved LZ/PZ, nobody waiting" to LidarBuildDto.serializer(),
+        "lidar: build, built already" to LidarBuildDto.serializer(),
+        "lidar: progress, queued" to LidarBuildDto.serializer(),
+        "lidar: progress, queued behind another" to LidarBuildDto.serializer(),
+        "lidar: a build under way" to LidarBuildDto.serializer(),
+        "lidar: progress, done" to LidarBuildDto.serializer(),
+        "lidar: progress, failed" to LidarBuildDto.serializer(),
+        "lidar: release" to LidarBuildDto.serializer(),
+        "lidar: progress, dropped once nobody waited" to LidarBuildDto.serializer(),
+        "terrain: heights" to TerrainHeightsDto.serializer(),
+        "terrain: heights, no points" to TerrainHeightsDto.serializer(),
     )
+
+    /** Documents a format reader reads, not records: a tileset's `tileset.json` is 3D Tiles, whose reader passes over what it does not know. */
+    private val documents = setOf("lidar: the tileset's root", "lidar: the ring's root")
 
     @TestFactory
     fun `every successful response decodes strictly`(): List<DynamicTest> =
@@ -160,10 +179,12 @@ class DtoFixtureTest {
     @Test
     fun `no successful response is left without a type`() {
         val uncovered = Recorded.all
-            .filter { it.status in 200..202 && it.body != null && it.name !in decoders }
+            // A binary body (a heightmap, a tile) is recorded as null with its bytes beside it: not a record either.
+            .filter { it.status in 200..202 && it.body != null && it.body !is JsonNull && it.name !in decoders }
             .map { it.name }
             // Bodies that are a status word only, not a record.
             .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in documents }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
     }
 

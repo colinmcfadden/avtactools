@@ -1,5 +1,6 @@
 package app.ezpztac.workspace
 
+import app.ezpztac.model.DiagramStatus
 import app.ezpztac.sync.MAX_NAME
 import app.ezpztac.sync.cutToCharacters
 import java.time.Instant
@@ -15,6 +16,14 @@ object LzNames {
 
     /** Whether [name] is still the made-up one. */
     fun isMadeUp(name: String): Boolean = MADE_UP.matches(name.trim())
+
+    /**
+     * Whether an LZ/PZ is saved as the web's `savedId` says one is: named (not its made-up name) and analysed (none is saved before), and not the copy
+     * kept beside a conflict. *Save* shows *Saved* then; a save seen happening asks for its point cloud ([app.ezpztac.data.BuildOnSave]), and the 3D
+     * view keeps a saved one's build going when it closes.
+     */
+    fun isSaved(name: String, status: DiagramStatus, conflictOf: String?): Boolean =
+        conflictOf == null && status == DiagramStatus.ANALYZED && !isMadeUp(name)
 
     /**
      * Why a made-up name cannot be what an LZ/PZ is saved or renamed as: it is what says the LZ/PZ has not been named yet, so one saved as `LZ/PZ 1`

@@ -53,6 +53,7 @@ dependencies {
     implementation(project(":feature-map"))
     implementation(project(":feature-workspace"))
     implementation(project(":feature-packs"))
+    implementation(project(":feature-viewer3d"))
     implementation(project(":feature-brief"))
 
     implementation(libs.androidx.core.ktx)
