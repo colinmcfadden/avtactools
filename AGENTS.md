@@ -850,8 +850,6 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 
 ## 15. Known issues and debt
 
-- `README.md`'s deployment section and project tree are stale (it describes
-  Hugging Face Spaces and a `backend/src/` layout). This file is current.
 - `backend/.env.example` is missing (§10).
 - `tests/test_threat_qr_export.py` fails (pre-existing).
 - CI runs the Kotlin modules, the fixtures and the backend's contract tests
