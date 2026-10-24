@@ -82,6 +82,18 @@ const VIEW_CASES = AREAS.flatMap((bounds) => MAPS.flatMap(([x, y]) => {
 
 const viewCase = (c) => ({ ...c, leaflet: leafletView(c.bounds, c.size, c.insets) });
 
+// Leaflet's projection runs through Math.sin, Math.log and Math.atan, whose last digit differs between machines (V8 on Apple silicon fuses multiply-adds that
+// x86-64 rounds twice, AGENTS.md §11), so a centre is held to 1e-9 of a degree (a tenth of a millimetre), not to its last digit; everything else exactly.
+const NEAR = 1e-9;
+const withinNear = (made, recorded) => {
+  if (typeof made === "number" && typeof recorded === "number") return Math.abs(made - recorded) <= NEAR ? recorded : made;
+  if (Array.isArray(made) && Array.isArray(recorded) && made.length === recorded.length) return made.map((v, i) => withinNear(v, recorded[i]));
+  if (made && recorded && typeof made === "object" && typeof recorded === "object" && !Array.isArray(made) && !Array.isArray(recorded)) {
+    return Object.fromEntries(Object.entries(made).map(([k, v]) => [k, k in recorded ? withinNear(v, recorded[k]) : v]));
+  }
+  return made;
+};
+
 const document_ = () => ({
   generatedBy: "frontend/src/contracts/briefSandtableFitFixtures.test.js (UPDATE_CONTRACTS=1)",
   leaflet: L.version,
@@ -109,7 +121,15 @@ describe("brief/sandtable-fit.json", () => {
   });
 
   it("holds Leaflet's view for every area, map and inset", () => {
-    expect(fixture.views).toEqual(made.views);
+    expect(fixture.views).toEqual(withinNear(made.views, fixture.views));
+  });
+
+  it("still sees a view that moved", () => {
+    const moved = JSON.parse(JSON.stringify(fixture.views));
+    moved[0].leaflet.center[0] += 1e-7;
+    expect(withinNear(moved, fixture.views)).not.toEqual(fixture.views);
+    moved[0].leaflet.center[0] -= 1e-7 - 1e-12;
+    expect(withinNear(moved, fixture.views)).toEqual(fixture.views);
   });
 });
 
