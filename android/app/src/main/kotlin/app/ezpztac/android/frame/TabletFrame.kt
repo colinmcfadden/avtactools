@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,10 +53,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
@@ -93,6 +97,8 @@ class TabletRail(
     val account: @Composable () -> Unit,
     /** The workspace tile: the Library's, or the open pack's in its colour, with the switcher at it when packs run here. */
     val workspace: RailWorkspace = RailWorkspace(),
+    /** The mission brief's setup (docs/MISSION_BRIEF.md, B8: the tablet's rail only), for an account with Mission briefs; none, no button. */
+    val onBrief: (() -> Unit)? = null,
 )
 
 /** What the rail's workspace tile says, and the switcher it opens ([menu], drawn while open with what closes it; none: a label, not a button). */
@@ -232,6 +238,13 @@ fun TabletFrame(
      * when the window crosses into a tablet's (a turn, a foldable opened), and a handler made later is asked first.
      */
     backEnabled: Boolean = true,
+    /**
+     * While a brief is presented on the live sandtable (feature-brief's `SandtableFrame`): the rail, the panes and the band are put away, kept composed as they were
+     * (their scroll, what was typed in them, what they listen for), as the web keeps its planning frame; the map takes the whole window where it is, with no padding of
+     * its own and none of its controls (it never moves: MapLibre's surface is not taken off the screen and put back), and the presentation is drawn over it. [toasts]
+     * go where the presentation puts them, and offer nothing to do.
+     */
+    presentation: (@Composable BoxScope.(toasts: @Composable (Modifier) -> Unit) -> Unit)? = null,
     mapScreen: @Composable (MapFrame) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -243,6 +256,7 @@ fun TabletFrame(
     val top = if (band != null) 0.dp else WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var mapHeight by remember { mutableIntStateOf(0) }
+    val briefFocus = remember { FocusRequester() }
     BoxWithConstraints(modifier.fillMaxSize()) {
         val panes = state.panes(maxWidth, standing != null)
         val bandMax = maxHeight * BAND_MAX_SHARE
@@ -251,22 +265,41 @@ fun TabletFrame(
             state.listShown = panes.list
             if (!panes.list) focus.clearFocus()
         }
-        // Back puts away the supporting pane that stands, as its close button does; one waiting out of sight is not taken away unseen.
-        BackHandler(enabled = backEnabled && standing != null && panes.support) { standing?.onClose?.invoke() }
+        // Back puts away the supporting pane that stands, as its close button does; one waiting out of sight is not taken away unseen. Not while presenting: Back is
+        // the sandtable's then.
+        val presenting = presentation != null
+        BackHandler(enabled = backEnabled && standing != null && panes.support && !presenting) { standing?.onClose?.invoke() }
+        // When a brief ends the keyboard's focus goes back to the rail's Brief, as the web gives it back to its Brief button (the setup the sandtable was begun
+        // from is gone by then), once the rail is laid out again. A button takes the focus only from someone using keys (`Focusability.SystemDefined`), so after a
+        // touch nothing is focused, as before.
+        var presented by remember { mutableStateOf(false) }
+        LaunchedEffect(presenting) {
+            if (presenting) {
+                presented = true
+            } else if (presented) {
+                presented = false
+                withFrameNanos { }
+                briefFocus.requestFocus()
+            }
+        }
+        // Put away while a brief is presented: composed, neither laid out nor read.
+        val away = if (presenting) Modifier.hidden() else Modifier
         Row(Modifier.fillMaxSize()) {
-            Rail(panels, current, counts, rail = rail, onPick = { picked ->
-                state.showList()
-                onPick(picked)
-            })
+            Box(away) {
+                Rail(panels, current, counts, rail = rail, briefFocus = briefFocus, onPick = { picked ->
+                    state.showList()
+                    onPick(picked)
+                })
+            }
             Column(Modifier.weight(1f).fillMaxHeight()) {
             if (band != null) {
-                Box(Modifier.heightIn(max = bandMax).verticalScroll(rememberScrollState())) { band() }
+                Box(Modifier.heightIn(max = bandMax).verticalScroll(rememberScrollState()).then(away)) { band() }
             }
-            Row(Modifier.weight(1f).fillMaxWidth().then(if (band != null) Modifier.consumeWindowInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)) else Modifier)) {
+            Row(Modifier.weight(1f).fillMaxWidth().then(if (band != null && !presenting) Modifier.consumeWindowInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)) else Modifier)) {
             // The panel's list: always composed (its scroll, its pickers, what it listens for), laid out only while it stands. A surface, so what is drawn on it
             // takes the palette's colour for text, as in the phone's sheet.
             Surface(
-                Modifier.then(if (panes.list) Modifier.width(LIST_WIDTH).fillMaxHeight() else Modifier.hidden()).edge(end = true, MaterialTheme.colorScheme.outlineVariant),
+                Modifier.then(if (panes.list && !presenting) Modifier.width(LIST_WIDTH).fillMaxHeight() else Modifier.hidden()).edge(end = true, MaterialTheme.colorScheme.outlineVariant),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
                 Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Bottom))) {
@@ -290,8 +323,11 @@ fun TabletFrame(
                     padding = MapPadding(top = top + MapChrome.SEARCH_BOTTOM, bottom = bottomInset),
                     controlsBottom = { if (mapHeight > 0) mapHeight - bottomPx else null },
                 )
-                mapScreen(frame)
-                if (toasts) {
+                // The one map, here whatever the frame shows: while presenting it is the whole window's and the presentation is drawn over it.
+                mapScreen(if (presenting) PRESENTING else frame)
+                if (presentation != null) {
+                    presentation { place -> if (toasts) ToastHost(snackbars, place.padding(horizontal = Tokens.Spacing.lg.dp, vertical = Tokens.Spacing.md.dp), actions = false) }
+                } else if (toasts) {
                     ToastHost(
                         snackbars,
                         Modifier.fillMaxSize().padding(horizontal = Tokens.Spacing.lg.dp).aboveTheReadout(floatingPx) { bottomPx.roundToInt() },
@@ -301,7 +337,7 @@ fun TabletFrame(
             // Every supporting pane stays composed (what was typed in it, its scroll), and only the one that stands is laid out.
             supporting.forEach { pane ->
                 key(pane.key) {
-                    val shown = pane === standing && panes.support
+                    val shown = pane === standing && panes.support && !presenting
                     Surface(
                         Modifier.then(if (shown) Modifier.width(SUPPORT_WIDTH).fillMaxHeight() else Modifier.hidden()).edge(end = false, MaterialTheme.colorScheme.outlineVariant)
                             .then(if (pane.title != null) Modifier.semantics { paneTitle = pane.title } else Modifier),
@@ -326,12 +362,15 @@ fun TabletFrame(
     }
 }
 
+/** The map while a brief is presented: the whole of it is the figure's, with no strip of its own kept for controls (it has none then). */
+private val PRESENTING = MapFrame(padding = MapPadding(), controlsBottom = { null })
+
 /**
  * The rail (the design's, 96 dp): the workspace and Import at the top, the panels with their counts, the Library and the account at the foot. It scrolls where the
  * window is not tall enough for all of it, so the Library and the account are never pushed off the screen.
  */
 @Composable
-private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail: TabletRail, onPick: (Panel) -> Unit) {
+private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail: TabletRail, briefFocus: FocusRequester, onPick: (Panel) -> Unit) {
     Surface(Modifier.width(RAIL_WIDTH).fillMaxHeight(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         BoxWithConstraints(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start))) {
             Column(
@@ -386,7 +425,11 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
                     }
                 }
                 Column(Modifier.padding(top = Tokens.Spacing.lg.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    // The Library is a page, not one of the panels: a button, not a tab.
+                    // The brief and the Library are dialogs and pages, not panels: buttons, not tabs.
+                    rail.onBrief?.let { brief ->
+                        RailButton(EzpzIcons.description, "Brief", onClick = brief, modifier = Modifier.focusRequester(briefFocus))
+                        Spacer(Modifier.height(Tokens.Spacing.sm.dp))
+                    }
                     RailButton(EzpzIcons.collectionsBookmark, "Library", onClick = rail.onLibrary)
                     Spacer(Modifier.height(Tokens.Spacing.md.dp))
                     rail.account()
@@ -441,9 +484,9 @@ private fun RailTile(icon: Int, label: String, description: String, tonal: Boole
 
 /** A button in the rail drawn as its destinations are (an icon over its word), for what is not one of them: the Library. */
 @Composable
-private fun RailButton(icon: Int, label: String, onClick: () -> Unit) {
+private fun RailButton(icon: Int, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(
-        Modifier.width(80.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = Tokens.Spacing.xs.dp),
+        modifier.width(80.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = Tokens.Spacing.xs.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(width = 56.dp, height = 32.dp), contentAlignment = Alignment.Center) {

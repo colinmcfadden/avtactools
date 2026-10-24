@@ -26,8 +26,8 @@ import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.Tokens
 import kotlin.math.roundToInt
 
-/** A name laid over the map beside a point, at a place on the screen. */
-data class PinLabel(val text: String, val at: ScreenPoint, val emphasised: Boolean, val description: String)
+/** A name laid over the map beside a point, at a place on the screen; [dim] for an LZ/PZ that is open but not the one being worked on. */
+data class PinLabel(val text: String, val at: ScreenPoint, val emphasised: Boolean, val description: String, val dim: Boolean = false)
 
 /**
  * The names of the points on the map, worked out for a camera. A raster style has no glyphs, so a name is not map text: it is Compose, put where
@@ -56,6 +56,26 @@ object PinLabels {
         val at = view.toScreen(pin.at)
         if (!onScreen(at, view)) return@mapNotNull null
         PinLabel(pin.name, at, emphasised = pin.selected, description = "${route.name}: ${pin.name}")
+    }
+
+    /** The names of the open LZ/PZs not being worked on, at their targets: each always named (there are few, and the name says which is which). */
+    fun others(scene: OtherLzScene, view: MapProjection): List<PinLabel> = scene.lzs.mapNotNull { lz ->
+        val target = lz.target ?: return@mapNotNull null
+        if (lz.name.isBlank()) return@mapNotNull null
+        val at = view.toScreen(target)
+        if (!onScreen(at, view)) return@mapNotNull null
+        PinLabel(lz.name, at, emphasised = false, description = "Also open: ${lz.name}", dim = true)
+    }
+
+    /**
+     * Whether [finger] is on the chip that names [text] beside the point at [at] (about as [PinChip] draws it, for a screen of [density] pixels to the point): a
+     * tap on the name of an open LZ/PZ is a tap on it.
+     */
+    fun chipContains(at: ScreenPoint, text: String, density: Double, finger: ScreenPoint): Boolean {
+        if (text.isBlank()) return false
+        val left = at.x + 8 * density
+        val top = at.y - HEIGHT_DP / 2 * density
+        return finger.x in left..(left + (PAD_DP + CHAR_DP * text.length) * density) && finger.y in top..(top + HEIGHT_DP * density)
     }
 
     /** The names of the local points to show at [zoom] on a screen of [view], nearest the middle first, none on another. */
@@ -93,18 +113,19 @@ object PinLabels {
 }
 
 /**
- * Draws the names of the route points and the local points over the map. It takes no touches: what is under a name is still tapped. A name sits to the
- * right of its dot on a dark chip, readable on satellite and on the pale charts.
+ * Draws the names of the route points and the local points over the map, and of the open LZ/PZs not being worked on ([others], dimmed, under the rest). It takes
+ * no touches: what is under a name is still tapped (an LZ/PZ's name is tested as part of it, [OtherLzHitTest]). A name sits to the right of its dot on a dark
+ * chip, readable on satellite and on the pale charts.
  */
 @Composable
-fun PinLabelsLayer(host: MapHost, routes: RouteScene, points: PointScene, modifier: Modifier = Modifier) {
+fun PinLabelsLayer(host: MapHost, routes: RouteScene, points: PointScene, modifier: Modifier = Modifier, others: OtherLzScene = OtherLzScene.EMPTY) {
     val camera = host.camera
     val density = LocalDensity.current.density.toDouble()
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
-        if (camera == null || size == IntSize.Zero || (routes.isEmpty && points.isEmpty)) return@Box
+        if (camera == null || size == IntSize.Zero || (routes.isEmpty && points.isEmpty && others.isEmpty)) return@Box
         val view = MapProjection(camera, size.width.toDouble(), size.height.toDouble(), density)
-        (PinLabels.routes(routes, view) + PinLabels.points(points, view, camera.zoom, density)).forEach { PinChip(it) }
+        (PinLabels.others(others, view) + PinLabels.routes(routes, view) + PinLabels.points(points, view, camera.zoom, density)).forEach { PinChip(it) }
     }
 }
 
@@ -114,10 +135,10 @@ private fun PinChip(label: PinLabel) {
     Surface(
         shape = RoundedCornerShape(Tokens.Radius.sm.dp),
         color = if (label.emphasised) scheme.primary else scheme.surface,
-        contentColor = if (label.emphasised) scheme.onPrimary else scheme.onSurface,
+        contentColor = if (label.emphasised) scheme.onPrimary else if (label.dim) scheme.onSurfaceVariant else scheme.onSurface,
         modifier = Modifier
             .offset { IntOffset(label.at.x.roundToInt() + 8.dp.roundToPx(), label.at.y.roundToInt() - 10.dp.roundToPx()) }
-            .alpha(0.92f)
+            .alpha(if (label.dim) 0.8f else 0.92f)
             .semantics { contentDescription = label.description },
     ) {
         Text(label.text, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(horizontal = Tokens.Spacing.xs.dp, vertical = 2.dp), maxLines = 1)

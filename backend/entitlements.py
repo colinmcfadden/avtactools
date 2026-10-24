@@ -16,7 +16,7 @@ import os
 # (routes/admin_routes.set_features), never an "off", so taking a key out of this
 # set really does turn it on for everyone, including people whose access an admin
 # edited while it was off.
-DEFAULT_OFF = frozenset({"mission_packs"})
+DEFAULT_OFF = frozenset({"mission_packs", "mission_brief"})
 
 # Canonical feature keys and human labels for the admin UI. Add new keys here;
 # they default to enabled for everyone until an admin turns one off (or, while
@@ -34,6 +34,7 @@ FEATURES = (
         "Create and manage custom aircraft profiles (the master list stays available)",
     ),
     ("mission_packs", "Mission packs", "Plan together in shared packs of LZs, routes and point sets, and join teams"),
+    ("mission_brief", "Mission brief", "Air movement and hasty multi-ship briefs from the plan: the PDF and the live sandtable"),
 )
 
 FEATURE_KEYS = tuple(key for key, _label, _desc in FEATURES)

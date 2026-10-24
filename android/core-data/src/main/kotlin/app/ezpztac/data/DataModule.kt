@@ -10,6 +10,7 @@ import app.ezpztac.missionpacks.RoutePackKind
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.RouteSet
 import app.ezpztac.network.ApiClient
+import app.ezpztac.network.AuthState
 import app.ezpztac.sync.RecordFeed
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.SyncScheduler
@@ -23,6 +24,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 /**
  * The one database, and what is built on it: the sync store and the repository the screens edit records through, and the mission packs'
@@ -100,10 +103,11 @@ internal object DataModule {
     @Singleton
     fun packStore(database: EzpzDatabase): PackStore = RoomPackStore(database)
 
-    /** What a pack would not take of a person's edits is kept in their library, as `NAME (my edits)`. */
+    /** What a pack would not take of a person's edits is kept in their library, as `NAME (my edits)`; a brief only for an account with mission briefs. */
     @Provides
     @Singleton
-    fun packKeeper(store: SyncStore): PackKeeper = LibraryPackKeeper(store)
+    fun packKeeper(store: SyncStore, api: ApiClient): PackKeeper =
+        LibraryPackKeeper(store, keepsBriefs = { (api.state.value as? AuthState.SignedIn)?.user?.hasFeature("mission_brief") == true })
 
     /**
      * Mission packs outlive any screen (a pack closed with edits still going out sends them), so the engine runs in a scope of its own.
@@ -122,6 +126,59 @@ internal object DataModule {
     @Singleton
     fun libraryCopier(repository: SyncRepository, diagrams: DiagramSession, routes: RouteSession, upload: LibraryUpload, api: ApiClient): LibraryCopier =
         LibraryToPack(repository, SessionWrites(diagrams, routes), upload, copyCall(api))
+
+    /**
+     * The brief being set up (docs/MISSION_BRIEF.md §3) outlives the setup: a change still waiting is written once the person has been still, and a pack's edit is sent,
+     * whatever closes. Kept in the Library only for an account that may keep records there (`cloud_save`).
+     */
+    @Provides
+    @Singleton
+    fun briefKeeper(repository: SyncRepository, scheduler: SyncScheduler, engine: PackEngine, last: LastBrief, api: ApiClient): BriefKeeper =
+        BriefKeeper(repository, scheduler, engine, last, CoroutineScope(SupervisorJob() + Dispatchers.Default), canKeep = { signedInHas(api, "cloud_save") })
+
+    /**
+     * What a brief is built from: the open pack, or the LZ/PZs and route sets open in this session (each LZ/PZ with the slope measured over it), with the
+     * threats (for an account with them) and the aircraft.
+     */
+    @Provides
+    @Singleton
+    fun briefSources(
+        engine: PackEngine,
+        openDiagrams: OpenDiagrams,
+        openSets: OpenRouteSets,
+        diagrams: DiagramSession,
+        routes: RouteSession,
+        feed: RecordFeed,
+        routeRepository: RouteRepository,
+        threats: ThreatStore,
+        aircraft: AircraftProfiles,
+        analysis: AnalysisService,
+        api: ApiClient,
+    ): BriefSources = BriefSources(
+        engine.open, openDiagrams, openSets, diagrams, routes, feed, routeRepository::read,
+        threats = threats.entries,
+        threatsAllowed = api.state.map { signedInHas(it, "threats") }.distinctUntilChanged(),
+        profiles = aircraft.profiles,
+        missionAircraft = aircraft.active.map { it.slug }.distinctUntilChanged(),
+        slopes = analysis.slopes,
+        boundaryKey = analysis::boundaryKey,
+    )
+
+    /** What of the brief waits, written when the app goes to the back and before a sign-out stops packs. */
+    @Provides
+    fun briefFlush(keeper: BriefKeeper): BriefFlush = BriefFlush { keeper.flush() }
+
+    /** The brief compiled, for an account with Mission briefs: compiled off the main thread, its weather fetched in a scope of its own. */
+    @Provides
+    @Singleton
+    fun briefSession(keeper: BriefKeeper, sources: BriefSources, briefApi: BriefApi, api: ApiClient): BriefSession = BriefSession(
+        keeper, sources.inputs, briefApi, CoroutineScope(SupervisorJob() + Dispatchers.Default), Dispatchers.Default,
+        account = api.state.map { state -> (state as? AuthState.SignedIn)?.user?.takeIf { it.hasFeature("mission_brief") }?.id }.distinctUntilChanged(),
+    )
+
+    private fun signedInHas(api: ApiClient, feature: String): Boolean = signedInHas(api.state.value, feature)
+
+    private fun signedInHas(state: AuthState, feature: String): Boolean = (state as? AuthState.SignedIn)?.user?.hasFeature(feature) == true
 
     /** An analysis outlives the screen that asked for it (the person may leave while the server works), and applies its result on the main thread, where edits are made. */
     @Provides

@@ -8,6 +8,7 @@ import app.ezpztac.android.AuthBackend
 import app.ezpztac.android.BuildConfig
 import app.ezpztac.android.DisplayPreferences
 import app.ezpztac.android.DisplaySettings
+import app.ezpztac.android.LastBriefPreferences
 import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastDiagramPreferences
 import app.ezpztac.android.LastRouteSet
@@ -17,6 +18,7 @@ import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.LidarWaitingPreferences
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.MinimumVersionPreferences
+import app.ezpztac.android.HiddenDiagramPreferences
 import app.ezpztac.android.OpenDiagramPreferences
 import app.ezpztac.android.OpenRouteSetPreferences
 import app.ezpztac.android.PointSetViewPreferences
@@ -33,27 +35,33 @@ import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.android.packs.SessionParking
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
+import app.ezpztac.briefs.RendererBriefPdfs
 import app.ezpztac.data.LibraryUpload
 import app.ezpztac.android.sync.WorkManagerSyncScheduler
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.ApiClientMasterProfileSource
 import app.ezpztac.data.ApiClientPlanningApi
+import app.ezpztac.data.ApiClientBriefApi
 import app.ezpztac.data.ApiClientTerrainApi
 import app.ezpztac.data.ApiClientThreatMaskApi
 import app.ezpztac.data.ApiClientLidarApi
 import app.ezpztac.data.ApiClientTerrainProbe
 import app.ezpztac.data.TerrainProbe
 import app.ezpztac.data.ApiClientWeatherApi
+import app.ezpztac.data.BriefApi
 import app.ezpztac.data.BuildOnSave
 import app.ezpztac.data.LidarBuilds
 import app.ezpztac.data.LidarWaiting
 import app.ezpztac.data.EncryptedThreatVault
 import app.ezpztac.data.FileMasterProfileStore
+import app.ezpztac.data.LastBrief
 import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.HiddenDiagramStore
 import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.data.OpenRouteSetStore
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetViewStore
+import app.ezpztac.data.SlopeOpacityMemory
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.data.ThreatMaskApi
 import app.ezpztac.data.ThreatStore
@@ -186,6 +194,11 @@ object AppModule {
     @Singleton
     fun weatherApi(client: ApiClient): WeatherApi = ApiClientWeatherApi(client)
 
+    /** What a mission brief asks the server: the weather at its planned times, and its PDF. */
+    @Provides
+    @Singleton
+    fun briefApi(client: ApiClient): BriefApi = ApiClientBriefApi(client)
+
     /** The weather outlives any screen (a fetch finishes with the sheet closed), so it runs in a scope of its own that is never cancelled with one. */
     @Provides
     @Singleton
@@ -214,7 +227,10 @@ object AppModule {
     /** Sign-out clears what was exported: a shared `.ths` holds a crew's threats in the clear. */
     @Provides
     @Singleton
-    fun exportCleaner(@ApplicationContext context: Context): ExportCleaner = ExportCleaner { ShareExport.clear(context) }
+    fun exportCleaner(@ApplicationContext context: Context): ExportCleaner = ExportCleaner {
+        ShareExport.clear(context)
+        RendererBriefPdfs.clear(context)
+    }
 
     @Provides
     @Singleton
@@ -278,6 +294,9 @@ interface AppBindings {
     fun lastPack(impl: LastPackPreferences): LastPack
 
     @Binds
+    fun lastBrief(impl: LastBriefPreferences): LastBrief
+
+    @Binds
     fun parking(impl: SessionParking): Parking
 
     @Binds
@@ -296,6 +315,9 @@ interface AppBindings {
     fun openDiagrams(impl: OpenDiagramPreferences): OpenDiagramStore
 
     @Binds
+    fun hiddenDiagrams(impl: HiddenDiagramPreferences): HiddenDiagramStore
+
+    @Binds
     fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore
 
     @Binds
@@ -312,4 +334,7 @@ interface AppBindings {
 
     @Binds
     fun gridMemory(impl: MapPreferences): GridMemory
+
+    @Binds
+    fun slopeOpacityMemory(impl: MapPreferences): SlopeOpacityMemory
 }

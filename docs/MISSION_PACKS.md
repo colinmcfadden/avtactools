@@ -48,6 +48,7 @@ recommendation on 2026-10-05.
 - *Update from original* is only for the member who copied the item in, and only they are told the original changed. The original is their private record. A duplicated pack's items have no source link.
 - A teammate is **added directly** by name (they get an email notice); anyone else gets an **invitation** they accept. An emailed link works for whichever account opens it, since people often sign in with a different address from the one they were invited at.
 - Editors rename and describe a pack. Only the owner finishes, reopens, deletes, manages members and invites, and shares with a team. A finished pack still lets the owner manage members and sharing, and lets everyone read it, copy items out, and duplicate it.
+- **A brief item is open to every member, viewers included, in every state of the pack** (the owner, 2026-10-16; `docs/MISSION_BRIEF.md` §3): a batch of operations whose every target is a `brief` (stored as one, or made as one earlier in the batch) is applied in a finished pack and from a viewer, under the pack's lock as every write is. A batch with any other operation in it is refused whole as before, so a client sends brief edits in batches of their own. Nothing else about a brief is an exception: copying in, updating from the original and the pack's own name are refused as before.
 - Limits: 200 operations per batch, 5 MB per item, 300-character log lines, 30 invitations an hour per person, and invitations last 14 days.
 
 ## 2. Data model
@@ -61,7 +62,7 @@ No existing table is altered.
 | `mission_pack` | The pack: owner, optional team share (`team_id`, `team_role`), status (`active` / `finished`), and `head_seq`, its own change counter. Deleting it leaves a tombstone with the content gone |
 | `mission_pack_member` | Who is in it and as what (owner, editor, viewer) |
 | `mission_pack_invite` | Invitations to a pack or a team: an email address (or, for a team, none: a single-use link), a SHA-256 token, role, status, expiry |
-| `mission_pack_item` | An item: `kind` (`lz`, `route`, `pointset`), `name`, and `data`, **exactly the JSON the library keeps** (`lz_data`, `route_data`, `points_data`), so every editor, exporter and native normalizer works on it unchanged. `source_*` records where a copy came from |
+| `mission_pack_item` | An item: `kind` (`lz`, `route`, `pointset`, `brief`), `name`, and `data`, **exactly the JSON the library keeps** (`lz_data`, `route_data`, `points_data`), so every editor, exporter and native normalizer works on it unchanged. `source_*` records where a copy came from |
 | `mission_pack_event` | The log: one row per operation, numbered by `seq` within the pack, with who, a sentence, the operation, and whether it was applied or skipped (and why). A change sent as several operations is several rows with its one sentence; the history shows them as one line |
 | `mission_pack_seen` | How far each person has looked in a pack (`seen_seq`, `seen_at`): what "changed since you looked" is measured from on every device, and a member's "Seen" time. Not part of the log |
 
@@ -80,8 +81,9 @@ headings, analysis results) runs on the client, as today, and is sent as the
 operations it produces.
 
 **The rules are a contract.** `frontend/src/feature/missionPacks/packOps.js` is the
-reference. It writes `contracts/fixtures/packs/ops.json` (134 cases), and
-`backend/pack_ops.py` is held to every case (`tests/test_pack_ops.py`). The Kotlin
+reference. It writes `contracts/fixtures/packs/ops.json` (134 cases) and, for the
+`brief` kind, `packs/ops-brief.json` (apart until every client has ported the kind), and
+`backend/pack_ops.py` is held to every case of both (`tests/test_pack_ops.py`). The Kotlin
 applier will be too. The rest of what a client does is pinned beside it, for the
 native apps: how an editor's change becomes operations (`packs/diff.json`), one
 change as sent (`packs/edit.json`), the history's sentences and new items' names
@@ -95,7 +97,7 @@ cd frontend; $env:UPDATE_CONTRACTS="1"; $env:CI="true"; npx react-scripts test -
 
 | Operation | Fields | Does |
 |---|---|---|
-| `item.create` | `kind`, `name`, `data` | Adds an item. `data` is an object for `lz` and `route`, a list for `pointset` |
+| `item.create` | `kind`, `name`, `data` | Adds an item. `data` is an object for `lz`, `route` and `brief`, a list for `pointset` |
 | `item.rename` | `name` | |
 | `item.delete` | | Deletes it; name and content go too. Its uuid is never used again |
 | `set` | `path` (not empty), `value` | Sets a field. Objects missing or null on the way are made |

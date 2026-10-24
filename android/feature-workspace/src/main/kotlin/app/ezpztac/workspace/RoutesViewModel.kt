@@ -978,9 +978,32 @@ class RoutesViewModel @Inject constructor(
         if (isMission()) return fail(MISSION_POINT_TYPES_ARE_THE_FILES)
         val route = session.active.value?.route(routeId) ?: return
         if (SketchOps.designate(route, pointId, PointSpec(RoutePoint.KIND_SHAPING)) == route) {
-            return fail("A route needs at least two named points.")
+            return fail(TWO_NAMED_POINTS)
         }
         session.edit("Make shaping point") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, PointSpec(RoutePoint.KIND_SHAPING)) } }
+    }
+
+    /**
+     * Makes a point of the held route what [role] says, from its bar's dialog (the owner's request of 2026-10-21), by the rules the route's plan changes a point's type by
+     * (`SketchOps.designate`, held to `routes/sketch.json`): a checkpoint, the SP, the RP or the target is a named point of that AMPS type, with the name
+     * [PointRoles.nameFor] gives it, and a shaping point only bends the line. One undo step; nothing when it is that already. Null once it is done, else the words for why
+     * not, for the dialog to say where the person is: a read-only pack's, a mission's (its points' types are its file's), and one of a route's last two named points,
+     * which a leg needs, cannot be made a shaping point.
+     */
+    fun setPointRole(routeId: String, pointId: String, role: PointRole): String? {
+        locked()?.let { return it }
+        if (isMission()) return MISSION_POINT_TYPES_ARE_THE_FILES
+        val route = session.active.value?.route(routeId) ?: return null
+        val point = route.points.firstOrNull { it.id == pointId } ?: return null
+        if (PointRoles.roleOf(point.kind, point.ptType, point.name) == role) return null
+        val spec = if (role == PointRole.SHAPING) {
+            PointSpec(RoutePoint.KIND_SHAPING)
+        } else {
+            PointSpec(RoutePoint.KIND_AMPS, ptType = role.ptType, name = PointRoles.nameFor(role, point.name))
+        }
+        if (SketchOps.designate(route, pointId, spec) == route) return if (role == PointRole.SHAPING) TWO_NAMED_POINTS else null
+        session.edit(if (role == PointRole.SHAPING) "Make shaping point" else "Change point type") { set -> set.mapRoute(routeId) { SketchOps.designate(it, pointId, spec) } }
+        return null
     }
 
     /** Moves a point of the held route [northFt] feet north and [eastFt] east (negative: south, west), as a drag would: it forgets a charted elevation it had snapped to. */
@@ -1250,6 +1273,9 @@ class RoutesViewModel @Inject constructor(
     internal companion object {
         const val MISSION_ROUTES_ARE_THE_FILES = "An AMPS mission's routes are part of its file: they can't be drawn, renamed or removed here. Make a new set to draw a route."
         const val MISSION_POINT_TYPES_ARE_THE_FILES = "What kind of point this is is fixed in the mission's file."
+
+        /** Why one of a route's last two named points cannot be made a shaping point: a leg runs between two. */
+        const val TWO_NAMED_POINTS = "A route needs at least two named points."
         const val CHOOSE_A_ROUTE = "Tap the route to add the point to first: this set has more than one."
         const val REMOVE_SET_IN_PACK_PANEL = "This set is the pack's: Remove from pack, in the Pack panel, takes it out for everyone."
 

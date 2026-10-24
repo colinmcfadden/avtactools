@@ -14,6 +14,7 @@ import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
+import app.ezpztac.model.AircraftName
 import app.ezpztac.model.Doghouses
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -85,7 +87,19 @@ data class InspectorUi(
     val doghouse: DoghouseUi? = null,
     /** The held unit as the unit builder shows it, and null for anything else. */
     val unit: UnitDraft? = null,
-)
+    /** The LZ/PZ it is on: with [ref], what a field typed for it names, so it lands on it and on nothing held or opened since ([GraphicOf]). */
+    val diagramId: String = "",
+    /** A helicopter's name (a chalk or tail number, the owner's request of 2026-10-22): "" with none; null for anything else. */
+    val name: String? = null,
+) {
+    val of: GraphicOf get() = GraphicOf(diagramId, ref)
+}
+
+/**
+ * One graphic of one LZ/PZ: what a field of the held bar was typed for. A field is left (and so takes what was typed) as another graphic is held or another LZ/PZ opened,
+ * and the standard doghouses have the same ids on every LZ/PZ, so what it takes is put on this graphic, or on nothing if that LZ/PZ is no longer the one open.
+ */
+data class GraphicOf(val diagramId: String, val ref: GraphicRef)
 
 /** A planning tool's mode under way, for its toolbar over the map: which tool, how many it has placed, and what went wrong if anything did. */
 data class PlacementUi(val tool: PlaceTool, val placed: Int, val error: String?)
@@ -204,9 +218,10 @@ class GraphicsViewModel @Inject constructor(
 
     // -- Editing the one that is held --------------------------------------------------------------------------------------
 
-    private fun edit(label: String, refusal: String = "That cannot be done to this graphic.", patch: (String, JsonObject) -> JsonObject?) {
-        val ref = selection.selected.value ?: return
+    private fun edit(label: String, refusal: String = "That cannot be done to this graphic.", on: GraphicOf? = null, patch: (String, JsonObject) -> JsonObject?) {
         val diagram = session.active.value ?: return
+        if (on != null && on.diagramId != diagram.id) return                                    // typed for an LZ/PZ no longer open: nothing of it lands on this one
+        val ref = on?.ref ?: selection.selected.value ?: return
         val graphic = DiagramOps.graphic(diagram, ref.collection, ref.key) ?: return
         locked()?.let { return fail(it) }
         val changes = patch(ref.collection, graphic) ?: return fail(refusal)
@@ -233,7 +248,8 @@ class GraphicsViewModel @Inject constructor(
 
     fun rotateBy(degrees: Double) = edit("Turn") { c, g -> GraphicEdits.rotateBy(c, g, degrees) }
 
-    fun setRotation(degrees: Double) = edit("Turn") { c, g -> GraphicEdits.setRotation(c, g, degrees) }
+    /** Turns the held graphic to [degrees], or graphic [on] (a field of the held bar's) wherever the selection is now. */
+    fun setRotation(degrees: Double, on: GraphicOf? = null) = edit("Turn", on = on) { c, g -> GraphicEdits.setRotation(c, g, degrees) }
 
     /** Lengthens or shortens the held PZ marker by [deltaFt] feet. */
     fun changeReach(deltaFt: Double) = edit("PZ reach") { c, g ->
@@ -250,21 +266,43 @@ class GraphicsViewModel @Inject constructor(
     // The held doghouse's own fields. What is typed is checked for what the field is and stored as the web stores it; when it is not what the
     // field is for, the answer is the words to show under the field (not the panel's banner, which may be scrolled out of sight).
 
-    private fun editDoghouse(label: String, refusal: String, patch: JsonObject?): String? {
+    /**
+     * Names the held helicopter, or helicopter [on] (a field of the held bar's): a chalk or tail number, in capitals less the spaces round it, as a route's name
+     * is kept, at most [AircraftName.MAX] characters (counted as characters, an emoji one); blank takes the name away. Stored as its `label`, which the web keeps
+     * with the rest of the aircraft and does not show yet (AGENTS.md §15). Null once it is taken, else the words for why not.
+     */
+    fun setAircraftName(typed: String, on: GraphicOf? = null): String? {
         locked()?.let { return it }
-        if (patch == null) return refusal
-        edit(label) { c, _ -> if (c == "doghouses") patch else null }
+        val name = typed.trim().uppercase()
+        if (name.codePointCount(0, name.length) > AircraftName.MAX) return "Enter a name of up to ${AircraftName.MAX} characters, such as CHALK 1."
+        if ((on?.ref ?: selection.selected.value)?.let { it.collection != "helicopters" } == true) return "Only a helicopter has a name."
+        edit("Aircraft name", on = on) { _, g ->
+            // The name it has (none for none) is no change and no step to undo; a name taken away is null, as a pack sends a field that went.
+            if (AircraftName.of(g).orEmpty() == name) JsonObject(emptyMap())
+            else JsonObject(mapOf(AircraftName.FIELD to (if (name.isEmpty()) JsonNull else JsonPrimitive(name))))
+        }
         return null
     }
 
-    fun setDoghouseLabel(typed: String): String? =
-        editDoghouse("Doghouse label", "Enter a label of up to ${Doghouses.MAX_LABEL} characters, such as [SP1].", Doghouses.labelPatch(typed))
+    // [on]: the doghouse a field of the held bar was typed for, wherever the selection is now; null, the held one (the panel's inspector).
+    private fun editDoghouse(label: String, refusal: String, patch: JsonObject?, on: GraphicOf?): String? {
+        locked()?.let { return it }
+        if (patch == null) return refusal
+        edit(label, on = on) { c, _ -> if (c == "doghouses") patch else null }
+        return null
+    }
 
-    fun setDoghouseTime(typed: String): String? = editDoghouse("Doghouse time", "Enter a time as minutes and seconds, such as 03+20.", Doghouses.timePatch(typed))
+    fun setDoghouseLabel(typed: String, on: GraphicOf? = null): String? =
+        editDoghouse("Doghouse label", "Enter a label of up to ${Doghouses.MAX_LABEL} characters, such as [SP1].", Doghouses.labelPatch(typed), on)
 
-    fun setDoghouseDistance(typed: String): String? = editDoghouse("Doghouse distance", "Enter a distance in kilometres, such as 3.1.", Doghouses.distancePatch(typed))
+    fun setDoghouseTime(typed: String, on: GraphicOf? = null): String? =
+        editDoghouse("Doghouse time", "Enter a time as minutes and seconds, such as 03+20.", Doghouses.timePatch(typed), on)
 
-    fun setDoghouseAirspeed(typed: String): String? = editDoghouse("Doghouse airspeed", "Enter an airspeed in knots, such as 60.", Doghouses.airspeedPatch(typed))
+    fun setDoghouseDistance(typed: String, on: GraphicOf? = null): String? =
+        editDoghouse("Doghouse distance", "Enter a distance in kilometres, such as 3.1.", Doghouses.distancePatch(typed), on)
+
+    fun setDoghouseAirspeed(typed: String, on: GraphicOf? = null): String? =
+        editDoghouse("Doghouse airspeed", "Enter an airspeed in knots, such as 60.", Doghouses.airspeedPatch(typed), on)
 
     /** Removes the held graphic. It can be brought back with undo. */
     fun delete() {
@@ -327,6 +365,8 @@ class GraphicsViewModel @Inject constructor(
                 direction = if (row.kind == GraphicKind.GO_AROUND) (o["direction"] as? JsonPrimitive)?.content else null,
                 doghouse = if (row.kind == GraphicKind.DOGHOUSE) doghouseUi(o) else null,
                 unit = if (row.kind == GraphicKind.UNIT) UnitDraft.of(o) else null,
+                diagramId = diagram.id,
+                name = if (row.kind == GraphicKind.HELICOPTER) AircraftName.of(o).orEmpty() else null,
             )
         }
         return GraphicsUiState(
@@ -380,7 +420,8 @@ class GraphicsViewModel @Inject constructor(
         GraphicKind.HELICOPTER -> {
             val key = DiagramOps.idText(saved["id"])
             val own = aircraft.firstOrNull { DiagramOps.idText(it.id) == key }
-            "Helicopter · ${own?.let { resolve(it).designation } ?: active.designation}"
+            // Its name first, where it has one (a chalk or tail number): that is what a crew calls it.
+            "${AircraftName.of(saved) ?: "Helicopter"} · ${own?.let { resolve(it).designation } ?: active.designation}"
         }
         else -> kind.label
     }

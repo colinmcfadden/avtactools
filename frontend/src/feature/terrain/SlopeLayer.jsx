@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
+import { SLOPE_OPACITY } from "./slopeOpacity";
 import "./slopeLayer.css";
 
 /**
@@ -22,9 +23,9 @@ export const CONTOUR_Z_INDEX = 390;
 export const CONTOUR_LABEL_Z_INDEX = 395;
 
 // The slope PNG already carries its own per-band alpha (145-185 of 255, rising with steepness so hazardous ground stands out), and
-// this multiplies it. 0.55 lands the middle band near 36% and the full range at roughly 31-40%, light enough to read the imagery
-// through while keeping the steep-ground emphasis.
-export const SLOPE_OVERLAY_OPACITY = 0.55;
+// the raster's opacity multiplies it. The person sets it (slopeOpacity.js); unset, 0.55 lands the middle band near 36% and the full
+// range at roughly 31-40%, light enough to read the imagery through while keeping the steep-ground emphasis.
+export const SLOPE_OVERLAY_OPACITY = SLOPE_OPACITY.DEFAULT / 100;
 
 // Leaflet has no way to remove a pane, so one made earlier is used again; empty, it shows nothing. Hidden from screen readers: the
 // slope tile says what matters in words.
@@ -47,19 +48,18 @@ const labelIcon = (elevationFt) => {
 };
 
 /**
- * Draws [terrainData]'s slope raster and contours on [map]; returns what takes them away. An analysis from a server before contours
- * draws the raster alone.
+ * Draws [terrainData]'s slope raster, at [opacity] (0 to 1, of its own alpha), and contours on [map]; returns what takes them away, which
+ * also sets the raster's opacity again (`setOpacity`) with nothing drawn anew. An analysis from a server before contours draws the raster
+ * alone. The contours keep their own opacity: the setting is the raster's.
  */
-export const attachSlope = (map, terrainData) => {
+export const attachSlope = (map, terrainData, opacity = SLOPE_OVERLAY_OPACITY) => {
   paneFor(map, SLOPE_PANE, SLOPE_Z_INDEX);
   paneFor(map, CONTOUR_PANE, CONTOUR_Z_INDEX);
   paneFor(map, CONTOUR_LABEL_PANE, CONTOUR_LABEL_Z_INDEX);
   const layers = L.layerGroup().addTo(map);
-  if (terrainData?.overlay && terrainData?.bounds) {
-    L.imageOverlay(terrainData.overlay, terrainData.bounds, {
-      pane: SLOPE_PANE, opacity: SLOPE_OVERLAY_OPACITY, interactive: false,
-    }).addTo(layers);
-  }
+  const raster = terrainData?.overlay && terrainData?.bounds
+    ? L.imageOverlay(terrainData.overlay, terrainData.bounds, { pane: SLOPE_PANE, opacity, interactive: false }).addTo(layers)
+    : null;
   const lines = Array.isArray(terrainData?.contours?.lines) ? terrainData.contours.lines : [];
   const renderer = new L.SVG({ pane: CONTOUR_PANE });
   const drawn = lines.filter((line) => Array.isArray(line?.points) && line.points.length >= 2);
@@ -70,16 +70,36 @@ export const attachSlope = (map, terrainData) => {
   drawn.filter((line) => Array.isArray(line.label) && line.label.length === 2).forEach((line) => {
     L.marker(line.label, { pane: CONTOUR_LABEL_PANE, icon: labelIcon(line.elevationFt), interactive: false, keyboard: false }).addTo(layers);
   });
-  return () => {
+  const detach = () => {
     layers.remove();
     renderer.remove();
   };
+  detach.setOpacity = (value) => raster?.setOpacity(value);
+  return detach;
 };
 
-/** The slope map as a child of MapContainer: drawn while mounted and [shown], for [terrainData]. */
-const SlopeLayer = ({ terrainData, shown }) => {
+/**
+ * The slope map as a child of MapContainer: drawn while mounted and [shown], for [terrainData], the raster at [opacity] (0 to 1). A new
+ * opacity is set on the raster drawn, never a reason to draw the slope map again: a slider being dragged would redraw every contour.
+ */
+const SlopeLayer = ({ terrainData, shown, opacity = SLOPE_OVERLAY_OPACITY }) => {
   const map = useMap();
-  useEffect(() => (shown && terrainData ? attachSlope(map, terrainData) : undefined), [map, terrainData, shown]);
+  const attached = useRef(null);
+  const opacityNow = useRef(opacity);
+  // Before the drawing effect, so a slope drawn in the same commit is drawn at the opacity it has now.
+  useEffect(() => {
+    opacityNow.current = opacity;
+    attached.current?.setOpacity(opacity);
+  }, [opacity]);
+  useEffect(() => {
+    if (!shown || !terrainData) return undefined;
+    const detach = attachSlope(map, terrainData, opacityNow.current);
+    attached.current = detach;
+    return () => {
+      attached.current = null;
+      detach();
+    };
+  }, [map, terrainData, shown]);
   return null;
 };
 

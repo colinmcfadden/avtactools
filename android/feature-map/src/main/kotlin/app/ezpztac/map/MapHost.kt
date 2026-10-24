@@ -92,8 +92,13 @@ class MapHost {
         publishCamera(map)
     }
 
-    internal fun attach(map: MapLibreMap) {
+    /**
+     * The map is made: it starts at [initial], and what was asked of it meanwhile (a flight to an LZ/PZ opened at launch, the sandtable's flight to its step after the
+     * activity was made again) is done after that, in the order asked, so the first camera never undoes it.
+     */
+    internal fun attach(map: MapLibreMap, initial: CameraState) {
         this.map = map
+        jumpTo(initial)
         waiting.toList().also { waiting.clear() }.forEach { it(map) }
         publishCamera(map)
     }
@@ -124,6 +129,20 @@ class MapHost {
     /** Moves the camera with an animation, to [at] and, if given, [zoom]. */
     fun flyTo(at: LatLon, zoom: Double? = null) = whenReady { map -> fly(map, LatLng(at.lat, at.lon), zoom, FLIGHT_MS) }
 
+    /**
+     * Moves the camera to [at] at [zoom], turned to [bearing], as a flight of [durationMs], or at once when that is 0 (animations off on the device): the live
+     * sandtable's flight to a step (feature-brief), which frames its figure north up. A padding that changes meanwhile is folded into the flight, as for [flyTo].
+     */
+    fun flyTo(at: LatLon, zoom: Double, bearing: Double, durationMs: Long) = whenReady { map ->
+        if (durationMs <= 0) {
+            flight = null
+            val position = CameraPosition.Builder().target(LatLng(at.lat, at.lon)).zoom(zoom).bearing(bearing).padding(padding.array())
+            map.moveCamera(CameraUpdateFactory.newCameraPosition(position.build()))
+        } else {
+            fly(map, LatLng(at.lat, at.lon), zoom, durationMs, bearing)
+        }
+    }
+
     private fun fly(map: MapLibreMap, target: LatLng, zoom: Double?, durationMs: Long, bearing: Double? = null) {
         val going = Flight(target, zoom, bearing, SystemClock.uptimeMillis() + durationMs)
         flight = going
@@ -140,8 +159,12 @@ class MapHost {
         )
     }
 
-    /** Moves the camera at once, for the first frame. */
+    /**
+     * Moves the camera at once: for the first frame, and to give the view back when the live sandtable ends. It ends a flight under way, so a padding that changes
+     * next does not carry that flight on to where it was going.
+     */
     fun jumpTo(state: CameraState) = whenReady { map ->
+        flight = null
         val position = CameraPosition.Builder().target(LatLng(state.center.lat, state.center.lon)).zoom(state.zoom).bearing(state.bearingDegrees)
         map.moveCamera(CameraUpdateFactory.newCameraPosition(position.padding(padding.array()).build()))
     }
@@ -267,8 +290,7 @@ fun EzpzMap(
             map.addOnCameraMoveListener { host.publishCamera(map) }
             map.addOnCameraIdleListener { host.publishCamera(map) }
             map.addOnMapClickListener { at -> tap(LatLon(at.latitude, at.longitude)); false }   // false: the map's own handling of a tap goes on
-            host.attach(map)
-            host.jumpTo(initial)
+            host.attach(map, initial)
         }
         onDispose {
             view.listener = null

@@ -10,6 +10,7 @@ import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.InMemoryAircraftChoice
 import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.InMemoryOpenDiagramStore
+import app.ezpztac.data.InMemorySlopeOpacity
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.SlopeVisibility
@@ -64,6 +65,7 @@ import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -169,11 +171,12 @@ class DiagramsViewModelTest {
         val weather = WeatherService(weatherApi, MemoryWeatherCache(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler))) { clock }
         val openStore = InMemoryOpenDiagramStore()
         val open = OpenDiagrams(openStore)
-        val slopeVisibility = SlopeVisibility()
+        val slopeVisibility = SlopeVisibility(InMemorySlopeOpacity())
+        val fresh = app.ezpztac.data.FreshDiagrams()
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            analysis, aircraft, weather, open, slopeVisibility, pack, buildOnSave,
+            analysis, aircraft, weather, open, slopeVisibility, pack, buildOnSave, fresh,
         )
         val rows get() = model.state.value.rows
 
@@ -907,6 +910,18 @@ class DiagramsViewModelTest {
     // -- The LZ/PZ panel: the open LZ/PZs, naming, closing (S3) ---------------------------------------------------------------
 
     private val here = LatLon(34.783817, -84.08219)
+
+    @Test
+    fun `an LZ-PZ just made is noted, so the bar over the map offers its first step`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)                                                                      // the map's long press, New LZ/PZ here; or the panel's
+        advanceUntilIdle()
+        val made = checkNotNull(r.session.active.value).id
+        assertEquals(made, r.fresh.made.value)
+        r.model.create("", "16S GD 66993 52949")                                                 // the form with a typed target
+        advanceUntilIdle()
+        assertEquals(checkNotNull(r.session.active.value).id, r.fresh.made.value)
+    }
 
     // -- In a Mission Pack (P2b) ------------------------------------------------------------------------------------------------
 
@@ -1659,5 +1674,68 @@ class DiagramsViewModelTest {
         r.model.toggleSlope()
         advanceUntilIdle()
         assertEquals(false, r.model.state.value.current!!.slopeShown)
+    }
+
+    @Test
+    fun `the slope map's opacity is this device's, set from the plan, kept on its steps, and the same for every LZ-PZ`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        assertEquals(55, r.model.state.value.current!!.slopeOpacity)                                 // the web's 0.55
+        r.model.setSlopeOpacity(32)
+        advanceUntilIdle()
+        assertEquals(30, r.model.state.value.current!!.slopeOpacity)
+        assertEquals(30, r.slopeVisibility.opacity.value)                                            // what the map draws it at
+        val first = r.session.active.value!!.id
+        r.model.newAt(LatLon(34.70, -84.20))
+        advanceUntilIdle()
+        assertNotEquals(first, r.session.active.value!!.id)
+        assertEquals(30, r.model.state.value.current!!.slopeOpacity)
+    }
+
+    @Test
+    fun `the LZ box switch is there once there is a boundary, and hides it as the LZ-PZ's own view, changing nothing it measures or keeps`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        assertNull("no boundary to hide", r.model.state.value.current!!.outlineShown)
+        r.model.analyze()
+        advanceUntilIdle()
+        val before = r.model.state.value.current!!
+        val diagram = r.session.active.value!!
+        assertEquals(true, before.outlineShown)
+        r.session.edit("Rename") { it.copy(name = "LZ HAWK") }                                          // something to undo
+        r.model.showOutline(false)
+        advanceUntilIdle()
+        val after = r.model.state.value.current!!
+        assertEquals(false, after.outlineShown)
+        assertEquals(false, r.session.active.value!!.view.showLZOutline)
+        assertEquals("what it measures", before.summary, after.summary)
+        assertEquals("what it keeps", diagram.analysis, r.session.active.value!!.analysis)
+        assertEquals("no step of its own", 1, r.session.undoDepth.value)
+        r.session.undo()
+        advanceUntilIdle()
+        assertEquals("an undo does not bring it back", false, r.model.state.value.current!!.outlineShown)
+        // Saved with the LZ/PZ as its base map is, so it is hidden the next time it is opened, here or on the web.
+        r.session.flush()
+        assertEquals(false, r.repository.open(diagram.id)!!.view.showLZOutline)
+        r.model.showOutline(true)
+        advanceUntilIdle()
+        assertEquals(true, r.model.state.value.current!!.outlineShown)
+    }
+
+    @Test
+    fun `a slope that could not be measured leaves the LZ box switch, with no slope switch`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.measure = { throw ApiException(502, null, "No configured terrain source covers this LZ") }
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        val current = r.model.state.value.current!!
+        assertNull(current.slopeShown)
+        assertEquals(true, current.outlineShown)
     }
 }

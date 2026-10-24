@@ -9,12 +9,14 @@ import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.BuildOnSave
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.FreshDiagrams
 import app.ezpztac.data.DiagramSummary
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenPack
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.PackGlance
 import app.ezpztac.data.PackLock
+import app.ezpztac.data.SlopeOpacity
 import app.ezpztac.data.SlopeState
 import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.Viewer3DTarget
@@ -281,6 +283,10 @@ data class ActiveDiagramUi(
     val chips: List<LzChip> = emptyList(),
     /** Whether the slope heat map is drawn; null while there is no slope measured to draw. */
     val slopeShown: Boolean? = null,
+    /** How opaque the slope heat map is drawn, a percentage of its own ([SlopeOpacity]): this device's, for every LZ/PZ. */
+    val slopeOpacity: Int = SlopeOpacity.DEFAULT,
+    /** Whether its analysis boundary is drawn (its own view, the web's *LZ Box*); null while it has none to draw. */
+    val outlineShown: Boolean? = null,
     /** What naming it keeps, in the save dialog's words: the boundary, target and slope; its graphics. */
     val saveContents: List<String> = emptyList(),
     /** A Mission Pack's item: saved to the pack as it changes, with no *Save* of its own. Null for the person's own. */
@@ -343,10 +349,15 @@ class DiagramsViewModel @Inject constructor(
     private val pack: OpenPack = OpenPack.None,
     /** An LZ/PZ saved here asks for its point cloud, so 3D is ready when it is opened (the web's useBuildOnSave). */
     private val buildOnSave: BuildOnSave = BuildOnSave.None,
+    /** A new LZ/PZ is noted there, so the bar over the map offers its first step (analyse it, or draw its boundary). */
+    private val fresh: FreshDiagrams = FreshDiagrams(),
 ) : ViewModel() {
     private val local = MutableStateFlow(DiagramsUiState())
     private val page = MutableStateFlow(LzPage.HOME)
-    private val analyses = combine(analysis.status, analysis.slopes, slopeVisibility.shown) { status, slopes, shown -> Triple(status, slopes, shown) }
+    private val analyses = combine(analysis.status, analysis.slopes, slopeVisibility.shown, slopeVisibility.opacity, ::Analyses)
+
+    /** What the open LZ/PZ's analysis section is made from besides the diagram: the analysis under way, the slopes measured, and the heat map's look. */
+    private data class Analyses(val status: AnalysisStatus, val slopes: Map<String, SlopeState>, val slopeShown: Boolean, val slopeOpacity: Int)
     private val airframes = combine(aircraft.entries, aircraft.active) { entries, active -> entries to active }
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
@@ -394,7 +405,7 @@ class DiagramsViewModel @Inject constructor(
     private val lzKind = LzPackKind()
 
     val state: StateFlow<DiagramsUiState> =
-        combine(inputs, analyses, airframes, weather.states) { inputs, (status, slopes, slopeShown), (entries, chosen), weatherStates ->
+        combine(inputs, analyses, airframes, weather.states) { inputs, look, (entries, chosen), weatherStates ->
             val (summaries, active, local, open, page) = inputs
             val glance = inputs.pack
             val byId = summaries.associateBy { it.uuid }
@@ -404,7 +415,7 @@ class DiagramsViewModel @Inject constructor(
             val diagrams = diagramsOf(glance)
             val packList = glance?.let { packListOf(it, active, diagrams) }
             val current = active?.let {
-                inPack(currentOf(it, status, slopes, slopeShown, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState()), glance)
+                inPack(currentOf(it, look, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState()), glance)
             }
             local.copy(
                 current = current,
@@ -467,6 +478,16 @@ class DiagramsViewModel @Inject constructor(
     /** Draws or hides the slope heat map (the plan's switch; the map's button does the same). */
     fun toggleSlope() = slopeVisibility.toggle()
 
+    /** Draws the slope heat map at [percent] of its own opacity (the plan's slider), on this device, for every LZ/PZ. */
+    fun setSlopeOpacity(percent: Int) = slopeVisibility.setOpacity(percent)
+
+    /**
+     * Draws or hides the open LZ/PZ's analysis boundary on the map (the plan's *LZ box*, the web's *LZ Box*): its own view, `view.showLZOutline`, saved with it
+     * as its base map is, and no step to undo. Nothing it measures or keeps changes. In a Mission Pack the view is this person's own and never sent, so it may
+     * be changed in a read-only one.
+     */
+    fun showOutline(shown: Boolean) = session.setQuietly { it.copy(view = it.view.copy(showLZOutline = shown)) }
+
     // -- Opening, making, closing ------------------------------------------------------------------------------------------
 
     /**
@@ -480,7 +501,7 @@ class DiagramsViewModel @Inject constructor(
         if (pack.state.value != null) {
             if (pack.lockNow() != null) return fail(PackFacts.NOTHING_NEW)
             return run("The LZ/PZ could not be made.") {
-                pack.createLz(DiagramTarget(at.lat, at.lon, grid))
+                pack.createLz(DiagramTarget(at.lat, at.lon, grid))?.let(fresh::made)
                 page.value = LzPage.HOME
             }
         }
@@ -489,6 +510,7 @@ class DiagramsViewModel @Inject constructor(
             val made = repository.create(DiagramTarget(at.lat, at.lon, grid), name)
             openSet.add(made.id)
             session.open(made.id)
+            fresh.made(made.id)
             page.value = LzPage.HOME
         }
     }
@@ -601,6 +623,7 @@ class DiagramsViewModel @Inject constructor(
         run("The diagram could not be made.") {
             val made = repository.create(target, title)
             session.open(made.id)
+            fresh.made(made.id)
             local.update { it.copy(creating = false) }
         }
     }
@@ -770,20 +793,21 @@ class DiagramsViewModel @Inject constructor(
     fun dismissAnalysisError() = analysis.dismiss()
 
     private fun currentOf(
-        diagram: Diagram, status: AnalysisStatus, slopes: Map<String, SlopeState>, slopeShown: Boolean, listed: DiagramSummary?, airframes: AircraftUi,
-        chosen: AircraftProfile, weatherState: WeatherState,
+        diagram: Diagram, look: Analyses, listed: DiagramSummary?, airframes: AircraftUi, chosen: AircraftProfile, weatherState: WeatherState,
     ): ActiveDiagramUi = ActiveDiagramUi(
         uuid = diagram.id,
         name = diagram.name,
         status = diagram.status,
         grid = diagram.target?.mgrs?.takeIf { it.isNotBlank() },
         canAnalyze = diagram.target != null,
-        analysis = when {
-            status is AnalysisStatus.Running && status.diagramId == diagram.id -> AnalysisUi.Running(status.stage)
-            status is AnalysisStatus.Failed && status.diagramId == diagram.id -> AnalysisUi.Failed(status.message)
-            else -> AnalysisUi.Idle
+        analysis = look.status.let { status ->
+            when {
+                status is AnalysisStatus.Running && status.diagramId == diagram.id -> AnalysisUi.Running(status.stage)
+                status is AnalysisStatus.Failed && status.diagramId == diagram.id -> AnalysisUi.Failed(status.message)
+                else -> AnalysisUi.Idle
+            }
         },
-        summary = summaryOf(diagram, slopes[diagram.id], chosen, weatherState),
+        summary = summaryOf(diagram, look.slopes[diagram.id], chosen, weatherState),
         weather = if (diagram.canEditGraphics) weatherOf(weatherState) else null,           // the web shows the weather once there is an analysis
         aircraft = airframes,
         sync = listed?.sync,
@@ -791,7 +815,10 @@ class DiagramsViewModel @Inject constructor(
         madeUpName = LzNames.isMadeUp(diagram.name),
         chips = lzChips(diagram.status, listed?.sync, listed?.conflictOf),
         // The switch is there while the open LZ/PZ has a slope measured for the boundary it has now, as the map's button is.
-        slopeShown = slopeShown.takeIf { (slopes[diagram.id] as? SlopeState.Ready)?.let { it.boundaryKey == analysis.boundaryKey(diagram) } == true },
+        slopeShown = look.slopeShown.takeIf { (look.slopes[diagram.id] as? SlopeState.Ready)?.let { it.boundaryKey == analysis.boundaryKey(diagram) } == true },
+        slopeOpacity = look.slopeOpacity,
+        // The switch is there while it has an analysis boundary to draw or hide, its slope measured or not (one that could not be leaves the boundary).
+        outlineShown = diagram.view.showLZOutline.takeIf { DiagramGeometry.boundary(diagram).size >= 3 },
         saveContents = saveContentsOf(diagram),
         target = diagram.target?.let { LatLon(it.lat, it.lon) },
     )

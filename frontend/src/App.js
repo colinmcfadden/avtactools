@@ -36,6 +36,7 @@ import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import { exportRouteSetFiles } from "./feature/msnxImport/exportRouteSet";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import useMgrsGrid from "./feature/mgrsGrid/useMgrsGrid";
+import useSlopeOpacity from "./feature/terrain/slopeOpacity";
 import UnitBadge from "./components/UnitBadge";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
@@ -64,6 +65,10 @@ import { ConfirmDialog } from "./feature/ui/Dialog";
 import { useMenu } from "./feature/ui/Menu";
 import { PanelHead } from "./feature/shell/Dock";
 import usePackWorkspace from "./feature/missionPacks/ui/usePackWorkspace";
+import { useBrief } from "./feature/brief/useBrief";
+import BriefMenu from "./feature/brief/BriefMenu";
+import BriefSetup from "./feature/brief/BriefSetup";
+import { SandtableBar, SandtableStage, SandtableSteps, useSandtable } from "./feature/brief/Sandtable";
 import PackPanel from "./feature/missionPacks/ui/PackPanel";
 import WorkspaceSwitcher from "./feature/missionPacks/ui/WorkspaceSwitcher";
 import { FinishedBanner } from "./feature/missionPacks/ui/PackDialogs";
@@ -79,6 +84,19 @@ const resolveStateUpdate = (nextValue, currentValue) =>
 const SIDEBAR_RAIL = 76;
 const SIDEBAR_DEFAULT = 320;
 const SIDEBAR_COLLAPSED_KEY = "avtac.sidebarCollapsed";
+
+// One list for "no threats", so the brief is not compiled again at every render with the threats feature off.
+const NO_THREATS = Object.freeze([]);
+
+// While a brief is presented a file dropped on the map is neither imported (nothing changes the plan) nor opened by
+// the browser in the app's place.
+const IGNORE_DROPS = {
+  onDragOver: (event) => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
+  },
+  onDrop: (event) => event.preventDefault(),
+};
 
 const EMPTY_LZ_GRAPHICS = Object.freeze({
   doghouses: Object.freeze([]),
@@ -102,6 +120,8 @@ function App() {
   const [mapStyle, setMapStyle] = useState("satellite");
   // The MGRS grid over the map: this browser's preference, not the diagram's (unlike mapStyle).
   const { showMgrsGrid, setShowMgrsGrid } = useMgrsGrid();
+  // How opaque the slope map is drawn: this browser's too.
+  const { slopeOpacity, setSlopeOpacity } = useSlopeOpacity();
 
   // Resizable/collapsible desktop control panel. Width persists across sessions;
   // below the compact threshold the panel renders as an icon rail. On mobile the
@@ -448,6 +468,7 @@ function App() {
     aircraft_profiles: !uf || uf.aircraft_profiles !== false,
     // Default off (entitlements.DEFAULT_OFF): only an explicit "on" shows Mission Packs.
     mission_packs: Boolean(uf && uf.mission_packs === true),
+    mission_brief: Boolean(uf && uf.mission_brief === true),
   };
   const { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
@@ -588,12 +609,17 @@ function App() {
     onOpenLibrary: () => openLibrary("routes"),
   });
 
+  // The live sandtable (docs/MISSION_BRIEF.md §2.8): the workspace a brief is being presented in ({ pack }), or null.
+  const [presented, setPresented] = useState(null);
+
   // --- Mission Packs: one open at a time, in place of the Library (docs/MENU_REDESIGN.md §8) ----------
   const packs = usePackWorkspace({
     enabled: feat.mission_packs,
     user,
     toast,
     dock,
+    // The Pack panel is put away while a brief is presented: nobody is looking at it.
+    presenting: Boolean(presented),
     lz: {
       workspace: lzWorkspace.workspace,
       importDiagram: lzWorkspace.importDiagram,
@@ -617,6 +643,42 @@ function App() {
     onOpenLibrary: () => openLibrary("lz"),
   });
   const inPack = Boolean(packs.open);
+
+  // --- The mission brief (docs/MISSION_BRIEF.md): from the open pack, else from this session ----------------------
+  const [briefOpen, setBriefOpen] = useState(false);
+  // A brief is presented only in the workspace it was begun in, and only while the feature is on: leaving the pack (or the
+  // pack going) ends it in the same render, so the map comes back to the new workspace's LZ/PZ.
+  const presenting = Boolean(presented) && feat.mission_brief && presented.pack === (packs.open ?? null);
+  useEffect(() => {
+    if (presented && !presenting) setPresented(null);
+  }, [presented, presenting]);
+  const brief = useBrief({
+    enabled: feat.mission_brief,
+    // The live sandtable reads the brief too: its answers and the weather at the planned times.
+    active: briefOpen || presenting,
+    user,
+    pack: inPack ? { name: packs.meta?.name ?? "", items: packs.items, edit: packs.edit, readOnly: packs.readOnly } : null,
+    session: { name: "", diagrams, routeSets },
+    threats: feat.threats ? threats : NO_THREATS,
+    aircraftProfiles,
+    missionAircraft: activeProfile?.slug ?? null,
+    toast,
+  });
+  // The live sandtable (docs/MISSION_BRIEF.md §2.8): the brief walked on the map, with the planning frame put away and
+  // nothing in it taking an edit until it ends.
+  const openPack = packs.open ?? null;
+  const setPresenting = useCallback((on) => setPresented(on ? { pack: openPack } : null), [openPack]);
+  const sandtable = useSandtable({ model: brief.model, on: presenting, setOn: setPresenting, loading: brief.loading });
+  const presentBrief = () => {
+    setBriefOpen(false);
+    setContextMenu(null);
+    setIsMobileMenuOpen(false);
+    // The 3D view is a planning window; the others (a unit, a threat, an export…) are put away with the frame.
+    setIs3DOpen(false);
+    // The others in a pack stop seeing this person's pointer: it no longer follows the mouse while they brief.
+    if (inPack) packs.pointAt?.(null);
+    sandtable.start();
+  };
   const packReadOnly = inPack && packs.readOnly;
   const editable = !packReadOnly;
   const diagramReadinessText = diagramReadiness({ hasTarget: hasActiveTarget, analyzed: canEditGraphics, editable });
@@ -1253,7 +1315,7 @@ function App() {
   }, [inPack, dock]);
 
   return (
-    <div className="app-container">
+    <div className={`app-container${presenting ? " app-container--presenting" : ""}`} {...(presenting ? IGNORE_DROPS : {})}>
       <button
         className="mobile-hamburger-btn"
         onClick={() => setIsMobileMenuOpen(true)}
@@ -1282,7 +1344,10 @@ function App() {
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
           addHelo={addHelo}
+          showHeatmap={showHeatmap}
           setShowHeatmap={setShowHeatmap}
+          slopeOpacity={slopeOpacity}
+          setSlopeOpacity={setSlopeOpacity}
           terrainData={terrainData}
           addGoAround={addGoAround}
           targetLocation={targetLocation}
@@ -1335,12 +1400,21 @@ function App() {
           width={sidebarWidth}
         />
       )}
-      <div className="map-area" {...imports.dragProps}>
+      {presenting && (
+        <>
+          <SandtableBar sandtable={sandtable} place={inPack ? packs.meta?.name ?? "The pack" : "This session"} />
+          <SandtableSteps sandtable={sandtable} />
+        </>
+      )}
+      <div className="map-area" {...(presenting ? {} : imports.dragProps)}>
         <TopBar
           user={user}
           isAdmin={Boolean(user?.is_admin)}
           onSignOut={logout}
           onOpenLibrary={() => openLibrary("lz")}
+          briefSlot={feat.mission_brief ? (
+            <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} onPresent={presentBrief} />
+          ) : null}
           onImport={(kind) => pickers[kind]?.open()}
           canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
           pack={packs.topPack}
@@ -1416,7 +1490,11 @@ function App() {
           exportProgress={exportProgress}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
+          onAnalyze={performTerrainAnalysis}
+          onToggleDrawing={toggleDrawingMode}
+          isDrawingLZ={isDrawingLZ}
           canAnalyze={canAnalyze && editable}
+          canDrawBoundary={hasActiveTarget && editable}
           canUseDiagramTools={canEditGraphics && editable}
           canSaveDiagram={canEditGraphics && editable}
           canExport={canEditGraphics}
@@ -1444,6 +1522,7 @@ function App() {
           aircraftProfiles={aircraftProfiles}
           activeAircraftProfile={activeProfile}
           showHeatmap={showHeatmap}
+          slopeOpacity={slopeOpacity}
           terrainData={terrainData}
           doghouses={doghouses}
           updateDoghouse={mapEdit(updateDoghouse)}
@@ -1488,7 +1567,9 @@ function App() {
           onMapMove={setMapCenter}
           presence={inPack ? packs.others : undefined}
           onPoint={inPack ? packs.pointAt : undefined}
+          presentation={presenting ? sandtable.presentation : null}
         />
+        {presenting && <SandtableStage sandtable={sandtable} />}
 
         <div className="alert-queue">
           {proximityAlerts.map((alert) => (
@@ -1928,6 +2009,15 @@ function App() {
           subtitle={inPack ? `Everything you have saved. Adding one puts a copy of it in ${packs.meta?.name ?? "the pack"}.` : undefined}
           // Already in a pack, the switcher is a click away in the top bar and the sentence would not fit.
           onOpenPacks={feat.mission_packs && !inPack ? openWorkspaceSwitcher : undefined}
+        />
+      )}
+      {briefOpen && feat.mission_brief && (
+        <BriefSetup
+          brief={brief}
+          title={inPack ? packs.meta?.name ?? "the pack" : "this session"}
+          threatCount={feat.threats ? threats.length : 0}
+          onClose={() => setBriefOpen(false)}
+          onPresent={presentBrief}
         />
       )}
       {pickers.msnx.element}

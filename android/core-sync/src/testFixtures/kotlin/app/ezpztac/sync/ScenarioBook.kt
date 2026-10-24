@@ -32,6 +32,8 @@ public fun content(kind: RecordKind, tag: String): JsonObject = when (kind) {
     RecordKind.POINT_SET -> JsonObject(mapOf("points" to JsonArray(listOf(buildJsonObject { put("id", "p1"); put("name", tag); put("lat", 34.5); put("lon", -84.2) }))))
     // A mission's document is its file; what the record holds beside it is the summary the server keeps for lists.
     RecordKind.MISSION -> doc("version" to 1, "note" to tag)
+    // The server does not look inside a brief document.
+    RecordKind.BRIEF -> doc("version" to 1, "template" to "amb", "note" to tag)
 }
 
 /** The file a record of [kind] carries when a scenario gives it [tag]: only a mission has one. The bytes say the tag, so a scenario can tell whose file it is looking at. */
@@ -79,6 +81,7 @@ public suspend fun Env.live(kind: RecordKind): List<SyncChange> = serverView().f
         RecordKind.ROUTE -> it.type == "route" && it.kind != "mission"
         RecordKind.MISSION -> it.type == "route" && it.kind == "mission"
         RecordKind.POINT_SET -> it.type == "pointset"
+        RecordKind.BRIEF -> it.type == "brief"
     }
     matches && !it.deleted
 }

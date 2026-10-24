@@ -180,14 +180,35 @@ class RouteRepository(
     // -- A mission's file ------------------------------------------------------------------------------------------------
 
     private suspend fun toMission(record: LocalRecord): RouteSet {
+        val (set, bytes) = readMission(record)
+        openMission = OpenMission(record.uuid, bytes, MissionRoutes.toMissionRoutes(set.routes))
+        return set
+    }
+
+    private suspend fun readMission(record: LocalRecord): Pair<RouteSet, ByteArray> {
         val file = record.file ?: throw app.ezpztac.formats.MsnxException("This mission has no file on this device yet.")
         val bytes = sync.file(RecordKind.MISSION, record.uuid) ?: throw app.ezpztac.formats.MsnxException("This mission's file is not on this device.")
         // Reading it is the work of the whole file (the part that is most of it is scanned, not built): off the main thread.
         val mission = withContext(heavy) { MsnxReader.read(bytes) }
         var n = 0
         val routes = MissionRoutes.toMissionSketchRoutes(mission, RouteSets.missionColors(record.data)) { "mission-${record.uuid.take(8)}-${n++}" }
-        openMission = OpenMission(record.uuid, bytes, MissionRoutes.toMissionRoutes(routes))
-        return RouteSet(id = record.uuid, savedId = record.serverId, name = record.name, routes = routes, mission = MissionLink(file.name))
+        return RouteSet(id = record.uuid, savedId = record.serverId, name = record.name, routes = routes, mission = MissionLink(file.name)) to bytes
+    }
+
+    /**
+     * The set or mission as it is stored, for what only reads it (a brief built from the session): a mission's routes are read from its file, but the file is not
+     * held, so the mission open in the editor keeps its own. Null if there is none, or for a mission whose file cannot be read here.
+     */
+    suspend fun read(uuid: String): RouteSet? {
+        sync.record(RecordKind.ROUTE, uuid)?.let { return toSet(it) }
+        val record = sync.record(RecordKind.MISSION, uuid) ?: return null
+        return try {
+            readMission(record).first
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**

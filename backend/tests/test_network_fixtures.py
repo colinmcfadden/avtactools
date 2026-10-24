@@ -49,6 +49,7 @@ from lidar import catalog, worker  # noqa: E402
 from models import LocalCredential, MissionPackInvite, User, db  # noqa: E402
 from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
+from routes.brief_routes import brief_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
@@ -137,7 +138,7 @@ def documented(method, path, status):
 
 class NetworkFixtureTests(NativeAuthCase):
     extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp,
-                        pack_bp, team_bp, lidar_bp)
+                        pack_bp, team_bp, brief_bp, lidar_bp)
 
     def setUp(self):
         super().setUp()
@@ -543,6 +544,27 @@ class NetworkFixtureTests(NativeAuthCase):
             self.rec("weather: the NOTAM search fails", self.client.get("/api/weather", headers=head, query_string=near_second))
         self.rec("weather: no position", self.client.get("/api/weather", headers=head))
         self.rec("weather: a position that is not one", self.client.get("/api/weather", headers=head, query_string={"lat": "x", "lng": "1"}))
+
+        # At a planned time (a brief's): the TAF period covering it, or the observation when the time is near or no TAF covers it.
+        now = 1_790_000_000                                                       # 2026-09-21T14:13:20Z
+        reports = [{**stations[0], "obsTime": now - 1800}, stations[1]]
+        tafs = [{"icaoId": "KRYY", "name": "Cobb County Airport", "lat": 34.01, "lon": -84.6, "issueTime": now - 3600,
+                 "rawTAF": "TAF KRYY 211130Z 2112/2212 30015G25KT P6SM BKN025 OVC050 BECMG 2122/2124 32006KT 2SM",
+                 "fcsts": [{"timeFrom": now - 3600, "timeTo": now + 36000, "fcstChange": None, "wdir": 300, "wspd": 15, "wgst": 25,
+                            "visib": "6+", "clouds": [{"cover": "BKN", "base": 2500}, {"cover": "OVC", "base": 5000}], "altim": 1012.0},
+                           {"timeFrom": now + 7200, "timeTo": now + 18000, "fcstChange": "TEMPO", "visib": 1, "clouds": [{"cover": "OVC", "base": 300}]}]}]
+
+        def awc(url, **_kw):
+            return Reply(200, tafs if url.endswith("/taf") else reports)
+
+        def at(seconds):
+            return datetime.utcfromtimestamp(now + seconds).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        with patch("routes.weather_routes.requests.get", side_effect=awc), faa(), patch("routes.weather_routes._now", return_value=now):
+            here = {"lat": "34.0", "lng": "-84.6"}
+            self.rec("weather: at a planned time, from the TAF", self.client.get("/api/weather", headers=head, query_string={**here, "at": at(4 * 3600)}))
+            self.rec("weather: at a time no TAF covers, the observation", self.client.get("/api/weather", headers=head, query_string={**here, "at": at(48 * 3600)}))
+            self.rec("weather: at a time that is not one", self.client.get("/api/weather", headers=head, query_string={**here, "at": "tomorrow"}))
 
     def pack_person(self, email, name, features=None):
         """A signed-in account, made in the database: the sign-ups above have used what one address may make in an hour. Mission packs
@@ -1000,6 +1022,49 @@ class NetworkFixtureTests(NativeAuthCase):
             self.rec("terrain: heights, too many", self.client.post("/api/terrain/heights", headers=head,
                                                                    json={"points": [here] * (terrain_tiles.MAX_POINTS + 1)}))
             self.rec("terrain: heights, not points", self.client.post("/api/terrain/heights", headers=head, json={"points": [{"lat": "x"}]}))
+    def briefs(self):
+        """Mission briefs (docs/MISSION_BRIEF.md §3): in the library, synced like an LZ, and a brief item in a finished pack, which is open
+        to every member. After everything but the 3D view, so that nothing it makes moves an id or a sequence number recorded above."""
+        brief_uuid = "3b8d5f1e-9c2a-4e70-b6d4-1a7f0c9e2b85"
+        pack_uuid = "e2a9c4d7-5b18-4f3e-9a60-7d1c8b4e0f26"
+        KEPT_UUIDS.update({brief_uuid, pack_uuid})
+        document = {"version": 1, "template": {"id": "amb", "version": 1}, "source": {"pack": None, "lzs": ["d-1"], "routeSets": []},
+                    "flow": [{"ref": "lz:d-1", "role": "LZ"}], "answers": {"2.b": {"value": "Move C Co to LZ HAWK."}}}
+        ray = self.pack_person("ray@example.com", "Ray", {"mission_brief": True, "mission_packs": True})
+        kim = self.pack_person("kim.b@example.com", "Kim")                         # nobody ticked mission_brief for her
+
+        def ask(who, method, path, if_match=None, **kwargs):
+            headers = {**who["head"], "If-Match": if_match} if if_match else who["head"]
+            return getattr(self.client, method)(path, headers=headers, **kwargs)
+
+        self.rec("briefs: an account without mission brief", ask(kim, "get", "/api/briefs"))
+        created = self.rec("brief: create", ask(ray, "post", "/api/briefs", json={"name": "OP DK BRIEF", "data": document, "client_uuid": brief_uuid}),
+                           "ETag").get_json()
+        self.rec("brief: create again with the same identity", ask(ray, "post", "/api/briefs", json={"name": "OP DK BRIEF", "data": {}, "client_uuid": brief_uuid}),
+                 "ETag")
+        self.rec("brief: no data", ask(ray, "post", "/api/briefs", json={"name": "OP DK BRIEF"}))
+        self.rec("brief: a name too long", ask(ray, "post", "/api/briefs", json={"name": "B" * 101, "data": {}}))
+        here = f"/api/briefs/{created['id']}"
+        self.rec("brief: list", ask(ray, "get", "/api/briefs"))
+        self.rec("brief: get", ask(ray, "get", here), "ETag")
+        self.rec("brief: update", ask(ray, "put", here, if_match='"1"', json={"name": "OP DK AMB"}), "ETag")
+        self.rec("brief: update on a stale revision", ask(ray, "put", here, if_match='"1"', json={"name": "mine"}), "ETag")
+        self.rec("brief: not found", ask(ray, "get", "/api/briefs/9999"))
+        self.rec("sync: changes, with a brief", ask(ray, "get", "/api/sync/changes?since=0"))
+        self.rec("brief: delete", ask(ray, "delete", here, if_match='"2"'))
+
+        # A finished pack is still briefed; an edit to anything else in it is refused as before.
+        ops = f"/api/packs/{pack_uuid}/ops"
+        ask(ray, "post", "/api/packs", json={"name": "OP DK", "uuid": pack_uuid})
+        ask(ray, "post", ops, json={"ops": [{"type": "item.create", "item": "lz-1", "kind": "lz", "name": "LZ HAWK", "data": {"schemaVersion": 2},
+                                             "client_op_id": "op-1"}]})
+        ask(ray, "post", f"/api/packs/{pack_uuid}/finish")
+        self.rec("ops: a brief in a finished pack", ask(ray, "post", ops, json={"ops": [
+            {"type": "item.create", "item": "brief-1", "kind": "brief", "name": "OP DK BRIEF", "data": document, "client_op_id": "op-2"},
+            {"type": "set", "item": "brief-1", "path": ["answers", "5.a.iii"], "value": {"mode": "standard"}, "client_op_id": "op-3"}]}))
+        self.rec("ops: a brief and an LZ together in a finished pack", ask(ray, "post", ops, json={"ops": [
+            {"type": "item.rename", "item": "brief-1", "name": "OP DK AMB", "client_op_id": "op-4"},
+            {"type": "item.rename", "item": "lz-1", "name": "LZ CROW", "client_op_id": "op-5"}]}))
 
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
@@ -1009,7 +1074,8 @@ class NetworkFixtureTests(NativeAuthCase):
         self.planning()
         self.weather_summary()
         self.packs()
-        self.viewer3d()                                     # last: its account would move every user id the packs' responses hold
+        self.briefs()
+        self.viewer3d()                                     # last: its account would move every user id the packs' and the briefs' responses hold
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "
                            "generated ids and the server version replaced by placeholders. The native apps decode each body "

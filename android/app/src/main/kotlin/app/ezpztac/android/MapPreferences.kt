@@ -2,6 +2,7 @@ package app.ezpztac.android
 
 import android.content.Context
 import androidx.core.content.edit
+import app.ezpztac.data.SlopeOpacityMemory
 import app.ezpztac.map.CameraMemory
 import app.ezpztac.map.GridMemory
 import app.ezpztac.map.CameraState
@@ -22,10 +23,11 @@ interface MapTokenSink {
 /**
  * What the map remembers between launches: the public Mapbox token (so a start with no signal can still draw satellite imagery) and where
  * the camera last was. Neither is a secret, and both stay on the device: the token is a public `pk.` one, and a camera position is the
- * area the person was looking at, which nothing sends anywhere. Excluded from backup with the rest of the app's data.
+ * area the person was looking at, which nothing sends anywhere. Excluded from backup with the rest of the app's data. Besides them, how the
+ * person likes the map to look: the MGRS grid and the slope map's opacity.
  */
 @Singleton
-class MapPreferences @Inject constructor(@ApplicationContext context: Context) : MapTokenSource, MapTokenSink, CameraMemory, GridMemory {
+class MapPreferences @Inject constructor(@ApplicationContext context: Context) : MapTokenSource, MapTokenSink, CameraMemory, GridMemory, SlopeOpacityMemory {
     private val prefs = context.getSharedPreferences("map", Context.MODE_PRIVATE)
     private val _token = MutableStateFlow(prefs.getString(TOKEN, null)?.takeIf { it.startsWith("pk.") })
 
@@ -63,8 +65,16 @@ class MapPreferences @Inject constructor(@ApplicationContext context: Context) :
         prefs.edit { putBoolean(GRID, shown) }
     }
 
+    // How opaque the slope map is drawn, a percentage: the same, on this device only. A value of another type under the key is none.
+    override fun slopeOpacity(): Int? = if (prefs.contains(SLOPE_OPACITY)) runCatching { prefs.getInt(SLOPE_OPACITY, 0) }.getOrNull() else null
+
+    override fun setSlopeOpacity(percent: Int) {
+        prefs.edit { putInt(SLOPE_OPACITY, percent) }
+    }
+
     companion object {
         private const val GRID = "mgrsGrid"
+        private const val SLOPE_OPACITY = "slopeOpacity"
         private const val TOKEN = "mapboxToken"
         private const val LAT = "lat"
         private const val LON = "lon"

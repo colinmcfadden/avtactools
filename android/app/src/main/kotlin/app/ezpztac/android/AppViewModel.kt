@@ -15,6 +15,7 @@ import app.ezpztac.auth.AuthRoute
 import app.ezpztac.auth.InviteLinks
 import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.data.AccountScope
+import app.ezpztac.data.BriefFlush
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.SessionPointSets
@@ -68,6 +69,7 @@ class AppViewModel @Inject constructor(
     private val sessionPoints: SessionPointSets,
     private val mapTokens: MapTokenSink,
     private val packs: PackRuntime,
+    private val briefs: BriefFlush,
     invites: PackInvites,
     private val minimumVersion: MinimumVersion,
     private val saved: SavedStateHandle,
@@ -193,6 +195,7 @@ class AppViewModel @Inject constructor(
             withContext(NonCancellable) {
                 quietly { session.flush() }
                 quietly { routeSession.flush() }
+                quietly { briefs.flush() }
                 quietly { if (packs.unsentCount() > 0) sync.requestSync() }
             }
         }
@@ -244,7 +247,7 @@ class AppViewModel @Inject constructor(
 
     /**
      * Whoever signs in next must not find this account's open diagram, or open set of routes, on the map. Each is saved first; if that fails the person is
-     * signed out anyway, and one that will not save does not keep the other from closing.
+     * signed out anyway, and one that will not save does not keep the other from closing. Then the brief's waiting change is written.
      */
     private suspend fun closeOpenDocuments() {
         try {
@@ -261,6 +264,8 @@ class AppViewModel @Inject constructor(
         } catch (_: Exception) {
             // Likewise the set of routes.
         }
+        // The brief's waiting change, written under this account, and a pack's sent while the pack still takes it.
+        quietly { briefs.flush() }
     }
 
     private fun startSyncing() {

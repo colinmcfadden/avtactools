@@ -73,6 +73,16 @@ import app.ezpztac.android.frame.shownPanel
 import app.ezpztac.android.frame.underPage
 import app.ezpztac.android.frame.usesTabletFrame
 import app.ezpztac.android.packs.InviteNotices
+import app.ezpztac.briefs.BriefSetupHost
+import app.ezpztac.briefs.BriefViewModel
+import app.ezpztac.briefs.SandtableBoxes
+import app.ezpztac.briefs.SandtableFlights
+import app.ezpztac.briefs.SandtableFrame
+import app.ezpztac.briefs.SandtableHandover
+import app.ezpztac.briefs.SandtableLayer
+import app.ezpztac.briefs.SandtableMarksLayer
+import app.ezpztac.briefs.SandtableScene
+import app.ezpztac.briefs.sandtableActionsOf
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
@@ -81,10 +91,14 @@ import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
 import app.ezpztac.map.DiagramLayer
+import app.ezpztac.map.OtherLzLayer
+import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
+import app.ezpztac.map.GpsState
 import app.ezpztac.map.ContourLabelsLayer
 import app.ezpztac.map.GraphicLabelsLayer
+import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapChromeBoxes
 import app.ezpztac.map.MgrsGridLayer
 import app.ezpztac.map.MapCommand
@@ -92,11 +106,14 @@ import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.PinLabelsLayer
+import app.ezpztac.map.PointScene
 import app.ezpztac.map.PointLayer
 import app.ezpztac.map.PointersLayer
 import app.ezpztac.map.RouteLayer
+import app.ezpztac.map.RouteScene
 import app.ezpztac.map.ThreatLabelsLayer
 import app.ezpztac.map.ThreatLayer
+import app.ezpztac.map.ThreatScene
 import app.ezpztac.map.rememberMapHost
 import app.ezpztac.map.rememberMapSearchState
 import app.ezpztac.missionpacks.InviteState
@@ -135,6 +152,7 @@ import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.GraphicKind
 import app.ezpztac.workspace.GraphicsViewModel
 import app.ezpztac.workspace.HeldObjectBarHost
+import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.ImportReviewHost
 import app.ezpztac.workspace.ImportSheet
 import app.ezpztac.workspace.ImportSheetContent
@@ -163,16 +181,22 @@ import app.ezpztac.workspace.importsLine
 import app.ezpztac.workspace.offersLibrary
 import app.ezpztac.workspace.rememberFileImport
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** How far from a graphic's point a finger still counts as on it: the platform's minimum touch target is 48 dp across, so 24 dp each way. */
 private const val TOUCH_RADIUS_DP = 24.0
 
 /** Why nothing is being sent: the person can still plan, and needs to know their work is waiting, not lost, and how to end the wait. */
 private const val TOO_OLD = "This version of the app is no longer supported by the server. Until you update it, your changes stay on this phone and nothing is sent."
+
+/** Why the live sandtable ended on its own when the window became a phone's: it is presented in the tablet's frame. */
+private const val SANDTABLE_NARROW = "The sandtable ended: the window is too narrow for it now. Make it wider (turn the tablet) to present the brief again."
 
 /** The bar for what is held does not stretch across a tablet. */
 private val HELD_BAR_MAX_WIDTH = 460.dp
@@ -205,6 +229,10 @@ fun MapHome(
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
+    // The open LZ/PZs not being worked on, drawn faded; those hidden with the eye on their rows; and the one a tap holds.
+    val others by home.others.collectAsStateWithLifecycle()
+    val hiddenOnMap by home.hiddenOnMap.collectAsStateWithLifecycle()
+    val heldOther by home.heldOther.collectAsStateWithLifecycle()
     val threatScene by home.threatScene.collectAsStateWithLifecycle()
     val threatCounts by home.counts.collectAsStateWithLifecycle()
     val night by display.night.collectAsStateWithLifecycle()
@@ -212,6 +240,7 @@ fun MapHome(
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val drawingWhat by home.drawingWhat.collectAsStateWithLifecycle()
     val slopeToggle by home.slopeToggle.collectAsStateWithLifecycle()
+    val slopeOpacity by home.slopeOpacity.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     // The phone's search, folded into the row or open across it, and what was typed (a tablet's bar is always open): the frame folds it.
     val search = rememberMapSearchState()
@@ -293,6 +322,43 @@ fun MapHome(
     val members: MembersViewModel = hiltViewModel()
     val membersOpen by remember(members) { members.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
     LaunchedEffect(members) { members.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // The mission brief's setup (docs/MISSION_BRIEF.md, B8): from the tablet's rail only, for an account with Mission briefs; a dialog drawing the frame's
+    // toasts over itself. Its PDF goes to the share sheet from here. A window that turns into a phone's, or an account without the feature, closes it.
+    val briefs: BriefViewModel = hiltViewModel()
+    val briefsHere = tablet && user.hasFeature("mission_brief")
+    val briefOpen by remember(briefs) { briefs.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
+    LaunchedEffect(briefs) { briefs.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    // A brief's PDF is megabytes: written off the main thread, and a write that fails (the disk full) is said, never the end of the app.
+    LaunchedEffect(briefs) {
+        briefs.exports.collect { pdf ->
+            val chooser = try {
+                withContext(Dispatchers.IO) { ShareExport.prepare(context, ExportFile(pdf.fileName, pdf.bytes)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (chooser != null) context.startActivity(chooser) else launch { snackbars.showSnackbar("The PDF could not be handed to another app.", withDismissAction = true) }
+        }
+    }
+    LaunchedEffect(briefsHere) {
+        if (briefsHere) return@LaunchedEffect
+        // The sandtable ended by the window turning a phone's (a tablet turned upright, a split screen): said, so the map going back is no mystery.
+        val wasPresenting = briefs.sandtable.value != null
+        briefs.close()
+        if (wasPresenting && !tablet) scope.launch { snackbars.showSnackbar(SANDTABLE_NARROW, withDismissAction = true) }
+    }
+    // The live sandtable (docs/MISSION_BRIEF.md §2.8, B9): the brief's steps walked on this map, the frame put away and nothing taking an edit until it ends. It
+    // belongs to the workspace it was begun in, and is presented only while that is the open one, worked out here in the same composition as the workspace's
+    // change (the web's), so the frame and the view come back before the new workspace's LZ/PZ is flown to; the view model then ends it.
+    val sandtable by briefs.sandtable.collectAsStateWithLifecycle()
+    val presenting = briefsHere && sandtable?.let { it.ui.pack == openPack?.uuid } == true
+    val sandtableBoxes = remember { SandtableBoxes() }
+    val sandtableHandover = remember { SandtableHandover() }
+    LaunchedEffect(openPack?.uuid, openPack?.name) { briefs.workspaceIs(openPack?.uuid, openPack?.name) }
+    val briefsHereNow by rememberUpdatedState(briefsHere)
+    // Read as it is now, not as last composed: a flight asked for as the workspace changes belongs to the new workspace, not to the sandtable.
+    val presentingNow = { briefsHereNow && briefs.sandtable.value?.let { it.ui.pack == workspace.open.value?.uuid } == true }
     // Teams, from the switcher's teams line: a page (a dialog on a tablet) drawing the frame's toasts over itself.
     val teams: TeamsViewModel = hiltViewModel()
     val teamsOpen by remember(teams) { teams.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
@@ -322,7 +388,7 @@ fun MapHome(
     val addingTo = CopyRules.addingTo(packsHere, openPack)
     val adding by copies.adding.collectAsStateWithLifecycle()
     // A page or dialog over the frame (the Library, Members, Teams, New pack): nobody is looking at the map or the Pack panel under it.
-    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen || lz.viewer3d != null
+    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen || briefOpen || presenting || lz.viewer3d != null
     // Where the keyboard's focus goes while the 3D view is up: a focus search that would go into the frame under it goes there.
     val viewer3dFocus = remember { FocusRequester() }
     LaunchedEffect(newPack) {
@@ -412,9 +478,14 @@ fun MapHome(
 
     LaunchedEffect(host) {
         viewModel.commands.collect { command ->
-            when (command) {
-                is MapCommand.FlyTo -> host.flyTo(command.at, command.zoom)
-                MapCommand.FaceNorth -> host.faceNorth()
+            // The sandtable moves the map while it runs: an LZ/PZ opened meanwhile (in a pack, someone else's) is not flown to, then or after (the web's). Once it
+            // has ended, a flight waits for the view it gives back while its frame is still going.
+            if (presentingNow()) return@collect
+            sandtableHandover.afterSandtable {
+                when (command) {
+                    is MapCommand.FlyTo -> host.flyTo(command.at, command.zoom)
+                    MapCommand.FaceNorth -> host.faceNorth()
+                }
             }
         }
     }
@@ -430,7 +501,9 @@ fun MapHome(
     LaunchedEffect(home) { home.opened.collect { viewModel.showDiagram(it.at, it.baseMap) } }
     LaunchedEffect(home) { home.focus.collect { viewModel.showArea(it.at, it.zoom) } }          // a mission just brought in: the map goes to its routes
     // A file another app opened with this one (Files, a mail, the share sheet), or chosen with Import, is put to the person here: nothing is imported until they say so.
-    ImportReviewHost(threatsAllowed = threatsOn, large = tablet, viewModel = incoming)
+    // Not over a brief being presented: a file opened with the app meanwhile waits for it to end (**not like the web**, which ignores a file dropped on the map then:
+    // here another app handed it over, and it is kept for after).
+    if (!presenting) ImportReviewHost(threatsAllowed = threatsOn, large = tablet, viewModel = incoming)
     if (importMenu) ImportSheet(threatsAllowed = threatsOn, onChoose = importFiles, onDismiss = { importMenu = false })            // the phone's, and a panel's own Import
     LaunchedEffect(incoming) { incoming.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     LaunchedEffect(importsModel) { importsModel.notices.collect { toast(it, LibraryTab.POINTS) } }
@@ -513,7 +586,7 @@ fun MapHome(
                         Panel.Lz -> LzPanelHost(
                             crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
                             onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
-                            onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
+                            onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy, hiddenOnMap = hiddenOnMap, onToggleOnMap = home::toggleOnMap,
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
@@ -565,11 +638,19 @@ fun MapHome(
                     buttonsAtFoot = tablet,
                     search = search,
                     hiding = frame.hiding,
+                    // The LZ/PZ tools on the map's edge while its panel is the one chosen: no going into the panel's plan to add an object (the owner's, 2026-10-22).
+                    tools = if (current == Panel.Lz) {
+                        { LzToolRailHost(crosshair = state.center, onSaid = { said -> scope.launch { snackbars.showSnackbar(said, withDismissAction = true) } }) }
+                    } else {
+                        null
+                    },
+                    // While a brief is presented the sandtable draws what is over the map: none of the planning controls.
+                    controls = !presenting,
                     // Over the readout, above the sheet: only there while a boundary or a route is being drawn (never both), or something on the map is held.
                     overlay = {
                         // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).
                         Box(Modifier.onSizeChanged { floating = it.height }) {
-                            BoundaryToolbarHost(crosshair = state.center)
+                            BoundaryToolbarHost(crosshair = state.center, offerAllowed = !drawing)
                             RouteToolbarHost(crosshair = state.center)
                             PlacementToolbarHost(crosshair = state.center)
                             // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
@@ -594,6 +675,14 @@ fun MapHome(
                                     },
                                     onDone = home::releaseHeld,
                                     modifier = Modifier.widthIn(max = HELD_BAR_MAX_WIDTH).fillMaxWidth(),
+                                    alsoOpen = heldOther,
+                                    // Opened from the map: the LZ/PZ panel shows it, as opening it from its row does.
+                                    onOpenOther = { id ->
+                                        home.releaseHeld()
+                                        diagrams.open(id)
+                                        frameState.choose(Panel.Lz)
+                                    },
+                                    onHideOther = home::hideOther,
                                 )
                             }
                         }
@@ -605,8 +694,8 @@ fun MapHome(
                         host = host, style = state.style, initial = viewModel.initialCamera, padding = frame.padding, modifier = Modifier.fillMaxSize(),
                         covered = lz.viewer3d != null,                       // the 3D view is over the whole of it
                         onTap = { at ->
-                            // With the phone's search open, a tap on the map folds it and does nothing else.
-                            if (!search.foldOnTap()) {
+                            // A brief being presented takes no edits: a tap holds nothing. With the phone's search open, a tap on the map folds it and does nothing else.
+                            if (!presenting && !search.foldOnTap()) {
                                 // Distances between points on the screen do not depend on where its middle is, so the size of the view is not needed here.
                                 host.camera?.let { camera ->
                                     val frames = home.mapTapped(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density)
@@ -615,14 +704,15 @@ fun MapHome(
                                 }
                             }
                         },
-                        // A long press on a graphic, a threat or a point of a route picks it up; the finger then moves it, and lifting puts it down.
+                        // A long press on a graphic, a threat or a point of a route holds it (its bar, nothing else) and picks it up; the finger then moves it, and lifting puts it down.
                         onPickUp = { at ->
-                            host.camera?.let { camera -> home.dragStarted(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) } ?: false
+                            !presenting &&
+                                host.camera?.let { camera -> home.dragStarted(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) } == true
                         },
                         onDrag = home::dragMoved, onDrop = home::dragEnded, onDragCancelled = home::dragCancelled,
                         // A long press on nothing that can be picked up opens the map's menu there (not while taps are corners, points or placements).
                         onPress = { at, px ->
-                            val place = home.pressed(at)
+                            val place = if (presenting) null else home.pressed(at)
                             if (place != null) {
                                 menu = OpenMapMenu(place, IntOffset(px.x.roundToInt(), px.y.roundToInt()), routesModel.pointAction())
                                 menuOpen = true
@@ -631,16 +721,23 @@ fun MapHome(
                         },
                     )
                     MgrsGridLayer(host, state.grid, chrome = chrome)        // its lines under everything planned, its labels under every other label
-                    DiagramLayer(host, scene)                       // under the routes and the GPS dot, which stays on top
-                    PointLayer(host, pointScene)                    // local points are under the routes: a route point snapped onto one is the route's
-                    RouteLayer(host, routeScene)
-                    ThreatLayer(host, threatScene)                  // range rings; symbols and names are Compose below
-                    GpsLayer(host, state.gps)
-                    ContourLabelsLayer(host, scene.slope)          // the slope map's heights, under every other label
-                    GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
-                    PinLabelsLayer(host, routeScene, pointScene)
-                    ThreatLabelsLayer(host, threatScene)
-                    PackPointers(host, home)
+                    // While a brief is presented the map draws its step and none of the planning layers, which come back as they were when it ends.
+                    OtherLzLayer(host, if (presenting) OtherLzScene.EMPTY else others)    // the open LZ/PZs not being worked on, faded, under the one that is
+                    DiagramLayer(host, if (presenting) LzScene.EMPTY else scene, slopeOpacity / 100f)  // under the routes and the GPS dot, which stays on top
+                    PointLayer(host, if (presenting) PointScene.EMPTY else pointScene)    // local points are under the routes: a route point snapped onto one is the route's
+                    RouteLayer(host, if (presenting) RouteScene.EMPTY else routeScene)
+                    ThreatLayer(host, if (presenting) ThreatScene.EMPTY else threatScene) // range rings; symbols and names are Compose below
+                    SandtableLayer(host, sandtable?.takeIf { presenting }?.scene ?: SandtableScene.EMPTY)
+                    GpsLayer(host, if (presenting) GpsState.Off else state.gps)           // the step alone while presenting, as the web's map (it has no position)
+                    if (presenting) {
+                        sandtable?.let { SandtableMarksLayer(host, it.scene) }
+                    } else {
+                        ContourLabelsLayer(host, scene.slope)          // the slope map's heights, under every other label
+                        GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
+                        PinLabelsLayer(host, routeScene, pointScene, others = others)
+                        ThreatLabelsLayer(host, threatScene)
+                        PackPointers(host, home)
+                    }
                     // At night the imagery is dimmed with the rest of the screen (docs/NATIVE_APPS_PLAN.md, "Night mode"); a tap goes through to the map.
                     if (night) NightDim()
                     // Anchored at the press, in the map's own pixels (this box is the map's).
@@ -725,6 +822,10 @@ fun MapHome(
                             libraryTab = libraryTabFor(current)
                         },
                         account = { account(false) },
+                        onBrief = if (briefsHere) ({
+                            focus.clearFocus()
+                            briefs.open()
+                        }) else null,
                         workspace = openPack.let { pack ->
                             RailWorkspace(
                                 // Only a tile that opens the switcher says it changes the workspace.
@@ -755,9 +856,17 @@ fun MapHome(
                         routesModel = routesModel, routePlan = movableRoutePlan, onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
                     ),
                     // The Library, Members and Teams draw the toasts over themselves, as dialogs: the frame's under their scrim would be a second copy.
-                    toasts = libraryTab == null && !membersOpen && !teamsOpen,
+                    toasts = libraryTab == null && !membersOpen && !teamsOpen && !briefOpen,
                     band = openPack?.takeIf { it.finished }?.let { finished ->
                         { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen, onSaveCopy = CopyRules.bannerCopy(lz.current?.uuid, saveCopy)) }
+                    },
+                    // The live sandtable: drawn over the whole map where it is, the planning frame put away (kept composed) until it ends.
+                    presentation = sandtable?.takeIf { presenting }?.let { shown ->
+                        { toasts ->
+                            val actions = remember(briefs) { sandtableActionsOf(briefs) }
+                            SandtableFrame(shown, actions, sandtableBoxes, chrome = chrome, toasts = toasts)
+                            SandtableFlights(host, shown.view, sandtableBoxes, sandtableHandover)
+                        }
                     },
                     modifier = Modifier.underPage(unread = libraryTab != null || lz.viewer3d != null, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
                     backEnabled = !overFrame,
@@ -804,6 +913,7 @@ fun MapHome(
             if (packsHere) NewPackHost(newPack, tablet)
             if (packsHere) MembersHost(members, tablet, snackbars)
             if (packsHere) TeamsHost(teams, tablet, snackbars)
+            if (briefsHere) BriefSetupHost(briefs, snackbars)
             // The Library (the design's): opening an item from it shuts it and shows the panel the item is in, as the web's does; renaming, deleting and settling a
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(

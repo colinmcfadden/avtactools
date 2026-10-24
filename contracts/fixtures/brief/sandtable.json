@@ -1,0 +1,2310 @@
+{
+  "generatedBy": "frontend/src/contracts/briefSandtableFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "from": "brief/compile.json",
+  "cases": [
+    {
+      "name": "OP DK, air movement brief, the flow from the routes",
+      "overview": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 18",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "1",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 18",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "2",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 18",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "3",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 18",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.a",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 18",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.b",
+            "kind": "departure",
+            "focus": "route:set-opdk/r-alderaan",
+            "bounds": [[33.874570000000006,-84.54385],[34.360929999999996,-84.21324999999999]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":true,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-opdk/r-alderaan",
+          "position": "Step 6 of 18",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "ALDERAAN",
+          "who": "Flight lead",
+          "time": "11:56:32",
+          "view": {
+            "stepId": "4.c@route:set-opdk/r-alderaan",
+            "kind": "route",
+            "focus": "route:set-opdk/r-alderaan",
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":true,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":true,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lz-bluebird",
+          "position": "Step 7 of 18",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ BLUEBIRD",
+          "who": "Flight lead",
+          "time": "12:21:03",
+          "view": {
+            "stepId": "4.e@lz:lz-bluebird",
+            "kind": "stop",
+            "focus": "lz:lz-bluebird",
+            "bounds": [[34.596505066475025,-84.05757402914784],[34.60589493352497,-84.04702597085216]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":true},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lz-hawk",
+          "position": "Step 8 of 18",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ HAWK",
+          "who": "Flight lead",
+          "time": "12:25:54",
+          "view": {
+            "stepId": "4.e@lz:lz-hawk",
+            "kind": "stop",
+            "focus": "lz:lz-hawk",
+            "bounds": [[34.54540506647503,-84.11547201723347],[34.554794933524974,-84.10492798276654]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":true},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-opdk/r-bespin",
+          "position": "Step 9 of 18",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "BESPIN",
+          "who": "Flight lead",
+          "time": "16:02:57",
+          "view": {
+            "stepId": "4.c@route:set-opdk/r-bespin",
+            "kind": "route",
+            "focus": "route:set-opdk/r-bespin",
+            "bounds": [[33.849590000000006,-84.55737],[34.63571,-84.06452999999999]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":true,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.d@lz:pz-ibis",
+          "position": "Step 10 of 18",
+          "number": "4.d",
+          "section": "PZ operations",
+          "title": "PZ IBIS",
+          "who": "Flight lead",
+          "time": "16:03:31",
+          "view": {
+            "stepId": "4.d@lz:pz-ibis",
+            "kind": "stop",
+            "focus": "lz:pz-ibis",
+            "bounds": [[34.565505066475026,-84.11087280800702],[34.57489493352497,-84.10032719199297]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":true},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.f@lz:farp-bucees",
+          "position": "Step 11 of 18",
+          "number": "4.f",
+          "section": "FARP",
+          "title": "FARP BUCEES",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.f@lz:farp-bucees",
+            "kind": "stop",
+            "focus": "lz:farp-bucees",
+            "bounds": [[34.47540506647503,-84.0464692694144],[34.484794933524974,-84.0359307305856]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":true},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lz-decoy",
+          "position": "Step 12 of 18",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ DECOY",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.e@lz:lz-decoy",
+            "kind": "stop",
+            "focus": "lz:lz-decoy",
+            "bounds": [[34.64540506647503,-84.20537595920304],[34.654794933524975,-84.19482404079697]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":true}],
+            "rally": false
+          }
+        },
+        {
+          "id": "5.a",
+          "position": "Step 13 of 18",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.a",
+            "kind": "rally",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": true
+          }
+        },
+        {
+          "id": "5.b",
+          "position": "Step 14 of 18",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.b",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "6",
+          "position": "Step 15 of 18",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "6",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "7",
+          "position": "Step 16 of 18",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "7",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "8",
+          "position": "Step 17 of 18",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "8",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "9",
+          "position": "Step 18 of 18",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {
+            "stepId": "9",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "OP DK, hasty brief, the person's flow and roles",
+      "overview": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+      "steps": [
+        {
+          "id": "situation",
+          "position": "Step 1 of 16",
+          "number": "1–4",
+          "section": "Roll call and situation",
+          "title": "Roll call and situation",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "situation",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "mission",
+          "position": "Step 2 of 16",
+          "number": "5–8",
+          "section": "Mission and concept",
+          "title": "Mission and concept",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "mission",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "route@route:set-opdk/r-alderaan",
+          "position": "Step 3 of 16",
+          "number": "11",
+          "section": "Route / time of flight",
+          "title": "ALDERAAN",
+          "who": "AMC",
+          "time": "11:56:32",
+          "view": {
+            "stepId": "route@route:set-opdk/r-alderaan",
+            "kind": "route",
+            "focus": "route:set-opdk/r-alderaan",
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":true,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":true,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "false@lz:lz-decoy",
+          "position": "Step 4 of 16",
+          "number": "10",
+          "section": "False infiltration LZ / concept",
+          "title": "LZ DECOY",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "false@lz:lz-decoy",
+            "kind": "stop",
+            "focus": "lz:lz-decoy",
+            "bounds": [[34.64540506647503,-84.20537595920304],[34.654794933524975,-84.19482404079697]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":true},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "lz@lz:lz-bluebird",
+          "position": "Step 5 of 16",
+          "number": "12–13",
+          "section": "RP inbound and LZ operations",
+          "title": "LZ BLUEBIRD",
+          "who": "AMC",
+          "time": "12:21:03",
+          "view": {
+            "stepId": "lz@lz:lz-bluebird",
+            "kind": "stop",
+            "focus": "lz:lz-bluebird",
+            "bounds": [[34.596505066475025,-84.05757402914784],[34.60589493352497,-84.04702597085216]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":true},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "route@route:set-opdk/r-bespin",
+          "position": "Step 6 of 16",
+          "number": "11",
+          "section": "Route / time of flight",
+          "title": "BESPIN",
+          "who": "AMC",
+          "time": "16:02:57",
+          "view": {
+            "stepId": "route@route:set-opdk/r-bespin",
+            "kind": "route",
+            "focus": "route:set-opdk/r-bespin",
+            "bounds": [[33.849590000000006,-84.55737],[34.63571,-84.06452999999999]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":true,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "pz@lz:pz-ibis",
+          "position": "Step 7 of 16",
+          "number": "9",
+          "section": "Enroute / PZ operations",
+          "title": "PZ IBIS",
+          "who": "AMC",
+          "time": "16:03:31",
+          "view": {
+            "stepId": "pz@lz:pz-ibis",
+            "kind": "stop",
+            "focus": "lz:pz-ibis",
+            "bounds": [[34.565505066475026,-84.11087280800702],[34.57489493352497,-84.10032719199297]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":true}],
+            "rally": false
+          }
+        },
+        {
+          "id": "support",
+          "position": "Step 8 of 16",
+          "number": "14–15",
+          "section": "Hot / cold and the attack / scout plan",
+          "title": "Hot / cold and the attack / scout plan",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "support",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "laager@lz:lz-hawk",
+          "position": "Step 9 of 16",
+          "number": "16",
+          "section": "Laager plan",
+          "title": "LZ HAWK",
+          "who": "AMC",
+          "time": "12:25:54",
+          "view": {
+            "stepId": "laager@lz:lz-hawk",
+            "kind": "stop",
+            "focus": "lz:lz-hawk",
+            "bounds": [[34.54540506647503,-84.11547201723347],[34.554794933524974,-84.10492798276654]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":true},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "airspace",
+          "position": "Step 10 of 16",
+          "number": "17",
+          "section": "Airspace control (rotary wing, CAS, ISR)",
+          "title": "Airspace control (rotary wing, CAS, ISR)",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "airspace",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "farp@lz:farp-bucees",
+          "position": "Step 11 of 16",
+          "number": "18",
+          "section": "Refuel plan / location",
+          "title": "FARP BUCEES",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "farp@lz:farp-bucees",
+            "kind": "stop",
+            "focus": "lz:farp-bucees",
+            "bounds": [[34.47540506647503,-84.0464692694144],[34.484794933524974,-84.0359307305856]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":true},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "detainee",
+          "position": "Step 12 of 16",
+          "number": "19",
+          "section": "Detainee transport plan",
+          "title": "Detainee transport plan",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "detainee",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "abort",
+          "position": "Step 13 of 16",
+          "number": "20–21",
+          "section": "Abort criteria and the weather call",
+          "title": "Abort criteria and the weather call",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "abort",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "fires",
+          "position": "Step 14 of 16",
+          "number": "22–25",
+          "section": "Fires, deception, resupply and bump plan",
+          "title": "Fires, deception, resupply and bump plan",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "fires",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "contingencies",
+          "position": "Step 15 of 16",
+          "number": "26–28",
+          "section": "Contingencies, MEDEVAC and QRF",
+          "title": "Contingencies, MEDEVAC and QRF",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "contingencies",
+            "kind": "rally",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": true
+          }
+        },
+        {
+          "id": "signal",
+          "position": "Step 16 of 16",
+          "number": "29–32",
+          "section": "Communication, command, ISR / CAS and timeline",
+          "title": "Communication, command, ISR / CAS and timeline",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "signal",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-decoy","close":false},{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:pz-ibis","close":false}],
+            "rally": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "a flow naming what has gone, threats left out, no appendices",
+      "overview": [[33.84649,-84.5627],[34.66981,-84.0059]],
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 13",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "1",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 13",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "2",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 13",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "3",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 13",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.a",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 13",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.b",
+            "kind": "departure",
+            "focus": "route:set-opdk/r-alderaan",
+            "bounds": [[33.874570000000006,-84.54385],[34.360929999999996,-84.21324999999999]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-opdk/r-alderaan",
+          "position": "Step 6 of 13",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "ALDERAAN",
+          "who": "Flight lead",
+          "time": "11:56:32",
+          "view": {
+            "stepId": "4.c@route:set-opdk/r-alderaan",
+            "kind": "route",
+            "focus": "route:set-opdk/r-alderaan",
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lz-hawk",
+          "position": "Step 7 of 13",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ HAWK",
+          "who": "Flight lead",
+          "time": "12:25:54",
+          "view": {
+            "stepId": "4.e@lz:lz-hawk",
+            "kind": "stop",
+            "focus": "lz:lz-hawk",
+            "bounds": [[34.54540506647503,-84.11547201723347],[34.554794933524974,-84.10492798276654]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-hawk","close":true}],
+            "rally": false
+          }
+        },
+        {
+          "id": "5.a",
+          "position": "Step 8 of 13",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.a",
+            "kind": "rally",
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": true
+          }
+        },
+        {
+          "id": "5.b",
+          "position": "Step 9 of 13",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.b",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "6",
+          "position": "Step 10 of 13",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "6",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "7",
+          "position": "Step 11 of 13",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "7",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "8",
+          "position": "Step 12 of 13",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "8",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "9",
+          "position": "Step 13 of 13",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {
+            "stepId": "9",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-hawk","close":false}],
+            "rally": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty plan: every value a write-in, no light without a place",
+      "overview": null,
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 11",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"1","kind":"overview","focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 11",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"2","kind":"overview","focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 11",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"3","kind":"overview","focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 11",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {"stepId":"4.a","kind":"overview","focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 11",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {"stepId":"4.b","kind":"departure","focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "5.a",
+          "position": "Step 6 of 11",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"5.a","kind":"rally","focus":null,"bounds":null,"routes":[],"stops":[],"rally":true}
+        },
+        {
+          "id": "5.b",
+          "position": "Step 7 of 11",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"5.b","kind":null,"focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "6",
+          "position": "Step 8 of 11",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"6","kind":null,"focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "7",
+          "position": "Step 9 of 11",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"7","kind":"overview","focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "8",
+          "position": "Step 10 of 11",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"8","kind":null,"focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        },
+        {
+          "id": "9",
+          "position": "Step 11 of 11",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {"stepId":"9","kind":null,"focus":null,"bounds":null,"routes":[],"stops":[],"rally":false}
+        }
+      ]
+    },
+    {
+      "name": "a route with one named point, and an LZ no route reaches",
+      "overview": [[34.998,-85.002],[35.002,-84.998]],
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 13",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "1",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 13",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "2",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 13",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "3",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 13",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.a",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 13",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.b",
+            "kind": "departure",
+            "focus": "route:s/one",
+            "bounds": null,
+            "routes": [{"ref":"route:s/one","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:s/one",
+          "position": "Step 6 of 13",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "ONE",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.c@route:s/one",
+            "kind": "route",
+            "focus": "route:s/one",
+            "bounds": null,
+            "routes": [{"ref":"route:s/one","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lone",
+          "position": "Step 7 of 13",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ LONE",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.e@lz:lone",
+            "kind": "stop",
+            "focus": "lz:lone",
+            "bounds": [[34.99530506647503,-85.00528990636569],[35.00469493352497,-84.99471009363431]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lone","close":true}],
+            "rally": false
+          }
+        },
+        {
+          "id": "5.a",
+          "position": "Step 8 of 13",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.a",
+            "kind": "rally",
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": true
+          }
+        },
+        {
+          "id": "5.b",
+          "position": "Step 9 of 13",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.b",
+            "kind": null,
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "6",
+          "position": "Step 10 of 13",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "6",
+            "kind": null,
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "7",
+          "position": "Step 11 of 13",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "7",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "8",
+          "position": "Step 12 of 13",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "8",
+            "kind": null,
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "9",
+          "position": "Step 13 of 13",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {
+            "stepId": "9",
+            "kind": null,
+            "focus": null,
+            "bounds": [[34.998,-85.002],[35.002,-84.998]],
+            "routes": [{"ref":"route:s/one","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lone","close":false}],
+            "rally": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "strip charts at 1:250,000: a dogleg, a gentle bend and a long leg",
+      "overview": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 13",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "1",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 13",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "2",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 13",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "3",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 13",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.a",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 13",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.b",
+            "kind": "departure",
+            "focus": "route:set-dog/dog",
+            "bounds": [[34.558,-84.36],[35.062000000000005,-83.64]],
+            "routes": [{"ref":"route:set-dog/dog","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-dog/dog",
+          "position": "Step 6 of 13",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "DOGLEG",
+          "who": "Flight lead",
+          "time": "09:00:00",
+          "view": {
+            "stepId": "4.c@route:set-dog/dog",
+            "kind": "route",
+            "focus": "route:set-dog/dog",
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lz-end",
+          "position": "Step 7 of 13",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ END",
+          "who": "Flight lead",
+          "time": "09:39:50",
+          "view": {
+            "stepId": "4.e@lz:lz-end",
+            "kind": "stop",
+            "focus": "lz:lz-end",
+            "bounds": [[35.615305066475024,-83.13531521930416],[35.62469493352497,-83.12468478069583]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-end","close":true}],
+            "rally": false
+          }
+        },
+        {
+          "id": "5.a",
+          "position": "Step 8 of 13",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.a",
+            "kind": "rally",
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": true
+          }
+        },
+        {
+          "id": "5.b",
+          "position": "Step 9 of 13",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.b",
+            "kind": null,
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "6",
+          "position": "Step 10 of 13",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "6",
+            "kind": null,
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "7",
+          "position": "Step 11 of 13",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "7",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "8",
+          "position": "Step 12 of 13",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "8",
+            "kind": null,
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "9",
+          "position": "Step 13 of 13",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {
+            "stepId": "9",
+            "kind": null,
+            "focus": null,
+            "bounds": [[34.498000000000005,-84.417],[35.721999999999994,-83.01299999999999]],
+            "routes": [{"ref":"route:set-dog/dog","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-end","close":false}],
+            "rally": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "strip charts: a doubled start, a long leg ending at a turn, threats left out, an unknown scale",
+      "overview": [[33.758,-85.062],[34.022,-84.318]],
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 12",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"1","kind":"overview","focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 12",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"2","kind":"overview","focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 12",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"3","kind":"overview","focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 12",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.a",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.758,-85.062],[34.022,-84.318]],
+            "routes": [{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 12",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.b",
+            "kind": "departure",
+            "focus": "route:set-long/long",
+            "bounds": [[33.758,-85.062],[34.022,-84.318]],
+            "routes": [{"ref":"route:set-long/long","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-long/long",
+          "position": "Step 6 of 12",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "LONG",
+          "who": "Flight lead",
+          "time": "10:00:00",
+          "view": {
+            "stepId": "4.c@route:set-long/long",
+            "kind": "route",
+            "focus": "route:set-long/long",
+            "bounds": [[33.758,-85.062],[34.022,-84.318]],
+            "routes": [{"ref":"route:set-long/long","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "5.a",
+          "position": "Step 7 of 12",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"5.a","kind":"rally","focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":true}
+        },
+        {
+          "id": "5.b",
+          "position": "Step 8 of 12",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"5.b","kind":null,"focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":false}],"stops":[],"rally":false}
+        },
+        {
+          "id": "6",
+          "position": "Step 9 of 12",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"6","kind":null,"focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":false}],"stops":[],"rally":false}
+        },
+        {
+          "id": "7",
+          "position": "Step 10 of 12",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"7","kind":"overview","focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "8",
+          "position": "Step 11 of 12",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"8","kind":null,"focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":false}],"stops":[],"rally":false}
+        },
+        {
+          "id": "9",
+          "position": "Step 12 of 12",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {"stepId":"9","kind":null,"focus":null,"bounds":[[33.758,-85.062],[34.022,-84.318]],"routes":[{"ref":"route:set-long/long","lit":false,"dimmed":false,"labelled":false}],"stops":[],"rally":false}
+        }
+      ]
+    },
+    {
+      "name": "strip charts across the antimeridian",
+      "overview": [[51.873000000000005,-215.94],[51.957,215.94]],
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 12",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "1",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 12",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "2",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 12",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "3",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 12",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.a",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 12",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.b",
+            "kind": "departure",
+            "focus": "route:set-date/date",
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-date/date",
+          "position": "Step 6 of 12",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "DATELINE",
+          "who": "Flight lead",
+          "time": "10:00:00",
+          "view": {
+            "stepId": "4.c@route:set-date/date",
+            "kind": "route",
+            "focus": "route:set-date/date",
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "5.a",
+          "position": "Step 7 of 12",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.a",
+            "kind": "rally",
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": true
+          }
+        },
+        {
+          "id": "5.b",
+          "position": "Step 8 of 12",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.b",
+            "kind": null,
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "6",
+          "position": "Step 9 of 12",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "6",
+            "kind": null,
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "7",
+          "position": "Step 10 of 12",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "7",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "8",
+          "position": "Step 11 of 12",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "8",
+            "kind": null,
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "9",
+          "position": "Step 12 of 12",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {
+            "stepId": "9",
+            "kind": null,
+            "focus": null,
+            "bounds": [[51.873000000000005,-215.94],[51.957,215.94]],
+            "routes": [{"ref":"route:set-date/date","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [],
+            "rally": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "strip charts stop at the most a packet holds",
+      "overview": [[28.8,-89.502],[43.2,-89.498]],
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 12",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"1","kind":"overview","focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 12",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"2","kind":"overview","focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 12",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"3","kind":"overview","focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 12",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {"stepId":"4.a","kind":"overview","focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 12",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.b",
+            "kind": "departure",
+            "focus": "route:set-ferry/ferry",
+            "bounds": [[28.8,-89.502],[43.2,-89.498]],
+            "routes": [{"ref":"route:set-ferry/ferry","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-ferry/ferry",
+          "position": "Step 6 of 12",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "FERRY",
+          "who": "Flight lead",
+          "time": "06:00:00",
+          "view": {
+            "stepId": "4.c@route:set-ferry/ferry",
+            "kind": "route",
+            "focus": "route:set-ferry/ferry",
+            "bounds": [[28.8,-89.502],[43.2,-89.498]],
+            "routes": [{"ref":"route:set-ferry/ferry","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [],
+            "rally": false
+          }
+        },
+        {
+          "id": "5.a",
+          "position": "Step 7 of 12",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"5.a","kind":"rally","focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":true}
+        },
+        {
+          "id": "5.b",
+          "position": "Step 8 of 12",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"5.b","kind":null,"focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":false}],"stops":[],"rally":false}
+        },
+        {
+          "id": "6",
+          "position": "Step 9 of 12",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"6","kind":null,"focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":false}],"stops":[],"rally":false}
+        },
+        {
+          "id": "7",
+          "position": "Step 10 of 12",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"7","kind":"overview","focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":true}],"stops":[],"rally":false}
+        },
+        {
+          "id": "8",
+          "position": "Step 11 of 12",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {"stepId":"8","kind":null,"focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":false}],"stops":[],"rally":false}
+        },
+        {
+          "id": "9",
+          "position": "Step 12 of 12",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {"stepId":"9","kind":null,"focus":null,"bounds":[[28.8,-89.502],[43.2,-89.498]],"routes":[{"ref":"route:set-ferry/ferry","lit":false,"dimmed":false,"labelled":false}],"stops":[],"rally":false}
+        }
+      ]
+    },
+    {
+      "name": "the slope of each LZ/PZ: judged at its landing heading, for its stop's wind",
+      "overview": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+      "steps": [
+        {
+          "id": "1",
+          "position": "Step 1 of 18",
+          "number": "1",
+          "section": "Roll call",
+          "title": "Roll call",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "1",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "2",
+          "position": "Step 2 of 18",
+          "number": "2",
+          "section": "Situation",
+          "title": "Situation",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "2",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "3",
+          "position": "Step 3 of 18",
+          "number": "3",
+          "section": "Mission and intent",
+          "title": "Mission and intent",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "3",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.a",
+          "position": "Step 4 of 18",
+          "number": "4.a",
+          "section": "Timeline",
+          "title": "Timeline",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.a",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.b",
+          "position": "Step 5 of 18",
+          "number": "4.b",
+          "section": "Departure sequence",
+          "title": "Departure sequence",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.b",
+            "kind": "departure",
+            "focus": "route:set-opdk/r-alderaan",
+            "bounds": [[33.874570000000006,-84.54385],[34.360929999999996,-84.21324999999999]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":true,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-opdk/r-alderaan",
+          "position": "Step 6 of 18",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "ALDERAAN",
+          "who": "Flight lead",
+          "time": "11:56:32",
+          "view": {
+            "stepId": "4.c@route:set-opdk/r-alderaan",
+            "kind": "route",
+            "focus": "route:set-opdk/r-alderaan",
+            "bounds": [[33.84649,-84.5627],[34.66981,-84.0059]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":true,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":true,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lz-bluebird",
+          "position": "Step 7 of 18",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ BLUEBIRD",
+          "who": "Flight lead",
+          "time": "12:21:03",
+          "view": {
+            "stepId": "4.e@lz:lz-bluebird",
+            "kind": "stop",
+            "focus": "lz:lz-bluebird",
+            "bounds": [[34.596505066475025,-84.05757402914784],[34.60589493352497,-84.04702597085216]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":true},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lz-hawk",
+          "position": "Step 8 of 18",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ HAWK",
+          "who": "Flight lead",
+          "time": "12:25:54",
+          "view": {
+            "stepId": "4.e@lz:lz-hawk",
+            "kind": "stop",
+            "focus": "lz:lz-hawk",
+            "bounds": [[34.54540506647503,-84.11547201723347],[34.554794933524974,-84.10492798276654]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":true},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.c@route:set-opdk/r-bespin",
+          "position": "Step 9 of 18",
+          "number": "4.c",
+          "section": "Enroute sequence",
+          "title": "BESPIN",
+          "who": "Flight lead",
+          "time": "16:02:57",
+          "view": {
+            "stepId": "4.c@route:set-opdk/r-bespin",
+            "kind": "route",
+            "focus": "route:set-opdk/r-bespin",
+            "bounds": [[33.849590000000006,-84.55737],[34.63571,-84.06452999999999]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":true,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":true,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.d@lz:pz-ibis",
+          "position": "Step 10 of 18",
+          "number": "4.d",
+          "section": "PZ operations",
+          "title": "PZ IBIS",
+          "who": "Flight lead",
+          "time": "16:03:31",
+          "view": {
+            "stepId": "4.d@lz:pz-ibis",
+            "kind": "stop",
+            "focus": "lz:pz-ibis",
+            "bounds": [[34.565505066475026,-84.11087280800702],[34.57489493352497,-84.10032719199297]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":true},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.f@lz:farp-bucees",
+          "position": "Step 11 of 18",
+          "number": "4.f",
+          "section": "FARP",
+          "title": "FARP BUCEES",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.f@lz:farp-bucees",
+            "kind": "stop",
+            "focus": "lz:farp-bucees",
+            "bounds": [[34.47540506647503,-84.0464692694144],[34.484794933524974,-84.0359307305856]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":true},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "4.e@lz:lz-decoy",
+          "position": "Step 12 of 18",
+          "number": "4.e",
+          "section": "Landing sequence",
+          "title": "LZ DECOY",
+          "who": "Flight lead",
+          "time": null,
+          "view": {
+            "stepId": "4.e@lz:lz-decoy",
+            "kind": "stop",
+            "focus": "lz:lz-decoy",
+            "bounds": [[34.64540506647503,-84.20537595920304],[34.654794933524975,-84.19482404079697]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":true}],
+            "rally": false
+          }
+        },
+        {
+          "id": "5.a",
+          "position": "Step 13 of 18",
+          "number": "5.a",
+          "section": "Contingencies",
+          "title": "Contingencies",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.a",
+            "kind": "rally",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": true
+          }
+        },
+        {
+          "id": "5.b",
+          "position": "Step 14 of 18",
+          "number": "5.b",
+          "section": "Coordinating instructions",
+          "title": "Coordinating instructions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "5.b",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "6",
+          "position": "Step 15 of 18",
+          "number": "6",
+          "section": "Command and signal",
+          "title": "Command and signal",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "6",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "7",
+          "position": "Step 16 of 18",
+          "number": "7",
+          "section": "Mission AAR time and location",
+          "title": "Mission AAR time and location",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "7",
+            "kind": "overview",
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":true},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":true}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "8",
+          "position": "Step 17 of 18",
+          "number": "8",
+          "section": "Questions",
+          "title": "Questions",
+          "who": "AMC",
+          "time": null,
+          "view": {
+            "stepId": "8",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        },
+        {
+          "id": "9",
+          "position": "Step 18 of 18",
+          "number": "9",
+          "section": "Commander / AMC comments",
+          "title": "Commander / AMC comments",
+          "who": "Commander / AMC",
+          "time": null,
+          "view": {
+            "stepId": "9",
+            "kind": null,
+            "focus": null,
+            "bounds": [[33.8416,-84.56381],[34.723600000000005,-83.99369]],
+            "routes": [{"ref":"route:set-opdk/r-alderaan","lit":false,"dimmed":false,"labelled":false},{"ref":"route:set-opdk/r-bespin","lit":false,"dimmed":false,"labelled":false}],
+            "stops": [{"ref":"lz:lz-bluebird","close":false},{"ref":"lz:lz-hawk","close":false},{"ref":"lz:pz-ibis","close":false},{"ref":"lz:farp-bucees","close":false},{"ref":"lz:lz-decoy","close":false}],
+            "rally": false
+          }
+        }
+      ]
+    }
+  ]
+}

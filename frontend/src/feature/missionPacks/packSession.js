@@ -20,6 +20,24 @@ const ITEM_EVENTS = new Set(["item.create", "item.delete", "item.rename", "item.
 
 const readOnlyFor = (role, status) => status === "finished" || role === "viewer";
 
+// A brief (docs/MISSION_BRIEF.md §3) is open to every member in every state of the pack: a read-only pack still takes
+// edits to it, and nothing else. An operation is on a brief when the item it names is one, as this browser knows the
+// items (made here or not, deleted or not), or when an item.create before it in the same edit makes one.
+const kindsOf = (session) => {
+  const kinds = {};
+  Object.entries(session.confirmed).forEach(([uuid, item]) => { kinds[uuid] = item.kind; });
+  Object.entries(session.view || {}).forEach(([uuid, item]) => { kinds[uuid] = item.kind; });
+  return kinds;
+};
+const allOnBriefs = (session, ops) => {
+  const kinds = kindsOf(session);
+  return ops.every((op) => {
+    if (op.type === "item.create" && kinds[op.item] === undefined) kinds[op.item] = op.kind;
+    return kinds[op.item] === "brief";
+  });
+};
+const onBrief = (session, entry) => allOnBriefs(session, [entry.op]);
+
 const fold = (confirmed, pending) =>
   pending.reduce((items, entry) => applyPackOp(items, entry.op).items, confirmed);
 
@@ -75,8 +93,10 @@ export const reloadSession = (session, pack) => {
  */
 export const edit = (session, ops, newId) => {
   if (session.gone) return { session, refused: "gone" };
-  if (session.readOnly) return { session, refused: "read_only" };
   const list = Array.isArray(ops) ? ops : [ops];
+  if (session.readOnly && !(list.length > 0 && list.every((op) => op && typeof op === "object") && allOnBriefs(session, list))) {
+    return { session, refused: "read_only" };
+  }
   for (const op of list) {
     const invalid = validatePackOp(op);
     if (invalid) return { session, refused: invalid };
@@ -89,8 +109,13 @@ export const edit = (session, ops, newId) => {
 /** The next batch to send, or null while one is in flight or nothing waits. */
 export const nextBatch = (session) => {
   if (session.pending.some((entry) => entry.state === "sent")) return null;
-  const queued = session.pending.filter((entry) => entry.state === "queued").slice(0, MAX_BATCH);
-  if (queued.length === 0) return null;
+  const waiting = session.pending.filter((entry) => entry.state === "queued");
+  if (waiting.length === 0) return null;
+  // Edits to briefs go in batches of their own, as the server takes them in a read-only pack only alone: a run of
+  // queued edits that are all on briefs, or all on anything else, in the order they were made.
+  const brief = onBrief(session, waiting[0]);
+  const run = waiting.findIndex((entry) => onBrief(session, entry) !== brief);
+  const queued = (run === -1 ? waiting : waiting.slice(0, run)).slice(0, MAX_BATCH);
   const sending = new Set(queued);
   return {
     session: { ...session, pending: session.pending.map((entry) => (sending.has(entry) ? { ...entry, state: "sent" } : entry)) },
@@ -218,11 +243,17 @@ const withHead = (session) =>
 const untaken = (entry) => entry.state === "queued" || entry.state === "sent";
 
 // Dropped in the order they were made (pending's order), all at once: droppedVersions applies them in that order.
-const dropUntaken = (session, reason) => withView({
-  ...session,
-  pending: session.pending.filter((entry) => !untaken(entry)),
-  dropped: [...session.dropped, ...session.pending.filter(untaken).map(({ op }) => ({ op, reason }))],
-});
+const dropUntaken = (session, reason, keep = () => false) => {
+  const drops = (entry) => untaken(entry) && !keep(entry);
+  return withView({
+    ...session,
+    pending: session.pending.filter((entry) => !drops(entry)),
+    dropped: [...session.dropped, ...session.pending.filter(drops).map(({ op }) => ({ op, reason }))],
+  });
+};
+
+// What a pack that turned read-only still takes: a brief edit still queued (one sent was in a batch the pack refused).
+const briefStillQueued = (session) => (entry) => entry.state === "queued" && onBrief(session, entry);
 
 // A pack that turned read-only (finished, or our role lowered) takes nothing more, so what is queued is dropped.
 // Not while a batch is out: the server decides only when the batch reaches the pack, so it may take it yet (it
@@ -234,7 +265,8 @@ const settle = (session) => {
   const waiting = session.pending.some((entry) => entry.state === "sent");
   if (!session.gone && (!session.readOnly || waiting)) return withView(session);
   if (!session.pending.some(untaken)) return withView(session);
-  return dropUntaken(session, session.gone ? "gone" : session.pack.status === "finished" ? "pack_finished" : "read_only");
+  if (session.gone) return dropUntaken(session, "gone");
+  return dropUntaken(session, session.pack.status === "finished" ? "pack_finished" : "read_only", briefStillQueued(session));
 };
 
 // An edit the server took is in `confirmed` once seq has reached the event its result named, whether or
@@ -307,10 +339,10 @@ export const batchFailed = (given, failure) => {
     // Each the body has, null too: whoever finished it may have deleted their account since, and when still holds.
     if (failure.finished_by !== undefined) pack.finished_by = failure.finished_by;
     if (failure.finished_at !== undefined) pack.finished_at = failure.finished_at;
-    return dropUntaken({ ...session, pack, readOnly: true }, "pack_finished");
+    return dropUntaken({ ...session, pack, readOnly: true }, "pack_finished", briefStillQueued(session));
   }
   if (status === 403 && code === "pack_read_only") {
-    return dropUntaken({ ...session, pack: { ...session.pack, role: "viewer" }, readOnly: true }, "read_only");
+    return dropUntaken({ ...session, pack: { ...session.pack, role: "viewer" }, readOnly: true }, "read_only", briefStillQueued(session));
   }
   if (status === 404 || status === 403) {
     return dropUntaken({ ...session, gone: status === 404 ? "not_found" : "forbidden" }, "gone");
