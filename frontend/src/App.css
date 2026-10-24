@@ -658,7 +658,7 @@ body.export-mode-active .leaflet-control-container {
   position: absolute;
   top: 20px;
   right: 20px;
-  z-index: 9999; /* This is crucial to float over Leaflet */
+  z-index: 2400; /* Over the map and the frame, under the floating windows (2500) and every dialog (3000) */
   display: flex;
   flex-direction: column;
   gap: 10px;

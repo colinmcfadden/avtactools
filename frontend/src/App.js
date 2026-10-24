@@ -1484,7 +1484,11 @@ function App() {
           exportProgress={exportProgress}
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
+          onAnalyze={performTerrainAnalysis}
+          onToggleDrawing={toggleDrawingMode}
+          isDrawingLZ={isDrawingLZ}
           canAnalyze={canAnalyze && editable}
+          canDrawBoundary={hasActiveTarget && editable}
           canUseDiagramTools={canEditGraphics && editable}
           canSaveDiagram={canEditGraphics && editable}
           canExport={canEditGraphics}
