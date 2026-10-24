@@ -24,19 +24,23 @@ stands said on its chip.
 
 ## Moving to a new computer (2026-10-23)
 
-**Every branch with work is on GitHub** (pushed 2026-10-23); nothing was left uncommitted or stashed. Where each stands:
+**Every branch with work was on GitHub** (pushed 2026-10-23), and on 2026-10-24 every finished one was merged into `develop` by a PR of its own, each
+brought up to date with `develop` first and checked on the new Mac (Android `test testDebugUnitTest lintDebug assembleDebug`, the backend's CI list,
+the web's Jest and `npm run build`):
 
-| Branch | What it holds | Where it stands |
+| Branch | What it holds | Merged |
 |---|---|---|
-| `feat/mission-brief` | The mission brief, web, server and Android B0–B8 (`docs/MISSION_BRIEF.md`) | PR #99 to `develop`, open, Auto-fix on. Staging has none of the brief's routes until it is merged (and so deployed there) |
-| `claude/festive-dijkstra-79b32b` | B9, the brief as a live sandtable on an Android tablet, on top of `feat/mission-brief` | pushed, no PR: into `feat/mission-brief`, or its own PR after #99 |
-| `feat/android-quick-edits` | The owner's device-run requests of 2026-10-21/22 (§0 below), from `develop` | pushed, no PR |
-| `claude/android-3d-view-e38b76` | The 3D LZ view on Android (`docs/ANDROID_3D_PLAN.md`), from `develop` | pushed, no PR. Tried on the tablet merged with `feat/android-quick-edits`: they conflict in `DiagramsViewModel`, `LzPanel` and their tests, and both sides are kept (a 3D test then needs `FreshDiagrams()` before its `BuildOnSave`) |
-| `claude/competent-noether-5cc4f7` | The MGRS grid fixture compared to a tolerance (a contracts test) | pushed, no PR |
-| `fix/window-stacking` | The web's floating windows and alerts stacked under menus, dialogs and toasts | pushed, no PR |
-| `fix/mobile-analyze-boundary` | The phone web's *Analyze* and *Draw boundary*, and capture and export above the sheet | PR #98 |
-| `claude/admin-coverage-prebuild-efcef7` | Docs only: the plan for the admin's data coverage map, uploads, 3D streamed from USGS, and organizations with an area of operation (`docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`; the owner's answers on its decisions page, https://claude.ai/artifact/RU8RPViDvj2qjpP7UGLT4R, recorded in the doc) | pushed, no PR. All 20 decisions answered on 2026-10-23, none open; D1 (MapLibre GL JS for the admin map) and D13 (several AOs per organization) differ from its recommendations. Nothing built: Phase 0 is next. It found that any signed-in user can list every place a 3D view was built, with its coordinates (`GET /api/lidar/tilesets` and each tileset's `area.json`); Phase 0 closes that |
-| `test/quick-edits-3d` | A throwaway merge of quick edits and 3D, built for staging and put on the tablet | never committed or pushed: remake it from the two branches |
+| `fix/mobile-analyze-boundary` | The phone web's *Analyze* and *Draw boundary*, and capture and export above the sheet | #98 |
+| `fix/window-stacking` | The web's floating windows and alerts stacked under menus, dialogs and toasts | #100 |
+| `claude/competent-noether-5cc4f7` | The MGRS grid fixture compared to a tolerance (it failed on Apple silicon in the last digits) | #101 |
+| `claude/admin-coverage-prebuild-efcef7` | Docs only: `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`, all 20 decisions answered on 2026-10-23 (https://claude.ai/artifact/RU8RPViDvj2qjpP7UGLT4R; D1, MapLibre GL JS for the admin map, and D13, several AOs per organization, differ from its recommendations). Nothing built: Phase 0 is next, and closes what it found: any signed-in user can list every place a 3D view was built, with its coordinates (`GET /api/lidar/tilesets` and each tileset's `area.json`) | #102 |
+| `feat/mission-brief` | The mission brief, web, server and Android B0–B8 (`docs/MISSION_BRIEF.md`). Staging gets the brief's routes on its next deploy from `develop` | #99 |
+| `claude/festive-dijkstra-79b32b` | B9, the brief as a live sandtable on an Android tablet; its Leaflet-fit fixture is now compared to 1e-9° (Apple silicon again) | #103 |
+| `feat/android-quick-edits` | The owner's device-run requests of 2026-10-21/22 (§0 below) | #104 |
+| `claude/android-3d-view-e38b76` | The 3D LZ view on Android (`docs/ANDROID_3D_PLAN.md`, §0b). It conflicted with the brief, B9 and quick edits; both sides kept (an LZ/PZ row has its *3D* and its eye; the recorded network fixtures regenerated, the briefs' recordings unchanged) | #105 |
+
+Left out: `refactor/backend-structure` (deliberately, §1); `docs/menu-redesign`, `fix/threat-colors` and `feat/vfr-sectional`, already in `develop` in
+another form, were deleted. `test/quick-edits-3d`, the throwaway merge put on the tablet, was never pushed: `develop` now holds both.
 
 **Not in git: bring it, or make it again.**
 - **The debug signing key** (`~/.android/debug.keystore`). A debug APK built with another key will not install over the tablet's or the phone's (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), and
