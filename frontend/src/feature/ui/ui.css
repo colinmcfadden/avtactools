@@ -225,6 +225,8 @@ select.ui-input { cursor: pointer; }
 
 /* -- Dialogs -------------------------------------------------------------------------------- */
 
+/* Above everything the planning frame floats over the map, the draggable windows (2500,
+   ExportModal.css) and the proximity alerts (2400, App.css) included: layers.test.js holds the order. */
 .ui-dialog__backdrop {
   position: fixed;
   inset: 0;
