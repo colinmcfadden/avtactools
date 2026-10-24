@@ -80,6 +80,22 @@ export const fetchHeightmap = async (level, x, y, { fetchImpl = fetch } = {}) =>
 /** Whether a tile carries real elevation rather than the flat fallback. */
 export const hasElevation = (heights) => heights !== FLAT;
 
+/** The level the probe below asks at. */
+export const PROBE_LEVEL = 12;
+
+/**
+ * The terrain tile holding a point, in Cesium's geographic tiling (two tiles across at level 0, quartered at
+ * every level below): x counts from 180° W, y from 90° N. The native apps are held to this (contracts/fixtures/viewer3d).
+ */
+export const terrainTileAt = (lat, lon, level) => {
+  const across = 2 << level;
+  const down = 1 << level;
+  return {
+    x: Math.floor((lon + 180) / (360 / across)),
+    y: Math.floor((90 - lat) / (180 / down)),
+  };
+};
+
 /**
  * Whether the server has DEM coverage for a point.
  *
@@ -89,11 +105,8 @@ export const hasElevation = (heights) => heights !== FLAT;
  * is — a backend started without TERRAIN_DATA_DIR, or a target outside the
  * mounted DEMs.
  */
-export const probeTerrain = async (lat, lon, { level = 12, fetchImpl } = {}) => {
-  const across = 2 << level;
-  const down = 1 << level;
-  const x = Math.floor((lon + 180) / (360 / across));
-  const y = Math.floor((90 - lat) / (180 / down));
+export const probeTerrain = async (lat, lon, { level = PROBE_LEVEL, fetchImpl } = {}) => {
+  const { x, y } = terrainTileAt(lat, lon, level);
   return hasElevation(await fetchHeightmap(level, x, y, { fetchImpl }));
 };
 

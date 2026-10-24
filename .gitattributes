@@ -9,6 +9,8 @@ android/**/*.sh text eol=lf
 # conversion may touch it; the JSON ones stay LF so a Windows checkout
 # regenerates to the same bytes.
 *.msnx binary
+# A LiDAR tileset's tiles (contracts/fixtures/viewer3d/tileset, py3dtiles's own output).
+*.pnts binary
 contracts/fixtures/**/*.json text eol=lf
 # The pre-rendered symbols, and milsymbol as the app bundles it (a test holds it
 # byte for byte to the web's node_modules copy): a CRLF checkout fails both.

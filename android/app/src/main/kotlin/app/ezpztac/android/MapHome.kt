@@ -37,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ClipEntry
@@ -46,7 +47,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -70,6 +70,7 @@ import app.ezpztac.android.frame.panelsFor
 import app.ezpztac.android.frame.pick
 import app.ezpztac.android.frame.rememberTabletFrameState
 import app.ezpztac.android.frame.shownPanel
+import app.ezpztac.android.frame.underPage
 import app.ezpztac.android.frame.usesTabletFrame
 import app.ezpztac.android.packs.InviteNotices
 import app.ezpztac.briefs.BriefSetupHost
@@ -166,6 +167,7 @@ import app.ezpztac.workspace.LzPanelHost
 import app.ezpztac.workspace.MapPointAction
 import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.PointsViewModel
+import app.ezpztac.viewer3d.Viewer3DHost
 import app.ezpztac.workspace.RoutePlanHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesFooterHost
@@ -386,7 +388,9 @@ fun MapHome(
     val addingTo = CopyRules.addingTo(packsHere, openPack)
     val adding by copies.adding.collectAsStateWithLifecycle()
     // A page or dialog over the frame (the Library, Members, Teams, New pack): nobody is looking at the map or the Pack panel under it.
-    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen || briefOpen || presenting
+    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen || briefOpen || presenting || lz.viewer3d != null
+    // Where the keyboard's focus goes while the 3D view is up: a focus search that would go into the frame under it goes there.
+    val viewer3dFocus = remember { FocusRequester() }
     LaunchedEffect(newPack) {
         newPack.made.collect { uuid ->
             pickedPack(uuid)
@@ -521,7 +525,10 @@ fun MapHome(
     val libraryOpen = libraryTab != null
     // The Library opens over the frame, and a route's plan page is a page over the frame too: a Saved toast's Open Library pressed on the plan page would leave the
     // plan under the Library, and come back over the panel the Library's Open then chose. Opening the Library closes it.
-    LaunchedEffect(libraryOpen) { if (libraryOpen && !tablet) routesModel.closePlan() }
+    LaunchedEffect(libraryOpen) {
+        if (libraryOpen && !tablet) routesModel.closePlan()
+        if (libraryOpen) diagrams.close3d()                                                  // a toast's Open Library, drawn over 3D, shows the Library
+    }
     LaunchedEffect(libraryOpen, lz.error) {
         val said = lz.error
         if (libraryOpen && said != null) {
@@ -685,6 +692,7 @@ fun MapHome(
                     // The search bar and the sheet are reserved from the map, so the camera's centre is the crosshair, which is drawn between them.
                     EzpzMap(
                         host = host, style = state.style, initial = viewModel.initialCamera, padding = frame.padding, modifier = Modifier.fillMaxSize(),
+                        covered = lz.viewer3d != null,                       // the 3D view is over the whole of it
                         onTap = { at ->
                             // A brief being presented takes no edits: a tap holds nothing. With the phone's search open, a tap on the map folds it and does nothing else.
                             if (!presenting && !search.foldOnTap()) {
@@ -860,7 +868,8 @@ fun MapHome(
                             SandtableFlights(host, shown.view, sandtableBoxes, sandtableHandover)
                         }
                     },
-                    modifier = if (libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
+                    modifier = Modifier.underPage(unread = libraryTab != null || lz.viewer3d != null, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
+                    backEnabled = !overFrame,
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
                 )
@@ -882,7 +891,7 @@ fun MapHome(
                     floatingPx = { floating },
                     footer = footer,
                     // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
-                    modifier = if (routes.planOpen || libraryTab != null) Modifier.clearAndSetSemantics {} else Modifier,
+                    modifier = Modifier.underPage(unread = routes.planOpen || libraryTab != null || lz.viewer3d != null, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
                     // A tap on the map hides it; Back shows it again, unless a page over the frame has Back for itself.
                     hidden = frameState.hidden,
                     onShow = frameState::show,
@@ -960,6 +969,9 @@ fun MapHome(
             // one made later, so it is made again when the Library's window is (it opens, or turns from a page into a tablet's dialog).
             if (packsHere) key(tablet, libraryTab != null) { AddToPackHost(copies, tablet) }
             if (packsHere) ItemDialogsHost(itemCopies, tablet)
+            // The open LZ/PZ in 3D, over the whole screen and everything on it, phone and tablet alike (the owner, 2026-10-20): the frame under it stays
+            // composed and untouched, neither read nor touched while it is up, so closing it shows the map as it was.
+            Viewer3DHost(target = lz.viewer3d, night = night, onClose = diagrams::close3d, snackbars = snackbars, focus = viewer3dFocus)
         }
     }
 }

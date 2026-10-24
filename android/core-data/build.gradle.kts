@@ -16,6 +16,7 @@ dependencies {
     api(project(":core-sync"))
     api(project(":core-planning"))                               // a route being drawn is made by its SketchOps
     api(project(":core-missionpacks"))                           // mission packs: their engine, kept here in Room
+    api(project(":core-scene3d"))                                // the 3D view's scene: its tiles' places and terrain tiling
     api(project(":core-brief"))                                  // the mission brief: its formats and compileBrief, kept and compiled here
     implementation(project(":core-formats"))                     // a set of routes is exported as an AMPS mission
     implementation(project(":core-geo"))

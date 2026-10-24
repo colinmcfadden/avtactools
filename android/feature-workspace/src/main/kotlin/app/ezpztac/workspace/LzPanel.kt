@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -127,6 +128,8 @@ class LzPanelActions(
     val addToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of the open pack's LZ/PZ ([uuid], the editor's id) saved to this person's Library; none: not offered. */
     val saveCopy: ((uuid: String) -> Unit)? = null,
+    /** Shows [uuid] in 3D over the whole screen, opening it first if it is not the one open (the web's window shows the open one). */
+    val view3d: (String) -> Unit = {},
     /** The eye on an open LZ/PZ's row: hidden from the map, or drawn again ([uuid]); none: no eye. */
     val toggleOnMap: ((uuid: String) -> Unit)? = null,
 )
@@ -170,7 +173,7 @@ fun LzPanelHost(
         selectAircraft = viewModel::selectAircraft, refreshWeather = viewModel::refreshWeather, toggleSlope = viewModel::toggleSlope,
         setSlopeOpacity = viewModel::setSlopeOpacity, showOutline = viewModel::showOutline,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
-        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy, toggleOnMap = onToggleOnMap,
+        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy, toggleOnMap = onToggleOnMap, view3d = viewModel::view3d,
     )
     val graphicsActions = graphicsActionsOf(graphics, crosshair)
     when (pane.shows(state.page)) {
@@ -267,7 +270,10 @@ fun LzHomeContent(
                                     row.presence?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                                 }
                             },
-                        ) { RowEye(row, row.uuid in hidden, actions) }
+                        ) {
+                            RowThreeD(row, actions)
+                            RowEye(row, row.uuid in hidden, actions)
+                        }
                     }
                 }
                 current?.inPack == null -> Text(
@@ -282,7 +288,10 @@ fun LzHomeContent(
                 ListRow(
                     EzpzIcons.flightLand, row.name, emphasis = true, onClick = { actions.open(row.uuid) }, onClickLabel = "Open",
                     supporting = { RowState(row.grid, row.chips.lastOrNull()) },
-                ) { RowEye(row, row.uuid in hidden, actions) }
+                ) {
+                    RowThreeD(row, actions)
+                    RowEye(row, row.uuid in hidden, actions)
+                }
             }
         }
         // Nothing new goes into a read-only pack, so it is not offered (the web's foot says why).
@@ -442,15 +451,20 @@ private fun ActiveLzCard(current: ActiveDiagramUi, actions: LzPanelActions) {
             )
             Chips(current.chips, Modifier.padding(top = 10.dp))
             current.inPack?.alsoHere?.let { AlsoHere(it, Modifier.padding(top = Tokens.Spacing.sm.dp)) }
-            Row(
-                Modifier.padding(top = Tokens.Spacing.md.dp, end = Tokens.Spacing.sm.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
-            ) {
-                // A pack's LZ/PZ is saved to the pack as it changes: no Save of its own (the design's PackLive).
-                if (current.inPack == null) SaveButton(current, actions.save)
-                PillButton("Plan", onClick = { actions.showPage(LzPage.PLAN) }, icon = EzpzIcons.tune, style = PillStyle.Tonal)
-                if (current.inPack == null) SavesToLibrary(Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
-            }
+            // Where it is saved beside the buttons while there is room for its words, else under them.
+            SideBySide(
+                minFlexible = SAVED_WORDS_MIN, gap = Tokens.Spacing.sm.dp, flexibleFirst = false,
+                modifier = Modifier.padding(top = Tokens.Spacing.md.dp, end = Tokens.Spacing.sm.dp),
+                fixed = {
+                    Buttons {
+                        // A pack's LZ/PZ is saved to the pack as it changes: no Save of its own (the design's PackLive).
+                        if (current.inPack == null) SaveButton(current, actions.save)
+                        PillButton("Plan", onClick = { actions.showPage(LzPage.PLAN) }, icon = EzpzIcons.tune, style = PillStyle.Tonal)
+                        ThreeDButton(current, actions)
+                    }
+                },
+                flexible = { if (current.inPack == null) SavesToLibrary(Modifier.fillMaxWidth()) },
+            )
             current.inPack?.let { SavedToPack(it.savedLine, Modifier.padding(top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.sm.dp), locked = it.reason != null) }
             renaming?.takeIf { current.locked == null }?.let { name ->
                 RenameField(
@@ -465,6 +479,35 @@ private fun ActiveLzCard(current: ActiveDiagramUi, actions: LzPanelActions) {
                 }
             }
         }
+    }
+}
+
+/** A card's buttons, side by side, going onto another line where they do not fit (a narrow phone, large text). */
+@Composable
+private fun Buttons(content: @Composable () -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) { content() }
+}
+
+/** How narrow the words saying where an LZ/PZ is saved may be beside its buttons before they go under them. */
+private val SAVED_WORDS_MIN = 112.dp
+
+/**
+ * *3D*: the open LZ/PZ in 3D over the whole screen (its point cloud, built if it has none yet), as the web's card offers it; off with no target, which
+ * leaves nothing to look at.
+ */
+@Composable
+private fun ThreeDButton(current: ActiveDiagramUi, actions: LzPanelActions) {
+    PillButton("3D", onClick = { actions.view3d(current.uuid) }, icon = EzpzIcons.viewInAr, style = PillStyle.Tonal, enabled = current.target != null)
+}
+
+/** The design's 3D icon at the end of an *Also open* or pack row: that LZ/PZ in 3D, opened first. Off with no target. */
+@Composable
+private fun RowThreeD(row: DiagramRow, actions: LzPanelActions) {
+    IconButton(onClick = { actions.view3d(row.uuid) }, enabled = row.hasTarget, modifier = Modifier.size(48.dp)) {
+        Icon(painterResource(EzpzIcons.viewInAr), contentDescription = "Open ${row.name} in 3D", modifier = Modifier.size(22.dp))
     }
 }
 
@@ -641,12 +684,20 @@ fun LzPlanContent(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
         Chips(current.chips)
         current.inPack?.alsoHere?.let { AlsoHere(it) }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            // A pack's LZ/PZ is saved to the pack as it changes: no Save of its own, and where it is saved said in its place (the design's PackLive pane).
-            if (current.inPack == null) SaveButton(current, actions.save)
-            LzMoreMenu(current, actions, onRename = { renaming = current.name }, onDelete = { confirmDelete = true }, outlined = true)
-            current.inPack?.let { SavedToPack(it.savedLine, Modifier.weight(1f), locked = it.reason != null) } ?: SavesToLibrary(Modifier.weight(1f))
-        }
+        SideBySide(
+            minFlexible = SAVED_WORDS_MIN, gap = Tokens.Spacing.sm.dp, flexibleFirst = false,
+            fixed = {
+                Buttons {
+                    // A pack's LZ/PZ is saved to the pack as it changes: no Save of its own, and where it is saved said in its place (the design's PackLive pane).
+                    if (current.inPack == null) SaveButton(current, actions.save)
+                    ThreeDButton(current, actions)
+                    LzMoreMenu(current, actions, onRename = { renaming = current.name }, onDelete = { confirmDelete = true }, outlined = true)
+                }
+            },
+            flexible = {
+                current.inPack?.let { SavedToPack(it.savedLine, Modifier.fillMaxWidth(), locked = it.reason != null) } ?: SavesToLibrary(Modifier.fillMaxWidth())
+            },
+        )
         renaming?.takeIf { current.locked == null }?.let { name ->
             RenameField(
                 name, current.name, onChange = { renaming = it }, onDone = { actions.rename(current.uuid, it); renaming = null }, onCancel = { renaming = null },
