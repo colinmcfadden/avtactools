@@ -88,7 +88,7 @@ class CheckerCatchesDriftTests(unittest.TestCase):
 
     def good(self):
         return {
-            "configVersion": 1, "serverVersion": "1.7.7",
+            "configVersion": 1, "serverVersion": "1.7.7", "apiVersion": "1.0.0", "apiMajors": [1],
             "minAppVersion": {"android": None, "ios": "1.0.0"},
             "maintenance": {"active": False, "message": None},
             "services": {"lidarBuilds": True, "packs": False},
@@ -127,6 +127,11 @@ class CheckerCatchesDriftTests(unittest.TestCase):
 
     def test_a_malformed_version_is_caught(self):
         self.assertTrue(self.problems(lambda v: v["minAppVersion"].update(android="latest")))
+        self.assertTrue(self.problems(lambda v: v.update(apiVersion="1")))
+
+    def test_a_server_that_serves_no_major_is_caught(self):
+        self.assertTrue(self.problems(lambda v: v.update(apiMajors=[])))
+        self.assertTrue(self.problems(lambda v: v.update(apiMajors=[0])))
 
     def test_a_keyword_the_checker_cannot_check_fails_loudly(self):
         with self.assertRaises(NotImplementedError):

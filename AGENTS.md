@@ -24,8 +24,12 @@ mission planning system).
 
 - **Users:** Army aviators. Access requires a verified `.mil` email or admin
   approval.
-- **Status:** public beta. Version lives in `frontend/package.json` and
-  `backend/version.py`, both written by semantic-release.
+- **Status:** public beta. Three kinds of version, each with its own number (§12):
+  the **product's** (web and backend, released together) in `frontend/package.json`
+  and `backend/version.py`, written by semantic-release; **each app's own**
+  (`ezpz.versionName` in `android/gradle.properties`, 0.x until the store; iOS
+  0.x until its first release); and the **API's** (`contracts/openapi.yaml`'s
+  `info.version`), whose major decides which app builds can talk to which server.
 - **Repo:** `github.com/colinmcfadden/avtactools` · default branch `develop`.
 - **Native apps:** Android (Kotlin) first, then iOS and iPadOS (Swift). Android
   has the plan's P0–P2 (§17; where it stands and what is next: `docs/HANDOFF.md`);
@@ -167,10 +171,25 @@ The native apps send `X-EZPZ-Client: android/1.4.0 (212)` on every request
 (`client_header.py`). Only a header of exactly that shape is kept, and it is
 recorded on sign-in (`LoginEvent.client`, shown in the admin login history), so
 the owner can see which app versions are in the field before changing an
-endpoint. **Routes the apps call are additive-only** — a removed or retyped field
+endpoint. **Routes the apps call are additive-only within an API major** — a removed or retyped field
 breaks an installed app nobody can update — and are described in
 `contracts/openapi.yaml`, which `backend/tests/test_openapi_contract.py` holds the
 responses to. A route not in that file is not yet something an app may rely on.
+
+**The API version** is that file's `info.version`, apart from the product's. Its major is the promise to
+installed apps; `contracts/scripts/api_version.py check` (CI, `api.yaml`) compares the spec with the branch
+it merges into, classifies every difference (a route, field or status gone, a type changed, a value that may
+now be null, a new required input, an enum widened in a response: breaking; a new route or optional field:
+additive), and fails on a break whose major did not move. `bump` writes the version a diff calls for. It
+never bumps by itself: a new major tells every app that does not support it to update, which is the owner's
+call, and the better fix is usually to keep the old shape. `backend/api_version.py` must agree with the spec
+and lists the majors the server still serves (`API_MAJORS_SERVED`: keep an old one, with its routes, while
+apps on it are in the field); `/api/config` sends `apiVersion` and `apiMajors`. **Each client build lists
+the majors it supports** (`ezpz.apiMajors` in `android/gradle.properties`, `frontend/src/apiSupport.json`),
+and the check fails while a client supports none the server serves. At run time Android treats a server past
+its majors as *Update required* and one behind them as a banner, sending nothing either way (`ApiSupport`,
+`holdsBack`, beside the minimum version); the web offers a reload (`feature/apiCompat`). A server from before
+the fields serves API 1.
 
 | Area | Routes |
 |---|---|
@@ -495,10 +514,11 @@ python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield
   (SQLAlchemy app registration). Report it; don't "fix" it as a side effect.
 - The geoid test skips without `PROJ_NETWORK=ON` — PROJ returns heights
   unchanged, and *reports success*, when grids are missing.
-- **CI runs three test sets:** `android.yaml` (the Kotlin modules),
-  `contracts.yaml` (the fixtures, on the web and PyGeodesy sides) and
+- **CI runs four test sets:** `android.yaml` (the Kotlin modules),
+  `contracts.yaml` (the fixtures, on the web and PyGeodesy sides),
   `backend.yaml` (the backend's contract tests: a named list of pytest files that
-  need no SAM weights, terrain data or GPU), each only when its paths change. The
+  need no SAM weights, terrain data or GPU) and `api.yaml` (the API version, §6),
+  each only when its paths change. The
   rest of backend pytest and of the web's Jest suite runs nowhere but on your machine.
   `backend.yaml` installs only the packages those files import, named in its Install
   step and pinned from `requirements.txt`: a new import in code they reach goes on that
@@ -545,10 +565,14 @@ python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield
   passes, `feat: LiDAR tiles` is rejected.
 - **Release is automatic on merge to `main`.** `release.yaml` runs
   semantic-release: it reads `feat` (minor) and `fix`/`perf` (patch) commits —
-  `refactor`, `docs`, `chore` and `test` release nothing — and a major only from
-  a `BREAKING CHANGE:` footer. **A `!` alone (`feat!: …`) releases nothing at all**
-  under this config (checked against the installed commit-analyzer; six `feat!:`
-  commits in history did not produce a 2.0). It bumps
+  `refactor`, `docs`, `chore` and `test` release nothing — and a major from a
+  `!` (`feat!: …`) or a `BREAKING CHANGE:` footer. That takes the
+  `conventionalcommits` preset (`.releaserc.json`, a direct dev dependency): the
+  default angular one ignores a `!`, which is why six `feat!:` commits in history
+  never produced a 2.0. Checked against the installed commit-analyzer: `feat!:`,
+  `fix(backend)!:` and a footer are major; `feat(android)!:` still releases
+  nothing. A product major is the product's (the web's or the server's
+  behaviour); it says nothing about the API, which has its own version (§6). It bumps
   `frontend/package.json` and `backend/version.py`, writes `CHANGELOG.md`,
   tags, publishes a GitHub release, and commits
   `chore(release): X.Y.Z [skip ci]` so Vercel skips a second build.
@@ -923,7 +947,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   UI sends; `createGoAround`); a PZ marker is made for a target that is not a position, with NaN fields (the native port refuses);
   `normalizeProfile` gives an empty profile the `generic` icon but no profile the
   UH-60L icon, and would turn a `null` number into 0 (unreachable: the API's
-  columns are NOT NULL); `feat!:` commits release nothing (§12).
+  columns are NOT NULL).
 - Mission-pack web behaviour the fixtures pin and the web should fix first (it changes behaviour), then
   regenerate. The first two are bugs, their cases marked `webBug: true` in `contracts/fixtures/packs/` so a
   native port can find them and not copy them. **A sentence or name cut through an emoji**: the history's sentences are cut to 300 and
@@ -1343,8 +1367,11 @@ client is built around not losing one:
   Kotlin plugin still builds the pure modules under the same Kotlin version.
 - **`compileSdk` is 37**, not 36: Compose 1.12 (the BOM) requires it, and the AAR metadata check fails the build
   otherwise. `targetSdk` stays 36 until 37 behaviour is tested. `minSdk` 29.
-- **`versionName` is the product's version**, read from `frontend/package.json` (semantic-release writes it, and
-  `android`-scoped commits never bump it). `versionCode` is `GITHUB_RUN_NUMBER`, or 1 locally.
+- **`versionName` is the Android app's own**, `ezpz.versionName` in `android/gradle.properties`: 0.x until the store, then
+  1.0.0, bumped by hand at each store release (the owner's call, 2026-10-24; it once followed `frontend/package.json`, so a
+  web-only release made a "new" Android version). It is what `X-EZPZ-Client` and `MIN_APP_VERSION_ANDROID` compare, so a server's
+  minimum must be an Android version, not the product's. `ezpz.apiMajors` beside it is the API majors the build talks (§6).
+  `versionCode` is `GITHUB_RUN_NUMBER`, or 1 locally.
 - **`applicationId` is a placeholder** (`app.ezpztac.unreleased`, `.debug` for debug builds). A release build is refused
   *before any work* unless `-Pezpz.applicationId=<id>` is passed, because the id is permanent once published and the owner
   has not chosen it. R8 release builds work (verified with an example id).

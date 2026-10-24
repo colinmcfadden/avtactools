@@ -2,30 +2,31 @@ package app.ezpztac.android.sync
 
 import app.ezpztac.android.AuthBackend
 import app.ezpztac.android.MinimumVersion
+import app.ezpztac.android.holdsBack
 import app.ezpztac.android.packs.MISSION_PACKS
 import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.LibraryUpload
-import app.ezpztac.data.Uploaded
 import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteSession
+import app.ezpztac.data.Uploaded
 import app.ezpztac.missionpacks.DrainOutcome
 import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AuthState
-import app.ezpztac.network.isBelowMinimum
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
+import app.ezpztac.network.servedApiMajors
 import app.ezpztac.sync.StopReason
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncReport
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /** What a scheduled sync should tell WorkManager. */
 enum class SyncOutcome {
@@ -122,7 +123,8 @@ class EngineSyncRunner @Inject constructor(
 
     private suspend fun lookAtMinimum() {
         try {
-            minimum.remember(auth.config().minAppVersion.android)
+            val config = auth.config()
+            minimum.remember(config.minAppVersion.android, config.servedApiMajors)
         } catch (e: CancellationException) {
             throw e
         } catch (_: ApiException) {
@@ -130,7 +132,7 @@ class EngineSyncRunner @Inject constructor(
         }
     }
 
-    private fun tooOld(): Boolean = isBelowMinimum(version, minimum.remembered.value)
+    private fun tooOld(): Boolean = holdsBack(version, minimum.remembered.value, minimum.rememberedApi.value)
 
     // Only for an account that may have packs: past the gate, the feature on. What only the account can unblock (PAUSED) is not tried again
     // by WorkManager; it goes at the next sign-in. A failure here never stops the library's own sync.

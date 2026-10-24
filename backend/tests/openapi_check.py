@@ -56,7 +56,7 @@ def validate(spec, schema, value, path="$"):
         return validate(spec, schema["allOf"][0], value, path)
     unknown = set(schema) - _IGNORED - {
         "type", "nullable", "enum", "required", "properties", "additionalProperties",
-        "items", "pattern", "minLength", "maxLength", "minimum", "maximum",
+        "items", "pattern", "minLength", "maxLength", "minimum", "maximum", "minItems", "maxItems",
     }
     if unknown:
         raise NotImplementedError(f"{path}: schema keywords not supported by the checker: {sorted(unknown)}")
@@ -101,6 +101,11 @@ def validate(spec, schema, value, path="$"):
             elif isinstance(extra, dict):
                 # A map: every extra key's value must match this schema.
                 problems += validate(spec, extra, item, f"{path}.{name}")
+    if isinstance(value, list):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            problems.append(f"{path}: fewer than {schema['minItems']} items")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            problems.append(f"{path}: more than {schema['maxItems']} items")
     if isinstance(value, list) and "items" in schema:
         for index, item in enumerate(value):
             problems += validate(spec, schema["items"], item, f"{path}[{index}]")

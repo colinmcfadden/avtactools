@@ -2,17 +2,18 @@ package app.ezpztac.android.sync
 
 import app.ezpztac.android.ApiClientBackend
 import app.ezpztac.android.AuthBackend
+import app.ezpztac.android.BUILT_API
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.packs.PackRuntime
-import app.ezpztac.missionpacks.DrainOutcome
-import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.data.AccountScope
-import app.ezpztac.data.Uploaded
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSession
+import app.ezpztac.data.Uploaded
+import app.ezpztac.missionpacks.DrainOutcome
+import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AppConfig
@@ -33,6 +34,7 @@ import app.ezpztac.sync.SyncApi
 import app.ezpztac.sync.SyncEngine
 import app.ezpztac.sync.SyncRepository
 import app.ezpztac.sync.doc
+import java.util.Collections
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -47,7 +49,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.Collections
 
 /**
  * The scheduled sync. WorkManager can start the app's process just to run it, with no activity and so no shell to read the stored session
@@ -137,9 +138,13 @@ class EngineSyncRunnerTest {
     }
 
     /** The oldest version the server last said it supports, as the device remembers it. */
-    private class KeptMinimum(kept: String? = null) : MinimumVersion {
+    private class KeptMinimum(kept: String? = null, keptApi: List<Int>? = null) : MinimumVersion {
         override val remembered = MutableStateFlow(kept)
-        override fun remember(minimum: String?) { remembered.value = minimum }
+        override val rememberedApi = MutableStateFlow(keptApi)
+        override fun remember(minimum: String?, apiMajors: List<Int>?) {
+            remembered.value = minimum
+            rememberedApi.value = apiMajors
+        }
     }
 
     /** The plans on the device: one change made here that nobody has sent. */
@@ -208,6 +213,19 @@ class EngineSyncRunnerTest {
     }
 
     @Test
+    fun `a server past this build's API is sent nothing, and the shell hears it too`() = runTest {
+        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
+        r.auth.config = Result.success(config(minimum = null).copy(apiVersion = "${BUILT_API.majors.max() + 1}.0.0", apiMajors = listOf(BUILT_API.majors.max() + 1)))
+
+        assertEquals(SyncOutcome.Done, r.runner.runOnce())
+
+        assertEquals(listOf(BUILT_API.majors.max() + 1), r.minimum.rememberedApi.value)
+        assertEquals(emptyList<String>(), r.server.log)
+        assertEquals(emptyList<PackUser>(), r.packs.drained)
+        assertEquals(1, r.device.pending())
+    }
+
+    @Test
     fun `a minimum the server has lowered again lets it sync`() = runTest {
         val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1, minimum = "9.0.0")
         r.auth.config = Result.success(config(minimum = null))
@@ -222,7 +240,7 @@ class EngineSyncRunnerTest {
     @Test
     fun `a raised minimum heard while the packs went keeps the library's sync from going`() = runTest {
         val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1))), owner = 1)
-        r.packs.drain = { r.minimum.remember("9.0.0") }                                    // the app, in this process, heard it meanwhile
+        r.packs.drain = { r.minimum.remember("9.0.0", null) }                                    // the app, in this process, heard it meanwhile
 
         assertEquals(SyncOutcome.Done, r.runner.runOnce())
 

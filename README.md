@@ -9,8 +9,8 @@ carry: LZ cards, AMPS mission files, ForeFlight and ATAK hand-offs, threat files
 - **Who it is for:** Army aviators. Signing in needs a verified `.mil` address or an admin's approval.
 - **Where it runs:** a React web app at [ezpztac.app](https://ezpztac.app), a Flask API, and an Android
   app for phones and tablets (in development). iOS is planned.
-- **Status:** public beta. The version is in `frontend/package.json` and `backend/version.py`, both
-  written by semantic-release.
+- **Status:** public beta. The product's version is in `frontend/package.json` and `backend/version.py`,
+  both written by semantic-release; the API and the Android app have versions of their own (below).
 - **Unclassified only.** Nothing here is an authorized boundary for CUI or classified data, and no
   controlled data goes into the repository.
 
@@ -353,10 +353,12 @@ host) are in [`AGENTS.md`](AGENTS.md) §9.
   `feat/…` or `fix/…`; release through `release/*` into `main`; hotfixes branch from `main`.
 - **Commits** follow [Conventional Commits](https://www.conventionalcommits.org), enforced by commitlint,
   with a lowercase subject (`feat: add lidar tiles`). App-only work is scoped: `feat(android): …`.
-- **Releases are automatic** when `main` moves. semantic-release reads `feat` (minor) and `fix`/`perf`
-  (patch) commits; a major release needs a `BREAKING CHANGE:` footer (a `!` alone releases nothing under
-  this configuration). It bumps both version files, writes `CHANGELOG.md`, tags, and publishes a GitHub
-  release; `android` and `ios` scoped commits release nothing.
+- **Releases are automatic** when `main` moves. semantic-release (the `conventionalcommits` preset) reads
+  `feat` (minor) and `fix`/`perf` (patch) commits; a `!` (`feat!: …`) or a `BREAKING CHANGE:` footer makes a
+  major. It bumps both version files, writes `CHANGELOG.md`, tags, and publishes a GitHub release; `android`
+  and `ios` scoped commits release nothing. That is the product's version only: the API has its own
+  (`contracts/openapi.yaml`, `backend/api_version.py`; AGENTS.md §6), checked on every change to the spec,
+  and the Android app its own `0.x` (`ezpz.versionName` in `android/gradle.properties`).
 - **Don't commit data:** `.env*`, databases, `*.pt`, DEMs, LiDAR, tilesets and signing keys are ignored.
 - **No new major dependency** without asking first.
 

@@ -195,6 +195,9 @@ private const val TOUCH_RADIUS_DP = 24.0
 /** Why nothing is being sent: the person can still plan, and needs to know their work is waiting, not lost, and how to end the wait. */
 private const val TOO_OLD = "This version of the app is no longer supported by the server. Until you update it, your changes stay on this phone and nothing is sent."
 
+/** The server serves only API majors older than this app's: the update is the server's to make, so there is no button. */
+private const val SERVER_BEHIND = "The server is older than this version of the app. Until it is updated, your changes stay on this phone and nothing is sent."
+
 /** Why the live sandtable ended on its own when the window became a phone's: it is presented in the tablet's frame. */
 private const val SANDTABLE_NARROW = "The sandtable ended: the window is too narrow for it now. Make it wider (turn the tablet) to present the brief again."
 
@@ -221,6 +224,8 @@ fun MapHome(
     onDismissInvite: () -> Unit = {},
     /** This version is below the server's minimum as last heard, with no config to show the update screen: nothing is sent ([Gate.Ready.tooOld]). */
     tooOld: Boolean = false,
+    /** The server serves only API majors older than this build's: nothing is sent until it is updated ([Gate.Ready.serverBehind]). */
+    serverBehind: Boolean = false,
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
     display: DisplayViewModel = hiltViewModel(),
@@ -565,6 +570,7 @@ fun MapHome(
                 ) {
                     if (maintenance != null) Banner(maintenance, BannerKind.Warning)
                     if (tooOld) Banner(TOO_OLD, BannerKind.Warning, actionLabel = "Update", onAction = { openStore(context) })
+                    if (serverBehind) Banner(SERVER_BEHIND, BannerKind.Warning)
                     // A finished pack, said at the top of every panel on a phone (a tablet has its band across the top instead).
                     if (!tablet) {
                         openPack?.takeIf { it.finished }?.let {

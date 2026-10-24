@@ -1,6 +1,7 @@
 package app.ezpztac.android
 
 import app.ezpztac.data.Ownership
+import app.ezpztac.network.ApiSupport
 import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AppConfig
 import app.ezpztac.network.AuthState
@@ -25,6 +26,49 @@ class GateTest {
     private val signedIn = AuthState.SignedIn(user())
 
     // -- An update comes before everything --------------------------------------------------------
+
+    @Test
+    fun `a server past every API major this build talks needs an update, even before anyone signs in`() {
+        val moved = config().copy(apiVersion = "2.0.0", apiMajors = listOf(2))
+        assertEquals(Gate.UpdateRequired(null), gateFor(moved, AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), null, "0.1.0", api = ApiSupport(listOf(1))))
+        assertEquals(Gate.UpdateRequired(null), gateFor(moved, signedIn, Ownership.Yours, "0.1.0", api = ApiSupport(listOf(1))))
+    }
+
+    @Test
+    fun `a server that still serves this build's API major is fine, as is one from before the field`() {
+        val kept = config().copy(apiVersion = "2.0.0", apiMajors = listOf(1, 2))
+        assertEquals(Gate.Ready(user(), null), gateFor(kept, signedIn, Ownership.Yours, "0.1.0", api = ApiSupport(listOf(1))))
+        assertEquals(Gate.Ready(user(), null), gateFor(config(), signedIn, Ownership.Yours, "0.1.0", api = ApiSupport(listOf(1))))
+    }
+
+    @Test
+    fun `a server behind this build's API opens planning, marked for its own banner`() {
+        val behind = config().copy(apiVersion = "1.4.0", apiMajors = listOf(1))
+        assertEquals(Gate.Ready(user(), null, serverBehind = true), gateFor(behind, signedIn, Ownership.Yours, "0.1.0", api = ApiSupport(listOf(2))))
+        // A server from before the field serves API 1.
+        assertEquals(Gate.Ready(user(), null, serverBehind = true), gateFor(config(), signedIn, Ownership.Yours, "0.1.0", api = ApiSupport(listOf(2))))
+    }
+
+    @Test
+    fun `API majors the device last heard mark the banner with no config, and unreadable ones mark nothing`() {
+        assertEquals(Gate.Ready(user(), null, tooOld = true), gateFor(null, signedIn, Ownership.Yours, "0.1.0", rememberedApi = listOf(2), api = ApiSupport(listOf(1))))
+        assertEquals(Gate.Ready(user(), null), gateFor(config().copy(apiVersion = "two"), signedIn, Ownership.Yours, "0.1.0", api = ApiSupport(listOf(1))))
+    }
+
+    @Test
+    fun `this build's own list is the one the build was made with`() {
+        assertTrue(BUILT_API.majors.isNotEmpty())
+        assertEquals(BUILT_API.majors, ApiSupport.parse(BuildConfig.SUPPORTED_API_MAJORS).majors)
+    }
+
+    @Test
+    fun `nothing is sent while the API has nothing in common, either way`() {
+        assertTrue(holdsBack("0.1.0", null, listOf(2), ApiSupport(listOf(1))))
+        assertTrue(holdsBack("0.1.0", null, listOf(1), ApiSupport(listOf(2))))
+        assertTrue(!holdsBack("0.1.0", null, listOf(1, 2), ApiSupport(listOf(1))))
+        assertTrue(!holdsBack("0.1.0", null, null, ApiSupport(listOf(1))))
+        assertTrue(holdsBack("0.1.0", "0.2.0", listOf(1), ApiSupport(listOf(1))))
+    }
 
     @Test
     fun `an app the server no longer supports is stopped, even before anyone signs in`() {

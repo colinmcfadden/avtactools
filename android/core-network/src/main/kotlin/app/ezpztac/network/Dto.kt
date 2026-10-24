@@ -93,6 +93,10 @@ public data class AppConfig(
     val maintenance: Maintenance,
     val services: Services,
     val mapbox: MapboxConfig,
+    /** The API the server serves now (`contracts/openapi.yaml`'s `info.version`); absent from a server older than it, which serves API 1. */
+    val apiVersion: String? = null,
+    /** Every API major the server still answers; absent from a server older than the field. */
+    val apiMajors: List<Int>? = null,
 ) {
     @Serializable public data class MinAppVersion(val android: String? = null, val ios: String? = null)
     @Serializable public data class Maintenance(val active: Boolean, val message: String? = null)

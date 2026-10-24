@@ -3,38 +3,39 @@ package app.ezpztac.android
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.android.packs.MISSION_PACKS
 import app.ezpztac.android.packs.PackInvites
 import app.ezpztac.android.packs.PackRuntime
-import app.ezpztac.missionpacks.InviteAcceptance
-import app.ezpztac.missionpacks.InviteState
-import app.ezpztac.missionpacks.PackUser
-import app.ezpztac.sync.SyncScheduler
 import app.ezpztac.auth.AuthLinks
 import app.ezpztac.auth.AuthRoute
 import app.ezpztac.auth.InviteLinks
-import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.BriefFlush
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.IncomingFiles
-import app.ezpztac.data.SessionPointSets
+import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteSession
+import app.ezpztac.data.SessionPointSets
 import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.TilesetCacheCleaner
 import app.ezpztac.data.WeatherService
-import app.ezpztac.data.Ownership
+import app.ezpztac.missionpacks.InviteAcceptance
+import app.ezpztac.missionpacks.InviteState
+import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.ApiUser
 import app.ezpztac.network.AppConfig
 import app.ezpztac.network.AuthState
-import app.ezpztac.network.isBelowMinimum
+import app.ezpztac.network.servedApiMajors
+import app.ezpztac.sync.SyncScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import javax.inject.Named
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,8 +47,7 @@ import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
-import javax.inject.Named
+import kotlinx.coroutines.withContext
 
 /**
  * The shell: reads the session, asks the server what it will allow, works out whose plans are on this device, and says which [Gate]
@@ -82,8 +82,9 @@ class AppViewModel @Inject constructor(
     /** A link from an email (verify, reset) that has been opened and not yet dealt with. It outranks everything but an update. */
     val pendingLink: StateFlow<AuthRoute?> = link.asStateFlow()
 
-    val gate: StateFlow<Gate> = combine(config, backend.state, ownership, minimumVersion.remembered) { config, auth, ownership, minimum ->
-        gateFor(config, auth, ownership, version, minimum)
+    val gate: StateFlow<Gate> = combine(config, backend.state, ownership, minimumVersion.remembered, minimumVersion.rememberedApi) {
+            config, auth, ownership, minimum, served ->
+        gateFor(config, auth, ownership, version, minimum, served)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Gate.Starting)
 
     // An invitation link the app was opened with, until it is accepted or refused for good: kept through a sign-in, a turn of the phone and
@@ -105,10 +106,12 @@ class AppViewModel @Inject constructor(
 
     /**
      * Whether this app may send anything now: this version is not below the server's minimum as last heard (the owner's decision: nothing is sent
-     * below it), which every look at the config updates first, the background sync's included. Nothing waits for a launch's look (the owner's
+     * below it), and the server serves an API major this build talks ([holdsBack]), which every look at the config updates first, the background
+     * sync's included. Nothing waits for a launch's look (the owner's
      * call, 2026-10-10): the first launch after the server raised its minimum sends until its config answers.
      */
-    private val mayGoOut: Flow<Boolean> = minimumVersion.remembered.map { !isBelowMinimum(version, it) }
+    private val mayGoOut: Flow<Boolean> =
+        combine(minimumVersion.remembered, minimumVersion.rememberedApi) { minimum, served -> !holdsBack(version, minimum, served) }
 
     init {
         viewModelScope.launch {
@@ -126,10 +129,10 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             // Mission packs run for the account while it may have them: apart from the collector above, which does not hear a feature
             // turned on or off by an admin (a refreshed user with the same id and access). A failure (the device's database) is tried
-            // again at the next change, or the next launch: it must not end the app. Below the server's minimum version (as last heard)
-            // they stop.
-            combine(backend.state, ownership, minimumVersion.remembered) { auth, ownership, minimum ->
-                packGateFor(auth, ownership, tooOld = isBelowMinimum(version, minimum))
+            // again at the next change, or the next launch: it must not end the app. Below the server's minimum version (as last heard),
+            // or with no API major in common with it, they stop.
+            combine(backend.state, ownership, minimumVersion.remembered, minimumVersion.rememberedApi) { auth, ownership, minimum, served ->
+                packGateFor(auth, ownership, tooOld = holdsBack(version, minimum, served))
             }.distinctUntilChanged().collect { gate ->
                 when (gate) {
                     is PackGate.Run -> quietly {
@@ -166,7 +169,7 @@ class AppViewModel @Inject constructor(
 
     // The person in, while the app may send: what the invitation collector asks, read now.
     private fun userWhoMaySend(): ApiUser? =
-        (gate.value as? Gate.Ready)?.user?.takeIf { !isBelowMinimum(version, minimumVersion.remembered.value) }
+        (gate.value as? Gate.Ready)?.user?.takeIf { !holdsBack(version, minimumVersion.remembered.value, minimumVersion.rememberedApi.value) }
 
     /** Puts away what became of the invitation link, once the person has seen it. */
     fun dismissInvite() {
@@ -291,7 +294,7 @@ class AppViewModel @Inject constructor(
     suspend fun loadConfig() {
         try {
             val fetched = backend.config()
-            minimumVersion.remember(fetched.minAppVersion.android)        // first: packs, invitations and the sync all go by it
+            minimumVersion.remember(fetched.minAppVersion.android, fetched.servedApiMajors)   // first: packs, invitations and the sync all go by it
             config.value = fetched
             mapTokens.update(fetched.mapbox.publicToken)                  // remembered, so the next start with no signal can draw imagery
         } catch (_: ApiException) {

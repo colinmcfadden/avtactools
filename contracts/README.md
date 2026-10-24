@@ -246,7 +246,10 @@ without the fixture diff in the same PR — and the Android tests then fail unti
   a time as each arrives. The mission-pack routes are described ahead of any client and
   held by `backend/tests/test_packs.py`. `backend/tests/test_openapi_contract.py`
   holds the server's responses to it and fails on an added, removed or retyped
-  field. Changes are additive: store builds stay in the field for months.
+  field. Changes are additive within an API major (its `info.version`): store builds
+  stay in the field for months. `scripts/api_version.py check --base <branch>` fails
+  on a breaking change whose major did not move, and on a client build that supports
+  no major the server serves; `bump` writes the version a change calls for (AGENTS.md §6).
 
 ## Known limits
 
