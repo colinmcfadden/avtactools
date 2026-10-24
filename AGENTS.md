@@ -86,7 +86,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 |---|---|---|---|
 | **Auth & access** | Google or email/password; email verification; `.mil` affiliation gate; per-user feature entitlements | `feature/auth/` | `routes/auth.py`, `entitlements.py`, `security_config.py`, `auth_rate_limit.py`, `email_service.py` |
 | **Admin dashboard** | Users, roles, entitlements, access approval, password resets, master aircraft list | — (Jinja) | `routes/admin_routes.py`, `templates/admin/` |
-| **App frame** (menu redesign, `docs/MENU_REDESIGN.md`) | Top bar (workspace, Import, Library, account); a right dock of panels (LZ/PZ, Routes, Threats, Imports) picked from an icon rail, a bottom sheet below 1100 px; the shared dialogs, menus and toasts. No browser `prompt`/`confirm`/`alert` on these paths | `feature/shell/`, `feature/ui/` | — |
+| **App frame** (menu redesign, `docs/MENU_REDESIGN.md`) | Top bar (workspace, Import, Library, account); a right dock of panels (LZ/PZ, Routes, Threats, Imports) picked from an icon rail, a bottom sheet below 1100 px; the shared dialogs, menus and toasts. No browser `prompt`/`confirm`/`alert` on these paths. At 850 px and below the left sidebar is a full-screen menu behind the top bar's ☰, so the map's tool rail (`MobileQuickAccess`) offers Analyze and Draw LZ itself, in words: without them a phone had no visible way to analyse a target (the owner, 2026-10-19) | `feature/shell/`, `feature/ui/`, `components/MobileQuickAccess.jsx` | — |
 | **LZ/PZ workspace** | Several LZ diagrams per session; target by MGRS; switch between them in the LZ/PZ panel | `feature/lzWorkspace/`, `feature/shell/LzPanel.jsx`, `components/MapView.jsx`, `App.js` | — |
 | **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM, with contour lines of the ground in and round the LZ, and a slope profile along and across the landing heading | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
 | **Planning graphics** | Helicopters, PZ markers, sectors of fire, go-arounds, doghouses, units, LZ box | `feature/{helicopters,pzMarker,sectorsOfFire,goAround,doghouses,unit}/` | — |
@@ -144,7 +144,7 @@ avtactools/
 ├─ android/                  Gradle project for the Android app (§17): pure-Kotlin core modules, Android libraries, the app
 ├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17); briefs/: the mission brief's formats as data
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
-├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md, ANDROID_MISSION_PACKS_PLAN.md; HANDOFF.md (where the Android build stands, what is next); native-design/ (the menu redesign for Android and iOS, phone and tablet: screenshots, outlines, sources, tokens; read its README before native UI work)
+├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md, ANDROID_MISSION_PACKS_PLAN.md, DATA_ADMIN_AND_PREBUILT_3D_PLAN.md; HANDOFF.md (where the Android build stands, what is next); native-design/ (the menu redesign for Android and iOS, phone and tablet: screenshots, outlines, sources, tokens; read its README before native UI work)
 ├─ .github/workflows/        release.yaml (semantic-release); android.yaml, contracts.yaml (path-filtered tests)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
 └─ backend/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
@@ -509,6 +509,14 @@ python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield
   the comparison while CI passes. And Windows and Linux maths libraries can differ
   in a double's last digit, so a recorded number is compared with a tolerance
   (`test_network_fixtures.settle_floats`), never exactly.
+- **So can Node on x86-64 and on an Apple-silicon Mac**: an arm64 build of V8 evaluates
+  its Math routines (fdlibm) with fused multiply-adds, which round once where x86-64
+  rounds twice (`Math.sin` differs at about 2% of arguments, `Math.exp` at 0.05%). The web's
+  fixtures are written and checked on x86-64 (CI), so one compared exactly can fail on a Mac
+  alone: `mgrs/grid.json` did, its searches turning a last digit into a millimetre. Its test
+  settles numbers to a tolerance and labels as a set (`settled` in `mgrsGridFixtures.test.js`),
+  and keeps the committed digits when regenerating, so a regenerated file changes only where
+  the grid did.
 - `frontend/package-lock.json` is out of sync under npm 10 (`npm ci` reports
   `Missing: yaml@2.9.1`), so install with `npm install` and restore the lockfile
   (`git checkout frontend/package-lock.json`) if you only needed `node_modules`.
@@ -798,6 +806,10 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   (`TabletFrameTest`), and the phone frame now draws its sheet itself. Keep movable contents side by side, never one inside another while both move.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
+- **A child's z-index counts only inside its parent's stacking context.** The phone's Capture and Export were `position: fixed; z-index: 9999`
+  inside the map's tool rail (`z-index: 1000`), so the bottom sheet (1050) covered them at every height and nobody could export an LZ card
+  from a phone. What floats on the phone's map goes in `.shell-map`, positioned from its edges (as the Layers button is): the map ends where
+  the sheet begins, so it is never under the sheet. `MobileQuickAccess.test.jsx` holds the pills out of the rail.
 - **A queued test dispatcher hides what the main thread does.** A view model's coroutines run on `Dispatchers.Main.immediate`, which runs
   work resumed on the main thread at once, inside whatever resumed it; `StandardTestDispatcher` as Main runs each in turn. The shell's pack
   gate passed every test so, and an independent review then proved four ordering bugs with `UnconfinedTestDispatcher` as Main and writes that
@@ -946,6 +958,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   clients compile once at the opening's offset to learn where and when to ask (the web's `bare`), so the places' times carry that offset. The
   brief itself is then compiled at the departure's (the light data's). Web first.
 - The Mapbox token is hardcoded in three places.
+- **Any signed-in user can find every place a 3D view was built.** `GET /api/lidar/tilesets` lists every tileset key,
+  and the file route serves each tileset's `area.json` (latitude, longitude, radius). A key is also an unkeyed SHA-256
+  of the rounded coordinates (`catalog.key_for`), so trying every cell of CONUS turns it back into its place. Neither
+  client calls the list. Phase 0 of `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` fixes it: tile files only, the list for
+  admins, keys by HMAC.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
 - In-process stores block horizontal scaling (§9).
@@ -962,7 +979,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/MISSION_BRIEF.md` (the mission brief: B0 to B8 done), `docs/native-design/README.md`, `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
+  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/MISSION_BRIEF.md` (the mission brief: B0 to B8 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23, not built yet), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
   "where things stand, what is next" note for whoever picks the Android work up; refresh it with each commit that moves either.
 
 ---
