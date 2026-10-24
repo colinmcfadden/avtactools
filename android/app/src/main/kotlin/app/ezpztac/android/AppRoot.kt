@@ -92,6 +92,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 invite = invite, inviteAttempt = inviteAttempt, onRetryInvite = viewModel::retryInvite, onDismissInvite = viewModel::dismissInvite,
                 // Known too old with no config to show the update screen (no signal): planning opens, nothing is sent, and the sheet says why.
                 tooOld = current.tooOld,
+                serverBehind = current.serverBehind,
             )
             is Gate.UpdateRequired -> UpdateRequiredScreen(current.minimum)
         }

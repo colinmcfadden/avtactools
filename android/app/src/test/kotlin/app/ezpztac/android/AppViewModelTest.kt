@@ -228,9 +228,13 @@ class AppViewModelTest {
     }
 
     /** The oldest version the server last said it supports, as the device remembers it. */
-    private class KeptMinimum(kept: String? = null) : MinimumVersion {
+    private class KeptMinimum(kept: String? = null, keptApi: List<Int>? = null) : MinimumVersion {
         override val remembered = MutableStateFlow(kept)
-        override fun remember(minimum: String?) { remembered.value = minimum }
+        override val rememberedApi = MutableStateFlow(keptApi)
+        override fun remember(minimum: String?, apiMajors: List<Int>?) {
+            remembered.value = minimum
+            rememberedApi.value = apiMajors
+        }
     }
 
     private class Rig(
@@ -907,7 +911,7 @@ class AppViewModelTest {
     @Test
     fun `a raised minimum the background sync heard stops packs here at once`() = runTest(dispatcher) {
         val r = rig(owner = 1)
-        r.minimum.remember("9.0.0")                                                         // what the runner does in this process
+        r.minimum.remember("9.0.0", null)                                                         // what the runner does in this process
         advanceUntilIdle()
         assertEquals("disable", r.packs.lastGate())
     }

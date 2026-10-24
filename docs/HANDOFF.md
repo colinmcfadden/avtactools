@@ -540,6 +540,13 @@ light data is our own sun and moon code; Android is tablet size and up only for 
 insertion); only the presenter's map moves in the sandtable; the weather at planned times (`/api/weather?at=`); strip charts are in. And on
 2026-10-19: Skyfield as the light fixtures' reference.
 
+**Made on 2026-10-24, for versions** (AGENTS.md §1, §6, §12): the web and the backend share the product's version, which goes to
+2.0 with the next release; Android has its own, 0.x until the store (`ezpz.versionName`, now 0.1.0), and iOS will start at 0.x; the
+API has its own (`contracts/openapi.yaml`, 1.0.0), and each client build lists the API majors it supports. A breaking change to the spec
+fails CI until its major moves. **Owner step:** Android's version dropped from the product's 1.7.x to 0.1.0, so a
+`MIN_APP_VERSION_ANDROID` set on staging or production to a 1.x value would now lock every build out ("Update required"): unset it, or
+set it to an Android version.
+
 **Still open:**
 
 - **Gotenberg** on the VM and `GOTENBERG_URL` (the brief's PDF); Mapbox's terms for printed figures.

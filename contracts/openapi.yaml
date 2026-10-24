@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EZ/PZ API (the parts the native apps call)
-  version: 0.1.0
+  version: 1.0.0
   description: |
     The contract between the Flask API and the web and native clients. It holds
     the routes the apps call, one at a time as each arrives; a route missing from
@@ -9,9 +9,17 @@ info:
     fails when a response stops matching, so a server change that would break an
     installed app shows up as a test failure first.
 
-    Store builds stay in the field for months. Changes here are additive: a new
-    optional field, a new route. Removing or retyping a field breaks apps that
-    cannot be updated, and needs `configVersion` bumped and `minAppVersion` raised.
+    `version` above is the **API version**, apart from the product's and each app's.
+    Its major is the promise to installed apps, which stay in the field for months:
+    within one major nothing they read or send stops working. Additive changes (a
+    new route, an optional field) bump the minor. A breaking one (a field removed,
+    retyped or made nullable, a new required input, an enum widened in a response)
+    bumps the major: `contracts/scripts/api_version.py check` compares this file with
+    the branch it merges into and fails until it does, and `bump` writes the version
+    the change calls for. `backend/api_version.py` must agree, and lists the majors
+    the server still serves; `/api/config` sends them, and each client build lists
+    the majors it supports (`ezpz.apiMajors` in `android/gradle.properties`,
+    `frontend/src/apiSupport.json`).
 
     Every route is under `/api`. The base URL is the deployment's (the same host
     the web app uses); it is not part of the spec.
@@ -3104,7 +3112,7 @@ components:
     Config:
       type: object
       additionalProperties: false
-      required: [configVersion, serverVersion, minAppVersion, maintenance, services, mapbox]
+      required: [configVersion, serverVersion, apiVersion, apiMajors, minAppVersion, maintenance, services, mapbox]
       properties:
         configVersion:
           type: integer
@@ -3112,7 +3120,21 @@ components:
           description: Bumped when the shape changes in a way an old app cannot read.
         serverVersion:
           type: string
-          description: The backend's semantic version.
+          description: The backend's semantic version (the product's, shared with the web).
+        apiVersion:
+          type: string
+          pattern: '^\d{1,4}\.\d{1,4}\.\d{1,4}$'
+          description: |
+            This spec's `info.version`: the API the server serves now. A server from before
+            it was sent serves API 1.
+        apiMajors:
+          type: array
+          minItems: 1
+          items: { type: integer, minimum: 1 }
+          description: |
+            Every API major the server still answers: the current one, and any kept for apps
+            not yet updated. An app that supports none of them is told to update (or, when
+            the server is the older one, waits for it).
         minAppVersion:
           type: object
           additionalProperties: false

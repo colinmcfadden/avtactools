@@ -4,13 +4,14 @@
     [
       "@semantic-release/commit-analyzer",
       {
+        "preset": "conventionalcommits",
         "releaseRules": [
           { "scope": "android", "release": false },
           { "scope": "ios", "release": false }
         ]
       }
     ],
-    "@semantic-release/release-notes-generator",
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
     "@semantic-release/changelog",
     [
       "@semantic-release/exec",

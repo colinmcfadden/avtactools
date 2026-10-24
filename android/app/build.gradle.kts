@@ -17,6 +17,13 @@ android {
         // without it the Google button is not offered. -Pezpz.googleClientId=<id>
         val googleClientId = providers.gradleProperty("ezpz.googleClientId").orElse("").get()
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleClientId\"")
+
+        // The API majors this build can talk to (ezpz.apiMajors in android/gradle.properties; contracts/scripts/api_version.py
+        // holds them to what the server serves). Against a server that serves none of them the app sends nothing and says why.
+        val apiMajors = providers.gradleProperty("ezpz.apiMajors").orNull?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?.takeIf { majors -> majors.isNotEmpty() && majors.all { it.toIntOrNull()?.let { n -> n > 0 } == true } }
+            ?: error("android/gradle.properties needs ezpz.apiMajors, comma-separated whole numbers")
+        buildConfigField("String", "SUPPORTED_API_MAJORS", "\"${apiMajors.joinToString(",")}\"")
     }
 
     buildFeatures {

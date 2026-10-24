@@ -57,6 +57,7 @@ import useLzSaves from "./feature/saveDialog/useLzSaves";
 import useRouteSaves, { SKETCHES } from "./feature/saveDialog/useRouteSaves";
 import NameDialog from "./feature/ui/NameDialog";
 import { useToast } from "./feature/ui/Toast";
+import useApiCompat from "./feature/apiCompat/useApiCompat";
 import useFilePicker from "./feature/imports/useFilePicker";
 import useImports, { movePointsToPack } from "./feature/imports/useImports";
 import ImportsPanel from "./feature/imports/ImportsPanel";
@@ -162,6 +163,7 @@ function App() {
   } = lzWorkspace;
   const workspaceRef = useRef(lzWorkspace.workspace);
   const { show: toast } = useToast();
+  useApiCompat();
   const dock = useDock("lz");
 
   useEffect(() => {

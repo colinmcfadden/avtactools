@@ -1,0 +1,52 @@
+name: API version
+
+# The API the clients call (contracts/openapi.yaml) has a version of its own, whose major is the promise to
+# installed apps: within one major nothing they read or send stops working. This compares the spec with the
+# branch it merges into (or, on a push, the commit before) and fails on a breaking change whose major did not
+# move, on versions that disagree (the spec and backend/api_version.py), and on a client build that supports
+# no major the server serves (android/gradle.properties, frontend/src/apiSupport.json). The fix for a break is
+# `python contracts/scripts/api_version.py bump --base origin/develop`, after deciding the break is wanted.
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "contracts/openapi.yaml"
+      - "contracts/scripts/api_version.py"
+      - "backend/api_version.py"
+      - "android/gradle.properties"
+      - "frontend/src/apiSupport.json"
+      - ".github/workflows/api.yaml"
+  pull_request:
+    paths:
+      - "contracts/openapi.yaml"
+      - "contracts/scripts/api_version.py"
+      - "backend/api_version.py"
+      - "android/gradle.properties"
+      - "frontend/src/apiSupport.json"
+      - ".github/workflows/api.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Breaking changes bump the API major
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the pinned PyYAML
+        run: pip install "$(grep -i '^pyyaml==' backend/requirements.txt)"
+      - name: Check
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: python contracts/scripts/api_version.py check --base "$BASE"
