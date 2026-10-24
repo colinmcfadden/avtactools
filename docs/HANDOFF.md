@@ -649,7 +649,8 @@ Full list in AGENTS.md; the ones that matter most for a fresh agent:
 - **The web is the reference; `contracts/` fixtures are the contract.** Never hand-edit a fixture; change the web (or backend)
   first, regenerate, review the diff, then follow in the clients.
 - **Commits:** Conventional Commits, lowercase subject, scoped (`feat(android): …`, `test(contracts): …`); app commits do not
-  bump the web version. Each ends with the attribution trailers the session provides. Update `AGENTS.md` in the same commit.
+  bump the web version. Commits and PRs carry no Claude co-author trailer and no "Generated with" line (the owner's call,
+  2026-10-24). Update `AGENTS.md` in the same commit.
 - **Codex may be working this checkout in parallel.** A file that changed under you is probably their work: re-read, never revert
   what you did not write.
 - **Never invent a value for "no data"**; refuse, or show the app's own words. A server's internals (a Python exception) are
