@@ -93,6 +93,8 @@ class TabletRail(
     val account: @Composable () -> Unit,
     /** The workspace tile: the Library's, or the open pack's in its colour, with the switcher at it when packs run here. */
     val workspace: RailWorkspace = RailWorkspace(),
+    /** The mission brief's setup (docs/MISSION_BRIEF.md, B8: the tablet's rail only), for an account with Mission briefs; none, no button. */
+    val onBrief: (() -> Unit)? = null,
 )
 
 /** What the rail's workspace tile says, and the switcher it opens ([menu], drawn while open with what closes it; none: a label, not a button). */
@@ -381,7 +383,11 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
                     }
                 }
                 Column(Modifier.padding(top = Tokens.Spacing.lg.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    // The Library is a page, not one of the panels: a button, not a tab.
+                    // The brief and the Library are dialogs and pages, not panels: buttons, not tabs.
+                    rail.onBrief?.let { brief ->
+                        RailButton(EzpzIcons.description, "Brief", onClick = brief)
+                        Spacer(Modifier.height(Tokens.Spacing.sm.dp))
+                    }
                     RailButton(EzpzIcons.collectionsBookmark, "Library", onClick = rail.onLibrary)
                     Spacer(Modifier.height(Tokens.Spacing.md.dp))
                     rail.account()

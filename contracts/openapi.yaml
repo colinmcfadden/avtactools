@@ -923,6 +923,204 @@ paths:
         "409":
           $ref: "#/components/responses/PointSetConflict"
 
+  /api/briefs:
+    get:
+      operationId: listBriefs
+      summary: The caller's saved mission briefs (summaries, without deleted ones)
+      description: |
+        A brief kept in the Library, outside a mission pack (docs/MISSION_BRIEF.md §3). Every `/api/briefs` route needs
+        the `mission_brief` entitlement and answers 403 `feature_disabled` without it; a create or an edit needs
+        `cloud_save` too.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BriefSummary"
+    post:
+      operationId: createBrief
+      summary: Save a mission brief
+      description: |
+        As `POST /api/lz`: send `client_uuid`, a UUID the device chose, so a retry after a lost response returns the
+        first record (200) instead of making a second (201). `data` is the brief document; the server does not look
+        inside it.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, data]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { description: "The brief document (docs/MISSION_BRIEF.md §2.2).", type: object }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/briefs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getBrief
+      summary: One saved mission brief, with its document
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateBrief
+      summary: Edit a saved mission brief
+      description: |
+        As `PUT /api/lz/{id}`: send `If-Match: "<revision>"`; a server that has moved on overwrites nothing and answers
+        409 with its copy. Without `If-Match` the last writer wins. A retry with the same `Idempotency-Key` is answered,
+        not refused. Only what is sent changes.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { type: object }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry, which answers the whole record).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/BriefConflict"
+    delete:
+      operationId: deleteBrief
+      summary: Delete a saved mission brief
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion through `/api/sync/changes`.
+        Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/BriefConflict"
+
+  /api/brief/pdf:
+    post:
+      operationId: printBrief
+      summary: Print a mission brief as a PDF
+      description: |
+        The brief the client compiled (compileBrief's model: docs/MISSION_BRIEF.md §2.3) laid out as pages and printed
+        by Gotenberg on the server (§2.7): its figures drawn from the model's geometry over the base map
+        `options.figureMap` names, on the paper `options.paper` names. Its strip charts (`model.strips`, each with the MGRS
+        grid the client adds as `grid`) are drawn turned course up on the map `options.stripMap` names; a strip that is
+        not the printed 5.5 by 21.5 cm at its scale, or will not draw, is left out. Nothing is kept: neither the model nor
+        the PDF.
+        Needs `mission_brief`. A heavy request: other work on the server waits for it.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: { description: "The compiled brief (format ezpz-brief-model).", type: object }
+      responses:
+        "200":
+          description: The PDF, as an attachment.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "400":
+          description: "`invalid_brief`: the body is not a brief model."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "403":
+          description: "`feature_disabled`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "413":
+          description: "`too_large`: more than 4 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "502":
+          description: "`pdf_failed`: Gotenberg did not print it."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "503":
+          description: "`pdf_unavailable`: this server has no Gotenberg (`GOTENBERG_URL`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
   /api/weather:
     get:
       operationId: weather
@@ -931,6 +1129,12 @@ paths:
         Looks up the nearest METAR within a degree or so of the position and the FAA NOTAMs within 10 nm. The services behind it are other people's, so
         the answer is **always 200** with what could be had: when no station answers, `station_id` is `TIMEOUT`, the numbers are null and `pressure` is
         `"--"`; when the NOTAM search is down, `notams` is a sentence instead of an object. A caller shows both without treating them as errors.
+
+        With `at`, a planned time (a brief's, docs/MISSION_BRIEF.md §2.5), the answer is for then: a time more than 30 minutes ahead is answered
+        from the nearest TAF with a period covering it (`kind: "forecast"`, its station in `station_id`, the period in `valid_from` and
+        `valid_to`, and no temperature, dew point or METAR, which a TAF does not give); a time sooner, in the past, or that no TAF nearby covers,
+        from the latest METAR as without `at` (`kind: "observation"`, with the report's time in `observed`). The NOTAMs are those in force now
+        either way. Without `at` the answer is exactly as it always was, with none of these fields.
       security:
         - bearer: []
       parameters:
@@ -942,6 +1146,11 @@ paths:
           in: query
           required: true
           schema: { type: number }
+        - name: at
+          in: query
+          required: false
+          description: An ISO 8601 time, e.g. `2026-10-16T14:30:00Z`; one without an offset is UTC. Anything else is 400 `invalid_at`.
+          schema: { type: string, maxLength: 40 }
       responses:
         "200":
           description: The report.
@@ -1534,7 +1743,7 @@ paths:
       summary: Apply a batch of edits, in order, each numbered and logged
       description: |
         Each operation is applied, or logged as `skipped` when what it edits is gone or in the
-        way; the rules are `contracts/fixtures/packs/ops.json`. Each carries a `client_op_id`
+        way; the rules are `contracts/fixtures/packs/ops.json` (and `ops-brief.json`). Each carries a `client_op_id`
         (printable ASCII, 64 at most): one the pack has seen is answered from the log and not
         applied again, so a batch whose answer was lost is safe to send again. A malformed
         operation refuses the whole batch (400 `invalid_op`, with `index` and `reason`) before
@@ -1543,7 +1752,10 @@ paths:
         With `base_seq`, `events` is everything after it (up to 500; `has_more` says there is
         more), so the client can rebase its unconfirmed edits; without it, just this batch's.
         Viewers get 403 `pack_read_only`; a finished pack 423 `pack_finished`; an item that
-        would pass 5 MB 413 `item_too_large`.
+        would pass 5 MB 413 `item_too_large`. The exception is a batch whose every operation is
+        on a `brief` item (one stored as a brief, or made as one earlier in the batch): briefing
+        is open to every member, viewers included, in every state of the pack. A batch with any
+        other operation in it is refused whole, so send brief edits in batches of their own.
 
         Those three refusals always carry `taken` (a server from before it sent none: read that
         as none): the operations of this batch the pack's log already has, the caller's own, in
@@ -2481,6 +2693,23 @@ components:
               server:
                 $ref: "#/components/schemas/PointSetFull"
 
+    BriefConflict:
+      description: |
+        The brief changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/BriefFull"
+
     AircraftConflict:
       description: |
         The profile changed on the server since the revision the edit was based on.
@@ -2537,7 +2766,7 @@ components:
         error: { type: string }
         code:
           type: string
-          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`"
+          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`"
 
     Error:
       type: object
@@ -2703,6 +2932,29 @@ components:
         revision: { type: integer, minimum: 1 }
         points: { type: array, items: { type: object } }
 
+    BriefSummary:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    BriefFull:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision, data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        data: { type: object, description: "The brief document (docs/MISSION_BRIEF.md §2.2)." }
+
     WeatherReport:
       type: object
       required: [station_id, name, temp_c, dewp_c, wind_spd_kts, wind_dir, wind_gust_kts, vis_sm, pressure, flight_category, raw_metar, distance_miles, notams]
@@ -2716,9 +2968,16 @@ components:
         wind_gust_kts: { type: number, nullable: true }
         vis_sm: { nullable: true, description: "Statute miles: a number, or text such as `10+`; null with no report." }
         pressure: { description: "Altimeter in inches of mercury, a number rounded to hundredths, or the text `--` when there is none." }
-        flight_category: { type: string, nullable: true, description: "VFR, MVFR, IFR or LIFR." }
+        flight_category: { type: string, nullable: true, description: "VFR, MVFR, IFR or LIFR. A forecast's is worked out from its ceiling and visibility, null when it gives either not." }
         raw_metar: { type: string, nullable: true }
         distance_miles: { type: number, description: "How far the station is from the position, in statute miles; 0 when none answered." }
+        kind: { type: string, enum: [observation, forecast], description: "Only when `at` was sent: what the answer is for that time." }
+        at: { type: string, description: "Only with `at`: the time asked for, as UTC (`2026-10-16T14:30:00Z`)." }
+        observed: { type: string, nullable: true, description: "An observation for `at` only: when the METAR was taken (UTC); null when no station answered." }
+        raw_taf: { type: string, nullable: true, description: "A forecast only: the TAF's text." }
+        issued: { type: string, nullable: true, description: "A forecast only: when the TAF was issued (UTC)." }
+        valid_from: { type: string, nullable: true, description: "A forecast only: the start of the period covering `at` (UTC)." }
+        valid_to: { type: string, nullable: true, description: "A forecast only: the end of that period (UTC)." }
         notams:
           description: |
             An object of lists of NOTAM text by the feature they are about (`{"Obstruction": ["…"]}`, or `{"Clear": ["No active NOTAMs in LZ area."]}` when
@@ -2810,12 +3069,13 @@ components:
       type: object
       required: [type, id, client_uuid, revision, deleted, name, seq, data]
       description: |
-        One changed record. `type` says which collection: `lz`, `route`, `pointset` or
-        `aircraft` (the caller's own profiles; the master list does not sync).
+        One changed record. `type` says which collection: `lz`, `route`, `pointset`,
+        `aircraft` (the caller's own profiles; the master list does not sync) or `brief`.
+        A device passes over a `type` it does not know, which a newer server may add.
         A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
         has `kind`, `file_name` and `has_file`; fetch the mission file separately.
       properties:
-        type: { type: string, enum: [lz, route, pointset, aircraft] }
+        type: { type: string, enum: [lz, route, pointset, aircraft, brief] }
         id: { type: integer }
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
@@ -2827,7 +3087,7 @@ components:
         kind: { type: string, description: "Routes only: `sketch` or `mission`." }
         file_name: { type: string, nullable: true }
         has_file: { type: boolean }
-        data: { description: "lz_data, route_data, the points or the profile, per `type`." }
+        data: { description: "lz_data, route_data, the points, the profile or the brief document, per `type`." }
 
     ChangeFeed:
       type: object
@@ -3288,7 +3548,7 @@ components:
       required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
       properties:
         uuid: { type: string }
-        kind: { type: string, enum: [lz, route, pointset] }
+        kind: { type: string, enum: [lz, route, pointset, brief] }
         name: { type: string }
         revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
         seq: { type: integer, minimum: 0, description: The event that last changed it. }
@@ -3444,7 +3704,7 @@ components:
       additionalProperties: false
       required: [kind, id, client_uuid, name, revision]
       properties:
-        kind: { type: string, enum: [lz, route, pointset] }
+        kind: { type: string, enum: [lz, route, pointset, brief] }
         id: { type: integer }
         client_uuid: { type: string }
         name: { type: string }

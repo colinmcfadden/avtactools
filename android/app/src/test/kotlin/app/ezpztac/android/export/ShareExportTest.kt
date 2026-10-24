@@ -100,6 +100,15 @@ class ShareExportTest {
     }
 
     @Test
+    fun `a brief's PDF keeps its type, is told to the other app as a PDF, and is shared as a brief`() {
+        assertEquals("OP DK brief.pdf", ShareExport.plainName("../OP DK brief.pdf"))
+        assertEquals("application/pdf", ShareExport.mimeOf(listOf(ExportFile("OP DK brief.pdf", bytes))))
+        val chooser = prepare(ExportFile("OP DK brief.pdf", bytes))
+        assertEquals("Share brief", chooser.getStringExtra(android.content.Intent.EXTRA_TITLE) ?: chooser.getCharSequenceExtra(android.content.Intent.EXTRA_TITLE)?.toString())
+        assertTrue(File(exports(), "OP DK brief.pdf").exists())
+    }
+
+    @Test
     fun `files from earlier exports are cleared after a day, and a recent one stays`() {
         exports().mkdirs()
         val old = File(exports(), "OLD.msnx").apply { writeBytes(bytes); setLastModified(1_000_000L) }

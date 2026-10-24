@@ -15,9 +15,12 @@ import org.junit.jupiter.api.TestInstance
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-/** The scenarios against the real server (`backend/tests/live_server.py`): one account per scenario, a device per client. */
+/**
+ * The scenarios against the real server (`backend/tests/live_server.py`): one account per scenario, a device per client. Mission briefs are ticked
+ * for the account (they are off for everyone but admins and testers until launch), so a brief record syncs as the others do.
+ */
 internal class LiveEnv(private val server: LiveServer) : Env {
-    private val email = "sync-${UUID.randomUUID()}@example.com".also { server.makeAccount(it) }
+    private val email = "sync-${UUID.randomUUID()}@example.com".also { server.makeAccount(it, features = mapOf("mission_brief" to true)) }
 
     private fun client(interceptor: okhttp3.Interceptor? = null): ApiClient {
         val http = OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS)

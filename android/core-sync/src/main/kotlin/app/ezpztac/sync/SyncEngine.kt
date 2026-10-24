@@ -462,6 +462,7 @@ public class SyncEngine(
             // A saved route is a set of sketched routes, or an AMPS mission with its file: the same table on the server, two kinds here.
             "route" -> if (change.kind == "mission") RecordKind.MISSION else RecordKind.ROUTE
             "pointset" -> RecordKind.POINT_SET
+            "brief" -> RecordKind.BRIEF
             else -> return SyncReport()                                    // a collection a newer server adds: not ours to read
         }
         val local = record(kind, change.clientUuid)

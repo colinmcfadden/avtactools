@@ -260,20 +260,68 @@ const CASES = [
   ["removing from a deleted item is skipped", gone, remove("gone-1", HELO("h-1"))],
 ];
 
+// The brief kind (docs/MISSION_BRIEF.md §3) has a file of its own, packs/ops-brief.json, so that a client that has not
+// ported the kind yet (Android, until step B7) is still held to every case of ops.json; the server is held to both.
+const BRIEF = {
+  kind: "brief",
+  name: "OP DK BRIEF",
+  deleted: false,
+  data: {
+    version: 1,
+    template: { id: "amb", version: 1 },
+    flow: [{ ref: "lz:d-1", role: "LZ" }],
+    answers: { "2.b": { value: "Move C Co to LZ HAWK." } },
+  },
+};
+const brief = { "br-1": BRIEF };
+
+const BRIEF_CASES = [
+  ["a brief is created", {}, { type: "item.create", item: "br-2", kind: "brief", name: "OP DK BRIEF 2", data: { version: 1, template: { id: "hasty", version: 1 } } }],
+  ["a brief whose content is a list is malformed", {}, { type: "item.create", item: "br-2", kind: "brief", name: "X", data: [] }],
+  ["a brief with no content is malformed", {}, { type: "item.create", item: "br-2", kind: "brief", name: "X" }],
+  ["an answer is set", brief, set("br-1", ["answers", "5.a.iii"], { mode: "standard" })],
+  ["an answer is replaced whole", brief, set("br-1", ["answers", "2.b"], { value: "Move B Co instead." })],
+  ["a stop in the flow has no id, so patching one by an id is skipped", brief, patch("br-1", ["flow", { id: "x" }], { role: "PZ" })],
+  ["answers are patched", brief, patch("br-1", ["answers"], { "5.a.v": { mode: "custom", fields: { lz: "LZ CROW" } } })],
+  ["a brief is renamed", brief, { type: "item.rename", item: "br-1", name: "OP DK AMB" }],
+  ["a brief is removed", brief, { type: "item.delete", item: "br-1" }],
+  ["a brief's content is replaced from its original", brief, { type: "item.replace", item: "br-1", data: { version: 1 } }],
+  ["a brief's content cannot be replaced by a list", brief, { type: "item.replace", item: "br-1", data: [] }],
+];
+
+const fixtureOf = (cases) => cases.map(([name, items, op]) => {
+  const result = applyPackOp(items, op);
+  return { name, items, op, status: result.status, reason: result.reason, expected: result.items };
+});
+
 const opsFixture = () => ({
   description: "What one mission-pack operation does to a pack's items, as frontend/src/feature/missionPacks/packOps.js does it "
     + "(the reference). `items` maps an item's uuid to {kind, name, data, deleted}; `op` is what a client sends (or, for "
     + "item.replace, what the server writes); `status` is applied, skipped or invalid, with `reason` for the last two; "
     + "`expected` is the items afterwards, equal to `items` unless the operation was applied. See docs/MISSION_PACKS.md.",
   generatedBy: GENERATED_BY,
-  cases: CASES.map(([name, items, op]) => {
-    const result = applyPackOp(items, op);
-    return { name, items, op, status: result.status, reason: result.reason, expected: result.items };
-  }),
+  cases: fixtureOf(CASES),
+});
+
+const briefFixture = () => ({
+  description: "packs/ops.json's cases for the brief item kind (docs/MISSION_BRIEF.md §3), in the same shape. Apart so a client "
+    + "that has not ported the kind yet is still held to every case of ops.json; the server is held to both.",
+  generatedBy: GENERATED_BY,
+  cases: fixtureOf(BRIEF_CASES),
 });
 
 describe("mission pack operations fixture", () => {
   it("packs/ops.json", () => settle("packs/ops.json", opsFixture()));
+  it("packs/ops-brief.json", () => settle("packs/ops-brief.json", briefFixture()));
+
+  it("keeps the brief kind out of ops.json and in ops-brief.json", () => {
+    const kinds = (fixture) => new Set(fixture.cases.flatMap((c) => [c.op && c.op.kind, ...Object.values(c.items).map((i) => i.kind)]));
+    expect(kinds(opsFixture()).has("brief")).toBe(false);
+    const { cases } = briefFixture();
+    expect(cases.filter((c) => c.status === "applied").length).toBeGreaterThanOrEqual(7);
+    expect(cases.find((c) => c.name === "a brief whose content is a list is malformed").reason).toBe("bad_data");
+    expect(cases.find((c) => c.name === "a brief's content cannot be replaced by a list").reason).toBe("not_an_object");
+  });
 
   it("covers every outcome and every reason", () => {
     const { cases } = opsFixture();
@@ -301,7 +349,7 @@ describe("mission pack operations fixture", () => {
   });
 
   it("validates exactly what it refuses as malformed", () => {
-    opsFixture().cases.forEach((c) => {
+    [...opsFixture().cases, ...briefFixture().cases].forEach((c) => {
       expect(validatePackOp(c.op)).toBe(c.status === "invalid" ? c.reason : null);
     });
   });

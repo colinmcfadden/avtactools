@@ -26,7 +26,7 @@ from email_service import send_pack_added_email, send_pack_invite_email
 from entitlements import account_active, has_feature, require_feature
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember,
-    SavedLZ, SavedPointSet, SavedRoute, User, db,
+    SavedBrief, SavedLZ, SavedPointSet, SavedRoute, User, db,
 )
 from routes.auth import _normalize_email, _valid_email
 
@@ -34,7 +34,7 @@ pack_bp = Blueprint('packs', __name__)
 
 _CLIENT_OP_ID = re.compile(r'^[\x21-\x7e]{1,64}\Z')       # printable ASCII, as an Idempotency-Key
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
-_KIND_WORDS = {'lz': 'LZ', 'route': 'routes', 'pointset': 'points'}
+_KIND_WORDS = {'lz': 'LZ', 'route': 'routes', 'pointset': 'points', 'brief': 'brief'}
 
 
 # -- Helpers --------------------------------------------------------------------
@@ -417,6 +417,19 @@ def _default_summary(user, op, name_before):
     return f'{who} edited "{name}".'
 
 
+def _only_briefs(ops, kinds):
+    """True when every operation of the batch is on a brief item: one stored as a brief (``kinds``, uuid to kind,
+    deleted items included), or one an earlier ``item.create`` of the batch makes as a brief. A brief is open to
+    every member in every state of the pack (docs/MISSION_BRIEF.md §3), and nothing else is."""
+    kinds = dict(kinds)
+    for op in ops:
+        if op['item'] not in kinds and op['type'] == 'item.create':
+            kinds[op['item']] = op['kind']
+        if kinds.get(op['item']) != 'brief':
+            return False
+    return True
+
+
 def _result(event):
     return {'client_op_id': event.client_op_id, 'seq': event.seq, 'status': event.status, 'reason': event.reason}
 
@@ -435,7 +448,11 @@ def apply_ops(pack_uuid):
 
     A resend can be refused although the pack took the batch the first time: the
     pack was finished (423), the caller made a viewer (403 ``pack_read_only``), or
-    the batch grew by an edit that is too large (413). Those three refusals always
+    the batch grew by an edit that is too large (413).
+
+    A batch whose every operation is on a brief item is the exception to the first two: briefing is for everyone in
+    the pack, viewers included, and a finished pack is still briefed (docs/MISSION_BRIEF.md §3). A batch with any
+    other operation in it is refused whole, as before, so a client sends brief edits in batches of their own. Those three refusals always
     carry ``taken``: the operations of this batch the log already has, the caller's
     own, in log order, each as its result would have been (possibly none). So the
     client keeps them as the pack's and offers back only the rest. Nothing is said
@@ -485,14 +502,14 @@ def apply_ops(pack_uuid):
         MissionPackEvent.pack_id == pack.id, MissionPackEvent.client_op_id.in_(seen)).all()}
     # Plain values, made before a 413 below rolls the session back.
     taken = [_result(e) for e in sorted(done.values(), key=lambda e: e.seq) if e.user_id == me.id]
-    if role not in packs.EDIT_ROLES:
-        return _read_only(taken=taken)
-    if pack.status == 'finished':
-        return _finished(pack, taken=taken)
-
     # Deleted items too: a uuid is never reused.
     rows = {i.uuid: i for i in MissionPackItem.query.filter(
         MissionPackItem.pack_id == pack.id, MissionPackItem.uuid.in_({op['item'] for op in ops})).all()}
+    if (role not in packs.EDIT_ROLES or pack.status == 'finished') and \
+            not _only_briefs(ops, {u: r.kind for u, r in rows.items()}):
+        if role not in packs.EDIT_ROLES:
+            return _read_only(taken=taken)
+        return _finished(pack, taken=taken)
     state = {u: {'kind': r.kind, 'name': r.name, 'data': copy.deepcopy(r.data), 'deleted': r.deleted_at is not None}
              for u, r in rows.items()}
 
@@ -777,14 +794,20 @@ def save_to_library(pack_uuid, item_uuid):
         return _error('The name must be 1 to 100 characters.', 400, 'invalid_name')
 
     data = copy.deepcopy(item.data)
+    if item.kind == 'brief' and not has_feature(me, 'mission_brief'):
+        return _error("This feature isn't enabled for your account.", 403, 'feature_disabled')
     if item.kind == 'lz':
         record = SavedLZ(user_id=me.id, name=name, lz_data=data)
+    elif item.kind == 'brief':
+        record = SavedBrief(user_id=me.id, name=name, brief_data=data)
     elif item.kind == 'route':
         record = SavedRoute(user_id=me.id, name=name, kind='sketch', route_data=data)
-    else:
+    elif item.kind == 'pointset':
         if not data:
             return _error('A point set with no points cannot be saved.', 400, 'empty_point_set')
         record = SavedPointSet(user_id=me.id, name=name, points_data=data)
+    else:
+        return _error('That item cannot be saved to a library.', 400, 'unreadable_source')
     record.client_uuid = sync.new_client_uuid()
     db.session.add(record)
     sync.stamp(record, me.id)

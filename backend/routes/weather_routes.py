@@ -4,7 +4,7 @@ import requests
 import math
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 weather_bp = Blueprint('weather', __name__)
 
@@ -119,6 +119,13 @@ def get_local_weather():
         raw_lat = float(lat_str)
         raw_lng = float(lng_str)
 
+        # A planned time (a brief's departure, say): optional, and without it the answer is as it always was.
+        at_epoch = None
+        if 'at' in request.args:
+            at_epoch = _parse_at(request.args.get('at'))
+            if at_epoch is None:
+                return jsonify({'error': 'at must be an ISO 8601 time, e.g. 2026-10-16T14:30:00Z.', 'code': 'invalid_at'}), 400
+
         # 2. INTEGER TRUNCATION
         lat_int = int(raw_lat)
         lng_int = int(raw_lng)
@@ -180,7 +187,7 @@ def get_local_weather():
         # --- PROTECTED NOTAM FETCH ---
         active_notams = get_radial_notams(raw_lat, raw_lng, radius_nm=10)
 
-        return jsonify({
+        body = {
             'station_id': station_id,
             'name': station_name,
             'temp_c': best_report.get('temp'),
@@ -194,12 +201,174 @@ def get_local_weather():
             'raw_metar': best_report.get('rawOb'),
             'distance_miles': round(min_dist * 69, 1) if min_dist != float('inf') else 0,
             'notams': active_notams
-        })
+        }
+        if at_epoch is not None:
+            body = _at_time(body, best_report, at_epoch, raw_lat, raw_lng, bbox)
+        return jsonify(body)
 
     except Exception as e:
         print("CRITICAL SERVER ERROR:")
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+# --- The weather at a planned time (``/api/weather?at=``) ---
+#
+# For a brief (docs/MISSION_BRIEF.md §2.5): a time more than FORECAST_THRESHOLD_SEC ahead is answered from the
+# TAF period that covers it, as the route winds are; anything sooner, or a time no TAF nearby covers, from the
+# latest METAR. The answer says which (`kind`), and a forecast never carries a number the TAF does not give.
+
+_MAX_AT_LENGTH = 40
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# A ceiling is the lowest layer broken or worse, or an obscured sky (VV).
+_CEILING_COVERS = ('BKN', 'OVC', 'OVX', 'VV')
+
+
+def _now():
+    return time.time()
+
+
+def _parse_at(value):
+    """Epoch seconds of an ISO 8601 time, or None. A time without an offset is UTC, as the server writes its own."""
+    if not isinstance(value, str) or not value or len(value) > _MAX_AT_LENGTH:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.strip().replace('Z', '+00:00').replace('z', '+00:00'))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def _iso(epoch):
+    """An AWC time (epoch seconds or ISO text) as ISO 8601 UTC with a Z, or None."""
+    seconds = _to_epoch(epoch)
+    if seconds is None:
+        return None
+    try:
+        # Added to the epoch rather than fromtimestamp, which refuses times before 1970 on Windows.
+        moment = _EPOCH + timedelta(seconds=seconds)
+    except OverflowError:
+        return None
+    return moment.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def _covering_periods(taf, target_epoch):
+    """The TAF's base periods (not TEMPO, not PROB) that cover ``target_epoch``, earliest start first."""
+    periods = []
+    for fcst in taf.get('fcsts') or []:
+        if not isinstance(fcst, dict):
+            continue
+        start, end = _to_epoch(fcst.get('timeFrom')), _to_epoch(fcst.get('timeTo'))
+        if start is None or end is None or not start <= target_epoch < end:
+            continue
+        if (fcst.get('fcstChange') or '') == 'TEMPO' or fcst.get('probability'):
+            continue
+        periods.append((start, fcst))
+    return [fcst for _start, fcst in sorted(periods, key=lambda pair: pair[0])]
+
+
+_PERIOD_FIELDS = ('wdir', 'wspd', 'wgst', 'visib', 'clouds', 'altim')
+
+
+def _period_at(taf, target_epoch):
+    """The forecast for ``target_epoch``: the latest base period covering it, with what it leaves out (a BECMG group
+    gives only what changes) taken from the earlier ones covering it. None when no period covers the time."""
+    periods = _covering_periods(taf, target_epoch)
+    if not periods:
+        return None
+    merged = {}
+    for fcst in periods:
+        merged.update({key: fcst[key] for key in _PERIOD_FIELDS if fcst.get(key) is not None})
+    latest = periods[-1]
+    merged['timeFrom'], merged['timeTo'] = latest.get('timeFrom'), latest.get('timeTo')
+    return merged
+
+
+def _visibility_sm(value):
+    """Statute miles from a report's visibility (8, "6+", "P6SM", "1 1/2", "1/4SM"), or None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    text = value.strip().upper().removesuffix('SM').removeprefix('P').removesuffix('+').strip()
+    try:
+        whole = 0.0
+        if ' ' in text:
+            head, text = text.split(' ', 1)
+            whole = float(head)
+        if '/' in text:
+            top, bottom = text.split('/', 1)
+            return whole + float(top) / float(bottom)
+        return whole + float(text)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def _flight_category(clouds, visibility):
+    """VFR, MVFR, IFR or LIFR from a ceiling and a visibility, as aviationweather.gov sorts them, or None when the
+    forecast does not say both. No layers listed is not a clear sky: only a list without a ceiling in it is."""
+    vis = _visibility_sm(visibility)
+    if vis is None or not isinstance(clouds, list):
+        return None
+    bases = [_num(layer.get('base')) for layer in clouds
+             if isinstance(layer, dict) and layer.get('cover') in _CEILING_COVERS]
+    if any(base is None for base in bases):
+        return None
+    ceiling = min(bases) if bases else float('inf')
+    if ceiling < 500 or vis < 1:
+        return 'LIFR'
+    if ceiling < 1000 or vis < 3:
+        return 'IFR'
+    if ceiling <= 3000 or vis <= 5:
+        return 'MVFR'
+    return 'VFR'
+
+
+def _at_time(observed, metar, at_epoch, lat, lon, bbox):
+    """``observed`` (the answer without ``at``) for a planned time: the TAF period covering it when it is far enough
+    ahead and a TAF nearby covers it, else the observation as it was. Either way it says which, and when."""
+    at = _iso(at_epoch)
+    if at_epoch > _now() + FORECAST_THRESHOLD_SEC:
+        # The nearest TAF with a period covering the time: a nearer one that ends sooner is passed over.
+        ranked = []
+        for taf in _fetch_awc('taf', bbox):
+            t_lat, t_lon = (_num(taf.get('lat')), _num(taf.get('lon'))) if isinstance(taf, dict) else (None, None)
+            if t_lat is not None and t_lon is not None:
+                ranked.append((get_distance(lat, lon, t_lat, t_lon), taf))
+        ranked.sort(key=lambda pair: pair[0])
+        for dist, taf in ranked:
+            period = _period_at(taf, at_epoch)
+            if period is None:
+                continue
+            station = taf.get('icaoId') or 'UNKNOWN'
+            altimeter = _num(period.get('altim'))
+            return {
+                'station_id': station,
+                'name': taf.get('name') or station,
+                # A TAF forecasts no temperature or dew point: none is made up from the observation.
+                'temp_c': None,
+                'dewp_c': None,
+                'wind_spd_kts': period.get('wspd'),
+                'wind_dir': period.get('wdir'),
+                'wind_gust_kts': period.get('wgst'),
+                'vis_sm': period.get('visib'),
+                'pressure': round(altimeter * 0.02953, 2) if altimeter is not None else '--',
+                'flight_category': _flight_category(period.get('clouds'), period.get('visib')),
+                'raw_metar': None,
+                'distance_miles': round(dist * 69, 1),
+                'notams': observed['notams'],
+                'kind': 'forecast',
+                'at': at,
+                'raw_taf': taf.get('rawTAF'),
+                'issued': _iso(taf.get('issueTime')),
+                'valid_from': _iso(period.get('timeFrom')),
+                'valid_to': _iso(period.get('timeTo')),
+            }
+    return {**observed, 'kind': 'observation', 'at': at, 'observed': _iso(metar.get('obsTime')) if metar else None}
 
 
 # --- Per-point route winds (METAR now / TAF for the future) ---

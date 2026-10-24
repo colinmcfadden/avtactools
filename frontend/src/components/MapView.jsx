@@ -30,6 +30,7 @@ import { getMapStyle } from "../feature/mapStyles/mapStyles";
 import MgrsGridLayer from "../feature/mgrsGrid/MgrsGridLayer";
 import SlopeLayer from "../feature/terrain/SlopeLayer";
 import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
+import SandtableLayer from "../feature/brief/SandtableLayer";
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -48,8 +49,10 @@ const starIcon = new L.Icon({
 // Zoom only when the user selects a new LZ/PZ target. `targetLocation` is
 // derived from workspace state and is recreated on normal renders, so using
 // the array itself as an effect dependency would otherwise lock the map back
-// to zoom 17 after every analysis or graphic edit.
-function MapUpdater({ center, targetId }) {
+// to zoom 17 after every analysis or graphic edit. While a brief is presented
+// (`paused`) the sandtable moves the map: a target that changes meanwhile (in a
+// pack, someone else's) is noted, not flown to, then or after.
+function MapUpdater({ center, targetId, paused = false }) {
   const map = useMap();
   const lastTargetKeyRef = useRef(null);
   const latitude = center?.[0];
@@ -62,8 +65,8 @@ function MapUpdater({ center, targetId }) {
     if (lastTargetKeyRef.current === targetKey) return;
 
     lastTargetKeyRef.current = targetKey;
-    map.setView([latitude, longitude], 17);
-  }, [latitude, longitude, map, targetId]);
+    if (!paused) map.setView([latitude, longitude], 17);
+  }, [latitude, longitude, map, targetId, paused]);
 
   return null;
 }
@@ -90,6 +93,7 @@ function MapInteractionHandler({
   addDraftPoint,
   onDraftPointContextMenu,
   onMapMove,
+  presenting = false,
 }) {
   const map = useMapEvents({
     moveend: () => {
@@ -99,6 +103,11 @@ function MapInteractionHandler({
       }
     },
     contextmenu: (e) => {
+      // A brief being presented takes no edits: no menu, and not the browser's either.
+      if (presenting) {
+        e.originalEvent.preventDefault();
+        return;
+      }
       if (isDrawingLZ) return; // Don't interrupt drawing
       if (isSketchingRoute) {
         // Right-click while drawing a route: designate a point (target / IP /
@@ -122,6 +131,7 @@ function MapInteractionHandler({
       );
     },
     click: (e) => {
+      if (presenting) return;
       if (isDrawingLZ) {
         setDrawingPoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
       } else if (isSketchingRoute) {
@@ -198,6 +208,9 @@ const MapView = ({
   onMapMove,
   presence,
   onPoint,
+  // The live sandtable (feature/brief): while it is given, the map shows the brief's step and nothing of the planning
+  // layers, and takes no edit. They are drawn again, as they were, when it ends.
+  presentation = null,
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -249,197 +262,205 @@ const MapView = ({
         addDraftPoint={addDraftPoint}
         onDraftPointContextMenu={onDraftPointContextMenu}
         onMapMove={onMapMove}
+        presenting={Boolean(presentation)}
       />
 
-      {/* In-progress route sketch */}
-      {isSketchingRoute && draftPoints.length > 0 && (
-        <>
+      {presentation && <SandtableLayer presentation={presentation} />}
+
+      {!presentation && (<>
+        {/* In-progress route sketch */}
+        {isSketchingRoute && draftPoints.length > 0 && (
+          <>
+            <Polyline
+              positions={draftPoints.map((p) => [p.lat, p.lon])}
+              pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
+            />
+            {draftPoints.map(
+              (p, i) =>
+                p.designation && (
+                  <Marker
+                    key={`draft-${i}`}
+                    position={[p.lat, p.lon]}
+                    icon={buildSketchPointIcon(
+                      { kind: "amps", ptType: p.designation.ptType },
+                      "#64D2FF",
+                    )}
+                  >
+                    <Tooltip permanent direction="top" offset={[0, -12]}>
+                      {(p.designation.name || "").replace(/^\./, "")}
+                    </Tooltip>
+                  </Marker>
+                ),
+            )}
+          </>
+        )}
+
+        {/* Render the Active Drawing Line */}
+        {isDrawingLZ && drawingPoints.length > 0 && (
           <Polyline
-            positions={draftPoints.map((p) => [p.lat, p.lon])}
-            pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
+            positions={drawingPoints}
+            pathOptions={{ color: "#FFC107", weight: 3, dashArray: "5, 5" }}
           />
-          {draftPoints.map(
-            (p, i) =>
-              p.designation && (
-                <Marker
-                  key={`draft-${i}`}
-                  position={[p.lat, p.lon]}
-                  icon={buildSketchPointIcon(
-                    { kind: "amps", ptType: p.designation.ptType },
-                    "#64D2FF",
-                  )}
-                >
-                  <Tooltip permanent direction="top" offset={[0, -12]}>
-                    {(p.designation.name || "").replace(/^\./, "")}
-                  </Tooltip>
-                </Marker>
-              ),
-          )}
-        </>
-      )}
+        )}
 
-      {/* Render the Active Drawing Line */}
-      {isDrawingLZ && drawingPoints.length > 0 && (
-        <Polyline
-          positions={drawingPoints}
-          pathOptions={{ color: "#FFC107", weight: 3, dashArray: "5, 5" }}
-        />
-      )}
+        {/* Render the Completed Custom Polygon */}
+        {customLZ && (
+          <Polygon
+            positions={customLZ}
+            pathOptions={{
+              color: "#FFC107",
+              weight: 3,
+              fillColor: "#FFC107",
+              fillOpacity: 0.2,
+            }}
+            eventHandlers={{
+              contextmenu: (e) => {
+                L.DomEvent.stop(e); // Prevent the map from seeing this right-click
+                e.originalEvent.preventDefault();
 
-      {/* Render the Completed Custom Polygon */}
-      {customLZ && (
-        <Polygon
-          positions={customLZ}
-          pathOptions={{
-            color: "#FFC107",
-            weight: 3,
-            fillColor: "#FFC107",
-            fillOpacity: 0.2,
-          }}
-          eventHandlers={{
-            contextmenu: (e) => {
-              L.DomEvent.stop(e); // Prevent the map from seeing this right-click
-              e.originalEvent.preventDefault();
-
-              handleLZRightClick(
-                e.latlng.lat,
-                e.latlng.lng,
-                e.originalEvent.clientX,
-                e.originalEvent.clientY,
-              );
-            },
-          }}
-        />
-      )}
+                handleLZRightClick(
+                  e.latlng.lat,
+                  e.latlng.lng,
+                  e.originalEvent.clientX,
+                  e.originalEvent.clientY,
+                );
+              },
+            }}
+          />
+        )}
+      </>)}
 
       {/* Logic to Zoom when target changes */}
-      <MapUpdater center={targetLocation} targetId={activeDiagramId} />
+      <MapUpdater center={targetLocation} targetId={activeDiagramId} paused={Boolean(presentation)} />
       <SizeWatcher />
-      {(presence?.length > 0 || onPoint) && <PresenceLayer people={presence} onPoint={onPoint} />}
 
-      <MsnxRouteLayer
-        routes={importedRoutes}
-        onUpdatePosition={onUpdateMsnxPointPosition}
-        onInsertPoint={onInsertMsnxPoint}
-        snapPoints={localSnapPoints}
-      />
+      {!presentation && (<>
+        {(presence?.length > 0 || onPoint) && <PresenceLayer people={presence} onPoint={onPoint} />}
 
-      <MsnxRouteLayer
-        routes={sketchedRoutes}
-        onUpdatePosition={onUpdateSketchPointPosition}
-        onInsertPoint={onInsertMsnxPoint}
-        onPointContextMenu={onSketchPointContextMenu}
-        snapPoints={localSnapPoints}
-      />
-
-      <LocalPointsLayer pointSets={localPointSets} onAddToRoute={onAddLocalPointToRoute} />
-
-      <ThreatLayer threats={threats} onMove={onThreatMove} onEdit={onThreatEdit} />
-
-      {/* 1. The Grid Location (Green Star) */}
-      {targetLocation && (
-        <Marker position={targetLocation} icon={starIcon}>
-          <Popup>{mapData.mgrs}</Popup>
-        </Marker>
-      )}
-
-      {/* 2. The Auto-Detected Field (Blue Outline) */}
-      {showLZOutline && detectedLZ && (
-        <Polygon
-          pathOptions={{
-            color: "#0056b3", 
-            weight: 3, 
-            fillColor: "#0056b3", 
-            fillOpacity: 0.1,
-            dashArray: "5, 5",
-          }}
-          positions={detectedLZ}
+        <MsnxRouteLayer
+          routes={importedRoutes}
+          onUpdatePosition={onUpdateMsnxPointPosition}
+          onInsertPoint={onInsertMsnxPoint}
+          snapPoints={localSnapPoints}
         />
-      )}
 
-      {detectedLZ && (
-        <LZDimensions
-          key={`lz-dimensions-${activeDiagramId ?? "none"}`}
-          detectedLZ={detectedLZ}
+        <MsnxRouteLayer
+          routes={sketchedRoutes}
+          onUpdatePosition={onUpdateSketchPointPosition}
+          onInsertPoint={onInsertMsnxPoint}
+          onPointContextMenu={onSketchPointContextMenu}
+          snapPoints={localSnapPoints}
         />
-      )}
 
-      <SlopeLayer terrainData={terrainData} shown={showHeatmap} />
+        <LocalPointsLayer pointSets={localPointSets} onAddToRoute={onAddLocalPointToRoute} />
 
-      {doghouses.map((dh) => (
-        <Doghouse
-          key={`${activeDiagramId ?? "lz"}-doghouse-${dh.id}`}
-          data={dh}
-          updateDoghouse={updateDoghouse}
-        />
-      ))}
+        <ThreatLayer threats={threats} onMove={onThreatMove} onEdit={onThreatEdit} />
 
-      {goArounds.map((ga) => (
-        <GoAroundMarker
-          key={`${activeDiagramId ?? "lz"}-go-around-${ga.id}`}
-          data={ga}
-          updateGoAround={updateGoAround}
-          deleteGoAround={deleteGoAround}
-        />
-      ))}
+        {/* 1. The Grid Location (Green Star) */}
+        {targetLocation && (
+          <Marker position={targetLocation} icon={starIcon}>
+            <Popup>{mapData.mgrs}</Popup>
+          </Marker>
+        )}
 
-      {pzMarkers.map((pz) => (
-        <PZMarker
-          key={`${activeDiagramId ?? "lz"}-pz-${pz.id}`}
-          data={pz}
-          updatePZMarker={updatePZMarker}
-          deletePZMarker={deletePZMarker}
-        />
-      ))}
+        {/* 2. The Auto-Detected Field (Blue Outline) */}
+        {showLZOutline && detectedLZ && (
+          <Polygon
+            pathOptions={{
+              color: "#0056b3", 
+              weight: 3, 
+              fillColor: "#0056b3", 
+              fillOpacity: 0.1,
+              dashArray: "5, 5",
+            }}
+            positions={detectedLZ}
+          />
+        )}
 
-      {units &&
-        units.map((unit) => (
-          <UnitMarker
-            key={`${activeDiagramId ?? "lz"}-unit-${unit.id}`}
-            data={unit}
-            updateUnitPosition={updateUnitPosition}
-            deleteUnit={deleteUnit}
-            onEdit={onEditUnit}
+        {detectedLZ && (
+          <LZDimensions
+            key={`lz-dimensions-${activeDiagramId ?? "none"}`}
+            detectedLZ={detectedLZ}
+          />
+        )}
+
+        <SlopeLayer terrainData={terrainData} shown={showHeatmap} />
+
+        {doghouses.map((dh) => (
+          <Doghouse
+            key={`${activeDiagramId ?? "lz"}-doghouse-${dh.id}`}
+            data={dh}
+            updateDoghouse={updateDoghouse}
           />
         ))}
 
-      {assets.map((asset, index) => (
-        <Helicopter
-          key={`${activeDiagramId ?? "lz"}-helo-${asset.id}`}
-          asset={asset}
-          allAssets={assets}
-          updateAsset={updateAsset}
-          deleteAsset={deleteAsset}
-          profiles={aircraftProfiles}
-          activeProfile={activeAircraftProfile}
-        />
-      ))}
+        {goArounds.map((ga) => (
+          <GoAroundMarker
+            key={`${activeDiagramId ?? "lz"}-go-around-${ga.id}`}
+            data={ga}
+            updateGoAround={updateGoAround}
+            deleteGoAround={deleteGoAround}
+          />
+        ))}
 
-      {sectors.map((sector) => (
-        <SectorMarker
-          key={`${activeDiagramId ?? "lz"}-sector-${sector.id}`}
-          data={sector}
-          updateSectorPoint={updateSectorPoint}
-          moveSector={moveSector}
-          deleteSector={deleteSector}
-        />
-      ))}
+        {pzMarkers.map((pz) => (
+          <PZMarker
+            key={`${activeDiagramId ?? "lz"}-pz-${pz.id}`}
+            data={pz}
+            updatePZMarker={updatePZMarker}
+            deletePZMarker={deletePZMarker}
+          />
+        ))}
 
-      {/* EXPORT BOXES */}
-      {!isExporting && exportBox && (
-        <ExportBox
-          id="red"
-          bounds={exportBox}
-          color="red"
-          aspectRatio={663 / 555} // Freeform or fixed, up to you
-          onUpdate={updateExportBox}
-          onDelete={() => {
-            setExportBox(null); // Removes the box from the map
-            setIsExporting(false); // Kills the UI progress bar overlay
-            setExportProgress(0); // Resets progress
-          }}
-        />
-      )}
+        {units &&
+          units.map((unit) => (
+            <UnitMarker
+              key={`${activeDiagramId ?? "lz"}-unit-${unit.id}`}
+              data={unit}
+              updateUnitPosition={updateUnitPosition}
+              deleteUnit={deleteUnit}
+              onEdit={onEditUnit}
+            />
+          ))}
+
+        {assets.map((asset, index) => (
+          <Helicopter
+            key={`${activeDiagramId ?? "lz"}-helo-${asset.id}`}
+            asset={asset}
+            allAssets={assets}
+            updateAsset={updateAsset}
+            deleteAsset={deleteAsset}
+            profiles={aircraftProfiles}
+            activeProfile={activeAircraftProfile}
+          />
+        ))}
+
+        {sectors.map((sector) => (
+          <SectorMarker
+            key={`${activeDiagramId ?? "lz"}-sector-${sector.id}`}
+            data={sector}
+            updateSectorPoint={updateSectorPoint}
+            moveSector={moveSector}
+            deleteSector={deleteSector}
+          />
+        ))}
+
+        {/* EXPORT BOXES */}
+        {!isExporting && exportBox && (
+          <ExportBox
+            id="red"
+            bounds={exportBox}
+            color="red"
+            aspectRatio={663 / 555} // Freeform or fixed, up to you
+            onUpdate={updateExportBox}
+            onDelete={() => {
+              setExportBox(null); // Removes the box from the map
+              setIsExporting(false); // Kills the UI progress bar overlay
+              setExportProgress(0); // Resets progress
+            }}
+          />
+        )}
+      </>)}
 
       {/* Export Logic */}
       <ExportHandler

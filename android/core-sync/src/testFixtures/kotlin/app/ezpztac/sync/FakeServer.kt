@@ -88,6 +88,8 @@ public class FakeServer : SyncApi {
         RecordKind.MISSION -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "kind" to JsonPrimitive("mission"),
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data,
             "has_file" to JsonPrimitive(r.file != null), "file_name" to JsonPrimitive(r.fileName)))
+        RecordKind.BRIEF -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
+            "revision" to JsonPrimitive(r.revision), "data" to r.data, "updated_at" to JsonPrimitive(updatedAt(r.seq))))
     }
 
     private fun conflict(r: Rec) = RevisionConflictException("The record changed on the server. Nothing was overwritten.", snapshot(r))
@@ -134,11 +136,15 @@ public class FakeServer : SyncApi {
         failAll?.let { throw it }
         val ours = records.filter { it.seq > since }.map {
             SyncChange(
-                type = when (it.kind) { RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE, RecordKind.MISSION -> "route"; RecordKind.POINT_SET -> "pointset" },
+                type = when (it.kind) {
+                    RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE, RecordKind.MISSION -> "route"; RecordKind.POINT_SET -> "pointset"
+                    RecordKind.BRIEF -> "brief"
+                },
                 id = it.serverId, clientUuid = it.uuid, revision = it.revision, deleted = it.deleted, name = it.name,
                 kind = when (it.kind) { RecordKind.ROUTE -> "sketch"; RecordKind.MISSION -> "mission"; else -> null },
                 fileName = it.fileName, hasFile = it.file != null,
-                // The feed carries an LZ's diagram and a route's routes as they are, a profile as the whole record, and a point set's points as a bare list.
+                // The feed carries an LZ's diagram, a route's routes and a brief's document as they are, a profile as the whole record, and a point set's
+                // points as a bare list.
                 seq = it.seq, data = feedData(it), updatedAt = updatedAt(it.seq),
             )
         }

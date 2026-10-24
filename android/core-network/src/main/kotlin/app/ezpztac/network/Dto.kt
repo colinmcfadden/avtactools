@@ -202,6 +202,29 @@ public data class PointSetFull(
     val points: JsonArray,
 )
 
+/** A saved mission brief without its document (docs/MISSION_BRIEF.md §3): the Library's record of a brief made outside a pack. */
+@Serializable
+public data class BriefSummary(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class BriefFull(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** The brief document (docs/MISSION_BRIEF.md §2.2). Opaque here; `core-brief` reads it. */
+    val data: JsonObject,
+)
+
 /** An airframe profile: the admin's master list, or one of the caller's own. */
 @Serializable
 public data class AircraftProfileDto(
