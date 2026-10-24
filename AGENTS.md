@@ -503,7 +503,9 @@ python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield
   `backend.yaml` installs only the packages those files import, named in its Install
   step and pinned from `requirements.txt`: a new import in code they reach goes on that
   list too, or CI fails with `ModuleNotFoundError` while every local run passes (OpenCV
-  once, contourpy for the slope contours since). To check, run the list in a clean venv.
+  once, contourpy for the slope contours since). `android.yaml` has a list of its own, for the Python the live test
+  server (`backend/tests/live_server.py`) runs under, and code that server imports needs it there too (pyproj, for the
+  3D view's LiDAR routes, was once on one list only). To check, run the list in a clean venv.
 - **On a Windows checkout** (`core.autocrlf=true`), a text file compared byte for
   byte needs an `eol=lf` rule in `.gitattributes`, or the checkout's CRLF fails
   the comparison while CI passes. And Windows and Linux maths libraries can differ
