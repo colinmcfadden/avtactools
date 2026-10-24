@@ -14,6 +14,7 @@ block
 calendar_month
 cancel
 check
+chevron_left
 chevron_right
 close
 cloud_done
@@ -44,6 +45,7 @@ flag
 flight
 flight_land
 folder
+format_list_numbered
 group
 group_add
 groups
@@ -74,6 +76,7 @@ person_add
 person_remove
 person_search
 pin_drop
+play_arrow
 refresh
 replay
 right_panel_open

@@ -49,7 +49,7 @@ class BriefSetupTest {
     private val changes = mutableListOf<(JsonObject) -> JsonObject>()
     private val actions = BriefActions(
         close = { log += "close" }, show = { log += "show $it" }, next = { log += "next" }, edit = { changes += it }, refreshWeather = { log += "weather" },
-        makePdf = { log += "make" }, share = { log += "share" }, save = { log += "save" },
+        makePdf = { log += "make" }, share = { log += "share" }, save = { log += "save" }, present = { log += "present" },
     )
 
     private fun set(state: BriefUi) = compose.setContent { EzpzTheme(ThemeMode.Dark) { BriefSetupContent(state, actions, Modifier.fillMaxSize()) } }
@@ -196,6 +196,48 @@ class BriefSetupTest {
         compose.onNodeWithText("Nav logs").performScrollTo().assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/screenshots/brief-review-narrow.png")
     }
+
+    @Test
+    fun `the brief is presented on the sandtable from any step, without its PDF`() {
+        var state by mutableStateOf(ui(SetupStep.FLOW))
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { BriefSetupContent(state, actions, Modifier.fillMaxSize()) } }
+        compose.onNodeWithText(SandtableWords.PRESENT).performClick()
+        state = ui(SetupStep.DETAILS)
+        compose.onNodeWithText(SandtableWords.PRESENT).performClick()
+        state = ui(SetupStep.REVIEW)
+        compose.onNodeWithText(SandtableWords.PRESENT).performClick()
+        assertEquals(listOf("present", "present", "present"), log)
+        // Opening at the first step asked for no PDF.
+        assertFalse("make" in log)
+    }
+
+    /** The foot's buttons in the real dialog (24 dp from the window's edges) at 840 dp: each whole, its words not cut, inside the window. */
+    private fun footFitsAt(name: String) {
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { BriefSetupContent(ui(SetupStep.REVIEW, pdf = PdfUi(made = MadePdf(FakePdf(3), byteArrayOf(1), BriefFixtures.model, "OP DK brief.pdf"))), actions, Modifier.briefDialog()) } }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/screenshots/brief-review-foot-$name.png")
+        val window = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        listOf(SandtableWords.PRESENT, "Save to device", "Share PDF").forEach { label ->
+            val text = compose.onNodeWithText(label, useUnmergedTree = true).fetchSemanticsNode()
+            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            text.config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action!!.invoke(layouts)
+            // Cut is an ellipsis on its line (`hasVisualOverflow` also counts a fraction of a pixel of a whole word).
+            val r = layouts.single()
+            assertTrue("$label is cut at $name", (0 until r.lineCount).none(r::isLineEllipsized))
+            assertTrue("$label leaves the window at $name: ${text.boundsInRoot}", text.boundsInRoot.right <= window.right + 0.5f && text.boundsInRoot.left >= window.left - 0.5f)
+        }
+        // The note keeps its room too, rather than a letter a line beside the buttons.
+        val note = compose.onNodeWithText("Kept with OP DK for everyone in it.", useUnmergedTree = true).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue("the note is squeezed at $name: $note", note.width >= 200f)
+    }
+
+    @Test
+    @Config(qualifiers = "w840dp-h640dp-mdpi", fontScale = 1.5f)
+    fun `at 840 dp and text half as large again the foot keeps every button whole`() = footFitsAt("150")
+
+    @Test
+    @Config(qualifiers = "w840dp-h640dp-mdpi", fontScale = 2.0f)
+    fun `at 840 dp and text twice as large the foot keeps every button whole`() = footFitsAt("200")
 
     @Test
     fun `the weather at the planned times can be asked for again where it is briefed`() {
