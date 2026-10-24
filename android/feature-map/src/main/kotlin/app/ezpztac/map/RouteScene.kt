@@ -12,8 +12,29 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-/** A point on a route as the map shows it: a named AMPS point is a dot in the route's colour, a shaping point only bends the line. */
-data class RoutePin(val id: String?, val at: LatLon, val name: String, val amps: Boolean, val selected: Boolean)
+/**
+ * What a named route point is drawn as, by its AMPS type, as the web draws it (`MsnxRouteLayer`'s `createIcon`): an IP point (the SP, the RP or an IP) a
+ * square, a target a triangle, and a turn point (a checkpoint), or a type this version does not know, a circle. A shaping point is a small dot ([RouteScene]).
+ */
+enum class PinShape(val key: String) {
+    CIRCLE("circle"),
+    SQUARE("square"),
+    TRIANGLE("triangle");
+
+    companion object {
+        fun of(ptType: String?): PinShape = when (ptType) {
+            "ip" -> SQUARE
+            "target" -> TRIANGLE
+            else -> CIRCLE
+        }
+    }
+}
+
+/**
+ * A point on a route as the map shows it: a named AMPS point is a [shape] in the route's colour (the owner's rule of 2026-10-21: an RP a square, a target a
+ * triangle, a checkpoint a circle), a shaping point only bends the line.
+ */
+data class RoutePin(val id: String?, val at: LatLon, val name: String, val amps: Boolean, val selected: Boolean, val shape: PinShape = PinShape.CIRCLE)
 
 /** One route as drawn: its line through every point in flight order, and its points. */
 data class RouteLine(val id: String, val name: String, val color: String, val line: List<LatLon>, val pins: List<RoutePin>, val selected: Boolean)
@@ -48,7 +69,14 @@ data class RouteScene(
                 r.pins.filter { !it.amps }.forEach { add(feature("shape", point(it.at), "color" to JsonPrimitive(r.color), "selected" to JsonPrimitive(it.selected))) }
             }
             routes.forEach { r ->
-                r.pins.filter { it.amps }.forEach { add(feature("pin", point(it.at), "color" to JsonPrimitive(r.color), "selected" to JsonPrimitive(it.selected))) }
+                r.pins.filter { it.amps }.forEach {
+                    add(
+                        feature(
+                            "pin", point(it.at), "color" to JsonPrimitive(r.color), "selected" to JsonPrimitive(it.selected), "shape" to JsonPrimitive(it.shape.key),
+                            "icon" to JsonPrimitive(pinImage(it.shape, r.color, it.selected)),
+                        ),
+                    )
+                }
             }
             if (draft.size >= 2) add(feature("draft", line(draft)))
             draft.forEach { add(feature("draft-vertex", point(it))) }
@@ -78,6 +106,13 @@ data class RouteScene(
         val EMPTY = RouteScene()
 
         /**
+         * The name a named point's picture is given to the map under: one for each shape, colour and whether it is held ([RoutePinImages] draws it). The colour is
+         * kept to letters and digits, so whatever a route's colour is written as names one picture.
+         */
+        fun pinImage(shape: PinShape, color: String, held: Boolean): String =
+            "route-pin-${shape.key}-${if (held) "held" else "plain"}-${color.lowercase().replace(Regex("[^0-9a-z]"), "_")}"
+
+        /**
          * The scene of [set] (nothing for none): its visible routes, with [selectedRouteId] heavier and [selectedPointId] (a point of that route)
          * marked, and [draft] the points of a route being drawn.
          */
@@ -90,7 +125,10 @@ data class RouteScene(
                     id = route.id, name = route.name, color = route.color, selected = chosen,
                     line = placed.map { LatLon(it.lat, it.lon) },
                     pins = placed.map { p ->
-                        RoutePin(p.id, LatLon(p.lat, p.lon), p.name.orEmpty(), amps = p.kind == RoutePoint.KIND_AMPS, selected = chosen && p.id != null && p.id == selectedPointId)
+                        RoutePin(
+                            p.id, LatLon(p.lat, p.lon), p.name.orEmpty(), amps = p.kind == RoutePoint.KIND_AMPS, selected = chosen && p.id != null && p.id == selectedPointId,
+                            shape = PinShape.of(p.ptType),
+                        )
                     },
                 )
             }

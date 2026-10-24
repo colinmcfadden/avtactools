@@ -92,7 +92,8 @@ internal object JsValue {
         return if (negative) -magnitude else magnitude
     }
 
-    private val FLOAT_PREFIX = Regex("""[+-]?(?:Infinity|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)""")
+    // ASCII digits spelt out, as JavaScript's \d is: Android's regular expressions (ICU) take every script's digits for \d.
+    private val FLOAT_PREFIX = Regex("""[+-]?(?:Infinity|(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)""")
 
     /**
      * `parseFloat(text)`: skips leading white space and reads the longest decimal number at the start ("3.13km" is 3.13, "1e" is 1, ".5" is

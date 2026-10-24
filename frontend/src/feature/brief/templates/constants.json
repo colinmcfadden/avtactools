@@ -1,0 +1,18 @@
+{
+  "format": "ezpz-brief-constants",
+  "version": 1,
+  "constants": [
+    { "id": "enrouteAirspeed", "label": "Enroute airspeed", "short": "ENROUTE", "unit": "KIAS", "bind": "routes.enrouteAirspeed", "offered": true },
+    { "id": "terrainFlightAirspeed", "label": "Terrain flight airspeed", "short": "TERRAIN FLT", "unit": "KIAS", "offered": true },
+    { "id": "rpInboundAirspeed", "label": "RP inbound airspeed", "short": "RP IN", "unit": "KIAS", "bind": "routes.rpInboundAirspeed", "offered": true },
+    { "id": "spOutboundAirspeed", "label": "SP outbound airspeed", "short": "SP OUT", "unit": "KIAS", "standard": "spOutboundAirspeed", "offered": true },
+    { "id": "goAround", "label": "Go-around direction", "short": "GO-AROUND", "bind": "stops.goAround", "offered": true },
+    { "id": "enrouteFormation", "label": "Enroute formation", "short": "FORMATION", "offered": true },
+    { "id": "iimcBaseAltitude", "label": "IIMC base altitude", "short": "IIMC ALT", "offered": false },
+    { "id": "altimeter", "label": "Altimeter", "short": "ALTIMETER", "bind": "weather.altimeter", "offered": false },
+    { "id": "bingoFuel", "label": "Bingo fuel", "short": "BINGO", "unit": "lb", "offered": false },
+    { "id": "lighting", "label": "Lighting", "short": "LIGHTING", "offered": false },
+    { "id": "separationDay", "label": "Rotor disk separation, day", "short": "SEP DAY", "standard": "separationDayDisks", "offered": false },
+    { "id": "separationNight", "label": "Rotor disk separation, night", "short": "SEP NIGHT", "standard": "separationNightDisks", "offered": false }
+  ]
+}

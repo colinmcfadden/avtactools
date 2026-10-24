@@ -53,14 +53,14 @@ jobs:
 
       # The pinned versions from requirements.txt, for just what these tests import. (GET /api/config reads the
       # Mapbox token from export_service, which pulls in rasterio, numpy and mercantile; the recorded terrain and
-      # threat responses need OpenCV, headless, and a slope analysis's contour lines contourpy. Not torch, which the
-      # SAM, terrain and LiDAR tests need and these do not.) The live service's websockets and the Postgres driver
-      # for the live chain come from their own pins.
+      # threat responses need OpenCV, headless, and a slope analysis's contour lines contourpy; the 3D view's LiDAR
+      # routes pyproj. Not torch, which the SAM, terrain and LiDAR tests need and these do not.) The live service's
+      # websockets and the Postgres driver for the live chain come from their own pins.
       - name: Install
         run: |
           { for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
                      python-dotenv PyYAML openpyxl pillow pygeodesy rasterio numpy mercantile affine \
-                     opencv-python-headless contourpy psycopg2-binary; do
+                     opencv-python-headless contourpy pyproj psycopg2-binary; do
               grep -i "^$p==" backend/requirements.txt
             done
             grep -i "^websockets==" backend/realtime/requirements.txt
@@ -73,7 +73,7 @@ jobs:
         run: >
           python -m pytest -q -p no:cacheprovider
           tests/test_network_fixtures.py tests/test_contract_fixtures.py tests/test_openapi_contract.py
-          tests/test_sync.py tests/test_aircraft_sync.py tests/test_native_sessions.py
+          tests/test_sync.py tests/test_aircraft_sync.py tests/test_briefs.py tests/test_brief_pdf.py tests/test_native_sessions.py
           tests/test_schema_sync.py tests/test_app_config.py tests/test_client_header.py tests/test_auth.py
-          tests/test_affiliation_gate.py tests/test_terrain_provider.py
+          tests/test_affiliation_gate.py tests/test_terrain_provider.py tests/test_weather_at.py
           tests/test_packs.py tests/test_pack_ops.py tests/test_realtime.py tests/test_realtime_live.py

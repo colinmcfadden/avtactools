@@ -110,6 +110,34 @@ describe("the slope map", () => {
     expect(classes(CONTOUR_PANE, "line")).toHaveLength(1);
   });
 
+  it("draws the raster at 0.55 when nobody says otherwise", () => {
+    attachSlope(map, ANALYSIS);
+    expect(images()[0].style.opacity).toBe("0.55");
+  });
+
+  it("draws the raster at its opacity, and sets a new one on the raster drawn, with nothing drawn again", () => {
+    const { rerender } = render(<SlopeLayer terrainData={ANALYSIS} shown opacity={0.3} />);
+    const [img] = images();
+    const contours = paths(CONTOUR_PANE);
+    expect(img.style.opacity).toBe("0.3");
+    rerender(<SlopeLayer terrainData={ANALYSIS} shown opacity={0.8} />);
+    expect(images()).toHaveLength(1);
+    expect(images()[0]).toBe(img);
+    expect(img.style.opacity).toBe("0.8");
+    expect(paths(CONTOUR_PANE)).toHaveLength(contours.length);
+    paths(CONTOUR_PANE).forEach((p, i) => expect(p).toBe(contours[i]));               // the very same lines: the contours keep theirs
+  });
+
+  it("draws a slope shown again, or for a new analysis, at the opacity it has now", () => {
+    const { rerender } = render(<SlopeLayer terrainData={ANALYSIS} shown={false} opacity={0.3} />);
+    expect(images()).toHaveLength(0);
+    rerender(<SlopeLayer terrainData={ANALYSIS} shown opacity={0.9} />);
+    expect(images()[0].style.opacity).toBe("0.9");
+    rerender(<SlopeLayer terrainData={{ ...ANALYSIS }} shown opacity={0.2} />);
+    expect(images()).toHaveLength(1);
+    expect(images()[0].style.opacity).toBe("0.2");
+  });
+
   it("is taken away when hidden, and drawn for the analysis it has now", () => {
     const { rerender } = render(<SlopeLayer terrainData={ANALYSIS} shown />);
     expect(classes(CONTOUR_PANE, "line")).toHaveLength(4);

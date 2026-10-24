@@ -5,6 +5,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -21,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performImeAction
 import androidx.test.core.app.ApplicationProvider
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
@@ -68,6 +71,7 @@ class GraphicsScreenTest {
             setDoghouseTime = { log += "time [$it]"; problem(it) },
             setDoghouseDistance = { log += "distance [$it]"; problem(it) },
             setDoghouseAirspeed = { log += "airspeed [$it]"; problem(it) },
+            setAircraftName = { log += "name [$it]"; problem(it) },
             delete = { log += "delete" },
             undo = { log += "undo" },
             redo = { log += "redo" },
@@ -288,6 +292,49 @@ class GraphicsScreenTest {
 
         field.performTextInput("270")                                                      // typing again clears the complaint
         compose.onNodeWithText("Enter degrees, such as 270.").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a helicopter's name is set from the inspector, a refusal said under the field, and one it has can be removed`() {
+        val r = show(aircraftHeld().let { it.copy(inspector = it.inspector!!.copy(name = "")) })
+        compose.onNodeWithText("Remove name").assertDoesNotExist()                          // nothing to remove
+        val field = compose.onNode(hasSetTextAction() and hasText("Name · none"))
+        field.performScrollTo().performTextInput("bad")
+        tap("Set name")
+        compose.onNodeWithText("That is not one of those.").assertIsDisplayed()
+        field.performTextInput("CHALK 1")
+        tap("Set name")
+        assertEquals(listOf("name [bad]", "name [badCHALK 1]"), r.log)
+    }
+
+    @Test
+    fun `a helicopter's name it has is said on its field, and can be removed`() {
+        val r = show(aircraftHeld().let { it.copy(inspector = it.inspector!!.copy(name = "CHALK 1")) })
+        compose.onNode(hasSetTextAction() and hasText("Name · CHALK 1")).assertExists()
+        tap("Remove name")
+        assertEquals(listOf("name []"), r.log)
+    }
+
+    @Test
+    fun `what was typed for one helicopter's name is not kept for the next held, and Go with nothing typed sets nothing`() {
+        val r = Recorder()
+        var state by mutableStateOf(aircraftHeld().let { it.copy(inspector = it.inspector!!.copy(name = "")) })
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { GraphicsContent(state, "16S GD 66993 52949", r.actions) } }
+        }
+        compose.onNode(hasSetTextAction() and hasText("Name · none")).performScrollTo().performTextInput("CHALK 1")   // typed, never set
+        state = state.copy(inspector = state.inspector!!.copy(ref = GraphicRef("helicopters", "2"), title = "Helicopter · UH-60L"))
+        compose.waitForIdle()
+        val field = compose.onNode(hasSetTextAction() and hasText("Name · none"))
+        field.assertTextEqualsEmpty()
+        field.performImeAction()
+        assertEquals(emptyList<String>(), r.log)
+    }
+
+    @Test
+    fun `only a helicopter is offered a name`() {
+        show(editable(inspector = held(pz, GraphicKind.PZ_MARKER, "PZ marker", rotation = 270.0, reachFt = 1_312)))
+        compose.onNodeWithText("Set name").assertDoesNotExist()
     }
 
     @Test
@@ -557,6 +604,20 @@ class LockedGraphicsTest {
         compose.onNodeWithText("Delete this helicopter").assertDoesNotExist()
         compose.onNodeWithContentDescription("Turn left 15 degrees").assertDoesNotExist()
         assertEquals("still listed, and held", 2, compose.onAllNodesWithText("Helicopter · UH-60L", useUnmergedTree = true).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `a helicopter of a finished pack says its name, with nothing to change it`() {
+        val ref = GraphicRef("helicopters", "1")
+        val state = GraphicsUiState(
+            listed = true, canEdit = false, locked = "OP DK is finished: nothing in it can be changed.",
+            rows = listOf(GraphicRowUi(ref, GraphicKind.HELICOPTER, "CHALK 1 · UH-60L", "16S GD 66993 52949", "heading 90°", warning = false, selected = true)),
+            inspector = InspectorUi(ref, GraphicKind.HELICOPTER, "CHALK 1 · UH-60L", "16S GD 66993 52949", "34.78382, -84.08219", 90.0, null, null, name = "CHALK 1"),
+        )
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { Box(Modifier.verticalScroll(rememberScrollState())) { GraphicsContent(state, "16S GD 66993 52949", GraphicsActions(), placeButtons = false) } } }
+        compose.onNodeWithText("Name CHALK 1").assertExists()
+        compose.onNodeWithText("Set name").assertDoesNotExist()
+        compose.onNodeWithText("Remove name").assertDoesNotExist()
     }
 }
 

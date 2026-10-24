@@ -319,6 +319,73 @@ class ApiClientCallsTest {
         }
     }
 
+    @Test
+    fun `the weather at a planned time is asked for with its instant, and comes back whole for the brief`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("weather: at a planned time, from the TAF") }
+            val report = rig.client.weatherAt(LatLon(34.0, -84.6), "2026-09-21T14:13:20.000-04:00")
+            val sent = rig.requests.single()
+            assertEquals("GET", sent.method)
+            assertEquals("/api/weather", sent.requestUrl!!.encodedPath)
+            assertEquals("34.0", sent.requestUrl!!.queryParameter("lat"))
+            assertEquals("-84.6", sent.requestUrl!!.queryParameter("lng"))
+            assertEquals("2026-09-21T14:13:20.000-04:00", sent.requestUrl!!.queryParameter("at"))
+            // Every field, the TAF's own included: the brief's compiler reads the body as the web passes it.
+            assertEquals(Recorded["weather: at a planned time, from the TAF"].body, report)
+            rig.serve { Recorded.mock("weather") }
+            rig.client.weatherAt(LatLon(34.0, -84.6), null)
+            assertNull(rig.requests.last().requestUrl!!.queryParameter("at"))
+        }
+    }
+
+    // -- The brief's PDF --------------------------------------------------------------
+
+    @Test
+    fun `a brief is printed from its model, and the PDF comes back byte for byte`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            // Bytes that are not text, as a PDF's are.
+            val pdf = byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0xe2.toByte(), 0xe3.toByte(), 0xcf.toByte(), 0xd3.toByte(), 0x00, 0xff.toByte())
+            rig.serve { MockResponse().setResponseCode(200).setHeader("Content-Type", "application/pdf").setBody(Buffer().write(pdf)) }
+            val model = buildJsonObject { put("format", "ezpz-brief-model"); put("version", 1) }
+            val bytes = rig.client.printBrief(model)
+            assertTrue(pdf.contentEquals(bytes))
+            val sent = rig.requests.single()
+            assertEquals("POST", sent.method)
+            assertEquals("/api/brief/pdf", sent.requestUrl!!.encodedPath)
+            assertEquals(buildJsonObject { put("model", model) }, ApiClient.JSON.parseToJsonElement(sent.body.readUtf8()))
+        }
+    }
+
+    @Test
+    fun `a brief that is not printed says why in the server's code`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            // Exactly what backend/routes/brief_routes.py answers.
+            val refusals = listOf(
+                Triple(503, "pdf_unavailable", """{"error": "The PDF is not available on this server.", "code": "pdf_unavailable"}"""),
+                Triple(502, "pdf_failed", """{"error": "The PDF could not be made. Try again in a moment.", "code": "pdf_failed"}"""),
+                Triple(400, "invalid_brief", """{"error": "a page names no step", "code": "invalid_brief"}"""),
+                Triple(413, "too_large", """{"error": "The brief is too large to print.", "code": "too_large"}"""),
+                Triple(403, "feature_disabled", """{"error": "This feature is not enabled for your account.", "code": "feature_disabled"}"""),
+            )
+            refusals.forEach { (status, code, body) ->
+                rig.serve { Rig.json(status, body) }
+                val e = assertThrows<ApiException> { rig.client.printBrief(JsonObject(emptyMap())) }
+                assertEquals(status, e.status)
+                assertEquals(code, e.code)
+            }
+        }
+    }
+
+    @Test
+    fun `printing a brief is heavy work, given the long time the server takes over it`() = runBlocking<Unit> {
+        assertTrue(PriorityPaths.isHeavy("/api/brief/pdf"))
+        Rig(readTimeoutSeconds = 1).use { rig ->
+            rig.serve { MockResponse().setResponseCode(200).setBody("%PDF").setBodyDelay(2, TimeUnit.SECONDS) }
+            assertEquals("%PDF", String(rig.client.printBrief(JsonObject(emptyMap())), Charsets.UTF_8))       // two seconds is fine for a print
+            assertFalse(rig.priority.isBusy)
+        }
+    }
+
     // -- Saved point sets -------------------------------------------------------------
 
     private val points = kotlinx.serialization.json.JsonArray(listOf(buildJsonObject { put("id", "lps-0-ab12cd"); put("name", "BLUE 1"); put("lat", 34.5123); put("lon", -84.2231) }))
@@ -389,6 +456,81 @@ class ApiClientCallsTest {
             assertEquals("DELETE", sent.method)
             assertEquals("\"2\"", sent.getHeader("If-Match"))
             assertEquals("key-s3", sent.getHeader("Idempotency-Key"))
+        }
+    }
+
+    // -- Saved mission briefs ----------------------------------------------------------
+
+    private val brief = buildJsonObject { put("version", 1); put("template", buildJsonObject { put("id", "amb"); put("version", 1) }) }
+
+    @Test
+    fun `saving a brief is a JSON body with its document and identity, and says whether it was new`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("brief: create") }
+            val first = rig.client.createBrief("OP DK BRIEF", brief, uuid, idempotencyKey = "key-b1")
+            assertTrue(first.created)
+            assertEquals(1, first.value.revision)
+            val sent = rig.requests.single()
+            assertEquals("POST", sent.method)
+            assertEquals("/api/briefs", sent.requestUrl!!.encodedPath)
+            assertEquals("key-b1", sent.getHeader("Idempotency-Key"))
+            val body = ApiClient.JSON.parseToJsonElement(sent.body.readUtf8()) as JsonObject
+            assertEquals(setOf("name", "data", "client_uuid"), body.keys)
+            assertEquals(brief, body["data"])
+
+            rig.serve { Recorded.mock("brief: create again with the same identity") }
+            assertFalse(rig.client.createBrief("OP DK BRIEF", brief, uuid).created)           // a repeat of a lost response: 200
+        }
+    }
+
+    @Test
+    fun `an edit of a brief says which revision it was made on, and sends only what changed`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("brief: update") }
+            val updated = rig.client.updateBrief(1, baseRevision = 1, name = "OP DK AMB", idempotencyKey = "key-b2")
+            assertEquals(2, updated.revision)
+            val sent = rig.requests.single()
+            assertEquals("PUT", sent.method)
+            assertEquals("/api/briefs/1", sent.requestUrl!!.encodedPath)
+            assertEquals("\"1\"", sent.getHeader("If-Match"))
+            assertEquals(setOf("name"), (ApiClient.JSON.parseToJsonElement(sent.body.readUtf8()) as JsonObject).keys)
+
+            rig.serve { Recorded.mock("brief: update") }
+            rig.client.updateBrief(1, baseRevision = null, data = brief)
+            val second = rig.requests.last()
+            assertNull(second.getHeader("If-Match"))
+            assertEquals(setOf("data"), (ApiClient.JSON.parseToJsonElement(second.body.readUtf8()) as JsonObject).keys)
+        }
+    }
+
+    @Test
+    fun `a conflict on a brief carries the server's copy, document and all`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("brief: update on a stale revision") }
+            val e = assertThrows<RevisionConflictException> { rig.client.updateBrief(1, baseRevision = 1, name = "mine") }
+            val server = ApiClient.JSON.decodeFromJsonElement(BriefFull.serializer(), e.server)
+            assertEquals("OP DK AMB", server.name)
+            assertEquals(2, server.revision)
+            assertEquals(JsonPrimitive("amb"), (server.data["template"] as JsonObject)["id"])
+        }
+    }
+
+    @Test
+    fun `listing, reading and deleting a brief, and an account without mission briefs is refused`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("brief: list") }
+            assertEquals("OP DK BRIEF", rig.client.listBriefs().single().name)
+            rig.serve { Recorded.mock("brief: get") }
+            assertEquals(JsonPrimitive(1), rig.client.getBrief(1).data["version"])
+            rig.serve { Recorded.mock("brief: delete") }
+            rig.client.deleteBrief(1, baseRevision = 2, idempotencyKey = "key-b3")
+            val sent = rig.requests.last()
+            assertEquals("DELETE", sent.method)
+            assertEquals("/api/briefs/1", sent.requestUrl!!.encodedPath)
+            assertEquals("\"2\"", sent.getHeader("If-Match"))
+            assertEquals("key-b3", sent.getHeader("Idempotency-Key"))
+            rig.serve { Recorded.mock("briefs: an account without mission brief") }
+            assertEquals(403, assertThrows<ApiException> { rig.client.listBriefs() }.status)
         }
     }
 

@@ -12,7 +12,11 @@ import okhttp3.mockwebserver.MockResponse
 
 /** The server's own responses, recorded by `backend/tests/test_network_fixtures.py`, for the tests to decode and replay. */
 internal object Recorded {
-    class Entry(val name: String, val method: String, val path: String, val status: Int, val headers: Map<String, String>, val body: JsonElement?)
+    class Entry(
+        val name: String, val method: String, val path: String, val status: Int, val headers: Map<String, String>, val body: JsonElement?,
+        /** A binary body (a heightmap, a tile), when it was short enough to be kept whole. */
+        val bytes: ByteArray? = null,
+    )
 
     val all: List<Entry> by lazy {
         Fixtures.load("network/responses.json").getValue("responses").jsonArray.map { e ->
@@ -24,6 +28,7 @@ internal object Recorded {
                 status = o.getValue("status").jsonPrimitive.content.toInt(),
                 headers = (o["headers"] as? JsonObject)?.mapValues { it.value.jsonPrimitive.content }.orEmpty(),
                 body = o["body"],
+                bytes = (o["base64"] as? JsonPrimitive)?.content?.let { java.util.Base64.getDecoder().decode(it) },
             )
         }
     }
@@ -40,6 +45,12 @@ internal object Recorded {
     /** A mock server response replaying the recorded one: its status, the headers it kept and its body. */
     fun mock(name: String, values: Map<String, String> = emptyMap()): MockResponse {
         val entry = this[name]
+        if (entry.status == 204) return MockResponse().setResponseCode(204).also { r -> entry.headers.forEach { (k, v) -> r.setHeader(k, v) } }
+        entry.bytes?.let { bytes ->
+            val response = MockResponse().setResponseCode(entry.status).setBody(okio.Buffer().write(bytes)).setHeader("Content-Type", "application/octet-stream")
+            entry.headers.forEach { (k, v) -> response.setHeader(k, v) }
+            return response
+        }
         val response = MockResponse().setResponseCode(entry.status).setBody(text(name, values))
         entry.headers.forEach { (k, v) -> response.setHeader(k, v) }
         if (entry.body != null) response.setHeader("Content-Type", "application/json")

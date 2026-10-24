@@ -153,8 +153,8 @@ const deleteItem = (item) => ({ type: "item.delete", item });
 const NEW_LZ = (id, name) => ({ schemaVersion: 2, id, name, status: "targeted" });
 
 const ITEM_TYPES = new Set(["item.create", "item.delete", "item.rename", "item.replace", "set", "patch", "upsert", "insert", "remove"]);
-const KIND_WORDS = { lz: "LZ", route: "routes", pointset: "points" };
-const NAMES = { "lz-1": "LZ HAWK", "ps-1": "LOCAL" };
+const KIND_WORDS = { lz: "LZ", route: "routes", pointset: "points", brief: "brief" };
+const NAMES = { "lz-1": "LZ HAWK", "ps-1": "LOCAL", "br-1": "OP DK BRIEF" };
 const roleWords = (role) => (role === "editor" ? "an editor" : "a viewer");
 
 // The History panel's sentence, as backend/routes/pack_routes.py writes it. The session never reads it.
@@ -1190,6 +1190,64 @@ const TEAM_KEYS = ["id", "name", "member_count", "role"];
 const COUNT_KEYS = ["lz", "route", "pointset"];
 const LAST_CHANGE_KEYS = ["actor", "summary", "created_at"];
 const sorted = (keys) => [...keys].sort();
+
+// -- Briefs (docs/MISSION_BRIEF.md §3) ------------------------------------------------------------------------------
+// A brief item is open to every member in every state of the pack; its edits go in batches of their own. Apart from
+// session.json so a port that has not reached briefs yet is still held to every case there.
+
+const BRIEF_DATA = { version: 1, template: { id: "amb", version: 1 }, answers: {} };
+const BRIEF_ITEM = packItem("br-1", "brief", "OP DK BRIEF", BRIEF_DATA, { seq: 3 });
+const setAnswer = (key, value, item = "br-1") => ({ type: "set", item, path: ["answers", key], value: { value } });
+const WITH_BRIEF = (rest = {}) => packBody({ items: [LZ_ITEM, BRIEF_ITEM], ...rest });
+
+const BRIEF_SCENARIOS = [
+  { name: "a finished pack takes a brief edit and refuses any other as read_only", me: SAM.id, pack: WITH_BRIEF(FINISHED),
+    steps: [S.edit(setAnswer("2.b", "500-1 day")), S.edit(setHeading(90)), S.edit([setAnswer("2.d", "11:15"), setHeading(90)]), S.nextBatch()] },
+  { name: "a viewer makes a brief and edits it", me: SAM.id, pack: packBody({ role: "viewer", members: [member(COLIN, "owner"), member(SAM, "viewer")] }),
+    steps: [S.edit([create("br-2", "brief", "OP DK HASTY", { version: 1, template: { id: "hasty", version: 1 } }), setAnswer("8.a", "12:45", "br-2")]),
+      S.nextBatch()] },
+  { name: "brief edits go in batches of their own, each run in the order made", me: SAM.id, pack: WITH_BRIEF(),
+    steps: [S.edit(setHeading(90)), S.edit(setAnswer("2.b", "500-1 day")), S.edit(setCallSign("HAWK 7")), S.nextBatch(),
+      S.batchAnswered(answered(ours(4, setHeading(90), "op-1"))), S.nextBatch(),
+      S.batchAnswered(answered(ours(5, setAnswer("2.b", "500-1 day"), "op-2"))), S.nextBatch()] },
+  { name: "a pack finished while brief and other edits wait keeps the brief edits and drops the rest", me: SAM.id, pack: WITH_BRIEF(),
+    steps: [S.edit(setHeading(90)), S.edit(setAnswer("2.b", "500-1 day")), S.receive(server(4, FINISH)), S.nextBatch()] },
+  { name: "a batch refused with 423 is dropped, and a brief edit queued behind it stays to be sent", me: SAM.id, pack: WITH_BRIEF(),
+    steps: [S.edit(setHeading(90)), S.nextBatch(), S.edit(setAnswer("2.b", "500-1 day")), S.batchFailed(FINISHED_423), S.nextBatch()] },
+];
+
+const briefFixture = () => withoutClockOrRandomness(() => ({
+  description: "packs/session.json's format and rules (read its description), for the brief item kind (docs/MISSION_BRIEF.md §3): "
+    + "an edit whose every operation is on a brief (an item this session knows as one, or one an item.create earlier in the same "
+    + "edit makes) is taken in a read-only pack, where any other is refused as read_only; nextBatch sends the longest run of queued "
+    + "edits, from the oldest, that are all on briefs or all on anything else (MAX_BATCH at most), so the two never share a batch; "
+    + "and a pack that turns read-only (an event, 423 or 403 pack_read_only) drops what waits as it always has, except brief "
+    + "edits still queued, which stay to be sent. A port that has not reached briefs is held to session.json alone.",
+  generatedBy: GENERATED_BY,
+  max_batch: MAX_BATCH,
+  scenarios: BRIEF_SCENARIOS.map((scenario) => ({ name: scenario.name, me: scenario.me, pack: scenario.pack, ...play(scenario) })),
+}));
+
+describe("mission pack session fixture, briefs", () => {
+  const brief = briefFixture();
+  it("packs/session-brief.json", () => settle("packs/session-brief.json", brief));
+
+  const last = (name) => brief.scenarios.find((s) => s.name === name).steps;
+  it("takes a brief edit in a finished pack and refuses the rest", () => {
+    const steps = last(BRIEF_SCENARIOS[0].name);
+    expect(steps.slice(1, 4).map((s) => s.result.refused)).toEqual([null, "read_only", "read_only"]);
+    expect(steps[4].result.batch.ops.map((op) => op.item)).toEqual(["br-1"]);
+  });
+  it("never mixes brief edits with others in one batch", () => {
+    const batches = last(BRIEF_SCENARIOS[2].name).filter((s) => s.do === "nextBatch").map((s) => s.result && s.result.batch.ops.map((op) => op.item));
+    expect(batches).toEqual([["lz-1"], ["br-1"], ["lz-1"]]);
+  });
+  it("keeps a queued brief edit when the pack is finished", () => {
+    const steps = last(BRIEF_SCENARIOS[3].name);
+    expect(steps[steps.length - 1].result.batch.ops.map((op) => op.item)).toEqual(["br-1"]);
+    expect(steps[steps.length - 1].session.dropped.map((d) => [d.op.item, d.reason])).toEqual([["lz-1", "pack_finished"]]);
+  });
+});
 
 let built = null;
 const fixture = () => {

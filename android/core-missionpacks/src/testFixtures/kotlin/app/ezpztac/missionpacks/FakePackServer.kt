@@ -297,13 +297,27 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
 
     private fun live(uuid: String, user: Int): Pack = packs[uuid]?.takeIf { !it.deleted } ?: error("No pack $uuid for $user")
 
+    // pack_routes._only_briefs: every operation is on a brief item, one stored as a brief (deleted items too) or one an earlier item.create of
+    // the batch makes as a brief.
+    private fun onlyBriefs(pack: Pack, ops: List<JsonObject>): Boolean {
+        val kinds = HashMap<String, String?>()
+        pack.items.forEach { (uuid, item) -> kinds[uuid] = item.kind }
+        return ops.all { op ->
+            val item = textOf(op["item"])
+            if (item != null && item !in kinds && textOf(op["type"]) == "item.create") kinds[item] = textOf(op["kind"])
+            kinds[item] == "brief"
+        }
+    }
+
     // pack_routes.apply_ops, under the pack's lock.
     private fun apply(pack: Pack, actor: Int, ops: List<JsonObject>, baseSeq: Long?): JsonObject {
         val ids = ops.map { textOf(it["client_op_id"]) }.toSet()
         val done = pack.events.filter { textOf(it["client_op_id"]) in ids }.associateBy { textOf(it["client_op_id"]) }
         val taken = JsonArray(done.values.sortedBy(::seqOf).filter { actorOf(it) == actor }.map(::result))
-        if (pack.members[actor] !in EDIT_ROLES) throw refusal(403, "pack_read_only", "taken" to taken)
-        if (pack.status == "finished") {
+        // A batch whose every operation is on a brief is open to every member in every state of the pack (pack_routes._only_briefs).
+        val briefs = onlyBriefs(pack, ops)
+        if (pack.members[actor] !in EDIT_ROLES && !briefs) throw refusal(403, "pack_read_only", "taken" to taken)
+        if (pack.status == "finished" && !briefs) {
             throw refusal(
                 423, "pack_finished",
                 "finished_at" to (pack.finishedAt?.let(::text) ?: JsonNull),
@@ -413,7 +427,8 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
     // pack_support.pack_full, for the person asking.
     private fun body(pack: Pack, asUser: Int): JsonObject {
         val items = pack.items.values.filter { !it.deleted }
-        val counts = PackOps.ITEM_KINDS.associateWith { kind -> JsonPrimitive(items.count { it.kind == kind }) }
+        // pack_support.item_counts counts the library's kinds only: not briefs, yet.
+        val counts = listOf("lz", "route", "pointset").associateWith { kind -> JsonPrimitive(items.count { it.kind == kind }) }
         return obj(
             "uuid" to text(pack.uuid),
             "name" to text(pack.name),
@@ -426,7 +441,7 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
             "seen_seq" to JsonPrimitive(0),
             "member_count" to JsonPrimitive(pack.members.size),
             "audience_count" to JsonPrimitive(pack.members.size),
-            "item_count" to JsonPrimitive(items.size),
+            "item_count" to JsonPrimitive(counts.values.sumOf { it.content.toInt() }),
             "item_counts" to JsonObject(counts),
             "finished_at" to (pack.finishedAt?.let(::text) ?: JsonNull),
             "finished_by" to (pack.finishedBy?.let(::person) ?: JsonNull),
@@ -490,7 +505,7 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
         const val MAX_SUMMARY = 300
         val EDIT_ROLES = setOf("owner", "editor")
         val CLIENT_OP_ID = Regex("[\\x21-\\x7e]{1,64}")
-        val KIND_WORDS = mapOf("lz" to "LZ", "route" to "routes", "pointset" to "points")
+        val KIND_WORDS = mapOf("lz" to "LZ", "route" to "routes", "pointset" to "points", "brief" to "brief")
 
         fun text(value: String): JsonPrimitive = JsonPrimitive(value)
 

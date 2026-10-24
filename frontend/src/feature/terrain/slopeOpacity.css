@@ -1,0 +1,35 @@
+/* The slope map's opacity, under the sidebar's Slope Map and LZ Box switches and drawn as their row is. */
+.slope-opacity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 4ch;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  border-radius: 7px;
+  background: var(--surface-1, rgba(0, 0, 0, 0.2));
+  color: var(--ff-text-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+/* Not the text fields' box: the app's input rule (padding, border, white ground) would push the track past its column. */
+.slope-opacity__range {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--ff-accent);
+  cursor: pointer;
+}
+
+.slope-opacity__value {
+  color: var(--ff-text-main);
+  font-family: var(--mono, monospace);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

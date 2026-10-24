@@ -16,6 +16,7 @@ export const PRIORITY_PATHS = [
   "/threat-mask",        // viewshed
   "/export-package",
   "/generate-excel",
+  "/brief/pdf",          // a brief's figures and pages, printed
 ];
 
 let active = 0;

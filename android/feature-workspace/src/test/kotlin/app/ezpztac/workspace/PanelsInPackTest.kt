@@ -20,6 +20,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -95,6 +96,25 @@ class PanelsInPackTest {
         compose.onNodeWithText("Delete").assertDoesNotExist()
         compose.onNodeWithText("Close here").performClick()
         assertEquals(listOf("open pack:p:lz-2", "close pack:p:lz-1"), log)
+    }
+
+    @Test
+    fun `a pack's LZ-PZs each have their 3D, as the design's pack rows do, read-only or not`() {
+        val asked = mutableListOf<String>()
+        val state = lzState.copy(pack = lzState.pack!!.copy(rows = lzState.pack.rows.map { it.copy(hasTarget = it.uuid != "pack:p:lz-4") }))
+        show { LzHomeContent(state, LzPanelActions(view3d = { asked += it }), GRID) }
+        compose.onNodeWithContentDescription("Open LZ HAWK (ROCK) in 3D").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Open LZ KESTREL in 3D").performScrollTo().assertIsNotEnabled()
+        assertEquals(listOf("pack:p:lz-2"), asked)
+    }
+
+    @Test
+    fun `each of the pack's LZ PZs has an eye of its own, hidden by its pack id`() {
+        val toggled = mutableListOf<String>()
+        show { LzHomeContent(lzState, LzPanelActions(toggleOnMap = { toggled += it }), GRID, hidden = setOf("pack:p:lz-4")) }
+        compose.onNodeWithContentDescription("Hide LZ HAWK (ROCK) on the map").performClick()
+        compose.onNodeWithContentDescription("Show LZ KESTREL on the map").performClick()
+        assertEquals(listOf("pack:p:lz-2", "pack:p:lz-4"), toggled)
     }
 
     @Test

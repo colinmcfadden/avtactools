@@ -457,10 +457,12 @@ internal fun SideBySide(
             val x = flexibleOnes.firstOrNull()?.measure(loose)
             val first = if (flexibleFirst) x else f
             val second = if (flexibleFirst) f else x
-            val height = maxOf((first?.height ?: 0) + gapPx + (second?.height ?: 0), constraints.minHeight)
+            // The gap is between two things: with nothing beside the buttons (a pack's card), none under them.
+            val between = if (first != null && second != null) gapPx else 0
+            val height = maxOf((first?.height ?: 0) + between + (second?.height ?: 0), constraints.minHeight)
             layout(constraints.maxWidth, height) {
                 first?.place(0, 0)
-                second?.place(if (stackedEnd) constraints.maxWidth - second.width else 0, (first?.height ?: 0) + gapPx)
+                second?.place(if (stackedEnd) constraints.maxWidth - second.width else 0, (first?.height ?: 0) + between)
             }
         }
     }

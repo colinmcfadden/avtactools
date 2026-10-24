@@ -31,11 +31,17 @@ class PackSessionFixtureTest {
     private val fixture = Fixtures.load("packs/session.json")
     private val scenarios = fixture.getValue("scenarios").jsonArray.map { it.jsonObject }
 
+    // session.json's rules for the brief item kind (docs/MISSION_BRIEF.md §3): brief edits taken in a read-only pack, sent in batches of their
+    // own, and kept when the pack turns read-only.
+    private val briefFixture = Fixtures.load("packs/session-brief.json")
+    private val briefScenarios = briefFixture.getValue("scenarios").jsonArray.map { it.jsonObject }
+
     private fun text(json: JsonObject, key: String): String = json.getValue(key).jsonPrimitive.content
 
     @Test
     fun `a batch holds as many operations as the web's`() {
         assertEquals(fixture.getValue("max_batch").jsonPrimitive.int, PackSessions.MAX_BATCH)
+        assertEquals(briefFixture.getValue("max_batch").jsonPrimitive.int, PackSessions.MAX_BATCH)
     }
 
     @Test
@@ -47,6 +53,11 @@ class PackSessionFixtureTest {
 
     @TestFactory
     fun `every scenario plays as the web's session plays it`(): List<DynamicTest> = scenarios.map { scenario ->
+        DynamicTest.dynamicTest(text(scenario, "name")) { play(scenario) }
+    }
+
+    @TestFactory
+    fun `every brief scenario plays as the web's session plays it`(): List<DynamicTest> = briefScenarios.map { scenario ->
         DynamicTest.dynamicTest(text(scenario, "name")) { play(scenario) }
     }
 

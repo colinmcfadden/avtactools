@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from "react";
 import { compassPose } from "./compass";
+import { FACE_NORTH_SECONDS } from "./sceneSettings";
 
 // Below this a frame's change is invisible, so the DOM is left alone.
 const CHANGE_DEG = 0.1;
-const FACE_NORTH_SECONDS = 0.6;
 
 /**
  * A compass rose for the 3D view that turns and tilts with the camera, so

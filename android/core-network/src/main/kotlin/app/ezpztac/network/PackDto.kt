@@ -29,9 +29,9 @@ public data class PackTeam(
     val role: String? = null,
 )
 
-/** Live items by kind. */
+/** Live items by kind. [brief] (docs/MISSION_BRIEF.md §3) is 0 from a server that does not count briefs. */
 @Serializable
-public data class PackItemCounts(val lz: Int, val route: Int, val pointset: Int)
+public data class PackItemCounts(val lz: Int, val route: Int, val pointset: Int, val brief: Int = 0)
 
 /** A pack as a list shows it. [role] is the caller's; a `finished` pack is read-only for everyone until its owner reopens it. */
 @Serializable

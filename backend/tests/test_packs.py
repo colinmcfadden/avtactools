@@ -18,7 +18,7 @@ from auth_rate_limit import clear_rate_limits  # noqa: E402
 from entitlements import resolve_features  # noqa: E402
 from models import (  # noqa: E402
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
-    SavedLZ, Team, TeamMember, User, db,
+    SavedBrief, SavedLZ, Team, TeamMember, User, db,
 )
 from openapi_check import check_response, load_spec  # noqa: E402
 from routes.admin_routes import admin_bp  # noqa: E402
@@ -798,6 +798,142 @@ class FinishTests(PackCase):
         self.ok(self.finish())
         self.ok(self.finish())
         self.assertEqual([e['type'] for e in self.events(self.uuid)].count('pack.finish'), 1)
+
+
+BRIEF_DATA = {'version': 1, 'template': {'id': 'amb', 'version': 1}, 'flow': [{'ref': 'lz:lz-1', 'role': 'LZ'}], 'answers': {}}
+
+
+class BriefItemTests(PackCase):
+    """A brief item is open to every member in every state of the pack (docs/MISSION_BRIEF.md §3); nothing else is."""
+
+    def setUp(self):
+        super().setUp()
+        self.uuid = self.new_pack()['uuid']
+        self.member(self.uuid, self.sam)
+        self.member(self.uuid, self.alex, role='viewer')
+        self.add_lz(self.uuid)
+        self.ok(self.send(self.uuid, self.op('item.create', 'br-1', kind='brief', name='OP DK BRIEF', data=BRIEF_DATA)))
+
+    def finish(self):
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/finish'))
+
+    def brief_edits(self, item='br-1', stop='s-2'):
+        """One of each operation a brief is edited with; ``stop`` is the id of the stop it leaves in ``stops``."""
+        return [
+            self.op('set', item, path=['answers', '2.b'], value={'value': 'Move C Co to LZ HAWK.'}),
+            self.op('patch', item, path=['answers'], value={'5.a.iii': {'mode': 'standard'}}),
+            self.op('set', item, path=['stops'], value=[]),
+            self.op('upsert', item, path=['stops'], value={'id': 's-1', 'role': 'PZ'}),
+            self.op('insert', item, path=['stops'], after='s-1', value={'id': stop, 'role': 'LZ'}),
+            self.op('remove', item, path=['stops', {'id': 's-1'}]),
+            self.op('item.rename', item, name='OP DK AMB'),
+        ]
+
+    def assert_briefing_is_open(self, who):
+        before = self.pack(self.uuid)['head_seq']
+        body = self.ok(self.send(self.uuid, *self.brief_edits(), who=who))
+        self.assertEqual([r['status'] for r in body['results']], ['applied'] * 7)
+        spare = f'br-spare-{who["id"]}'                                 # a deleted item's uuid is never used again
+        made = self.ok(self.send(self.uuid, self.op('item.create', spare, kind='brief', name='SPARE', data={'version': 1}),
+                                 self.op('set', spare, path=['answers'], value={}),
+                                 self.op('item.delete', spare), who=who))
+        self.assertEqual([r['status'] for r in made['results']], ['applied'] * 3)
+        pack = self.pack(self.uuid)
+        self.assertEqual(pack['head_seq'], before + 10)
+        self.assertEqual(self.item(pack, 'br-1')['name'], 'OP DK AMB')
+        self.assertIsNone(self.item(pack, spare))
+        with self.app.app_context():
+            row = MissionPackItem.query.filter_by(uuid='br-1').one()
+            self.assertEqual(row.data['stops'], [{'id': 's-2', 'role': 'LZ'}])
+            self.assertEqual(row.data['answers'], {'2.b': {'value': 'Move C Co to LZ HAWK.'}, '5.a.iii': {'mode': 'standard'}})
+            self.assertEqual(row.updated_by, who['id'])
+        # The history says who changed it, as for any change.
+        self.assertEqual(self.events(self.uuid)[-1]['actor']['name'], who['name'])
+
+    def assert_nothing_else_is(self, who, status, code):
+        with self.app.app_context():
+            before = pack_state(self.uuid)
+        attempts = [
+            [self.op('item.rename', 'lz-1', name='X')],
+            [self.op('set', 'lz-1', path=['flightData', 'callSign'], value='X')],
+            [self.op('item.create', 'lz-2', kind='lz', name='LZ CROW', data=LZ_DATA)],
+            [self.op('item.delete', 'lz-1')],
+            # A batch with one operation that is not on a brief is refused whole: the brief's edit goes nowhere either.
+            [self.op('item.rename', 'br-1', name='MIXED'), self.op('item.rename', 'lz-1', name='X')],
+            [self.op('item.create', 'br-3', kind='brief', name='B', data={}), self.op('item.rename', 'lz-1', name='X')],
+            # An item that is not there, or one made as a brief over an LZ's uuid, is not a brief.
+            [self.op('set', 'nothing-here', path=['answers'], value={})],
+            [self.op('item.create', 'lz-1', kind='brief', name='B', data={})],
+        ]
+        for ops in attempts:
+            with self.subTest(ops=[(o['type'], o['item']) for o in ops]):
+                response = self.send(self.uuid, *ops, who=who)
+                self.assertEqual((response.status_code, response.get_json()['code']), (status, code))
+                self.assertEqual(response.get_json()['taken'], [])
+        with self.app.app_context():
+            self.assertEqual(pack_state(self.uuid), before)
+
+    def test_a_viewer_briefs(self):
+        self.assert_briefing_is_open(self.alex)
+
+    def test_a_viewer_still_cannot_change_anything_else(self):
+        self.assert_nothing_else_is(self.alex, 403, 'pack_read_only')
+
+    def test_a_finished_pack_is_still_briefed_by_everyone(self):
+        self.finish()
+        for who in (self.colin, self.sam, self.alex):
+            with self.subTest(who=who['name']):
+                self.assert_briefing_is_open(who)
+
+    def test_a_finished_pack_still_refuses_everything_else(self):
+        self.finish()
+        self.assert_nothing_else_is(self.colin, 423, 'pack_finished')
+        self.assert_nothing_else_is(self.sam, 423, 'pack_finished')
+        # A viewer in a finished pack hears that they are a viewer, as before.
+        self.assert_nothing_else_is(self.alex, 403, 'pack_read_only')
+        # Finishing, a pack's own edit and copying in are refused as they were.
+        lz = self.ok(self.call(self.colin, 'post', '/api/lz', json={'name': 'LZ CROW', 'lz_data': {}}), 201)
+        self.assertEqual(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items',
+                                   json={'source': {'kind': 'lz', 'id': lz['id']}}).status_code, 423)
+        self.assertEqual(self.call(self.colin, 'put', f'/api/packs/{self.uuid}', json={'name': 'X'}).status_code, 423)
+
+    def test_a_brief_edit_sent_again_is_answered_from_the_log(self):
+        self.finish()
+        batch = self.brief_edits()
+        first = self.ok(self.send(self.uuid, *batch, who=self.alex))
+        again = self.ok(self.send(self.uuid, *batch, who=self.alex))
+        self.assertEqual(again['results'], first['results'])
+
+    def test_a_brief_holds_an_object(self):
+        response = self.send(self.uuid, self.op('item.create', 'br-2', kind='brief', name='B', data=[]))
+        self.assertEqual((response.status_code, response.get_json()['reason']), (400, 'bad_data'))
+
+    def test_a_brief_is_listed_and_its_history_named(self):
+        pack = self.pack(self.uuid)
+        self.assertEqual(self.item(pack, 'br-1')['kind'], 'brief')
+        self.assertEqual(check_response(load_spec(), '/api/packs/{uuid}', 'get', 200, pack), [])
+        created = [e for e in self.events(self.uuid) if e['item'] == 'br-1'][0]
+        self.assertEqual(created['summary'], 'Colin added the brief "OP DK BRIEF".')
+
+    def test_anyone_saves_a_brief_to_their_library_with_the_feature(self):
+        self.finish()
+        path = f'/api/packs/{self.uuid}/items/br-1/library'
+        refused = self.call(self.alex, 'post', path)
+        self.assertEqual((refused.status_code, refused.get_json()['code']), (403, 'feature_disabled'))
+        with self.app.app_context():
+            db.session.get(User, self.alex['id']).features = {'mission_packs': True, 'mission_brief': True}
+            db.session.commit()
+        saved = self.ok(self.call(self.alex, 'post', path, json={'name': 'MY BRIEF'}), 201)
+        self.assertEqual(check_response(load_spec(), '/api/packs/{uuid}/items/{item}/library', 'post', 201, saved), [])
+        self.assertEqual((saved['kind'], saved['name'], saved['revision']), ('brief', 'MY BRIEF', 1))
+        with self.app.app_context():
+            record = db.session.get(SavedBrief, saved['id'])
+            self.assertEqual((record.user_id, record.brief_data, record.client_uuid),
+                             (self.alex['id'], BRIEF_DATA, saved['client_uuid']))
+
+    def test_a_copy_of_the_pack_carries_its_brief(self):
+        copy = self.ok(self.call(self.alex, 'post', f'/api/packs/{self.uuid}/duplicate'), 201)
+        self.assertEqual(self.item(self.pack(copy['uuid'], who=self.alex), 'br-1')['kind'], 'brief')
 
 
 class LostAnswerTests(PackCase):

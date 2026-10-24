@@ -242,6 +242,9 @@ class AppViewModelTest {
         val saved: SavedStateHandle,
         private val makeShell: (SavedStateHandle) -> AppViewModel,
         val exportsCleared: () -> Int,
+        val tilesCleared: () -> Int,
+        /** How often the brief's waiting change was written, and how many pack stops had been asked for each time. */
+        val briefFlushes: List<Int>,
     ) {
         /** Another shell over the same process (the activity finished and opened again, or recreated), with [saved] as the state it comes back with. */
         fun newShell(saved: SavedStateHandle = SavedStateHandle()): AppViewModel = makeShell(saved)
@@ -271,21 +274,26 @@ class AppViewModelTest {
         val clock = MutableClock()
         val threats = ThreatStore(threatVault, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), StandardTestDispatcher(testScheduler)) { clock.now }
         var cleared = 0
+        var tilesCleared = 0
+        val briefFlushes = mutableListOf<Int>()
         val incoming = IncomingFiles()
         val sessionPoints = SessionPointSets()
         val packs = RecordingPacks().apply(setUpPacks)
         val invites = FakeInvites()
         val kept = KeptMinimum(minimum)
         val shell = { saved: SavedStateHandle ->
-            AppViewModel(backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, incoming, sessionPoints, tokens, packs, invites, kept, saved, version)
+            AppViewModel(
+                backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, { tilesCleared++ }, incoming, sessionPoints, tokens, packs,
+                { briefFlushes += packs.log.count { it == "disable" } }, invites, kept, saved, version,
+            )
         }
         val saved = SavedStateHandle()
         val model = shell(saved)
         advanceUntilIdle()
         return Rig(
             backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock,
-            incoming, packs, store, invites, kept, sessionPoints, saved, shell,
-        ) { cleared }
+            incoming, packs, store, invites, kept, sessionPoints, saved, shell, { cleared }, { tilesCleared }, briefFlushes,
+        )
     }
 
     // -- Launch ------------------------------------------------------------------------------------
@@ -478,12 +486,14 @@ class AppViewModelTest {
     }
 
     @Test
-    fun `signing out clears what was exported, and being signed in does not`() = runTest(dispatcher) {
+    fun `signing out clears what was exported and the point clouds the 3D view kept, and being signed in does not`() = runTest(dispatcher) {
         val r = rig(owner = 1)
         assertEquals(0, r.exportsCleared())
+        assertEquals(0, r.tilesCleared())
         r.model.signOut()
         advanceUntilIdle()
         assertEquals(1, r.exportsCleared())
+        assertEquals(1, r.tilesCleared())
     }
 
     @Test
@@ -672,6 +682,7 @@ class AppViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("disable"), r.packs.log)                                          // once, and only after
         assertTrue(closedFirst)
+        assertEquals(listOf(0), r.briefFlushes)                                               // the brief's waiting change too, while packs still take it
     }
 
     @Test
@@ -699,6 +710,7 @@ class AppViewModelTest {
 
         assertEquals("LZ CROW", r.repository.open(diagram.id)!!.name)
         assertEquals("MISSION 2", r.routes.open(set.id)!!.name)                               // the set of routes was never written at once before
+        assertEquals(1, r.briefFlushes.size)                                                  // and the brief's waiting change
         assertEquals(listOf("foreground false"), r.packs.log)
         assertEquals(asked, r.scheduler.requested)                                            // no pack edit waits: nothing more to ask for
     }
@@ -820,6 +832,7 @@ class AppViewModelTest {
         assertTrue(r.threats.entries.value.isEmpty())
         assertNull(r.threatVault.kept)
         assertEquals(1, r.exportsCleared())
+        assertEquals(1, r.tilesCleared())
     }
 
     // -- An app the server no longer supports -------------------------------------------------------

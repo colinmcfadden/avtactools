@@ -86,7 +86,7 @@ class PriorityGateTest {
         val recorded = Fixtures.load("network/priority.json")
         assertEquals(
             recorded.getValue("heavyPaths").jsonArray.map { it.jsonPrimitive.content }.toSet(),
-            setOf("/analyze-field", "/terrain-analysis", "/threat-mask", "/export-package", "/generate-excel"),
+            setOf("/analyze-field", "/terrain-analysis", "/threat-mask", "/export-package", "/generate-excel", "/brief/pdf"),
         )
         return recorded.getValue("cases").jsonArray.map { case ->
             val url = case.jsonObject.getValue("url").jsonPrimitive.content

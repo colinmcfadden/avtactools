@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -78,6 +79,15 @@ public class LiveServer private constructor(private val process: Process, public
     /** Moves every spent refresh token this many seconds into the past: time passing, for the 30 s grace period. */
     public fun ageSpentRefreshTokens(seconds: Int) {
         post("/__test__/age-refresh", """{"seconds":$seconds}""")
+    }
+
+    /** Runs every point-cloud build queued, as the build service's worker would; each puts the 3D view's fixture tileset in place. Their keys. */
+    public fun runLidarBuilds(): List<String> =
+        ApiJson.parseToJsonElement(post("/__test__/lidar/run", "{}")).jsonObject.getValue("built").jsonArray.map { it.jsonPrimitive.content }
+
+    /** Moves the build service's clock on [seconds] and drops what nobody has asked after since (a build nobody waits for goes after 90 s). */
+    public fun lidarLater(seconds: Int) {
+        post("/__test__/lidar/later", """{"seconds":$seconds}""")
     }
 
     override fun close() {

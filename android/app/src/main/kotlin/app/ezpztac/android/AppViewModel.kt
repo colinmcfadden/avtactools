@@ -15,11 +15,13 @@ import app.ezpztac.auth.AuthRoute
 import app.ezpztac.auth.InviteLinks
 import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.data.AccountScope
+import app.ezpztac.data.BriefFlush
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.SessionPointSets
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.TilesetCacheCleaner
 import app.ezpztac.data.WeatherService
 import app.ezpztac.data.Ownership
 import app.ezpztac.network.ApiException
@@ -62,10 +64,12 @@ class AppViewModel @Inject constructor(
     private val weather: WeatherService,
     private val threats: ThreatStore,
     private val exports: ExportCleaner,
+    private val tiles: TilesetCacheCleaner,
     private val incoming: IncomingFiles,
     private val sessionPoints: SessionPointSets,
     private val mapTokens: MapTokenSink,
     private val packs: PackRuntime,
+    private val briefs: BriefFlush,
     invites: PackInvites,
     private val minimumVersion: MinimumVersion,
     private val saved: SavedStateHandle,
@@ -191,6 +195,7 @@ class AppViewModel @Inject constructor(
             withContext(NonCancellable) {
                 quietly { session.flush() }
                 quietly { routeSession.flush() }
+                quietly { briefs.flush() }
                 quietly { if (packs.unsentCount() > 0) sync.requestSync() }
             }
         }
@@ -225,6 +230,7 @@ class AppViewModel @Inject constructor(
                 weather.clear()                                                  // where this account's landing zones are does not stay for the next person
                 threats.wipe()                                                   // nor does the threat picture: it is the most sensitive thing on the device
                 exports.clear()                                                  // nor a .ths or mission that was shared: they are in the clear in the cache
+                tiles.clear()                                                    // nor the point clouds the 3D view kept: each is a place
             }
             return
         }
@@ -241,7 +247,7 @@ class AppViewModel @Inject constructor(
 
     /**
      * Whoever signs in next must not find this account's open diagram, or open set of routes, on the map. Each is saved first; if that fails the person is
-     * signed out anyway, and one that will not save does not keep the other from closing.
+     * signed out anyway, and one that will not save does not keep the other from closing. Then the brief's waiting change is written.
      */
     private suspend fun closeOpenDocuments() {
         try {
@@ -258,6 +264,8 @@ class AppViewModel @Inject constructor(
         } catch (_: Exception) {
             // Likewise the set of routes.
         }
+        // The brief's waiting change, written under this account, and a pack's sent while the pack still takes it.
+        quietly { briefs.flush() }
     }
 
     private fun startSyncing() {

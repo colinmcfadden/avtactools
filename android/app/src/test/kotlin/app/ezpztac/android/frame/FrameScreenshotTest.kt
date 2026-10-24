@@ -36,6 +36,14 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.packs.OpenPackUi
 import app.ezpztac.packs.ATTENTION_AFTER_MS
 import app.ezpztac.packs.PersonUi
+import app.ezpztac.workspace.GraphicOf
+import app.ezpztac.workspace.HeldObjectActions
+import app.ezpztac.workspace.HeldObjectBar
+import app.ezpztac.workspace.HeldObjectUi
+import app.ezpztac.workspace.LzToolRail
+import app.ezpztac.workspace.RailTool
+import app.ezpztac.workspace.ToolSymbol
+import app.ezpztac.model.GraphicRef
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
 import org.junit.Test
@@ -67,6 +75,8 @@ class FrameScreenshotTest {
         pack: OpenPackUi? = null,
         search: MapSearchState = MapSearchState(),
         hidden: Boolean = false,
+        tools: (@androidx.compose.runtime.Composable () -> Unit)? = null,
+        overlay: @androidx.compose.runtime.Composable () -> Unit = {},
     ) {
         val styles = MapStyles.available("pk.t")
         val sheet = PanelSheetState(detent)
@@ -83,7 +93,7 @@ class FrameScreenshotTest {
                         state = MapUiState(styles, styles.first(), Readout.of(LatLon(34.783817, -84.08219))),
                         camera = CameraState(LatLon(34.78, -84.08), 16.0), gps = GpsState.Off,
                         onSearch = { true }, onClearSearchError = {}, onSelectStyle = {}, onToggleGps = {}, onGpsPermissionResult = {}, onLocateMe = {}, onFaceNorth = {},
-                        padding = frame.padding, controlsBottom = frame.controlsBottom, search = search, hiding = frame.hiding,
+                        padding = frame.padding, controlsBottom = frame.controlsBottom, search = search, hiding = frame.hiding, tools = tools, overlay = overlay,
                         account = {
                             AccountButton("Colin McFadden", "pilot@example.com", "Version 1.9.0 (1)", night = mode == ThemeMode.Night, onNight = {}, onSignOut = {}, notice = "", floating = true)
                         },
@@ -147,6 +157,32 @@ class FrameScreenshotTest {
     @Test
     @Config(qualifiers = "w360dp-h780dp-xxhdpi")
     fun hidden360() = shot("hidden-360", SheetDetent.Lowered, hidden = true)
+
+    // The LZ/PZ tools on the map's edge (the owner's request of 2026-10-22): a column where they fit, one Add button where they do not, and above a held bar.
+    private val railTools = listOf(
+        RailTool(ToolSymbol.Boundary, "Draw LZ", "Draw the LZ/PZ boundary", enabled = true, on = false) {},
+        RailTool(ToolSymbol.Helicopter, "Helicopter", "Place helicopters", enabled = true, on = true) {},
+        RailTool(ToolSymbol.Pz, "PZ marker", "Place PZ markers", enabled = true, on = false) {},
+        RailTool(ToolSymbol.Sector, "Sector of fire", "Place sectors of fire", enabled = true, on = false) {},
+        RailTool(ToolSymbol.Unit, "Unit", "Add a unit at the crosshair", enabled = true, on = false) {},
+        RailTool(ToolSymbol.GoAroundLeft, "Left go-around", "Place left go-arounds", enabled = true, on = false) {},
+        RailTool(ToolSymbol.GoAroundRight, "Right go-around", "Place right go-arounds", enabled = true, on = false) {},
+    )
+    private val rail: @androidx.compose.runtime.Composable () -> Unit = { LzToolRail(railTools) }
+    private val heldHelicopter: @androidx.compose.runtime.Composable () -> Unit = {
+        HeldObjectBar(
+            HeldObjectUi("CHALK 1 · UH-60L", "16S GD 66993 52949", heading = 90.0, aircraftName = "CHALK 1", graphic = GraphicOf("lz-1", GraphicRef("helicopters", "1"))),
+            HeldObjectActions(),
+        )
+    }
+
+    @Test fun lzToolsLowered() = shot("lz-tools-lowered", SheetDetent.Lowered, panel = Panel.Lz, tools = rail)
+    @Test fun lzToolsHalf() = shot("lz-tools-half", SheetDetent.Half, panel = Panel.Lz, tools = rail)
+    @Test fun lzToolsHeldNight() = shot("lz-tools-held-night", SheetDetent.Lowered, ThemeMode.Night, panel = Panel.Lz, tools = rail, overlay = heldHelicopter)
+
+    @Test
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi")
+    fun lzTools360() = shot("lz-tools-360", SheetDetent.Lowered, ThemeMode.Light, panel = Panel.Lz, tools = rail)
 
     @Test
     @Config(fontScale = 1.3f)

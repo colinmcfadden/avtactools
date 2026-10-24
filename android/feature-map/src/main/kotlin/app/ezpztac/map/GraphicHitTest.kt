@@ -91,10 +91,10 @@ object GraphicHitTest {
         return best
     }
 
-    private fun distance(a: ScreenPoint, b: ScreenPoint) = hypot(a.x - b.x, a.y - b.y)
+    internal fun distance(a: ScreenPoint, b: ScreenPoint) = hypot(a.x - b.x, a.y - b.y)
 
     /** The distance from [p] to the nearest point of the segment [a]–[b] (to [a] when the two are the same point). */
-    private fun distanceToSegment(p: ScreenPoint, a: ScreenPoint, b: ScreenPoint): Double {
+    internal fun distanceToSegment(p: ScreenPoint, a: ScreenPoint, b: ScreenPoint): Double {
         val dx = b.x - a.x
         val dy = b.y - a.y
         val lengthSquared = dx * dx + dy * dy
