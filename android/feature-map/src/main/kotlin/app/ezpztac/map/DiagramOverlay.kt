@@ -15,6 +15,7 @@ import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.layers.SymbolLayer
+import org.maplibre.android.style.layers.TransitionOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.style.sources.ImageSource
 
@@ -23,19 +24,21 @@ import org.maplibre.android.style.sources.ImageSource
  * and the slope map under all of them (its raster, and its contour lines over the raster: near-black over a light halo, every fifth heavier,
  * the ring outside the LZ faded; their numbers are Compose labels, [ContourLabelsLayer]). Thin on purpose: *what* is drawn is the scene, which is tested; this only hands it to MapLibre,
  * which needs a GPU and cannot be tried here. The aircraft pictures are drawn for a screen of [screenDensity] pixels to the point, the UH-60's from
- * [assets].
+ * [assets]. The raster is drawn at [slopeOpacity] (0 to 1, of its own alpha) until told otherwise ([setSlopeOpacity]).
  */
-class DiagramOverlay(private val assets: AssetManager, private val screenDensity: Float) {
+class DiagramOverlay(private val assets: AssetManager, private val screenDensity: Float, private var slopeOpacity: Float) {
     private var style: Style? = null
     private var vector: GeoJsonSource? = null
     private var contours: GeoJsonSource? = null
     private var latest: LzScene = LzScene.EMPTY
     private var drawnSlope: SlopeImage? = null
+    private var slopeLayer: RasterLayer? = null
 
     /** Adds the layers to a freshly loaded style. A style that replaces another has none of them, so this runs for each. */
     fun install(style: Style) {
         this.style = style
         drawnSlope = null
+        slopeLayer = null
         val geoJson = GeoJsonSource(SOURCE)
         vector = geoJson
         style.addSource(geoJson)
@@ -214,6 +217,16 @@ class DiagramOverlay(private val assets: AssetManager, private val screenDensity
         showSlope(scene.slope)
     }
 
+    /**
+     * Draws the slope raster at [opacity] (0 to 1, of the raster's own alpha) from now on. Only the layer's property changes, at once: the raster stays where it
+     * is, so a slider being dragged costs neither the bitmap nor the rest of the scene.
+     */
+    fun setSlopeOpacity(opacity: Float) {
+        if (opacity == slopeOpacity) return
+        slopeOpacity = opacity
+        slopeLayer?.setProperties(PropertyFactory.rasterOpacity(opacity))
+    }
+
     /** The raster goes *under* the boundary, so the outline stays readable over it. */
     private fun showSlope(slope: SlopeImage?) {
         val current = style ?: return
@@ -221,15 +234,17 @@ class DiagramOverlay(private val assets: AssetManager, private val screenDensity
         current.removeLayer(SLOPE_LAYER)
         current.removeSource(SLOPE_SOURCE)
         drawnSlope = null
+        slopeLayer = null
         contours?.setGeoJson(slope?.contourGeoJson() ?: SlopeImage.NO_CONTOURS)
         if (slope == null) return
         val bitmap = decode(slope.dataUri) ?: return                   // a raster that will not decode is left off, not drawn wrong
         val corners = LatLngQuad(LatLng(slope.north, slope.west), LatLng(slope.north, slope.east), LatLng(slope.south, slope.east), LatLng(slope.south, slope.west))
         current.addSource(ImageSource(SLOPE_SOURCE, corners, bitmap))
-        current.addLayerBelow(
-            RasterLayer(SLOPE_LAYER, SLOPE_SOURCE).withProperties(PropertyFactory.rasterOpacity(0.85f), PropertyFactory.rasterFadeDuration(0f)),
-            CONTOUR_HALO_LAYER,
-        )
+        val layer = RasterLayer(SLOPE_LAYER, SLOPE_SOURCE).withProperties(PropertyFactory.rasterOpacity(slopeOpacity), PropertyFactory.rasterFadeDuration(0f))
+        // A change of opacity is shown as the slider moves, not eased in over the style's transition.
+        layer.rasterOpacityTransition = TransitionOptions(0, 0)
+        current.addLayerBelow(layer, CONTOUR_HALO_LAYER)
+        slopeLayer = layer
         drawnSlope = slope
     }
 

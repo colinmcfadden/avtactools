@@ -90,6 +90,8 @@ import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
 import app.ezpztac.map.DiagramLayer
+import app.ezpztac.map.OtherLzLayer
+import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.GpsState
@@ -149,6 +151,7 @@ import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.GraphicKind
 import app.ezpztac.workspace.GraphicsViewModel
 import app.ezpztac.workspace.HeldObjectBarHost
+import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.ImportReviewHost
 import app.ezpztac.workspace.ImportSheet
 import app.ezpztac.workspace.ImportSheetContent
@@ -224,6 +227,10 @@ fun MapHome(
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
+    // The open LZ/PZs not being worked on, drawn faded; those hidden with the eye on their rows; and the one a tap holds.
+    val others by home.others.collectAsStateWithLifecycle()
+    val hiddenOnMap by home.hiddenOnMap.collectAsStateWithLifecycle()
+    val heldOther by home.heldOther.collectAsStateWithLifecycle()
     val threatScene by home.threatScene.collectAsStateWithLifecycle()
     val threatCounts by home.counts.collectAsStateWithLifecycle()
     val night by display.night.collectAsStateWithLifecycle()
@@ -231,6 +238,7 @@ fun MapHome(
     val drawing by home.isDrawing.collectAsStateWithLifecycle()
     val drawingWhat by home.drawingWhat.collectAsStateWithLifecycle()
     val slopeToggle by home.slopeToggle.collectAsStateWithLifecycle()
+    val slopeOpacity by home.slopeOpacity.collectAsStateWithLifecycle()
     val host = rememberMapHost()
     // The phone's search, folded into the row or open across it, and what was typed (a tablet's bar is always open): the frame folds it.
     val search = rememberMapSearchState()
@@ -571,7 +579,7 @@ fun MapHome(
                         Panel.Lz -> LzPanelHost(
                             crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
                             onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
-                            onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
+                            onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy, hiddenOnMap = hiddenOnMap, onToggleOnMap = home::toggleOnMap,
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
@@ -623,13 +631,19 @@ fun MapHome(
                     buttonsAtFoot = tablet,
                     search = search,
                     hiding = frame.hiding,
+                    // The LZ/PZ tools on the map's edge while its panel is the one chosen: no going into the panel's plan to add an object (the owner's, 2026-10-22).
+                    tools = if (current == Panel.Lz) {
+                        { LzToolRailHost(crosshair = state.center, onSaid = { said -> scope.launch { snackbars.showSnackbar(said, withDismissAction = true) } }) }
+                    } else {
+                        null
+                    },
                     // While a brief is presented the sandtable draws what is over the map: none of the planning controls.
                     controls = !presenting,
                     // Over the readout, above the sheet: only there while a boundary or a route is being drawn (never both), or something on the map is held.
                     overlay = {
                         // One place for what floats there, measured, so the toasts can go above it (nothing there measures nothing).
                         Box(Modifier.onSizeChanged { floating = it.height }) {
-                            BoundaryToolbarHost(crosshair = state.center)
+                            BoundaryToolbarHost(crosshair = state.center, offerAllowed = !drawing)
                             RouteToolbarHost(crosshair = state.center)
                             PlacementToolbarHost(crosshair = state.center)
                             // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
@@ -654,6 +668,14 @@ fun MapHome(
                                     },
                                     onDone = home::releaseHeld,
                                     modifier = Modifier.widthIn(max = HELD_BAR_MAX_WIDTH).fillMaxWidth(),
+                                    alsoOpen = heldOther,
+                                    // Opened from the map: the LZ/PZ panel shows it, as opening it from its row does.
+                                    onOpenOther = { id ->
+                                        home.releaseHeld()
+                                        diagrams.open(id)
+                                        frameState.choose(Panel.Lz)
+                                    },
+                                    onHideOther = home::hideOther,
                                 )
                             }
                         }
@@ -674,7 +696,7 @@ fun MapHome(
                                 }
                             }
                         },
-                        // A long press on a graphic, a threat or a point of a route picks it up; the finger then moves it, and lifting puts it down.
+                        // A long press on a graphic, a threat or a point of a route holds it (its bar, nothing else) and picks it up; the finger then moves it, and lifting puts it down.
                         onPickUp = { at ->
                             !presenting &&
                                 host.camera?.let { camera -> home.dragStarted(at, MapProjection(camera, 0.0, 0.0, density.density.toDouble()), TOUCH_RADIUS_DP * density.density) } == true
@@ -692,7 +714,8 @@ fun MapHome(
                     )
                     MgrsGridLayer(host, state.grid, chrome = chrome)        // its lines under everything planned, its labels under every other label
                     // While a brief is presented the map draws its step and none of the planning layers, which come back as they were when it ends.
-                    DiagramLayer(host, if (presenting) LzScene.EMPTY else scene)          // under the routes and the GPS dot, which stays on top
+                    OtherLzLayer(host, if (presenting) OtherLzScene.EMPTY else others)    // the open LZ/PZs not being worked on, faded, under the one that is
+                    DiagramLayer(host, if (presenting) LzScene.EMPTY else scene, slopeOpacity / 100f)  // under the routes and the GPS dot, which stays on top
                     PointLayer(host, if (presenting) PointScene.EMPTY else pointScene)    // local points are under the routes: a route point snapped onto one is the route's
                     RouteLayer(host, if (presenting) RouteScene.EMPTY else routeScene)
                     ThreatLayer(host, if (presenting) ThreatScene.EMPTY else threatScene) // range rings; symbols and names are Compose below
@@ -703,7 +726,7 @@ fun MapHome(
                     } else {
                         ContourLabelsLayer(host, scene.slope)          // the slope map's heights, under every other label
                         GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
-                        PinLabelsLayer(host, routeScene, pointScene)
+                        PinLabelsLayer(host, routeScene, pointScene, others = others)
                         ThreatLabelsLayer(host, threatScene)
                         PackPointers(host, home)
                     }

@@ -98,6 +98,15 @@ class PanelsInPackTest {
     }
 
     @Test
+    fun `each of the pack's LZ PZs has an eye of its own, hidden by its pack id`() {
+        val toggled = mutableListOf<String>()
+        show { LzHomeContent(lzState, LzPanelActions(toggleOnMap = { toggled += it }), GRID, hidden = setOf("pack:p:lz-4")) }
+        compose.onNodeWithContentDescription("Hide LZ HAWK (ROCK) on the map").performClick()
+        compose.onNodeWithContentDescription("Show LZ KESTREL on the map").performClick()
+        assertEquals(listOf("pack:p:lz-2", "pack:p:lz-4"), toggled)
+    }
+
+    @Test
     fun `an empty pack says what goes into it`() {
         show { LzHomeContent(DiagramsUiState(pack = PackLzListUi("OP DK", "OP DK · 0 items · live", emptyList())), LzPanelActions(), GRID) }
         compose.onNodeWithText("Nothing in OP DK yet. Tap New LZ/PZ at the crosshair, or long-press the map, and the new LZ/PZ goes into the pack.").assertIsDisplayed()

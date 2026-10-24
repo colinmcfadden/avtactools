@@ -1,5 +1,6 @@
 package app.ezpztac.map
 
+import app.ezpztac.model.AircraftName
 import app.ezpztac.model.AircraftProfile
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramOps
@@ -33,6 +34,8 @@ data class SceneAircraft(
     val designation: String,
     val violating: Boolean,
     val selected: Boolean,
+    /** What the crew calls it (a chalk or tail number), written under it on the map; null with none. */
+    val name: String? = null,
 )
 
 /** The line between two aircraft's rotor tips and what it says, in feet. The web draws one for every pair, red when too close. */
@@ -140,6 +143,7 @@ data class GraphicsScene(
                 SceneAircraft(
                     ref = ref, at = a.at, rotationDeg = number(saved["rotation"]) ?: 0.0, diameterM = profile.rotorDiameterM, clearanceM = profile.rotorTipClearanceM,
                     iconKey = AircraftIcons.keyFor(profile.iconKey), designation = profile.designation, violating = key in violating, selected = ref == selected,
+                    name = AircraftName.of(saved),
                 )
             }
 

@@ -6,7 +6,8 @@ import kotlin.math.hypot
 
 /**
  * Which corner of the boundary a tap was on, worked out on the screen with [MapProjection] and so tried without a GPU: the nearest corner of the analysis boundary or of the drawn
- * one (a polygon of three corners or more) within [touchRadiusPx], or nothing. Corners are the lowest thing on the map, so this is looked at after everything else.
+ * one (a polygon of three corners or more) within [touchRadiusPx], or nothing. Corners are the lowest thing on the map, so this is looked at after everything else. Only a corner
+ * that is drawn: the analysis boundary's are not while its outline is hidden ([LzScene.boundaryCornersShown]).
  */
 object CornerHitTest {
     fun pick(scene: LzScene, view: MapProjection, tap: LatLon, touchRadiusPx: Double): BoundaryCornerRef? {
@@ -24,7 +25,7 @@ object CornerHitTest {
                 }
             }
         }
-        consider(scene.boundary, drawn = false)
+        if (scene.boundaryCornersShown) consider(scene.boundary, drawn = false)
         consider(scene.drawn, drawn = true)
         return best
     }

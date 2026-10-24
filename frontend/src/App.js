@@ -36,6 +36,7 @@ import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import { exportRouteSetFiles } from "./feature/msnxImport/exportRouteSet";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import useMgrsGrid from "./feature/mgrsGrid/useMgrsGrid";
+import useSlopeOpacity from "./feature/terrain/slopeOpacity";
 import UnitBadge from "./components/UnitBadge";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
@@ -119,6 +120,8 @@ function App() {
   const [mapStyle, setMapStyle] = useState("satellite");
   // The MGRS grid over the map: this browser's preference, not the diagram's (unlike mapStyle).
   const { showMgrsGrid, setShowMgrsGrid } = useMgrsGrid();
+  // How opaque the slope map is drawn: this browser's too.
+  const { slopeOpacity, setSlopeOpacity } = useSlopeOpacity();
 
   // Resizable/collapsible desktop control panel. Width persists across sessions;
   // below the compact threshold the panel renders as an icon rail. On mobile the
@@ -1341,7 +1344,10 @@ function App() {
           isSketching={isSketching}
           toggleRouteSketch={toggleRouteSketch}
           addHelo={addHelo}
+          showHeatmap={showHeatmap}
           setShowHeatmap={setShowHeatmap}
+          slopeOpacity={slopeOpacity}
+          setSlopeOpacity={setSlopeOpacity}
           terrainData={terrainData}
           addGoAround={addGoAround}
           targetLocation={targetLocation}
@@ -1516,6 +1522,7 @@ function App() {
           aircraftProfiles={aircraftProfiles}
           activeAircraftProfile={activeProfile}
           showHeatmap={showHeatmap}
+          slopeOpacity={slopeOpacity}
           terrainData={terrainData}
           doghouses={doghouses}
           updateDoghouse={mapEdit(updateDoghouse)}

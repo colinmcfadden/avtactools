@@ -1083,6 +1083,88 @@ class RoutesViewModelTest {
         assertEquals(0, r.state.detail!!.shapingPoints)
     }
 
+    // -- A point's type from its bar (the owner's request of 2026-10-21) ------------------------------------------------------
+
+    @Test
+    fun `a point is made the RP, a checkpoint or the target from its bar, its name with it, one step each`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val points = r.state.detail!!.points                                                     // .TGT, .SP, .RP, .TGT, as a finished sketch is designated
+        assertNull(r.model.setPointRole(id, points[1].id, PointRole.RP)); settle()
+        assertEquals("ip" to ".RP", r.state.detail!!.points[1].let { it.ptType to it.name })
+        assertNull(r.model.setPointRole(id, points[0].id, PointRole.CHECKPOINT)); settle()
+        assertEquals("turn" to ".CP", r.state.detail!!.points[0].let { it.ptType to it.name })
+        assertNull(r.model.setPointRole(id, points[2].id, PointRole.TARGET)); settle()
+        assertEquals("target" to ".TGT", r.state.detail!!.points[2].let { it.ptType to it.name })
+        assertNull(r.model.setPointRole(id, points[2].id, PointRole.SP)); settle()
+        assertEquals("ip" to ".SP", r.state.detail!!.points[2].let { it.ptType to it.name })
+        // Each was a step of its own: taken back, the point is the target again, then the RP it was.
+        r.model.undo(); settle()
+        assertEquals("target" to ".TGT", r.state.detail!!.points[2].let { it.ptType to it.name })
+        r.model.undo(); settle()
+        assertEquals("ip" to ".RP", r.state.detail!!.points[2].let { it.ptType to it.name })
+    }
+
+    @Test
+    fun `a checkpoint keeps a name of the person's own when it is made the target`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val point = r.state.detail!!.points[1].id
+        r.model.renamePoint(id, point, "hawk"); settle()
+        r.model.setPointRole(id, point, PointRole.TARGET); settle()
+        assertEquals("target" to "HAWK", r.state.detail!!.points[1].let { it.ptType to it.name })
+    }
+
+    @Test
+    fun `what a point is already changes nothing, and is no step to undo`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val before = r.session.active.value
+        assertNull(r.model.setPointRole(id, r.state.detail!!.points[1].id, PointRole.SP)); settle()
+        assertSame(before, r.session.active.value)
+    }
+
+    @Test
+    fun `one of the last two named points is refused as a shaping point, in words for the dialog`() = runTest(dispatcher) {
+        val r = rig()
+        val id = openWithPlannedRoute(r)
+        val points = r.state.detail!!.points
+        assertNull(r.model.setPointRole(id, points[1].id, PointRole.SHAPING)); settle()
+        assertEquals(1, r.state.detail!!.shapingPoints)
+        assertNull(r.model.setPointRole(id, points[2].id, PointRole.SHAPING)); settle()
+        val before = r.session.active.value
+        assertEquals(RoutesViewModel.TWO_NAMED_POINTS, r.model.setPointRole(id, points[0].id, PointRole.SHAPING)); settle()
+        assertSame(before, r.session.active.value)
+        assertNull("said in the dialog, not the panel", r.state.error)
+        // A shaping point is made a named one the same way.
+        assertNull(r.model.setPointRole(id, points[1].id, PointRole.RP)); settle()
+        assertEquals("ip" to ".RP", r.state.detail!!.points[1].let { it.ptType to it.name })
+    }
+
+    @Test
+    fun `a mission's points keep the types their file gives them`() = runTest(dispatcher) {
+        val r = rig()
+        openMission(r)
+        val route = r.session.active.value!!.routes.single()
+        val named = route.points.first { it.kind == RoutePoint.KIND_AMPS }
+        assertEquals(RoutesViewModel.MISSION_POINT_TYPES_ARE_THE_FILES, r.model.setPointRole(route.id, named.id!!, PointRole.TARGET)); settle()
+        assertEquals(route.points, r.session.active.value!!.routes.single().points)
+    }
+
+    @Test
+    fun `in a finished pack a point's type is not changed, and the pack says why`() = runTest {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(listOf(FakeOpenPack.routes("rt-1", "OP DK INGRESS", routes = 1)), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+        r.model.openSet("pack:p:rt-1")
+        advanceUntilIdle()
+        val before = r.session.active.value
+        val routeId = before!!.routes.single().id
+        assertEquals("OP DK is finished: nothing in it can be changed.", r.model.setPointRole(routeId, "any", PointRole.RP))
+        advanceUntilIdle()
+        assertSame(before, r.session.active.value)
+    }
+
     @Test
     fun `a held point that only shapes the line is offered as one`() = runTest(dispatcher) {
         val r = rig()

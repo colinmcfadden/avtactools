@@ -39,6 +39,8 @@ Enable **Slope Map** to overlay a color-coded slope heatmap (green = flat, red =
 
 ![Slope heatmap](images/05-slopemap.png)
 
+While the slope map is on, the **Opacity** slider under the switches sets how strongly it is drawn over the imagery, from 10% to 100% (55% to start). The contour lines are not changed. Your choice is remembered in this browser for every LZ/PZ, and it is not saved with a plan.
+
 **Custom LZ**: if the auto-detected boundary isn't what you want, use **Draw LZ** in the tools grid — click the map to outline your own polygon, then click **Finish LZ**. Right-click the polygon for options (set target, analyze, delete).
 
 ## 3. Placement tools

@@ -14,9 +14,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
@@ -28,8 +32,12 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
 import app.ezpztac.data.PlaceTool
 import app.ezpztac.designsystem.EzpzTheme
@@ -53,11 +61,13 @@ internal fun activeLz(
     status: DiagramStatus = DiagramStatus.ANALYZED,
     sync: SyncStatus = SyncStatus.SYNCED,
     slopeShown: Boolean? = true,
+    outlineShown: Boolean? = true,
 ): ActiveDiagramUi {
     val madeUp = LzNames.isMadeUp(name)
     return ActiveDiagramUi(
         uuid = "lz-1", name = name, status = status, grid = GRID, canAnalyze = true, analysis = AnalysisUi.Idle, summary = null, sync = sync, conflictOf = null,
         madeUpName = madeUp, chips = lzChips(status, sync, null), slopeShown = slopeShown.takeIf { status == DiagramStatus.ANALYZED },
+        outlineShown = outlineShown.takeIf { status == DiagramStatus.ANALYZED },
         saveContents = listOf("Boundary, target $GRID and slope analysis", "3 helicopters, 2 sectors, doghouses and flight data"),
     )
 }
@@ -88,6 +98,7 @@ class LzPanelScreenTest {
         open = { log += "open $it" }, newHere = { log += "new" }, close = { log += "close $it" }, rename = { id, name -> log += "rename $id $name" },
         delete = { log += "delete $it" }, save = { log += "save" }, showPage = { log += "page $it" }, browse = { log += "browse" }, analyze = { log += "analyze" },
         toggleSlope = { log += "slope" }, beginTool = { log += "tool $it" }, drawBoundary = { log += "draw" }, selectAircraft = { log += "aircraft $it" },
+        setSlopeOpacity = { log += "opacity $it" }, showOutline = { log += "outline $it" },
     )
 
     private fun show(content: @Composable () -> Unit) {
@@ -107,6 +118,24 @@ class LzPanelScreenTest {
         compose.onNodeWithText("Save").assertIsEnabled().performClick()
         compose.onNodeWithText("Plan").performClick()
         assertEquals(listOf("save", "page PLAN"), log)
+    }
+
+    @Test
+    fun `each LZ PZ also open has an eye that hides it from the map and shows it again, and the one worked on has none`() {
+        val toggled = mutableListOf<String>()
+        show { LzHomeContent(homeState(), LzPanelActions(toggleOnMap = { toggled += it }), GRID, hidden = setOf("lz-3")) }
+        compose.onNodeWithContentDescription("Hide LZ HAWK (ROCK) on the map").performClick()
+        compose.onNodeWithContentDescription("Show LZ/PZ 3 on the map").performClick()
+        compose.onNodeWithContentDescription("Hide LZ/PZ 1 on the map").assertDoesNotExist()      // always drawn while it is worked on
+        assertEquals(listOf("lz-2", "lz-3"), toggled)
+        // The row is still opened by a tap on it: the eye is a button of its own.
+        compose.onNodeWithText("LZ HAWK (ROCK)").assertIsDisplayed()
+    }
+
+    @Test
+    fun `without a toggle from the host there are no eyes`() {
+        show { LzHomeContent(homeState(), actions, GRID) }
+        compose.onNodeWithContentDescription("Hide LZ HAWK (ROCK) on the map").assertDoesNotExist()
     }
 
     @Test
@@ -276,6 +305,64 @@ class LzPanelScreenTest {
         plan()
         compose.onNode(isToggleable() and hasText("Slope map")).performScrollTo().assertIsOn().performClick()   // one target, said with its name
         assertEquals(listOf("slope"), log)
+    }
+
+    @Test
+    fun `while the slope map is drawn its opacity is a slider, said as the slope map's opacity in percent, set on its steps`() {
+        plan()
+        val slider = compose.onNode(hasContentDescription("Slope map opacity")).performScrollTo().assertIsDisplayed()
+        slider.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "55 percent"))
+        slider.assert(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo(55f, 10f..100f, 17)))
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { it(31f) }                          // between two steps: the nearer
+        assertEquals(listOf("opacity 30"), log)
+        // Its words are the slider's, said with it: not a second and third thing to hear.
+        compose.onNodeWithText("Opacity").assertDoesNotExist()
+        compose.onNodeWithText("55%").assertDoesNotExist()
+    }
+
+    @Test
+    fun `with the slope map off there is no opacity to set`() {
+        plan(activeLz(slopeShown = false))
+        compose.onNode(isToggleable() and hasText("Slope map")).performScrollTo().assertIsOff()
+        compose.onNode(hasContentDescription("Slope map opacity")).assertDoesNotExist()
+    }
+
+    @Test
+    fun `with no slope measured there is no slope switch and no opacity, and the LZ box switch stays`() {
+        plan(activeLz(slopeShown = null))
+        compose.onNode(isToggleable() and hasText("Slope map")).assertDoesNotExist()
+        compose.onNode(hasContentDescription("Slope map opacity")).assertDoesNotExist()
+        compose.onNode(isToggleable() and hasText("LZ box")).performScrollTo().assertIsOn()
+    }
+
+    @Test
+    fun `the LZ box switch hides the outline`() {
+        plan()
+        compose.onNode(isToggleable() and hasText("LZ box")).performScrollTo().assertIsOn().performClick()    // one target, said with its name
+        assertEquals(listOf("outline false"), log)
+    }
+
+    @Test
+    fun `a hidden outline's LZ box switch shows it again`() {
+        plan(activeLz(outlineShown = false))
+        compose.onNode(isToggleable() and hasText("LZ box")).performScrollTo().assertIsOff().performClick()
+        assertEquals(listOf("outline true"), log)
+    }
+
+    @Test
+    fun `an LZ-PZ with no boundary has no LZ box switch`() {
+        plan(activeLz(status = DiagramStatus.TARGETED))
+        compose.onNode(isToggleable() and hasText("LZ box")).assertDoesNotExist()
+    }
+
+    @Test
+    fun `in a finished pack the slope map and the LZ box are still this person's to look at as they like`() {
+        val lock = app.ezpztac.data.PackLock("p", "OP DK", "OP DK is finished: nothing in it can be changed.", "Off in a finished pack", true)
+        plan(activeLz().copy(inPack = InPackUi("OP DK", "Finished by Sam B. on Oct 5 at 14:20", null, readOnly = true, lock = lock)), canEdit = false, canDraw = false)
+        compose.onNodeWithText("Re-analyze").performScrollTo().assertIsNotEnabled()
+        compose.onNode(isToggleable() and hasText("LZ box")).performScrollTo().assertIsEnabled().performClick()
+        compose.onNode(hasContentDescription("Slope map opacity")).assertIsEnabled().performSemanticsAction(SemanticsActions.SetProgress) { it(80f) }
+        assertEquals(listOf("outline false", "opacity 80"), log)
     }
 
     @Test

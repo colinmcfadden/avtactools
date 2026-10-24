@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import MissionSummary from "./MissionSummary";
 import AircraftPicker from "../feature/aircraft/AircraftPicker";
 import CoordinateHint from "./CoordinateHint";
+import SlopeOpacityControl from "../feature/terrain/SlopeOpacityControl";
+import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
 import "../feature/aircraft/aircraft.css";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import { symbolDataUri } from "../feature/symbols/milsym";
@@ -31,6 +33,8 @@ const Controls = ({
   addHelo,
   showHeatmap,
   setShowHeatmap,
+  slopeOpacity,
+  setSlopeOpacity,
   terrainData,
   addGoAround,
   targetLocation,
@@ -391,6 +395,10 @@ const Controls = ({
               <span>LZ Box</span>
             </div>
           </div>
+          {/* How opaque the slope map is drawn, while it is (this browser's setting, never the plan's). */}
+          {showHeatmap && terrainData?.overlay && setSlopeOpacity && (
+            <SlopeOpacityControl value={slopeOpacity ?? SLOPE_OPACITY.DEFAULT} onChange={setSlopeOpacity} />
+          )}
           {terrainData?.stats && (
             <div className="ff-stat-block">
               <div className="stat-row">

@@ -25,6 +25,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +69,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.PlaceTool
+import app.ezpztac.data.SlopeOpacity
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
@@ -85,6 +88,7 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.model.UnitDraft
 import app.ezpztac.sync.SyncEngine
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 /**
  * What the LZ/PZ panel can ask for (docs/native-design: Home, LzPlan, SaveLz). The crosshair is not in here: the host supplies it, so the panel stays a
@@ -109,6 +113,10 @@ class LzPanelActions(
     val selectAircraft: (String) -> Unit = {},
     val refreshWeather: () -> Unit = {},
     val toggleSlope: () -> Unit = {},
+    /** How opaque the slope heat map is drawn, a percentage of its own (the slider under its switch). */
+    val setSlopeOpacity: (Int) -> Unit = {},
+    /** Draws or hides the open LZ/PZ's analysis boundary (*LZ box*). */
+    val showOutline: (Boolean) -> Unit = {},
     /** A planning tool's mode: map taps place its graphic until Done or Cancel. */
     val beginTool: (PlaceTool) -> Unit = {},
     val drawBoundary: () -> Unit = {},
@@ -119,6 +127,8 @@ class LzPanelActions(
     val addToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of the open pack's LZ/PZ ([uuid], the editor's id) saved to this person's Library; none: not offered. */
     val saveCopy: ((uuid: String) -> Unit)? = null,
+    /** The eye on an open LZ/PZ's row: hidden from the map, or drawn again ([uuid]); none: no eye. */
+    val toggleOnMap: ((uuid: String) -> Unit)? = null,
 )
 
 /**
@@ -139,6 +149,9 @@ fun LzPanelHost(
     onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of a pack's LZ/PZ open here, saved to the Library: given while a pack is open. */
     onSaveCopy: ((uuid: String) -> Unit)? = null,
+    /** The open LZ/PZs hidden from the map ([LzHomeContent]'s eyes), and the eye's toggle; none: no eyes. */
+    hiddenOnMap: Set<String> = emptySet(),
+    onToggleOnMap: ((uuid: String) -> Unit)? = null,
     viewModel: DiagramsViewModel = hiltViewModel(),
     graphics: GraphicsViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
@@ -155,20 +168,14 @@ fun LzPanelHost(
         save = { naming = true }, showPage = viewModel::showPage, browse = onBrowseLibrary, resolve = viewModel::resolve, dismissError = viewModel::dismissError,
         analyze = viewModel::analyze, stopAnalysis = viewModel::stopAnalysis, dismissAnalysis = viewModel::dismissAnalysisError,
         selectAircraft = viewModel::selectAircraft, refreshWeather = viewModel::refreshWeather, toggleSlope = viewModel::toggleSlope,
+        setSlopeOpacity = viewModel::setSlopeOpacity, showOutline = viewModel::showOutline,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
-        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy,
+        addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy, toggleOnMap = onToggleOnMap,
     )
-    val graphicsActions = GraphicsActions(
-        select = graphics::select, deselect = graphics::deselect, nudge = graphics::nudge, moveToCrosshair = { graphics.moveToCrosshair(crosshair) },
-        moveToText = graphics::moveToText, rotateBy = graphics::rotateBy, setRotation = graphics::setRotation, changeReach = graphics::changeReach,
-        tipToCrosshair = { graphics.tipToCrosshair(crosshair) }, setDirection = graphics::setDirection, updateUnit = graphics::updateUnit,
-        setDoghouseLabel = graphics::setDoghouseLabel, setDoghouseTime = graphics::setDoghouseTime, setDoghouseDistance = graphics::setDoghouseDistance,
-        setDoghouseAirspeed = graphics::setDoghouseAirspeed, delete = graphics::delete, undo = graphics::undo, redo = graphics::redo,
-        dismissError = graphics::dismissError,
-    )
+    val graphicsActions = graphicsActionsOf(graphics, crosshair)
     when (pane.shows(state.page)) {
         LzPage.HOME -> LzHomeContent(
-            state, actions, crosshairGrid, modifier,
+            state, actions, crosshairGrid, modifier, hidden = hiddenOnMap,
             // The open LZ/PZ's tools under its card, unless its plan, which has them, stands beside the list (a tablet's pane); none in a read-only pack.
             tools = state.current?.takeIf { it.locked == null && (pane == LzPane.WHOLE || state.page != LzPage.PLAN) }?.let { current ->
                 { LzToolsSection(current, graphicsState, boundaryState, placing, actions, crosshairGrid) }
@@ -212,7 +219,8 @@ enum class LzPane {
 
 /**
  * The open LZ/PZs (the design's Home): the one on the map as a card with its [tools] under it, the others "Also open", a new one at the crosshair, and the most
- * recent of the rest of the Library. A conflict waiting for a choice is said at the top, because it is easy to miss on the list of everything.
+ * recent of the rest of the Library. A conflict waiting for a choice is said at the top, because it is easy to miss on the list of everything. Every open one but
+ * the one being worked on is drawn faded on the map, unless it is [hidden]: the eye at the end of its row says which, and changes it.
  */
 @Composable
 fun LzHomeContent(
@@ -220,6 +228,8 @@ fun LzHomeContent(
     actions: LzPanelActions,
     crosshairGrid: String?,
     modifier: Modifier = Modifier,
+    /** The open LZ/PZs hidden from the map, by id: this device's own. */
+    hidden: Set<String> = emptySet(),
     /** The open LZ/PZ's tools, drawn under its card (the host's [LzToolsSection]); none: not drawn. */
     tools: (@Composable () -> Unit)? = null,
 ) {
@@ -257,7 +267,7 @@ fun LzHomeContent(
                                     row.presence?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                                 }
                             },
-                        )
+                        ) { RowEye(row, row.uuid in hidden, actions) }
                     }
                 }
                 current?.inPack == null -> Text(
@@ -272,7 +282,7 @@ fun LzHomeContent(
                 ListRow(
                     EzpzIcons.flightLand, row.name, emphasis = true, onClick = { actions.open(row.uuid) }, onClickLabel = "Open",
                     supporting = { RowState(row.grid, row.chips.lastOrNull()) },
-                )
+                ) { RowEye(row, row.uuid in hidden, actions) }
             }
         }
         // Nothing new goes into a read-only pack, so it is not offered (the web's foot says why).
@@ -311,6 +321,22 @@ fun LzHomeContent(
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Tokens.Spacing.sm.dp),
+        )
+    }
+}
+
+/**
+ * The eye at the end of an open LZ/PZ's row (the owner's request of 2026-10-21): the LZ/PZ is drawn faded on the map while another is worked on, or [hidden] from
+ * it. The one being worked on has none: it is always drawn. Nothing when the host gives no toggle.
+ */
+@Composable
+private fun RowEye(row: DiagramRow, hidden: Boolean, actions: LzPanelActions) {
+    val toggle = actions.toggleOnMap ?: return
+    IconButton(onClick = { toggle(row.uuid) }, modifier = Modifier.size(48.dp)) {
+        Icon(
+            painterResource(if (hidden) EzpzIcons.visibilityOff else EzpzIcons.visibility),
+            contentDescription = (if (hidden) "Show " else "Hide ") + row.name + " on the map",
+            tint = if (hidden) MaterialTheme.colorScheme.onSurfaceVariant else EzpzTheme.status.accent,
         )
     }
 }
@@ -787,7 +813,10 @@ private fun AircraftRow(aircraft: AircraftUi, onSelect: (String) -> Unit, onMana
     }
 }
 
-/** The analysis: where it stands in words, the one thing to do next (analyse, analyse again, stop), and the slope map's switch once there is a slope. */
+/**
+ * The analysis: where it stands in words, the one thing to do next (analyse, analyse again, stop), and how it is drawn (the design's LzPlan): the slope map's
+ * switch once there is a slope, with its opacity while it is drawn, and the *LZ box* switch once there is a boundary.
+ */
 @Composable
 private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
@@ -838,15 +867,51 @@ private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
             }
         }
         current.slopeShown?.let { shown ->
-            // The whole row is the switch, so it is said with its name; the switch itself only shows the state and is not a second target.
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = shown, role = Role.Switch, onValueChange = { actions.toggleSlope() }),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Slope map", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Switch(checked = shown, onCheckedChange = null)
-            }
+            ViewSwitch("Slope map", shown) { actions.toggleSlope() }
+            if (shown) SlopeOpacitySlider(current.slopeOpacity, actions.setSlopeOpacity)
         }
+        // Looking, not changing: offered in a read-only pack too, where the view is this person's own.
+        current.outlineShown?.let { shown -> ViewSwitch("LZ box", shown, actions.showOutline) }
+    }
+}
+
+/** One of the analysis's view switches. The whole row is the switch, so it is said with its name; the switch itself only shows the state and is not a second target. */
+@Composable
+private fun ViewSwitch(label: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = on, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Switch(checked = on, onCheckedChange = null)
+    }
+}
+
+/**
+ * How opaque the slope heat map is drawn (the design's overlay opacity, docs/native-design Imports): its name and percentage over a slider that has the
+ * row's whole width, so a value that grows a digit never moves the track under the finger. A percentage of the raster's own, in steps of
+ * [SlopeOpacity.STEP]; this device's, for every LZ/PZ. Said once, as the slider: the words over it are its name and value.
+ */
+@Composable
+private fun SlopeOpacitySlider(percent: Int, onChange: (Int) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically) {
+            Text("Opacity", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text("$percent%", style = MaterialTheme.typography.bodyMedium)
+        }
+        Slider(
+            value = percent.toFloat(),
+            onValueChange = { onChange(it.roundToInt()) },
+            valueRange = SlopeOpacity.MIN.toFloat()..SlopeOpacity.MAX.toFloat(),
+            steps = SlopeOpacity.STOPS_BETWEEN,
+            // The stops are there (the thumb and a screen reader move by them); a dot for each of nineteen is only noise under the number that says it.
+            colors = SliderDefaults.colors(activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
+            modifier = Modifier.fillMaxWidth().semantics {
+                contentDescription = "Slope map opacity"
+                // Its own words: read as a share of the slider's range, 55 would be said as 50 percent.
+                stateDescription = "$percent percent"
+            },
+        )
     }
 }
 

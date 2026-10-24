@@ -3,11 +3,16 @@ package app.ezpztac.map
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -44,6 +49,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
@@ -75,6 +81,9 @@ class MapScreenTest {
         buttonsAtFoot: Boolean = false,
         grid: Boolean? = null,
         chrome: MapChromeBoxes? = null,
+        tools: (@Composable () -> Unit)? = null,
+        overlay: @Composable () -> Unit = {},
+        controlsBottom: () -> Float? = { null },
         controls: Boolean = true,
     ) {
         compose.setContent {
@@ -86,6 +95,7 @@ class MapScreenTest {
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
                     onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding, buttonsAtFoot = buttonsAtFoot,
                     onToggleGrid = grid?.let { { log += "grid" } }, chrome = chrome, search = search, hiding = hiding, controls = controls,
+                    tools = tools, overlay = overlay, controlsBottom = controlsBottom,
                     map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40)).semantics { contentDescription = "The map" }) },  // stands in for the GPU-drawn map
                 )
             }
@@ -462,4 +472,96 @@ class MapScreenTest {
         compose.onNodeWithContentDescription("Face north. The map is turned 30 degrees").performClick()
         assertEquals(listOf("north"), log)
     }
+
+    // -- The panel's tools on the map's edge (the owner's request of 2026-10-22) -----------------------------------------------
+
+    /** The height of the room the tools were given, in pixels. */
+    private var toolsRoom = -1
+
+    private val toolsSlot: @Composable () -> Unit = {
+        BoxWithConstraints {
+            toolsRoom = constraints.maxHeight
+            Box(Modifier.size(MapChrome.BUTTON).semantics { contentDescription = "Tools" })
+        }
+    }
+
+    private fun box(description: String) = compose.onNodeWithContentDescription(description, substring = true).fetchSemanticsNode().boundsInRoot
+
+    private fun px(dp: androidx.compose.ui.unit.Dp) = with(compose.density) { dp.toPx() }
+
+    @Test
+    fun `a phone's tools stand apart under its map buttons, at their edge, with room down to the sheet's edge`() {
+        val sheetEdge = px(700.dp)
+        show(state(), tools = toolsSlot, controlsBottom = { sheetEdge })
+        compose.waitForIdle()
+        val tools = box("Tools")
+        val compass = box("Face north")                                                       // the last of the buttons, the map being turned
+        assertEquals(compass.bottom + px(MapChrome.TOOLS_APART), tools.top, 1.5f)
+        assertEquals(compass.right, tools.right, 1.5f)
+        assertEquals(sheetEdge - px(MapChrome.TOOLS_GAP), tools.top + toolsRoom, 1.5f)       // the readout is narrow: it does not reach them
+    }
+
+    @Test
+    fun `what floats over the readout across the map keeps the tools above it, and as it changes`() {
+        val sheetEdge = px(700.dp)
+        var tall by mutableStateOf(160.dp)
+        show(
+            state(), tools = toolsSlot, controlsBottom = { sheetEdge },
+            overlay = { Box(Modifier.fillMaxWidth().height(tall).semantics { contentDescription = "Held bar" }) },
+        )
+        compose.waitForIdle()
+        assertEquals(box("Held bar").top - px(MapChrome.TOOLS_GAP), box("Tools").top + toolsRoom, 1.5f)
+        tall = 60.dp                                                                           // a doghouse's bar put down for a shorter one
+        compose.waitForIdle()
+        assertEquals(box("Held bar").top - px(MapChrome.TOOLS_GAP), box("Tools").top + toolsRoom, 1.5f)
+    }
+
+    @Test
+    fun `what floats over the readout that does not reach the tools' edge leaves them their room down to the sheet`() {
+        val sheetEdge = px(700.dp)
+        show(
+            state(), tools = toolsSlot, controlsBottom = { sheetEdge },
+            overlay = { Box(Modifier.width(120.dp).height(160.dp).semantics { contentDescription = "Narrow" }) },
+        )
+        compose.waitForIdle()
+        assertEquals(sheetEdge - px(MapChrome.TOOLS_GAP), box("Tools").top + toolsRoom, 1.5f)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)                                                       // the readout's real width: it ends 14 dp short of the tools
+    fun `on a narrow phone the readout beside the tools, not under them, leaves them their room down to the sheet`() {
+        val sheetEdge = px(620.dp)
+        show(state(), tools = toolsSlot, controlsBottom = { sheetEdge })
+        compose.waitForIdle()
+        val pill = box("Grid under the crosshair")
+        assertTrue("the readout ends short of the tools: ${pill.right} and ${box("Tools").left}", pill.right < box("Tools").left)
+        assertEquals(sheetEdge - px(MapChrome.TOOLS_GAP), box("Tools").top + toolsRoom, 1.5f)
+    }
+
+    @Test
+    fun `a tablet's tools stand under its search bar, with room down to its buttons at the foot`() {
+        show(state(), buttonsAtFoot = true, tools = toolsSlot)
+        compose.waitForIdle()
+        val tools = box("Tools")
+        val layers = box("Base map")                                                          // the first of the buttons
+        assertEquals(px(MapChrome.SEARCH_BOTTOM + MapChrome.TOOLS_GAP), tools.top, 1.5f)
+        assertEquals(layers.top - px(MapChrome.TOOLS_GAP), tools.top + toolsRoom, 1.5f)
+        assertEquals(layers.right, tools.right, 1.5f)
+    }
+
+    @Test
+    fun `on a tablet what is said under the search bar pushes the tools down below it`() {
+        show(state(error = "Could not read that as a grid or a coordinate."), buttonsAtFoot = true, tools = toolsSlot)
+        compose.waitForIdle()
+        val said = compose.onNodeWithText("Could not read that as a grid or a coordinate.").fetchSemanticsNode().boundsInRoot
+        assertTrue("the tools start under what is said: ${box("Tools").top} and ${said.bottom}", box("Tools").top >= said.bottom)
+    }
+
+    @Test
+    fun `with no tools nothing stands there`() {
+        show(state())
+        compose.onNodeWithContentDescription("Tools").assertDoesNotExist()
+    }
 }
+

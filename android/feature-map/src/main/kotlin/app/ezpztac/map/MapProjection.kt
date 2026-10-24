@@ -26,7 +26,8 @@ class MapProjection(
     private val camera: CameraState,
     val widthPx: Double,
     val heightPx: Double,
-    private val density: Double = 1.0,
+    /** Physical pixels per point: what a size given in points (a label's) is on the screen. */
+    val density: Double = 1.0,
 ) {
     private val middleX = widthPx / 2
     private val middleY = camera.paddingTopPx + (heightPx - camera.paddingTopPx - camera.paddingBottomPx) / 2

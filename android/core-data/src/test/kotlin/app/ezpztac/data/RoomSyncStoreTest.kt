@@ -130,6 +130,27 @@ class RoomSyncStoreTest {
         }
     }
 
+    @Test
+    fun `a few records are followed without the rest, in the store's order, deleted ones hidden`() = runBlocking<Unit> {
+        store.transaction { put(lz("a")); put(lz("b")); put(lz("c")) }
+        store.observe(RecordKind.LZ, emptySet()).test {
+            assertEquals(emptyList<LocalRecord>(), awaitItem())
+            awaitComplete()                                                                   // nothing to follow: no query at all
+        }
+        store.observe(RecordKind.LZ, setOf("c", "a", "gone")).test {
+            assertEquals(listOf("a", "c"), awaitItem().map { it.uuid })                       // the store's order, not the set's; one not here is not invented
+            store.transaction { put(lz("a", name = "LZ ALPHA")) }
+            assertEquals("LZ ALPHA", awaitItem().first().name)
+            store.transaction { put(lz("b", name = "LZ BRAVO")) }                            // not followed: nothing to see
+            expectNoEvents()
+            store.transaction { put(lz("c").copy(deleted = true)) }
+            assertEquals(listOf("a"), awaitItem().map { it.uuid })
+            store.transaction { put(lz("a").copy(kind = RecordKind.AIRCRAFT)) }             // another kind's record of the same uuid is not this one
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     // -- Longer than a cursor window ----------------------------------------------------------
     // A row over 2 MB cannot be read whole on a device, and Robolectric's SQLite enforces the same window. These are past it, with
     // characters of one, two and four bytes so the parts are counted in characters, not bytes.

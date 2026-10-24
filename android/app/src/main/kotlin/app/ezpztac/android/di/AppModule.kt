@@ -17,6 +17,7 @@ import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.MinimumVersionPreferences
+import app.ezpztac.android.HiddenDiagramPreferences
 import app.ezpztac.android.OpenDiagramPreferences
 import app.ezpztac.android.OpenRouteSetPreferences
 import app.ezpztac.android.PointSetViewPreferences
@@ -48,10 +49,12 @@ import app.ezpztac.data.EncryptedThreatVault
 import app.ezpztac.data.FileMasterProfileStore
 import app.ezpztac.data.LastBrief
 import app.ezpztac.data.MissionTemplate
+import app.ezpztac.data.HiddenDiagramStore
 import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.data.OpenRouteSetStore
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetViewStore
+import app.ezpztac.data.SlopeOpacityMemory
 import app.ezpztac.data.TerrainApi
 import app.ezpztac.data.ThreatMaskApi
 import app.ezpztac.data.ThreatStore
@@ -283,6 +286,9 @@ interface AppBindings {
     fun openDiagrams(impl: OpenDiagramPreferences): OpenDiagramStore
 
     @Binds
+    fun hiddenDiagrams(impl: HiddenDiagramPreferences): HiddenDiagramStore
+
+    @Binds
     fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore
 
     @Binds
@@ -299,4 +305,7 @@ interface AppBindings {
 
     @Binds
     fun gridMemory(impl: MapPreferences): GridMemory
+
+    @Binds
+    fun slopeOpacityMemory(impl: MapPreferences): SlopeOpacityMemory
 }

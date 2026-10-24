@@ -11,6 +11,7 @@ import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDraft
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.DiagramsOnMap
 import app.ezpztac.data.GraphicPlacement
 import app.ezpztac.data.GraphicSelection
 import app.ezpztac.data.LocalPoints
@@ -19,6 +20,7 @@ import app.ezpztac.data.MapFocus
 import app.ezpztac.data.MaskState
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.OtherDiagrams
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.PackLock
 import app.ezpztac.data.PointSelection
@@ -36,14 +38,16 @@ import app.ezpztac.map.CornerHitTest
 import app.ezpztac.map.DragHitTest
 import app.ezpztac.map.DrawnPointSet
 import app.ezpztac.map.GraphicHitTest
-import app.ezpztac.map.GraphicsScene
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapPointer
 import app.ezpztac.map.MapProjection
+import app.ezpztac.map.OtherLzHitTest
+import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.PersonColors
 import app.ezpztac.map.PointHitTest
 import app.ezpztac.map.PointScene
 import app.ezpztac.map.RouteHitTest
+import app.ezpztac.map.GraphicsScene
 import app.ezpztac.map.RouteScene
 import app.ezpztac.map.ContourPiece
 import app.ezpztac.map.SlopeImage
@@ -61,6 +65,7 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.packs.PackDoor
 import app.ezpztac.symbols.SymbolRenderer
+import app.ezpztac.workspace.AlsoOpenUi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlin.math.abs
@@ -120,6 +125,9 @@ class HomeViewModel @Inject constructor(
     /** The workspace: the person's own documents do not come back at launch into a Mission Pack. */
     private val packs: PackDoor,
     mapFocus: MapFocus,
+    /** Which of the open LZ/PZs not being worked on the person hid, and the one held after a tap on it. */
+    private val onMap: DiagramsOnMap,
+    otherDiagrams: OtherDiagrams,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
 ) : ViewModel() {
@@ -211,6 +219,29 @@ class HomeViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
 
+    /**
+     * The open LZ/PZs other than the one being worked on, drawn faded under it (the owner's request of 2026-10-21): the person's own open ones, or the pack's while
+     * one is open, less those hidden with the eye on their rows ([OtherDiagrams]). Each aircraft is drawn as the airframe it was placed as, as on the open one.
+     */
+    val others: StateFlow<OtherLzScene> = combine(
+        otherDiagrams.observe(session.active.map { it?.id }, packs.open), aircraft.profiles, aircraft.active,
+    ) { diagrams, profiles, active -> OtherLzScene.of(diagrams, profiles, active) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, OtherLzScene.EMPTY)
+
+    /** The open LZ/PZs hidden from the map with the eye on their rows: this device's own. */
+    val hiddenOnMap: StateFlow<Set<String>> = onMap.hidden
+
+    /** The eye on an open LZ/PZ's row: hidden from the map, or drawn again. */
+    fun toggleOnMap(id: String) = onMap.toggle(id)
+
+    /** The open LZ/PZ not being worked on that a tap on the map holds, for the bar over the map: its name, its grid, and where it is open. */
+    val heldOther: StateFlow<AlsoOpenUi?> = combine(onMap.held, others, packs.open.map { it?.let(PackFacts::name) }.distinctUntilChanged()) { id, scene, pack ->
+        scene.lzs.firstOrNull { it.id == id }?.let { lz -> AlsoOpenUi(lz.id, lz.name, lz.grid, if (pack != null) "In $pack" else "Also open") }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** The held one is hidden from the map (its bar's *Hide*): it is put down, since it is no longer there to be seen. */
+    fun hideOther(id: String) = onMap.setShown(id, false)
+
     /** What the map's scene is built from besides the diagram: what is held, what is being drawn, whether the heat map is on, and the boundary corner held. */
     private data class HeldView(val selected: GraphicRef?, val draft: BoundaryDraft?, val slopeShown: Boolean, val corner: BoundaryCornerRef?, val lock: PackLock?)
 
@@ -222,6 +253,9 @@ class HomeViewModel @Inject constructor(
 
     /** The person pressed the slope button: the heat map goes on or off. */
     fun toggleSlope() = slopeVisibility.toggle()
+
+    /** How opaque the heat map is drawn, a percentage of its own ([app.ezpztac.data.SlopeOpacity]): this device's, the same for every LZ/PZ, set from the LZ/PZ's plan. */
+    val slopeOpacity: StateFlow<Int> = slopeVisibility.opacity
 
     /**
      * What the map draws for the open set of routes: each visible route as a line with its named points, the one being worked on heavier, and a route
@@ -281,6 +315,7 @@ class HomeViewModel @Inject constructor(
         routeSelection.held.value?.pointId != null -> Panel.Routes
         boundaryCorners.held.value != null -> Panel.Lz
         pointSelection.held.value != null -> Panel.Imports
+        heldOther.value != null -> Panel.Lz
         else -> null
     }
 
@@ -362,9 +397,14 @@ class HomeViewModel @Inject constructor(
                 sayPointer()
             }
         }
-        // An LZ/PZ closed (and none opened in its place) takes a tool's mode with it.
+        // An LZ/PZ closed (and none opened in its place: a sign-out closes it) takes a tool's mode with it, and an LZ/PZ held beside it.
         viewModelScope.launch {
-            session.active.collect { diagram -> if (diagram == null) placement.end() }
+            session.active.collect { diagram ->
+                if (diagram == null) {
+                    placement.end()
+                    onMap.release()
+                }
+            }
         }
         // The pack turned read-only (finished by its owner, or this person made a viewer) while something was under way on its LZ/PZ: it ends, keeping only
         // what the pack already has (a tool's mode ends rather than cancels, whose taking back would itself be a change), and the person is told what stopped.
@@ -436,6 +476,8 @@ class HomeViewModel @Inject constructor(
                 if (PackRef.parse(diagram.id) == null) last.remember(diagram.id)
                 selection.clear()                                                          // what was held belonged to the diagram before
                 boundaryCorners.clear()
+                onMap.release()                                                            // and so did an LZ/PZ held beside it (it may be this one)
+                onMap.shown(diagram.id)                                                    // opened, it was looked at: it stays on the map when another opens
                 drawing.cancel()                                                           // and so did a boundary half drawn
                 if (placement.placing.value?.diagramId != diagram.id) placement.end()     // and a tool's mode (what it placed stays)
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))
@@ -448,7 +490,9 @@ class HomeViewModel @Inject constructor(
      * [touchRadiusPx] is how far from a graphic's point a finger still counts as on it. While a boundary is being drawn a tap is a corner of it,
      * and while a route is being drawn a point of it, wherever it falls: nothing else on the map can be held until the person finishes or cancels.
      * Otherwise a planning graphic is held first; failing that a route or one of its points; failing that a local point (tapping the held one puts it
-     * down); a tap on nothing puts down the graphic, the route's point and the local point (the route being worked on stays, so drawing and editing it carry on).
+     * down); failing that an open LZ/PZ not being worked on, drawn faded under everything (its target, its name, its graphics: [OtherLzHitTest]; tapping the held
+     * one puts it down); a tap on nothing puts down the graphic, the route's point, the local point and the LZ/PZ (the route being worked on stays, so drawing and
+     * editing it carry on).
      *
      * Answers whether the tap was the frame's (the owner's decision of 2026-10-13: it hides the phone's frame, or shows it again): one on nothing, with nothing
      * being drawn or placed, that put nothing down either. A tap with something held only puts it down, so the next one is the frame's. A route held alone has no
@@ -475,6 +519,7 @@ class HomeViewModel @Inject constructor(
             boundaryCorners.clear()
             pointSelection.clear()
             threatSelection.clear()
+            onMap.release()
             selection.select(hit)
             return false
         }
@@ -484,6 +529,7 @@ class HomeViewModel @Inject constructor(
             boundaryCorners.clear()
             pointSelection.clear()
             routeSelection.releasePoint()
+            onMap.release()
             threatSelection.toggle(threat)
             return false
         }
@@ -492,6 +538,7 @@ class HomeViewModel @Inject constructor(
         if (route != null) {
             boundaryCorners.clear()
             pointSelection.clear()
+            onMap.release()
             routeSelection.select(route.routeId, route.pointId)
             return false
         }
@@ -500,6 +547,7 @@ class HomeViewModel @Inject constructor(
         val corner = CornerHitTest.pick(scene.value, view, at, touchRadiusPx)
         if (corner != null) {
             pointSelection.clear()
+            onMap.release()
             boundaryCorners.select(corner)
             return false
         }
@@ -507,10 +555,18 @@ class HomeViewModel @Inject constructor(
         // A local point is under the routes (a route point snapped onto one is the route's), and over nothing: a tap on nothing puts it down.
         val point = PointHitTest.pick(points.value, view, at, touchRadiusPx)
         if (point != null) {
+            onMap.release()
             pointSelection.toggle(point.setId, point.pointId)
             return false
         }
         pointSelection.clear()
+        // Lowest of all: an open LZ/PZ not being worked on, drawn faded under everything else.
+        val other = OtherLzHitTest.pick(others.value, view, at, touchRadiusPx)
+        if (other != null) {
+            if (onMap.held.value == other) onMap.release() else onMap.hold(other)
+            return false
+        }
+        onMap.release()
         return !held
     }
 
@@ -523,23 +579,85 @@ class HomeViewModel @Inject constructor(
             threatSelection.held.value?.let { id -> threatsAllowed.value && threats.entries.value.any { it.id == id && it.visible } } == true ||
             routeSelection.held.value?.pointId != null ||
             boundaryCorners.held.value != null ||
-            pointSelection.held.value != null
+            pointSelection.held.value != null ||
+            heldOther.value != null                                                               // one held that has since gone (closed, hidden) is not on the map
 
     // -- Picking something up with a long press and dragging it ---------------------------------------------------------------
 
     /**
-     * A long press at [at]: if there is something there that can be moved (a planning graphic, the tip of a PZ marker's arrow, a threat, a point of a route: what
-     * [DragHitTest] finds), it is picked up, and this answers true so the finger drags it and the map does not pan. **Nothing is held or opened by a long press**: the bar with
-     * the object's information is for a tap. False for anything else (the line between two points, the ground, a local point), and while a boundary or a route is being drawn:
-     * taps are corners then.
+     * A long press at [at] on something that can be moved (a planning graphic, the tip of a PZ marker's arrow, a threat, a point of a route: what [DragHitTest] finds):
+     * it is held as a tap would hold it, so its bar is over the map and nothing else opens (the owner's request, 2026-10-21: no going into the panel to turn it), and it
+     * is picked up, so the finger drags it and the map does not pan; a press that does not move leaves it where it is, held. One of a read-only pack's LZ/PZ or set of
+     * routes is held and not picked up: the finger moves nothing, and so is an open LZ/PZ not being worked on (its bar offers to open it). Answers true for all of
+     * these, so the map's menu does not open; false for anything else (the line between two points, the ground, a local point), and while a boundary or a route is
+     * being drawn: taps are corners then.
      */
     fun dragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
         if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null) return false
-        // Nothing of a read-only pack's LZ/PZ or set of routes is picked up: a press there opens the map's menu, as on the ground. A threat (the person's own) still is.
+        press = null
+        // What can be moved comes first: a read-only pack's LZ/PZ or set of routes is left out, so the person's own threat under one of its graphics is still picked up.
         val graphics = if (lzLocked() != null) GraphicsScene.EMPTY else scene.value.graphics
         val routeScene = if (routesLocked() != null) RouteScene.EMPTY else routes.value
-        val target = DragHitTest.pick(graphics, threatScene.value, routeScene, view, at, touchRadiusPx, unitFootprints) ?: return false
-        return mapDrag.start(target, at)
+        DragHitTest.pick(graphics, threatScene.value, routeScene, view, at, touchRadiusPx, unitFootprints)?.let { target ->
+            hold(target)
+            if (mapDrag.start(target, at)) press = Press(at, view, touchRadiusPx * PRESS_SLOP)
+            return true
+        }
+        // Then what can only be looked at: held, to be seen in its bar (not the map's menu), and nothing picked up.
+        val lookedAt = DragHitTest.pick(scene.value.graphics, threatScene.value, routes.value, view, at, touchRadiusPx, unitFootprints)
+        if (lookedAt != null) {
+            hold(lookedAt)
+            return true
+        }
+        // An open LZ/PZ not being worked on is held the same way: its bar offers to open it.
+        val other = OtherLzHitTest.pick(others.value, view, at, touchRadiusPx) ?: return false
+        releaseHeld()
+        onMap.hold(other)
+        return true
+    }
+
+    /**
+     * The long press that picked something up: where, seen through the projection of the moment, and how far the finger may roll before it moves the thing. A press meant
+     * only to hold it ([dragStarted]) is not a move: under the slop nothing is moved, and lifting there ends the drag with no edit (a route point keeps its fetched ground, a
+     * threat its terrain mask, and no step is left to undo).
+     */
+    private class Press(val at: LatLon, val view: MapProjection, val slopPx: Double) {
+        var moved = false
+
+        /** Whether the finger at [to] is far enough from the press to move the thing; once it has been, it always is. */
+        fun moves(to: LatLon): Boolean {
+            if (!moved && view.pixelsBetween(at, to) >= slopPx) moved = true
+            return moved
+        }
+    }
+
+    private var press: Press? = null
+
+    /** What a long press found, held as a tap on it holds it (`mapTapped`): its bar over the map, and what else was held put down. A threat is held, never let go of, by it. */
+    private fun hold(target: DragTarget) {
+        boundaryCorners.clear()
+        pointSelection.clear()
+        onMap.release()
+        when (target) {
+            is DragTarget.Graphic -> {
+                threatSelection.clear()
+                selection.select(target.ref)
+            }
+            is DragTarget.PzTip -> {
+                threatSelection.clear()
+                selection.select(target.ref)
+            }
+            is DragTarget.Threat -> {
+                selection.clear()
+                routeSelection.releasePoint()
+                threatSelection.select(target.id)
+            }
+            is DragTarget.RoutePoint -> {
+                selection.clear()
+                threatSelection.clear()
+                routeSelection.select(target.routeId, target.pointId)
+            }
+        }
     }
 
     /**
@@ -561,10 +679,12 @@ class HomeViewModel @Inject constructor(
         threatSelection.clear()
         pointSelection.clear()
         routeSelection.releasePoint()
+        onMap.release()
     }
 
-    /** The finger holding what was picked up is now at [at]. */
+    /** The finger holding what was picked up is now at [at]: within the slop of the press it stays where it was. */
     fun dragMoved(at: LatLon) {
+        if (press?.moves(at) == false) return
         mapDrag.move(at)
         // The finger is the pointer while it moves something (the design's: Sam B.'s pointer is on the aircraft he is moving).
         if (mapDrag.active.value != null) {
@@ -573,16 +693,20 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** The finger lifted at [at]: what was picked up is put down there. */
+    /** The finger lifted at [at]: what was picked up is put down there, or, never moved past the slop, left where it was with no edit at all. */
     fun dragEnded(at: LatLon) {
-        mapDrag.end(at)
+        val p = press
+        press = null
+        if (p != null && !p.moves(at)) mapDrag.abandon() else mapDrag.end(at)
         finger = null
         sayPointer()
     }
 
-    /** The touch was taken from the drag: what was picked up goes back where it was. */
+    /** The touch was taken from the drag: what was picked up goes back where it was (never moved, it is simply let go of, with no edit). */
     fun dragCancelled() {
-        mapDrag.cancel()
+        val p = press
+        press = null
+        if (p != null && !p.moved) mapDrag.abandon() else mapDrag.cancel()
         finger = null
         sayPointer()
     }
@@ -590,6 +714,9 @@ class HomeViewModel @Inject constructor(
     /** The person chose a base map: the open diagram keeps it, so it comes back the next time the diagram is opened. */
     fun baseMapChosen(id: String) = session.setQuietly { it.copy(view = it.view.copy(mapStyle = id)) }
 }
+
+/** How far a finger may roll after a long press before it moves what it picked up, as a share of the touch radius (24 dp: 8 dp, the platform's touch slop). */
+private const val PRESS_SLOP = 1.0 / 3
 
 /** Where a long press opened the map menu, and its grid (degrees where MGRS has none, at the poles), as the web's menu heads itself. */
 data class MapMenuPlace(val at: LatLon, val grid: String)
