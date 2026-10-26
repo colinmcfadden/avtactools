@@ -6,12 +6,12 @@ const unauthorizedAdapter = (config) =>
 describe("auth API unauthorized handling", () => {
   beforeEach(() => {
     localStorage.clear();
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
-    jest.useRealTimers();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
   });
 
   test("recognizes public authentication requests", () => {
@@ -21,7 +21,7 @@ describe("auth API unauthorized handling", () => {
   });
 
   test("keeps public auth failures inline but expires protected state without a stored token", async () => {
-    const onExpired = jest.fn();
+    const onExpired = vi.fn();
     window.addEventListener("auth-expired", onExpired);
 
     await expect(

@@ -292,7 +292,7 @@ export const createLzDiagramFromTarget = ({
 };
 
 /**
- * Converts the current App.js save shape into exactly one versioned diagram.
+ * Converts the current App.jsx save shape into exactly one versioned diagram.
  * It accepts the API record as well, so callers may provide `id`/`name` from
  * the SavedLZ listing without changing the legacy payload itself.
  */

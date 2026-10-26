@@ -3,33 +3,33 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AuthScreen from "./AuthScreen";
 import { useAuth } from "./AuthContext";
 
-jest.mock("./AuthContext", () => ({ useAuth: jest.fn() }));
-jest.mock("./GoogleLoginButton", () => ({
+vi.mock("./AuthContext", () => ({ useAuth: vi.fn() }));
+vi.mock("./GoogleLoginButton", () => ({
   __esModule: true,
   default: () => <div data-testid="google-login" />,
 }));
 
 const authMethods = (overrides = {}) => ({
-  loginWithPassword: jest.fn(),
-  register: jest.fn(),
-  verifyEmail: jest.fn(),
-  resendVerification: jest.fn(),
-  requestPasswordReset: jest.fn(),
-  resetPassword: jest.fn(),
-  dismissAuthNotice: jest.fn(),
-  clearSession: jest.fn(),
+  loginWithPassword: vi.fn(),
+  register: vi.fn(),
+  verifyEmail: vi.fn(),
+  resendVerification: vi.fn(),
+  requestPasswordReset: vi.fn(),
+  resetPassword: vi.fn(),
+  dismissAuthNotice: vi.fn(),
+  clearSession: vi.fn(),
   ...overrides,
 });
 
 describe("AuthScreen", () => {
   afterEach(() => {
     window.history.replaceState({}, "", "/");
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test("requires an explicit click before consuming an email-verification token", async () => {
-    const verifyEmail = jest.fn().mockResolvedValue({ message: "Account verified." });
-    const clearSession = jest.fn();
+    const verifyEmail = vi.fn().mockResolvedValue({ message: "Account verified." });
+    const clearSession = vi.fn();
     useAuth.mockReturnValue(authMethods({ verifyEmail, clearSession }));
     window.history.replaceState({}, "", "/?auth=verify&token=verification-token");
 
@@ -67,7 +67,7 @@ describe("AuthScreen", () => {
   });
 
   test("starts manual registration with identity details before collecting a password", async () => {
-    const register = jest.fn().mockResolvedValue({ status: "success" });
+    const register = vi.fn().mockResolvedValue({ status: "success" });
     useAuth.mockReturnValue(authMethods({ register }));
     window.history.replaceState({}, "", "/?auth=register");
 
@@ -93,7 +93,7 @@ describe("AuthScreen", () => {
   });
 
   test("offers a direct, privacy-preserving verification resend path from sign in", async () => {
-    const resendVerification = jest.fn().mockResolvedValue({ status: "success" });
+    const resendVerification = vi.fn().mockResolvedValue({ status: "success" });
     useAuth.mockReturnValue(authMethods({ resendVerification }));
 
     render(<AuthScreen />);
@@ -111,8 +111,8 @@ describe("AuthScreen", () => {
   });
 
   test("successful password reset clears any existing local session", async () => {
-    const resetPassword = jest.fn().mockResolvedValue({ status: "success" });
-    const clearSession = jest.fn();
+    const resetPassword = vi.fn().mockResolvedValue({ status: "success" });
+    const clearSession = vi.fn();
     useAuth.mockReturnValue(authMethods({ resetPassword, clearSession }));
     window.history.replaceState({}, "", "/?auth=reset&token=reset-token");
 

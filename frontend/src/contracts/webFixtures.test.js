@@ -587,7 +587,7 @@ const FULL_DIAGRAM = {
   view: { mapStyle: "outdoors", showLZOutline: false, showHeatmap: true },
 };
 
-// What App.js saved before diagrams were versioned: one flat object.
+// What App.jsx saved before diagrams were versioned: one flat object.
 const LEGACY_SNAPSHOT = {
   targetLocation: [34.545678, -84.123456],
   gridInput: "16S GD 52000 30000",

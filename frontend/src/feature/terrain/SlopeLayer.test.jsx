@@ -15,11 +15,11 @@ import SlopeLayer, {
 import { GRID_Z_INDEX, LABEL_Z_INDEX } from "../mgrsGrid/MgrsGridLayer";
 
 // react-leaflet is an ES module Jest does not transform: useMap hands the layer a real Leaflet map.
-jest.mock("react-leaflet", () => {
+vi.mock("react-leaflet", () => {
   const holder = { map: null };
   return { __holder: holder, useMap: () => holder.map };
 });
-const { __holder: holder } = jest.requireMock("react-leaflet");
+const { __holder: holder } = await import("react-leaflet");
 
 let container;
 let map;

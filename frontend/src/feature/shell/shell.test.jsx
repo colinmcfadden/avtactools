@@ -34,9 +34,9 @@ describe("the LZ/PZ panel", () => {
   ];
 
   it("saves the active one, opens the others, and offers what is recent in the Library", () => {
-    const onSave = jest.fn();
-    const onSelect = jest.fn();
-    const onOpenRecent = jest.fn();
+    const onSave = vi.fn();
+    const onSelect = vi.fn();
+    const onOpenRecent = vi.fn();
     render(
       <LzPanel
         diagrams={diagrams}
@@ -66,7 +66,7 @@ describe("the LZ/PZ panel", () => {
   });
 
   it("exports a card from the ⋯ menu once the LZ/PZ is analysed", () => {
-    const onExportCard = jest.fn();
+    const onExportCard = vi.fn();
     const panel = (activeDiagramId) => (
       <LzPanel
         diagrams={diagrams}
@@ -121,7 +121,7 @@ describe("the LZ/PZ panel", () => {
 });
 
 describe("the top bar's workspace switcher", () => {
-  // As in App.js: the switcher's menu is held outside the bar, so the Library's footer can open it.
+  // As in App.jsx: the switcher's menu is held outside the bar, so the Library's footer can open it.
   const Harness = () => {
     const switcher = useMenu();
     return (
@@ -218,8 +218,8 @@ describe("whether a route set is saved", () => {
   it("is clean once saved, unsaved after a change, and later saves go to the same record without asking", async () => {
     const library = {
       savedRoutes: [],
-      saveSketch: jest.fn().mockResolvedValue({ id: 31, name: "RED", updated_at: "2026-10-07T12:00:00" }),
-      updateSketch: jest.fn().mockResolvedValue({ id: 31, updated_at: "2026-10-07T12:05:00" }),
+      saveSketch: vi.fn().mockResolvedValue({ id: 31, name: "RED", updated_at: "2026-10-07T12:00:00" }),
+      updateSketch: vi.fn().mockResolvedValue({ id: 31, updated_at: "2026-10-07T12:05:00" }),
     };
     let routes = [route("a")];
     const { result, rerender } = renderHook(

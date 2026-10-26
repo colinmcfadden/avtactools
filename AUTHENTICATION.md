@@ -68,8 +68,8 @@ fly secrets set JWT_SECRET_KEY="<random-secret>" GOOGLE_CLIENT_ID="<google-clien
 Vercel needs:
 
 ```text
-REACT_APP_API_URL=https://api.example.com/api
-REACT_APP_GOOGLE_CLIENT_ID=<google-client-id>
+VITE_API_URL=https://api.example.com/api
+VITE_GOOGLE_CLIENT_ID=<google-client-id>
 ```
 
 In Google Cloud, add `http://localhost:3000` and the production frontend URL as

@@ -158,8 +158,8 @@ On a host without the service, set these for the frontend build so the 3D
 window's fallback prints a command that works there:
 
 ```
-REACT_APP_LIDAR_BUILD_CWD=/opt/avtactools
-REACT_APP_LIDAR_COLLECTION=/data/lidar
+VITE_LIDAR_BUILD_CWD=/opt/avtactools
+VITE_LIDAR_COLLECTION=/data/lidar
 ```
 
 ## Later: an index instead of a directory

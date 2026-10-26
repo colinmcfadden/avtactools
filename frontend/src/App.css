@@ -32,7 +32,7 @@ body, html, .App {
 
 /* --- Controls Container (The Sidebar) --- */
 .controls-container {
-  /* This class likely wraps the <Controls /> component in your App.js */
+  /* This class likely wraps the <Controls /> component in your App.jsx */
   height: 100vh;
   background-color: var(--ff-bg-dark);
   padding: 0;
@@ -920,7 +920,7 @@ body.export-mode-active .leaflet-control-container {
         overflow-y: auto;
     }
 
-    /* Class added by App.js state */
+    /* Class added by App.jsx state */
     .sidebar.mobile-open {
         left: 0;
     }
@@ -1174,7 +1174,7 @@ html,
    selector's higher specificity beats the base .sidebar width/min-width without
    an inline-vs-cascade fight; the explicit min-width also lets the flex item
    shrink past its default 320px content minimum. Keep 76px in sync with
-   SIDEBAR_RAIL in App.js. */
+   SIDEBAR_RAIL in App.jsx. */
 .sidebar.sidebar-compact {
   width: 76px;
   min-width: 76px;

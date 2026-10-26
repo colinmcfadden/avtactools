@@ -53,7 +53,7 @@ These come from the owner. Do not work around them.
 ## 3. Architecture
 
 ```
-Browser — React 19 SPA (CRA), hosted on Vercel
+Browser — React 19 SPA (Vite), hosted on Vercel
  ├─ Leaflet 2D map ───────────── Mapbox satellite/outdoors, FAA VFR sectional tiles
  ├─ Cesium 3D view (in progress) ─ /api/lidar/*, /api/terrain/heightmap/*, Mapbox imagery
  └─ axios + bearer JWT ──────────► Flask API — gunicorn, 1 worker
@@ -132,13 +132,14 @@ avtactools/
 │  ├─ tests/                 pytest
 │  ├─ Dockerfile, fly.toml   Production container and Fly config
 │  └─ version.py             Written by semantic-release
-├─ frontend/                 React 19 SPA (Create React App)
-│  ├─ src/App.js             Top-level state and layout — large; most features hook in here
+├─ frontend/                 React 19 SPA (Vite)
+│  ├─ src/App.jsx            Top-level state and layout — large; most features hook in here
 │  ├─ src/components/        Shared UI (MapView, Controls, MissionSummary, mobile inputs)
 │  ├─ src/feature/<name>/    One folder per feature: components + a use<Name> hook
 │  ├─ src/utils/             Coordinates, MGRS (`mgrs.js`), LZ dictionary, helicopter capacity
 │  ├─ public/                msnx_template.msnx, static assets; public/cesium/ is copied at build
-│  └─ scripts/copy-cesium.js prestart/prebuild: copies Cesium's static build into public/
+│  ├─ index.html, vite.config.mts  The page Vite builds from (entry src/index.jsx); port 3000 and base "/" are load-bearing
+│  └─ scripts/copy-cesium.js prestart/predev/prebuild: copies Cesium's static build into public/
 ├─ android/                  Gradle project for the Android app (§17): pure-Kotlin core modules, Android libraries, the app
 ├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17)
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
@@ -284,13 +285,17 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 | Frontend | Vercel, `ezpztac.app` | Automatically: `main` → production, PRs → previews |
 | Backend (Fly) | `backend-brisk-acorn-4800.fly.dev` | **Manually:** `fly deploy` from `backend/` |
 | Backend (self-hosted) | Coolify VM, `prod-ezpz-api.mcfadd.in` via Cloudflare Tunnel | Automatically on push, via Coolify's GitHub App |
-| Backend (staging) | Coolify VM, project EZPZ, environment `staging`, `dev-ezpz-api.mcfadd.in` via the same tunnel; its own Supabase project (free tier: pauses after 7 days unused, restore it from the dashboard) | Automatically on push to **`develop`**. Its own `JWT_SECRET_KEY`; shares the build service and `/data/{topo,tiles,cache}` with production. `CORS_ORIGINS` takes the Vercel previews by a regex (flask-cors treats an origin with `^`, `$`, `*` … as one); the variable is marked **literal** in Coolify and writes `[.]`, not `\.`, because otherwise Coolify mangles the `$` and the regex silently matches nothing. Vercel's *Preview* `REACT_APP_API_URL` points at it, so PR previews never touch production data |
+| Backend (staging) | Coolify VM, project EZPZ, environment `staging`, `dev-ezpz-api.mcfadd.in` via the same tunnel; its own Supabase project (free tier: pauses after 7 days unused, restore it from the dashboard) | Automatically on push to **`develop`**. Its own `JWT_SECRET_KEY`; shares the build service and `/data/{topo,tiles,cache}` with production. `CORS_ORIGINS` takes the Vercel previews by a regex (flask-cors treats an origin with `^`, `$`, `*` … as one); the variable is marked **literal** in Coolify and writes `[.]`, not `\.`, because otherwise Coolify mangles the `$` and the regex silently matches nothing. Vercel's *Preview* `VITE_API_URL` points at it, so PR previews never touch production data |
 | LiDAR build service | Coolify VM, beside the backend — **no public domain** | Automatically on push (separate Coolify app, base dir `/backend/lidar`) |
 | Live service (mission packs) | Coolify VM, beside the backend; **needs a public hostname** through the Cloudflare Tunnel (WebSockets) | Not yet deployed. A separate Coolify app, base dir `/backend/realtime`, port 8091; set `DATABASE_URL` and `REALTIME_API_URL` on it and `REALTIME_PUBLIC_URL` on the API. Without it clients poll |
 | Admin | `admin.ezpztac.app` → the backend's `/admin` | with the backend |
 | Database | Supabase Postgres, **Session-mode pooler** | — |
 
-- **Which backend is live is decided by `REACT_APP_API_URL` in Vercel.**
+- **Which backend is live is decided by `VITE_API_URL` in Vercel.**
+- **Vercel builds the web with Vite**: framework preset Vite, `npm run build`, output `dist`,
+  and every frontend variable named `VITE_*` in Production and Preview alike (they were
+  `REACT_APP_*` before October 2026). A variable under its old name is simply not seen: the
+  build succeeds and the site has no API address.
 - The container runs **one gunicorn worker with 8 threads** and a 180 s
   timeout. One worker because SAM holds about 1 GB resident and the rate
   limiter, QR store and route-share store are in-process — do not add workers
@@ -404,12 +409,12 @@ There is **no `backend/.env.example`** — it was removed in `55aef5d` although
 
 | Variable | Purpose |
 |---|---|
-| `REACT_APP_API_URL` | API base **including `/api`**, e.g. `http://127.0.0.1:5000/api`. |
-| `REACT_APP_GOOGLE_CLIENT_ID` | Google OAuth client. |
-| `REACT_APP_LIDAR_BUILD_CWD` | Where the 3D window tells operators to run builds. |
-| `REACT_APP_LIDAR_COLLECTION` | Downloaded LiDAR directory, added to that command. |
+| `VITE_API_URL` | API base **including `/api`**, e.g. `http://127.0.0.1:5000/api`. |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth client. |
+| `VITE_LIDAR_BUILD_CWD` | Where the 3D window tells operators to run builds. |
+| `VITE_LIDAR_COLLECTION` | Downloaded LiDAR directory, added to that command. |
 
-CRA inlines these at **build** time — changing one in Vercel needs a redeploy.
+Vite inlines these (`import.meta.env.VITE_*`) at **build** time — changing one in Vercel needs a redeploy. Only names that start `VITE_` reach the app.
 
 ---
 
@@ -442,7 +447,7 @@ npm start                                     # copies Cesium into public/cesium
 `.claude/launch.json` defines the `frontend` preview server.
 
 **What trips a fresh machine** (found setting up a Windows laptop with only Python 3.14, October 2026):
-- **`frontend/.env` must exist.** `api.js` takes its base URL from `REACT_APP_API_URL` with no fallback and there is no dev proxy, so without it every call
+- **`frontend/.env` must exist.** `api.js` takes its base URL from `VITE_API_URL` with no fallback and there is no dev proxy, so without it every call
   goes to the dev server itself and sign-in fails with no clear error. Copy `.env.example` (it points at `http://127.0.0.1:5000/api`) and restart `npm start`.
 - **Open `http://localhost:3000`, not `127.0.0.1:3000`**: `CORS_ORIGINS` defaults to `http://localhost:3000`, and emailed links use `FRONTEND_URL`'s same default.
 - **Python 3.14 works** (torch, ultralytics, rasterio and the rest have wheels). `psycopg2-binary` is pinned at 2.9.11 because 2.9.10 had no 3.14 wheel and its
@@ -476,8 +481,8 @@ differs between machines** (on one it is not at `backend/venv`, on another it is
 
 ```powershell
 cd backend;  python -m pytest tests -q
-cd frontend; $env:CI="true"; npm test         # CI=true, or Jest waits in watch mode
-cd frontend; npm run build                    # catches lint errors the tests miss
+cd frontend; npm test                        # vitest run (`npm run test:watch` to watch)
+cd frontend; npm run build                    # the production bundle into dist/; then `npm run preview` serves it
 cd android;  .\gradlew.bat test               # Kotlin core modules, against ../contracts
 python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (~20 s)
 ```
@@ -490,7 +495,7 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
   `contracts.yaml` (the fixtures, on the web and PyGeodesy sides) and
   `backend.yaml` (the backend's contract tests: a named list of pytest files that
   need no SAM weights, terrain data or GPU), each only when its paths change. The
-  rest of backend pytest and of the web's Jest suite runs nowhere but on your machine.
+  rest of backend pytest and of the web's Vitest suite runs nowhere but on your machine.
   `backend.yaml` installs only the packages those files import, named in its Install
   step and pinned from `requirements.txt`: a new import in code they reach goes on that
   list too, or CI fails with `ModuleNotFoundError` while every local run passes (OpenCV
@@ -500,13 +505,22 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
   the comparison while CI passes. And Windows and Linux maths libraries can differ
   in a double's last digit, so a recorded number is compared with a tolerance
   (`test_network_fixtures.settle_floats`), never exactly.
-- `frontend/package-lock.json` is out of sync under npm 10 (`npm ci` reports
-  `Missing: yaml@2.9.1`), so install with `npm install` and restore the lockfile
-  (`git checkout frontend/package-lock.json`) if you only needed `node_modules`.
-- The build prints many pre-existing ESLint warnings; add none of your own.
-- **Jest finds no tests in a Claude worktree** (`.claude/worktrees/<name>/`): CRA's `testMatch`
-  globs skip paths with a dot directory. Pass the pattern yourself, e.g.
-  `npx react-scripts test --watchAll=false --testMatch "**/.claude/**/src/contracts/*.test.js"`.
+- **The web is built by Vite and tested by Vitest** (it was Create React App and Jest until
+  October 2026). Things that differ, each found in the switch:
+  - JSX only in `.jsx` files: Vite will not parse it in a `.js` file.
+  - No `require` in the app's code: the dev server serves real ES modules, so a `require` there
+    leaves the page blank while the production build, which converts it, still works. Import
+    assets (`import icon from "….png"`). Tests may still `require` Node modules.
+  - Write `vi.mock`, never `jest.mock` through an alias: Vitest moves only a literal `vi.mock(...)`
+    above the imports, so an aliased one runs after the real module has loaded and mocks nothing.
+    A factory that keeps part of the real module is `async (importOriginal) => ({ ...(await importOriginal()), … })`,
+    and a module with a default export is mocked as `{ default: … }`.
+  - `setupTests.js` gives Testing Library a global `jest.advanceTimersByTime`, which is the one
+    thing its `waitFor` looks for to move fake timers; without it a `waitFor` under
+    `vi.useFakeTimers()` never finishes.
+  - Nothing runs ESLint any more (CRA's build did, `react-hooks` rules included); setting a
+    linter up is the owner's call.
+  - Vitest finds tests in a Claude worktree too (Jest's globs skipped dot directories).
 - `tests/test_realtime.py` needs `websockets` (`pip install -r realtime/requirements.txt`) and skips without it;
   `tests/test_realtime_live.py` also needs `psycopg2` and a local Postgres named by `EZPZ_LIVE_POSTGRES` (its docstring
   has the `docker run` line). `tests/live_server.py` takes `EZPZ_LIVE_DATABASE_URL` for that.
@@ -556,7 +570,7 @@ python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (
 **Coordinates.** Crews work in MGRS. Lat/lon → MGRS runs in the browser
 (`utils/mgrs.js`: Krüger-series transverse Mercator, matched against the
 backend's PyGeodesy at 5,649 points worldwide — `contracts/fixtures/mgrs`, run
-by Jest — every one identical) — the cursor readout converts on every mouse
+by Vitest — every one identical) — the cursor readout converts on every mouse
 move, so never call the API for it. The browser has the inverse too (`fromUtm`,
 `mgrsToLatLon`, and `toUtmInZone` for a point in a zone it is not in; ported from
 the Android `MgrsConverter`), held to `contracts/fixtures/mgrs/inverse.json`
@@ -722,7 +736,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **LAS RGB is 16-bit.** Widen 8-bit colour by ×257 or points render black.
 - **`.pnts` carry no Classification**, so Cesium styles on `${Classification}`
   match nothing. Colour is baked into RGB at build time.
-- **API-relative URLs.** `REACT_APP_API_URL` already ends in `/api`; any URL the
+- **API-relative URLs.** `VITE_API_URL` already ends in `/api`; any URL the
   backend returns for the client must not repeat it.
 - **Every backend import must be in `backend/requirements.txt`.** v1.7.0
   shipped importing `pyproj`, which the developer's machine had and the
@@ -737,10 +751,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **Never `import` Cesium through webpack.** Its source reads `import.meta`,
   which CRA's webpack leaves in a non-module chunk: a SyntaxError that broke
   every production 3D view in v1.7 while the dev server worked. Cesium loads
-  from its prebuilt bundle in `public/cesium` (`viewer3d/cesiumSetup.js`).
-  Check 3D changes against a production build (`npm run build`, serve
-  `build/`), not only `npm start` — and a build warning that mentions
-  `import.meta` is a failure, not noise.
+  from its prebuilt bundle in `public/cesium` (`viewer3d/cesiumSetup.js`), and
+  the switch to Vite kept it so. Check 3D changes against a production build
+  (`npm run build`, then `npm run preview`, which serves `dist/`), not only
+  `npm start` — and a build warning that mentions `import.meta` is a failure,
+  not noise.
 - **Coolify rewrites Dockerfiles.** It inserts `ARG` lines after every line
   starting with `FROM` — case-insensitively — so a Python `from x import y` at
   the start of a line inside a multi-line `RUN` gets ARGs spliced into the
@@ -843,7 +858,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - `backend/.env.example` is missing (§10).
 - `tests/test_threat_qr_export.py` fails (pre-existing).
 - CI runs the Kotlin modules, the fixtures and the backend's contract tests
-  (§11); the rest of backend pytest and most of the web's Jest suite run nowhere
+  (§11); the rest of backend pytest and most of the web's Vitest suite run nowhere
   but locally, and `pytest` isn't a declared dependency.
 - Web behaviour the native ports reproduce on purpose, because the web is the
   reference and the fixtures pin it. Each is a candidate to fix on the web
@@ -1210,7 +1225,7 @@ client is built around not losing one:
   *before any work* unless `-Pezpz.applicationId=<id>` is passed, because the id is permanent once published and the owner
   has not chosen it. R8 release builds work (verified with an example id).
 - **The server URL** is `-Pezpz.apiUrl=<root>`, default the self-hosted backend. It is the server **root**: the typed calls
-  carry their own `/api` paths, unlike the web's `REACT_APP_API_URL`, which ends in `/api`.
+  carry their own `/api` paths, unlike the web's `VITE_API_URL`, which ends in `/api`.
 - **Security settings in the manifest** (plan, "Security, privacy and distribution"): HTTPS only with the platform's
   certificate checks and no pinning (`network_security_config.xml`; debug builds also allow cleartext to the emulator's
   host loopback `10.0.2.2`), `allowBackup=false` and extraction rules that exclude everything, so LZ locations never reach
@@ -2344,7 +2359,7 @@ client is built around not losing one:
   - **One source of truth for what a symbol looks like: the web's milsymbol.** The plan's decision (milsymbol in the system JS engine, not a native
     2525 library) is why: the symbols match the web exactly and keep the 2525C SIDCs that `.ths` files carry. `android/core-symbols/src/main/assets/
     milsymbol.js` is the web's `node_modules/milsymbol/dist/milsymbol.js` **byte for byte** (a contract test fails if they differ); to upgrade
-    milsymbol, copy that file over, run `UPDATE_CONTRACTS=1 CI=true npx react-scripts test --watchAll=false src/contracts/symbolFixtures` and review the diff.
+    milsymbol, copy that file over, run `UPDATE_CONTRACTS=1 npx vitest run src/contracts/symbolFixtures` and review the diff.
   - **Three things are held by `frontend/src/contracts/symbolFixtures.test.js`**: the SIDC logic and preset lists (`symbols/sidc.json`); the
     pre-rendered preset SVGs, each with the size and anchor milsymbol gave it (`symbols/svg/*.svg`, `symbols/presets.json`; the app ships these files
     as its assets, so they are the web's own pictures); and `ezpz-render.js`, the script the app evaluates in the sandbox, which the test runs

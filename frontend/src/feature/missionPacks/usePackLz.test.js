@@ -38,10 +38,10 @@ const useHarness = ({ items: initial = [ITEM], readOnly = false, refuse = null }
 };
 
 const diagramOf = (result, id = DIAGRAM) => result.current.ws.workspace.diagramsById[id];
-const settleTimers = () => act(() => { jest.advanceTimersByTime(1000); });
+const settleTimers = () => act(() => { vi.advanceTimersByTime(1000); });
 
-beforeEach(() => jest.useFakeTimers());
-afterEach(() => jest.useRealTimers());
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 
 const opened = (options) => {
   const view = renderHook(() => useHarness(options));
@@ -117,7 +117,7 @@ describe("usePackLz", () => {
     act(() => { result.current.ws.patchGraphic("helicopters", 101, { lat: 34.4991 }, DIAGRAM); });
     act(() => { result.current.remote([{ type: "patch", item: "lz-1", path: ["flightData"], value: { landing_hdg: "180°" } }]); });
     [34.4992, 34.4993, 34.4994].forEach((lat) => {
-      act(() => { jest.advanceTimersByTime(50); });
+      act(() => { vi.advanceTimersByTime(50); });
       act(() => { result.current.ws.patchGraphic("helicopters", 101, { lat }, DIAGRAM); });
     });
     settleTimers();
@@ -211,7 +211,7 @@ describe("usePackLz", () => {
   });
 });
 
-describe("usePackLz with the flight data following the doghouses, as App.js wires them", () => {
+describe("usePackLz with the flight data following the doghouses, as App.jsx wires them", () => {
   const RP = "dh-rp";
   const WITH_DOGHOUSES = {
     ...LZ_DATA,
@@ -225,7 +225,7 @@ describe("usePackLz with the flight data following the doghouses, as App.js wire
     },
   };
 
-  // App.js's wiring: the doghouses of the diagram on the map, set through the workspace, with the flight data following them.
+  // App.jsx's wiring: the doghouses of the diagram on the map, set through the workspace, with the flight data following them.
   const useWired = ({ data = WITH_DOGHOUSES, readOnly = false } = {}) => {
     const ws = useLzWorkspace();
     const { items, edit, remote, sent } = useFakePack([{ ...ITEM, data }]);
@@ -285,7 +285,7 @@ describe("usePackLz with the flight data following the doghouses, as App.js wire
       const { result, unmount } = openedWired();
       parts.forEach((ops) => {
         act(() => { result.current.remote(ops); });
-        act(() => { jest.advanceTimersByTime(5); });
+        act(() => { vi.advanceTimersByTime(5); });
       });
       settleTimers();
       // Heard a part at a time, as the live stream gives it, the landing heading comes before the doghouse: following the doghouse then

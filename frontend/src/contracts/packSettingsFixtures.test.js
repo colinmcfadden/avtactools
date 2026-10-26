@@ -99,7 +99,7 @@ const drawing = (draw, run) => {
 
 // -- An LZ/PZ -------------------------------------------------------------------------------------------------------------------------
 
-/** One action of the workspace's reducer on [diagram], as App.js dispatches it for the diagram on the map. */
+/** One action of the workspace's reducer on [diagram], as App.jsx dispatches it for the diagram on the map. */
 const reduce = (diagram, action) => {
   const state = createInitialLzWorkspace([diagram]);
   return lzWorkspaceReducer(state, { ...action, diagramId: diagram.id }).diagramsById[diagram.id];
@@ -107,7 +107,7 @@ const reduce = (diagram, action) => {
 
 const targetOf = (diagram) => [diagram.target.lat, diagram.target.lon];
 
-// Each graphic's hook, given the diagram's collection and App.js's setters for it.
+// Each graphic's hook, given the diagram's collection and App.jsx's setters for it.
 const useHelicoptersOf = (d, set) => useHelicopters(targetOf(d), { helicopters: d.graphics.helicopters, setHelicopters: set });
 const usePzMarkersOf = (d, set) => usePzMarker(targetOf(d), { pzMarker: d.graphics.pzMarkers, setPzMarkers: set });
 const useSectorsOf = (d, set) => useSectorsOfFire(targetOf(d), { sectorsOfFire: d.graphics.sectorsOfFire, setSectors: set });
@@ -117,7 +117,7 @@ const useDoghousesOf = (d, set, setFlightData) =>
   useDoghouses(targetOf(d), setFlightData, { doghouses: d.graphics.doghouses, setDoghouses: set });
 
 /**
- * [diagram] once [call] has been made on the hook that edits [collection], wired as App.js wires it: what the hook sets goes through the
+ * [diagram] once [call] has been made on the hook that edits [collection], wired as App.jsx wires it: what the hook sets goes through the
  * reducer (setGraphicCollection, and setFlightData for the doghouses), and the hook is drawn again with the result, so an effect that follows
  * it (the flight data following the doghouses) runs as it does in the app.
  */
@@ -160,7 +160,7 @@ const analysisOf = (boundary, elevation) => ({
 });
 
 /**
- * App.js's handleAnalysisComplete: the analysis completes, the standard doghouses are made once, for a diagram that has none, and the flight
+ * App.jsx's handleAnalysisComplete: the analysis completes, the standard doghouses are made once, for a diagram that has none, and the flight
  * data then follows them (useDoghouses's effect).
  */
 const analysed = (diagram, analysis) => {
@@ -250,7 +250,7 @@ const lzSteps = () => {
   step("the flight data is typed", full, reduce(full, { type: LZ_WORKSPACE_ACTIONS.SET_FLIGHT_DATA, flightData: { callSign: "HAWK 7", frequency: "251.0" } }));
   step("the view is each person's own: nothing is sent", full, reduce(full, { type: LZ_WORKSPACE_ACTIONS.SET_VIEW, view: { mapStyle: "vfr-sectional", showLZOutline: false, showHeatmap: true } }));
 
-  // App.js's toggleDrawingMode: starting resets an analysed diagram and clears the drawn boundary; finishing keeps three corners or more.
+  // App.jsx's toggleDrawingMode: starting resets an analysed diagram and clears the drawn boundary; finishing keeps three corners or more.
   const drawing0 = reduce(reduce(full, { type: LZ_WORKSPACE_ACTIONS.RESET_ANALYSIS }), { type: LZ_WORKSPACE_ACTIONS.SET_ANALYSIS_DRAFT, analysis: { customLZ: null } });
   d = step("drawing a boundary starts: the analysis is reset and its graphics kept", full, drawing0);
   d = step("the boundary drawn", d, reduce(d, { type: LZ_WORKSPACE_ACTIONS.SET_ANALYSIS_DRAFT, analysis: { customLZ: DRAWN } }));

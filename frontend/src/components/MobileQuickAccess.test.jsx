@@ -19,8 +19,8 @@ const renderQuickAccess = (props = {}) =>
 
 describe("the phone's quick access", () => {
   it("exports an analysed LZ/PZ that may not be changed (a finished pack), while its tools stay off", () => {
-    const enableExportMode = jest.fn();
-    const onDownloadClick = jest.fn();
+    const enableExportMode = vi.fn();
+    const onDownloadClick = vi.fn();
     renderQuickAccess({ enableExportMode, onDownloadClick, canUseDiagramTools: false, canSaveDiagram: false, canExport: true });
     expect(screen.getByAltText("Helo").closest("button")).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /Capture/ }));

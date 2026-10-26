@@ -36,7 +36,7 @@ describe("captureInviteLink", () => {
   it("still holds the link for this load when the tab's storage is blocked", () => {
     const blocked = {
       location: new URL(`https://ezpztac.app/?invite=${TOKEN}`),
-      history: { state: null, replaceState: jest.fn() },
+      history: { state: null, replaceState: vi.fn() },
       get sessionStorage() {
         throw new Error("SecurityError");
       },
@@ -56,8 +56,8 @@ describe("useInviteLink", () => {
   it("accepts once the person can open packs, says what they joined and forgets the link", async () => {
     withLink();
     const answer = { pack: { uuid: "p-1", name: "OP DK", role: "editor" }, team: null };
-    const accept = jest.fn().mockResolvedValue(answer);
-    const onJoined = jest.fn();
+    const accept = vi.fn().mockResolvedValue(answer);
+    const onJoined = vi.fn();
     const { result } = renderHook(() => useInviteLink({ enabled: true, accept, onJoined }));
     await waitFor(() => expect(result.current.status).toBe("joined"));
     expect(accept).toHaveBeenCalledWith(TOKEN);
@@ -69,7 +69,7 @@ describe("useInviteLink", () => {
   it("asks once even when React runs the effect twice", async () => {
     withLink();
     let resolve;
-    const accept = jest.fn(() => new Promise((r) => { resolve = r; }));
+    const accept = vi.fn(() => new Promise((r) => { resolve = r; }));
     const { result: first } = renderHook(() => useInviteLink({ enabled: true, accept }));
     const { result: second } = renderHook(() => useInviteLink({ enabled: true, accept }));
     expect(accept).toHaveBeenCalledTimes(1);
@@ -80,7 +80,7 @@ describe("useInviteLink", () => {
 
   it("keeps the link while packs are not on for the account", () => {
     withLink();
-    const accept = jest.fn();
+    const accept = vi.fn();
     const { result } = renderHook(() => useInviteLink({ enabled: false, accept }));
     expect(result.current.status).toBe("unavailable");
     expect(accept).not.toHaveBeenCalled();
@@ -90,7 +90,7 @@ describe("useInviteLink", () => {
   it("forgets a link the server refused, in the app's words", async () => {
     withLink();
     const expired = Object.assign(new Error("Gone"), { response: { status: 410, data: { code: "invite_expired", error: "x" } } });
-    const { result } = renderHook(() => useInviteLink({ enabled: true, accept: jest.fn().mockRejectedValue(expired) }));
+    const { result } = renderHook(() => useInviteLink({ enabled: true, accept: vi.fn().mockRejectedValue(expired) }));
     await waitFor(() => expect(result.current.status).toBe("failed"));
     expect(result.current.message).toBe("That invitation has expired. Ask whoever sent it for a new one.");
     expect(result.current.retryable).toBe(false);
@@ -99,7 +99,7 @@ describe("useInviteLink", () => {
 
   it("keeps a link it could not send, and tries again when asked", async () => {
     withLink();
-    const accept = jest.fn()
+    const accept = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error("Network Error"), { status: undefined }))
       .mockResolvedValueOnce({ pack: { name: "OP DK", role: "viewer" } });
     const { result } = renderHook(() => useInviteLink({ enabled: true, accept }));
@@ -112,7 +112,7 @@ describe("useInviteLink", () => {
   });
 
   it("does nothing without a link", () => {
-    const accept = jest.fn();
+    const accept = vi.fn();
     const { result } = renderHook(() => useInviteLink({ enabled: true, accept }));
     expect(result.current.status).toBe("none");
     expect(accept).not.toHaveBeenCalled();

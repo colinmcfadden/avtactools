@@ -2,9 +2,9 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import api from "../auth/api";
 import { releaseAbandonedBuilds, useLidarTileset, watcherId } from "./useLidarTileset";
 
-jest.mock("../auth/api", () => ({
+vi.mock("../auth/api", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }));
 
 const TARGET = { lat: 34.783817, lon: -84.08219 };
@@ -21,12 +21,12 @@ const missing = (canBuild) => ({
 // Let pending promise callbacks run, then move the poll clock on.
 const advance = async (ms) => {
   await act(async () => {
-    jest.advanceTimersByTime(ms);
+    vi.advanceTimersByTime(ms);
   });
 };
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   api.get.mockReset();
   api.post.mockReset();
   api.delete.mockReset();
@@ -35,7 +35,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 const route = ({ resolve, build }) => {

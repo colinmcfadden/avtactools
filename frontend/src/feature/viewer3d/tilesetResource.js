@@ -8,12 +8,12 @@
  * renderer.
  */
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
 /**
  * Absolute URL for a path the API returned.
  *
- * API paths are relative to REACT_APP_API_URL, which already ends in `/api`.
+ * API paths are relative to VITE_API_URL, which already ends in `/api`.
  * Static paths (the development demo tileset) are served by the frontend
  * itself and must be left alone — prefixing one with the API base points it at
  * the backend, where nothing is serving it.

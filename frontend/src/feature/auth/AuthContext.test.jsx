@@ -3,11 +3,11 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import api from "./api";
 
-jest.mock("./api", () => ({
+vi.mock("./api", () => ({
   __esModule: true,
   default: {
-    get: jest.fn(),
-    post: jest.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -35,7 +35,7 @@ const dispatchTokenStorage = (newValue) => {
 describe("AuthProvider tab synchronization", () => {
   beforeEach(() => {
     localStorage.clear();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test("restores a login from another tab and follows its logout", async () => {

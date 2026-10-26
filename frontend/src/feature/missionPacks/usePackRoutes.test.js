@@ -29,7 +29,7 @@ const useHarness = (initial = [SET], options = {}) => {
   return { sketch, pack, routes, gone };
 };
 
-const settleTimers = () => act(() => { jest.advanceTimersByTime(1000); });
+const settleTimers = () => act(() => { vi.advanceTimersByTime(1000); });
 const setRoutes = (result) => result.current.sketch.sketchedRoutes.filter((r) => r.setId === SET_ID);
 
 // The sketch names new points with crypto.randomUUID, which browsers have and this test's DOM does not.
@@ -41,8 +41,8 @@ afterAll(() => {
   if (!hadCrypto) delete global.crypto;
 });
 
-beforeEach(() => jest.useFakeTimers());
-afterEach(() => jest.useRealTimers());
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 
 const opened = (...args) => {
   const view = renderHook(() => useHarness(...args));

@@ -56,7 +56,7 @@ npm install
 
 # Set up Environment Variables
 # Create a .env file and add your backend URL
-echo "REACT_APP_API_URL=http://127.0.0.1:5000/api" > .env
+echo "VITE_API_URL=http://127.0.0.1:5000/api" > .env
 
 # Start the development server
 npm start
@@ -96,7 +96,7 @@ security configuration are documented in [AUTHENTICATION.md](AUTHENTICATION.md).
 1. Push your code to GitHub.
 2. Import the project into Vercel.
 3. Crucial: Set the Environment Variable in Vercel Settings:
-    - REACT_APP_API_URL: https://your-huggingface-space-url.hf.space (No trailing slash, no port).
+    - VITE_API_URL: https://your-huggingface-space-url.hf.space (No trailing slash, no port).
 4. Deploy.
 
 ## Backend (Hugging Face Spaces)

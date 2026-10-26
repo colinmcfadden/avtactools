@@ -2,9 +2,9 @@ import { renderHook } from "@testing-library/react";
 import api from "../auth/api";
 import { useBuildOnSave } from "./useBuildOnSave";
 
-jest.mock("../auth/api", () => ({
+vi.mock("../auth/api", () => ({
   __esModule: true,
-  default: { post: jest.fn() },
+  default: { post: vi.fn() },
 }));
 
 const TARGET = { lat: 34.783817, lon: -84.08219 };

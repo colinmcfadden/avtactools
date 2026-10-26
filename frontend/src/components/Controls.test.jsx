@@ -23,7 +23,7 @@ const renderControls = (props = {}) =>
 
 describe("the sidebar's Routes card", () => {
   it("holds the Route tool only: mission files come in through the Import menu and its review", () => {
-    const toggleRouteSketch = jest.fn();
+    const toggleRouteSketch = vi.fn();
     const { container } = renderControls({ toggleRouteSketch });
     expect(screen.getByText("Routes", { selector: ".ff-card-header" })).toBeInTheDocument();
     expect(screen.queryByText(/Routes \(\.msnx\)/)).not.toBeInTheDocument();
@@ -45,8 +45,8 @@ describe("the sidebar's Export card", () => {
     features: { lz_pz_tools: true, exports: true, routes: false },
     targetLocation: [34, -84],
     mapData: { mgrs: "16S GC 1 2" },
-    enableExportMode: jest.fn(),
-    setIsExporting: jest.fn(),
+    enableExportMode: vi.fn(),
+    setIsExporting: vi.fn(),
     showHeatmap: false,
     setShowHeatmap: () => {},
     showLZOutline: true,
@@ -59,8 +59,8 @@ describe("the sidebar's Export card", () => {
   };
 
   it("exports an analysed LZ/PZ that may not be changed (a finished pack), while its tools stay off", () => {
-    const enableExportMode = jest.fn();
-    const setIsExporting = jest.fn();
+    const enableExportMode = vi.fn();
+    const setIsExporting = vi.fn();
     renderControls({
       ...analysed,
       enableExportMode,
@@ -102,7 +102,7 @@ describe("the sidebar's LZ/PZ analysis card", () => {
     });
 
   it("offers to analyse again once analysed, and says what that unlocked", () => {
-    const performTerrainAnalysis = jest.fn();
+    const performTerrainAnalysis = vi.fn();
     card({
       performTerrainAnalysis,
       diagramStatus: "analyzed",

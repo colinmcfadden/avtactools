@@ -83,7 +83,34 @@ const settle = (document) => {
   if (!fs.existsSync(file)) {
     throw new Error(`${NAME} is missing; run with UPDATE_CONTRACTS=1 to create it`);
   }
-  expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual(JSON.parse(text));
+  expect(firstDifference(JSON.parse(fs.readFileSync(file, "utf8")), JSON.parse(text))).toBeNull();
+};
+
+// Where the recorded grid and today's differ, or null. A number is the same within a relative 1e-9: the fixture was written under
+// Jest and the suite now runs under Vitest, and the grid's trigonometry comes out a few units different in the last digits.
+const firstDifference = (recorded, now, at = "$") => {
+  if (typeof recorded === "number" && typeof now === "number") {
+    const scale = Math.max(1, Math.abs(recorded), Math.abs(now));
+    return Math.abs(recorded - now) <= 1e-9 * scale ? null : `${at}: ${recorded} is now ${now}`;
+  }
+  if (Array.isArray(recorded) || Array.isArray(now)) {
+    if (!Array.isArray(recorded) || !Array.isArray(now) || recorded.length !== now.length) return `${at}: not the same list`;
+    for (let i = 0; i < recorded.length; i += 1) {
+      const found = firstDifference(recorded[i], now[i], `${at}[${i}]`);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (recorded && now && typeof recorded === "object" && typeof now === "object") {
+    const keys = Object.keys(recorded);
+    if (keys.join() !== Object.keys(now).join()) return `${at}: not the same fields`;
+    for (const key of keys) {
+      const found = firstDifference(recorded[key], now[key], `${at}.${key}`);
+      if (found) return found;
+    }
+    return null;
+  }
+  return Object.is(recorded, now) ? null : `${at}: ${JSON.stringify(recorded)} is now ${JSON.stringify(now)}`;
 };
 
 test("the MGRS grid of each view", () => {
