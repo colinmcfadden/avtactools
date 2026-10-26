@@ -27,6 +27,7 @@ lidar_bp = Blueprint("lidar", __name__)
 # more often than the app's own endpoints and the content never changes for a
 # given key — the key includes everything that determines the contents.
 TILE_CACHE_SECONDS = 7 * 24 * 3600
+PALETTE_CACHE_SECONDS = 3600
 
 # Builds are interactive — someone is waiting in the 3D window — so their area
 # is capped tighter than lookups are. Matches the service's own limit.
@@ -174,7 +175,11 @@ def _streamed_file(streamer, key, filename):
         path = streamer.file(key, filename)
     except stream.StreamError as error:
         return jsonify({"error": str(error), "code": error.code}), error.status
-    response = send_file(path, conditional=True, max_age=TILE_CACHE_SECONDS,
+    # A piece still in its palette is kept an hour, so the photograph the
+    # background pass lays on (lidar.photo) reaches a later view.
+    waiting = filename.endswith(".pnts") and not streamer.photographic(key, filename)
+    response = send_file(path, conditional=True,
+                         max_age=PALETTE_CACHE_SECONDS if waiting else TILE_CACHE_SECONDS,
                          mimetype=("application/json" if filename.endswith(".json")
                                    else "application/octet-stream"))
     response.cache_control.public = False

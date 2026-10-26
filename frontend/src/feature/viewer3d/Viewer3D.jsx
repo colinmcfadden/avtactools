@@ -99,6 +99,10 @@ const report = (viewer, tileset) => {
  */
 const NO_ROUTES = [];
 
+// A streamed survey's points are coloured from USDA's NAIP imagery, served by
+// USGS The National Map (backend lidar/photo.py), which asks to be credited.
+const STREAMED_CREDIT = "LiDAR: USGS 3DEP · Point colour: USDA NAIP, from USGS The National Map";
+
 const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = true,
                    showTerrain = true, routeScene = NO_ROUTES, onReady }) => {
   const containerRef = useRef(null);
@@ -198,6 +202,8 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = 
           // capped how dense the cloud could ever look no matter what was
           // built. An LZ is small enough to afford loading it properly.
           maximumScreenSpaceError: CORE_SCREEN_SPACE_ERROR,
+          // Only a streamed survey comes with a frame (useLidarTileset).
+          ...(frameRef.current ? { credit: STREAMED_CREDIT, showCreditsOnScreen: true } : {}),
         });
         if (cancelled) return;
 

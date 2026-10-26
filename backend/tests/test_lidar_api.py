@@ -521,6 +521,31 @@ class StreamApiTests(LidarApiHarness):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data[:4], b"pnts")
 
+    def test_a_palette_piece_is_kept_an_hour_and_a_photographic_one_the_week(self):
+        """So a browser or the app picks the photograph up on a later view."""
+        from lidar import names
+        from test_lidar_stream import SECRET
+        piece = f"{names.piece_name(self.survey.name, self.survey.centre, secret=SECRET)}.pnts"
+        url = f"/api/lidar/tilesets/{self.survey_key}/{piece}"
+        first = self.client.get(url, headers=self.auth).headers["Cache-Control"]
+        self.assertIn("max-age=3600", first)
+        self.assertIn("private", first)
+        (self.cache / self.survey_key / f"{piece}.photo").write_bytes(b"")
+        later = self.client.get(url, headers=self.auth).headers["Cache-Control"]
+        self.assertIn("max-age=604800", later)
+        self.assertNotIn("public", later)
+        root = self.client.get(f"/api/lidar/tilesets/{self.survey_key}/tileset.json", headers=self.auth)
+        self.assertIn("max-age=604800", root.headers["Cache-Control"])
+
+    def test_a_pieces_mark_is_never_served(self):
+        from lidar import names
+        from test_lidar_stream import SECRET
+        piece = f"{names.piece_name(self.survey.name, self.survey.centre, secret=SECRET)}.pnts"
+        self.client.get(f"/api/lidar/tilesets/{self.survey_key}/{piece}", headers=self.auth)
+        (self.cache / self.survey_key / f"{piece}.photo").write_bytes(b"")
+        response = self.client.get(f"/api/lidar/tilesets/{self.survey_key}/{piece}.photo", headers=self.auth)
+        self.assertEqual(response.status_code, 404)
+
     def test_a_streamed_file_needs_a_token(self):
         response = self.client.get(f"/api/lidar/tilesets/{self.survey_key}/tileset.json")
         self.assertEqual(response.status_code, 401)

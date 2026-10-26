@@ -15,6 +15,7 @@ so nothing in it goes stale.
 
     LIDAR_STREAM_CACHE_DIR      the cache; unset turns streaming off
     LIDAR_STREAM_CACHE_MAX_GB   pieces past this are let go, oldest first (200)
+    LIDAR_STREAM_PHOTO          off: no photographic pass (``lidar.photo``; on)
 
 The browser never talks to AWS: AWS sees this server, never a crew.
 """
@@ -187,6 +188,9 @@ class Streamer:
         self._infos = {}
         self._hierarchies = {}
         self._written = 0
+        # The photographic pass (``lidar.photo.PhotoPass``) cached pieces are
+        # offered to; None for none.
+        self.photo = None
 
     # -- names -------------------------------------------------------------
 
@@ -322,6 +326,7 @@ class Streamer:
         path = self.root / key / name
         if path.is_file():
             self._touch(path)
+            self._offer(key, name, kind)
             return path
 
         survey = self._survey(key)
@@ -344,7 +349,48 @@ class Streamer:
                 data = self._piece(key, survey, node)
             _write_atomic(path, data)
             self._wrote()
+        self._offer(key, name, kind)
         return path
+
+    # -- photographic colour (lidar.photo) -------------------------------------
+
+    @staticmethod
+    def _mark(path: Path) -> Path:
+        return path.with_name(path.name + ".photo")
+
+    def photographic(self, key: str, name: str) -> bool:
+        """Whether a cached piece has its photograph."""
+        return self._mark(self.root / key / name).is_file()
+
+    def _offer(self, key: str, name: str, kind: str) -> None:
+        if kind == "pnts" and self.photo is not None and not self.photographic(key, name):
+            self.photo.offer(key, name)
+
+    def make_photographic(self, key: str, name: str, image) -> bool:
+        """Colour a cached piece from imagery, in place; False when there is
+        nothing to do (let go of, or done already)."""
+        from . import photo
+
+        path = self.root / key / name
+        match = _FILE.match(name or "")
+        survey = self._by_key().get(key)
+        if not match or match.group(2) != "pnts" or survey is None or not path.is_file() \
+                or self.photographic(key, name):
+            return False
+        node = names.piece_node(survey[0].name, match.group(1), secret=self._secret_now())
+        if node is None:
+            return False
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return False
+        recoloured = photo.recolour(data, image, spacing_m=self.info(key).spacing(node))
+        with self._claim(path):
+            if not path.is_file():
+                return False
+            _write_atomic(path, recoloured)
+            _write_atomic(self._mark(path), b"")
+        return True
 
     def _tileset(self, key, survey, node, page) -> bytes:
         info = self.info(key)
@@ -456,6 +502,7 @@ class Streamer:
                 freed += size
             except OSError:
                 continue
+            self._mark(path).unlink(missing_ok=True)
         return freed
 
 
@@ -481,5 +528,11 @@ def streamer() -> Streamer | None:
         return None
     with _streamer_lock:
         if _streamer is None or _streamer.root != root:
+            if _streamer is not None and _streamer.photo is not None:
+                _streamer.photo.stop()
             _streamer = Streamer(root)
+            if (os.environ.get("LIDAR_STREAM_PHOTO") or "on").strip().lower() != "off":
+                from . import photo
+
+                _streamer.photo = photo.PhotoPass(_streamer)
         return _streamer

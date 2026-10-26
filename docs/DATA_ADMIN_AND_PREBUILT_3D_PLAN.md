@@ -318,7 +318,7 @@ and USGS's copy has no colour of its own.
 - It comes from USGS NAIP (public domain, 0.6 m, CONUS), not Mapbox: storing Mapbox colour in data that is then sold
   is a terms question (licence language commonly bars data derived from tiles).
 
-### Photographic colour, in the background (the owner's request of 2026-10-26; not built)
+### Photographic colour, in the background (the owner's request of 2026-10-26; built the same day on USGS's service)
 
 Each cached piece recoloured from NAIP off the request path, so a later view of the same ground is photographic and the first
 view never waits for it. **Checked 2026-10-26, before building; the source and the licence are the owner's to settle:**
@@ -339,16 +339,22 @@ clear; selling photographic colour (D23) is worth confirming with USDA's APFO (t
 Mercator, sample the image bilinearly and write the piece again (measured on five cached pieces of 74–88 thousand points).
 A coarse piece needs no 0.6 m: its image would be sized to its own spacing (a 3 km piece at about 6 m).
 
-**Proposed design** (once the source is chosen):
+**The owner chose USGS's service** (2026-10-26; it held the newest imagery anyway: Georgia's is 2021–2023, nothing anywhere for 2024
+or 2025 yet). **Built** as below (`lidar/photo.py`), except that a failed fetch is tried again after 10 minutes, and pieces are taken in
+the order they were cached (coarse first, then the LZ's own) rather than nearest the LZ. **Measured** at Ellijay: a cold first view with
+the pass running was as fast as without it (first points 1.5 s, the LZ's square 11.4 s, against 1.4 s and 10.0 s); the pass made 164
+of the 168 pieces photographic in about 8.6 minutes (median 3.3 s an image, the slowest 47 s, 4 failures left in the palette until
+tried again).
+
+**The design**:
 - A queue and two worker threads of its own in the API, apart from gunicorn's 8 request threads, so a view never waits on it;
-  a piece is queued as it is first cached, nearest the LZ first, at most a few thousand waiting, and dropped when the cache lets
-  it go. Nothing is fetched while an analysis runs (`terrain_tiles.pauses_warming`).
+  a piece is queued as it is first cached or served still in its palette, at most 5,000 waiting, and skipped when the cache has
+  let it go. Nothing is fetched while an analysis runs (`terrain_tiles.pauses_warming`).
 - The recoloured piece replaces the palette one atomically under the same name. **Caching**: a palette piece is served for an
   hour (`max-age=3600`), a photographic one for the week, so a browser or the app picks the photograph up on a later view without
-  a new look or key.
+  a new look or key. The mark is `<name>.photo` beside the piece, let go with it.
 - The imagery's own vintage (2023, leaf-on) is not the LiDAR's (2018): a tree cut since shows as ground colour on the canopy's
-  points and the reverse. The credit goes beside Mapbox's in the 3D view ("Imagery: USDA NAIP").
-- Measured before shipping: a cold first view must stay as now (first points 1.3–3.0 s), and the pass's own rate per piece.
+  points and the reverse. Credited in the web's 3D view ("Point colour: USDA NAIP, from USGS The National Map"); Android's is to be.
 
 ### Warmed areas: what "prebuilt" becomes
 
