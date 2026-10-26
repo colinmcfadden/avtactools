@@ -1,6 +1,7 @@
 # LZ surveys — architecture and plan
 
-Status: **planned, nothing built** (2026-10-26). The owner's answers of 2026-10-26 are in §10; what is still open is §11. This file is
+Status: **planned, nothing built** (2026-10-26). The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are
+in §11; nothing is open. This file is
 the plan for building the feature; where it and the code disagree once it is built, the code wins (AGENTS.md §16).
 
 ---
@@ -74,7 +75,8 @@ by key), so the move is a new class and a copy, not a change to the routes.
 - Photos are taken as JPEG or PNG up to 20 MB, re-encoded by Pillow (already a dependency) to at most 2400 px on the long side, with the
   orientation applied and **every EXIF field dropped**. A capture is stored as sent (PNG).
 - An S3 store needs `boto3`: a new dependency, to be asked for when the move comes (AGENTS.md §2).
-- The VM's disk is not backed up today, and a full disk took Coolify down on 2026-10-26: §11, R6.
+- The VM's disk is not backed up today, and a full disk took Coolify down on 2026-10-26, so `SURVEY_ASSETS_DIR` is backed up off the VM
+  and the disk watched (§11, R6): a photo cannot be measured again.
 
 ### 3.3 The snapshot: what EZ/PZ measured, frozen
 
@@ -93,7 +95,7 @@ the survey's snapshot, and a published revision keeps the snapshot it was publis
 | Obstacles | §4 |
 
 The 95th-percentile call is the survey's alone. The LZ/PZ panel's slope tile keeps judging the steepest slope at the landing doghouse;
-whether to bring the two together is §11, R7.
+the two stay apart for now (§11, R7).
 
 ### 3.4 Status, sign-off and publishing
 
@@ -111,8 +113,9 @@ Every streamed point already carries its **height above ground** (`lidar/pieces.
 ground returns), and the pieces are cached on the server (`LIDAR_STREAM_CACHE_DIR`). From them, for the survey's LZ:
 
 - **The approach and departure clearance profile** (replacing the field survey's hand-drawn box, "100 ft at 200 m"): along the best
-  approach and the best exit, a corridor (§11, R5) out to a distance, the tallest point above ground in each 10 m along it, drawn as a
-  treetop line over the ground profile, with the angle from the LZ's edge that clears the tallest obstacle and where it is.
+  approach and the best exit, a corridor 30 m each side of the line out to 1,000 m (§11, R5), the tallest point above ground in each 10 m along it, drawn as a
+  treetop line over the ground profile, with the angle from the LZ's edge that clears the tallest obstacle with no margin, and that obstacle's height and distance (no margin
+  until doctrine gives one).
 - **Obstacles in and round the LZ:** the tallest point inside the boundary and within 100 m of it, with bearing, distance and height;
   points standing more than 2 m inside the boundary counted and drawn, and trees found one by one where there are some
   (`filters.litree`, tried on Ellijay hardwood: AGENTS.md §13). This is how "tall dead trees in centre of LZ" can be measured rather
@@ -183,10 +186,12 @@ the admin's to draw. 44 analyses take about 10 minutes.
 | | Read published surveys and the book | Read drafts | Create, edit, measure, import, publish |
 |---|---|---|---|
 | Admins and super-admins | always | always | yes |
-| GA ARNG aviators | yes (§11, R1) | no | no |
+| GA ARNG aviators: accounts with `lz_surveys` ticked (§11, R1) | yes | no | no |
 | Everyone else | no | no | no |
 
-Every route checks on the server (`entitlements.is_admin`); the web hides what a person may not do, and nothing else.
+Every route checks on the server (`entitlements.is_admin` for an admin; for a reader, the feature key `lz_surveys`, in
+`entitlements.DEFAULT_OFF` and ticked by an admin, with a bulk tick in the admin dashboard); the web hides what a person may not do, and
+nothing else. Once organizations exist, membership of a GA ARNG organization replaces the tick.
 
 ---
 
@@ -212,7 +217,7 @@ Each step is built, reviewed independently and committed with its tests, as the 
 | L2 | The import script and *Import* | The 44 pages are drafts with their photos and measurements |
 | L3 | The 3D capture | A survey has its 3D view |
 | L4 | The obstacles (§4) | The clearance profile and obstacles in the editor |
-| L5 | The page's PDF, the preview, sign-off, publishing and revisions; readers' access | A signed page readers can open |
+| L5 | The page's PDF, the preview, sign-off, publishing and revisions; readers' access (`lz_surveys`, the bulk tick) | A signed page readers can open |
 | L6 | The book's PDF | The whole book printed |
 | Later | S3; a server-side 3D render; wider readers once organizations exist (`docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`, Part D) | |
 
@@ -234,9 +239,11 @@ Each step is built, reviewed independently and committed with its tests, as the 
 
 ---
 
-## 11. Still open
+## 11. Decided (2026-10-26)
 
-| # | Question | Recommended |
+The owner took the recommended answer to each (2026-10-26).
+
+| # | Question | Decided |
 |---|---|---|
 | R1 | How EZ/PZ knows who is a GA ARNG aviator (accounts are cleared by any `.mil` address, which does not say which unit) | A feature key `lz_surveys`, off by default (`entitlements.DEFAULT_OFF`), ticked by an admin, with a bulk tick in the admin dashboard; replaced by membership of a GA ARNG organization once organizations exist |
 | R2 | The sign-off | Recorded by the publishing admin: approver's name, rank, title and date, printed; the approver need not have an account, and the publishing admin may be the approver |
