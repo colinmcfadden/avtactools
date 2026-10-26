@@ -1,6 +1,6 @@
 # Plan: EZ/PZ and TAK (ATAK, iTAK and TAK servers)
 
-Status: proposed 2026-10-26. Planning only: nothing is built. The decisions only the owner can make are in §11, each with
+Status: proposed 2026-10-26; the ways to connect (§3a) added the same day. Planning only: nothing is built. The decisions only the owner can make are in §11, each with
 a recommendation. Until they are answered, nothing here is a commitment.
 
 The request, in the owner's words: "an option to connect to a TAK server for access to custom map types, overlays, and
@@ -15,9 +15,10 @@ eventually pushing routes, doghouses, LZ surveys, etc for use in ATAK/ITAK." Tha
 XML file, an overlay is KML/KMZ, and a TAK *data package* is a zip of CoT events with a manifest. ATAK and iTAK import
 them from Files, the share sheet or the TAK server's own file list. So the plan starts with **files both ways** (T1, T2),
 which works offline, needs no certificates, puts no TAK credential anywhere near EZ/PZ's servers, and keeps EZ/PZ out of
-any network it has no business on. A **live connection from the Android app** comes after (T3), and only to servers the
-owner's rules allow (§2). The browser never connects to a TAK server; a server-side relay for web users is possible but
-not recommended now (§3).
+any network it has no business on. A **live connection from the Android app** comes after (T3), in whichever of
+several ways the person's organization supports (§3a: a connection package, enrollment, a username and password, or
+Sit(x)'s own sign-in), and only to servers the owner's rules allow (§2). The browser never connects to a TAK server; a
+server-side relay for web users is possible but not recommended now (§3).
 
 ---
 
@@ -105,7 +106,7 @@ admin, or exports it from ATAK, and imports it into EZ/PZ; EZ/PZ exports a data 
 ATAK or iTAK, or uploads it to the TAK server from ATAK themselves. On Android, a data package goes straight to ATAK on
 the same device through the share sheet (`ShareExport`, as the `.msnx` does).
 
-**Getting a client certificate on Android** (T3), two ways a TAK server supports:
+**Getting a client certificate on Android** (T3a; §3a has every way to connect, these two among them):
 - **A connection data package** (a zip from the TAK admin with the client `.p12`, the trust store `.p12` and a `.pref`
   file naming the server). Read with the platform's `KeyStore("PKCS12")` and moved into the Android Keystore; the file and
   its password are then discarded. No new library.
@@ -119,6 +120,43 @@ the same device through the share sheet (`ShareExport`, as the `.msnx` does).
 Ports, from the example `CoreConfig.example.xml`: 8089 TLS streaming CoT, 8443 HTTPS API (client certificate),
 8444 federation, 8446 certificate enrollment (no client certificate), and commented-out plaintext inputs (8087, 8080).
 A unit's server may use others; the connection data package names them.
+
+---
+
+## 3a. Ways to connect: the person picks what their organization supports
+
+Organizations reach their TAK servers in different ways, so EZ/PZ offers several and the person picks the one their unit
+uses. Each is a **connection profile** on the device: a server, a way to sign in, and the credential that way produces,
+kept in the Android Keystore. The organization's approved-servers list (K1) says which servers, and which ways, are
+allowed. Every way leads to the same few calls (§6: list map layers, find and fetch files, upload a data package), behind
+one client interface, so the screens do not care which way was used.
+
+| Way | How it works | Credential on the device | Works with | Phase |
+|---|---|---|---|---|
+| **1. No connection: files** | The person imports what their TAK admin gives them, and exports data packages they open in ATAK or iTAK (§4, §5). | None | Everything | T1, T2 |
+| **2. ATAK's own connection** | EZ/PZ hands a data package to ATAK on the same phone (the share sheet); the crew sends it on from ATAK, which is already connected. EZ/PZ never touches the server. | None | Any server ATAK connects to | T2 |
+| **3. Connection data package** | The zip a TAK admin hands out for ATAK. Inside, a `config.pref` names the server (`connectString0` as `host:8089:ssl`) and the client and trust store files (`certificateLocation`, `caLocation`) with their passwords, beside the two `.p12` files ([PyTAK's test package][pytakpref]). EZ/PZ reads it, moves the key into the Keystore, keeps the CA as this connection's trust anchor, and calls the HTTPS API on 8443 with mutual TLS. | Client certificate and key | Official TAK Server, OTS, FTS, Sit(x) (its dashboard hands out "certificate packages": [Sit(x) FAQ][sitxfaq]) | T3a |
+| **4. Certificate enrollment** | Username and password (or a one-time token) instead of a certificate. EZ/PZ makes a key pair in the Keystore, asks `GET /Marti/api/tls/config` on 8446 for the subject, and sends a signing request to `POST /Marti/api/tls/signClient/v2` with basic auth; the server answers with the certificate and its chain ([CertManagerApi.java][certapi]). Then as way 3. **ATAK's enrollment link or QR code** carries the same thing: `tak://com.atakmap.app/enroll?host=<host>:<port>&username=<user>&token=<one-time token>` (as OpenTAKServer writes it: [token_api.py][otsqr]); EZ/PZ can take the link pasted, opened from a message, or scanned (K14). | Client certificate and key (the password is used once, not kept) | Official TAK Server, OTS (enrollment and its QR), FTS (to check) | T3a (needs K6) |
+| **5. Username and password, no certificate (OAuth)** | TAK Server is an OAuth2 server using the password flow: `POST https://<host>:8446/oauth/token` with the username and password, checked against its file or LDAP/Active Directory back end, returns a JWT signed by the server's certificate ([TAK Server OAuth2 docs][takoauth]). WebTAK signs in this way on 8446 ([WebTAK docs][takwebtak]). EZ/PZ would call the API on 8446 with the token as a bearer. OTS has the same `/oauth/token` route. **Which Marti routes take a bearer token on 8446** is to try: WebTAK's use says the ones it calls do. | An access token (and the password, only if the person asks to stay signed in) | Official TAK Server (with OAuth configured), OTS | T3b |
+| **6. Sit(x)'s own API** | Sit(x) is a hosted TAK Server ([Booz Allen][sitxbah], [sitx.io][sitx]), so ways 2 and 3 work with it as with any TAK server. It also has a **REST API with OAuth 2.0** ([Sit(x) developers][sitxdev]): a device authorization grant (the phone shows a code, the person approves it in the Sit(x) dashboard, the phone gets a token), an SSO token grant (SAML, OIDC, OAuth: Entra ID, Okta and others), refresh tokens with rotation, and a "Device / External API" that acts for one user under `{org}.{host}/api/v1/`, covering missions, fileshares, content, GeoChat, users and groups. Access is by **contacting Sit(x)** ("request API access"); the routes and scopes are not public. | An OAuth token for the person's Sit(x) account | Sit(x) only | T3c (needs K13) |
+| **7. A VPN on the phone** | Not a way to sign in but a way to reach a server: the unit's VPN, or WireGuard, Tailscale or ZeroTier, makes a private server reachable, and ways 3 to 5 then work unchanged. Nothing for EZ/PZ to build. | The VPN app's own | Any | — |
+
+Not offered: the **streaming port** with a client certificate or an authentication message (TAK Server's `auth="ldap"` or
+`"file"` inputs: [authentication messages][takauthmsg]), which carries the SA feed (§2); and **federation**, which is
+server to server.
+
+**What Sit(x) changes.** It is the way the owner has used: a managed TAK Server on AWS GovCloud (US), built by Booz Allen
+(the Android app's listing names PAR Government as developer), with ATAK, iTAK, WinTAK and its own Sit(x) Mobile app as
+clients, mutual TLS and MFA, organizations kept apart in one service, and "accessible from NIPR" ([Sit(x) for defense][sitxdef]).
+Its pages state **no FedRAMP authorization, impact level, ATO or CUI rule** ([Sit(x) security][sitxsec]), and none of them
+says anything about personal devices. So the Sit(x) tenant an organization uses is judged as any server is (§2): if a
+unit lets soldiers use its tenant on personal phones, what the unit says that tenant is approved for is what K1 records.
+For EZ/PZ the difference is the API: OAuth instead of certificates, a device grant that suits a phone, SSO, and calls
+for content and files. It is also the only way that could serve web users without a certificate, from the backend
+(K3), since Sit(x) is on the internet and has a real OAuth service. It needs Sit(x)'s agreement and documentation first.
+
+**Which way where.** Ways 3 to 6 run in the Android app (§3). The browser can use way 1 only. A backend relay (K3) could
+use 3, 5 or 6 for servers on the internet, and only for those.
 
 ---
 
@@ -329,9 +367,11 @@ Sizes are one engineer's weeks, ±30%. Each phase ends in something a crew can u
 | **T0 — Rules and a device spike** | The owner's decisions (§11). Hand-made data packages tried on ATAK-CIV and iTAK (a route with `Flying` and remarks, a doghouse marker, circles, an attached KMZ), with screenshots into this file. The import's words. | Answers, no code in the product | 0.5 |
 | **T1 — Map sources and overlays from files** | Web first: import a map source XML (tile and WMS) as a base map, and a KML/KMZ as an overlay (vectors and ground overlays), through the Import menu and drop; kept per browser; held to fixtures. Then Android (Import menu, the system picker and other apps' share). Small MBTiles on the web; MBTiles on Android once MapLibre's support is known. | A crew loads their unit's map sources and overlays and plans on them | web 2–3, Android 2 |
 | **T2 — A TAK data package from a plan** | Web first: Export → *TAK data package* for the session or a mission pack (§5), routes, LZ/PZs, graphics, threats with their KMZ attached, the LZ card image; fixtures and XSD checks. Android: the same, to ATAK through the share sheet. | Plans open in ATAK and iTAK as native, navigable objects | web 2–3, Android 1.5 |
-| **T3 — Android connects to an approved TAK server** | The approved-servers route; *Connect to TAK* (connection package, then enrollment if K6 allows); pull map layers and map files; push a data package, optionally to contacts. Tried against the local TAK Server and one real server. | A crew pulls the unit's map layers and pushes a plan from the field, with no laptop | 4–6 |
+| **T3a — Android connects with a certificate** | The approved-servers route; *Connect to TAK* with a connection data package (way 3), then enrollment by password or `tak://` link (way 4, if K6 allows); pull map layers and map files; push a data package, optionally to contacts. Tried against the local TAK Server, OTS and one real server. | A crew pulls the unit's map layers and pushes a plan from the field, with no laptop | 4–6 |
+| **T3b — Username and password (OAuth)** | Way 5 behind the same client interface; which routes take a bearer token recorded against the local TAK Server first. | Units whose server signs people in by password reach it without a certificate | 1–2 |
+| **T3c — Sit(x)** | Way 6, once Sit(x) gives API access and documentation (K13): the device grant, SSO, their content and fileshare calls. | Units on Sit(x) connect with their Sit(x) sign-in | 2–3, after access |
 | **T4 — A mission pack published to a Data Sync mission** | One-way: create or update the mission, replace its contents, delete what left the pack (`t-x-d-d`). | A team's pack shows up as a TAK feed for the rest of the unit | 3–4 |
-| **T5 — Optional** | A server-side connector for web users to internet-reachable approved servers (K3), or iOS's T1–T3 once the iOS app exists. | — | 4+ each |
+| **T5 — Optional** | A server-side connector for web users to internet-reachable approved servers (K3; Sit(x)'s OAuth API is the likeliest), or iOS's T1–T3 once the iOS app exists. | — | 4+ each |
 
 ---
 
@@ -350,6 +390,9 @@ Sizes are one engineer's weeks, ±30%. Each phase ends in something a crew can u
 | K9 | Third-party map sources | EZ/PZ ships none, imports what the person brings, and says the terms are theirs | Community collections point at providers whose terms forbid it | Refuse known hosts |
 | K10 | Order | T1 (map sources in) before T2 (data package out), as asked; both before T3 | The owner asked for TAK into EZ/PZ first, and both are small and offline | T2 first: the data package is the one HANDOFF already lists as not built (`docs/HANDOFF.md` §2, item 7) |
 | K11 | Local test server | The official TAK Server (GPL-3.0 source) in Docker; OTS second | It is the reference implementation; OTS is a re-implementation | OTS only; FTS |
+| K12 | Which ways to connect, and in what order | Files and ATAK's own connection (ways 1, 2) first; then connection packages and enrollment (3, 4); then username and password (5); Sit(x)'s API (6) once Sit(x) agrees | 3 and 4 work with every TAK server and are what admins already hand out; 5 and 6 need a server configured for them or a vendor's agreement | Sit(x) first, if most units the owner knows use it |
+| K13 | Asking Sit(x) for API access | The owner contacts Sit(x) (Booz Allen) now, as research: documentation, a sandbox tenant, whether a third-party app may be registered, and what their tenants are approved for | Only they can say, and the answer decides T3c and whether a web path (K3) is worth it | Wait until T3a is in |
+| K14 | Reading a `tak://` enrollment QR code | Take the link pasted or opened from a message first; scanning needs a barcode library (ZXing, or Google's ML Kit, which needs Play services) | No new dependency until crews ask for scanning | Scan from the start |
 
 ---
 
@@ -361,6 +404,8 @@ Sizes are one engineer's weeks, ±30%. Each phase ends in something a crew can u
 | T1, T2 Android | Nothing new: `java.util.zip`, the `MsnxXml` DOM toolkit, `SqliteReader` | — |
 | T2 web | Nothing new. node-cot ([MIT][nodecot]) is a reference to read, not a dependency: it is built for Node (file system, protobuf, AJV) | — |
 | T3 Android | OkHttp (present) with a Keystore-backed key manager; **`org.bouncycastle:bcpkix-jdk18on`** only for enrollment (K6) | Building the certificate request |
+| T3 Android, scanning | ZXing (`com.google.zxing:core`, Apache-2.0) only if K14 asks for scanning | Reading an enrollment QR code |
+| T3c | Nothing known yet: Sit(x)'s API is plain REST with OAuth 2.0 over OkHttp | — |
 | Tests | A TAK Server Docker image built locally (dev only); an XSD validator for the contracts script (`xmllint` from libxml2, or Python `xmlschema`) | Recorded answers; schema checks |
 
 No new major dependency is needed for T1 or T2.
@@ -382,6 +427,8 @@ No new major dependency is needed for T1 or T2.
 - **Same-device CoT to ATAK** without a file (UDP to ATAK's input on 4242 or the 239.2.3.1:6969 multicast group, as
   drone apps do: [Auterion ATAK setup][auterion]) is undocumented for loopback on Android; not planned.
 - **How DoD and Army TAK servers are accredited**: no public source found; §2 does not depend on it.
+- **Sit(x)**: what its tenants are approved for (its pages state no FedRAMP authorization, impact level or CUI rule), its API's routes and scopes (not public), and whether it serves the Marti API to third parties as a stock TAK Server does.
+- **OAuth on TAK Server**: whether every Marti route this plan uses takes a bearer token on 8446, and whether FTS enrolls certificates at all.
 
 ---
 
@@ -411,6 +458,18 @@ No new major dependency is needed for T1 or T2.
 - [COTAK iTAK training][cotakitak]
 - [Auterion ATAK communications setup][auterion]
 - [PyTAK][pytak] (a Python TAK client library, Apache-2.0)
+- [PyTAK's test connection preferences][pytakpref]
+- [OpenTAKServer `token_api.py` (the enrollment QR link)][otsqr]
+- [TAK Server OAuth2 authentication][takoauth]
+- [TAK Server WebTAK][takwebtak]
+- [TAK Server authentication messages][takauthmsg]
+- [Sit(x) on Booz Allen's site][sitxbah]
+- [sitx.io][sitx]
+- [Sit(x) developers][sitxdev]
+- [Sit(x) FAQ][sitxfaq]
+- [Sit(x) security][sitxsec]
+- [Sit(x) for defense][sitxdef]
+- [Sit(x) Mobile on Google Play][sitxplay]
 
 [takgov]: https://tak.gov/products
 [atakciv]: https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV
@@ -436,3 +495,15 @@ No new major dependency is needed for T1 or T2.
 [cotakitak]: https://cotak.gov/guest/itak-training
 [auterion]: https://docs.auterion.com/vehicle-operation/auterion-mission-control/useful-resources/situational-awareness/atak-communications-setup
 [pytak]: https://pytak.readthedocs.io/
+[pytakpref]: https://github.com/snstac/pytak/blob/main/tests/data/test_pref.pref
+[otsqr]: https://github.com/brian7704/OpenTAKServer/blob/master/opentakserver/blueprints/ots_api/token_api.py
+[takoauth]: https://github.com/TAK-Product-Center/Server/blob/main/src/takserver-core/src/main/webapp/Marti/documentation/takserver/oath2authentication/index.html
+[takwebtak]: https://github.com/TAK-Product-Center/Server/blob/main/src/takserver-core/src/main/webapp/Marti/documentation/takserver/webtak/index.html
+[takauthmsg]: https://github.com/TAK-Product-Center/Server/blob/main/src/takserver-core/src/main/webapp/Marti/documentation/takserver/configuration/groupassignmentusingauth/index.html
+[sitxbah]: https://www.boozallen.com/expertise/products/sitx-situational-awareness-in-real-time.html
+[sitx]: https://sitx.io/
+[sitxdev]: https://sitx.io/developers
+[sitxfaq]: https://sitx.io/faq
+[sitxsec]: https://sitx.io/security
+[sitxdef]: https://parteamconnect.com/use-cases/defense-and-military
+[sitxplay]: https://play.google.com/store/apps/details?id=com.partech.sitx_multiplatform
