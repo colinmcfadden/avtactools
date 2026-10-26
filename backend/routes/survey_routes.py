@@ -218,7 +218,12 @@ def _clean_diagram(value):
     analysis = value.get('analysis')
     if isinstance(analysis, dict) and analysis.get('terrainData') is not None:
         value['analysis'] = {**analysis, 'terrainData': None}
-    if len(json.dumps(value)) > MAX_DIAGRAM_BYTES:
+    try:
+        # NaN and Infinity read as JSON in Python but are not JSON, and Postgres refuses them.
+        size = len(json.dumps(value, allow_nan=False))
+    except ValueError:
+        raise ValueError('The diagram holds a number that is not finite')
+    if size > MAX_DIAGRAM_BYTES:
         raise ValueError('The diagram is too large to keep with a survey')
     return value
 
@@ -408,8 +413,8 @@ def measure_survey(survey_uuid):
     user = _me()
     try:
         snapshot = measure.measure(survey.diagram, survey.field, user.name or user.email)
-    except ValueError as problem:
-        return _error(str(problem), 400, 'no_target')
+    except measure.CannotMeasure as problem:
+        return _error(str(problem), 400, problem.code)
     changes = measure.differences(survey.snapshot, snapshot)
     if apply:
         survey.snapshot = snapshot

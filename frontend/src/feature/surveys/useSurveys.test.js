@@ -76,6 +76,17 @@ describe("useSurveys", () => {
     expect(result.current.list).toMatchObject({ status: "error", error: "Only admins can work on LZ surveys." });
   });
 
+  it("says why a survey would not open, and opens nothing", async () => {
+    const client = fakeClient({ getSurvey: jest.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 404, data: { code: "not_found" } } }); }) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    let failure;
+    await act(async () => {
+      failure = await result.current.openSurvey("s-9");
+    });
+    expect(failure).toBe("That survey is no longer there.");
+    expect(result.current.survey).toBeNull();
+  });
+
   it("saves what was typed on the revision it was opened at", async () => {
     const client = fakeClient();
     const { result } = await opened(client);

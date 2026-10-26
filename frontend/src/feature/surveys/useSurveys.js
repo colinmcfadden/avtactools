@@ -86,6 +86,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     refresh(next);
   }, [refresh, showArchived]);
 
+  /** Opens a survey in the editor. Null when it opened, else why not, in words. */
   const openSurvey = useCallback(async (uuid) => {
     setBusy("opening");
     setError(null);
@@ -93,10 +94,9 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
       take(await client.getSurvey(uuid));
       setConflict(null);
       setPreview(null);
-      return true;
+      return null;
     } catch (err) {
-      setError(surveyFailure(err, "The survey could not be opened."));
-      return false;
+      return surveyFailure(err, "The survey could not be opened.");
     } finally {
       setBusy(null);
     }

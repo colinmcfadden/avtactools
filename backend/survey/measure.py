@@ -43,6 +43,17 @@ LIMITS_DEG = {
 LIMIT_WORDS = {"noseUp": "nose up", "noseDown": "nose down", "cross": "cross slope"}
 # How far round the target to read the DEM when there is no boundary yet.
 TARGET_ONLY_PAD_M = 60.0
+# Past this on its long side a boundary is not an LZ (a slip of the mouse, a polygon of a county), and measuring it would read
+# a DEM, or fetch Terrarium tiles, over all of it.
+MAX_BOUNDARY_M = 3000.0
+
+
+class CannotMeasure(ValueError):
+    """Why a survey cannot be measured, with a ``code`` for the API's answer."""
+
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
 
 
 def _finite(value):
@@ -199,12 +210,16 @@ def _terrain_block(boundary):
 
 
 def measure(diagram, field, by_name="", now=None):
-    """The snapshot for a survey's diagram and field values. Raises ValueError when the diagram has no target to measure from."""
+    """The snapshot for a survey's diagram and field values. Raises CannotMeasure with no target, or a boundary no LZ could have."""
     target = target_of(diagram)
     if target is None:
-        raise ValueError("Set the LZ's target (its touchdown point) before measuring.")
+        raise CannotMeasure("Set the LZ's target (its touchdown point) before measuring.", "no_target")
     lat, lon = target
     boundary = boundary_of(diagram)
+    if boundary is not None:
+        rect = geometry.smallest_rectangle(boundary + [[lat, lon]])
+        if rect is not None and rect["lengthM"] > MAX_BOUNDARY_M:
+            raise CannotMeasure("The boundary (with the target) is more than 3 km across: too large to be an LZ.", "too_large_to_measure")
     heading = heading_of((field or {}).get("approachDeg"))
     problems = []
 

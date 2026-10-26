@@ -64,6 +64,7 @@ const WORDS = {
   revision_conflict: "Someone saved this survey since you opened it.",
   archived: "This survey is archived: restore it to change it.",
   no_target: "Set the LZ's target before measuring.",
+  too_large_to_measure: "The boundary is more than 3 km across: too large to be an LZ. Draw it again.",
   not_found: "That survey is no longer there.",
   too_large: "A photo can be at most 20 MB.",
   not_an_image: "That file is not a picture that can be read.",

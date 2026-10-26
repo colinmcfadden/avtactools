@@ -132,6 +132,13 @@ class SurveyTests(SurveyCase):
                 response = self.client.post('/api/surveys', headers=self.admin, json=body)
                 self.assertEqual((response.status_code, response.get_json()['code']), (400, 'invalid_survey'))
 
+    def test_a_diagram_that_is_not_json_is_refused(self):
+        # Python reads NaN as JSON; Postgres does not, and would answer a 500.
+        survey = self.new_survey()
+        bad = {**DIAGRAM, 'target': {'lat': float('nan'), 'lon': TARGET[1]}}
+        response = self.patch_survey(survey, {'diagram': bad})
+        self.assertEqual((response.status_code, response.get_json()['code']), (400, 'invalid_survey'))
+
     def test_a_save_names_the_revision_it_was_made_on(self):
         survey = self.new_survey()
         missing = self.client.patch(f'/api/surveys/{survey["uuid"]}', headers=self.admin, json={'name': 'LZ D'})

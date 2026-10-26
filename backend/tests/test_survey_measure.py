@@ -285,8 +285,20 @@ class MeasureTests(unittest.TestCase):
         self.assertTrue(any('No terrain covers' in p for p in snap['problems']))
 
     def test_with_no_target_there_is_nothing_to_measure(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(measure.CannotMeasure) as refused:
             measure.measure(diagram(boundary=square(), target=None), {}, 'Admin')
+        self.assertEqual(refused.exception.code, 'no_target')
+
+    def test_a_boundary_no_lz_could_have_is_not_measured(self):
+        # A slip of the mouse, or a county: it would read (or fetch) terrain over all of it. Refused before any is loaded.
+        with patch('terrain_provider.load_best_terrain') as load:
+            with self.assertRaises(measure.CannotMeasure) as refused:
+                measure.measure(diagram(boundary=square(1600)), {'approachDeg': '360'}, 'Admin')
+            self.assertEqual(refused.exception.code, 'too_large_to_measure')
+            far = diagram(boundary=square(50), target=tuple(local(0, 3500)))       # a target far from its boundary
+            with self.assertRaises(measure.CannotMeasure):
+                measure.measure(far, {}, 'Admin')
+        load.assert_not_called()
 
     def test_a_new_snapshot_says_what_it_changes(self):
         with Terrain(east_deg=5.0):

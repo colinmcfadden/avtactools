@@ -104,7 +104,8 @@ const SurveyBook = ({ onClose, client }) => {
             surveys={surveys}
             onNew={() => setCreating(true)}
             onOpen={async (uuid) => {
-              if (!(await surveys.openSurvey(uuid))) show({ message: surveys.error ?? "The survey could not be opened.", tone: "error" });
+              const failure = await surveys.openSurvey(uuid);
+              if (failure) show({ message: failure, tone: "error" });
             }}
           />
         )}
