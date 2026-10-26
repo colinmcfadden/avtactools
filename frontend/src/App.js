@@ -75,6 +75,7 @@ import WorkspaceSwitcher from "./feature/missionPacks/ui/WorkspaceSwitcher";
 import { FinishedBanner } from "./feature/missionPacks/ui/PackDialogs";
 import { lzDiagramFromItem, packDiagramId } from "./feature/missionPacks/packLz";
 import { packLocalRef } from "./feature/missionPacks/packRef";
+import SurveyBook from "./feature/surveys/SurveyBook";
 
 const resolveStateUpdate = (nextValue, currentValue) =>
   typeof nextValue === "function" ? nextValue(currentValue) : nextValue;
@@ -645,6 +646,9 @@ function App() {
     onOpenLibrary: () => openLibrary("lz"),
   });
   const inPack = Boolean(packs.open);
+
+  // --- The LZ survey book (docs/LZ_SURVEYS.md): admins only, a window of its own over the planning frame -------------
+  const [surveysOpen, setSurveysOpen] = useState(false);
 
   // --- The mission brief (docs/MISSION_BRIEF.md): from the open pack, else from this session ----------------------
   const [briefOpen, setBriefOpen] = useState(false);
@@ -1412,6 +1416,7 @@ function App() {
         <TopBar
           user={user}
           isAdmin={Boolean(user?.is_admin)}
+          onOpenSurveys={() => setSurveysOpen(true)}
           onSignOut={logout}
           onOpenLibrary={() => openLibrary("lz")}
           briefSlot={feat.mission_brief ? (
@@ -2013,6 +2018,7 @@ function App() {
           onOpenPacks={feat.mission_packs && !inPack ? openWorkspaceSwitcher : undefined}
         />
       )}
+      {surveysOpen && user?.is_admin && <SurveyBook onClose={() => setSurveysOpen(false)} />}
       {briefOpen && feat.mission_brief && (
         <BriefSetup
           brief={brief}

@@ -1,6 +1,7 @@
 # LZ surveys — architecture and plan
 
-Status: **planned, nothing built** (2026-10-26). The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are
+Status: **L1 built** (2026-10-26: admins make, edit, measure and photograph a survey on the web; §12 says what L1 settled that the
+plan did not). L2 to L6 are next. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are
 in §11; nothing is open. This file is
 the plan for building the feature; where it and the code disagree once it is built, the code wins (AGENTS.md §16).
 
@@ -252,3 +253,43 @@ The owner took the recommended answer to each (2026-10-26).
 | R5 | The approach corridor and the clearance | 30 m each side of the approach line, out to 1,000 m; print the angle that clears the tallest obstacle with no margin and the obstacle's height and distance, until doctrine gives a margin (AGENTS.md §13: do not invent separation values) |
 | R6 | Backups | Back up `SURVEY_ASSETS_DIR` off the VM (photos cannot be measured again), and watch the disk |
 | R7 | The LZ/PZ panel's slope tile judges the steepest slope; the survey the 95th percentile | Keep them apart for now; bring the panel to the 95th percentile on the web first if wanted |
+
+---
+
+## 12. L1 as built (2026-10-26)
+
+What L1 had to decide that the plan did not, each with its reason. The code is `backend/survey/`, `backend/routes/survey_routes.py` and
+`frontend/src/feature/surveys/`.
+
+- **The editor's map is a map of its own**, not the planning map in a mode: a react-leaflet map in the survey window that reuses the
+  planning map's slope layer (`SlopeLayer`, raster and contours, at the person's own opacity), its base maps and the slope profile
+  (`SlopeProfile`). A survey's LZ is then never one of the session's LZ/PZs, so the planning tools' Save, Ctrl/⌘ S, the Library and
+  Mission Packs can never take it. Its diagram is still the web's schema-2 document, so it opens in the LZ/PZ tools as it is.
+- **Best approach and exit** are the field's (R3) and typed in the form; the map draws them as arrows (into the target along the
+  approach, out along the exit), and the saved diagram carries them as its landing and takeoff doghouses, with the flight data's
+  headings, so the document says the same.
+- **The boundary** is found with the model at the target (`/api/analyze-field`, as Analyze does) or drawn a corner at a click; either
+  becomes `analysis.detectedLZ`, the one measured.
+- **Measure works on the saved survey**: the editor saves first. Without `apply` the server answers the new snapshot and what it changes
+  and keeps nothing; with `apply` (and If-Match) it measures again and keeps it. Measuring twice costs a few seconds and keeps the server
+  from ever storing a snapshot the client sent.
+- **Every save names its revision** (`If-Match` is required, 428 without; 409 with the server's copy on a stale one). The editor keeps
+  what was typed and offers *Save mine over theirs* or *Load theirs*, naming what the other admin changed.
+- **Field values are text**, as the book writes them; a number is read out of the text only to compare it. A field key the server does
+  not know is refused, so the web's list (`surveyFields.js`) and the server's (`survey/fields.py`) cannot drift; both are held to
+  `contracts/fixtures/surveys/donovan.json`.
+- **Disagreements are flagged past** 50 m for the grid or lat/long against the target (the import's own check, §6), 25 ft of elevation,
+  2° of slope (the field's "roll" or "cross" against the cross slope, "nose up/down" against those, else the steepest of the three) and
+  10% of size. These are review flags, not limits. A field value that cannot be read is a disagreement. *Accept computed* needs no
+  reason; *Print survey's* does. A choice is kept with the two values it was made on and stops settling the disagreement when either
+  changes, so measuring again or retyping a value puts it back in front of an admin.
+- **Photos do not move the survey's revision**: an upload, a caption or taking one off is its own request and never conflicts with a
+  form being typed. A survey's asset ids are its asset rows not taken off (`removed_at`), in upload order.
+- **The snapshot keeps the slope map, contours and profiles** (`terrain`, as `/api/terrain-analysis` answers them less the table by
+  heading), so the editor draws them without measuring again; tens to a few hundred KB a survey.
+- **Headings are the DEM grid's**: over a local DEM the 95th percentile is taken along the UTM grid's north, turned up to ~1.7° from true
+  in north Georgia (AGENTS.md §15, *True or magnetic*); the same as `byHeading`.
+- **Status** exists (`draft`, `in_review`, `published`) but L1 only ever makes a draft, and any change to a survey under review or
+  published makes it a draft again, ready for L5.
+- **The book** is made on first use, named `HLZ SURVEY BOOK` (renamed from the list), its page order the order surveys were made in.
+- **The window** opens from the account menu for admins only; the server refuses everyone else (403 `admin_required`) on every route.
