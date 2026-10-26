@@ -148,7 +148,7 @@ avtactools/
 ├─ android/                  Gradle project for the Android app (§17): pure-Kotlin core modules, Android libraries, the app
 ├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17); briefs/: the mission brief's formats as data
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
-├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md, ANDROID_MISSION_PACKS_PLAN.md, DATA_ADMIN_AND_PREBUILT_3D_PLAN.md; HANDOFF.md (where the Android build stands, what is next); native-design/ (the menu redesign for Android and iOS, phone and tablet: screenshots, outlines, sources, tokens; read its README before native UI work)
+├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md, ANDROID_MISSION_PACKS_PLAN.md, DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, TAK_INTEGRATION_PLAN.md; HANDOFF.md (where the Android build stands, what is next); native-design/ (the menu redesign for Android and iOS, phone and tablet: screenshots, outlines, sources, tokens; read its README before native UI work)
 ├─ .github/workflows/        release.yaml (semantic-release); android.yaml, contracts.yaml (path-filtered tests)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
 └─ backend/TERRAIN_DATA.md, backend/lidar/SERVER_SETUP.md
@@ -1076,7 +1076,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/ANDROID_3D_PLAN.md` (the 3D view on Android), `docs/MISSION_BRIEF.md` (the mission brief: B0 to B9 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23, not built yet), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
+  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/ANDROID_3D_PLAN.md` (the 3D view on Android), `docs/MISSION_BRIEF.md` (the mission brief: B0 to B9 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23, not built yet), `docs/TAK_INTEGRATION_PLAN.md` (TAK: map sources and overlays in, data packages out, a live connection from the Android app; proposed 2026-10-26, decisions open), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
   "where things stand, what is next" note for whoever picks the Android work up; refresh it with each commit that moves either.
 
 ---
