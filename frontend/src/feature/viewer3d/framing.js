@@ -15,3 +15,18 @@ export const framingRange = (radius, aspectRatio, fov) => {
   const across = Math.atan(Math.tan(fov / 2) * aspectRatio);
   return range * Math.sin(fov / 2) / Math.sin(across);
 };
+
+/**
+ * The sphere the view opens on, and the *LZ* button flies back to: the
+ * server's `frame` where it gave one (a streamed survey is a whole state's
+ * octree, whose own sphere is the state), else the tileset's own. A frame
+ * whose ground height nobody knows falls back too, rather than open on a
+ * height made up.
+ */
+export const lzSphere = (Cesium, tileset, frame) => {
+  const usable = frame && Number.isFinite(frame.lat) && Number.isFinite(frame.lon)
+    && Number.isFinite(frame.height_m) && Number.isFinite(frame.radius_m);
+  if (!usable) return tileset.boundingSphere;
+  return new Cesium.BoundingSphere(
+    Cesium.Cartesian3.fromDegrees(frame.lon, frame.lat, frame.height_m), frame.radius_m);
+};

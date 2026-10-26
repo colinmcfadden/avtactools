@@ -106,7 +106,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
 | **Mission packs** | A shared container of LZs, sketched route sets and point sets a team plans one operation in. Members edit it through a server-ordered stream of id-addressed operations, every change is logged, and the owner can finish it (read-only for everyone). Teams, email invites, and name search limited to teammates. Edits reach everyone through a live stream (a separate service), or by polling where it is not running. Design and rules: `docs/MISSION_PACKS.md`. On Android the engine runs with the app, takes invitation links and has the workspace switcher and the Pack panel (§17, *Mission packs on Android*, *The workspace switcher*, *The Pack panel*); the other panels in a pack and the rest of its screens are next | `feature/missionPacks/` (the sync client `useMissionPack`; `packApi` for every route; invitation links; the editors kept in step with an open pack, `usePackLz` / `usePackRoutes` / `usePackPoints` on `usePackItemSync`: `docs/MISSION_PACKS.md` §5a; the screens in `feature/missionPacks/ui/`: the workspace switcher, the Pack panel with Items and History, New pack, Members, Teams, Add to pack, the finished banner and other people's pointers, joined to the app by `usePackWorkspace`) | `routes/pack_routes.py`, `routes/team_routes.py`, `pack_ops.py`, `pack_support.py`, `realtime/service.py` |
 | **Mission brief** *(B0 to B9 built; plan, the owner's decisions and what is next in `docs/MISSION_BRIEF.md`)* | The air movement and hasty multi-ship briefs from a pack or the session: a PDF and a live sandtable. So far the formats as data (`contracts/briefs/`, copied byte for byte into the web) and the pure core: `compileBrief` (everything a brief says, held to `contracts/fixtures/brief/compile.json`) and on-device light data (held to Skyfield, `light.json`). The server keeps briefs in the Library (`/api/briefs`, synced) and as pack items open to every member, and answers the weather at a planned time (`/api/weather?at=`). The web's Brief menu and three-step setup (`BriefSetup` over `useBrief`) for accounts with `mission_brief` (off for all but admins and ticked testers); a pack's session takes brief edits even when read-only, in batches of their own (`packSession.js`, `packs/session-brief.json`). The PDF: the client sends the compiled model to `POST /api/brief/pdf`, the server draws each figure (tiles stitched with Pillow, the plan as SVG from the model's `geometry`), lays the pages out as HTML (`brief/templates/`) and Gotenberg prints them; nothing is kept. **A brief never says a page number**: Chromium decides where a long step breaks, so the packet is said by section and the footer numbers the pages. The live sandtable (*Present live sandtable* in the Brief menu, *Present sandtable* at the review): the brief's steps walked on the live map, the planning frame put away (kept mounted) and nothing taking an edit, each step flown to and drawn from `geometry` by the PDF's own rules (`sandtableSteps.js`, held to `contracts/fixtures/brief/sandtable.json`; `SandtableLayer.jsx`), a step called *Step n of N*, never by a page. Strip charts in the PDF's appendix: each route cut by `compileBrief` into 5.5 × 21.5 cm strips (three a page, 1:100,000 or 1:250,000, topo unless asked), the 1 km MGRS grid added only when printing (`stripGrid.js`), and the server turning the map so the course is up (`figures.draw_strip`). On Android, tablets only (the rail's *Brief*): the setup's three steps, the review over the real PDF, Share and Save (`feature-brief` over core-data's `BriefSession`, §17 *The brief on a tablet*), and the live sandtable from the setup's *Present sandtable* (`SandtableFrame` over the tablet's map, core-brief's `SandtableSteps` held to `sandtable.json`, the fit to `sandtable-fit.json`; §17 *The sandtable on a tablet*) | `feature/brief/` | `routes/brief_routes.py`, `brief/` (`figures.py`, `pages.py`, `gotenberg.py`, `templates/`), `pack_routes._only_briefs`, `routes/weather_routes.py` |
-| **3D LZ view** *(in progress; on Android too, `docs/ANDROID_3D_PLAN.md`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
+| **3D LZ view** *(in progress; on Android too, `docs/ANDROID_3D_PLAN.md`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. The web streams the place's whole USGS survey from its octree on AWS, a piece at a time, converted and cached by the API on first ask (`lidar/stream.py`; first points in about 2 s, the LZ at full density in about 12 s cold, against a 137 s build), and opens on `resolve`'s `frame`; where nothing streams, opening it on an unbuilt LZ builds one automatically and shows progress (Android still builds: §15). Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`, and `ept.py`, `names.py`, `pieces.py`, `stream.py` for streaming), `tools/` |
 
 Entitlement keys (`entitlements.FEATURES`): `lz_pz_tools`, `routes`,
 `msnx_import`, `threats`, `cloud_save`, `exports`, `aircraft_profiles`,
@@ -205,7 +205,7 @@ the fields serves API 1.
 | aircraft | `/api/aircraft-profiles` CRUD, `/<id>/template`. A user's own profiles sync like saved records; the master list does not |
 | threats | `POST /api/threat-mask`, `POST /api/threats-ths`, `GET/POST /api/threats-kmz`, `POST /api/threats-kmz-link` |
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
-| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key. What the apps call of these and the two 3D terrain routes is in `contracts/openapi.yaml` (the 3D view's section), recorded with a real py3dtiles tileset (`contracts/fixtures/viewer3d/tileset`) |
+| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key. The bare list is admins' only (403 `admin_required`), and a tileset's folder serves only tile files (`.json` but never `area.json`, `.pnts`, `.b3dm`, `.glb`, `.subtree`; nothing under a dot), anything else a JSON 404. `resolve` with `stream: true` answers a streamed survey (`streamed`, `frame`) where nothing is built and the server streams (`LIDAR_STREAM_CACHE_DIR`); its files (`tileset.json`, `<16 hex>.json`, `<16 hex>.pnts`) come from the same file route, 502 `upstream_unavailable` or 503 `geoid_unavailable` when they cannot be made. What the apps call of these and the two 3D terrain routes is in `contracts/openapi.yaml` (the 3D view's section), recorded with a real py3dtiles tileset (`contracts/fixtures/viewer3d/tileset`) |
 | mission packs | `/api/packs` (+ `/<uuid>`, `/finish`, `/reopen`, `/duplicate`, `/ops`, `/events`, `/seen`, `/items…`, `/members…`, `/invites…`) — `docs/MISSION_PACKS.md` §4. A batch of `/ops` all on `brief` items is taken from viewers and in a finished pack |
 | teams, invites, search | `/api/teams` (+ `/<id>`, `/members/<user_id>`, `/invites`), `/api/invites` (+ `/<id>/accept`, `/<id>/decline`, `/accept`), `GET /api/users/search?q=` (teammates only) |
 | admin | `/admin/*` — session cookie, not JWT. `/admin/packs` and `/admin/teams` are read only and never show what a pack holds |
@@ -295,7 +295,7 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 | **OpenTopoData** (SRTM30m) | Point elevation in field analysis | `terrain_routes.py` | keyless |
 | **aviationweather.gov** | METAR, winds aloft | `weather_routes.py` | keyless |
 | **FAA NOTAM search** | NOTAMs | `weather_routes.py` | keyless |
-| **USGS 3DEP LiDAR** | Point clouds | `backend/lidar/`, `tools/` | keyless (§12) |
+| **USGS 3DEP LiDAR** | Point clouds: built from, and streamed by the API from its octree on AWS (`lidar/stream.py`; the browser never talks to AWS) | `backend/lidar/`, `tools/` | keyless (§12) |
 | **USGS 1/3″ DEMs** | Local terrain | mounted at `TERRAIN_DATA_DIR` | downloaded |
 | **Ultralytics SAM** | LZ detection model | `sam_b.pt`, auto-downloaded on first load | — |
 | **GitHub Actions** | Semantic release | `.github/workflows/release.yaml` | `GITHUB_TOKEN` |
@@ -355,6 +355,7 @@ the owner's workstation against the north Georgia DEMs (73 × 1/3″, 30–35°N
 | E | Build the point cloud on save | **Done** — `viewer3d/useBuildOnSave.js` | Saving an LZ asks for a kept build in the background. The build service runs builds someone is watching first, so this never delays the 3D window. LZs loaded already saved are not built. |
 | F | Build from the downloaded collection | **Owner config** — set `LIDAR_COLLECTION=/data/lidar` on the VM's build service | Skips reading the survey from AWS. Not measured since the imagery fix below made builds 5× faster; expect a further cut. |
 | G | Coarser point-cloud streaming (`maximumScreenSpaceError` 2 → 4) | **Not done** | Trades the fidelity the 3D view exists for. |
+| H | Stream USGS's own octree instead of building (plan Part C, D20) | **Done for the web** — `lidar/stream.py`, `resolve`'s `stream` | Measured 2026-10-26 from the owner's Mac, cold cache, at the Ellijay test LZ: first points 1.4–2.9 s; every piece over the 1 km square at every depth (168, 52 MB) in 10–13 s; the whole opening view at error 2 on a 1600 × 900 view (370 pieces, 147 MB, the landscape included) in 18–21 s; warm, all of it off the disk at once. A build of the same LZ: 137 s. Not measured: the VM's link to AWS, and the tunnel to a viewer. |
 
 Also: point colour from Mapbox level 18 instead of 20 (§13) took a 500 m build
 from 707 s to 137 s.
@@ -412,7 +413,10 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `LIDAR_TILES_DIR` | Tileset store the API serves. Default `/data/tiles`. |
 | `LIDAR_BUILDER_URL` | The build service, e.g. `http://<internal host>:8090`. Unset → no on-demand builds. |
 | `LIDAR_BUILDER_TOKEN` | Shared secret with the build service. |
+| `LIDAR_KEY_SECRET` | **Required on every deployment, and the same on the API, staging's API and the build service** (they share `/data/tiles`). New tileset keys are an HMAC under it (`lidar/catalog.key_for`). Both refuse to start without one of 32 characters or more wherever `JWT_SECRET_KEY` is required, or `LIDAR_BUILDER_TOKEN` is set (`catalog.key_secret`); a bare local run uses a public development value. `openssl rand -hex 32`. |
 | `LIDAR_CACHE_DIR` | Where the USGS coverage index is cached. |
+| `LIDAR_STREAM_CACHE_DIR` | Streams 3D from USGS's octree (plan Part C) when set: where the survey indexes and converted pieces are cached. A persistent, writable mount in production (e.g. `/data/cache/lidar`); safe to delete. Unset: no streaming, and the 3D view builds as before. The coverage index (8 MB) is downloaded into it on first use. |
+| `LIDAR_STREAM_CACHE_MAX_GB` | The pieces' cap (default 200): past it the pieces used longest ago are let go. |
 | `MIN_APP_VERSION_ANDROID`, `MIN_APP_VERSION_IOS` | Oldest supported native app version, `X.Y.Z`, served by `/api/config`; the app shows "Update required" below it. Unset = no minimum. A malformed value is ignored and logged, never served. |
 | `MAINTENANCE_MESSAGE` | Non-empty turns maintenance on in `/api/config` and is the notice the apps show (500 chars max). |
 | `REALTIME_PUBLIC_URL` | Where clients open the mission packs' live stream (`ws://` or `wss://`), handed out as every pack's `live_url`. Unset: clients poll. The service's own settings are at the top of `backend/realtime/service.py`. |
@@ -708,16 +712,33 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - A downloaded directory can hold **several surveys in different CRSs**
   (Albers vs UTM 17N). Tiles carry their own CRS; never assume the first
   speaks for all.
-- Tilesets are addressed by an opaque hash key so URLs don't reveal locations,
-  but **found by coverage**: each has an `area.json` manifest and `resolve`
-  returns the nearest one whose area contains the target.
+- Tilesets are addressed by an opaque key so URLs don't reveal locations,
+  but **found by coverage**: each has an `area.json` manifest (never served)
+  and `resolve` returns the nearest one whose area contains the target. The key
+  is an HMAC of the rounded target under `LIDAR_KEY_SECRET`: an unkeyed hash of
+  it could be hashed back into its place by trying every rounded place in a
+  region. Tilesets from before the HMAC keep their old names (the owner's call,
+  2026-10-26: no rename); since lookups go by coverage, both kinds are found.
 - Pipeline: PDAL crops, classifies, colours from Mapbox imagery, reprojects to
   ECEF → py3dtiles writes `.pnts`. It runs in the `backend/lidar` Docker image
   (`docker build -t avtac-lidar:dev backend/lidar`), whose default command is
   the build service. `lidar/build.py` is the single build path; the service
   (`lidar/worker.py`), the CLI (`python -m lidar`) and `tools/build_lz.py` all
   go through it.
-- **Builds happen on first view, or in the background when an LZ is saved.**
+- **Streamed instead, where the server streams** (`lidar/stream.py`, plan Part C): `resolve` with `stream: true`
+  answers the place's survey (`coverage`'s choice) as one tileset written from USGS's own Entwine index
+  (`lidar/ept.py`: four levels a file, the next joined as external tilesets, regions from each cube with
+  the geoid added, error the cube's width over its span, `ADD`), and each piece a viewer asks for is
+  fetched from AWS, converted (`lidar/pieces.py`: noise dropped, the build's class rules by survey year,
+  coloured by height above the piece's nearest ground, the geoid read at its centre, `POSITION_QUANTIZED`)
+  and cached. Names in URLs are opaque (`lidar/names.py`): a survey's key is an HMAC of its name, a
+  piece's name its octree address through a keyed 64-bit permutation, so the server reads it back without
+  keeping a table. A built tileset still wins (photographic colour). Only a client that frames on
+  `frame` may ask: the tileset is a state, and its own sphere opens on the state. Every AWS read is
+  tried three times over one pooled session (Cesium never asks again for a tile that failed); without
+  the geoid grids nothing is served (503), as builds refuse.
+- **Builds happen on first view, or in the background when an LZ is saved**, where nothing streams. The
+  web asks `resolve` before a build on save and builds nothing where the place streams.
   The service builds one at a time from a bounded queue — builds someone is
   watching first (polled in the last 15 s), then the rest oldest first — stages each under `.staging-<key>` and moves it into place
   only when complete. It prefers the downloaded collection when that covers
@@ -1015,9 +1036,20 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   comment above `TILE_SAMPLES` means that too). The ground is drawn stretched by 65/64 about each tile's middle, up to 0.77% of a tile's width off at its edges
   (about 8 m at level 14 in north Georgia, more on coarser tiles), and two tiles' shared edge is read 1.5% of a tile apart. The web draws it so, and Android
   will draw what Cesium draws, to match; the fix is the server's and changes every cached tile (owner to decide).
-- **A tileset's key can be turned back into its place** (`lidar/catalog.key_for`): it is the first 16 hex digits of an unsalted SHA-256 of the target rounded to 4
-  decimals, so whoever has a key (it is in URLs and the server's logs) can find the place to about 11 m by trying every rounded place in a region. A keyed hash
-  (HMAC with a server secret) would close it, at the cost of every stored tileset's name (owner to decide, server first).
+- **A tileset built before the keyed names can still be turned back into its place**: its key is the first 16 hex digits of an unsalted SHA-256 of the target
+  rounded to 4 decimals, so whoever has one (it is in URLs and the server's logs) can find the place to about 11 m by trying every rounded place in a region. New keys
+  are an HMAC under `LIDAR_KEY_SECRET` (§13); the old tilesets were left under their names (the owner's call, 2026-10-26), and streaming (plan Part C) makes no new
+  per-LZ ones.
+- **Android does not stream yet**: it never sends `stream`, so it keeps the build flow, and builds on save. Its half is next
+  (`docs/HANDOFF.md`): send `stream: true`, frame the opening view and *LZ* on `frame`, held to
+  `contracts/fixtures/viewer3d/lidarFlowStream.json`; its `PntsReader` already reads `POSITION_QUANTIZED` and its `TilesetReader`
+  external tilesets and regions.
+- **A streamed view fetches the landscape at full detail**: at error 2 every piece in the frustum is refined as far as its distance
+  allows, so a wide first view at the Ellijay LZ was 370 pieces, 147 MB, where the LZ's own square is 52 MB. Heavy for a phone on a
+  cellular link, and each piece holds one of the API's 8 threads for the half second AWS takes. Measure on the VM, then weigh a coarser
+  error for the landscape, Cesium's dynamic screen-space error, or more threads (I/O-bound) before Android streams.
+- Streamed pieces are not held back while an analysis runs, as terrain tiles are (`requestPriority`); AWS does the waiting, and a piece's
+  conversion is about 13 ms.
 - The web shows a failed build's `error` text (`useLidarTileset.js`), which can hold a tool's output with the place's coordinates in it; Android does not (§17,
   *The 3D view*).
 - **The web's 3D view shows Cesium's default sky, sun and atmosphere, and fog on far ground** (`Viewer3D.jsx` turns none of `CesiumWidget`'s defaults off): a
@@ -1055,11 +1087,6 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   clients compile once at the opening's offset to learn where and when to ask (the web's `bare`), so the places' times carry that offset. The
   brief itself is then compiled at the departure's (the light data's). Web first.
 - The Mapbox token is hardcoded in three places.
-- **Any signed-in user can find every place a 3D view was built.** `GET /api/lidar/tilesets` lists every tileset key,
-  and the file route serves each tileset's `area.json` (latitude, longitude, radius). A key is also an unkeyed SHA-256
-  of the rounded coordinates (`catalog.key_for`), so trying every cell of CONUS turns it back into its place. Neither
-  client calls the list. Phase 0 of `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` fixes it: tile files only, the list for
-  admins, keys by HMAC.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
 - In-process stores block horizontal scaling (§9).

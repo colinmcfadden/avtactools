@@ -22,7 +22,7 @@ import java.security.MessageDigest
 /** The 3D view's calls against the server's recorded answers: what is sent (coordinates only in a body), what is read, and what is refused unsent. */
 class Viewer3dCallsTest {
     private val here = LatLon(34.591552, -84.128225)
-    private val key = "074c940ed6ec1bf1"                    // the recorded tileset's
+    private val key = "029a9f7de3bb64d6"                    // the recorded tileset's
 
     private fun body(request: RecordedRequest): JsonObject = ApiClient.JSON.parseToJsonElement(request.body.readUtf8()).jsonObject
 
@@ -154,7 +154,7 @@ class Viewer3dCallsTest {
                                 "points/r0.pnts?x=1", "a b.pnts", "%2e%2e/auth")) {
                 assertThrows<IllegalArgumentException>(file) { rig.client.lidarTilesetFile(key, file) }
             }
-            for (bad in listOf("", "074C940ED6EC1BF1", "074c940ed6ec1bf", "../074c940ed6ec1b", "074c940ed6ec1bf1/x")) {
+            for (bad in listOf("", "029A9F7DE3BB64D6", "029a9f7de3bb64d", "../029a9f7de3bb64", "029a9f7de3bb64d6/x")) {
                 assertThrows<IllegalArgumentException>(bad) { rig.client.lidarTilesetFile(bad, "tileset.json") }
                 assertThrows<IllegalArgumentException>(bad) { rig.client.lidarBuildStatus(bad, watcher = null, keep = false) }
                 assertThrows<IllegalArgumentException>(bad) { rig.client.lidarRelease(bad, watcher = null) }

@@ -145,7 +145,10 @@ class RoutesTests(unittest.TestCase):
 class CheckTests(unittest.TestCase):
     """What `check` fails on."""
 
-    SERVED = ("1.0.0", [1])
+    # Read from the spec, so these hold whatever version the API is at.
+    VERSION = REAL["info"]["version"]
+    SERVED = (VERSION, [1])
+    NEXT_MINOR = f"{VERSION.split('.')[0]}.{int(VERSION.split('.')[1]) + 1}.0"
     CLIENTS = {"android": [1], "web": [1]}
 
     def broken_real(self):
@@ -181,9 +184,9 @@ class CheckTests(unittest.TestCase):
         self.assertTrue(any("android" in n for n in notes))
 
     def test_versions_that_disagree_fail(self):
-        errors, _, _ = script.problems(REAL, None, ("1.1.0", [1]), self.CLIENTS)
+        errors, _, _ = script.problems(REAL, None, (self.NEXT_MINOR, [1]), self.CLIENTS)
         self.assertTrue(any("must agree" in e for e in errors))
-        errors, _, _ = script.problems(REAL, None, ("1.0.0", [2]), self.CLIENTS)
+        errors, _, _ = script.problems(REAL, None, (self.VERSION, [2]), self.CLIENTS)
         self.assertTrue(errors)
 
     def test_an_addition_without_a_new_minor_is_a_note_not_a_failure(self):
@@ -191,7 +194,7 @@ class CheckTests(unittest.TestCase):
         grown["components"]["schemas"]["Config"]["properties"]["extra"] = {"type": "string"}
         errors, notes, _ = script.problems(grown, REAL, self.SERVED, self.CLIENTS)
         self.assertEqual(errors, [])
-        self.assertTrue(any("1.1.0" in n for n in notes), notes)
+        self.assertTrue(any(self.NEXT_MINOR in n for n in notes), notes)
 
     def test_the_version_going_down_fails(self):
         older = copy.deepcopy(REAL)

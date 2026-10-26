@@ -13,11 +13,12 @@ enumerate where a unit has been planning to land.
 
 import re
 
-from flask import Blueprint, jsonify, request, send_from_directory
-from flask_jwt_extended import jwt_required
+from flask import Blueprint, jsonify, request, send_file, send_from_directory
+from flask_jwt_extended import get_jwt_identity, jwt_required
 
+import entitlements
 import lidar_builder
-from lidar import catalog
+from lidar import catalog, stream
 from lidar.aoi import DEFAULT_RADIUS_M
 
 lidar_bp = Blueprint("lidar", __name__)
@@ -67,6 +68,43 @@ def _available_body(key):
     }
 
 
+def _streamed_body(key, lat, lon, radius):
+    """A target's survey, streamed (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md,
+    Part C). Its tileset is the whole survey, a state's octree, so ``frame``
+    says where to look: the caller's own place, its radius, and the ground's
+    ellipsoidal height there (null where nothing says it)."""
+    return {
+        "key": key,
+        "available": True,
+        "streamed": True,
+        "url": _tileset_url(key),
+        "contextUrl": None,
+        "frame": {"lat": lat, "lon": lon, "radius_m": radius,
+                  "height_m": _ground_height(lat, lon)},
+    }
+
+
+def _ground_height(lat, lon):
+    """Ellipsoidal metres at a place: the 3D terrain's own DEMs first, so the
+    view opens on the ground it draws, else Terrarium's (USGS's NED) plus the
+    geoid. None rather than a guess."""
+    try:
+        import terrain_tiles
+        ground, _geoid = terrain_tiles.sample_points([(lat, lon)])
+        if ground[0] is not None:
+            return ground[0]
+        from routes.terrain_routes import _M_TO_FT, _sample_elevations_ft
+        feet = _sample_elevations_ft([{"lat": lat, "lon": lon}])[0]
+        if feet is None:
+            return None
+        separation = terrain_tiles.geoid_offset(lon, lat)
+        if abs(separation) < 1.0:
+            return None
+        return round(feet / _M_TO_FT + separation, 1)
+    except Exception:  # noqa: BLE001 — framing falls back to the tileset
+        return None
+
+
 def _context_url(key: str) -> str:
     """The wider, thinned ring built beside a core tileset."""
     return f"/lidar/tilesets/{key}/{catalog.CONTEXT_DIRNAME}/tileset.json"
@@ -108,7 +146,14 @@ def tileset_file(key, filename):
     if directory is None:
         return jsonify({"error": "Malformed tileset key."}), 400
     if not directory.is_dir():
+        streamer = stream.streamer()
+        if streamer is not None and streamer.has_survey(key):
+            return _streamed_file(streamer, key, filename)
         return jsonify({"error": "Tileset not found."}), 404
+    # The same 404 as a file that is not there, so a refusal says nothing
+    # about what the folder holds.
+    if not catalog.is_served_file(filename):
+        return jsonify({"error": "File not found."}), 404
 
     # send_from_directory refuses to escape the directory it is given, so a
     # traversal in `filename` is rejected rather than followed.
@@ -124,11 +169,38 @@ def tileset_file(key, filename):
     return response
 
 
+def _streamed_file(streamer, key, filename):
+    try:
+        path = streamer.file(key, filename)
+    except stream.StreamError as error:
+        return jsonify({"error": str(error), "code": error.code}), error.status
+    response = send_file(path, conditional=True, max_age=TILE_CACHE_SECONDS,
+                         mimetype=("application/json" if filename.endswith(".json")
+                                   else "application/octet-stream"))
+    response.cache_control.public = False
+    response.cache_control.private = True
+    return response
+
+
 @lidar_bp.route("/api/lidar/tilesets", methods=["GET"])
 @jwt_required()
 def list_tilesets():
-    """Keys with a tileset on disk, so a client can resolve several at once."""
+    """Keys with a tileset on disk: admins only.
+
+    It is every place a 3D view was ever built, and neither app calls it.
+    """
+    if not _caller_is_admin():
+        return jsonify({"error": "Admins only.", "code": "admin_required"}), 403
     return jsonify({"keys": catalog.available()})
+
+
+def _caller_is_admin():
+    from models import User, db
+    try:
+        user = db.session.get(User, int(get_jwt_identity()))
+    except (TypeError, ValueError):
+        user = None
+    return entitlements.is_admin(user) and entitlements.account_active(user)
 
 
 @lidar_bp.route("/api/lidar/resolve", methods=["POST"])
@@ -140,9 +212,9 @@ def resolve():
     sensitive part, and this keeps them out of URLs, request logs and the
     browser's history.
     """
+    data = request.get_json(silent=True) or {}
     try:
-        lat, lon, radius = _parse_target(request.get_json(silent=True) or {},
-                                         max_radius=2000)
+        lat, lon, radius = _parse_target(data, max_radius=2000)
     except _BadTarget as error:
         return jsonify({"error": str(error)}), 400
 
@@ -157,6 +229,18 @@ def resolve():
 
     if catalog.exists(key):
         return jsonify(_available_body(key))
+
+    # Streamed only to a client that says it frames on ``frame``: one that
+    # frames on the tileset's own sphere would open on the whole state, so it
+    # keeps the build flow.
+    streamer = stream.streamer() if data.get("stream") is True else None
+    if streamer is not None:
+        try:
+            found = streamer.survey_for(lat, lon)
+        except Exception:  # noqa: BLE001 — the coverage index is unreachable
+            found = None
+        if found is not None:
+            return jsonify(_streamed_body(found[1], lat, lon, radius))
 
     return jsonify({
         "key": key,
