@@ -1,5 +1,9 @@
 # Android 3D LZ view — plan
 
+**2026-10-26: the view streams.** Where nothing is built, it now asks for the place's whole USGS survey streamed from its octree
+(docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C) and opens on `resolve`'s `frame` rather than the tileset's sphere (`LidarBuilds`'s `stream`,
+`SceneSession`'s `lzSphere`; AGENTS.md §17, *The 3D view*). Untried on a device.
+
 Status (2026-10-20): **V0 to V7 done**, each step reviewed independently and the whole by three final reviews (parity, lifecycle and concurrency, the screens),
 their findings fixed with tests (branch `claude/android-3d-view-e38b76`; V3 was built before V1, since the build flow's probe uses its tiling). What is left
 is the owner's: the device runs (`docs/HANDOFF.md`) and one question (AGENTS.md §15: the web's sky). The two others the final reviews raised, the portrait

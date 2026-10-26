@@ -4,6 +4,7 @@ import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.LidarBuildDto
+import app.ezpztac.network.LidarFrameDto
 import app.ezpztac.network.LidarResolveDto
 import app.ezpztac.network.LidarTargetDto
 import app.ezpztac.network.NetworkException
@@ -27,7 +28,8 @@ import java.security.SecureRandom
 
 /** The calls finding or building a point cloud makes (contracts/openapi.yaml, *The 3D LZ view*). [ApiClient] in the app; a stand-in in tests. */
 public interface LidarApi {
-    public suspend fun resolve(at: LatLon, radiusM: Double?): LidarResolveDto
+    /** [stream]: asks for the place's survey streamed from USGS's octree where nothing is built (`resolve`'s `stream`). */
+    public suspend fun resolve(at: LatLon, radiusM: Double?, stream: Boolean): LidarResolveDto
 
     public suspend fun build(at: LatLon, keep: Boolean, watcher: String?, radiusM: Double?): LidarBuildDto
 
@@ -38,7 +40,7 @@ public interface LidarApi {
 
 /** [LidarApi] over the real client. */
 public class ApiClientLidarApi(private val client: ApiClient) : LidarApi {
-    override suspend fun resolve(at: LatLon, radiusM: Double?): LidarResolveDto = client.lidarResolve(at, radiusM)
+    override suspend fun resolve(at: LatLon, radiusM: Double?, stream: Boolean): LidarResolveDto = client.lidarResolve(at, radiusM, stream)
 
     override suspend fun build(at: LatLon, keep: Boolean, watcher: String?, radiusM: Double?): LidarBuildDto = client.lidarBuild(at, keep, watcher, radiusM)
 
@@ -116,7 +118,8 @@ public enum class LidarProblem {
 /**
  * What the 3D view shows of the point cloud it was opened on: where it is ([url], [contextUrl], relative to the API's root), how its build is going
  * ([stage] in the service's own word, [position] in the queue, [elapsedS] since it started), the place the server would build ([target], for a
- * server that cannot), or why it failed ([problem]; [buildFailed] when it was the build, not the lookup).
+ * server that cannot), or why it failed ([problem]; [buildFailed] when it was the build, not the lookup). [streamed] says the tileset is a whole
+ * survey streamed from USGS's octree, which the view opens on [frame] (where to look), never on the tileset's own sphere (a state).
  */
 public data class LidarLookup(
     val phase: LidarPhase = LidarPhase.IDLE,
@@ -129,11 +132,14 @@ public data class LidarLookup(
     val position: Int? = null,
     val elapsedS: Int? = null,
     val buildFailed: Boolean = false,
+    val streamed: Boolean = false,
+    val frame: LidarFrameDto? = null,
 )
 
 /**
  * Finding an LZ/PZ's point cloud, and having it built while someone waits: `useLidarTileset.js` as a plain machine, held to
- * `contracts/fixtures/viewer3d/lidarFlow.json` request by request.
+ * `contracts/fixtures/viewer3d/lidarFlow.json` request by request, and, asked with `stream` (the place's USGS survey streamed where nothing is
+ * built, docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C), to `lidarFlowStream.json`.
  *
  * - **Coordinates only in POST bodies**: a build's progress is asked for by its opaque key.
  * - **A build runs only while someone waits.** Every ask about it says who waits ([LidarWaiting.watcher]); closing the view lets it go (a DELETE,
@@ -150,15 +156,22 @@ public class LidarBuilds(
     private val waiting: LidarWaiting,
     private val scope: CoroutineScope,
 ) {
-    /** Starts finding the point cloud at [at], in [runScope] (a view's): its state from [LidarPhase.RESOLVING] on. */
-    public fun start(runScope: CoroutineScope, at: LatLon, keep: Boolean, radiusM: Double? = null): LidarLookupRun =
-        LidarLookupRun(this, runScope, at, radiusM, keep)
+    /**
+     * Starts finding the point cloud at [at], in [runScope] (a view's): its state from [LidarPhase.RESOLVING] on. [stream] asks for a streamed
+     * survey where nothing is built; only a view that opens on [LidarLookup.frame] may ask.
+     */
+    public fun start(runScope: CoroutineScope, at: LatLon, keep: Boolean, radiusM: Double? = null, stream: Boolean = false): LidarLookupRun =
+        LidarLookupRun(this, runScope, at, radiusM, keep, stream)
 
-    /** Asks for the point cloud at [at] to be built in the background and kept: an LZ/PZ just saved. Built already, or a server that cannot: nothing to say. */
+    /**
+     * Asks for the point cloud at [at] to be built in the background and kept: an LZ/PZ just saved. Built already, streamed there (a first view
+     * is seconds away already, as the web's `requestKeptBuild` sees it), or a server that cannot: nothing to say.
+     */
     public fun requestKept(at: LatLon) {
         if (!at.lat.isFinite() || !at.lon.isFinite()) return
         scope.launch {
             try {
+                if (api.resolve(at, radiusM = null, stream = true).available) return@launch
                 api.build(at, keep = true, watcher = null, radiusM = null)
             } catch (e: CancellationException) {
                 throw e
@@ -218,7 +231,7 @@ public class LidarBuilds(
         }
     }
 
-    internal suspend fun resolve(at: LatLon, radiusM: Double?) = api.resolve(at, radiusM)
+    internal suspend fun resolve(at: LatLon, radiusM: Double?, stream: Boolean) = api.resolve(at, radiusM, stream)
 
     internal suspend fun build(at: LatLon, keep: Boolean, radiusM: Double?) = api.build(at, keep, waiting.watcher(), radiusM)
 
@@ -252,6 +265,7 @@ public class LidarLookupRun internal constructor(
     private val at: LatLon,
     private val radiusM: Double?,
     keep: Boolean,
+    private val stream: Boolean,
 ) {
     private val _state = MutableStateFlow(LidarLookup())
 
@@ -328,14 +342,14 @@ public class LidarLookupRun internal constructor(
             _state.value = LidarLookup(LidarPhase.RESOLVING)
             builds.afterAbandonedReleased()
             val data = try {
-                builds.resolve(at, radiusM)
+                builds.resolve(at, radiusM, stream)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 stillWanted()
                 return fail(if (e is NetworkException) LidarProblem.LOOKUP_UNREACHABLE else LidarProblem.LOOKUP_FAILED)
             }
-            if (data.available) return finish(data.key, data.url, data.contextUrl)
+            if (data.available) return finish(data.key, data.url, data.contextUrl, data.streamed == true, data.frame)
             // The place the server resolved, so a server that cannot build can say what an operator would build.
             resolvedTarget = data.target
             if (data.canBuild == true) {
@@ -413,9 +427,11 @@ public class LidarLookupRun internal constructor(
             waitingOn = null
         }
 
-        private fun finish(key: String?, url: String?, contextUrl: String?) {
+        private fun finish(key: String?, url: String?, contextUrl: String?, streamed: Boolean = false, frame: LidarFrameDto? = null) {
             settled()
-            _state.value = LidarLookup(LidarPhase.AVAILABLE, key = key.orNull(), url = url, contextUrl = contextUrl.orNull())
+            _state.value = LidarLookup(
+                LidarPhase.AVAILABLE, key = key.orNull(), url = url, contextUrl = contextUrl.orNull(), streamed = streamed, frame = frame,
+            )
         }
 
         private fun fail(problem: LidarProblem, buildFailed: Boolean = false) {

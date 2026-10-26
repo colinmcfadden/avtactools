@@ -8,12 +8,11 @@ that moves the "where things stand" or "next" sections.
 **3D streamed from USGS (2026-10-26, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`).** Phase 0 is built: new tileset keys are an HMAC under
 `LIDAR_KEY_SECRET` (the same value on the API, staging's API and the build service, or they refuse to start), the tileset list is admins' only and a
 tileset's `area.json` is never served. Android's calls are unchanged (one test's recorded key moved). Phase 1 (streaming) is built for the backend and the web
-(`feat/lidar-streaming`); **Android's half is next**: send `stream: true` on `resolve` (core-data's `LidarBuilds`), carry `frame` to the
-view and frame the opening pose and *LZ* on it (`SceneSession`, `CameraPose.framing`) instead of the root's sphere, held to
-`contracts/fixtures/viewer3d/lidarFlowStream.json` as `LidarBuildsFixtureTest` holds `lidarFlow.json`. Until then Android never asks,
-and keeps building. The DTO already reads `streamed` and `frame` (`LidarResolveDto`). A streamed tileset is a whole survey, joined as
-external tilesets every four levels, with regions and `POSITION_QUANTIZED`, which the readers already take; what it costs a phone to draw
-the landscape at error 2 is to be weighed first (AGENTS.md §15).
+(`feat/lidar-streaming`) and for Android (`feat/android-lidar-streaming`): `LidarBuilds` sends `stream: true` (held to
+`contracts/fixtures/viewer3d/lidarFlowStream.json`), `LidarLookup` carries `frame`, and `SceneSession` opens and flies *LZ* on it
+(`lzSphere`) instead of the root's sphere, a state; a save builds nothing where the place streams. **To try first on a device:** open 3D
+on an LZ/PZ in north Georgia against a server with `LIDAR_STREAM_CACHE_DIR` set; it should open on the LZ in seconds, not a build's
+minutes. What it costs a phone's link and memory to draw the landscape at error 2 is untried (AGENTS.md §15).
 
 Last refreshed: 2026-10-24 (every finished branch merged into `develop`: *Moving to a new computer*, below). Before that, 2026-10-23 (the owner moves to a new
 computer: every branch with work is pushed, and what is not in git is listed in *Moving to a new computer*; the device-run work of 2026-10-21/22 is §0).

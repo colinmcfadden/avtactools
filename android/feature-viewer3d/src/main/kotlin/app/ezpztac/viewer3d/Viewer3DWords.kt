@@ -120,6 +120,9 @@ object Viewer3DWords {
     const val MAPBOX_CREDIT = "© Mapbox"
     const val MAPBOX_ABOUT = "https://www.mapbox.com/about/maps/"
     const val MAPBOX_CREDIT_OPEN = "Open Mapbox's page about its maps"
+
+    /** A streamed survey's point colour, laid on from USDA's NAIP by the server (backend lidar/photo.py): the web's `STREAMED_CREDIT`, in part. */
+    const val NAIP_CREDIT = "Point colour: USDA NAIP, from USGS The National Map"
     const val POINT_SIZE = "Point size"
 
     /**

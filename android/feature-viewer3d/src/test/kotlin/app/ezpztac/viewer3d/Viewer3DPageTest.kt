@@ -495,6 +495,18 @@ class Viewer3DPageTest {
     }
 
     @Test
+    fun `a streamed surveys point colour is credited to NAIP, as the web's view credits it`() {
+        var streamed by mutableStateOf(true)
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) { SceneFootContent(SceneStatus.Drawing, 5, {}, credit = true, colourCredit = streamed) }
+        }
+        compose.onNodeWithText(Viewer3DWords.NAIP_CREDIT).assertIsDisplayed()
+        compose.onNodeWithText(Viewer3DWords.MAPBOX_CREDIT).assertIsDisplayed()
+        compose.runOnIdle { streamed = false }
+        compose.onNodeWithText(Viewer3DWords.NAIP_CREDIT).assertDoesNotExist()
+    }
+
+    @Test
     fun `a toast is drawn above the point size, not over it`() {
         val model = viewModel(FakeLidar(), CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
         val toasts = androidx.compose.material3.SnackbarHostState()

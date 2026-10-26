@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -52,6 +53,28 @@ class Viewer3dCallsTest {
             assertEquals(true, missing.canBuild)
             assertEquals(LidarTargetDto(here.lat, here.lon, 500.0), missing.target)
             assertNull(missing.url)
+        }
+    }
+
+    @Test
+    fun `a lookup asks for a stream only when told, and reads the streamed survey and where to look`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("lidar: resolve, streamed") }
+            val streamed = rig.client.lidarResolve(here, stream = true)
+            val request = rig.requestsTo("/api/lidar/resolve").single()
+            assertEquals(JsonPrimitive(true), body(request)["stream"])
+            noPlaceIn(request)
+            assertEquals(true, streamed.streamed)
+            val frame = streamed.frame!!
+            assertEquals(here.lat, frame.lat, 0.0)
+            assertEquals(here.lon, frame.lon, 0.0)
+            assertNotNull(frame.heightM)
+
+            rig.serve { Recorded.mock("lidar: resolve, streamed but not asked for") }
+            val asBefore = rig.client.lidarResolve(here)
+            assertFalse("stream" in body(rig.requestsTo("/api/lidar/resolve").last()))
+            assertNull(asBefore.streamed)
+            assertNull(asBefore.frame)
         }
     }
 

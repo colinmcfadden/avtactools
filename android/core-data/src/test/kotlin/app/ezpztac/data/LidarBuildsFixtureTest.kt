@@ -3,6 +3,7 @@ package app.ezpztac.data
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiException
 import app.ezpztac.network.LidarBuildDto
+import app.ezpztac.network.LidarFrameDto
 import app.ezpztac.network.LidarResolveDto
 import app.ezpztac.network.LidarTargetDto
 import app.ezpztac.network.NetworkException
@@ -36,7 +37,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Finding or building a point cloud, held to the web's `useLidarTileset` (contracts/fixtures/viewer3d/lidarFlow.json): every scenario replayed against
+ * Finding or building a point cloud, held to the web's `useLidarTileset` (contracts/fixtures/viewer3d/lidarFlow.json, and asked with `stream`,
+ * lidarFlowStream.json, whose cases also hold what is shown of a streamed survey: `streamed` and `frame`): every scenario replayed against
  * a stand-in server that answers each request as the web was answered, checking each request (what was asked, with what, how long after the last
  * answer), what the view shows after each answer, and what would be asked next. What is said of a failure is the app's own ([LidarProblem]), so a
  * failure is held to the request that failed rather than to the web's words.
@@ -44,6 +46,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class LidarBuildsFixtureTest {
     private val fixture = Fixtures.load("viewer3d/lidarFlow.json")
+    private val streamFixture = Fixtures.load("viewer3d/lidarFlowStream.json")
     private val watcher = "android-fixture-watcher"
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
@@ -60,8 +63,8 @@ class LidarBuildsFixtureTest {
             return deferred.await()
         }
 
-        override suspend fun resolve(at: LatLon, radiusM: Double?): LidarResolveDto =
-            ask(request("POST", "/lidar/resolve", body = place(at, radiusM))) as LidarResolveDto
+        override suspend fun resolve(at: LatLon, radiusM: Double?, stream: Boolean): LidarResolveDto =
+            ask(request("POST", "/lidar/resolve", body = place(at, radiusM, stream))) as LidarResolveDto
 
         override suspend fun build(at: LatLon, keep: Boolean, watcher: String?, radiusM: Double?): LidarBuildDto =
             ask(
@@ -91,9 +94,10 @@ class LidarBuildsFixtureTest {
             released += request("DELETE", "/lidar/build/$key", params = buildJsonObject { if (watcher != null) put("watcher", "<watcher>") })
         }
 
-        private fun place(at: LatLon, radiusM: Double?) = buildJsonObject {
+        private fun place(at: LatLon, radiusM: Double?, stream: Boolean) = buildJsonObject {
             put("lat", at.lat); put("lon", at.lon)
             if (radiusM != null) put("radius_m", radiusM)
+            if (stream) put("stream", true)
         }
 
         private fun request(method: String, path: String, body: JsonObject? = null, params: JsonObject? = null) = buildJsonObject {
@@ -126,8 +130,8 @@ class LidarBuildsFixtureTest {
         }
     }
 
-    /** What the view shows, in the fixture's terms (the web's error words aside). */
-    private fun shown(lookup: LidarLookup): Map<String, Any?> = mapOf(
+    /** What the view shows, in the fixture's terms (the web's error words aside); with [stream], what it shows of a streamed survey too. */
+    private fun shown(lookup: LidarLookup, stream: Boolean): Map<String, Any?> = mapOf(
         "state" to lookup.phase.name.lowercase(),
         "key" to lookup.key,
         "url" to lookup.url,
@@ -137,9 +141,9 @@ class LidarBuildsFixtureTest {
         "position" to lookup.position,
         "elapsedS" to lookup.elapsedS,
         "buildFailed" to lookup.buildFailed,
-    )
+    ) + if (stream) mapOf("streamed" to lookup.streamed, "frame" to lookup.frame) else emptyMap()
 
-    private fun expected(then: JsonObject): Map<String, Any?> = mapOf(
+    private fun expected(then: JsonObject, stream: Boolean): Map<String, Any?> = mapOf(
         "state" to then.text("state"),
         "key" to then.text("key"),
         "url" to then.text("url"),
@@ -149,7 +153,15 @@ class LidarBuildsFixtureTest {
         "position" to (then["position"] as? JsonPrimitive)?.intOrNull,
         "elapsedS" to (then["elapsedS"] as? JsonPrimitive)?.intOrNull,
         "buildFailed" to then.getValue("buildFailed").jsonPrimitive.booleanOrNull,
-    )
+    ) + if (stream) {
+        mapOf(
+            // The web's `streamed` is false until a streamed answer; null only before the state has the field.
+            "streamed" to ((then["streamed"] as? JsonPrimitive)?.booleanOrNull ?: false),
+            "frame" to (then["frame"] as? JsonObject)?.let { json.decodeFromJsonElement<LidarFrameDto>(it) },
+        )
+    } else {
+        emptyMap()
+    }
 
     private fun JsonObject.text(field: String): String? = (this[field] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull
 
@@ -193,6 +205,18 @@ class LidarBuildsFixtureTest {
         for (element in cases) scenario(element.jsonObject)
     }
 
+    @Test
+    fun `asked with stream, every scenario asks and shows what the web's does, a streamed survey's frame included`() {
+        assertEquals(fixture.getValue("constants"), streamFixture.getValue("constants"))
+        val cases = streamFixture.getValue("cases").jsonArray
+        assertTrue(cases.size >= 5)
+        assertTrue(cases.all { it.jsonObject["stream"]?.jsonPrimitive?.booleanOrNull == true })
+        assertTrue("a streamed answer is held", cases.any { case ->
+            case.jsonObject.getValue("steps").jsonArray.any { (it.jsonObject["then"] as? JsonObject)?.get("frame") is JsonObject }
+        })
+        for (element in cases) scenario(element.jsonObject)
+    }
+
     private fun scenario(case: JsonObject) = runTest {
         val name = case.getValue("name").jsonPrimitive.content
         val server = Server()
@@ -202,7 +226,8 @@ class LidarBuildsFixtureTest {
         val target = case.getValue("target").jsonObject
         val at = LatLon(target.getValue("lat").jsonPrimitive.doubleOrNull ?: Double.NaN, target.getValue("lon").jsonPrimitive.doubleOrNull ?: Double.NaN)
         val keep = case.getValue("keep").jsonPrimitive.booleanOrNull == true
-        val run = builds.start(scope, at, keep)
+        val stream = case["stream"]?.jsonPrimitive?.booleanOrNull == true
+        val run = builds.start(scope, at, keep, stream = stream)
         var closed = false
 
         for ((index, step) in case.getValue("steps").jsonArray.map { it.jsonObject }.withIndex()) {
@@ -210,17 +235,17 @@ class LidarBuildsFixtureTest {
             when {
                 "mounted" in step -> {
                     runCurrent()
-                    assertEquals(where, expected(step.getValue("then").jsonObject), shown(run.state.value))
+                    assertEquals(where, expected(step.getValue("then").jsonObject, stream), shown(run.state.value, stream))
                 }
                 "saved" in step -> {
                     run.setKeep(step.getValue("saved").jsonPrimitive.booleanOrNull == true)
                     runCurrent()
-                    assertEquals(where, expected(step.getValue("then").jsonObject), shown(run.state.value))
+                    assertEquals(where, expected(step.getValue("then").jsonObject, stream), shown(run.state.value, stream))
                 }
                 "retried" in step -> {
                     run.retry()
                     runCurrent()
-                    assertEquals(where, expected(step.getValue("then").jsonObject), shown(run.state.value))
+                    assertEquals(where, expected(step.getValue("then").jsonObject, stream), shown(run.state.value, stream))
                 }
                 "closed" in step -> {
                     val before = server.released.size
@@ -237,7 +262,7 @@ class LidarBuildsFixtureTest {
                     answerWith(pending, answer)
                     runCurrent()
                     val then = step.getValue("then").jsonObject
-                    assertEquals("$where: what it shows", expected(then), shown(run.state.value))
+                    assertEquals("$where: what it shows", expected(then, stream), shown(run.state.value, stream))
                     if (then.text("state") == "error") {
                         assertEquals("$where: why", problemFor(pending.request, answer), run.state.value.problem)
                     } else {

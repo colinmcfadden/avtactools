@@ -126,7 +126,8 @@ class Viewer3DViewModel @Inject constructor(
         close()
         target.value = shown
         val at = LatLon(shown.lat, shown.lon)
-        val started = lidar.start(viewModelScope, at, keep = shown.saved)
+        // It opens on `frame`, so it asks for the place's survey streamed where nothing is built.
+        val started = lidar.start(viewModelScope, at, keep = shown.saved, stream = true)
         run = started
         val placing = SceneHeights(routeGround, viewModelScope).also { heights = it }
         jobs = listOf(
@@ -149,7 +150,9 @@ class Viewer3DViewModel @Inject constructor(
         if (_session.value != null && sceneOf == at) return
         _session.value?.close()
         sceneOf = at
-        val made = scenes.make(LatLon(target.lat, target.lon), TilesetAddress.of(found.url), TilesetAddress.of(found.contextUrl), viewModelScope, _pointSize.value)
+        val made = scenes.make(
+            LatLon(target.lat, target.lon), TilesetAddress.of(found.url), TilesetAddress.of(found.contextUrl), found.frame, viewModelScope, _pointSize.value,
+        )
         heights?.placed?.value?.let(made::setRoutes)
         _session.value = made
     }
