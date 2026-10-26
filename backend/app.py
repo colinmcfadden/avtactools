@@ -19,6 +19,7 @@ from token_revocation import is_revoked
 from aircraft_seed import seed_aircraft_profiles
 from schema_sync import ensure_unique_index, sync_table_columns
 from security_config import (
+    is_production,
     resolve_jwt_secret,
     session_cookie_secure,
     validate_email_configuration,
@@ -46,6 +47,7 @@ from routes.config_routes import config_bp
 from routes.sync_routes import sync_bp
 from routes.pack_routes import pack_bp
 from routes.team_routes import team_bp
+from routes.survey_routes import survey_bp
 from client_header import CLIENT_HEADER
 
 app = Flask(__name__)
@@ -59,9 +61,10 @@ cors_origins = [
 CORS(
     app,
     resources={r'/api/*': {'origins': cors_origins}},
-    # The native apps (and, later, the web) identify themselves with X-EZPZ-Client.
-    allow_headers=['Authorization', 'Content-Type', CLIENT_HEADER],
-    methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    # The native apps (and, later, the web) identify themselves with X-EZPZ-Client. The web's LZ surveys
+    # save with PATCH and name the revision they were made on with If-Match.
+    allow_headers=['Authorization', 'Content-Type', 'If-Match', CLIENT_HEADER],
+    methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 )
 
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -143,6 +146,7 @@ app.register_blueprint(config_bp)
 app.register_blueprint(sync_bp)
 app.register_blueprint(pack_bp)
 app.register_blueprint(team_bp)
+app.register_blueprint(survey_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
@@ -158,6 +162,10 @@ if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
     if os.environ.get("TERRAIN_DATA_DIR") and not terrain_tiles.geoid_grids_available():
         app.logger.warning("3D: geoid grids unavailable, so terrain will sit ~30 m off the "
                            "LiDAR. Set PROJ_NETWORK=ON or install the grids (projsync).")
+    # A survey's photos cannot be taken again; in the temp directory they would go with the next redeploy.
+    if is_production(os.environ) and not os.environ.get("SURVEY_ASSETS_DIR"):
+        app.logger.warning("LZ surveys: SURVEY_ASSETS_DIR is not set, so photos are kept in a temporary "
+                           "directory and lost on redeploy. Point it at a persistent, backed-up mount.")
 
 @app.route('/')
 def health_check():
