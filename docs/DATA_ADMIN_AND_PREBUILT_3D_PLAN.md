@@ -308,6 +308,11 @@ and USGS's copy has no colour of its own.
 - **Decided (D22):** colour every streamed piece at once by **height above ground**, using today's bands: surface, grass,
   brush, canopy, and above 15 m in orange. It is worked out from the piece's own ground points, as builds do
   (`filters.hag_nn`), and it is the obstruction reading the build's own code calls the more direct one for an LZ.
+- **Changed 2026-10-26 (the owner):** the bands came out orange over nearly every crown at Ellijay (north Georgia's
+  hardwoods stand over 15 m), so a streamed piece is now coloured as the place looks: the ground tan and brown, greens
+  darkening with height above ground, shaded by LiDAR intensity within the survey's range (`pieces.NATURAL_STOPS`,
+  `survey_intensity_range`). Height still decides the green, so how tall the obstructions stand still reads. Then a
+  background pass is to recolour cached pieces from imagery (the owner's request of the same day, once its terms are checked).
 - **Photographic colour** is added only where an area is warmed (below). One imagery request per piece would about
   double a first view.
 - It comes from USGS NAIP (public domain, 0.6 m, CONUS), not Mapbox: storing Mapbox colour in data that is then sold
