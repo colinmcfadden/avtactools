@@ -83,6 +83,21 @@ Use the build service's internal container hostname, which Coolify shows on
 that application. Both applications must be on the same Docker network — if
 the backend cannot reach it, enable **Connect to Predefined Network** on both.
 
+### 2b. Streaming from USGS's octree (the backend only)
+
+Streamed 3D (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C) runs in the API, not
+here: the API fetches each octree piece from AWS the first time a viewer asks,
+converts it and caches it. Give the backend a persistent, writable directory and
+point it there, then redeploy:
+
+```
+LIDAR_STREAM_CACHE_DIR=/data/cache/lidar
+```
+
+(`/data/cache` must then be mounted into the backend too.) Without it nothing
+streams and the 3D view builds as before. The cache can be deleted at any time;
+it keeps itself under 200 GB (`LIDAR_STREAM_CACHE_MAX_GB`).
+
 ### 3. Check it
 
 Open the 3D view on an LZ that has never been built. It should say

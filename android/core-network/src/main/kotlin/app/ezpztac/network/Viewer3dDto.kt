@@ -22,6 +22,18 @@ public data class LidarResolveDto(
     val canBuild: Boolean? = null,
     /** Not built only: the caller's own place, echoed. */
     val target: LidarTargetDto? = null,
+    /** Asked for with `stream` only: the tileset is a whole survey streamed from USGS's octree, so the view opens on [frame]. */
+    val streamed: Boolean? = null,
+    /** Streamed only: where to open the view (the caller's place, its radius, and the ground's ellipsoidal height, null where unknown). */
+    val frame: LidarFrameDto? = null,
+)
+
+@Serializable
+public data class LidarFrameDto(
+    val lat: Double,
+    val lon: Double,
+    @SerialName("radius_m") val radiusM: Double,
+    @SerialName("height_m") val heightM: Double?,
 )
 
 @Serializable

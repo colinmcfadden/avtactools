@@ -447,3 +447,99 @@ class BuildApiTests(LidarApiHarness):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StreamApiTests(LidarApiHarness):
+    """resolve and the file route with streaming on (plan Part C)."""
+
+    def setUp(self):
+        super().setUp()
+        from test_lidar_stream import BASE, SECRET, FakeSurvey, geoid
+        from lidar import names, stream
+
+        self.survey = FakeSurvey()
+        self.cache = Path(tempfile.mkdtemp(prefix="stream-"))
+        self.addCleanup(shutil.rmtree, self.cache, True)
+        self.streamer = stream.Streamer(self.cache, fetch=self.survey.fetch, geoid=geoid,
+                                        index=self.survey.index(), base=BASE, secret=SECRET)
+        self.survey_key = names.survey_key(self.survey.name, secret=SECRET)
+        for item in (patch("lidar.stream.streamer", return_value=self.streamer),
+                     patch("routes.lidar_routes._ground_height", return_value=371.2)):
+            item.start()
+            self.addCleanup(item.stop)
+        # The survey's target: Ellijay, beside the API tests' own.
+        self.target = {"lat": 34.596407, "lon": -84.128098}
+
+    def resolve(self, **body):
+        return self.client.post("/api/lidar/resolve", json={**self.target, **body},
+                                headers=self.auth).get_json()
+
+    def test_a_client_that_asks_gets_the_survey_and_where_to_look(self):
+        body = self.resolve(stream=True)
+        self.assertEqual(body, {
+            "key": self.survey_key, "available": True, "streamed": True,
+            "url": f"/lidar/tilesets/{self.survey_key}/tileset.json", "contextUrl": None,
+            "frame": {**self.target, "radius_m": float(RADIUS), "height_m": 371.2},
+        })
+
+    def test_a_client_that_does_not_ask_keeps_the_build_flow(self):
+        """It frames on the tileset's sphere, which would be the whole state."""
+        for body in (self.resolve(), self.resolve(stream=False), self.resolve(stream="yes")):
+            self.assertFalse(body["available"])
+            self.assertNotIn("frame", body)
+            self.assertNotIn("streamed", body)
+
+    def test_a_built_tileset_still_wins(self):
+        """Builds carry photographic colour."""
+        key = catalog.key_for(**self.target, radius_m=RADIUS)
+        directory = self.make_tileset(key)
+        catalog.write_manifest(directory, self.target["lat"], self.target["lon"], radius_m=RADIUS)
+        body = self.resolve(stream=True)
+        self.assertEqual(body["key"], key)
+        self.assertNotIn("streamed", body)
+
+    def test_with_streaming_off_a_client_that_asks_keeps_the_build_flow(self):
+        with patch("lidar.stream.streamer", return_value=None):
+            self.assertFalse(self.resolve(stream=True)["available"])
+
+    def test_somewhere_usgs_has_nothing_keeps_the_build_flow(self):
+        body = self.client.post("/api/lidar/resolve", json={"lat": 40.0, "lon": -100.0, "stream": True},
+                                headers=self.auth).get_json()
+        self.assertFalse(body["available"])
+
+    def test_the_streamed_tileset_and_its_pieces_are_served_privately(self):
+        from lidar import names
+        from test_lidar_stream import SECRET
+        response = self.client.get(f"/api/lidar/tilesets/{self.survey_key}/tileset.json", headers=self.auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/json")
+        cache_control = response.headers["Cache-Control"]
+        self.assertIn("private", cache_control)
+        self.assertNotIn("public", cache_control)
+        piece = names.piece_name(self.survey.name, self.survey.centre, secret=SECRET)
+        response = self.client.get(f"/api/lidar/tilesets/{self.survey_key}/{piece}.pnts", headers=self.auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[:4], b"pnts")
+
+    def test_a_streamed_file_needs_a_token(self):
+        response = self.client.get(f"/api/lidar/tilesets/{self.survey_key}/tileset.json")
+        self.assertEqual(response.status_code, 401)
+
+    def test_nothing_else_is_served_from_a_survey(self):
+        for path in ("ept.json", "area.json", "h/0-0-0-0.json", "0123456789abcdef.pnts", "x/../tileset.json"):
+            response = self.client.get(f"/api/lidar/tilesets/{self.survey_key}/{path}", headers=self.auth)
+            self.assertEqual(response.status_code, 404, path)
+
+    def test_an_unknown_key_is_still_not_found(self):
+        response = self.client.get("/api/lidar/tilesets/0123456789abcdef/tileset.json", headers=self.auth)
+        self.assertEqual(response.status_code, 404)
+
+    def test_without_geoid_grids_a_piece_is_refused_in_words(self):
+        from lidar import stream
+        from test_lidar_stream import BASE, SECRET
+        broken = stream.Streamer(self.cache, fetch=self.survey.fetch, geoid=lambda lons, lats: [0.0] * len(lons),
+                                 index=self.survey.index(), base=BASE, secret=SECRET)
+        with patch("lidar.stream.streamer", return_value=broken):
+            response = self.client.get(f"/api/lidar/tilesets/{self.survey_key}/tileset.json", headers=self.auth)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["code"], "geoid_unavailable")

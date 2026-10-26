@@ -7,7 +7,8 @@ for the admin map) and D13 (several AOs per organization). **2026-10-26:** Phase
 the owner's answers of that day: existing tilesets keep their old keys (no rename), the streamed `resolve` and its
 `frame` go only to a client that asks for them in the request (so an installed app that frames on the root sphere keeps
 the build flow), and tests build a tiny octree themselves, with a live AWS test behind an environment variable and no
-USGS data committed.
+USGS data committed. **Phase 1 built for the backend and the web the same day** (*Phase 1 as built*, below); Android's half
+is next.
 
 The request, in the owner's words: an admin page with a CONUS map showing where the server holds terrain and LiDAR
 itself (not what comes from outside services); drag-and-drop uploads into the server's volumes; areas chosen on the
@@ -524,6 +525,34 @@ owner runs every deploy and every Coolify change.
 | **9. Launch** | Catalogue areas warmed, org onboarding, the user guide. | Pricing, the terms of sale, the stores' rules. |
 
 What the Android branch's 3D view needs when it is merged is in Part C, *For the Android 3D branch*.
+
+### Phase 1 as built (2026-10-26)
+
+**Built** (backend and web): `lidar/ept.py` (USGS's index read as 3D Tiles), `lidar/names.py` (opaque names), `lidar/pieces.py`
+(a LAZ piece as `.pnts`), `lidar/stream.py` (the streamer and its cache), `resolve`'s `stream` and `frame` (API 1.1.0, additive),
+the web asking for them and framing on `frame`, and builds on save skipped where a place streams. Tests build a small octree
+themselves; `EZPZ_LIVE_AWS=1` streams the Ellijay LZ from the real survey.
+
+**Not like the plan above**, on purpose:
+- **A piece's name is its address through a keyed permutation**, not a keyed hash with a table of the names handed out: equally
+  opaque without the secret, and the server reads the address back with nothing to keep or lose across restarts.
+- **Streamed only to a client that asks** (`stream: true`; the owner's call, 2026-10-26), so an installed app that frames on the
+  root sphere keeps the build flow rather than opening on the state.
+- **AWS reads are tried three times over pooled connections**: Cesium never asks again for a tile that failed, and pooling halved a
+  first view (a TLS handshake a piece).
+- `frame.height_m` is the 3D terrain's DEM where it reaches, else Terrarium plus the geoid, else null (the viewer then falls back
+  to the tileset's sphere rather than open on a height made up).
+
+**Measured** (the owner's Mac, home connection, cold cache, Ellijay test LZ, GA_Statewide_B3_2018): first points 1.4–2.9 s; the
+LZ's own 1 km square at every depth (168 pieces, 52 MB) in 10–13 s; the whole opening view at error 2 on a 1600 × 900 view (370
+pieces, 147 MB) in 18–21 s; a build of the same LZ 137 s. Warm, it all comes off the disk at once.
+
+**Left, in order:**
+1. Android: send `stream`, frame on `frame` (`SceneSession`, *LZ*), held to `contracts/fixtures/viewer3d/lidarFlowStream.json`.
+2. The owner: set `LIDAR_STREAM_CACHE_DIR` on staging, open 3D somewhere new and time it (the VM's link to AWS is unmeasured).
+3. Weigh the landscape's cost (147 MB for a wide view; §15 of AGENTS.md): a coarser error far off, Cesium's dynamic
+   screen-space error, or more API threads, before phones stream.
+4. Pieces held back while an analysis runs, as terrain tiles are (not done: AWS does the waiting).
 
 ---
 

@@ -30,7 +30,7 @@ contracts/
 │  │                strip-grid.json (reference: the web, feature/brief/stripGrid.js over mgrsGrid.js, the strips' MGRS grid)
 │  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
-│  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json, scene.json   reference: the web app (feature/viewer3d/)
+│  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json, lidarFlowStream.json, scene.json   reference: the web app (feature/viewer3d/)
 │  │                geodesy.json   geodetic to geocentric points               reference: PROJ (scripts/geodesy_fixtures.py)
 │  │                tileset/   a LiDAR tileset as the server serves it        reference: py3dtiles 12.1.1 (scripts/tileset_fixture.py)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
@@ -115,6 +115,7 @@ shows can:
 | `compass.json` | How the compass turns and tilts for a camera's heading and pitch, and the heading it shows (`330°T`) | `compass.js` |
 | `terrain.json` | Which terrain tile holds a place at each level (Cesium's geographic tiling), and the tiles' size | `terrainProvider.js` |
 | `lidarFlow.json` | Finding or building a point cloud while someone waits: every request, how long after the last answer it came, the answer, and what the view shows then, through every answer the server can give | `useLidarTileset.js` |
+| `lidarFlowStream.json` | The same lookup by a viewer that frames on `frame` and so asks for a streamed survey (`stream: true` on `resolve` only): what it sends, and what it shows of a streamed answer, a built one and the build flow (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C). Android follows it once it streams | `useLidarTileset.js` |
 | `scene.json` | How the view looks and moves (the opening pose, the point sizes, the screen-space errors, the eye-dome lighting, the flights' lengths), the twenty draws Cesium sizes a leaf's points from (`PntsLoader`'s twister from seed 0, from the `mersenne-twister` package Cesium itself uses), and how far back a sphere is framed for views of each shape, wider than tall to an upright phone (`framing`) | `sceneSettings.js`, `framing.js` |
 
 `tileset/` is a LiDAR tileset as the server serves it (`backend/lidar/tiles.py`): a synthetic point cloud converted by py3dtiles 12.1.1, the

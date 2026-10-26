@@ -146,6 +146,8 @@ class DtoFixtureTest {
         "lidar: resolve, nothing built here" to LidarResolveDto.serializer(),
         "lidar: resolve, built" to LidarResolveDto.serializer(),
         "lidar: resolve, on a server that cannot build" to LidarResolveDto.serializer(),
+        "lidar: resolve, streamed" to LidarResolveDto.serializer(),
+        "lidar: resolve, streamed but not asked for" to LidarResolveDto.serializer(),
         "lidar: build" to LidarBuildDto.serializer(),
         "lidar: build, asked for again" to LidarBuildDto.serializer(),
         "lidar: build of a saved LZ/PZ, nobody waiting" to LidarBuildDto.serializer(),
@@ -162,7 +164,7 @@ class DtoFixtureTest {
     )
 
     /** Documents a format reader reads, not records: a tileset's `tileset.json` is 3D Tiles, whose reader passes over what it does not know. */
-    private val documents = setOf("lidar: the tileset's root", "lidar: the ring's root")
+    private val documents = setOf("lidar: the tileset's root", "lidar: the ring's root", "lidar: a streamed survey's root")
 
     @TestFactory
     fun `every successful response decodes strictly`(): List<DynamicTest> =

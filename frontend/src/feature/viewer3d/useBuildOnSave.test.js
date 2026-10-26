@@ -1,4 +1,4 @@
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import api from "../auth/api";
 import { useBuildOnSave } from "./useBuildOnSave";
 
@@ -10,24 +10,44 @@ jest.mock("../auth/api", () => ({
 const TARGET = { lat: 34.783817, lon: -84.08219 };
 const lz = (overrides) => ({ id: "a", name: "LZ/PZ 1", target: TARGET, savedId: null, ...overrides });
 
-// CRA resets mock implementations before every test.
-beforeEach(() => api.post.mockResolvedValue({}));
+// Nothing built or streamed there, unless a test says otherwise.
+const NOT_THERE = { data: { key: "0123456789abcdef", available: false, canBuild: true } };
 
-it("asks for a kept build when an LZ is saved", () => {
+// CRA resets mock implementations before every test.
+beforeEach(() => api.post.mockImplementation((path) =>
+  Promise.resolve(path === "/lidar/resolve" ? NOT_THERE : {})));
+
+const settle = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+it("asks for a kept build when an LZ is saved", async () => {
   const { rerender } = renderHook(({ diagrams }) => useBuildOnSave(diagrams),
                                   { initialProps: { diagrams: [lz()] } });
   expect(api.post).not.toHaveBeenCalled();
 
   rerender({ diagrams: [lz({ savedId: 42 })] });
+  await settle();
+  expect(api.post).toHaveBeenCalledWith("/lidar/resolve", { ...TARGET, stream: true });
   expect(api.post).toHaveBeenCalledWith("/lidar/build", { ...TARGET, keep: true });
 });
 
-it("asks only once, not on every later update", () => {
+it("builds nothing where the server streams the place", async () => {
+  // A streamed first view takes seconds; a build would only spend minutes.
+  api.post.mockImplementation((path) => Promise.resolve(path === "/lidar/resolve"
+    ? { data: { key: "0123456789abcdef", available: true, streamed: true } } : {}));
+  const { rerender } = renderHook(({ diagrams }) => useBuildOnSave(diagrams),
+                                  { initialProps: { diagrams: [lz()] } });
+  rerender({ diagrams: [lz({ savedId: 42 })] });
+  await settle();
+  expect(api.post).not.toHaveBeenCalledWith("/lidar/build", expect.anything());
+});
+
+it("asks only once, not on every later update", async () => {
   const { rerender } = renderHook(({ diagrams }) => useBuildOnSave(diagrams),
                                   { initialProps: { diagrams: [lz()] } });
   rerender({ diagrams: [lz({ savedId: 42 })] });
   rerender({ diagrams: [lz({ savedId: 42, name: "renamed" })] });
-  expect(api.post).toHaveBeenCalledTimes(1);
+  await settle();
+  expect(api.post.mock.calls.filter(([path]) => path === "/lidar/build")).toHaveLength(1);
 });
 
 it("does not build LZs that arrive already saved", () => {

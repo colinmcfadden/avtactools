@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EZ/PZ API (the parts the native apps call)
-  version: 1.0.0
+  version: 1.1.0
   description: |
     The contract between the Flask API and the web and native clients. It holds
     the routes the apps call, one at a time as each arrives; a route missing from
@@ -1537,6 +1537,13 @@ paths:
         `/api`, so these must not repeat it). Not built: `available` is false, `canBuild` says whether
         `POST /api/lidar/build` can do anything on this server, and `target` echoes the caller's own
         place, so a client can say what to build. `radius_m` is 50 to 2,000 (default 500).
+
+        Streamed (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C): a client that sends `stream: true`
+        and whose place nothing built covers is answered, where this server streams and USGS has a
+        survey there, with that survey's tileset, `streamed: true` and `frame`. The tileset is a whole
+        survey, a state's octree, so the client opens the view, and its *LZ* button, on `frame` (the
+        caller's place, its radius and the ground's ellipsoidal height there, null where nothing says
+        it), never on the tileset's own sphere. A client that does not send it is answered as before.
       security:
         - bearer: []
       parameters:
@@ -1677,6 +1684,15 @@ paths:
         inside the tileset and may hold slashes (`points/r0.pnts`, `context/tileset.json`); a tile's
         `content.uri` is relative to the tileset.json that names it. A file that is not there is 404
         (Flask's own page, not JSON). Private and cached a week: a key's content never changes.
+
+        A streamed survey (`resolve`'s `streamed`) is written from USGS's own octree: its files are
+        `tileset.json` and `<16 hex>.json` (external tilesets, one every four levels) and `<16 hex>.pnts`,
+        names that say nothing of the place. Tiles have a `region` and `refine: ADD`; its `.pnts` carry
+        `POSITION_QUANTIZED` (with `QUANTIZED_VOLUME_OFFSET` and `QUANTIZED_VOLUME_SCALE`, in WGS84
+        geocentric metres, no `transform`) and `RGB` by height above ground. A piece is fetched from AWS the
+        first time anyone asks for it: AWS unreachable is 502 `upstream_unavailable`, a server without
+        its geoid grids 503 `geoid_unavailable` (heights would be about 30 m out), and a name never
+        handed out a JSON 404 `not_found`; each is worth asking again later but the last.
       security:
         - bearer: []
       parameters:
@@ -1701,11 +1717,15 @@ paths:
         "400":
           $ref: "#/components/responses/SimpleError"
         "404":
-          description: No such tileset (`{error}`), or no such file in it (Flask's own page, not JSON).
+          description: No such tileset (`{error}`), no such file in it (Flask's own page, not JSON), or a file it does not serve (`{error}`).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
 
   /api/terrain/heightmap/{level}/{x}/{y}:
     get:
@@ -3048,6 +3068,7 @@ components:
         lat: { type: number }
         lon: { type: number }
         radius_m: { type: number, minimum: 50, maximum: 2000 }
+        stream: { type: boolean, description: "This client frames on `frame`: answer a streamed survey where nothing is built." }
 
     LidarResolve:
       type: object
@@ -3066,6 +3087,16 @@ components:
             lat: { type: number }
             lon: { type: number }
             radius_m: { type: number }
+        streamed: { type: boolean, description: "Asked for with `stream` only: the tileset is a whole survey, streamed." }
+        frame:
+          description: "Streamed only: where to open the view. The caller's own place, echoed, with the ground's WGS84 ellipsoidal height in metres (null where nothing says it)."
+          type: object
+          required: [lat, lon, radius_m, height_m]
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            radius_m: { type: number }
+            height_m: { type: number, nullable: true }
 
     LidarBuild:
       type: object

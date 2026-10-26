@@ -37,6 +37,7 @@ const MAX_RESUBMITS = 2;
 const IDLE = {
   state: "idle", url: null, contextUrl: null, key: null, target: null,
   error: "", stage: null, position: null, elapsedS: null, buildFailed: false,
+  streamed: false, frame: null,
 };
 
 // Who is waiting, as far as the build service is concerned: one opaque id per
@@ -105,9 +106,17 @@ export const releaseAbandonedBuilds = () => {
  * in the 3D window is waiting for. Already built, or a server that cannot
  * build: both are fine, and nothing is reported.
  */
-export const requestKeptBuild = ({ lat, lon } = {}) => {
+export const requestKeptBuild = async ({ lat, lon } = {}) => {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-  api.post("/lidar/build", { lat, lon, keep: true }).catch(() => {});
+  try {
+    // Where the server streams this place there is nothing to build: the
+    // first view is seconds away already (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md).
+    const res = await api.post("/lidar/resolve", { lat, lon, stream: true });
+    if (res?.data?.available) return;
+    await api.post("/lidar/build", { lat, lon, keep: true });
+  } catch {
+    // Nothing waits on it; the next save or the 3D view asks again.
+  }
 };
 
 const isCancel = (err) => err?.name === "CanceledError" || err?.code === "ERR_CANCELED";
@@ -115,7 +124,13 @@ const isCancel = (err) => err?.name === "CanceledError" || err?.code === "ERR_CA
 const messageOf = (err, fallback) =>
   err?.response?.data?.error || err?.message || fallback;
 
-export const useLidarTileset = ({ lat, lon, radiusM, keep = false } = {}) => {
+/**
+ * `stream` asks for the place's survey streamed from USGS's octree where
+ * nothing is built (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C). Such a
+ * tileset is a whole survey, so `frame` says where to open the view; a viewer
+ * that cannot frame on it must not ask.
+ */
+export const useLidarTileset = ({ lat, lon, radiusM, keep = false, stream = false } = {}) => {
   const [result, setResult] = useState(IDLE);
   // Bumped by refresh() to run the whole lookup again.
   const [attempt, setAttempt] = useState(0);
@@ -159,6 +174,8 @@ export const useLidarTileset = ({ lat, lon, radiusM, keep = false } = {}) => {
         // Optional wider, thinned ring. Absent unless one was built.
         contextUrl: data.contextUrl || null,
         key: data.key || null,
+        streamed: data.streamed === true,
+        frame: data.frame || null,
       });
     };
 
@@ -243,7 +260,8 @@ export const useLidarTileset = ({ lat, lon, radiusM, keep = false } = {}) => {
     const run = async () => {
       setResult({ ...IDLE, state: "resolving" });
       try {
-        const res = await api.post("/lidar/resolve", body, { signal });
+        const res = await api.post("/lidar/resolve", stream ? { ...body, stream: true } : body,
+                                   { signal });
         const data = res.data || {};
         if (data.available) return finish(data);
         // The target the server resolved, so a "not built" panel can say
@@ -272,7 +290,7 @@ export const useLidarTileset = ({ lat, lon, radiusM, keep = false } = {}) => {
       // is waiting.
       release(waitingOn);
     };
-  }, [hasTarget, lat, lon, radiusM, attempt]);
+  }, [hasTarget, lat, lon, radiusM, stream, attempt]);
 
   const refresh = useCallback(() => setAttempt((n) => n + 1), []);
 
