@@ -296,6 +296,7 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 | **aviationweather.gov** | METAR, winds aloft | `weather_routes.py` | keyless |
 | **FAA NOTAM search** | NOTAMs | `weather_routes.py` | keyless |
 | **USGS 3DEP LiDAR** | Point clouds: built from, and streamed by the API from its octree on AWS (`lidar/stream.py`; the browser never talks to AWS) | `backend/lidar/`, `tools/` | keyless (§12) |
+| **USGS The National Map, NAIP** | Photographic colour for streamed pieces, fetched in the background (`USGSNAIPImagery` `exportImage`) | `backend/lidar/photo.py` | keyless; credit "USDA NAIP, from USGS The National Map" |
 | **USGS 1/3″ DEMs** | Local terrain | mounted at `TERRAIN_DATA_DIR` | downloaded |
 | **Ultralytics SAM** | LZ detection model | `sam_b.pt`, auto-downloaded on first load | — |
 | **GitHub Actions** | Semantic release | `.github/workflows/release.yaml` | `GITHUB_TOKEN` |
@@ -417,6 +418,7 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `LIDAR_CACHE_DIR` | Where the USGS coverage index is cached. |
 | `LIDAR_STREAM_CACHE_DIR` | Streams 3D from USGS's octree (plan Part C) when set: where the survey indexes and converted pieces are cached. A persistent, writable mount in production (e.g. `/data/cache/lidar`); safe to delete. Unset: no streaming, and the 3D view builds as before. The coverage index (8 MB) is downloaded into it on first use. |
 | `LIDAR_STREAM_CACHE_MAX_GB` | The pieces' cap (default 200): past it the pieces used longest ago are let go. |
+| `LIDAR_STREAM_PHOTO` | `off` turns off the background pass that recolours cached pieces from USGS's NAIP service (`lidar/photo.py`); on by default wherever streaming is. |
 | `MIN_APP_VERSION_ANDROID`, `MIN_APP_VERSION_IOS` | Oldest supported native app version, `X.Y.Z`, served by `/api/config`; the app shows "Update required" below it. Unset = no minimum. A malformed value is ignored and logged, never served. |
 | `MAINTENANCE_MESSAGE` | Non-empty turns maintenance on in `/api/config` and is the notice the apps show (500 chars max). |
 | `REALTIME_PUBLIC_URL` | Where clients open the mission packs' live stream (`ws://` or `wss://`), handed out as every pack's `live_url`. Unset: clients poll. The service's own settings are at the top of `backend/realtime/service.py`. |
@@ -746,6 +748,15 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   key** (`pieces.LOOK`, part of `names.survey_key`): browsers and the app keep a piece a week under its URL, so the old colours
   would otherwise stay. Measured with it, cold at Ellijay: first points 1.3–3.0 s, the LZ's square 11–14 s, the whole view 18 s;
   a piece converts in 25–33 ms, as before.
+- **Then each cached piece is made photographic in the background** (`lidar/photo.py`, the owner's choice of 2026-10-26: USGS's
+  free NAIP image service): its own queue and two worker threads, apart from gunicorn's 8, fetch NAIP over the piece's box
+  (`USGSNAIPImagery` `exportImage`, 0.6 m, or half the piece's spacing for a coarse one) and rewrite only its colour bytes, then
+  mark it (`<name>.photo`). A view never waits for it; nothing is fetched while an analysis runs; a failed fetch keeps the palette
+  and is offered again when next served, after 10 minutes. A palette piece is served `max-age=3600`, a photographic one the week,
+  so a browser or the app picks the photograph up on a later view. Credited in the web's view ("Point colour: USDA NAIP, from USGS
+  The National Map"). Measured at Ellijay: the first view as fast as without it; the LZ's 168 pieces photographic in about 8.6
+  minutes (median 3.3 s an image, 40–60 ms of CPU a piece). NAIP's licence for imagery after 2019 is unconfirmed: confirm with USDA's
+  APFO before selling photographic colour (the plan, *Photographic colour, in the background*).
 - **Builds happen on first view, or in the background when an LZ is saved**, where nothing streams. The
   web asks `resolve` before a build on save and builds nothing where the place streams.
   The service builds one at a time from a bounded queue — builds someone is

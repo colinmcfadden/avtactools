@@ -1689,7 +1689,9 @@ paths:
         `tileset.json` and `<16 hex>.json` (external tilesets, one every four levels) and `<16 hex>.pnts`,
         names that say nothing of the place. Tiles have a `region` and `refine: ADD`; its `.pnts` carry
         `POSITION_QUANTIZED` (with `QUANTIZED_VOLUME_OFFSET` and `QUANTIZED_VOLUME_SCALE`, in WGS84
-        geocentric metres, no `transform`) and `RGB` by height above ground. A piece is fetched from AWS the
+        geocentric metres, no `transform`) and `RGB`: first a natural palette, kept an hour
+        (`max-age=3600`), then, once the server has laid USDA NAIP imagery on it in the background,
+        photographic, kept the week. The points never move between the two. A piece is fetched from AWS the
         first time anyone asks for it: AWS unreachable is 502 `upstream_unavailable`, a server without
         its geoid grids 503 `geoid_unavailable` (heights would be about 30 m out), and a name never
         handed out a JSON 404 `not_found`; each is worth asking again later but the last.
