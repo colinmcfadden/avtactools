@@ -111,6 +111,24 @@ describe("the survey book", () => {
     expect(within(row).getByText("OCT 2023")).toBeInTheDocument();
   });
 
+  it("says a survey never measured is not measured, not that it has nothing to look at", async () => {
+    const client = fakeClient({
+      listSurveys: jest.fn(async () => ({
+        book: { name: "AASF 1 HLZ SURVEY BOOK", revision: 2, page_order: ["s-1", "s-2"] },
+        surveys: [
+          { uuid: "s-1", hlz_id: "GA 034", name: "LZ DONOVAN", status: "draft", disagreements: 0, surveyed_on: "", grid: "", measured_at: null, updated_at: "2026-10-26T12:00:00Z", updated_by: "CW3 Admin", archived: false },
+          { uuid: "s-2", hlz_id: "GA 035", name: "LZ EAGLE", status: "draft", disagreements: 0, surveyed_on: "", grid: "", measured_at: "2026-10-26T12:00:00Z", updated_at: "2026-10-26T12:00:00Z", updated_by: "CW3 Admin", archived: false },
+        ],
+      })),
+    });
+    await renderBook(client);
+    const never = screen.getByRole("button", { name: "LZ DONOVAN" }).closest("tr");
+    expect(within(never).getByText("Not measured")).toBeInTheDocument();
+    expect(within(never).queryByText("None")).not.toBeInTheDocument();
+    const agrees = screen.getByRole("button", { name: "LZ EAGLE" }).closest("tr");
+    expect(within(agrees).getByText("None")).toBeInTheDocument();
+  });
+
   it("makes a new survey and opens it", async () => {
     const { client } = await renderBook();
     fireEvent.click(screen.getByRole("button", { name: "New survey" }));

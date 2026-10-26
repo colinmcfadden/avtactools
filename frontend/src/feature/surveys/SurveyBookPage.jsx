@@ -123,7 +123,10 @@ const SurveyBookPage = ({ surveys, onOpen, onNew }) => {
                   <span className="ui-chip">{row.archived ? "Archived" : STATUS_WORDS[row.status] ?? row.status}</span>
                 </td>
                 <td>
-                  {row.disagreements ? (
+                  {/* Never measured is nothing compared yet, not nothing to look at. */}
+                  {!row.measured_at ? (
+                    <span className="survey-muted">Not measured</span>
+                  ) : row.disagreements ? (
                     <span className="survey-state survey-state--warn">{row.disagreements} {row.disagreements === 1 ? "disagreement" : "disagreements"}</span>
                   ) : (
                     <span className="survey-muted">None</span>
