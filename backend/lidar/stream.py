@@ -360,16 +360,38 @@ class Streamer:
 
     def _piece(self, key, survey, node) -> bytes:
         info = self.info(key)
-        data = self._fetch(f"{self._base}/{survey.name}/ept-data/{node}.laz", MAX_PIECE_BYTES)
+        data = self._fetch(self._piece_url(survey, node), MAX_PIECE_BYTES)
         lon, lat = ept.centre_lonlat(info, node)
         separation = self._checked_geoid([lon], [lat])[0]
         try:
+            span = self._survey_range(key, survey, data if node == ept.ROOT else None)
             body, _kept = pieces.convert(data, classified=survey.likely_classified,
-                                         geoid_m=separation)
+                                         geoid_m=separation, survey_range=span)
         except pieces.PieceError:
             raise StreamError("USGS sent a piece that cannot be read.",
                               code="upstream_unavailable", status=502) from None
         return body
+
+    def _piece_url(self, survey, node) -> str:
+        return f"{self._base}/{survey.name}/ept-data/{node}.laz"
+
+    def _survey_range(self, key, survey, root_data=None):
+        """The survey's intensity range, taken once from its root piece (a
+        sample across all of it) and kept, so every piece is shaded alike.
+        ``root_data`` is the root's LAZ where the caller has it already."""
+        path = self.root / key / "stats.json"
+        with self._claim(path):
+            if path.is_file():
+                try:
+                    found = json.loads(path.read_bytes()).get("intensity")
+                    return tuple(found) if found else None
+                except (ValueError, TypeError, AttributeError):
+                    path.unlink(missing_ok=True)
+            data = root_data if root_data is not None else self._fetch(
+                self._piece_url(survey, ept.ROOT), MAX_PIECE_BYTES)
+            span = pieces.survey_intensity_range(data)
+            _write_atomic(path, json.dumps({"intensity": list(span) if span else None}).encode())
+            return span
 
     # -- the cache ------------------------------------------------------------
 

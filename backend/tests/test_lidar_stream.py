@@ -35,7 +35,7 @@ GEOID = -30.35                             # north Georgia's separation
 BASE = "https://aws.example/usgs-lidar-public"
 
 
-def write_laz(x, y, z, classification) -> bytes:
+def write_laz(x, y, z, classification, intensity=None) -> bytes:
     import laspy
 
     header = laspy.LasHeader(point_format=6, version="1.4")
@@ -44,6 +44,8 @@ def write_laz(x, y, z, classification) -> bytes:
     las = laspy.LasData(header)
     las.x, las.y, las.z = x, y, z
     las.classification = np.asarray(classification, dtype=np.uint8)
+    if intensity is not None:
+        las.intensity = np.asarray(intensity, dtype=np.uint16)
     buffer = io.BytesIO()
     las.write(buffer, do_compress=True)
     return buffer.getvalue()
@@ -106,7 +108,8 @@ class FakeSurvey:
             classification[90:] = 6                      # buildings: not kept
             z = ground.copy()
             z[60:80] += 20.0                              # 20 m canopy
-            self.put(f"ept-data/{node}.laz", write_laz(x, y, z, classification))
+            self.put(f"ept-data/{node}.laz", write_laz(x, y, z, classification,
+                                                       intensity=rng.integers(200, 2000, count)))
 
     def put(self, path, data):
         self.files[f"{BASE}/{self.name}/{path}"] = data
@@ -286,10 +289,17 @@ class NameTests(unittest.TestCase):
         for bad in ("", "../../etc", "ABCDEF0123456789", "0" * 15, "0" * 17):
             self.assertIsNone(names.piece_node("GA", bad, secret=SECRET))
 
+    def test_a_new_look_is_a_new_key_so_no_cache_keeps_the_old_colours(self):
+        """Browsers and Android keep a piece a week under its URL."""
+        self.assertNotEqual(names.survey_key("GA", secret=SECRET, look=1),
+                            names.survey_key("GA", secret=SECRET, look=2))
+        self.assertEqual(names.survey_key("GA", secret=SECRET), names.survey_key("GA", secret=SECRET, look=pieces.LOOK))
+
     def test_a_survey_key_is_an_hmac_of_its_name(self):
         import hashlib
         import hmac
-        expected = hmac.new(SECRET.encode(), b"survey:GA_Statewide_B3_2018", hashlib.sha256).hexdigest()[:16]
+        seed = f"survey:look{pieces.LOOK}:GA_Statewide_B3_2018".encode()
+        expected = hmac.new(SECRET.encode(), seed, hashlib.sha256).hexdigest()[:16]
         self.assertEqual(names.survey_key("GA_Statewide_B3_2018", secret=SECRET), expected)
 
 
@@ -298,7 +308,7 @@ class PieceTests(unittest.TestCase):
         survey = FakeSurvey()
         node = survey.centre
         data = survey.files[f"{BASE}/{survey.name}/ept-data/{node}.laz"]
-        x, y, z, classification = pieces.read_laz(data)
+        x, y, z, classification, _intensity = pieces.read_laz(data)
         body, kept = pieces.convert(data, classified=classified, geoid_m=GEOID)
         return (x, y, z, classification), body, kept
 
@@ -326,22 +336,63 @@ class PieceTests(unittest.TestCase):
         self.assertLess(np.max(np.abs(points[:, 1] - lats)) * metres, 0.02)
         self.assertLess(np.max(np.abs(points[:, 2] - (z[keep] + GEOID))), 0.02)
 
-    def test_points_are_coloured_by_height_above_ground(self):
+    def test_the_ground_is_brown_and_the_trees_green_never_orange(self):
+        """The owner's screenshot at Ellijay: nearly every crown orange, since
+        north Georgia's hardwoods stand over 15 m. Nature's colours instead."""
         (_x, _y, _z, classification), body, _kept = self.piece()
         _points, rgb, _table, _ = read_pnts(body)
-        kept_classes = classification[np.isin(classification, (2, 5))]
-        surface = pipeline.HEIGHT_BANDS[0][1]
-        canopy = pipeline.HEIGHT_BANDS[4][1]                 # 20 m: above 15 m
-        self.assertTrue((rgb[kept_classes == 2] == surface).all())
-        self.assertTrue((rgb[kept_classes == 5] == canopy).all())
+        kept = classification[np.isin(classification, (2, 5))]
+        r, g, b = (rgb[:, i].astype(int) for i in range(3))
+        ground, trees = kept == 2, kept == 5
+        self.assertTrue((r[ground] > g[ground]).all() and (g[ground] > b[ground]).all(), "browns: red over green over blue")
+        self.assertTrue((g[trees] > r[trees]).all() and (g[trees] > b[trees]).all(), "greens")
+        self.assertFalse(((r - b > 80) & (r > g + 30)).any(), "nothing orange")
+
+    def test_greens_darken_with_height_above_ground(self):
+        heights = np.array([0.0, 0.0, 0.0, 1.0, 3.0, 8.0, 20.0, 40.0])
+        classes = [2, 2, 2, 3, 4, 5, 5, 5]
+        x = np.array([0.0, 4.0, 8.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+        data = write_laz(x, np.zeros(8), 300.0 + heights, classes, intensity=[1000] * 8)
+        _p, rgb, _t, _ = read_pnts(pieces.convert(data, classified=True, geoid_m=GEOID, survey_range=(0, 2000))[0])
+        brightness = rgb[3:].astype(int).sum(axis=1)
+        self.assertTrue((np.diff(brightness) <= 0).all(), brightness)
+        self.assertTrue(brightness[0] > brightness[-1] + 60)
+
+    def test_each_point_is_shaded_by_its_intensity_within_the_surveys_range(self):
+        x = np.array([0.0, 1.0, 2.0, 3.0])
+        data = write_laz(x, np.zeros(4), np.full(4, 300.0), [2, 2, 2, 2], intensity=[100, 900, 1700, 5000])
+        _p, rgb, _t, _ = read_pnts(pieces.convert(data, classified=True, geoid_m=GEOID, survey_range=(100, 1700))[0])
+        brightness = rgb.astype(int).sum(axis=1)
+        self.assertTrue(brightness[0] < brightness[1] < brightness[2], brightness)
+        # Past the survey's range is the range's end, not a glare.
+        self.assertEqual(brightness[2], brightness[3])
+
+    def test_a_piece_given_no_range_shades_by_its_own(self):
+        x = np.array([0.0, 1.0, 2.0])
+        data = write_laz(x, np.zeros(3), np.full(3, 300.0), [2, 2, 2], intensity=[10, 20, 30])
+        _p, rgb, _t, _ = read_pnts(pieces.convert(data, classified=True, geoid_m=GEOID)[0])
+        brightness = rgb.astype(int).sum(axis=1)
+        self.assertTrue(brightness[0] < brightness[1] < brightness[2], brightness)
+
+    def test_a_survey_with_no_intensity_is_not_shaded_to_black(self):
+        data = write_laz(np.array([0.0, 1.0]), np.zeros(2), np.full(2, 300.0), [2, 2], intensity=[0, 0])
+        _p, rgb, _t, _ = read_pnts(pieces.convert(data, classified=True, geoid_m=GEOID)[0])
+        self.assertTrue((rgb.astype(int).sum(axis=1) > 200).all())
 
     def test_a_piece_with_no_ground_is_coloured_by_class(self):
         data = write_laz(np.array([0.0, 1.0]), np.array([0.0, 1.0]), np.array([5.0, 6.0]),
-                         [pipeline.HIGH_VEGETATION, pipeline.LOW_VEGETATION])
-        body, _ = pieces.convert(data, classified=True, geoid_m=GEOID)
-        _points, rgb, _table, _ = read_pnts(body)
-        self.assertEqual([tuple(c) for c in rgb],
-                         [pipeline.CLASSIFICATION_COLORS[5], pipeline.CLASSIFICATION_COLORS[3]])
+                         [pipeline.HIGH_VEGETATION, pipeline.LOW_VEGETATION], intensity=[500, 500])
+        _p, rgb, _t, _ = read_pnts(pieces.convert(data, classified=True, geoid_m=GEOID, survey_range=(0, 1000))[0])
+        r, g, b = (rgb[:, i].astype(int) for i in range(3))
+        self.assertTrue((g > r).all() and (g > b).all())
+        # High vegetation stands for a tall crown, low for scrub: the darker the taller.
+        self.assertLess(int(rgb[0].astype(int).sum()), int(rgb[1].astype(int).sum()))
+
+    def test_intensity_range_is_the_middle_of_a_sample(self):
+        lo, hi = pieces.intensity_range(np.concatenate([np.arange(1, 1001), [60000]]))
+        self.assertLess(lo, 30)
+        self.assertTrue(950 < hi < 1001)
+        self.assertIsNone(pieces.intensity_range(np.zeros(50)))
 
     def test_the_feature_table_is_aligned_for_its_binary(self):
         _source, body, _kept = self.piece()
@@ -417,6 +468,21 @@ class StreamerTests(unittest.TestCase):
         self.streamer.file(self.key, f"{self.name(node)}.pnts")
         self.assertEqual([url for url in self.survey.fetched if url.endswith(".laz")], laz)
 
+    def test_every_piece_is_shaded_by_the_surveys_range_taken_once_from_its_root(self):
+        """One range for the survey, so two pieces side by side are shaded alike."""
+        with patch.object(pieces, "convert", wraps=pieces.convert) as convert:
+            for node in sorted(self.survey.all_nodes)[:3]:
+                self.streamer.file(self.key, f"{self.name(node)}.pnts")
+        ranges = {call.kwargs["survey_range"] for call in convert.call_args_list}
+        self.assertEqual(len(ranges), 1)
+        self.assertIsNotNone(next(iter(ranges)))
+        stats = json.loads((self.root / self.key / "stats.json").read_text())
+        self.assertEqual(tuple(stats["intensity"]), next(iter(ranges)))
+        # The root's piece is read for it once, and is not fetched again as a piece.
+        self.streamer.file(self.key, f"{self.name(ept.ROOT)}.pnts")
+        root_laz = f"{BASE}/{self.survey.name}/ept-data/0-0-0-0.laz"
+        self.assertEqual(self.survey.fetched.count(root_laz), 1)
+
     def test_two_asking_at_once_fetch_once(self):
         node = self.survey.centre
         slow = self.survey.fetch
@@ -432,7 +498,8 @@ class StreamerTests(unittest.TestCase):
             thread.start()
         for thread in threads:
             thread.join()
-        self.assertEqual(sum(url.endswith(".laz") for url in self.survey.fetched), 1)
+        piece = f"{BASE}/{self.survey.name}/ept-data/{node}.laz"
+        self.assertEqual(self.survey.fetched.count(piece), 1)
 
     def test_a_name_never_handed_out_is_not_found(self):
         for name in ("0123456789abcdef.pnts", "tileset.pnts", "area.json", "ept.json",

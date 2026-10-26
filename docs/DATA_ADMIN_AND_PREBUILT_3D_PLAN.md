@@ -308,10 +308,47 @@ and USGS's copy has no colour of its own.
 - **Decided (D22):** colour every streamed piece at once by **height above ground**, using today's bands: surface, grass,
   brush, canopy, and above 15 m in orange. It is worked out from the piece's own ground points, as builds do
   (`filters.hag_nn`), and it is the obstruction reading the build's own code calls the more direct one for an LZ.
+- **Changed 2026-10-26 (the owner):** the bands came out orange over nearly every crown at Ellijay (north Georgia's
+  hardwoods stand over 15 m), so a streamed piece is now coloured as the place looks: the ground tan and brown, greens
+  darkening with height above ground, shaded by LiDAR intensity within the survey's range (`pieces.NATURAL_STOPS`,
+  `survey_intensity_range`). Height still decides the green, so how tall the obstructions stand still reads. Then a
+  background pass is to recolour cached pieces from imagery (*Photographic colour, in the background*, below: checked, not built).
 - **Photographic colour** is added only where an area is warmed (below). One imagery request per piece would about
   double a first view.
 - It comes from USGS NAIP (public domain, 0.6 m, CONUS), not Mapbox: storing Mapbox colour in data that is then sold
   is a terms question (licence language commonly bars data derived from tiles).
+
+### Photographic colour, in the background (the owner's request of 2026-10-26; not built)
+
+Each cached piece recoloured from NAIP off the request path, so a later view of the same ground is photographic and the first
+view never waits for it. **Checked 2026-10-26, before building; the source and the licence are the owner's to settle:**
+
+| Source | Access | Terms as published | Measured from the owner's Mac |
+|---|---|---|---|
+| **USGS The National Map, `USGSNAIPImagery` ImageServer** (`exportImage`) | Free, keyless, HTTPS; up to 4,000 × 4,000 px a request, any box in EPSG:3857 | Credited "USGS, USDA, The National Map: Orthoimagery"; its metadata's use and licence fields are empty; no published rate limits | A piece's box (195 m at 0.6 m, 325 px) 0.3–7 s, median about 0.9 s, about 23 KB of JPEG; a 782 m box 2.2 s, 360 KB. At Ellijay it served `m_3408431_ne_16_060_20231008`: 0.6 m, October 2023, leaf-on |
+| **AWS Open Data, `naip-visualization`** (3-band COG, JPEG q85) | **Requester Pays**: an AWS account, a key on the server (a secret), and billing | "Public Domain with Attribution" (cite "NAIP on AWS … registry.opendata.aws/naip"); 2010–2023 | Not tried (anonymous access is refused). Pennies: AWS egress is about $0.09 a GB, and a piece's window is tens of KB |
+| Microsoft Planetary Computer | Azure (West Europe), SAS token | Its catalogue calls the licence "proprietary" and links to USDA FSA's policies | Not tried; not recommended |
+
+**The licence.** NAIP is USDA FSA's. It has been public domain, and USGS publishes its 2012–2015 NAIP under the USA.gov public
+domain label. In 2018 FSA weighed licensing it commercially, and the program was said to stay public domain for imagery taken
+through 2019. USGS and AWS both serve 2020–2023 imagery openly (AWS as "Public Domain with Attribution"), and nothing found says a
+licence was adopted, but FSA's own current statement for post-2019 imagery was not found. **Using it in the app, with credit, looks
+clear; selling photographic colour (D23) is worth confirming with USDA's APFO (the office that runs NAIP) first.**
+
+**What one piece costs**: one image fetch for its box (above) and 40–60 ms of CPU to turn its quantized positions back into Web
+Mercator, sample the image bilinearly and write the piece again (measured on five cached pieces of 74–88 thousand points).
+A coarse piece needs no 0.6 m: its image would be sized to its own spacing (a 3 km piece at about 6 m).
+
+**Proposed design** (once the source is chosen):
+- A queue and two worker threads of its own in the API, apart from gunicorn's 8 request threads, so a view never waits on it;
+  a piece is queued as it is first cached, nearest the LZ first, at most a few thousand waiting, and dropped when the cache lets
+  it go. Nothing is fetched while an analysis runs (`terrain_tiles.pauses_warming`).
+- The recoloured piece replaces the palette one atomically under the same name. **Caching**: a palette piece is served for an
+  hour (`max-age=3600`), a photographic one for the week, so a browser or the app picks the photograph up on a later view without
+  a new look or key.
+- The imagery's own vintage (2023, leaf-on) is not the LiDAR's (2018): a tree cut since shows as ground colour on the canopy's
+  points and the reverse. The credit goes beside Mapbox's in the 3D view ("Imagery: USDA NAIP").
+- Measured before shipping: a cold first view must stay as now (first points 1.3–3.0 s), and the pass's own rate per piece.
 
 ### Warmed areas: what "prebuilt" becomes
 

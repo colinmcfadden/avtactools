@@ -3,7 +3,7 @@
 A streamed tileset's URL keeps the shape the clients already parse,
 ``/lidar/tilesets/<16 hex>/<file>``, and says nothing about where it is:
 
-- a survey's key is an HMAC of its name under ``LIDAR_KEY_SECRET``, found
+- a survey's key is an HMAC of its name and look under ``LIDAR_KEY_SECRET``, found
   again by computing it for every survey in USGS's index (a few thousand);
 - a piece's name is its octree address put through a keyed permutation of
   64-bit numbers (a Feistel network over HMAC rounds), so the server reads the
@@ -27,9 +27,13 @@ _HALF = 0xFFFFFFFF
 _COORD_BITS = 19
 
 
-def survey_key(survey: str, *, secret: str | None = None) -> str:
+def survey_key(survey: str, *, secret: str | None = None, look: int | None = None) -> str:
+    """A survey's key, for the look its pieces are drawn in (``pieces.LOOK``):
+    a new look is a new key, so nothing cached under the old URLs is shown."""
+    if look is None:
+        from .pieces import LOOK as look
     secret = secret if secret is not None else catalog.key_secret()
-    return hmac.new(secret.encode(), f"survey:{survey}".encode(),
+    return hmac.new(secret.encode(), f"survey:look{look}:{survey}".encode(),
                     hashlib.sha256).hexdigest()[:16]
 
 

@@ -730,13 +730,22 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   (`lidar/ept.py`: four levels a file, the next joined as external tilesets, regions from each cube with
   the geoid added, error the cube's width over its span, `ADD`), and each piece a viewer asks for is
   fetched from AWS, converted (`lidar/pieces.py`: noise dropped, the build's class rules by survey year,
-  coloured by height above the piece's nearest ground, the geoid read at its centre, `POSITION_QUANTIZED`)
+  coloured as the place looks, the geoid read at its centre, `POSITION_QUANTIZED`)
   and cached. Names in URLs are opaque (`lidar/names.py`): a survey's key is an HMAC of its name, a
   piece's name its octree address through a keyed 64-bit permutation, so the server reads it back without
   keeping a table. A built tileset still wins (photographic colour). Only a client that frames on
   `frame` may ask: the tileset is a state, and its own sphere opens on the state. Every AWS read is
   tried three times over one pooled session (Cesium never asks again for a tile that failed); without
   the geoid grids nothing is served (503), as builds refuse.
+- **A streamed point is coloured as the place looks** (`pieces.NATURAL_STOPS`, the owner's request of 2026-10-26): the ground
+  tan and brown, what stands on it greens that darken with its height above the piece's nearest ground return (a piece with no
+  ground: what its class says of its height), shaded by its LiDAR intensity within the survey's range, which is taken once from
+  the survey's root piece (a sample across the whole survey) and kept (`stats.json` beside it), so pieces side by side are shaded
+  alike. The build's bands came out orange over nearly every crown, since north Georgia's hardwoods stand over their 15 m. USGS's
+  copies carry no colour (GA_Statewide_B3_2018's schema has intensity and classification, no RGB). **A new look is a new survey
+  key** (`pieces.LOOK`, part of `names.survey_key`): browsers and the app keep a piece a week under its URL, so the old colours
+  would otherwise stay. Measured with it, cold at Ellijay: first points 1.3–3.0 s, the LZ's square 11–14 s, the whole view 18 s;
+  a piece converts in 25–33 ms, as before.
 - **Builds happen on first view, or in the background when an LZ is saved**, where nothing streams. The
   web asks `resolve` before a build on save and builds nothing where the place streams.
   The service builds one at a time from a bounded queue — builds someone is
