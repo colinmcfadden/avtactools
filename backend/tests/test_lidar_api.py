@@ -243,8 +243,57 @@ class LidarApiTests(LidarApiHarness):
         key = catalog.key_for(**TARGET, radius_m=RADIUS)
         self.make_tileset(key)
         (self.root / "0123456789abcdef").mkdir()      # started, no tileset.json
-        body = self.client.get("/api/lidar/tilesets", headers=self.auth).get_json()
+        with patch("entitlements.is_admin", return_value=True):
+            body = self.client.get("/api/lidar/tilesets", headers=self.auth).get_json()
         self.assertEqual(body["keys"], [key])
+
+    # --- what may be found out (plan §2.1) ----------------------------------
+
+    def test_only_an_admin_may_list_the_tilesets(self):
+        """The list is every place a 3D view was built: no crew needs it."""
+        self.make_tileset(catalog.key_for(**TARGET, radius_m=RADIUS))
+        response = self.client.get("/api/lidar/tilesets", headers=self.auth)
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(b"keys", response.data)
+
+    def test_a_tilesets_manifest_is_never_served(self):
+        """area.json is the place itself: latitude, longitude and radius."""
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
+        directory = self.make_tileset(key)
+        catalog.write_manifest(directory, TARGET["lat"], TARGET["lon"], radius_m=RADIUS)
+        (directory / catalog.CONTEXT_DIRNAME).mkdir()
+        (directory / catalog.CONTEXT_DIRNAME / "area.json").write_text('{"lat": 34.59}')
+        for path in ("area.json", "AREA.JSON", "Area.json", "context/area.json", "./area.json"):
+            response = self.client.get(f"/api/lidar/tilesets/{key}/{path}", headers=self.auth)
+            self.assertEqual(response.status_code, 404, path)
+            self.assertNotIn(b"34.59", response.data, path)
+
+    def test_only_tile_files_are_served(self):
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
+        directory = self.make_tileset(key)
+        (directory / "points").mkdir()
+        (directory / "points" / "r0.pnts").write_bytes(b"pnts")
+        for name in ("build.log", "pipeline.txt", "notes", "r.las", "tileset.json.bak"):
+            (directory / name).write_text("34.59 -84.12")
+        served = {
+            "tileset.json": 200, "points/r0.pnts": 200,
+            "build.log": 404, "pipeline.txt": 404, "notes": 404, "r.las": 404,
+            "tileset.json.bak": 404,
+        }
+        for path, status in served.items():
+            response = self.client.get(f"/api/lidar/tilesets/{key}/{path}", headers=self.auth)
+            self.assertEqual(response.status_code, status, path)
+
+    def test_a_hidden_file_or_folder_is_never_served(self):
+        """A build stages under a dot folder, which holds its own manifest."""
+        key = catalog.key_for(**TARGET, radius_m=RADIUS)
+        directory = self.make_tileset(key)
+        (directory / ".staging").mkdir()
+        (directory / ".staging" / "tileset.json").write_text("{}")
+        (directory / ".hidden.json").write_text("{}")
+        for path in (".staging/tileset.json", ".hidden.json"):
+            response = self.client.get(f"/api/lidar/tilesets/{key}/{path}", headers=self.auth)
+            self.assertEqual(response.status_code, 404, path)
 
 
 class BuildApiTests(LidarApiHarness):

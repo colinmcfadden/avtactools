@@ -205,7 +205,7 @@ the fields serves API 1.
 | aircraft | `/api/aircraft-profiles` CRUD, `/<id>/template`. A user's own profiles sync like saved records; the master list does not |
 | threats | `POST /api/threat-mask`, `POST /api/threats-ths`, `GET/POST /api/threats-kmz`, `POST /api/threats-kmz-link` |
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
-| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key. What the apps call of these and the two 3D terrain routes is in `contracts/openapi.yaml` (the 3D view's section), recorded with a real py3dtiles tileset (`contracts/fixtures/viewer3d/tileset`) |
+| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key. The bare list is admins' only (403 `admin_required`), and a tileset's folder serves only tile files (`.json` but never `area.json`, `.pnts`, `.b3dm`, `.glb`, `.subtree`; nothing under a dot), anything else a JSON 404. What the apps call of these and the two 3D terrain routes is in `contracts/openapi.yaml` (the 3D view's section), recorded with a real py3dtiles tileset (`contracts/fixtures/viewer3d/tileset`) |
 | mission packs | `/api/packs` (+ `/<uuid>`, `/finish`, `/reopen`, `/duplicate`, `/ops`, `/events`, `/seen`, `/items…`, `/members…`, `/invites…`) — `docs/MISSION_PACKS.md` §4. A batch of `/ops` all on `brief` items is taken from viewers and in a finished pack |
 | teams, invites, search | `/api/teams` (+ `/<id>`, `/members/<user_id>`, `/invites`), `/api/invites` (+ `/<id>/accept`, `/<id>/decline`, `/accept`), `GET /api/users/search?q=` (teammates only) |
 | admin | `/admin/*` — session cookie, not JWT. `/admin/packs` and `/admin/teams` are read only and never show what a pack holds |
@@ -412,6 +412,7 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `LIDAR_TILES_DIR` | Tileset store the API serves. Default `/data/tiles`. |
 | `LIDAR_BUILDER_URL` | The build service, e.g. `http://<internal host>:8090`. Unset → no on-demand builds. |
 | `LIDAR_BUILDER_TOKEN` | Shared secret with the build service. |
+| `LIDAR_KEY_SECRET` | **Required on every deployment, and the same on the API, staging's API and the build service** (they share `/data/tiles`). New tileset keys are an HMAC under it (`lidar/catalog.key_for`). Both refuse to start without one of 32 characters or more wherever `JWT_SECRET_KEY` is required, or `LIDAR_BUILDER_TOKEN` is set (`catalog.key_secret`); a bare local run uses a public development value. `openssl rand -hex 32`. |
 | `LIDAR_CACHE_DIR` | Where the USGS coverage index is cached. |
 | `MIN_APP_VERSION_ANDROID`, `MIN_APP_VERSION_IOS` | Oldest supported native app version, `X.Y.Z`, served by `/api/config`; the app shows "Update required" below it. Unset = no minimum. A malformed value is ignored and logged, never served. |
 | `MAINTENANCE_MESSAGE` | Non-empty turns maintenance on in `/api/config` and is the notice the apps show (500 chars max). |
@@ -708,9 +709,13 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - A downloaded directory can hold **several surveys in different CRSs**
   (Albers vs UTM 17N). Tiles carry their own CRS; never assume the first
   speaks for all.
-- Tilesets are addressed by an opaque hash key so URLs don't reveal locations,
-  but **found by coverage**: each has an `area.json` manifest and `resolve`
-  returns the nearest one whose area contains the target.
+- Tilesets are addressed by an opaque key so URLs don't reveal locations,
+  but **found by coverage**: each has an `area.json` manifest (never served)
+  and `resolve` returns the nearest one whose area contains the target. The key
+  is an HMAC of the rounded target under `LIDAR_KEY_SECRET`: an unkeyed hash of
+  it could be hashed back into its place by trying every rounded place in a
+  region. Tilesets from before the HMAC keep their old names (the owner's call,
+  2026-10-26: no rename); since lookups go by coverage, both kinds are found.
 - Pipeline: PDAL crops, classifies, colours from Mapbox imagery, reprojects to
   ECEF → py3dtiles writes `.pnts`. It runs in the `backend/lidar` Docker image
   (`docker build -t avtac-lidar:dev backend/lidar`), whose default command is
@@ -1015,9 +1020,10 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   comment above `TILE_SAMPLES` means that too). The ground is drawn stretched by 65/64 about each tile's middle, up to 0.77% of a tile's width off at its edges
   (about 8 m at level 14 in north Georgia, more on coarser tiles), and two tiles' shared edge is read 1.5% of a tile apart. The web draws it so, and Android
   will draw what Cesium draws, to match; the fix is the server's and changes every cached tile (owner to decide).
-- **A tileset's key can be turned back into its place** (`lidar/catalog.key_for`): it is the first 16 hex digits of an unsalted SHA-256 of the target rounded to 4
-  decimals, so whoever has a key (it is in URLs and the server's logs) can find the place to about 11 m by trying every rounded place in a region. A keyed hash
-  (HMAC with a server secret) would close it, at the cost of every stored tileset's name (owner to decide, server first).
+- **A tileset built before the keyed names can still be turned back into its place**: its key is the first 16 hex digits of an unsalted SHA-256 of the target
+  rounded to 4 decimals, so whoever has one (it is in URLs and the server's logs) can find the place to about 11 m by trying every rounded place in a region. New keys
+  are an HMAC under `LIDAR_KEY_SECRET` (§13); the old tilesets were left under their names (the owner's call, 2026-10-26), and streaming (plan Part C) makes no new
+  per-LZ ones.
 - The web shows a failed build's `error` text (`useLidarTileset.js`), which can hold a tool's output with the place's coordinates in it; Android does not (§17,
   *The 3D view*).
 - **The web's 3D view shows Cesium's default sky, sun and atmosphere, and fog on far ground** (`Viewer3D.jsx` turns none of `CesiumWidget`'s defaults off): a
@@ -1055,11 +1061,6 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   clients compile once at the opening's offset to learn where and when to ask (the web's `bare`), so the places' times carry that offset. The
   brief itself is then compiled at the departure's (the light data's). Web first.
 - The Mapbox token is hardcoded in three places.
-- **Any signed-in user can find every place a 3D view was built.** `GET /api/lidar/tilesets` lists every tileset key,
-  and the file route serves each tileset's `area.json` (latitude, longitude, radius). A key is also an unkeyed SHA-256
-  of the rounded coordinates (`catalog.key_for`), so trying every cell of CONUS turns it back into its place. Neither
-  client calls the list. Phase 0 of `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` fixes it: tile files only, the list for
-  admins, keys by HMAC.
 - Sessions are bearer tokens in `localStorage` with no server-side revocation;
   see `AUTHENTICATION.md` for the path to HttpOnly cookies.
 - In-process stores block horizontal scaling (§9).

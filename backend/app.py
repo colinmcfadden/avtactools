@@ -26,6 +26,7 @@ from security_config import (
 
 # Import your Blueprints
 import lidar_builder
+from lidar import catalog as lidar_catalog
 import terrain_tiles
 from routes.terrain_routes import terrain_bp
 from routes.lidar_routes import lidar_bp
@@ -88,6 +89,9 @@ if is_postgres(database_url):
     }
 app.config['JWT_SECRET_KEY'] = resolve_jwt_secret(os.environ)
 validate_email_configuration(os.environ)
+# Tileset keys are an HMAC under this; a deployment without it would name new
+# tilesets with a public secret, which hashes back into places.
+lidar_catalog.key_secret(os.environ)
 # A one-day session balances an operational planning workflow with reasonable
 # exposure if a bearer token is lost. Password resets revoke older tokens via
 # the per-account session-version claim below.

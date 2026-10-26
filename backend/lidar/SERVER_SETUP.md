@@ -56,8 +56,13 @@ Environment:
 
 ```
 LIDAR_BUILDER_TOKEN=<the secret>
+LIDAR_KEY_SECRET=<openssl rand -hex 32>
 LIDAR_COLLECTION=/data/lidar
 ```
+
+`LIDAR_KEY_SECRET` names new tilesets (an HMAC of the place, so a key cannot be
+hashed back into it). The service refuses to start without it once a token is
+set, and the API (production and staging) must have **the same value**.
 
 The first image build takes several minutes and about 5 GB; later deploys only
 rebuild the final code layer. The image refuses to finish building if the
@@ -71,6 +76,7 @@ Add to its environment, then redeploy:
 LIDAR_TILES_DIR=/data/tiles
 LIDAR_BUILDER_URL=http://<build service hostname>:8090
 LIDAR_BUILDER_TOKEN=<the same secret>
+LIDAR_KEY_SECRET=<the build service's>
 ```
 
 Use the build service's internal container hostname, which Coolify shows on

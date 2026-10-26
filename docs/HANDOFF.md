@@ -5,6 +5,11 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
+**3D streamed from USGS (2026-10-26, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`).** Phase 0 is built: new tileset keys are an HMAC under
+`LIDAR_KEY_SECRET` (the same value on the API, staging's API and the build service, or they refuse to start), the tileset list is admins' only and a
+tileset's `area.json` is never served. Android's calls are unchanged (one test's recorded key moved). Phase 1 (streaming) is next: the backend and the web
+first, then Android reads `resolve`'s new `frame` and asks for the streamed tileset.
+
 Last refreshed: 2026-10-24 (every finished branch merged into `develop`: *Moving to a new computer*, below). Before that, 2026-10-23 (the owner moves to a new
 computer: every branch with work is pushed, and what is not in git is listed in *Moving to a new computer*; the device-run work of 2026-10-21/22 is §0).
 Before that, 2026-10-21 (the 3D LZ view's first device run, §0b, on `claude/android-3d-view-e38b76`).

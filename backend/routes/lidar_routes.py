@@ -14,8 +14,9 @@ enumerate where a unit has been planning to land.
 import re
 
 from flask import Blueprint, jsonify, request, send_from_directory
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import get_jwt_identity, jwt_required
 
+import entitlements
 import lidar_builder
 from lidar import catalog
 from lidar.aoi import DEFAULT_RADIUS_M
@@ -109,6 +110,10 @@ def tileset_file(key, filename):
         return jsonify({"error": "Malformed tileset key."}), 400
     if not directory.is_dir():
         return jsonify({"error": "Tileset not found."}), 404
+    # The same 404 as a file that is not there, so a refusal says nothing
+    # about what the folder holds.
+    if not catalog.is_served_file(filename):
+        return jsonify({"error": "File not found."}), 404
 
     # send_from_directory refuses to escape the directory it is given, so a
     # traversal in `filename` is rejected rather than followed.
@@ -127,8 +132,22 @@ def tileset_file(key, filename):
 @lidar_bp.route("/api/lidar/tilesets", methods=["GET"])
 @jwt_required()
 def list_tilesets():
-    """Keys with a tileset on disk, so a client can resolve several at once."""
+    """Keys with a tileset on disk: admins only.
+
+    It is every place a 3D view was ever built, and neither app calls it.
+    """
+    if not _caller_is_admin():
+        return jsonify({"error": "Admins only.", "code": "admin_required"}), 403
     return jsonify({"keys": catalog.available()})
+
+
+def _caller_is_admin():
+    from models import User, db
+    try:
+        user = db.session.get(User, int(get_jwt_identity()))
+    except (TypeError, ValueError):
+        user = None
+    return entitlements.is_admin(user) and entitlements.account_active(user)
 
 
 @lidar_bp.route("/api/lidar/resolve", methods=["POST"])

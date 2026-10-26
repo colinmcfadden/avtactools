@@ -3,7 +3,11 @@
 Status: proposed 2026-10-22, and reworked the same day around streaming 3D from USGS's own octree (Part C), which
 measured about fifty times faster than building. **Decided 2026-10-23:** the owner answered all 20 decisions on the
 decisions page, with no notes, so none is open (§9). Eighteen follow the recommendation; two do not: D1 (MapLibre GL JS
-for the admin map) and D13 (several AOs per organization). Nothing is built yet; Phase 0 is next.
+for the admin map) and D13 (several AOs per organization). **2026-10-26:** Phase 0 built (its own PR); Phase 1 next, with
+the owner's answers of that day: existing tilesets keep their old keys (no rename), the streamed `resolve` and its
+`frame` go only to a client that asks for them in the request (so an installed app that frames on the root sphere keeps
+the build flow), and tests build a tiny octree themselves, with a live AWS test behind an environment variable and no
+USGS data committed.
 
 The request, in the owner's words: an admin page with a CONUS map showing where the server holds terrain and LiDAR
 itself (not what comes from outside services); drag-and-drop uploads into the server's volumes; areas chosen on the
@@ -508,7 +512,7 @@ owner runs every deploy and every Coolify change.
 
 | Phase | Builds | Owner steps |
 |---|---|---|
-| **0. Close the exposure** (small, on its own) | §2.1: tile files only, the list admin-only, HMAC for any new key. AGENTS.md §13 and §15. | Set `LIDAR_KEY_SECRET` (`openssl rand -hex 32`) on the API and the build service, then deploy both. |
+| **0. Close the exposure** (small, on its own). **Built 2026-10-26.** | §2.1: tile files only, the list admin-only, HMAC for any new key. AGENTS.md §13 and §15. Old tilesets keep their keys (the owner's call). | Set `LIDAR_KEY_SECRET` (`openssl rand -hex 32`) on the API and the build service, then deploy both. |
 | **1. Streamed 3D** | Part C's streaming: the tileset from USGS's index, pieces converted and cached, opaque names, quantized positions, height colour, the `frame` hint in the web's viewer. Builds stop for new views. Tests hold the conversion to PROJ with grids, the geoid guard, the class rules by survey year and the names. | Set `LIDAR_STREAM_CACHE_DIR` on a persistent, writable mount, then deploy. Open 3D somewhere new and time it; the page logs its first picture's time. |
 | **2. Terrain cache per tile** | §2.2 (the key per tile, a sweep for orphans), `warm_area`. | None. The first start after it rewarms levels 0–9 once (about 1 minute). |
 | **3. The coverage map** (read only) | §2.3 (the index written by rename, the scan in subfolders), §2.5, MapLibre GL JS vendored, `/admin/data` with its layers and numbers, `DATA_ADMIN`. | Mount `/data/lidar` (read only for now) into the API at the same path. Set `LIDAR_COLLECTION=/data/lidar` and `DATA_ADMIN=read` on the API. |
