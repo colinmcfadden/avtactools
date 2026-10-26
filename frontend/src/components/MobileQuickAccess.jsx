@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UNIT_TYPES } from '../feature/unit/UnitIcons';
 import { symbolDataUri } from '../feature/symbols/milsym';
+import Icon from '../feature/ui/Icon';
 import './MobileQuickAccess.css';
 
 const MobileQuickAccess = ({
@@ -17,6 +18,12 @@ const MobileQuickAccess = ({
     isSketching,
     toggleRouteSketch,
     onOpenUnitBuilder,
+    // Analyze and the hand-drawn boundary. On a phone the sidebar that holds them is behind the top
+    // bar's menu button, so once a target is set the next step is offered here, in words.
+    onAnalyze,
+    onToggleDrawing,
+    isDrawingLZ = false,
+    canDrawBoundary: canDrawBoundaryProp,
     // Optional diagram lifecycle contract. Defaults retain the previous
     // always-available mobile quick-access behavior for legacy callers.
     canAnalyze: canAnalyzeProp,
@@ -52,6 +59,12 @@ const MobileQuickAccess = ({
         ? "Set a target and analyze the LZ to unlock planning tools."
         : "Analyze the LZ to unlock planning tools."
       : null);
+  const analyzed = diagramStatus === "analyzed";
+  const canRunAnalysis = Boolean(onAnalyze) && canAnalyzeProp !== false;
+  const canDraw = Boolean(onToggleDrawing) && canDrawBoundaryProp !== false;
+  // With a target, only a read-only pack (finished, or a viewer of it) takes them away.
+  const noTarget = !diagramStatus || diagramStatus === "draft" || diagramStatus === "no_target";
+  const lockedReason = noTarget ? null : "Read-only here: nothing can be changed.";
 
   const menuRef = useRef(null);
   const gaMenuRef = useRef(null);
@@ -132,6 +145,7 @@ const MobileQuickAccess = ({
   };
 
   return (
+    <>
     <div className="mobile-quick-access-container">
       {/* The readiness hint ("Set a target…") is intentionally NOT rendered here.
           On mobile it pushed this vertical icon rail toward mid-screen; the same
@@ -161,6 +175,38 @@ const MobileQuickAccess = ({
       )}
 
       {can("lz_pz_tools") && (<>
+      {/* Analyze, primary while it is the next step, and the boundary drawn by hand (the sidebar's Draw LZ) */}
+      <button
+        type="button"
+        onClick={() => canRunAnalysis && onAnalyze()}
+        disabled={!canRunAnalysis}
+        className={`qa-btn qa-pill${canRunAnalysis && !analyzed ? ' qa-pill--primary' : ''}`}
+        title={
+          canRunAnalysis
+            ? analyzed ? "Analyze the active LZ/PZ again" : "Analyze the active LZ/PZ"
+            : lockedReason || "Set a target on the map before analyzing the LZ/PZ."
+        }
+      >
+        <Icon name="crosshair" size={18} />
+        <span>{analyzed ? "Re-analyze" : "Analyze"}</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => canDraw && onToggleDrawing()}
+        disabled={!canDraw}
+        aria-pressed={isDrawingLZ}
+        className={`qa-btn qa-pill${isDrawingLZ ? ' qa-pill--drawing' : ''}`}
+        title={
+          canDraw
+            ? isDrawingLZ ? "Tap the map for each corner, then finish" : "Draw the LZ/PZ boundary by hand"
+            : lockedReason || "Set a target on the map before drawing an LZ/PZ boundary."
+        }
+      >
+        <Icon name="hexagon" size={18} />
+        <span>{isDrawingLZ ? "Finish LZ" : "Draw LZ"}</span>
+      </button>
+
       {/* Helo Button */}
       <button
         onClick={() => canUseDiagramTools && addHelo()}
@@ -277,8 +323,11 @@ const MobileQuickAccess = ({
         )}
       </div>
       </>)}
+    </div>
 
-      {/* --- NEW: Bottom Right Export Controls --- */}
+      {/* LZ card export, above the Layers button. Not inside the rail: the rail is its own stacking
+          context (z-index 1000), under the bottom sheet's 1050, and a fixed bottom ignored the sheet
+          altogether. Placed in the map like the Layers button, it ends where the sheet begins. */}
       {can("exports") && (
       <div className="mobile-export-container">
         
@@ -310,7 +359,7 @@ const MobileQuickAccess = ({
         </div>
       </div>
       )}
-    </div>
+    </>
   );
 };
 

@@ -135,7 +135,10 @@ public object PackSessions {
      */
     public fun edit(session: PackSession, ops: List<JsonElement>, newId: () -> String): Edited {
         if (session.gone != null) return Edited(session, "gone")
-        if (session.readOnly) return Edited(session, "read_only")
+        // A read-only pack still takes an edit to a brief, and nothing else (the web's `typeof op === "object"` is a list's too).
+        if (session.readOnly && !(ops.isNotEmpty() && ops.all { it is JsonObject || it is JsonArray } && allOnBriefs(session, ops))) {
+            return Edited(session, "read_only")
+        }
         for (op in ops) {
             val invalid = PackOps.validate(op)
             if (invalid != null) return Edited(session, invalid)
@@ -145,11 +148,17 @@ public object PackSessions {
         return Edited(withView(session.copy(pending = session.pending + added)), null)
     }
 
-    /** The next batch to send, or null while one is out or nothing waits. */
+    /**
+     * The next batch to send, or null while one is out or nothing waits. Edits to briefs go in batches of their own, as the server takes
+     * them in a read-only pack only alone: the longest run of queued edits, from the oldest, that are all on briefs or all on anything
+     * else, in the order they were made.
+     */
     public fun nextBatch(session: PackSession): NextBatch? {
         if (session.pending.any { it.state == PendingState.SENT }) return null
-        val queued = session.pending.indices.filter { session.pending[it].state == PendingState.QUEUED }.take(MAX_BATCH)
-        if (queued.isEmpty()) return null
+        val waiting = session.pending.indices.filter { session.pending[it].state == PendingState.QUEUED }
+        if (waiting.isEmpty()) return null
+        val brief = onBrief(session, session.pending[waiting[0]])
+        val queued = waiting.takeWhile { onBrief(session, session.pending[it]) == brief }.take(MAX_BATCH)
         val sending = queued.toHashSet()
         val pending = session.pending.mapIndexed { i, entry -> if (i in sending) entry.copy(state = PendingState.SENT) else entry }
         val batch = buildJsonObject {
@@ -219,10 +228,12 @@ public object PackSessions {
             // Each the body has, null too: whoever finished it may have deleted their account since, and when still holds.
             failure.finishedBy?.let { pack["finished_by"] = it }
             failure.finishedAt?.let { pack["finished_at"] = it }
-            return dropUntaken(session.copy(pack = JsonObject(pack), readOnly = true), "pack_finished")
+            return dropUntaken(session.copy(pack = JsonObject(pack), readOnly = true), "pack_finished", briefStillQueued(session))
         }
         if (status == 403 && failure.code == "pack_read_only") {
-            return dropUntaken(session.copy(pack = JsonObject(session.pack + ("role" to JsonPrimitive("viewer"))), readOnly = true), "read_only")
+            return dropUntaken(
+                session.copy(pack = JsonObject(session.pack + ("role" to JsonPrimitive("viewer"))), readOnly = true), "read_only", briefStillQueued(session),
+            )
         }
         if (status == 404 || status == 403) {
             return dropUntaken(session.copy(gone = if (status == 404) "not_found" else "forbidden"), "gone")
@@ -524,13 +535,41 @@ public object PackSessions {
     // the pack after, so it is never offered back as the person's own; it stays until it is confirmed.
     private fun untaken(entry: PendingOp): Boolean = entry.state == PendingState.QUEUED || entry.state == PendingState.SENT
 
-    // Dropped in the order they were made (pending's order), all at once: droppedVersions applies them in that order.
-    private fun dropUntaken(session: PackSession, reason: String): PackSession = withView(
-        session.copy(
-            pending = session.pending.filterNot(::untaken),
-            dropped = session.dropped + session.pending.filter(::untaken).map { DroppedOp(it.op, reason) },
-        ),
-    )
+    // Dropped in the order they were made (pending's order), all at once: droppedVersions applies them in that order. What [keep]
+    // says stays.
+    private fun dropUntaken(session: PackSession, reason: String, keep: (PendingOp) -> Boolean = { false }): PackSession {
+        fun drops(entry: PendingOp) = untaken(entry) && !keep(entry)
+        return withView(
+            session.copy(
+                pending = session.pending.filterNot(::drops),
+                dropped = session.dropped + session.pending.filter(::drops).map { DroppedOp(it.op, reason) },
+            ),
+        )
+    }
+
+    // A brief (docs/MISSION_BRIEF.md §3) is open to every member in every state of the pack: a read-only pack still takes edits to it, and
+    // nothing else. An operation is on a brief when the item it names is one, as this device knows the items (made here or not, deleted or
+    // not), or when an item.create before it in the same edit makes one. The web's kindsOf, allOnBriefs and onBrief.
+    private fun kindsOf(session: PackSession): MutableMap<String, String?> {
+        val kinds = HashMap<String, String?>()
+        session.confirmed.forEach { (uuid, item) -> kinds[uuid] = item.kind }
+        session.view.forEach { (uuid, item) -> kinds[uuid] = item.kind }
+        return kinds
+    }
+
+    private fun allOnBriefs(session: PackSession, ops: List<JsonElement>): Boolean {
+        val kinds = kindsOf(session)
+        return ops.all { op ->
+            val item = Js.text(Js.prop(op, "item"))
+            if (text(Js.prop(op, "type")) == "item.create" && kinds[item] == null) kinds[item] = text(Js.prop(op, "kind"))
+            kinds[item] == "brief"
+        }
+    }
+
+    private fun onBrief(session: PackSession, entry: PendingOp): Boolean = allOnBriefs(session, listOf(entry.op))
+
+    // What a pack that turned read-only still takes: a brief edit still queued (one sent was in a batch the pack refused).
+    private fun briefStillQueued(session: PackSession): (PendingOp) -> Boolean = { entry -> entry.state == PendingState.QUEUED && onBrief(session, entry) }
 
     // A pack that turned read-only (finished, or our role lowered) takes nothing more, so what is queued is dropped. Not
     // while a batch is out: the server decides only when the batch reaches the pack, so it may take it yet (it took it
@@ -542,12 +581,8 @@ public object PackSessions {
         val waiting = session.pending.any { it.state == PendingState.SENT }
         if (session.gone == null && (!session.readOnly || waiting)) return withView(session)
         if (session.pending.none(::untaken)) return withView(session)
-        val reason = when {
-            session.gone != null -> "gone"
-            text(session.pack["status"]) == "finished" -> "pack_finished"
-            else -> "read_only"
-        }
-        return dropUntaken(session, reason)
+        if (session.gone != null) return dropUntaken(session, "gone")
+        return dropUntaken(session, if (text(session.pack["status"]) == "finished") "pack_finished" else "read_only", briefStillQueued(session))
     }
 
     // An edit the server took is in `confirmed` once seq has reached the event its result named, whether or not that event

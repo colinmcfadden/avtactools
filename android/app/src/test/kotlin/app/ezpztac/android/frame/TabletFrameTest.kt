@@ -21,12 +21,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -42,6 +47,7 @@ import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.designsystem.rememberPanelSheetState
 import app.ezpztac.missionpacks.PackStatus
 import com.github.takahirom.roborazzi.captureRoboImage
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -64,21 +70,28 @@ class TabletFrameTest {
     private val said = mutableListOf<String>()
     private var mapFrame: MapFrame? = null
     private var askAgain: () -> Unit = {}
+    private var presenting by mutableStateOf(false)
+    private val snackbars = SnackbarHostState()
+    private var panelsDisposed = 0
+    private var mapsMade = 0
+    private var inputModes: InputModeManager? = null
 
-    private fun frame(mode: ThemeMode = ThemeMode.Dark, withSupport: Boolean = false, withRoute: Boolean = false) = compose.setContent {
+    private fun frame(mode: ThemeMode = ThemeMode.Dark, withSupport: Boolean = false, withRoute: Boolean = false, brief: Boolean = false) = compose.setContent {
         var current by remember { mutableStateOf(Panel.Lz) }
         var support by remember { mutableStateOf(withSupport) }
         var route by remember { mutableStateOf(withRoute) }
         var asked by remember { mutableIntStateOf(0) }
         askAgain = { asked++ }
+        inputModes = LocalInputModeManager.current
         EzpzTheme(mode) {
             TabletFrame(
                 panels = Panel.entries - Panel.Pack, current = current, counts = PanelCounts(threats = 1, imports = 3),
-                onPick = { current = it; picked += it }, snackbars = remember { SnackbarHostState() },
+                onPick = { current = it; picked += it }, snackbars = snackbars,
                 rail = TabletRail(
                     importMenu = { dismiss -> Text("The import menu", Modifier.semantics { contentDescription = "Close the import menu" }.padding(8.dp)); said += "importMenu"; if (false) dismiss() },
                     onLibrary = { said += "library" },
                     account = { Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.extraLarge).semantics { contentDescription = "Account" }) },
+                    onBrief = if (brief) ({ said += "brief" }) else null,
                 ),
                 head = PanelHead(current.label, "3 open · this session"),
                 supporting = listOfNotNull(
@@ -92,12 +105,86 @@ class TabletFrameTest {
                     },
                     if (route) SupportingPane(key = "route:r1", title = null, onClose = { route = false; said += "closeRoute" }) { Text("ROUTE 1 plan") } else null,
                 ),
-                panel = { panel -> Column(Modifier.padding(16.dp)) { Text("${panel.label} panel body") } },
+                panel = { panel ->
+                    DisposableEffect(panel) { onDispose { panelsDisposed++ } }
+                    Column(Modifier.padding(16.dp)) { Text("${panel.label} panel body") }
+                },
+                presentation = if (presenting) {
+                    { toasts ->
+                        Column(Modifier.fillMaxSize()) {
+                            Text("The sandtable's bar", Modifier.background(Color.Black))
+                            Box(Modifier.fillMaxWidth().weight(1f)) { toasts(Modifier) }
+                        }
+                    }
+                } else {
+                    null
+                },
             ) { frame ->
                 mapFrame = frame
+                // The map is made once, wherever the frame draws it: what it remembers is kept through a brief presented over it.
+                remember { mapsMade++ }
                 Box(Modifier.fillMaxSize().background(Color(0xFF3A4A3A))) { Text("The map", Modifier.padding(16.dp)) }
             }
         }
+    }
+
+    @Test
+    fun `while a brief is presented the frame is put away but kept, the map stays where it is with the whole window and no padding, and toasts offer nothing to do`() {
+        frame(withSupport = true)
+        compose.onNodeWithText("LZ/PZ panel body").assertIsDisplayed()
+        presenting = true
+        compose.waitForIdle()
+        compose.onNodeWithText("The sandtable's bar").assertIsDisplayed()
+        // The map is under the presentation, the whole window's: never made again, never moved.
+        val map = compose.onNodeWithText("The map").fetchSemanticsNode().boundsInRoot
+        assertTrue("the map has the window's left edge: $map", map.left < 40f)
+        assertEquals(1, mapsMade)
+        assertEquals(app.ezpztac.map.MapPadding(), mapFrame!!.padding)
+        assertEquals(null, mapFrame!!.controlsBottom())
+        // The rail, the panel and the supporting pane are neither seen nor read, and stay composed.
+        compose.onNodeWithText("LZ/PZ panel body").assertDoesNotExist()
+        compose.onNodeWithText("Aircraft, analysis and the tools").assertDoesNotExist()
+        compose.onNodeWithText("Library").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Account").assertDoesNotExist()
+        assertEquals(0, panelsDisposed)
+        // A toast says its words and offers no action (they open planning flows).
+        compose.runOnUiThread { kotlinx.coroutines.MainScope().launch { snackbars.showSnackbar("Saved \"LZ HAWK\"", actionLabel = "Open Library", withDismissAction = true) } }
+        compose.waitForIdle()
+        compose.onNodeWithText("Saved \"LZ HAWK\"").assertIsDisplayed()
+        compose.onNodeWithText("Open Library").assertDoesNotExist()
+        snackbars.currentSnackbarData?.dismiss()
+        presenting = false
+        compose.waitForIdle()
+        compose.onNodeWithText("The sandtable's bar").assertDoesNotExist()
+        compose.onNodeWithText("LZ/PZ panel body").assertIsDisplayed()
+        compose.onNodeWithText("Aircraft, analysis and the tools").assertIsDisplayed()
+        assertEquals(0, panelsDisposed)
+        assertEquals(1, mapsMade)
+        assertTrue(mapFrame!!.padding.top > 0.dp)
+    }
+
+    @Test
+    fun `when a brief ends the keyboard's focus goes back to the rail's Brief, as the web gives it back to its Brief button`() {
+        frame(brief = true)
+        // Someone using keys (a presenter's clicker): the brief ends with the focus on Brief, ready for the next.
+        compose.runOnIdle { assertTrue(inputModes!!.requestInputMode(InputMode.Keyboard)) }
+        presenting = true
+        compose.waitForIdle()
+        compose.onNodeWithText("Brief").assertDoesNotExist()
+        presenting = false
+        compose.waitForIdle()
+        compose.onNodeWithText("Brief").assertIsFocused()
+    }
+
+    @Test
+    fun `after a brief ended by touch no button takes the focus`() {
+        frame(brief = true)
+        compose.runOnIdle { assertEquals("the test starts with the screen touched", InputMode.Touch, inputModes!!.inputMode) }
+        presenting = true
+        compose.waitForIdle()
+        presenting = false
+        compose.waitForIdle()
+        compose.onNodeWithText("Brief").assertIsNotFocused()
     }
 
     @Test
@@ -161,6 +248,21 @@ class TabletFrameTest {
         assertEquals(listOf("library"), said)
         compose.onNodeWithContentDescription("Account").assertIsDisplayed()
         compose.onNodeWithContentDescription("Workspace: Personal").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the brief is a button on the rail for an account with Mission briefs, and nowhere for one without`() {
+        frame(brief = true)
+        val button = compose.onNodeWithText("Brief").fetchSemanticsNode()
+        assertFalse(SemanticsProperties.Selected in button.config)                                // a button, not a sixth tab
+        compose.onNodeWithText("Brief").performClick()
+        assertEquals(listOf("brief"), said)
+    }
+
+    @Test
+    fun `without Mission briefs the rail has no Brief`() {
+        frame()
+        compose.onNodeWithText("Brief").assertDoesNotExist()
     }
 
     @Test

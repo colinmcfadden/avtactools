@@ -115,6 +115,30 @@ describe("the sidebar's LZ/PZ analysis card", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Analyzed. Planning graphics, export and save are unlocked.");
   });
 
+  const SLOPE = { overlay: "data:image/png;base64,AA==", bounds: [[34, -84], [34.01, -83.99]] };
+
+  it("offers the slope map's opacity while it is drawn, said in percent, and hands on what is set", () => {
+    const setSlopeOpacity = vi.fn();
+    card({ diagramStatus: "analyzed", canUseDiagramTools: true, showHeatmap: true, terrainData: SLOPE, slopeOpacity: 30, setSlopeOpacity });
+    const range = screen.getByRole("slider", { name: "Slope map opacity" });
+    expect(range.value).toBe("30");
+    expect(range).toHaveAttribute("aria-valuetext", "30 percent");
+    expect([range.min, range.max, range.step]).toEqual(["10", "100", "5"]);
+    expect(screen.getByText("30%")).toBeInTheDocument();
+    fireEvent.change(range, { target: { value: "75" } });
+    expect(setSlopeOpacity).toHaveBeenCalledWith(75);
+  });
+
+  it("offers no opacity while the slope map is off", () => {
+    card({ diagramStatus: "analyzed", showHeatmap: false, terrainData: SLOPE, slopeOpacity: 55, setSlopeOpacity: () => {} });
+    expect(screen.queryByRole("slider", { name: "Slope map opacity" })).toBeNull();
+  });
+
+  it("offers no opacity while there is no slope to draw", () => {
+    card({ diagramStatus: "targeted", showHeatmap: true, terrainData: null, slopeOpacity: 55, setSlopeOpacity: () => {} });
+    expect(screen.queryByRole("slider", { name: "Slope map opacity" })).toBeNull();
+  });
+
   it("asks for an analysis while there is only a target", () => {
     card({
       diagramStatus: "targeted",

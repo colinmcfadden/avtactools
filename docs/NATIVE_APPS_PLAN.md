@@ -508,6 +508,8 @@ Each feature below names the screens it needs, the web code its logic is ported 
 
 ### 3D LiDAR view
 
+Android's steps, and what the web does that it mirrors, are in `docs/ANDROID_3D_PLAN.md`.
+
 - **Flow:** `POST /api/lidar/resolve`; if no tileset exists, `POST /api/lidar/build` and poll `GET /api/lidar/build/<key>` every 3 s, showing the service's stage names. `DELETE` when the view closes; saved LZs pass `keep`. Saving an LZ asks for a background build, as `useBuildOnSave.js` does.
 - **Renderer:** one east-north-up frame at the LZ. It walks `tileset.json` (bounding volumes, geometric error, additive and replace refinement) and decodes `.pnts` (float or quantised positions, RGB, RTC centre). Points draw as GPU sprites with size attenuation.
 - **Terrain and imagery:** terrain meshed from the 65 × 65 Int16 heightmap tiles, draped with Mapbox imagery online or pack imagery offline.

@@ -53,6 +53,15 @@ class DiagramRepository @Inject constructor(
     fun observe(): Flow<List<DiagramSummary>> = feed.observe(RecordKind.LZ).map { records -> records.map(::summarize) }
 
     /**
+     * The records of [uuids] that are here, as a list that updates itself, read without the rest of the Library: what the map draws of the open LZ/PZs that are not
+     * the one being worked on ([OtherDiagrams]), each read as a diagram by [diagramOf] only when its record changed.
+     */
+    fun records(uuids: Set<String>): Flow<List<LocalRecord>> = feed.observe(RecordKind.LZ, uuids)
+
+    /** [record] as a diagram, as [open] reads one. */
+    fun diagramOf(record: LocalRecord): Diagram = toDiagram(record)
+
+    /**
      * A new diagram bound to [target]: blank, with no graphics (defaults are made only once analysis has succeeded for this diagram).
      * It is queued for the server at once.
      */

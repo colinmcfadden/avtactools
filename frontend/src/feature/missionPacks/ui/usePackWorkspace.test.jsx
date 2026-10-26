@@ -3,7 +3,7 @@ import React from "react";
 import LzPanel from "../../shell/LzPanel";
 import TopBar from "../../shell/TopBar";
 import { dateAtTime } from "../../ui/time";
-import { packAudience, topBarPack, UpdateFromOriginalDialog } from "./usePackWorkspace";
+import { lookingAtPack, packAudience, topBarPack, UpdateFromOriginalDialog } from "./usePackWorkspace";
 
 describe("the top bar while a pack opens", () => {
   const listed = [{ uuid: "a", name: "OP DK", status: "active" }];
@@ -114,5 +114,21 @@ describe("updating a copy from its Library original", () => {
     show(vi.fn(() => new Promise(() => {})));
     expect(screen.getByText("Updating replaces the pack copy with your Library version.")).toBeInTheDocument();
     expect(warning()).toBeNull();
+  });
+});
+
+describe("whether the Pack panel is being looked at", () => {
+  const shown = { loaded: true, presenting: false, panel: "pack", collapsed: false, visible: true };
+
+  it("is, while the loaded pack's panel shows in a window in front", () => {
+    expect(lookingAtPack(shown)).toBe(true);
+  });
+
+  it("is not while a brief is presented over the frame, nor with the panel folded, another panel, the window behind or the pack still loading", () => {
+    expect(lookingAtPack({ ...shown, presenting: true })).toBe(false);
+    expect(lookingAtPack({ ...shown, collapsed: true })).toBe(false);
+    expect(lookingAtPack({ ...shown, panel: "lz" })).toBe(false);
+    expect(lookingAtPack({ ...shown, visible: false })).toBe(false);
+    expect(lookingAtPack({ ...shown, loaded: null })).toBe(false);
   });
 });

@@ -1,0 +1,350 @@
+{
+  "generatedBy": "contracts/scripts/light_fixtures.py (Skyfield 1.55, JPL DE421)",
+  "tolerance": {
+    "sunSeconds": 60,
+    "moonSeconds": 180,
+    "illumination": 0.01
+  },
+  "cases": [
+    {
+      "name": "north Georgia, autumn (the design's OP DK)",
+      "lat": 34.37,
+      "lon": -84.11,
+      "date": "2026-10-16",
+      "utcOffsetMinutes": -240,
+      "at": "2026-10-16T15:56:00Z",
+      "expected": {
+        "bmnt": "2026-10-16T10:48:13Z",
+        "sunrise": "2026-10-16T11:42:45Z",
+        "sunset": "2026-10-16T23:00:40Z",
+        "eent": "2026-10-16T23:55:09Z",
+        "moonrise": "2026-10-16T17:30:03Z",
+        "moonset": "2026-10-17T03:02:08Z",
+        "illumination": 0.3157
+      }
+    },
+    {
+      "name": "north Georgia, winter",
+      "lat": 34.37,
+      "lon": -84.11,
+      "date": "2026-01-15",
+      "utcOffsetMinutes": -300,
+      "at": "2026-01-16T00:30:00Z",
+      "expected": {
+        "bmnt": "2026-01-15T11:44:21Z",
+        "sunrise": "2026-01-15T12:42:28Z",
+        "sunset": "2026-01-15T22:49:36Z",
+        "eent": "2026-01-15T23:47:43Z",
+        "moonrise": "2026-01-15T10:24:49Z",
+        "moonset": "2026-01-15T19:52:33Z",
+        "illumination": 0.0759
+      }
+    },
+    {
+      "name": "Fort Novosel, summer",
+      "lat": 31.33,
+      "lon": -85.71,
+      "date": "2026-07-01",
+      "utcOffsetMinutes": -300,
+      "at": "2026-07-01T07:00:00Z",
+      "expected": {
+        "bmnt": "2026-07-01T09:40:17Z",
+        "sunrise": "2026-07-01T10:42:10Z",
+        "sunset": "2026-07-02T00:51:15Z",
+        "eent": "2026-07-02T01:53:04Z",
+        "moonrise": "2026-07-02T02:24:04Z",
+        "moonset": "2026-07-01T11:57:06Z",
+        "illumination": 0.9841
+      }
+    },
+    {
+      "name": "Fort Novosel, a full moon night",
+      "lat": 31.33,
+      "lon": -85.71,
+      "date": "2026-08-28",
+      "utcOffsetMinutes": -300,
+      "at": "2026-08-29T04:00:00Z",
+      "expected": {
+        "bmnt": "2026-08-28T10:22:08Z",
+        "sunrise": "2026-08-28T11:16:27Z",
+        "sunset": "2026-08-29T00:11:05Z",
+        "eent": "2026-08-29T01:05:15Z",
+        "moonrise": "2026-08-29T00:30:07Z",
+        "moonset": "2026-08-28T11:37:28Z",
+        "illumination": 0.9894
+      }
+    },
+    {
+      "name": "Fort Novosel, a new moon",
+      "lat": 31.33,
+      "lon": -85.71,
+      "date": "2026-09-11",
+      "utcOffsetMinutes": -300,
+      "at": "2026-09-11T17:00:00Z",
+      "expected": {
+        "bmnt": "2026-09-11T10:31:40Z",
+        "sunrise": "2026-09-11T11:24:42Z",
+        "sunset": "2026-09-11T23:53:34Z",
+        "eent": "2026-09-12T00:46:30Z",
+        "moonrise": "2026-09-11T11:51:18Z",
+        "moonset": "2026-09-12T00:08:22Z",
+        "illumination": 0.0043
+      }
+    },
+    {
+      "name": "Fairbanks, midsummer: no nautical dark",
+      "lat": 64.84,
+      "lon": -147.72,
+      "date": "2026-06-21",
+      "utcOffsetMinutes": -480,
+      "at": "2026-06-21T20:00:00Z",
+      "expected": {
+        "bmnt": null,
+        "sunrise": "2026-06-21T10:57:37Z",
+        "sunset": "2026-06-21T08:47:44Z",
+        "eent": null,
+        "moonrise": "2026-06-21T22:11:36Z",
+        "moonset": "2026-06-21T09:31:38Z",
+        "illumination": 0.4929
+      }
+    },
+    {
+      "name": "Fairbanks, midwinter",
+      "lat": 64.84,
+      "lon": -147.72,
+      "date": "2026-12-21",
+      "utcOffsetMinutes": -540,
+      "at": "2026-12-21T21:00:00Z",
+      "expected": {
+        "bmnt": "2026-12-21T17:20:52Z",
+        "sunrise": "2026-12-21T19:58:29Z",
+        "sunset": "2026-12-21T23:39:48Z",
+        "eent": "2026-12-22T02:17:24Z",
+        "moonrise": "2026-12-21T20:19:35Z",
+        "moonset": "2026-12-21T18:24:35Z",
+        "illumination": 0.9276
+      }
+    },
+    {
+      "name": "Svalbard, polar night: no sunrise",
+      "lat": 78.22,
+      "lon": 15.65,
+      "date": "2026-12-21",
+      "utcOffsetMinutes": 60,
+      "at": "2026-12-21T11:00:00Z",
+      "expected": {
+        "bmnt": "2026-12-21T09:58:07Z",
+        "sunrise": null,
+        "sunset": null,
+        "eent": "2026-12-21T11:52:44Z",
+        "moonrise": null,
+        "moonset": null,
+        "illumination": 0.9
+      }
+    },
+    {
+      "name": "Svalbard, midnight sun",
+      "lat": 78.22,
+      "lon": 15.65,
+      "date": "2026-06-21",
+      "utcOffsetMinutes": 120,
+      "at": "2026-06-21T10:00:00Z",
+      "expected": {
+        "bmnt": null,
+        "sunrise": null,
+        "sunset": null,
+        "eent": null,
+        "moonrise": "2026-06-21T10:29:12Z",
+        "moonset": "2026-06-20T23:17:04Z",
+        "illumination": 0.4496
+      }
+    },
+    {
+      "name": "the equator, an equinox",
+      "lat": 0.0,
+      "lon": 32.58,
+      "date": "2026-03-20",
+      "utcOffsetMinutes": 180,
+      "at": "2026-03-20T03:00:00Z",
+      "expected": {
+        "bmnt": "2026-03-20T03:09:13Z",
+        "sunrise": "2026-03-20T03:53:53Z",
+        "sunset": "2026-03-20T16:00:23Z",
+        "eent": "2026-03-20T16:45:02Z",
+        "moonrise": "2026-03-20T04:48:14Z",
+        "moonset": "2026-03-20T17:11:49Z",
+        "illumination": 0.0156
+      }
+    },
+    {
+      "name": "Grafenwoehr, spring",
+      "lat": 49.7,
+      "lon": 11.94,
+      "date": "2026-04-02",
+      "utcOffsetMinutes": 120,
+      "at": "2026-04-02T19:00:00Z",
+      "expected": {
+        "bmnt": "2026-04-02T03:35:35Z",
+        "sunrise": "2026-04-02T04:47:21Z",
+        "sunset": "2026-04-02T17:45:12Z",
+        "eent": "2026-04-02T18:57:17Z",
+        "moonrise": "2026-04-02T18:35:20Z",
+        "moonset": "2026-04-02T04:36:07Z",
+        "illumination": 0.9942
+      }
+    },
+    {
+      "name": "Camp Humphreys",
+      "lat": 36.96,
+      "lon": 127.03,
+      "date": "2026-11-05",
+      "utcOffsetMinutes": 540,
+      "at": "2026-11-04T19:00:00Z",
+      "expected": {
+        "bmnt": "2026-11-04T21:01:36Z",
+        "sunrise": "2026-11-04T21:59:30Z",
+        "sunset": "2026-11-05T08:30:57Z",
+        "eent": "2026-11-05T09:28:49Z",
+        "moonrise": "2026-11-04T17:43:01Z",
+        "moonset": "2026-11-05T06:11:23Z",
+        "illumination": 0.201
+      }
+    },
+    {
+      "name": "Schofield Barracks",
+      "lat": 21.5,
+      "lon": -158.06,
+      "date": "2026-05-10",
+      "utcOffsetMinutes": -600,
+      "at": "2026-05-11T06:00:00Z",
+      "expected": {
+        "bmnt": "2026-05-10T15:04:05Z",
+        "sunrise": "2026-05-10T15:55:52Z",
+        "sunset": "2026-05-11T05:01:35Z",
+        "eent": "2026-05-11T05:53:28Z",
+        "moonrise": "2026-05-10T11:38:15Z",
+        "moonset": "2026-05-10T23:19:55Z",
+        "illumination": 0.3631
+      }
+    },
+    {
+      "name": "Sydney, the south",
+      "lat": -33.87,
+      "lon": 151.21,
+      "date": "2026-10-16",
+      "utcOffsetMinutes": 660,
+      "at": "2026-10-16T01:00:00Z",
+      "expected": {
+        "bmnt": "2026-10-15T18:17:23Z",
+        "sunrise": "2026-10-15T19:13:07Z",
+        "sunset": "2026-10-16T08:09:04Z",
+        "eent": "2026-10-16T09:04:56Z",
+        "moonrise": "2026-10-15T22:22:05Z",
+        "moonset": null,
+        "illumination": 0.2624
+      }
+    },
+    {
+      "name": "Fiji, beside the date line",
+      "lat": -17.8,
+      "lon": 178.0,
+      "date": "2026-07-15",
+      "utcOffsetMinutes": 720,
+      "at": "2026-07-15T06:00:00Z",
+      "expected": {
+        "bmnt": "2026-07-14T17:49:11Z",
+        "sunrise": "2026-07-14T18:39:20Z",
+        "sunset": "2026-07-15T05:48:40Z",
+        "eent": "2026-07-15T06:38:49Z",
+        "moonrise": "2026-07-14T19:12:15Z",
+        "moonset": "2026-07-15T06:37:42Z",
+        "illumination": 0.011
+      }
+    },
+    {
+      "name": "Samoa, the other side",
+      "lat": -13.83,
+      "lon": -171.76,
+      "date": "2026-07-15",
+      "utcOffsetMinutes": 780,
+      "at": "2026-07-15T05:00:00Z",
+      "expected": {
+        "bmnt": "2026-07-14T17:02:26Z",
+        "sunrise": "2026-07-14T17:51:38Z",
+        "sunset": "2026-07-15T05:14:26Z",
+        "eent": "2026-07-15T06:03:36Z",
+        "moonrise": "2026-07-14T18:21:56Z",
+        "moonset": "2026-07-15T06:01:54Z",
+        "illumination": 0.01
+      }
+    },
+    {
+      "name": "Fort Wainwright, a day the moon neither rises nor sets",
+      "lat": 64.83,
+      "lon": -147.64,
+      "date": "2026-02-26",
+      "utcOffsetMinutes": -540,
+      "at": "2026-02-26T21:00:00Z",
+      "expected": {
+        "bmnt": "2026-02-26T15:23:15Z",
+        "sunrise": "2026-02-26T17:09:30Z",
+        "sunset": "2026-02-27T02:58:32Z",
+        "eent": "2026-02-27T04:45:10Z",
+        "moonrise": null,
+        "moonset": null,
+        "illumination": 0.758
+      }
+    },
+    {
+      "name": "north Georgia, a day the moon does not set",
+      "lat": 34.37,
+      "lon": -84.11,
+      "date": "2026-10-18",
+      "utcOffsetMinutes": -240,
+      "at": "2026-10-18T16:00:00Z",
+      "expected": {
+        "bmnt": "2026-10-18T10:49:45Z",
+        "sunrise": "2026-10-18T11:44:24Z",
+        "sunset": "2026-10-18T22:58:13Z",
+        "eent": "2026-10-18T23:52:49Z",
+        "moonrise": "2026-10-18T18:53:43Z",
+        "moonset": null,
+        "illumination": 0.5005
+      }
+    },
+    {
+      "name": "north Georgia, a day the moon does not rise",
+      "lat": 34.37,
+      "lon": -84.11,
+      "date": "2026-11-30",
+      "utcOffsetMinutes": -300,
+      "at": "2026-11-30T17:00:00Z",
+      "expected": {
+        "bmnt": "2026-11-30T11:25:16Z",
+        "sunrise": "2026-11-30T12:23:43Z",
+        "sunset": "2026-11-30T22:26:22Z",
+        "eent": "2026-11-30T23:24:49Z",
+        "moonrise": null,
+        "moonset": "2026-11-30T17:40:09Z",
+        "illumination": 0.5614
+      }
+    },
+    {
+      "name": "Fort Bliss, a crescent at dusk",
+      "lat": 31.81,
+      "lon": -106.42,
+      "date": "2026-10-12",
+      "utcOffsetMinutes": -360,
+      "at": "2026-10-13T01:00:00Z",
+      "expected": {
+        "bmnt": "2026-10-12T12:14:11Z",
+        "sunrise": "2026-10-12T13:07:00Z",
+        "sunset": "2026-10-13T00:36:44Z",
+        "eent": "2026-10-13T01:29:29Z",
+        "moonrise": "2026-10-12T15:08:23Z",
+        "moonset": "2026-10-13T01:36:38Z",
+        "illumination": 0.0603
+      }
+    }
+  ]
+}

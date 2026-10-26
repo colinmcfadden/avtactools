@@ -2,12 +2,15 @@ package app.ezpztac.workspace
 
 import app.ezpztac.data.AircraftProfiles
 import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.BuildOnSave
+import app.ezpztac.data.Viewer3DTarget
 import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.InMemoryAircraftChoice
 import app.ezpztac.data.InMemoryMasterProfileStore
 import app.ezpztac.data.InMemoryOpenDiagramStore
+import app.ezpztac.data.InMemorySlopeOpacity
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.SlopeVisibility
@@ -62,6 +65,7 @@ import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -147,6 +151,7 @@ class DiagramsViewModelTest {
         scope: TestScope, label: String = "A", val server: FakeServer = FakeServer(), realEngine: Boolean = false, resolver: ConflictResolver? = null,
         masterList: List<AircraftProfile> = emptyList(),
         val pack: FakeOpenPack = FakeOpenPack(),
+        buildOnSave: BuildOnSave = BuildOnSave.None,
     ) {
         val terrain = Terrain()
         val device = Device(label, server)
@@ -166,11 +171,12 @@ class DiagramsViewModelTest {
         val weather = WeatherService(weatherApi, MemoryWeatherCache(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler))) { clock }
         val openStore = InMemoryOpenDiagramStore()
         val open = OpenDiagrams(openStore)
-        val slopeVisibility = SlopeVisibility()
+        val slopeVisibility = SlopeVisibility(InMemorySlopeOpacity())
+        val fresh = app.ezpztac.data.FreshDiagrams()
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
-            analysis, aircraft, weather, open, slopeVisibility, pack,
+            analysis, aircraft, weather, open, slopeVisibility, pack, buildOnSave, fresh,
         )
         val rows get() = model.state.value.rows
 
@@ -905,6 +911,18 @@ class DiagramsViewModelTest {
 
     private val here = LatLon(34.783817, -84.08219)
 
+    @Test
+    fun `an LZ-PZ just made is noted, so the bar over the map offers its first step`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)                                                                      // the map's long press, New LZ/PZ here; or the panel's
+        advanceUntilIdle()
+        val made = checkNotNull(r.session.active.value).id
+        assertEquals(made, r.fresh.made.value)
+        r.model.create("", "16S GD 66993 52949")                                                 // the form with a typed target
+        advanceUntilIdle()
+        assertEquals(checkNotNull(r.session.active.value).id, r.fresh.made.value)
+    }
+
     // -- In a Mission Pack (P2b) ------------------------------------------------------------------------------------------------
 
     @Test
@@ -1421,6 +1439,196 @@ class DiagramsViewModelTest {
     }
 
     @Test
+    fun `an LZ-PZ saved here asks for its point cloud once, and one that arrives saved asks for nothing`() = runTest(dispatcher) {
+        val asked = mutableListOf<LatLon>()
+        val r = Rig(this, buildOnSave = BuildOnSave { asked += it }).also { advanceUntilIdle() }
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val uuid = r.model.state.value.current!!.uuid
+        r.model.rename(uuid, "LZ HAWK")
+        advanceUntilIdle()
+        assertTrue("named, but not analysed: not saved", asked.isEmpty())
+        r.model.analyze()
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(here.lat, here.lon)), asked)
+        r.model.rename(uuid, "LZ HAWK 2")
+        advanceUntilIdle()
+        assertEquals("a rename is no new save", 1, asked.size)
+        // The same records seen afresh, as by the next launch: what is first seen saved is no reason to spend a build.
+        val again = mutableListOf<LatLon>()
+        DiagramsViewModel(
+            r.repository, r.session, ConflictResolver { _, _, _ -> }, r.analysis, r.aircraft, r.weather, r.open, r.slopeVisibility, r.pack,
+            BuildOnSave { again += it },
+        )
+        advanceUntilIdle()
+        assertTrue(again.isEmpty())
+    }
+
+    // -- The 3D view ---------------------------------------------------------------------------------------------------------
+
+    private val there = LatLon(34.79, -84.07)
+
+    @Test
+    fun `3D shows the open LZ-PZ with its name, its target and whether it is saved, and closing it lets it go`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val uuid = r.model.state.value.current!!.uuid
+        assertNull(r.model.state.value.viewer3d)
+        r.model.view3d(uuid)
+        advanceUntilIdle()
+        assertEquals(Viewer3DTarget(uuid, "LZ/PZ 1", here.lat, here.lon, saved = false), r.model.state.value.viewer3d)
+        // Saved meanwhile (its title and its build follow it): named and analysed.
+        r.model.analyze()
+        advanceUntilIdle()
+        r.model.saveAs("LZ HAWK")
+        advanceUntilIdle()
+        assertEquals(Viewer3DTarget(uuid, "LZ HAWK", here.lat, here.lon, saved = true), r.model.state.value.viewer3d)
+        r.model.close3d()
+        advanceUntilIdle()
+        assertNull(r.model.state.value.viewer3d)
+    }
+
+    @Test
+    fun `3D on another open LZ-PZ opens it first, as the web's window always shows the open one`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(there)
+        advanceUntilIdle()
+        assertEquals(listOf(true), r.model.state.value.open.map { it.hasTarget })              // the other row has a target, so its 3D is on
+        r.model.view3d(first)
+        advanceUntilIdle()
+        assertEquals(first, r.session.active.value?.id)
+        assertEquals(first, r.model.state.value.viewer3d?.uuid)
+        assertEquals(here.lat, r.model.state.value.viewer3d!!.lat, 0.0)
+    }
+
+    @Test
+    fun `another LZ-PZ opened, or this one closed, lets the 3D view go, and opening this one again does not bring it back`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(there)
+        advanceUntilIdle()
+        val second = r.model.state.value.current!!.uuid
+        r.model.view3d(second)
+        advanceUntilIdle()
+        r.model.open(first)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.viewer3d)
+        r.model.open(second)
+        advanceUntilIdle()
+        assertNull("it is shown in 3D only when asked", r.model.state.value.viewer3d)
+        r.model.view3d(second)
+        advanceUntilIdle()
+        r.model.close(second)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.viewer3d)
+    }
+
+    @Test
+    fun `an LZ-PZ with no target has nothing to see in 3D, and says so`() = runTest(dispatcher) {
+        val r = rig()
+        val made = r.repository.create(DiagramTarget(here.lat, here.lon, grid), "LZ BLANK")
+        r.repository.save(made.copy(target = null))
+        r.model.open(made.id)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.current!!.target)
+        r.model.view3d(made.id)
+        advanceUntilIdle()
+        assertNull(r.model.state.value.viewer3d)
+        assertEquals(DiagramsViewModel.NO_TARGET_3D, r.model.state.value.error)
+    }
+
+    @Test
+    fun `an LZ-PZ with no target open beside another has its 3D off`() = runTest(dispatcher) {
+        val r = rig()
+        val made = r.repository.create(DiagramTarget(here.lat, here.lon, grid), "LZ BLANK")
+        r.repository.save(made.copy(target = null))
+        r.model.open(made.id)
+        advanceUntilIdle()
+        r.model.newAt(there)
+        advanceUntilIdle()
+        assertEquals(listOf(made.id), r.model.state.value.open.map { it.uuid })
+        assertEquals(listOf(false), r.model.state.value.open.map { it.hasTarget })
+    }
+
+    @Test
+    fun `3D is shown on the open LZ-PZ only when it is the one asked for`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val open = r.model.state.value.current!!
+        assertEquals(open.threeD, shownIn3D(open.uuid, open))
+        // Another opened under the view, before the view has let go: nothing, not the one now open.
+        assertNull(shownIn3D("another", open))
+        assertNull(shownIn3D(null, open))
+        assertNull(shownIn3D(open.uuid, null))
+    }
+
+    @Test
+    fun `3D asked for while its LZ-PZ opens is withdrawn by closing it before it has opened`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(there)
+        advanceUntilIdle()
+        // The first is opened before it is shown, which takes a moment; the view is closed meanwhile (the Library opened over it, say).
+        r.model.view3d(first)
+        r.model.close3d()
+        advanceUntilIdle()
+        assertEquals("opened, as asked", first, r.session.active.value?.id)
+        assertNull(r.model.state.value.viewer3d)
+        // Asked for again, it is shown.
+        r.model.view3d(first)
+        advanceUntilIdle()
+        assertEquals(first, r.model.state.value.viewer3d?.uuid)
+    }
+
+    @Test
+    fun `the 3D view never shows, even for a moment, an LZ-PZ opened while it was up`() = runTest(dispatcher) {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))                           // every state as the main thread sees it (AGENTS.md §14)
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        val first = r.model.state.value.current!!.uuid
+        r.model.newAt(there)
+        advanceUntilIdle()
+        val second = r.model.state.value.current!!.uuid
+        // Collected as each state is made: a background collector would see only the last (advanceUntilIdle does not run it).
+        val seen = mutableListOf<String?>()
+        val watching = launch(UnconfinedTestDispatcher(testScheduler)) { r.model.state.collect { seen += it.viewer3d?.uuid } }
+        r.model.view3d(second)
+        advanceUntilIdle()
+        r.model.open(first)
+        advanceUntilIdle()
+        watching.cancel()
+        assertTrue(seen.toString(), second in seen)
+        assertFalse("never the one opened under it: $seen", first in seen)
+        assertNull(r.model.state.value.viewer3d)
+    }
+
+    @Test
+    fun `an LZ-PZ analysed while it is still called by its made-up name is not saved, and naming it is the save`() = runTest(dispatcher) {
+        val asked = mutableListOf<LatLon>()
+        val r = Rig(this, buildOnSave = BuildOnSave { asked += it }).also { advanceUntilIdle() }
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        assertTrue("analysed, but still called LZ/PZ 1", asked.isEmpty())
+        assertFalse(r.model.state.value.current!!.saved)
+        r.model.saveAs("LZ HAWK")
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(here.lat, here.lon)), asked)
+        assertTrue(r.model.state.value.current!!.saved)
+    }
+
+    @Test
     fun `an LZ-PZ named before it is analysed is not saved until it is`() = runTest(dispatcher) {
         val r = rig()
         r.model.newAt(here)
@@ -1466,5 +1674,68 @@ class DiagramsViewModelTest {
         r.model.toggleSlope()
         advanceUntilIdle()
         assertEquals(false, r.model.state.value.current!!.slopeShown)
+    }
+
+    @Test
+    fun `the slope map's opacity is this device's, set from the plan, kept on its steps, and the same for every LZ-PZ`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        assertEquals(55, r.model.state.value.current!!.slopeOpacity)                                 // the web's 0.55
+        r.model.setSlopeOpacity(32)
+        advanceUntilIdle()
+        assertEquals(30, r.model.state.value.current!!.slopeOpacity)
+        assertEquals(30, r.slopeVisibility.opacity.value)                                            // what the map draws it at
+        val first = r.session.active.value!!.id
+        r.model.newAt(LatLon(34.70, -84.20))
+        advanceUntilIdle()
+        assertNotEquals(first, r.session.active.value!!.id)
+        assertEquals(30, r.model.state.value.current!!.slopeOpacity)
+    }
+
+    @Test
+    fun `the LZ box switch is there once there is a boundary, and hides it as the LZ-PZ's own view, changing nothing it measures or keeps`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.newAt(here)
+        advanceUntilIdle()
+        assertNull("no boundary to hide", r.model.state.value.current!!.outlineShown)
+        r.model.analyze()
+        advanceUntilIdle()
+        val before = r.model.state.value.current!!
+        val diagram = r.session.active.value!!
+        assertEquals(true, before.outlineShown)
+        r.session.edit("Rename") { it.copy(name = "LZ HAWK") }                                          // something to undo
+        r.model.showOutline(false)
+        advanceUntilIdle()
+        val after = r.model.state.value.current!!
+        assertEquals(false, after.outlineShown)
+        assertEquals(false, r.session.active.value!!.view.showLZOutline)
+        assertEquals("what it measures", before.summary, after.summary)
+        assertEquals("what it keeps", diagram.analysis, r.session.active.value!!.analysis)
+        assertEquals("no step of its own", 1, r.session.undoDepth.value)
+        r.session.undo()
+        advanceUntilIdle()
+        assertEquals("an undo does not bring it back", false, r.model.state.value.current!!.outlineShown)
+        // Saved with the LZ/PZ as its base map is, so it is hidden the next time it is opened, here or on the web.
+        r.session.flush()
+        assertEquals(false, r.repository.open(diagram.id)!!.view.showLZOutline)
+        r.model.showOutline(true)
+        advanceUntilIdle()
+        assertEquals(true, r.model.state.value.current!!.outlineShown)
+    }
+
+    @Test
+    fun `a slope that could not be measured leaves the LZ box switch, with no slope switch`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.measure = { throw ApiException(502, null, "No configured terrain source covers this LZ") }
+        r.model.newAt(here)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        val current = r.model.state.value.current!!
+        assertNull(current.slopeShown)
+        assertEquals(true, current.outlineShown)
     }
 }

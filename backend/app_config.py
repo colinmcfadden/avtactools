@@ -11,6 +11,8 @@ ever appear in it. The Mapbox value is only ever a ``pk.`` token for that reason
 import logging
 import re
 
+from api_version import API_MAJORS_SERVED, API_VERSION
+
 log = logging.getLogger(__name__)
 
 # Bumped if the shape of the payload changes in a way an old app cannot read.
@@ -59,6 +61,8 @@ def build_config(environ, *, server_version, lidar_builds, mapbox_default=None):
     return {
         "configVersion": CONFIG_VERSION,
         "serverVersion": server_version,
+        "apiVersion": API_VERSION,
+        "apiMajors": list(API_MAJORS_SERVED),
         "minAppVersion": {
             "android": _min_version(environ, "MIN_APP_VERSION_ANDROID"),
             "ios": _min_version(environ, "MIN_APP_VERSION_IOS"),

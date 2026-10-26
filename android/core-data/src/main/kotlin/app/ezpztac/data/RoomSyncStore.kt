@@ -12,6 +12,7 @@ import app.ezpztac.sync.SyncStore
 import app.ezpztac.sync.SyncTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -36,8 +37,14 @@ public class RoomSyncStore internal constructor(private val database: EzpzDataba
      * *any* row of the table changes (another kind's, or a queued change), so equal lists are dropped: a screen only redraws for a change
      * it can see.
      */
-    override fun observe(kind: RecordKind): Flow<List<LocalRecord>> =
-        dao.observe(kind.name, LongValues.TEXT_PART).map { rows ->
+    override fun observe(kind: RecordKind): Flow<List<LocalRecord>> = whole(kind, dao.observe(kind.name, LongValues.TEXT_PART))
+
+    /** Only the rows of [uuids] are read, each time anything in the table changes: the map follows a few open LZ/PZs without reading the Library. */
+    override fun observe(kind: RecordKind, uuids: Set<String>): Flow<List<LocalRecord>> =
+        if (uuids.isEmpty()) flowOf(emptyList()) else whole(kind, dao.observeSome(kind.name, uuids.toList(), LongValues.TEXT_PART))
+
+    private fun whole(kind: RecordKind, reads: Flow<List<RecordRead>>): Flow<List<LocalRecord>> =
+        reads.map { rows ->
             if (rows.none { it.dataSize > LongValues.TEXT_PART }) {
                 rows.map { it.record.toModel() }
             } else {

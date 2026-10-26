@@ -49,6 +49,7 @@ public object PriorityPaths {
         "/threat-mask",         // viewshed
         "/export-package",
         "/generate-excel",
+        "/brief/pdf",
     )
 
     /** Whether a request to [url] (a path, or a whole URL) is heavy. A query string is ignored. */

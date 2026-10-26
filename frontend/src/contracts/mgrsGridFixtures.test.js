@@ -73,44 +73,63 @@ const CASES = [
   { name: "bounds the wrong way round", bounds: { south: 35, west: -84, north: 34, east: -85 }, metersPerPixel: 12 },
 ];
 
-const settle = (document) => {
-  const file = fixturePath(NAME);
-  const text = `${compact(document)}\n`;
-  if (UPDATE) {
-    writeFixture(NAME, text);
-    return;
-  }
-  if (!fs.existsSync(file)) {
-    throw new Error(`${NAME} is missing; run with UPDATE_CONTRACTS=1 to create it`);
-  }
-  expect(firstDifference(JSON.parse(fs.readFileSync(file, "utf8")), JSON.parse(text))).toBeNull();
+// Two machines can work the same grid out a digit or two apart (AGENTS.md §11). The fixture was written by Node on x86-64, and Node on
+// an Apple-silicon Mac evaluates V8's Math routines with fused multiply-adds, which round once where x86-64 rounds twice. The grid then
+// ends its searches at a millimetre (a line's ends) and at 1e-10° (where a line crosses an edge, for its label), so a last digit can
+// move a point by a millimetre or so and a label's box by under 1e-5 px; and labels whose areas are equal in exact arithmetic (100 km
+// squares mirrored across a zone boundary, a band's grid zones) can be placed in the other order. So a number within these of the
+// committed one, and the committed labels in another order, count as the same and keep what is committed: the comparison holds on
+// any machine, and a fixture regenerated on one changes only where the grid did.
+const DEGREES = 1e-7;      // about a centimetre
+const PIXELS = 1e-3;
+
+const near = (a, b, within) => typeof a === "number" && typeof b === "number" && Math.abs(a - b) <= within;
+
+// The same label: what it says exactly, where it is to within the tolerance.
+const sameLabel = (a, b) => ["kind", "edge", "text", "zone", "value"].every((key) => a[key] === b[key])
+  && near(a.lat, b.lat, DEGREES) && near(a.lon, b.lon, DEGREES);
+
+// The fresh labels in the committed order, if they are the committed labels in another order; else as they are.
+const inCommittedOrder = (committed, fresh) => {
+  const left = [...fresh];
+  const matched = committed.map((label) => {
+    const i = left.findIndex((candidate) => sameLabel(label, candidate));
+    return i < 0 ? null : left.splice(i, 1)[0];
+  });
+  return left.length === 0 && matched.every(Boolean) ? matched : fresh;
 };
 
-// Where the recorded grid and today's differ, or null. A number is the same within a relative 1e-9: the fixture was written under
-// Jest and the suite now runs under Vitest, and the grid's trigonometry comes out a few units different in the last digits.
-const firstDifference = (recorded, now, at = "$") => {
-  if (typeof recorded === "number" && typeof now === "number") {
-    const scale = Math.max(1, Math.abs(recorded), Math.abs(now));
-    return Math.abs(recorded - now) <= 1e-9 * scale ? null : `${at}: ${recorded} is now ${now}`;
+/**
+ * `fresh`, with every number within the tolerance of the committed one at the same place (a label's box in pixels, the rest in
+ * degrees or exact) replaced by the committed one, and each case's labels in the committed order. Anything else that differs is left
+ * to fail the comparison.
+ */
+const settled = (committed, fresh, key) => {
+  if (typeof fresh === "number") return near(committed, fresh, key === "box" ? PIXELS : DEGREES) ? committed : fresh;
+  if (Array.isArray(fresh)) {
+    if (!Array.isArray(committed)) return fresh;
+    const items = key === "labels" ? inCommittedOrder(committed, fresh) : fresh;
+    return items.length === committed.length ? items.map((item, i) => settled(committed[i], item, key)) : items;
   }
-  if (Array.isArray(recorded) || Array.isArray(now)) {
-    if (!Array.isArray(recorded) || !Array.isArray(now) || recorded.length !== now.length) return `${at}: not the same list`;
-    for (let i = 0; i < recorded.length; i += 1) {
-      const found = firstDifference(recorded[i], now[i], `${at}[${i}]`);
-      if (found) return found;
-    }
-    return null;
+  if (fresh && typeof fresh === "object" && committed && typeof committed === "object") {
+    return Object.fromEntries(Object.entries(fresh).map(([k, value]) => [k, k in committed ? settled(committed[k], value, k) : value]));
   }
-  if (recorded && now && typeof recorded === "object" && typeof now === "object") {
-    const keys = Object.keys(recorded);
-    if (keys.join() !== Object.keys(now).join()) return `${at}: not the same fields`;
-    for (const key of keys) {
-      const found = firstDifference(recorded[key], now[key], `${at}.${key}`);
-      if (found) return found;
-    }
-    return null;
+  return fresh;
+};
+
+const settle = (document) => {
+  const file = fixturePath(NAME);
+  const committed = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+  const fresh = JSON.parse(JSON.stringify(document));
+  const result = committed ? settled(committed, fresh) : fresh;
+  if (UPDATE) {
+    writeFixture(NAME, `${compact(result)}\n`);
+    return;
   }
-  return Object.is(recorded, now) ? null : `${at}: ${JSON.stringify(recorded)} is now ${JSON.stringify(now)}`;
+  if (!committed) {
+    throw new Error(`${NAME} is missing; run with UPDATE_CONTRACTS=1 to create it`);
+  }
+  expect(committed).toEqual(result);
 };
 
 test("the MGRS grid of each view", () => {
@@ -134,4 +153,33 @@ test("the MGRS grid of each view", () => {
     generatedBy: GENERATED_BY,
     cases,
   });
+});
+
+test("a digit's drift counts as the same, a real change to the grid does not", () => {
+  const gc = { kind: "square", text: "16S GC", zone: 16, lat: 33.9, lon: -84.05, box: [100, 200, 160, 217] };
+  const kt = { kind: "square", text: "17S KT", zone: 17, lat: 33.9, lon: -83.95, box: [440, 200, 500, 217] };
+  const line = { kind: "minor", zone: 16, axis: "easting", value: 766000, points: [[33.8, -84.1], [34.0, -84.09]] };
+  const committed = { spacing: 1000, lines: [line], labels: [gc, kt] };
+  const moved = (point, dLat) => [point[0] + dLat, point[1]];
+
+  // Drift: a point a millimetre off, a box 1e-5 px off, a label's place 1e-10° off, two tied labels the other way round.
+  const drifted = {
+    spacing: 1000,
+    lines: [{ ...line, points: [moved(line.points[0], 9e-9), line.points[1]] }],
+    labels: [{ ...kt, lat: kt.lat + 1e-10 }, { ...gc, box: [100 + 1e-5, 200, 160 + 1e-5, 217] }],
+  };
+  expect(settled(committed, drifted)).toEqual(committed);
+
+  const changes = [
+    { ...committed, lines: [{ ...line, points: [moved(line.points[0], 1e-6), line.points[1]] }] },    // a point 11 cm off
+    { ...committed, lines: [{ ...line, points: [...line.points, [34.1, -84.08]] }] },                 // another point
+    { ...committed, lines: [{ ...line, value: 767000 }] },
+    { ...committed, labels: [gc, { ...kt, box: [441, 200, 501, 217] }] },                               // a box a pixel off
+    { ...committed, labels: [gc, { ...kt, text: "17S KU" }] },
+    { ...committed, labels: [gc, { ...kt, lon: -83.9 }] },                                              // placed elsewhere
+    { ...committed, labels: [gc] },
+    { ...committed, labels: [kt, gc, gc] },
+    { ...committed, spacing: 100 },
+  ];
+  changes.forEach((changed) => expect(settled(committed, changed)).not.toEqual(committed));
 });

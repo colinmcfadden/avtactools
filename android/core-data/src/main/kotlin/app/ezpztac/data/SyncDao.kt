@@ -26,6 +26,10 @@ internal interface SyncDao {
     @Query("SELECT $RECORD_COLUMNS FROM record WHERE kind = :kind AND deleted = 0 ORDER BY rowid")
     fun observe(kind: String, inline: Int): Flow<List<RecordRead>>
 
+    /** The same, for the records of [uuids] alone: a few documents followed without reading the rest of their kind. */
+    @Query("SELECT $RECORD_COLUMNS FROM record WHERE kind = :kind AND uuid IN (:uuids) AND deleted = 0 ORDER BY rowid")
+    fun observeSome(kind: String, uuids: List<String>, inline: Int): Flow<List<RecordRead>>
+
     /** [count] characters of a record's document from character [from] (counted from 1). */
     @Query("SELECT substr(data, :from, :count) FROM record WHERE kind = :kind AND uuid = :uuid")
     suspend fun recordDataPart(kind: String, uuid: String, from: Int, count: Int): String?

@@ -336,6 +336,24 @@ class PackEditorTest {
     }
 
     @Test
+    fun `in a finished pack the LZ box is still this person's to hide, with nothing sent or put back, nobody told, and kept for the next opening`() = packTest { r ->
+        r.opened()
+        r.server.finish(PACK, COLIN.id)
+        r.engine.refresh()
+        runCurrent()
+        assertTrue(r.engine.open.value!!.readOnly)
+        r.diagrams.setQuietly { it.copy(view = it.view.copy(showLZOutline = false)) }
+        r.advance(STILL)
+        assertFalse(r.doc().view.showLZOutline)
+        assertEquals(emptyList<List<JsonObject>>(), r.sent())
+        assertTrue(r.notices.none { it is PackNotice.Refused })
+        assertEquals(false, r.packStore.own(PACK, ITEM)!!.getValue("view").jsonObject.getValue("showLZOutline").jsonPrimitive.content.toBooleanStrict())
+        r.diagrams.close()
+        r.openItem(ITEM)
+        assertFalse(r.doc().view.showLZOutline)
+    }
+
+    @Test
     fun `a change still waiting here when the pack is finished is put back, and the person told`() = packTest { r ->
         r.opened()
         r.diagrams.edit("Move", change = move(101, """{"lat": 34.3}"""))

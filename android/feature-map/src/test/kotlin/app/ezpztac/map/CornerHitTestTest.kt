@@ -12,8 +12,8 @@ class CornerHitTestTest {
     private val here = LatLon(34.78, -84.08)
     private val view = MapProjection(CameraState(here, 18.0, 0.0), 1000.0, 2000.0)
     private fun at(north: Double, east: Double = 0.0) = GraphicEdits.offset(here, north, east)
-    private fun scene(boundary: List<LatLon> = emptyList(), drawn: List<LatLon> = emptyList(), held: BoundaryCornerRef? = null) =
-        LzScene(null, boundary, drawn, null, heldCorner = held)
+    private fun scene(boundary: List<LatLon> = emptyList(), drawn: List<LatLon> = emptyList(), held: BoundaryCornerRef? = null, outline: Boolean = true) =
+        LzScene(null, boundary, drawn, null, heldCorner = held, boundaryShown = outline)
 
     private val triangle = listOf(at(0.0, 0.0), at(10.0, 0.0), at(0.0, 10.0))
 
@@ -42,5 +42,16 @@ class CornerHitTestTest {
         assertEquals(3, Regex("\"corner\"").findAll(json).count())
         assertEquals(1, Regex("\"held\":true").findAll(json).count())
         assertEquals(0, Regex("\"corner\"").findAll(scene(drawn = triangle.take(2)).geoJson()).count())
+    }
+
+    @Test
+    fun `a corner of an outline the view hides is not drawn and is not held, but one held already keeps them all in reach`() {
+        assertNull(CornerHitTest.pick(scene(boundary = triangle, outline = false), view, at(10.2, 0.2), 24.0))
+        assertEquals(
+            BoundaryCornerRef(false, 1),
+            CornerHitTest.pick(scene(boundary = triangle, outline = false, held = BoundaryCornerRef(false, 2)), view, at(10.2, 0.2), 24.0),
+        )
+        // A boundary drawn by hand is drawn whatever the view says, so its corners are held as ever.
+        assertEquals(BoundaryCornerRef(true, 2), CornerHitTest.pick(scene(drawn = triangle, outline = false), view, at(0.2, 9.8), 24.0))
     }
 }

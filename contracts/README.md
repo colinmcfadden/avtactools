@@ -10,6 +10,7 @@ golden answers they are all tested against. See `docs/NATIVE_APPS_PLAN.md`
 contracts/
 ├─ openapi.yaml     the API routes the apps call (checked against the backend's responses)
 ├─ tokens/          design tokens (colours for dark, light and night, spacing, type) — tokens.json
+├─ briefs/          the mission brief's formats as data (templates, bindings, constants, standards) — see briefs/README.md
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy; grid.json: the web
 │  ├─ coords/       parse.json                      reference: the web app
@@ -23,10 +24,17 @@ contracts/
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
 │  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
-│  ├─ packs/        ops.json, diff.json, edit.json, shared.json, describe.json, session.json, settings.json, history.json
+│  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py),
+│  │                sandtable.json (reference: the web, feature/brief/sandtableSteps.js, read from compile.json's models),
+│  │                sandtable-fit.json (reference: the web's fitInsets, and Leaflet's own flyToBounds framing),
+│  │                strip-grid.json (reference: the web, feature/brief/stripGrid.js over mgrsGrid.js, the strips' MGRS grid)
+│  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
+│  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json, scene.json   reference: the web app (feature/viewer3d/)
+│  │                geodesy.json   geodetic to geocentric points               reference: PROJ (scripts/geodesy_fixtures.py)
+│  │                tileset/   a LiDAR tileset as the server serves it        reference: py3dtiles 12.1.1 (scripts/tileset_fixture.py)
 │  └─ network/      responses.json, priority.json   reference: the server's own responses; the web's priority rule
-└─ scripts/         generators: the fixtures PyGeodesy owns, and tokens.py
+└─ scripts/         generators: the fixtures PyGeodesy owns, tokens.py, and the LiDAR tileset (tileset_fixture.py)
 ```
 
 ## Who is the reference
@@ -50,6 +58,11 @@ reference is.
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
+| `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` (`CompileBrief`: every case, strictly: null kept apart from absent, numbers in JavaScript's digits, keys in JavaScript's order, the strips' numbers and the slope calls too; `CompileFixtureTest`) |
+| `brief/light.json` | `frontend/src/contracts/briefLightFixtures.test.js` | — (reference: Skyfield, `scripts/light_fixtures.py`) | `core-brief` (`Light`, within the file's tolerances; `LightFixtureTest`) |
+| `brief/strip-grid.json` | `frontend/src/contracts/briefStripGridFixtures.test.js` | `backend/tests/test_brief_pdf.py` (draws OP DK's strips with it) | `core-brief` (`StripGrid`, `StripGridTest`): the MGRS 1 km grid Android adds to each strip of `compile.json` before printing, compared within `mgrs/grid.json`'s tolerances (a line sampled with other points, an end a millimetre off) |
+| `brief/sandtable.json` | `frontend/src/contracts/briefSandtableFixtures.test.js` | — | `core-brief` (`SandtableSteps`, `SandtableFixtureTest`): each step as the sandtable lists it and what the map shows for it, from `compile.json`'s models (both are made from the same cases, `briefCases.js`, so one `UPDATE_CONTRACTS=1` run writes both), strictly, as `compile.json` is held |
+| `brief/sandtable-fit.json` | `frontend/src/contracts/briefSandtableFitFixtures.test.js` | — | `core-brief` (`SandtableSteps.fitInsets`, `SandtableFitFixtureTest`: what is kept clear of the card, the constants and the steps, squeezes and ties included) and `feature-brief` (`SandtableCamera`, `SandtableCameraFixtureTest`): where Leaflet itself flies for a step's area with those insets (`flyToBounds`, `maxZoom` 17, `zoomSnap` 0.1, the app's Leaflet named in the file), which Android works out for MapLibre (its zoom one less, never below 0) |
 | `workspace/ops.json` | `frontend/src/contracts/workspaceOpsFixtures.test.js` | — | `core-model` (`DiagramOps`) |
 | `workspace/doghouses.json` | `frontend/src/contracts/doghouseFixtures.test.js` | — | `core-model` (`Doghouses`, `JsValue.parseInt` / `parseFloat`) |
 | `formats/number_text.json` | `frontend/src/contracts/numberTextFixtures.test.js` | — | `core-model` (`JsNumber.toText`) |
@@ -67,11 +80,16 @@ reference is.
 | `network/priority.json` | `frontend/src/contracts/networkFixtures.test.js` | — | `core-network` |
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | `core-missionpacks` (`PackOps`: every case, strictly: status, reason, null kept apart from absent, keys in JavaScript's order; `PackOpsFixtureTest`) |
+| `packs/ops-brief.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` | `core-missionpacks` (`PackOpsFixtureTest`, its cases beside `ops.json`'s, as strictly) |
+| `packs/session-brief.json` | `frontend/src/contracts/packSessionFixtures.test.js` | — | `core-missionpacks` (`PackSessionFixtureTest`, every scenario as `session.json`'s are played): brief edits taken in a read-only pack, sent in batches of their own, kept when the pack turns read-only |
 | `packs/diff.json` | `frontend/src/contracts/packDiffFixtures.test.js` | — | `core-missionpacks` (`PackDiff`: the operations an editor's change is sent as, every case strictly and in order, each rebuilt with `PackOps`, and every `sameData` pair; the `webBug` cases and pairs are not copied and have tests of the right behaviour; `PackDiffFixtureTest`) |
 | `packs/shared.json`, `packs/describe.json`, `packs/edit.json` | `frontend/src/contracts/packSharedFixtures.test.js` | — | `core-missionpacks` (`PackLz`, `PackRoutes`, `PackPoints`, `PackSentences`, `PackEdit`: what is each person's own, the history's sentences and new items' names, how one edit is put together; every case, the `webBug` ones not copied and tested for the right behaviour; `PackSharedFixtureTest`, `PackDescribeFixtureTest`, `PackEditFixtureTest`) |
 | `packs/settings.json` | `frontend/src/contracts/packSettingsFixtures.test.js` | — | `core-missionpacks` (`LzPackKind`, `RoutePackKind`, `PackDiff`: each setting's item read and written back unchanged, the web's operations for it strictly and in order, and what the port sends instead, kept whole, rebuilding the same item; `PackSettingsFixtureTest`) |
 | `packs/history.json` | `frontend/src/contracts/packHistoryFixtures.test.js` | — | `core-missionpacks` (`PackHistory`: a pack's log read as the history's lines, every case, its events read strictly as the server's; `PackHistoryFixtureTest`) |
 | `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | `core-missionpacks` (`PackSessions`: every scenario step by step, with the whole session, what is visible, each answer and the `dropped_versions`, strictly: null kept apart from absent, keys in JavaScript's order; `PackSessionFixtureTest`) |
+| `viewer3d/*.json` | `frontend/src/contracts/viewer3dFixtures.test.js` | — | `core-scene3d` (the route scene, the compass, the terrain tiles), `core-data` (the build flow) |
+| `viewer3d/tileset/` | — (py3dtiles's own output, by `contracts/scripts/tileset_fixture.py`) | `backend/tests/test_network_fixtures.py` (served as the recorded tileset) | `core-scene3d` (`TilesetReader`, `PntsReader`) |
+| `viewer3d/geodesy.json` | — (PROJ's own transform, by `contracts/scripts/geodesy_fixtures.py`) | — | `core-scene3d` (`geodeticToEcef`, `ecefToGeodetic`, `LocalFrame`) |
 
 iOS joins this table when it starts; it reads the same files.
 
@@ -86,6 +104,28 @@ the Kotlin reader is always tested on the files the web would produce today.
 Everything inside is invented; no file from a real mission. A real, unclassified AMPS
 export from the owner would be added as a further case, and is the better test.
 
+### The `viewer3d/` fixtures
+
+The 3D LZ view (`docs/ANDROID_3D_PLAN.md`). The web draws it with Cesium, which cannot be a fixture; everything that decides what it
+shows can:
+
+| File | What it pins | Web code |
+|---|---|---|
+| `routeScene.json` | Where each route's line, curtain, drop lines and labels go, in metres above the ellipsoid: the samples asked for, and the shapes made from each answer (hidden routes, touchdowns, AGL with no MSL, the 50 ft mismatch, missing ground and geoid, a long route sampled coarsely, the labels' text); for each answer the sphere *Routes* frames, and a route's colours as Cesium reads them, both from Cesium itself (its CommonJS build, required by the test: never through webpack) | `routeScene.js`, `routeEntities.js`, Cesium's `BoundingSphere.fromPoints` and `Color.fromCssColorString` |
+| `compass.json` | How the compass turns and tilts for a camera's heading and pitch, and the heading it shows (`330°T`) | `compass.js` |
+| `terrain.json` | Which terrain tile holds a place at each level (Cesium's geographic tiling), and the tiles' size | `terrainProvider.js` |
+| `lidarFlow.json` | Finding or building a point cloud while someone waits: every request, how long after the last answer it came, the answer, and what the view shows then, through every answer the server can give | `useLidarTileset.js` |
+| `scene.json` | How the view looks and moves (the opening pose, the point sizes, the screen-space errors, the eye-dome lighting, the flights' lengths), the twenty draws Cesium sizes a leaf's points from (`PntsLoader`'s twister from seed 0, from the `mersenne-twister` package Cesium itself uses), and how far back a sphere is framed for views of each shape, wider than tall to an upright phone (`framing`) | `sceneSettings.js`, `framing.js` |
+
+`tileset/` is a LiDAR tileset as the server serves it (`backend/lidar/tiles.py`): a synthetic point cloud converted by py3dtiles 12.1.1, the
+build image's version, with `context/` beside it as the thinned ring. Regenerate with `python contracts/scripts/tileset_fixture.py` in the
+LiDAR image or a venv with that version; py3dtiles stamps the time it was made, and its previews are random, so a regenerated tileset
+differs there and nowhere else.
+
+`geodesy.json` is the earth's frame the 3D view puts everything in: latitude, longitude and height above the ellipsoid to geocentric metres,
+from PROJ (pyproj, as the backend pins it; EPSG:4979 to EPSG:4978) at the LZ, the poles, the antimeridian, below the ellipsoid and far above
+it. `python contracts/scripts/geodesy_fixtures.py` writes it with the backend's Python, and `... check` fails if the committed file differs.
+
 ### The `packs/` fixtures
 
 Mission packs (`docs/MISSION_PACKS.md`) are edited through id-addressed operations, and the web's
@@ -95,6 +135,8 @@ sync is held to these files:
 | File | What it pins | Web code |
 |---|---|---|
 | `ops.json` | What one operation does to a pack's items (the server applies it the same way) | `packOps.js` |
+| `ops-brief.json` | The same, for the `brief` kind | `packOps.js` |
+| `session-brief.json` | `session.json`'s rules for brief edits: taken in a read-only pack, their own batches, kept when the pack turns read-only | `packSession.js` |
 | `diff.json` | The operations an editor's change to an item is sent as, in order | `packDiff.js` |
 | `edit.json` | One change as sent: the rename, the operations that bring an old item to today's shape, the change, one sentence on each | `packEdit.js` (`composeEdit`, from `usePackItemSync`) |
 | `shared.json` | What of an item is each person's own and never sent; a set's points made ready; the name and library form of a person's own version of an item ("NAME (my edits)"); the shape an editor gives an LZ/PZ or route set it opens, which the reshape in `edit.json` brings an older item to | `packLz.js`, `packRoutes.js` (with `useLzWorkspace.normalizeLzDiagram` and `useRouteSketch.restoreSketchRoute`), `usePackPoints.js`, `packSentences.js`, `packActions.js` |
@@ -204,7 +246,10 @@ without the fixture diff in the same PR — and the Android tests then fail unti
   a time as each arrives. The mission-pack routes are described ahead of any client and
   held by `backend/tests/test_packs.py`. `backend/tests/test_openapi_contract.py`
   holds the server's responses to it and fails on an added, removed or retyped
-  field. Changes are additive: store builds stay in the field for months.
+  field. Changes are additive within an API major (its `info.version`): store builds
+  stay in the field for months. `scripts/api_version.py check --base <branch>` fails
+  on a breaking change whose major did not move, and on a client build that supports
+  no major the server serves; `bump` writes the version a change calls for (AGENTS.md §6).
 
 ## Known limits
 

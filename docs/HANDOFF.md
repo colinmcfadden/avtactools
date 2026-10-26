@@ -5,7 +5,12 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
-Last refreshed: 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
+Last refreshed: 2026-10-24 (every finished branch merged into `develop`: *Moving to a new computer*, below). Before that, 2026-10-23 (the owner moves to a new
+computer: every branch with work is pushed, and what is not in git is listed in *Moving to a new computer*; the device-run work of 2026-10-21/22 is §0).
+Before that, 2026-10-21 (the 3D LZ view's first device run, §0b, on `claude/android-3d-view-e38b76`).
+Before that, 2026-10-20 for the mission brief (§0a: B0 to B9 built on `feat/mission-brief`: the web and the server, then Android's core (B7), its setup, review, Share and Save on a tablet (B8), and its live sandtable (B9)).
+Before that, 2026-10-19 (B8).
+Before that, 2026-10-13 (the redesigned screens on `feat/android-screens`: S1 the design system, S2 the phone's frame and S3 the LZ/PZ
 panel reviewed together, S4 the Routes panel and the route's plan, S5 the Threats panel and its form, S6 Import (the menu, the review, the Imports
 panel) S7 the Library (with record times, database version 4) and S8 the map's long-press menu and the Saved toast's *Open Library*, each reviewed on its own,
 S9 the tablet, P1 the workspace switcher, P2a the Pack panel, P2b the LZ/PZ and Routes panels in a pack, P2c a read-only pack, P2d a finished pack (its banner, Finish, Reopen, Duplicate), P2e the presence pointer, P3a New pack, P3b Members, P3c Teams, P4a copies into a pack, P4b updating a copy and copies to the Library, P4c the edits a pack would not take, every review's fixes in: S1–S9 and P1–P4 are built, and the owner's device run is next. The owner tries it on a device once S7–S9 and P1–P4 are done. The owner decided threats may be saved and shared: AGENTS.md §2, and step *T* of
@@ -14,6 +19,235 @@ map, from the Layers menu (AGENTS.md §17, *The MGRS grid*), its code ported and
 two-device run found, a pack's route written twice (§1); the audit of every setting in a pack that followed it (§1); and the owner's changes to the phone's frame
 from the same day's device run (§1): the search, the workspace, Import and the Library on one row, a tap on the map that hides the frame, and how an open pack
 stands said on its chip.
+
+---
+
+## Moving to a new computer (2026-10-23)
+
+**Every branch with work was on GitHub** (pushed 2026-10-23), and on 2026-10-24 every finished one was merged into `develop` by a PR of its own, each
+brought up to date with `develop` first and checked on the new Mac (Android `test testDebugUnitTest lintDebug assembleDebug`, the backend's CI list,
+the web's Jest and `npm run build`):
+
+| Branch | What it holds | Merged |
+|---|---|---|
+| `fix/mobile-analyze-boundary` | The phone web's *Analyze* and *Draw boundary*, and capture and export above the sheet | #98 |
+| `fix/window-stacking` | The web's floating windows and alerts stacked under menus, dialogs and toasts | #100 |
+| `claude/competent-noether-5cc4f7` | The MGRS grid fixture compared to a tolerance (it failed on Apple silicon in the last digits) | #101 |
+| `claude/admin-coverage-prebuild-efcef7` | Docs only: `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`, all 20 decisions answered on 2026-10-23 (https://claude.ai/artifact/RU8RPViDvj2qjpP7UGLT4R; D1, MapLibre GL JS for the admin map, and D13, several AOs per organization, differ from its recommendations). Nothing built: Phase 0 is next, and closes what it found: any signed-in user can list every place a 3D view was built, with its coordinates (`GET /api/lidar/tilesets` and each tileset's `area.json`) | #102 |
+| `feat/mission-brief` | The mission brief, web, server and Android B0–B8 (`docs/MISSION_BRIEF.md`). Staging gets the brief's routes on its next deploy from `develop` | #99 |
+| `claude/festive-dijkstra-79b32b` | B9, the brief as a live sandtable on an Android tablet; its Leaflet-fit fixture is now compared to 1e-9° (Apple silicon again) | #103 |
+| `feat/android-quick-edits` | The owner's device-run requests of 2026-10-21/22 (§0 below) | #104 |
+| `claude/android-3d-view-e38b76` | The 3D LZ view on Android (`docs/ANDROID_3D_PLAN.md`, §0b). It conflicted with the brief, B9 and quick edits; both sides kept (an LZ/PZ row has its *3D* and its eye; the recorded network fixtures regenerated, the briefs' recordings unchanged) | #105 |
+
+Left out: `refactor/backend-structure` (deliberately, §1); `docs/menu-redesign`, `fix/threat-colors` and `feat/vfr-sectional`, already in `develop` in
+another form, were deleted. `test/quick-edits-3d`, the throwaway merge put on the tablet, was never pushed: `develop` now holds both.
+
+**Not in git: bring it, or make it again.**
+- **The debug signing key** (`~/.android/debug.keystore`). A debug APK built with another key will not install over the tablet's or the phone's (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), and
+  uninstalling it first deletes what the app holds on the device (changes not yet synced, the threat picture, the session). Copy the file to the same place on the new
+  machine. Google sign-in's Android OAuth client is tied to its SHA-1 too (§4).
+- `android/local.properties` (`sdk.dir`), `frontend/.env` (from `.env.example`), the backend's venv, and `backend/ezpz.db` (local accounts: `dev_user.py` makes them again). SAM's
+  `sam_b.pt` downloads itself on the backend's first start (358 MB). The setup for each is AGENTS.md §11 and §3 below.
+- **The mission packet's sources**, outside the repo on purpose: `~/Downloads/ABOS Annex A AV Handbook 15July2024.pdf` (its cover is marked CUI, so it never goes into the repo,
+  AGENTS.md §2), `~/Downloads/DOORKICKER_PACKET.pdf` (another unit's packet with real names: a layout reference only), and `2023 Mission packet - WILSON.pptx` in Keynote's iCloud
+  folder, which iCloud brings along.
+- Claude's notes for this project (`~/.claude/projects/<project>/memory/`) and the agent sessions' transcripts stay on the old Mac. What they held that matters is in this
+  section and AGENTS.md. Each branch's worktree under `.claude/worktrees/` is local too; the branches are what matter, and they are pushed.
+
+**Trying a build on a device from a Mac, against staging.**
+- **For 3D, build for staging**: `./gradlew assembleDebug -Pezpz.apiUrl=https://dev-ezpz-api.mcfadd.in/`. A machine with no DEMs, LiDAR or build service answers only "Not generated"
+  locally, while staging shares the build service and the tiles with production. It is HTTPS, so no `adb reverse`.
+- **Staging's email does not arrive** (verification, password reset), and `dev_user.py` writes only a local SQLite database. A verified staging account is made in the staging
+  Supabase project's SQL editor: an upsert into `"user"` (role, `is_active`, `access_approved`) and `local_credential` (a werkzeug scrypt hash made locally from a password asked
+  with `getpass`, `email_verified_at`, status `active`, `session_version` moved on). Never paste staging's `DATABASE_URL`, or a password, into a chat (AGENTS.md §2: a secret
+  shown in a chat is rotated).
+- In an agent session, the Bash sandbox has no USB: run `adb` with the sandbox off. Each time the adb server starts again, the tablet asks again to allow USB debugging.
+
+**Designed, not built: the mission packet export** (started 2026-10-21). The owner's kneeboard packet (ABOS Part Nine, *Kneeboard Products*) as an EZ/PZ-styled PDF with
+clickable navigation. The design canvas, in the owner's claude.ai account: https://claude.ai/artifact/Phz2jDxwu5wcUejiqaYGq3 (eleven Letter sheets: a cover with the inventory,
+crew and commo, timeline, EXCHECK, concept sketch, PZ, TDH, LZ, FARP, approach plate, IIMC). Decided so far, the owner's to change: Letter portrait, one sheet a page, a
+right-hand tab rail with IIMC pinned last in red (as the owner's packets have it), the EZ/PZ light palette, Roboto Flex with Roboto Mono for numbers, UNCLASSIFIED top and
+bottom, a "V2 · n of N" footer, and fictional sample data. Next, the owner said: the screens of the dialog that builds the packet. It overlaps the mission brief's setup and
+PDF, so it reuses their compile and print path rather than making a second one. The ABOS handbook's item lists and field names are put in the app's own words, never its text.
+
+## 0. Analyze after Finish, objects edited from their bar, the slope map's opacity, the LZ box, every open LZ/PZ on the map, route points by type, helicopter names and the tools on the map's edge (2026-10-21/22)
+
+Branch `feat/android-quick-edits` (from `develop`). The owner's requests from a phone run (AGENTS.md §17, *Boundary drawing* and *Dragging and turning on the map*):
+- **Finish offers the analysis there and then**: the drawing toolbar gives way to *Analyze LZ/PZ* over the map (then its stage with *Stop*, then *Try again* on a failure, and
+  *Not now*), so a boundary just drawn is not three steps from its analysis (`BoundaryViewModel.analyzeOffer`, `AnalyzeOfferBar`; `AnalyzeOfferTest`).
+- **A long press holds what it is on, as a tap does**: its bar over the map and nothing else (no panel), and still picks it up to drag; a press that does not move leaves it where
+  it was. A read-only pack's object is held, not picked up, so its bar answers the press rather than the map's menu (`HomeViewModel.dragStarted`).
+- **A doghouse's fields are in its bar**: label, heading, time, distance and airspeed, with the turn buttons; *More options* is an icon beside *Done*. What a field takes lands on the
+  doghouse it was typed for (`GraphicOf`), never on one held or an LZ/PZ opened since; the bar scrolls past 60% of the window, and what floats over the map stands on the
+  keyboard's top when that is higher than the sheet (`MapScreen.standingBottom`).
+
+An independent review's findings are fixed, each with a test (mutation-checked): a field with focus wrote its old value back over a turn or an undo made meanwhile; the
+offer came back for a later *Re-analyze* and showed an earlier failure; it lay over the held bar or a route's toolbar; the doghouse's bar could reach above the screen over a
+sheet at half (what floats is now measured into the room under the row); and a finger's roll after a long press moved what it only held (now an 8 dp slop, and no edit at all
+when the finger never passed it).
+
+A new LZ/PZ (the map's long press *New LZ/PZ here*, or the panel's) is offered its first step in the same bar: *Analyze* or *Draw boundary*, and *Draw boundary* again where no
+area was found (`FreshDiagrams`).
+
+**The slope map's opacity and the LZ box** (the owner's request from the tablet run; AGENTS.md §17, *How the slope map and the LZ box are drawn*): in the plan's analysis
+section, under *Slope map*, an *Opacity* slider while it is drawn (10 to 100% in steps of 5, from the web's 55% where Android drew 85%; this device's, kept between launches,
+never saved with a plan), then an *LZ box* switch that hides the analysis boundary, its fill and its corner dots (the diagram's own `view.showLZOutline`, the web's *LZ Box*;
+a corner held keeps its corners drawn, a boundary drawn by hand is drawn as ever). Both offered in a read-only pack. Looked at as Roborazzi pictures in dark, night and light,
+and on a 360 dp phone at 1.3 and 2.0. The web has the same slider, in the sidebar under *Slope Map*, remembered per browser (AGENTS.md §13, *The slope map's opacity*).
+
+**Every open LZ/PZ stays on the map** (the owner's request from the tablet run; AGENTS.md §17, *The open LZ/PZs stay on the map*): a new LZ/PZ no longer takes the last one
+off the map. Every open one but the one being worked on is drawn faded under it (target and name, boundary, aircraft, PZ arrows, sectors, go-arounds; not its slope map,
+doghouses, units or separation lines), the person's own open set in the Library and the pack's LZ/PZs in a pack. Each row of *Also open* (and of a pack's list) has an eye that
+hides it from the map and shows it again (this device's own, never sent); a tap on a faded one holds it, its bar offering *Open* and *Hide*. The web draws the open one alone
+(AGENTS.md §15). Only the open ones' records are read for it (a Room query of their uuids), each again only when it changed, off the main thread. Looked at as Roborazzi
+pictures (the eyes and the bar, at 412 dp and on a 360 dp phone at 1.3).
+
+**Route points are drawn by their type** (the owner's rule: an RP a square, a target a triangle, a checkpoint a circle; AGENTS.md §17, *A named point's shape is its
+AMPS type*): as the web draws them, an IP point (the SP and the RP) a square, a target a triangle pointing up, a turn point a circle, shaping points small dots as before.
+Bitmaps in the route's colour sized in points (`RoutePinImages`), drawn for real in `RoutePinImagesTest` (its contact sheet looked at over grass, the topographic map and
+the chart).
+
+**A route point's type from its bar** (the owner's requests; AGENTS.md §17, *A route point's type is in its bar*): a held point's bar has a chip for each of *Checkpoint*,
+*SP*, *RP*, *TGT* and *Shaping*, the one it is selected, and a tap on another makes it that, by the route's plan's rules (`SketchOps.designate`, one undo step). The first
+version opened a dialog of the five; the owner asked on 2026-10-22 for the choices in the bar itself. The SP and the RP take their names (`.SP`, `.RP`: AMPS calls both IP
+points); a checkpoint or the target keeps a name of the person's own. Refused in words: a mission's points (the file's), one of the last two named points as a shaping point,
+a read-only pack. The web's menu offers "RP / IP" once and asks for a name (AGENTS.md §15). Looked at as Roborazzi pictures (the bar, a mission's bar, a route of two named
+points, in dark, night and light, and on a 360 dp phone at 1.3).
+
+**A helicopter's name** (the owner's request of 2026-10-22; AGENTS.md §17, *A helicopter has a name*): a chalk or tail number, set in the inspector and in the held bar,
+kept in capitals as the aircraft's `label` (20 characters at most), first in its title and written under it on the map. The web keeps the field but does not show it yet
+(AGENTS.md §15).
+
+**The LZ/PZ tools on the map's edge** (the owner's request of 2026-10-22; AGENTS.md §17, *And on the map's right edge*): while the LZ/PZ panel is chosen, *Draw LZ*, the four
+placing modes and a unit stand as a column of buttons under the map's own; where not all fit, as many as do and a *More* button for the rest, the tool in use always
+shown; kept above a held object's or a tool's bar. Looked at in the phone's frame (sheet lowered and at half, a held helicopter at night, a 360 dp phone).
+
+An independent review of these three found, each now fixed with a test (mutation-checked): *Set name* in the options panel did nothing in the app (the panel built its
+own actions and left the name out; one builder now serves every screen); a refused *Draw LZ* from the map's edge was silent and later showed in the panel; its question
+could come back by itself after a pack was finished and reopened, or apply to another LZ/PZ; the column collapsed to one button as soon as a tool's bar came up; a name
+typed for one helicopter carried over to the next; Go on an empty name field took the name away; a tablet's search error covered the first tool; the name sat on a
+north-facing UH-60's tail; and the feet between two aircraft, like the new name pill, swallowed a tap meant for the map.
+
+**Not verifiable here:** the keyboard lifting the bar on a device, the bar over a real map, TalkBack on the new fields, the slope raster at each opacity and the
+outline hidden on the real map, the faded LZ/PZs over imagery with twenty open, the point shapes on the GL map, the type chips and the tools on the map's edge under a glove,
+and the names under the aircraft over imagery. A device run on the owner's phone is next.
+
+## 0a. The mission brief (2026-10-16 to 20)
+
+Branch **`feat/mission-brief`**, on `develop` (which has `feat/android-panel-close-and-tools`, merged as PR #97). **Not pushed; no PR yet.** The plan, the
+owner's decisions of 2026-10-16 and each step's state are in **`docs/MISSION_BRIEF.md`** (read it first); AGENTS.md §4, §6, §9 and §10 say what exists.
+
+**What it is:** the air movement and hasty multi-ship briefs (Aviation Branch Handbook formats; the owner confirmed their item lists and standard values
+releasable, the handbook itself is CUI-marked and never committed) generated from a mission pack or the session: a PDF and a live sandtable.
+Web and Android; Android tablet size and up only for now.
+
+**Built (each with its tests, the commit named):**
+- **B0** `contracts/briefs/`: the two formats as data (templates, bindings, constants, standards), held by `briefTemplates.test.js`; the web bundles
+  byte-for-byte copies in `frontend/src/feature/brief/templates/` (a test fails if a copy differs: change `contracts/briefs`, then copy).
+- **B1** `compileBrief` (`frontend/src/feature/brief/compile.js`, pure: no clock, zone or network) held to `contracts/fixtures/brief/compile.json`, and
+  on-device light data (`light.js`) held to Skyfield (`contracts/scripts/light_fixtures.py`, `light.json`; Skyfield is a dev-only reference the owner
+  approved, never shipped).
+- **B2** (built in a side session, reviewed and merged here): `SavedBrief` and `/api/briefs` synced like an LZ, the pack item kind `brief` open to every
+  member in every state of the pack (`pack_routes._only_briefs`), `/api/weather?at=`, the `mission_brief` entitlement (default off).
+- **B3** the web's Brief menu and three-step setup (`BriefSetup` over `useBrief`): Library record outside a pack, the pack's brief item inside one; the
+  web's pack session takes brief edits in a read-only pack, in batches of their own (`packs/session-brief.json`).
+- **B4** the PDF: `POST /api/brief/pdf` draws the figures from the model's `geometry` (tiles + SVG, `backend/brief/figures.py`), lays out the pages
+  (`pages.py`, `templates/`) and prints them through **Gotenberg** (`GOTENBERG_URL`). Tried end to end on the owner's Mac against Gotenberg 8.21.1 run
+  locally with JavaScript off and the network denied, and through the real Download PDF button. **A brief says no page numbers** (Chromium may break a
+  long step onto two pages): the packet is said by section, the footer numbers pages.
+- **B5** the web's live sandtable: *Present live sandtable* in the Brief menu and *Present sandtable* at the review. The brief's steps walked
+  on the live map (`Sandtable.jsx`, `SandtableLayer.jsx`), each flown to and drawn from the model's `geometry` by the PDF's own rules
+  (`sandtableSteps.js`, held to the new `contracts/fixtures/brief/sandtable.json`, which B9 follows); the planning frame put away and nothing
+  taking an edit while it runs; a step is *Step n of N*, never a page. On the way, a departure figure now names the route it leaves on
+  (`compile.json` regenerated), so the PDF lights it too. Reviewed independently on four counts (state and keys, the map, editing off, the
+  contract), each finding checked by a skeptic: thirteen were real (two others were refuted) and are fixed with tests (each fix undone once to see its test fail), among
+  them planning windows left open over the brief, a sign-out mid-brief throwing, a pack that went leaving the map on its old area, and
+  `useBrief`'s account reset running after its read (it now runs first, and a read for the account before is dropped). Tried in the browser
+  against a local backend with OP DK seeded as a pack: every step, the narrow layout, keys with the map focused, a right-click, an aircraft
+  window put away, an LZ/PZ removed and then the whole pack deleted mid-brief, End brief and Escape.
+
+- **B6** strip charts in the PDF's appendix (MISSION_BRIEF.md §2.6, *As built*): `compileBrief` cuts each route into 5.5 × 21.5 cm strips
+  (`model.strips`, a `strips` page kind three a page; 1:100,000 or 1:250,000; topo unless asked), the MGRS 1 km grid is added only when printing
+  (`stripGrid.js`, held to the new `strip-grid.json`), and the server turns the map course up and draws the strip (`figures.draw_strip`). Printed
+  through Gotenberg 8.21.1 on this Mac with real Mapbox tiles: OP DK's 12 strips on 4 pages in about 2 s with tiles cached, and the 1:250,000
+  dogleg case across the zone 16/17 boundary; pages looked at as images. `compile.json` changed (every case's options, the strips, the packet sentence,
+  four strip cases): B7's port must follow it, and compare the strips' numbers within a tolerance. An independent review then found, and this fixed:
+  strips cut with stubs, north-up nothing pieces and a wrong course across the antimeridian, no bound on a long route (now 60 strips, said in setup)
+  and nothing past 84° of latitude; the server taking the strip's pixel size from the model, trusting its field types, caching decoded tiles, laying a
+  strip out twice and leaving grid lines through the scale bar's and arrow's corners unnumbered (now every line is numbered on an edge or on itself,
+  swept at every course and both scales); the squares beside the route unnamed; and the cover counting pages Chromium decides.
+- **B7** (built in a side session on its own branch, `claude/android-core-brief-2ffe1e`, and merged here): **7a** the new pure module
+  `android/core-brief`: `CompileBrief` (compile.js ported, held strictly to every case of `compile.json`), `Light` (light.js, held to Skyfield's
+  `light.json`) and `BriefFormats` (`contracts/briefs` bundled by the build, held byte for byte and to the format's rules). AGENTS.md §17 has the row.
+  **7b** the brief's Library record: `RecordKind.BRIEF` over `/api/briefs` (core-network's calls, core-sync's gateway and change feed), through every per-kind
+  sync scenario on the fake server, the real Flask server (the live test server now registers the briefs blueprint) and Room.
+  **7c** the pack kind: `PackOps` takes `brief` (`ops-brief.json` folded into `PackOpsFixtureTest`), `PackSessions` takes brief edits in a read-only pack,
+  sends them in batches of their own and keeps them when the pack turns read-only (`session-brief.json`), `PackLock` lets brief items through and nothing else,
+  `PackItemCounts` takes `brief`, a refused brief is kept in the Library as a brief; a pack story holds it on the fake server, the real one and Room.
+  Then B6 merged in and followed: the strip charts in `CompileBrief` (`StripCharts`), every case of the new `compile.json` exact, strip cases included;
+  `strip-grid.json` (the grid added at print time) is B8's, with the PDF request.
+- **B8** Android's brief on a tablet (AGENTS.md §17, *The brief on a tablet*): the rail's *Brief* opens the setup's three steps (`feature-brief`, a dialog
+  nearly the window), the review over the real PDF (drawn by `PdfRenderer`), *Save to device* and *Share PDF*. Under it core-data's `BriefKeeper`
+  (the Library record or the pack's item; a change kept as a transform and laid over the version it is written or sent to), `BriefSources` (the
+  pack's items, or this session's open LZ/PZs with their measured slope and route sets) and `BriefSession` (compiled off the main thread with the weather
+  at the planned times, `weatherAt`; printed with the strips' grid, core-brief's `StripGrid`); core-brief's `BriefEdits` are the setup's edits. Three
+  independent reviews (parity with the web, concurrency and lifecycle, the screens) found real faults, all fixed with tests and checked by mutation:
+  pack edits that could go out of order or crash the app, a Library brief never read again (the next change wrote over a newer version), a paused
+  pack's changes dropped, the session left open for the next account, a field's words carried to another answer (no row was keyed), the script reset
+  undone, the slope call never briefed outside a pack, the PDF renderer's thread lock and leftover files, a narrow window's layout. On the way, two
+  changes outside Android: `compile.json` gained a slope case (the web's slope call, now held on both sides) and the web keeps its weather when a
+  refresh gets no answer, as the plan always said.
+
+- **B9** Android's live sandtable on a tablet (AGENTS.md §17, *The sandtable on a tablet*): the setup's *Present sandtable* (on every step) closes the setup and
+  draws feature-brief's `SandtableFrame` over the map where the tablet's frame has it (`TabletFrame`'s `presentation`: the map never moves; the rail, panes and band
+  put away, kept composed): the bar, the steps, the constants and the script card. Each step is core-brief's `SandtableSteps` (the web's `sandtableSteps.js`, held strictly to every case of
+  `sandtable.json`, from compile.json's model and from the brief compiled here), drawn from the model's `geometry` (`SandtableScene`: GeoJSON to MapLibre,
+  `SandtableOverlay`, and the marks and words in Compose, `SandtableMarksLayer`) and flown to as the web's Leaflet frames it (`SandtableCamera`, clear of what
+  lies over the map), held to Leaflet's own answers in the new `brief/sandtable-fit.json` (with the web's `fitInsets`). Editing is off while it runs, and it ends with its workspace, the account, End brief, Back or Escape. Its three independent
+  reviews (parity with the web, lifecycle and concurrency, the screens) found, among others: a sandtable ending with its pack could leave the map on the pack's view (it now ends in the same composition, and a flight waits for the view to be given
+  back); a flight asked before MapLibre has made the map was undone by its first camera (`MapHost.attach` now sets the camera first); an opening queued behind a
+  close was never dropped; the review's foot cut its buttons at large text; TalkBack would have said "not selected" on every other step; each was fixed with a test. Rechecking them after the commit closed
+  three more: the keyboard's focus goes back to the rail's *Brief* when the sandtable ends (the web's goes back to its Brief button), the bar names the open
+  pack while its brief is still read and after a rename, and the card says "← → keys" while a keyboard is attached. The toasts' timing and their not being
+  counted as covers are the web's own, and the labels' collisions are too. The brief's design boards were not to hand: the layout
+  follows the web's, and the rail's *Brief* still opens the setup (AGENTS.md §15).
+
+**Checks that ran (2026-10-19, the owner's Mac):** for B4, the backend's CI list (517 passed, 1 skipped), the web's contract and brief tests (all but
+`mgrsGridFixtures`, a last-digit float difference on this Mac that predates the brief), `npm run build` with no new warnings, Android
+`:core-network:test` and `:core-missionpacks:test`. For B5 (web only, no server code changed): the web's whole Jest suite (1,068 passed; only
+`mgrsGridFixtures` fails, as before), `npm run build` with no new warnings, and the backend's `test_brief_pdf.py` and `test_contract_fixtures.py`
+against the regenerated `compile.json`. For B6: the web's whole Jest suite (1,098 passed; only `mgrsGridFixtures`), `npm run build` with no new
+warnings, and the backend's CI list (531 passed, 2 skipped: the live service needs Postgres); OP DK at 1:100,000 and the dogleg at 1:250,000
+printed again through Gotenberg after the review's fixes and looked at. For B8: Android's full `./gradlew test lintDebug assembleDebug` (5,633 tests,
+3 skipped, none failed; lint clean), the screens drawn by Roborazzi at 1,280 and 840 dp and looked at, the web's brief and contract tests (165 and 14
+in `useBrief`) and `npm run build` with no new warnings. For B9 (2026-10-20): Android's full `./gradlew test lintDebug assembleDebug` (5,769 tests with the recheck's, 3 skipped, none
+failed; lint clean), the web's contract tests (275 of 276; only `mgrsGridFixtures`, as before) with `sandtable-fit.json` written by Leaflet 1.9.4 itself, the
+sandtable drawn by Roborazzi (1,280 × 800 in the three palettes, 845 dp with the steps over the map, large text on a short window) and looked at, and
+14 mutations of the step's fixes (the flight, the session's order, the screens), every one killed.
+
+**Not verifiable here, or not tried:** a brief built from real LZ/PZs and routes in the browser (only the fixture's OP DK, in Jest and the PDF test,
+and seeded as a pack for the sandtable); the sandtable's animated flights (the agent's browser reports reduced motion, so only the unanimated fit was
+seen) and on a projector or a presenter's clicker; the weather `at` answers from aviationweather.gov live; Gotenberg on the Coolify VM.
+
+**Not verifiable here (B8):** the platform's renderer drawing a real PDF (Robolectric's cannot open one), the share sheet and the picker, a real
+Gotenberg print on a device, the setup over the real map, and TalkBack: the owner's device run.
+
+**Not verifiable here (B9):** the figure MapLibre draws (its GL layers are compile-only: the Roborazzi pictures draw the same scene over a stand-in map, and
+the marks and words are the app's own Compose), the flights on a real map and the view given back, a presenter's clicker on a real tablet, TalkBack, and the
+frame on a tablet's real insets and cut-outs: the owner's device run. **To try first on a device:** present OP DK's brief from the setup, step through it
+with the arrows and a clicker (Page Down), pan the map mid-step and step on (it flies again), turn the tablet, then End brief (the map comes back where it
+was); in a pack, have another member change an LZ/PZ while presenting.
+
+**Next, in order** (docs/MISSION_BRIEF.md §5): the owner's device run of B8 and B9 on a tablet; then §5's *later*. Owner's call from B9 (AGENTS.md §15):
+whether the rail's *Brief* becomes the web's Brief menu, with *Present live sandtable* one tap away. Owner's calls the B8 reviews raised
+(AGENTS.md §15): one identity for a session's LZ/PZ and route in a Library brief (the web and Android name them differently), two brief items made
+when two members start a pack's brief at once, and the weather asked an hour off across a change of daylight saving; each web first. **Owner steps:** deploy Gotenberg on the VM (AGENTS.md §9 has the command line) and set `GOTENBERG_URL`; check Mapbox's
+terms for printed figures before the PDF ships; tick *Mission brief* for testers in the admin dashboard.
+
+**Local setup left on the Mac:** `frontend/.env` (gitignored) points at a backend on **port 5055**, because macOS's AirPlay receiver holds 5000; run the
+backend with `cd backend && venv/bin/python -m flask --app app run --port 5055` (add `GOTENBERG_URL=http://127.0.0.1:3091` and
+`docker run --rm -p 3091:3000 gotenberg/gotenberg:8.21.1 gotenberg --chromium-disable-javascript=true` for the PDF). A test account
+`brief.check@local.ezpz.test` (admin) is in the local SQLite database; its password is not recorded in the repo: make another with `dev_user.py` if needed.
 
 ---
 
@@ -40,6 +274,80 @@ DEMs and as Roborazzi pictures on Android; neither on a device. **Next:** the ow
 
 The server must reach staging (`develop`) before a device shows any of it: until then every analysis has no `byHeading`, and the apps say
 HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".
+
+---
+
+## 0b. The 3D LZ view (2026-10-20)
+
+Branch `claude/android-3d-view-e38b76` (from `develop` at `85a54cd`), committed locally, not pushed. **The plan is `docs/ANDROID_3D_PLAN.md`**: the steps V0–V7
+and the owner's decisions (a native OpenGL ES renderer of our own, the whole screen with the system bars left see-through, the title `3D · NAME`). What each
+piece holds and the rules it keeps are AGENTS.md §17, *The 3D view*.
+
+**Done**, each step reviewed independently (V7 by the three final reviews) and its findings fixed with tests: V0 (the six routes the app calls, in `contracts/openapi.yaml` with recorded
+responses; the web's fixtures for the build flow, the route scene, the compass and the terrain's tiling; a small tileset py3dtiles itself made, by a script),
+V3 (`core-scene3d`: the earth's frame held to PROJ, the tileset and `.pnts` readers, the camera, Cesium's choice of tiles) and V1 (the calls with every read
+bounded, `LidarBuilds` held to the build-flow fixture scenario by scenario, build on save from the LZ/PZ panel, the watcher kept on the device so the next
+launch lets go of what the last one waited on, and a live-server test of the LiDAR routes and the build service's queue), and V2 (the full-screen page in every
+state, over both frames, closing back to the map as it was, with *3D* on the LZ/PZ panel's card, its plan page and each other open or pack LZ/PZ; its review's
+findings fixed after: Back and a keyboard's focus kept in the page across a frame made again under it, its lookup let go when the map leaves, a failure said to a
+screen reader at once, and 3D asked for during a slow open withdrawn by a close), V4 (the point cloud drawn: OpenGL ES 3.0 with Cesium's attenuation and
+eye-dome lighting, the fingers as Cesium's touch controls, *LZ*, the compass and the point size; its review's findings fixed after: a still camera over the
+point budget refetching for ever, the wrong tiles let go of when many went at once, the ground the fingers hold to sitting in the trees, points too small on a
+dense screen, the tilt's rate and the flights' easing, a GL view being replaced taking the new one's frames, and a screen reader's way to move the camera), and V5 (the ground under it: Cesium's quadtree over the
+server's heightmaps, none where the server has none, with Mapbox's satellite imagery laid on as Cesium lays it), and V6 (the routes the map shows, at their
+planned MSL with their curtains, drop lines, dots and labels as the web's, and *Routes* to frame them; its review's findings fixed after: the heights asked
+again after a failure that may pass, *Routes* saying why it has nothing to frame, the labels bounded and painted a few a frame, on Cesium's curve with distance,
+red at night and at the person's text size, the dash's angle quantized as Cesium's, the colours read as Cesium reads them, and the framing held to Cesium's
+own sphere), and V7 (the 2D map stopped while 3D covers it, the point clouds' files kept on the device for a week and cleared at sign-out, and what is not drawn
+let go of in the back). **The three final reviews** (parity with the web and Cesium, lifecycle and concurrency, the screens) found nothing severe; their findings
+were fixed with tests: an activity made again (a font size, a keyboard) no longer closes the view and drops an unsaved build; MapLibre is stopped, not paused,
+under the page (its pause did nothing); the GPU copies trimmed in the back are freed before the GL thread pauses; a pinch no longer snaps a far camera in to
+30 km; Mapbox is credited; the terrain fetches only the children in view, as Cesium's; one live region that stays says each state; the keyboard's focus goes
+round the page; the scene's side edges pan rather than go Back; the toasts and the foot keep clear of the controls; the steps are said; and smaller ones (an
+uncoloured `.pnts` in Cesium's grey, the tileset count read once, the cache's empty folders, an `Error` on the GL and fetch threads). **Not verifiable here:**
+that opening 3D in touch mode drops the keyboard of a field left focused under it (Robolectric runs in keyboard mode, where the page takes the focus itself),
+and anything GL draws. **The owner's decisions after the reviews** (2026-10-20): the opening view, *LZ* and *Routes* frame their sphere across the narrower side
+of the view, so a phone held upright no longer cuts an LZ's sides off (the web first, `framing.js`, held to `scene.json`'s `framing`, then Android,
+`SceneLook.framingRange`; a view at least as wide as tall is framed as before, 2.2 radii back); and Android's view closes when the open LZ/PZ changes under it,
+on purpose unlike the web's window, which follows the active LZ.
+
+**The first device run** (2026-10-21, a staging build on the owner's Galaxy Tab Active5, Mali, and Galaxy S948U, Adreno on Android 17): the build service
+built the point cloud in 4 to 6 minutes and a second open drew at once, but the view said *3D view failed* ("This device could not set up the 3D view")
+on both the moment the cloud came. Android's GL binding refused the routes' upload (`glBufferData`: `remaining() < size < needed`): an LZ/PZ with no
+routes had empty buffers sized by their capacity, and the routes' fault was taken as the scene's. Fixed: every buffer goes up sized by what it holds
+(`BufferData`), a route fault costs the routes on that context, a bitmap the binding refuses costs its tile or label, and every call in from the GL
+thread is guarded. Robolectric's GL had checked nothing, so the renderer's whole sequence of calls now runs in a JVM test against shadows that refuse
+what the binding refuses (`SceneRendererTest`, `GlBinding`); with the old sizing every scene there fails as the devices did. **Not done**, the
+owner's call since the app logs nothing: in debug builds, logging the exceptions the renderer swallows (this one took a diagnostic build to see).
+**Next:** device run 1 again on a staging build, then the other runs (below), and the question for the owner.
+
+**Owner device run 1** (V4): open a built LZ/PZ's *3D* on a phone and the same LZ in the web's 3D window, and compare screenshots from the same view (*LZ* on
+both): the points' size and density as the camera comes in, the outlines the eye-dome lighting draws, the background. Then try one finger, a pinch, a twist
+and two fingers up and down, *LZ* and the compass; the point size at 2 and 16; the app sent to the back and brought again (the cloud should come back at once,
+nothing fetched again); a phone held upright (*LZ* should hold the whole LZ across the screen with a margin, as the web now does in a window narrower than
+tall) and turned; airplane mode while the tiles come (the preview stays, the rest come once the signal does). Say what differs.
+
+**Owner device run 2** (V5): the same LZ: the points should sit on the ground (the shared geoid correction), the imagery should line up with the points'
+own colours, and the ground should end where the DEMs do (nothing drawn past them, where the web shows a flat plain). If the imagery never comes, the
+Mapbox token may be URL-restricted and refusing a native app (AGENTS.md §8): the ground is then a plain dark grey-green.
+
+**Owner device run 3** (V6): an LZ/PZ with a route open on the map: the route at its planned MSL, its curtain meeting the ground, the drop lines and the
+labels (name, MSL, AGL measured; amber where the AGL is more than 50 ft off the plan's) matching the route's plan; a leg through trees dashed across them;
+*Routes* framing them; a route hidden on the map not drawn; and the same in the web's 3D window beside it.
+
+**Owner device run 4** (V7): Android Studio's profiler with an LZ/PZ open in 3D for a while (turning, zooming, *LZ*, *Routes*): memory under 600 MB, the frame
+rate, and nothing growing without end; the app sent to the back and brought again (the view as it was, and the GPU's memory down while it was in the back); the
+map under it after closing 3D (where it was, no flash: MapLibre is now stopped while covered, so this is where a lost context would show); an LZ/PZ opened in 3D
+a second time with no signal (it should come from the device); the system font size changed with 3D open on an unsaved LZ/PZ that is building (the build goes
+on, the view as it was).
+
+**Owner device run 5** (the final reviews): with TalkBack, open 3D and hear each state as it comes (looking up, building, failed), the scene's steps and where
+each leaves the camera, and *Routes* with no routes; with a keyboard, Tab round the page; at night, the routes' labels and dots red; a pan from the scene's left
+or right edge (it should pan, not close the view); a phone on its side at the largest text (the notice of no terrain clear of the compass).
+
+**For the owner** (AGENTS.md §15): the server's heightmap samples sit half a cell from where Cesium draws them; a tileset's key can be turned back into its
+place; the web shows a failed build's raw text, with the place in it; and the web's 3D view shows Cesium's daylight sky and fog where Android's (and the
+plan's) is dark.
 
 ---
 
@@ -162,6 +470,8 @@ HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".
 
 ## 2. Next work, in order
 
+(The mission brief has its own next steps: §0a.)
+
 0. **Two devices in one pack again**, after the settings audit: what only a device run shows is the live stream end to end, a drag and its pointer on the real map, and
    the clock form and the unit builder with someone else's change arriving while they are open. Then the owner's calls in AGENTS.md §15 (an aircraft's own airframe
    on other devices, two clocks, the web's partial values and forms, which want the web first).
@@ -193,7 +503,7 @@ HEADING REQUIRED at 15° and "Heading limits not checked (server not updated)".
 7. **Route hand-off**: **GPX and Garmin FPL built** (a route shared from its card; AGENTS.md §17, *Sharing a route with another app*). Not built: an ATAK data package (a zip with a
    manifest) or KML/KMZ, and threats to ATAK; both want the owner's say on what ATAK crews expect. **Dragging on the map is built** (a long press picks up a graphic, a threat or a route
    point; a tap holds it and shows the bar with the turn buttons); boundary corners are not draggable yet. The admin-attached AMPS template (`resolveExportTemplate`) is not built.
-8. **Later phases** (plan): P3 offline map packs / on-device viewshed / the remaining exports; P4 the 3D view. The online terrain mask is built (the held
+8. **Later phases** (plan): P3 offline map packs / on-device viewshed / the remaining exports; P4 the 3D view (under way: §0b, `docs/ANDROID_3D_PLAN.md`). The online terrain mask is built (the held
    threat's *Show terrain mask*; AGENTS.md §17, *The terrain mask*); KMZ and QR calls exist on the backend but **no Android call is made**. The owner approved a transient send *only when the person
    explicitly asks* and the server must not retain it; an offline viewshed is not built.
 9. **When the initial build is done: the dev environment / device login session** the owner asked for (§4).
@@ -303,8 +613,22 @@ another (a deliberate difference from the web, which drops them); refused edits 
 is not open; `feature_disabled`, `affiliation_required` and an ended session pause the queue rather than drop it. Also approved and
 done: the five web session fixes, the `taken` field, and the role re-read under the lock on every pack write route.
 
+**Made on 2026-10-16, for the mission brief** (`docs/MISSION_BRIEF.md` §9): the formats' item lists and standard values are releasable; a finished
+pack's brief is a pack item that stays open to change, and every member (viewers too) may brief; the PDF is rendered on the server by Gotenberg;
+light data is our own sun and moon code; Android is tablet size and up only for now; every flow role (PZ, LZ, FARP, holding area, laager, false
+insertion); only the presenter's map moves in the sandtable; the weather at planned times (`/api/weather?at=`); strip charts are in. And on
+2026-10-19: Skyfield as the light fixtures' reference.
+
+**Made on 2026-10-24, for versions** (AGENTS.md §1, §6, §12): the web and the backend share the product's version, which goes to
+2.0 with the next release; Android has its own, 0.x until the store (`ezpz.versionName`, now 0.1.0), and iOS will start at 0.x; the
+API has its own (`contracts/openapi.yaml`, 1.0.0), and each client build lists the API majors it supports. A breaking change to the spec
+fails CI until its major moves. **Owner step:** Android's version dropped from the product's 1.7.x to 0.1.0, so a
+`MIN_APP_VERSION_ANDROID` set on staging or production to a 1.x value would now lock every build out ("Update required"): unset it, or
+set it to an Android version.
+
 **Still open:**
 
+- **Gotenberg** on the VM and `GOTENBERG_URL` (the brief's PDF); Mapbox's terms for printed figures.
 - **`applicationId`** — permanent once published; release builds are refused until `-Pezpz.applicationId=<id>` is passed.
 - **Mapbox token** — if it is URL-restricted, a native app (no web referrer) may be refused; give the apps their own via
   `MAPBOX_PUBLIC_TOKEN`.
@@ -324,14 +648,16 @@ done: the five web session fixes, the `taken` field, and the role re-read under 
 
 Full list in AGENTS.md; the ones that matter most for a fresh agent:
 
-- **Unclassified only.** Threats are never synced or persisted server-side; on the device they live in memory plus a sealed
-  no-backup file for at most 48 h after the last change, wiped at sign-out. **The only Android threat network call is the terrain mask, made
+- **Unclassified only.** The mission brief's handbook is CUI-marked: never commit it or send it to a service; the templates carry its item lists
+  and standard values in the app's own words, by the owner's leave (2026-10-16). Threats are never synced or persisted server-side; on the device they
+  live in memory plus a sealed no-backup file, wiped at sign-out. **The only Android threat network call is the terrain mask, made
   when the person presses its button**: do not add another, or make this one on its own, without the person asking for it.
 - **Agents do not deploy.** Never push `main`, run `fly deploy`, or trigger production. No new major dependency without asking.
 - **The web is the reference; `contracts/` fixtures are the contract.** Never hand-edit a fixture; change the web (or backend)
   first, regenerate, review the diff, then follow in the clients.
 - **Commits:** Conventional Commits, lowercase subject, scoped (`feat(android): …`, `test(contracts): …`); app commits do not
-  bump the web version. Each ends with the attribution trailers the session provides. Update `AGENTS.md` in the same commit.
+  bump the web version. Commits and PRs carry no Claude co-author trailer and no "Generated with" line (the owner's call,
+  2026-10-24). Update `AGENTS.md` in the same commit.
 - **Codex may be working this checkout in parallel.** A file that changed under you is probably their work: re-read, never revert
   what you did not write.
 - **Never invent a value for "no data"**; refuse, or show the app's own words. A server's internals (a Python exception) are

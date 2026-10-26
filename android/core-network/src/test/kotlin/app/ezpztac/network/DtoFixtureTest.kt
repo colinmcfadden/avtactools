@@ -7,6 +7,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DynamicTest
@@ -44,11 +47,19 @@ class DtoFixtureTest {
         "weather: no station and no NOTAMs" to WeatherReportDto.serializer(),
         "weather: both services down" to WeatherReportDto.serializer(),
         "weather: the NOTAM search fails" to WeatherReportDto.serializer(),
+        // The weather at a planned time (`weatherAt`): kept whole as JSON, which is how the brief's compiler reads it (docs/MISSION_BRIEF.md §2.5).
+        "weather: at a planned time, from the TAF" to JsonObject.serializer(),
+        "weather: at a time no TAF covers, the observation" to JsonObject.serializer(),
         "pointset: create" to PointSetSummary.serializer(),
         "pointset: create again with the same identity" to PointSetSummary.serializer(),
         "pointset: list" to ListSerializer(PointSetSummary.serializer()),
         "pointset: get" to PointSetFull.serializer(),
         "pointset: update" to PointSetSummary.serializer(),
+        "brief: create" to BriefSummary.serializer(),
+        "brief: create again with the same identity" to BriefSummary.serializer(),
+        "brief: list" to ListSerializer(BriefSummary.serializer()),
+        "brief: get" to BriefFull.serializer(),
+        "brief: update" to BriefSummary.serializer(),
         "aircraft: list with no profiles of my own" to ListSerializer(AircraftProfileDto.serializer()),
         "aircraft: create" to AircraftProfileDto.serializer(),
         "aircraft: list" to ListSerializer(AircraftProfileDto.serializer()),
@@ -78,6 +89,7 @@ class DtoFixtureTest {
         "route-winds: no station answers" to WindsResponse.serializer(),
         "sync: changes" to ChangeFeed.serializer(),
         "sync: nothing new" to ChangeFeed.serializer(),
+        "sync: changes, with a brief" to ChangeFeed.serializer(),
         // Mission packs, teams, invitations and finding people
         "packs" to PacksBody.serializer(),
         "pack: create" to Pack.serializer(),
@@ -94,6 +106,7 @@ class DtoFixtureTest {
         "ops: make an LZ, a route set and a point set" to PackOpsResult.serializer(),
         "ops: edits, one skipped, with the events after base_seq" to PackOpsResult.serializer(),
         "ops: the same batch again, answered from the log" to PackOpsResult.serializer(),
+        "ops: a brief in a finished pack" to PackOpsResult.serializer(),
         "events: a page" to PackEventPage.serializer(),
         "events: the rest" to PackEventPage.serializer(),
         "seen" to PackSeenDto.serializer(),
@@ -130,7 +143,26 @@ class DtoFixtureTest {
         "team invites" to InvitesBody.serializer(),
         "users: search" to UsersBody.serializer(),
         "users: search finds only teammates" to UsersBody.serializer(),
+        "lidar: resolve, nothing built here" to LidarResolveDto.serializer(),
+        "lidar: resolve, built" to LidarResolveDto.serializer(),
+        "lidar: resolve, on a server that cannot build" to LidarResolveDto.serializer(),
+        "lidar: build" to LidarBuildDto.serializer(),
+        "lidar: build, asked for again" to LidarBuildDto.serializer(),
+        "lidar: build of a saved LZ/PZ, nobody waiting" to LidarBuildDto.serializer(),
+        "lidar: build, built already" to LidarBuildDto.serializer(),
+        "lidar: progress, queued" to LidarBuildDto.serializer(),
+        "lidar: progress, queued behind another" to LidarBuildDto.serializer(),
+        "lidar: a build under way" to LidarBuildDto.serializer(),
+        "lidar: progress, done" to LidarBuildDto.serializer(),
+        "lidar: progress, failed" to LidarBuildDto.serializer(),
+        "lidar: release" to LidarBuildDto.serializer(),
+        "lidar: progress, dropped once nobody waited" to LidarBuildDto.serializer(),
+        "terrain: heights" to TerrainHeightsDto.serializer(),
+        "terrain: heights, no points" to TerrainHeightsDto.serializer(),
     )
+
+    /** Documents a format reader reads, not records: a tileset's `tileset.json` is 3D Tiles, whose reader passes over what it does not know. */
+    private val documents = setOf("lidar: the tileset's root", "lidar: the ring's root")
 
     @TestFactory
     fun `every successful response decodes strictly`(): List<DynamicTest> =
@@ -147,11 +179,34 @@ class DtoFixtureTest {
     @Test
     fun `no successful response is left without a type`() {
         val uncovered = Recorded.all
-            .filter { it.status in 200..202 && it.body != null && it.name !in decoders }
+            // A binary body (a heightmap, a tile) is recorded as null with its bytes beside it: not a record either.
+            .filter { it.status in 200..202 && it.body != null && it.body !is JsonNull && it.name !in decoders }
             .map { it.name }
             // Bodies that are a status word only, not a record.
-            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in documents }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
+    }
+
+    @Test
+    fun `the weather at a planned time carries what the brief reads of it`() {
+        // Kept whole as JSON, so no type notices a field renamed: what core-brief's compile reads of a report (the station, its words, whether it is a forecast,
+        // the wind, the altimeter and the NOTAMs) is held to what the server answers here.
+        listOf("weather: at a planned time, from the TAF" to "forecast", "weather: at a time no TAF covers, the observation" to "observation").forEach { (name, kind) ->
+            val report = Json.parseToJsonElement(Recorded.text(name)).jsonObject
+            fun number(key: String) = (report[key] as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull
+            assertEquals(JsonPrimitive(kind), report["kind"], name)
+            assertTrue((report["station_id"] as? JsonPrimitive)?.isString == true, name)
+            assertTrue(listOf("raw_taf", "raw_metar").any { (report[it] as? JsonPrimitive)?.isString == true }, name)
+            assertTrue(number("wind_spd_kts") != null && number("wind_dir") != null && number("pressure") != null, name)
+            assertTrue(report["notams"] is JsonObject, name)
+        }
+    }
+
+    @Test
+    fun `a pack's item counts take briefs, and a server that does not count them says none`() {
+        assertEquals(PackItemCounts(1, 2, 0, 0), strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0}"""))
+        assertEquals(3, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "brief": 3}""").brief)
     }
 
     @Test

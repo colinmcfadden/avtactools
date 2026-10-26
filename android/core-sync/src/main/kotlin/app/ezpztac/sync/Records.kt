@@ -6,9 +6,10 @@ import kotlinx.serialization.json.JsonObject
  * The kinds of saved record that sync. A [ROUTE] record is a *set* of sketched routes under one name (the server's `kind: sketch` saved route). A
  * [POINT_SET] record is the points of one `.LPS` import; its document is `{"points": [...]}`, the server's list of points in an object so it is held
  * like every other record's document. A [MISSION] record is an imported AMPS mission (the server's `kind: mission` saved route): **its file is the document**
- * ([LocalRecord.file]), and the record's own `data` is only the display summary the server keeps beside it.
+ * ([LocalRecord.file]), and the record's own `data` is only the display summary the server keeps beside it. A [BRIEF] record is a mission brief kept in the
+ * Library (docs/MISSION_BRIEF.md §3): its document is the brief document, the person's answers (`/api/briefs`, which needs the `mission_brief` entitlement).
  */
-public enum class RecordKind { LZ, AIRCRAFT, ROUTE, POINT_SET, MISSION }
+public enum class RecordKind { LZ, AIRCRAFT, ROUTE, POINT_SET, MISSION, BRIEF }
 
 /**
  * A file a record carries beside its document: an AMPS mission's `.msnx`. [id] is the SHA-256 of the file's bytes, so a file is kept once and can never change under

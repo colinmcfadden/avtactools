@@ -132,6 +132,36 @@ class RouteSceneTest {
         assertEquals(1.5, v[1].jsonPrimitive.content.toDouble(), 0.0)
     }
 
+    // -- What each named point is drawn as (the owner's rule of 2026-10-21, the web's icons) --------------------------------------
+
+    private fun typed(id: String, ptType: String?, name: String) = RoutePoint(id = id, lat = 34.0 + id.length / 100.0, lon = -84.0, kind = RoutePoint.KIND_AMPS, ptType = ptType, name = name)
+
+    @Test
+    fun `an RP or SP is a square, a target a triangle, a checkpoint a circle, and a type this version does not know a circle`() {
+        val route = route(
+            "t", "#0A84FF", true, typed("tgt", "target", ".TGT"), typed("sp", "ip", ".SP"), typed("cp", "turn", ".CP1"), typed("rp", "ip", ".RP"),
+            typed("odd", "RtePtSTTO", ".X"), typed("none", null, ".Y"), shaping("s1", 34.3, -84.3),
+        )
+        val pins = RouteScene.of(set(route), selectedRouteId = "t").routes.single().pins
+        assertEquals(
+            listOf(PinShape.TRIANGLE, PinShape.SQUARE, PinShape.CIRCLE, PinShape.SQUARE, PinShape.CIRCLE, PinShape.CIRCLE),
+            pins.filter { it.amps }.map { it.shape },
+        )
+        assertEquals(listOf("triangle", "square", "circle", "square", "circle", "circle"), features(RouteScene.of(set(route))).filter { role(it) == "pin" }.map { prop(it, "shape").content })
+    }
+
+    @Test
+    fun `each named point names its picture by shape, colour and whether it is held, and a shaping point stays a dot`() {
+        val route = route("t", "#0A84FF", true, typed("tgt", "target", ".TGT"), typed("rp", "ip", ".RP"), shaping("s1", 34.3, -84.3))
+        val f = features(RouteScene.of(set(route), selectedRouteId = "t", selectedPointId = "rp"))
+        val icons = f.filter { role(it) == "pin" }.map { prop(it, "icon").content }
+        assertEquals(listOf("route-pin-triangle-plain-_0a84ff", "route-pin-square-held-_0a84ff"), icons)
+        assertEquals(1, f.count { role(it) == "shape" })
+        assertTrue(f.single { role(it) == "shape" }.getValue("properties").jsonObject["icon"] == null)
+        // Whatever a colour is written as, it names one picture of letters, digits and underscores.
+        assertEquals("route-pin-circle-plain-rgb_255__0__0_", RouteScene.pinImage(PinShape.CIRCLE, "rgb(255, 0, 0)", held = false))
+    }
+
     @Test
     fun `a point with no id is never the held one, even when no point is held`() {
         val nameless = route("n", "#FFD60A", true, RoutePoint(lat = 1.0, lon = 2.0, kind = RoutePoint.KIND_AMPS, name = "A"), RoutePoint(lat = 1.1, lon = 2.1, kind = RoutePoint.KIND_AMPS, name = "B"))

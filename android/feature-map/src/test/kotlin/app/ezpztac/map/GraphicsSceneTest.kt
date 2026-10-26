@@ -88,6 +88,22 @@ class GraphicsSceneTest {
         assertEquals("generic", scene.aircraft.single().iconKey)
     }
 
+    @Test
+    fun `an aircraft's name is its label, without the spaces round it, and it has none when that is blank, missing or not text`() {
+        val scene = sceneOf(
+            DiagramGraphics(
+                helicopters = listOf(
+                    JsonObject(helo(1, 34.5, -84.1) + ("label" to JsonPrimitive(" CHALK 1 "))),
+                    JsonObject(helo(2, 34.51, -84.1) + ("label" to JsonPrimitive("  "))),
+                    helo(3, 34.52, -84.1),
+                    JsonObject(helo(4, 34.53, -84.1) + ("label" to JsonNull)),
+                    JsonObject(helo(5, 34.54, -84.1) + ("label" to JsonPrimitive(7))),
+                ),
+            ),
+        )
+        assertEquals(listOf("CHALK 1", null, null, null, null), scene.aircraft.map { it.name })
+    }
+
     // -- Separation ------------------------------------------------------------------------------------------------------
 
     @Test

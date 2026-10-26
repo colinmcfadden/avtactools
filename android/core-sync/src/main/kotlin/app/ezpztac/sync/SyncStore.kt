@@ -22,6 +22,13 @@ public interface SyncStore {
 public interface RecordFeed {
     /** The records of [kind] that are not deleted, in the order the store holds them, emitted again whenever any of them changes. */
     public fun observe(kind: RecordKind): Flow<List<LocalRecord>>
+
+    /**
+     * The records of [kind] named in [uuids] that are not deleted, in the order the store holds them, emitted again whenever any of them changes: a few
+     * documents followed without reading the rest. A store that can read only those rows does (Room's); this one reads them all and keeps those.
+     */
+    public fun observe(kind: RecordKind, uuids: Set<String>): Flow<List<LocalRecord>> =
+        observe(kind).map { records -> records.filter { it.uuid in uuids } }.distinctUntilChanged()
 }
 
 public interface SyncTransaction {

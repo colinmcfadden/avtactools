@@ -93,6 +93,10 @@ public data class AppConfig(
     val maintenance: Maintenance,
     val services: Services,
     val mapbox: MapboxConfig,
+    /** The API the server serves now (`contracts/openapi.yaml`'s `info.version`); absent from a server older than it, which serves API 1. */
+    val apiVersion: String? = null,
+    /** Every API major the server still answers; absent from a server older than the field. */
+    val apiMajors: List<Int>? = null,
 ) {
     @Serializable public data class MinAppVersion(val android: String? = null, val ios: String? = null)
     @Serializable public data class Maintenance(val active: Boolean, val message: String? = null)
@@ -200,6 +204,29 @@ public data class PointSetFull(
     val revision: Int,
     /** The points as the web keeps them (`{ id, name, description, group, icon, elevationFt, lat, lon }`). Opaque here; `core-model` reads them. */
     val points: JsonArray,
+)
+
+/** A saved mission brief without its document (docs/MISSION_BRIEF.md §3): the Library's record of a brief made outside a pack. */
+@Serializable
+public data class BriefSummary(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class BriefFull(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** The brief document (docs/MISSION_BRIEF.md §2.2). Opaque here; `core-brief` reads it. */
+    val data: JsonObject,
 )
 
 /** An airframe profile: the admin's master list, or one of the caller's own. */

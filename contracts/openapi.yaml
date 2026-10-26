@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EZ/PZ API (the parts the native apps call)
-  version: 0.1.0
+  version: 1.0.0
   description: |
     The contract between the Flask API and the web and native clients. It holds
     the routes the apps call, one at a time as each arrives; a route missing from
@@ -9,9 +9,17 @@ info:
     fails when a response stops matching, so a server change that would break an
     installed app shows up as a test failure first.
 
-    Store builds stay in the field for months. Changes here are additive: a new
-    optional field, a new route. Removing or retyping a field breaks apps that
-    cannot be updated, and needs `configVersion` bumped and `minAppVersion` raised.
+    `version` above is the **API version**, apart from the product's and each app's.
+    Its major is the promise to installed apps, which stay in the field for months:
+    within one major nothing they read or send stops working. Additive changes (a
+    new route, an optional field) bump the minor. A breaking one (a field removed,
+    retyped or made nullable, a new required input, an enum widened in a response)
+    bumps the major: `contracts/scripts/api_version.py check` compares this file with
+    the branch it merges into and fails until it does, and `bump` writes the version
+    the change calls for. `backend/api_version.py` must agree, and lists the majors
+    the server still serves; `/api/config` sends them, and each client build lists
+    the majors it supports (`ezpz.apiMajors` in `android/gradle.properties`,
+    `frontend/src/apiSupport.json`).
 
     Every route is under `/api`. The base URL is the deployment's (the same host
     the web app uses); it is not part of the spec.
@@ -923,6 +931,204 @@ paths:
         "409":
           $ref: "#/components/responses/PointSetConflict"
 
+  /api/briefs:
+    get:
+      operationId: listBriefs
+      summary: The caller's saved mission briefs (summaries, without deleted ones)
+      description: |
+        A brief kept in the Library, outside a mission pack (docs/MISSION_BRIEF.md §3). Every `/api/briefs` route needs
+        the `mission_brief` entitlement and answers 403 `feature_disabled` without it; a create or an edit needs
+        `cloud_save` too.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BriefSummary"
+    post:
+      operationId: createBrief
+      summary: Save a mission brief
+      description: |
+        As `POST /api/lz`: send `client_uuid`, a UUID the device chose, so a retry after a lost response returns the
+        first record (200) instead of making a second (201). `data` is the brief document; the server does not look
+        inside it.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, data]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { description: "The brief document (docs/MISSION_BRIEF.md §2.2).", type: object }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/briefs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getBrief
+      summary: One saved mission brief, with its document
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateBrief
+      summary: Edit a saved mission brief
+      description: |
+        As `PUT /api/lz/{id}`: send `If-Match: "<revision>"`; a server that has moved on overwrites nothing and answers
+        409 with its copy. Without `If-Match` the last writer wins. A retry with the same `Idempotency-Key` is answered,
+        not refused. Only what is sent changes.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { type: object }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry, which answers the whole record).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/BriefConflict"
+    delete:
+      operationId: deleteBrief
+      summary: Delete a saved mission brief
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion through `/api/sync/changes`.
+        Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/BriefConflict"
+
+  /api/brief/pdf:
+    post:
+      operationId: printBrief
+      summary: Print a mission brief as a PDF
+      description: |
+        The brief the client compiled (compileBrief's model: docs/MISSION_BRIEF.md §2.3) laid out as pages and printed
+        by Gotenberg on the server (§2.7): its figures drawn from the model's geometry over the base map
+        `options.figureMap` names, on the paper `options.paper` names. Its strip charts (`model.strips`, each with the MGRS
+        grid the client adds as `grid`) are drawn turned course up on the map `options.stripMap` names; a strip that is
+        not the printed 5.5 by 21.5 cm at its scale, or will not draw, is left out. Nothing is kept: neither the model nor
+        the PDF.
+        Needs `mission_brief`. A heavy request: other work on the server waits for it.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: { description: "The compiled brief (format ezpz-brief-model).", type: object }
+      responses:
+        "200":
+          description: The PDF, as an attachment.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "400":
+          description: "`invalid_brief`: the body is not a brief model."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "403":
+          description: "`feature_disabled`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "413":
+          description: "`too_large`: more than 4 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "502":
+          description: "`pdf_failed`: Gotenberg did not print it."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "503":
+          description: "`pdf_unavailable`: this server has no Gotenberg (`GOTENBERG_URL`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
   /api/weather:
     get:
       operationId: weather
@@ -931,6 +1137,12 @@ paths:
         Looks up the nearest METAR within a degree or so of the position and the FAA NOTAMs within 10 nm. The services behind it are other people's, so
         the answer is **always 200** with what could be had: when no station answers, `station_id` is `TIMEOUT`, the numbers are null and `pressure` is
         `"--"`; when the NOTAM search is down, `notams` is a sentence instead of an object. A caller shows both without treating them as errors.
+
+        With `at`, a planned time (a brief's, docs/MISSION_BRIEF.md §2.5), the answer is for then: a time more than 30 minutes ahead is answered
+        from the nearest TAF with a period covering it (`kind: "forecast"`, its station in `station_id`, the period in `valid_from` and
+        `valid_to`, and no temperature, dew point or METAR, which a TAF does not give); a time sooner, in the past, or that no TAF nearby covers,
+        from the latest METAR as without `at` (`kind: "observation"`, with the report's time in `observed`). The NOTAMs are those in force now
+        either way. Without `at` the answer is exactly as it always was, with none of these fields.
       security:
         - bearer: []
       parameters:
@@ -942,6 +1154,11 @@ paths:
           in: query
           required: true
           schema: { type: number }
+        - name: at
+          in: query
+          required: false
+          description: An ISO 8601 time, e.g. `2026-10-16T14:30:00Z`; one without an offset is UTC. Anything else is 400 `invalid_at`.
+          schema: { type: string, maxLength: 40 }
       responses:
         "200":
           description: The report.
@@ -1304,6 +1521,275 @@ paths:
         "500":
           $ref: "#/components/responses/SimpleError"
 
+  # -- The 3D LZ view (docs/ANDROID_3D_PLAN.md) -------------------------------------------
+  # Coordinates only ever travel in POST bodies. A build's progress and a tileset's files are
+  # addressed by an opaque key, so where an LZ is never lands in a URL or a request log.
+
+  /api/lidar/resolve:
+    post:
+      operationId: lidarResolve
+      summary: The point cloud that covers a place, and whether it is built
+      description: |
+        The key of a built tileset whose area holds the place (nearest centre first), else the key a
+        build of it would have. Built: `available` is true, `url` is the tileset's root and `contextUrl`
+        a thinned ring round it (null when none was built). Both are relative to the API's root, as
+        `/lidar/tilesets/<key>/tileset.json`: the app puts its own base in front (the web's base ends in
+        `/api`, so these must not repeat it). Not built: `available` is false, `canBuild` says whether
+        `POST /api/lidar/build` can do anything on this server, and `target` echoes the caller's own
+        place, so a client can say what to build. `radius_m` is 50 to 2,000 (default 500).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LidarTarget"
+      responses:
+        "200":
+          description: The key, and the tileset's place when it is built.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarResolve"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/build:
+    post:
+      operationId: lidarBuild
+      summary: Ask for a point cloud to be built
+      description: |
+        Idempotent: asking again while a build is queued or running answers that build, and a place
+        already built answers 200 with `state: done` and the tileset's place (as `resolve` gives it).
+        Otherwise the build service queues it and the answer is 202 with the job. `watcher` is an
+        opaque id of whoever waits (`^[A-Za-z0-9_-]{8,64}$`; anything else is dropped): the service
+        drops a build nobody has asked after for 90 s, unless `keep` (a saved LZ/PZ) asks it to finish
+        regardless. Builds someone is watching run first. `radius_m` is 50 to 1,000 here. Without a
+        build service: 503 `builder_not_configured`; the service unreachable: 503 `builder_unavailable`;
+        its queue full: 429 `builder_busy`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+                radius_m: { type: number, minimum: 50, maximum: 1000 }
+                keep: { type: boolean, description: "Finish the build even once nobody waits for it." }
+                watcher: { type: string }
+      responses:
+        "200":
+          description: The place is built already.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "202":
+          description: The build, queued or under way.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "429":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/build/{key}:
+    get:
+      operationId: lidarBuildStatus
+      summary: How a build is going
+      description: |
+        Asking counts as still waiting for it (polled every 3 s while someone waits). `keep=1` marks it
+        to be finished regardless, as when the LZ/PZ was saved while it built. A build the service has
+        no record of is 404 `no_build` (a restarted service forgets its queue: ask for the build again).
+        Done: `state: done` with the tileset's place.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - $ref: "#/components/parameters/LidarWatcher"
+        - name: keep
+          in: query
+          required: false
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          description: The build.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+    delete:
+      operationId: lidarBuildRelease
+      summary: Stop waiting for a build
+      description: |
+        The service drops the build if nobody else is waiting and it was not kept. A build the service
+        never had, or a server without a build service, answers 204. Nothing to read in a 200 that the
+        app needs: it is sent when the view closes and its answer is not waited for.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - $ref: "#/components/parameters/LidarWatcher"
+      responses:
+        "200":
+          description: The build as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "204":
+          description: Nothing to release.
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/tilesets/{key}/{file}:
+    get:
+      operationId: lidarTilesetFile
+      summary: One file of a tileset, its root or one of its tiles
+      description: |
+        A 3D Tiles 1.0 tileset as py3dtiles 12.1.1 writes it, unchanged (backend/lidar/tiles.py): the
+        root `tileset.json`, and `.pnts` tiles (`POSITION` float32 and `RGB` uint8, in the tile's frame:
+        each tile's `transform`, translation then scale, composed down from the root). `file` is a path
+        inside the tileset and may hold slashes (`points/r0.pnts`, `context/tileset.json`); a tile's
+        `content.uri` is relative to the tileset.json that names it. A file that is not there is 404
+        (Flask's own page, not JSON). Private and cached a week: a key's content never changes.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - name: file
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: "private, max-age=604800" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tileset"
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          description: No such tileset (`{error}`), or no such file in it (Flask's own page, not JSON).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleError"
+
+  /api/terrain/heightmap/{level}/{x}/{y}:
+    get:
+      operationId: terrainHeightmap
+      summary: The ground of one terrain tile, from the local DEMs
+      description: |
+        65 × 65 heights in metres above the WGS84 ellipsoid (the geoid separation added, as the LiDAR's
+        is), little-endian Int16, rows from north to south and each row west to east: 8,450 bytes. The
+        tiling is Cesium's geographic one: two tiles at level 0, each 180° wide, quartered at every
+        level; tile `x` counts from 180° W, `y` from 90° N. A tile no DEM reaches answers 204: no data,
+        never sea level. Levels above 22 are refused.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - { name: level, in: path, required: true, schema: { type: integer, minimum: 0, maximum: 22 } }
+        - { name: x, in: path, required: true, schema: { type: integer, minimum: 0 } }
+        - { name: y, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: The heights.
+          headers:
+            X-Terrain-Samples:
+              schema: { type: string, example: "65" }
+            Cache-Control:
+              schema: { type: string, example: "private, max-age=604800" }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "204":
+          description: No DEM reaches this tile.
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/terrain/heights:
+    post:
+      operationId: terrainHeights
+      summary: Ground and geoid at points, for placing a route in 3D
+      description: |
+        For each point in the order sent: `groundM`, the ground in metres above the ellipsoid from the
+        same DEMs and correction as the heightmap tiles (null where no DEM covers it, never made up),
+        and `geoidM`, the geoid separation there, which turns an MSL height into one above the
+        ellipsoid (`mslFt × 0.3048 + geoidM`). Not `/api/elevations`, which feeds the route planner and
+        the AMPS export. At most 5,000 points. Never cached: it says where someone means to fly.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points:
+                  type: array
+                  items:
+                    type: object
+                    required: [lat, lon]
+                    properties:
+                      lat: { type: number }
+                      lon: { type: number }
+      responses:
+        "200":
+          description: Heights, one of each for every point.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groundM, geoidM]
+                properties:
+                  groundM:
+                    type: array
+                    items: { type: number, nullable: true }
+                  geoidM:
+                    type: array
+                    items: { type: number }
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
   # -- Mission packs (docs/MISSION_PACKS.md) ---------------------------------------------
   # Every pack route needs the `mission_packs` entitlement (403 `feature_disabled` without it)
   # and is never cached. A pack the caller is not in is a 404, so its existence is not revealed.
@@ -1534,7 +2020,7 @@ paths:
       summary: Apply a batch of edits, in order, each numbered and logged
       description: |
         Each operation is applied, or logged as `skipped` when what it edits is gone or in the
-        way; the rules are `contracts/fixtures/packs/ops.json`. Each carries a `client_op_id`
+        way; the rules are `contracts/fixtures/packs/ops.json` (and `ops-brief.json`). Each carries a `client_op_id`
         (printable ASCII, 64 at most): one the pack has seen is answered from the log and not
         applied again, so a batch whose answer was lost is safe to send again. A malformed
         operation refuses the whole batch (400 `invalid_op`, with `index` and `reason`) before
@@ -1543,7 +2029,10 @@ paths:
         With `base_seq`, `events` is everything after it (up to 500; `has_more` says there is
         more), so the client can rebase its unconfirmed edits; without it, just this batch's.
         Viewers get 403 `pack_read_only`; a finished pack 423 `pack_finished`; an item that
-        would pass 5 MB 413 `item_too_large`.
+        would pass 5 MB 413 `item_too_large`. The exception is a batch whose every operation is
+        on a `brief` item (one stored as a brief, or made as one earlier in the batch): briefing
+        is open to every member, viewers included, in every state of the pack. A batch with any
+        other operation in it is refused whole, so send brief edits in batches of their own.
 
         Those three refusals always carry `taken` (a server from before it sent none: read that
         as none): the operations of this batch the pack's log already has, the caller's own, in
@@ -2333,6 +2822,23 @@ components:
         maxLength: 64
         pattern: '^(android|ios|web)/\d{1,4}\.\d{1,4}\.\d{1,4}(-[0-9A-Za-z.]{1,20})?( \(\d{1,9}\))?$'
 
+    LidarKey:
+      name: key
+      in: path
+      required: true
+      description: A tileset's or a build's opaque key, as `resolve` and `build` give it; anything else is 400.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{16}$'
+
+    LidarWatcher:
+      name: watcher
+      in: query
+      required: false
+      description: The waiter's opaque id, as sent with the build (`^[A-Za-z0-9_-]{8,64}$`; anything else is dropped).
+      schema:
+        type: string
+
     IfMatch:
       name: If-Match
       in: header
@@ -2481,6 +2987,23 @@ components:
               server:
                 $ref: "#/components/schemas/PointSetFull"
 
+    BriefConflict:
+      description: |
+        The brief changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/BriefFull"
+
     AircraftConflict:
       description: |
         The profile changed on the server since the revision the edit was based on.
@@ -2518,6 +3041,97 @@ components:
             $ref: "#/components/schemas/PackError"
 
   schemas:
+    LidarTarget:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+        radius_m: { type: number, minimum: 50, maximum: 2000 }
+
+    LidarResolve:
+      type: object
+      required: [key, available, url, contextUrl]
+      properties:
+        key: { type: string, pattern: '^[0-9a-f]{16}$' }
+        available: { type: boolean }
+        url: { type: string, nullable: true, description: "The tileset's root, relative to the API's root; null when it is not built." }
+        contextUrl: { type: string, nullable: true, description: "The thinned ring round it, relative to the API's root; null when none was built." }
+        canBuild: { type: boolean, description: "Not built only: whether this server can build it." }
+        target:
+          description: "Not built only: the caller's own place, echoed."
+          type: object
+          required: [lat, lon, radius_m]
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            radius_m: { type: number }
+
+    LidarBuild:
+      type: object
+      description: |
+        A build as the service reports it, or a place already built (`state: done` with the tileset's
+        place, and no `stage`). `state` is `queued`, `running`, `done`, `failed` or `cancelled` (dropped
+        because nobody waited); `stage` a word for what it is doing (`waiting`, `starting`, `locating
+        survey`, `processing points`, `building tiles`, `building context`, `done`, `cancelled`; a new
+        one may come, so show what is not known as it is); `position` how many builds are ahead of a
+        queued one; `elapsed_s` how long a started one has run; `error` why one failed.
+      required: [key, state]
+      properties:
+        key: { type: string, pattern: '^[0-9a-f]{16}$' }
+        state: { type: string }
+        stage: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        position: { type: integer, nullable: true }
+        elapsed_s: { type: integer, nullable: true }
+        available: { type: boolean }
+        url: { type: string, nullable: true }
+        contextUrl: { type: string, nullable: true }
+
+    Tileset:
+      type: object
+      description: |
+        The parts of a 3D Tiles 1.0 tileset.json the apps read (the format is the Open Geospatial
+        Consortium's; this is py3dtiles's use of it). Anything else in it is passed over.
+      required: [asset, geometricError, root]
+      properties:
+        asset:
+          type: object
+          required: [version]
+          properties:
+            version: { type: string }
+        geometricError: { type: number }
+        root:
+          $ref: "#/components/schemas/Tile"
+
+    Tile:
+      type: object
+      description: |
+        `transform` is a column-major 4 × 4 matrix from this tile's frame to its parent's (the root's to
+        WGS84 geocentric metres). `refine` is `ADD` (drawn with its children) or `REPLACE` (drawn until
+        they are); a tile without one refines as its parent does. A `content.uri` ending in `.json` is
+        a tileset of its own.
+      required: [boundingVolume, geometricError]
+      properties:
+        boundingVolume:
+          type: object
+          properties:
+            box: { type: array, items: { type: number }, description: "Centre, then the three half-axes, in the tile's frame." }
+            sphere: { type: array, items: { type: number } }
+            region: { type: array, items: { type: number } }
+        geometricError: { type: number }
+        refine: { type: string, enum: [ADD, REPLACE] }
+        transform: { type: array, items: { type: number } }
+        content:
+          type: object
+          required: [uri]
+          properties:
+            uri: { type: string }
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tile"
+
     PointWind:
       type: object
       required: [dirTrue, speedKts, variable, station, source, distanceMiles]
@@ -2537,7 +3151,7 @@ components:
         error: { type: string }
         code:
           type: string
-          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`"
+          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`"
 
     Error:
       type: object
@@ -2703,6 +3317,29 @@ components:
         revision: { type: integer, minimum: 1 }
         points: { type: array, items: { type: object } }
 
+    BriefSummary:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    BriefFull:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision, data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        data: { type: object, description: "The brief document (docs/MISSION_BRIEF.md §2.2)." }
+
     WeatherReport:
       type: object
       required: [station_id, name, temp_c, dewp_c, wind_spd_kts, wind_dir, wind_gust_kts, vis_sm, pressure, flight_category, raw_metar, distance_miles, notams]
@@ -2716,9 +3353,16 @@ components:
         wind_gust_kts: { type: number, nullable: true }
         vis_sm: { nullable: true, description: "Statute miles: a number, or text such as `10+`; null with no report." }
         pressure: { description: "Altimeter in inches of mercury, a number rounded to hundredths, or the text `--` when there is none." }
-        flight_category: { type: string, nullable: true, description: "VFR, MVFR, IFR or LIFR." }
+        flight_category: { type: string, nullable: true, description: "VFR, MVFR, IFR or LIFR. A forecast's is worked out from its ceiling and visibility, null when it gives either not." }
         raw_metar: { type: string, nullable: true }
         distance_miles: { type: number, description: "How far the station is from the position, in statute miles; 0 when none answered." }
+        kind: { type: string, enum: [observation, forecast], description: "Only when `at` was sent: what the answer is for that time." }
+        at: { type: string, description: "Only with `at`: the time asked for, as UTC (`2026-10-16T14:30:00Z`)." }
+        observed: { type: string, nullable: true, description: "An observation for `at` only: when the METAR was taken (UTC); null when no station answered." }
+        raw_taf: { type: string, nullable: true, description: "A forecast only: the TAF's text." }
+        issued: { type: string, nullable: true, description: "A forecast only: when the TAF was issued (UTC)." }
+        valid_from: { type: string, nullable: true, description: "A forecast only: the start of the period covering `at` (UTC)." }
+        valid_to: { type: string, nullable: true, description: "A forecast only: the end of that period (UTC)." }
         notams:
           description: |
             An object of lists of NOTAM text by the feature they are about (`{"Obstruction": ["…"]}`, or `{"Clear": ["No active NOTAMs in LZ area."]}` when
@@ -2810,12 +3454,13 @@ components:
       type: object
       required: [type, id, client_uuid, revision, deleted, name, seq, data]
       description: |
-        One changed record. `type` says which collection: `lz`, `route`, `pointset` or
-        `aircraft` (the caller's own profiles; the master list does not sync).
+        One changed record. `type` says which collection: `lz`, `route`, `pointset`,
+        `aircraft` (the caller's own profiles; the master list does not sync) or `brief`.
+        A device passes over a `type` it does not know, which a newer server may add.
         A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
         has `kind`, `file_name` and `has_file`; fetch the mission file separately.
       properties:
-        type: { type: string, enum: [lz, route, pointset, aircraft] }
+        type: { type: string, enum: [lz, route, pointset, aircraft, brief] }
         id: { type: integer }
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
@@ -2827,7 +3472,7 @@ components:
         kind: { type: string, description: "Routes only: `sketch` or `mission`." }
         file_name: { type: string, nullable: true }
         has_file: { type: boolean }
-        data: { description: "lz_data, route_data, the points or the profile, per `type`." }
+        data: { description: "lz_data, route_data, the points, the profile or the brief document, per `type`." }
 
     ChangeFeed:
       type: object
@@ -2844,7 +3489,7 @@ components:
     Config:
       type: object
       additionalProperties: false
-      required: [configVersion, serverVersion, minAppVersion, maintenance, services, mapbox]
+      required: [configVersion, serverVersion, apiVersion, apiMajors, minAppVersion, maintenance, services, mapbox]
       properties:
         configVersion:
           type: integer
@@ -2852,7 +3497,21 @@ components:
           description: Bumped when the shape changes in a way an old app cannot read.
         serverVersion:
           type: string
-          description: The backend's semantic version.
+          description: The backend's semantic version (the product's, shared with the web).
+        apiVersion:
+          type: string
+          pattern: '^\d{1,4}\.\d{1,4}\.\d{1,4}$'
+          description: |
+            This spec's `info.version`: the API the server serves now. A server from before
+            it was sent serves API 1.
+        apiMajors:
+          type: array
+          minItems: 1
+          items: { type: integer, minimum: 1 }
+          description: |
+            Every API major the server still answers: the current one, and any kept for apps
+            not yet updated. An app that supports none of them is told to update (or, when
+            the server is the older one, waits for it).
         minAppVersion:
           type: object
           additionalProperties: false
@@ -3288,7 +3947,7 @@ components:
       required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
       properties:
         uuid: { type: string }
-        kind: { type: string, enum: [lz, route, pointset] }
+        kind: { type: string, enum: [lz, route, pointset, brief] }
         name: { type: string }
         revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
         seq: { type: integer, minimum: 0, description: The event that last changed it. }
@@ -3444,7 +4103,7 @@ components:
       additionalProperties: false
       required: [kind, id, client_uuid, name, revision]
       properties:
-        kind: { type: string, enum: [lz, route, pointset] }
+        kind: { type: string, enum: [lz, route, pointset, brief] }
         id: { type: integer }
         client_uuid: { type: string }
         name: { type: string }

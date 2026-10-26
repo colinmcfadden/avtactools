@@ -1,18 +1,17 @@
 import com.android.build.api.dsl.ApplicationExtension
 
-// The app module. Version name comes from the product's version, which semantic-release writes to
-// frontend/package.json; the build number is the CI run number, so every CI build is a distinct upload to a store.
+// The app module. Version name is the Android app's own (ezpz.versionName in android/gradle.properties: 0.x until the
+// store, bumped by hand at each store release), apart from the product's in frontend/package.json; the build number is the
+// CI run number, so every CI build is a distinct upload to a store.
 
 plugins {
     id("com.android.application")
     id("ezpz.android-common")
 }
 
-val productVersion: String = run {
-    val manifest = rootProject.layout.projectDirectory.file("../frontend/package.json").asFile
-    Regex("\"version\"\\s*:\\s*\"([^\"]+)\"").find(manifest.readText())?.groupValues?.get(1)
-        ?: error("no \"version\" in ${manifest.path}")
-}
+val appVersion: String = providers.gradleProperty("ezpz.versionName").orNull
+    ?.takeIf { Regex("""^\d{1,4}\.\d{1,4}\.\d{1,4}$""").matches(it) }
+    ?: error("android/gradle.properties needs ezpz.versionName=X.Y.Z")
 
 // The applicationId is permanent once an app is on Play, and the owner has not chosen it (AGENTS.md §17). A
 // development build gets a clearly temporary one; a release build refuses to be made without a deliberate choice.
@@ -25,7 +24,7 @@ extensions.configure<ApplicationExtension> {
         applicationId = chosenApplicationId.orElse(placeholderApplicationId).get()
         minSdk = 29
         targetSdk = 36
-        versionName = productVersion
+        versionName = appVersion
         versionCode = providers.environmentVariable("GITHUB_RUN_NUMBER").map { it.toInt() }.orElse(1).get()
     }
     compileOptions {

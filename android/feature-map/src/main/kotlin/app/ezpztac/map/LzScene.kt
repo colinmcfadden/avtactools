@@ -84,8 +84,16 @@ data class LzScene(
     val locked: Boolean = false,
     /** The corner of the boundary the person is holding (to delete it), if one is: drawn larger, in amber. */
     val heldCorner: BoundaryCornerRef? = null,
+    /**
+     * Whether the analysis boundary is drawn: the diagram's own view (`view.showLZOutline`, the web's *LZ Box*). Hidden, it is still the diagram's, measured
+     * and saved as ever; a boundary drawn by hand and one being drawn are drawn all the same, as on the web.
+     */
+    val boundaryShown: Boolean = true,
 ) {
     val isEmpty: Boolean get() = target == null && boundary.isEmpty() && drawn.isEmpty() && slope == null && graphics.isEmpty && draft.isEmpty()
+
+    /** Whether the analysis boundary's corners are drawn, and can be held: with its outline, or while one of them is held (the person is working on it). */
+    val boundaryCornersShown: Boolean get() = boundaryShown || heldCorner?.drawn == false
 
     /**
      * The vector part as GeoJSON, for the map's source. Coordinates are `[longitude, latitude]`, as GeoJSON has them (the diagram stores
@@ -94,13 +102,13 @@ data class LzScene(
     fun geoJson(): String = buildJsonObject {
         put("type", "FeatureCollection")
         putJsonArray("features") {
-            if (boundary.size >= 3) add(feature("boundary", polygon(boundary)))
+            if (boundary.size >= 3 && boundaryShown) add(feature("boundary", polygon(boundary)))
             when {
                 drawn.size >= 3 -> add(feature("drawn", polygon(drawn)))
                 drawn.size == 2 -> add(feature("drawn", line(drawn)))
             }
             // A dot at each corner of a boundary that is a polygon, so a corner can be seen and held; the held one is marked.
-            if (boundary.size >= 3) boundary.forEachIndexed { i, p -> add(feature("corner", point(p), "held" to JsonPrimitive(heldCorner == BoundaryCornerRef(false, i)))) }
+            if (boundary.size >= 3 && boundaryCornersShown) boundary.forEachIndexed { i, p -> add(feature("corner", point(p), "held" to JsonPrimitive(heldCorner == BoundaryCornerRef(false, i)))) }
             if (drawn.size >= 3) drawn.forEachIndexed { i, p -> add(feature("corner", point(p), "held" to JsonPrimitive(heldCorner == BoundaryCornerRef(true, i)))) }
             if (draft.size >= 2) add(feature("drawn", line(draft)))
             draft.forEach { add(feature("vertex", point(it))) }
@@ -119,13 +127,10 @@ data class LzScene(
                 add(feature("ga", point(ga.at), "icon" to JsonPrimitive(if (ga.direction == "right") "ga-right" else "ga-left"), "rotation" to JsonPrimitive(ga.rotationDeg)))
             }
             graphics.aircraft.forEach { a ->
-                // The rotor is what is to scale, and the picture is wider than it (the tail, and room round the mast): this many metres across on the ground.
-                val pictureM = a.diameterM * AircraftIcons.frame(a.iconKey).widthPerRotorDiameter
-                val k0 = pictureM / (METERS_PER_POINT_AT_ZOOM_0 * cos(Math.toRadians(a.at.lat))) / AIRCRAFT_ICON_PT
                 add(
                     feature(
                         "heli", point(a.at),
-                        "icon" to JsonPrimitive(aircraftImage(a.iconKey, a.violating)), "rotation" to JsonPrimitive(a.rotationDeg), "k0" to JsonPrimitive(k0),
+                        "icon" to JsonPrimitive(aircraftImage(a.iconKey, a.violating)), "rotation" to JsonPrimitive(a.rotationDeg), "k0" to JsonPrimitive(aircraftK0(a)),
                         "selected" to JsonPrimitive(a.selected),
                     ),
                 )
@@ -176,8 +181,18 @@ data class LzScene(
         fun aircraftImage(iconKey: String, violating: Boolean): String = "ac-$iconKey-${if (violating) "violation" else "normal"}"
 
         /**
+         * How large [a]'s picture is drawn at zoom 0, as a share of its [AIRCRAFT_ICON_PT] points: the rotor is what is to scale, and the picture is wider than it
+         * (the tail, and room round the mast), this many metres across on the ground.
+         */
+        internal fun aircraftK0(a: SceneAircraft): Double {
+            val pictureM = a.diameterM * AircraftIcons.frame(a.iconKey).widthPerRotorDiameter
+            return pictureM / (METERS_PER_POINT_AT_ZOOM_0 * cos(Math.toRadians(a.at.lat))) / AIRCRAFT_ICON_PT
+        }
+
+        /**
          * The scene of [diagram] (nothing for none), with [slope] if it has been measured. [profiles] and [active] say what each placed
-         * aircraft is, [selected] is the graphic the person is holding, and [draft] the points of a boundary being drawn.
+         * aircraft is, [selected] is the graphic the person is holding, and [draft] the points of a boundary being drawn. Its analysis boundary is
+         * drawn as its view says ([boundaryShown]).
          */
         fun of(
             diagram: Diagram?,
@@ -199,6 +214,7 @@ data class LzScene(
                 draft = draft,
                 heldCorner = heldCorner,
                 locked = locked,
+                boundaryShown = diagram.view.showLZOutline,
             )
         }
     }

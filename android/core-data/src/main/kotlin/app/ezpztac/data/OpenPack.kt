@@ -79,7 +79,8 @@ interface OpenPack {
 
 /**
  * The open pack is read-only (finished by its owner, or this person a viewer in it), and why, in words for each place that says it: nothing in it may be changed, so
- * the editors offer nothing that would change one of its items, and refuse what is asked anyway with [reason] (P2c, docs/ANDROID_SCREENS_PLAN.md).
+ * the editors offer nothing that would change one of its items, and refuse what is asked anyway with [reason] (P2c, docs/ANDROID_SCREENS_PLAN.md). Its briefs are
+ * the exception ([briefs]): a brief is open to every member in every state of the pack (docs/MISSION_BRIEF.md §3), and nothing else is.
  */
 data class PackLock(
     val pack: String,
@@ -89,6 +90,8 @@ data class PackLock(
     /** A tool's line where it is off: "Off in a finished pack" (the design's), "Off: you can view this pack, not change it". */
     val short: String,
     val finished: Boolean,
+    /** The pack's brief items, which the lock lets through. */
+    val briefs: Set<String> = emptySet(),
 ) {
     /** What was under way when it turned read-only is said to have stopped after this: "OP DK was finished", "You can only view OP DK now". */
     val stopped: String get() = if (finished) "$name was finished" else "You can only view $name now"
@@ -96,8 +99,8 @@ data class PackLock(
     /** A plan's line under its title: "Read-only · OP DK is finished" (the design's), "Read-only · you can view OP DK". */
     val pane: String get() = if (finished) "Read-only · $name is finished" else "Read-only · you can view $name"
 
-    /** Why [documentId] cannot be changed: it is an item of this pack. Null for the person's own, or another pack's. */
-    fun reasonFor(documentId: String?): String? = reason.takeIf { documentId != null && PackRef.parse(documentId)?.pack == pack }
+    /** Why [documentId] cannot be changed: it is an item of this pack. Null for the person's own, another pack's, and this pack's briefs. */
+    fun reasonFor(documentId: String?): String? = reason.takeIf { PackRef.parse(documentId)?.let { it.pack == pack && it.item !in briefs } == true }
 
     companion object {
         /** The lock of [state], or null while its pack can be changed (or before the device holds it, when nothing is known: edits wait then, never lost). */
@@ -111,6 +114,7 @@ data class PackLock(
                 reason = if (finished) "$name is finished: nothing in it can be changed." else "You can view $name but not change it.",
                 short = if (finished) "Off in a finished pack" else "Off: you can view this pack, not change it",
                 finished = finished,
+                briefs = state.items.filter { it.kind == "brief" }.mapTo(HashSet()) { it.uuid },
             )
         }
     }
