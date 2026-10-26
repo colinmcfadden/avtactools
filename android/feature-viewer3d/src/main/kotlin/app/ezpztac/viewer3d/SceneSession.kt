@@ -227,6 +227,9 @@ class SceneSession(
     @Volatile internal var routeLook: RouteLook = RouteLook()
         private set
 
+    /** Whether this is a streamed survey (it came with `resolve`'s `frame`), whose points' colour is credited to NAIP. */
+    val streamed: Boolean get() = lzFrame != null
+
     /** Whether the ground has Mapbox's imagery laid on it, which the view credits (as the web's Cesium does, and Mapbox's terms ask). */
     val hasImagery: Boolean get() = imageryTiles != null && decoder != null
 

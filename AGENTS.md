@@ -2661,6 +2661,8 @@ client is built around not losing one:
     shown of a streamed answer (`LidarLookup.streamed`, `frame`) included; a streamed survey's scene opens, and *LZ* flies, on `frame`
     (`lzSphere`, the web's: a sphere of its radius at its ground height in the scene's frame, the core's own sphere where it has no height),
     never on the root's sphere, which is a state. A save asks `resolve` with `stream` before a build, and builds nothing where the place streams.
+    A streamed survey's points are credited at the scene's foot under Mapbox's ("Point colour: USDA NAIP, from USGS The National Map",
+    `Viewer3DWords.NAIP_CREDIT`), as the web's view credits them: the server lays NAIP on them in the background (backend `lidar/photo.py`).
   - **One watcher per install, and what it waited on is kept** (`LidarWaitingPreferences`: `android-` and 24 URL-safe characters, made once; the keys being waited on,
     16 hex each). A lookup let go of (the view closed, its scope cancelled, *Retry*) releases its build at once; the next launch releases what the last one was
     waiting on before its first lookup asks (waiting at most 3 s), as the web's `releaseAbandonedBuilds` does at a page's load. A saved LZ/PZ's build is `keep`,
