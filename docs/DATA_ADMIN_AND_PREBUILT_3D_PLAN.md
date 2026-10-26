@@ -7,8 +7,7 @@ for the admin map) and D13 (several AOs per organization). **2026-10-26:** Phase
 the owner's answers of that day: existing tilesets keep their old keys (no rename), the streamed `resolve` and its
 `frame` go only to a client that asks for them in the request (so an installed app that frames on the root sphere keeps
 the build flow), and tests build a tiny octree themselves, with a live AWS test behind an environment variable and no
-USGS data committed. **Phase 1 built for the backend and the web the same day** (*Phase 1 as built*, below); Android's half
-is next.
+USGS data committed. **Phase 1 built for the backend, the web and Android the same day** (*Phase 1 as built*, below).
 
 The request, in the owner's words: an admin page with a CONUS map showing where the server holds terrain and LiDAR
 itself (not what comes from outside services); drag-and-drop uploads into the server's volumes; areas chosen on the
@@ -548,7 +547,8 @@ LZ's own 1 km square at every depth (168 pieces, 52 MB) in 10–13 s; the whole 
 pieces, 147 MB) in 18–21 s; a build of the same LZ 137 s. Warm, it all comes off the disk at once.
 
 **Left, in order:**
-1. Android: send `stream`, frame on `frame` (`SceneSession`, *LZ*), held to `contracts/fixtures/viewer3d/lidarFlowStream.json`.
+1. ~~Android: send `stream`, frame on `frame` (`SceneSession`, *LZ*), held to `contracts/fixtures/viewer3d/lidarFlowStream.json`.~~
+   Built the same day (`feat/android-lidar-streaming`); a device run is the owner's.
 2. The owner: set `LIDAR_STREAM_CACHE_DIR` on staging, open 3D somewhere new and time it (the VM's link to AWS is unmeasured).
 3. Weigh the landscape's cost (147 MB for a wide view; §15 of AGENTS.md): a coarser error far off, Cesium's dynamic
    screen-space error, or more API threads, before phones stream.
