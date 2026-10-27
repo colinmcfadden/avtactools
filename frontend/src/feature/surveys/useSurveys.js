@@ -76,6 +76,8 @@ export const IMPORT_POLL_MS = 5000;
 export const PRINT_POLL_MS = 3000;
 
 const NO_PRINT = { status: "idle", print: null, error: null };
+// A 3D capture is a few megabytes of PNG: past this its upload is given up, and the window says so, rather than waiting for ever.
+const CAPTURE_UPLOAD_MS = 120000;
 
 export const useSurveys = ({ client = surveyApi } = {}) => {
   const [books, setBooks] = useState({ status: "idle", books: [], teams: [], canMakeForNoTeam: false, error: null });
@@ -667,12 +669,12 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
 
   /** Keeps a frame of the 3D window as the survey's 3D view, with the camera that took it: it takes the place of the last, as the
    * server keeps it. */
-  const captureView = useCallback(async (blob, pose) => {
+  const captureView = useCallback(async (blob, pose, { signal } = {}) => {
     const uuid = surveyRef.current.uuid;
     const file = new File([blob], "view-3d.png", { type: "image/png" });
     const { survey: moved, ...asset } = await client.uploadAsset(uuid, file, {
       kind: "view_3d", caption: "", heading_deg: pose.headingDeg, taken_on: capturedOn(), pose: JSON.stringify(pose),
-    });
+    }, { signal, timeout: CAPTURE_UPLOAD_MS });
     withAssets(uuid, (assets) => [...assets.filter((a) => a.kind !== "view_3d"), asset], moved);
     return asset;
   }, [client, withAssets]);

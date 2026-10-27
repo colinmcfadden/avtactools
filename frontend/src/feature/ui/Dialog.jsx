@@ -44,9 +44,11 @@ const Dialog = ({
   }, []);
 
   const onKeyDown = (event) => {
-    if (event.key === "Escape" && dismissible) {
+    if (event.key === "Escape") {
+      // Never past this dialog, whether or not it closes: React carries a key from a dialog over another (a 3D capture over the survey
+      // book) up to the one under it, which would close in its place.
       event.stopPropagation();
-      onClose?.();
+      if (dismissible) onClose?.();
       return;
     }
     if (event.key !== "Tab") return;

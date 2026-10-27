@@ -1,4 +1,4 @@
-import React, { useCallback, useId, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Dialog, { ConfirmDialog } from "../ui/Dialog";
 import Icon from "../ui/Icon";
 import { useToast } from "../ui/Toast";
@@ -22,9 +22,10 @@ export const surveyWords = (survey) =>
     ? `${survey.name}${survey.year && !String(survey.name).includes(String(survey.year)) ? ` (${survey.year})` : ""}`
     : null;
 
-const captionWords = (capture) => {
+/** A capture as the editor lists it: "Looking 090° true · 27 OCT 2026 · LiDAR GA_Statewide_B3_2018" (north is 360, as on the page). */
+export const captionWords = (capture) => {
   const parts = [];
-  if (Number.isFinite(capture.heading_deg)) parts.push(`Looking ${String(Math.round(capture.heading_deg) % 360).padStart(3, "0")}° true`);
+  if (Number.isFinite(capture.heading_deg)) parts.push(`Looking ${String(Math.round(capture.heading_deg) % 360 || 360).padStart(3, "0")}° true`);
   if (capture.taken_on) parts.push(capture.taken_on);
   const survey = surveyWords(capture.pose?.survey);
   if (survey) parts.push(`LiDAR ${survey}`);
@@ -38,34 +39,58 @@ const LOOKING = {
   missing: "This server cannot build the point cloud here.",
 };
 
+/** Why a capture was not kept, in words: the server's, where it came that far; the frame's own otherwise, never "no connection". */
+export const captureFailure = (error) => {
+  if (error?.isAxiosError || error?.response || error?.request) return surveyFailure(error, "The 3D view could not be kept.");
+  return typeof error?.message === "string" && error.message.startsWith("The 3D view")
+    ? error.message
+    : "The 3D view could not be captured: close it and open it again.";
+};
+
 /** The 3D window for a capture: the LZ's point cloud, opened down the best approach, and Capture. */
 export const CaptureDialog = ({ target, approach, survey, onKeep, onClose }) => {
-  const { state, url, contextUrl, frame, error, refresh } = useLidarTileset({ lat: target?.lat, lon: target?.lon, stream: true });
+  const { state, url, contextUrl, frame, streamed, error, refresh } = useLidarTileset({ lat: target?.lat, lon: target?.lon, stream: true });
   const view = useMemo(() => approachView(approach), [approach]);
   const scene = useRef(null);
-  const [ready, setReady] = useState(false);
+  const urlRef = useRef(url);
+  urlRef.current = url;
+  const [readyFor, setReadyFor] = useState(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState(null);
-  // Stable: the viewer is built again whenever it changes.
+  const working = useRef(null);
+  // Stable: the viewer is built again whenever it changes. Ready for the tileset it was built on, so a viewer gone (the target moved,
+  // the point cloud lost) leaves Capture off until the next one is.
   const onReady = useCallback((parts) => {
     scene.current = parts;
-    setReady(true);
+    setReadyFor(urlRef.current);
   }, []);
+  const ready = state === "available" && readyFor === url;
+
+  // Closing the window (Cancel, Escape, the target gone) gives up a capture under way: its frame is not kept, nor its upload finished.
+  useEffect(() => () => working.current?.abort(), []);
 
   const capture = async () => {
     const parts = scene.current;
     if (!parts) return;
+    const controller = new AbortController();
+    working.current = controller;
     setBusy(true);
     setProblem(null);
     try {
-      const blob = await captureFrame(parts.viewer);
-      const centre = lzSphere(parts.Cesium, parts.tileset, frame).center;
-      await onKeep(blob, { ...poseOf(parts.Cesium, parts.viewer.camera, centre), survey: survey ?? null });
+      const { viewer, tileset, Cesium } = parts;
+      // From the LZ's middle where the server says where it is; a streamed survey's own sphere is a whole state, too far to say.
+      const framed = frame && [frame.lat, frame.lon, frame.height_m, frame.radius_m].every(Number.isFinite);
+      const centre = framed || !streamed ? lzSphere(Cesium, tileset, frame).center : null;
+      const { blob, pose } = await captureFrame(viewer, { readPose: () => poseOf(Cesium, viewer.camera, centre) });
+      if (controller.signal.aborted) return;
+      // The survey the window shows is the one the snapshot's obstacles were read from only where both are streamed for the place.
+      await onKeep(blob, { ...pose, survey: streamed ? survey ?? null : null }, { signal: controller.signal });
     } catch (err) {
-      setProblem(err?.name === "SecurityError"
-        ? "The browser would not let the view be read (its imagery came without leave to). Close the window and try again."
-        : surveyFailure(err, "The 3D view could not be kept."));
+      if (controller.signal.aborted) return;
+      setProblem(captureFailure(err));
       setBusy(false);
+    } finally {
+      if (working.current === controller) working.current = null;
     }
   };
 
@@ -75,11 +100,10 @@ export const CaptureDialog = ({ target, approach, survey, onKeep, onClose }) => 
       subtitle={view ? `Opens looking down the best approach, ${String(view.headingDeg).padStart(3, "0")}°` : "The survey has no best approach: it opens as the 3D view does"}
       icon="box"
       width="xwide"
-      onClose={busy ? undefined : onClose}
-      dismissible={!busy}
+      onClose={onClose}
       footer={(
         <>
-          <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onClose}>Cancel</button>
           <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={capture} disabled={!ready || busy}>
             <Icon name="image" size={14} />
             {busy ? "Keeping…" : "Capture"}
@@ -122,8 +146,8 @@ const Survey3D = ({ assets = [], target, approach, survey, readOnly = false, onC
   const [removing, setRemoving] = useState(false);
   const capture = assets.filter((a) => a.kind === "view_3d").reduce((newest, a) => (!newest || a.id > newest.id ? a : newest), null);
 
-  const keep = async (blob, pose) => {
-    await onCapture(blob, pose);
+  const keep = async (blob, pose, options) => {
+    await onCapture(blob, pose, options);
     setOpen(false);
     show({ message: "3D view kept: the page prints it." });
   };

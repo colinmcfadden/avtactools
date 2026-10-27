@@ -8,12 +8,19 @@ import { headingOf } from "./surveyDiagram";
  * Pure but for the scene and the canvas it is handed, so it is tested without WebGL.
  */
 
+// The page's 3D box is 3.79 × 2.10 in (backend/survey/templates/survey_style.css's .view3d, which crops a picture of another shape to
+// fill it): the capture is that shape, so the page prints all of what the admin framed, and the capture window shows the same shape.
 export const CAPTURE_WIDTH = 1600;
-export const CAPTURE_HEIGHT = 1000;
+export const CAPTURE_HEIGHT = 887;
 // Down at 20°: lower than the 3D view's own opening look (35°), nearer the way the LZ is seen on the approach, high enough to see in.
 export const APPROACH_PITCH_DEG = -20;
 // The most the frame is drawn finer than its window to reach the capture's width.
 const MAX_FINER = 4;
+// How long a capture waits for its frame, its finer tiles included: a scene whose drawing stopped (a lost WebGL context, a render
+// error) draws none, and the capture would otherwise wait for ever.
+export const CAPTURE_WAIT_MS = 15000;
+// Of that, how long it waits for the finer tiles before it takes the frame as it is.
+export const TILES_WAIT_MS = 8000;
 
 /** The view down the best approach: the camera facing the way the aircraft flies in. Null where the survey has no best approach. */
 export const approachView = (approachText) => {
@@ -34,30 +41,63 @@ export const poseOf = (Cesium, camera, centre) => ({
 export const capturedOn = (when = new Date()) =>
   `${when.getDate()} ${["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"][when.getMonth()]} ${when.getFullYear()}`;
 
+/** What of the scene chooses its detail by screen-space error: its 3D tilesets and its globe, each saying whether it has its tiles. */
+const detailed = (scene) => {
+  const parts = [];
+  for (let i = 0; i < (scene.primitives?.length ?? 0); i += 1) {
+    const primitive = scene.primitives.get(i);
+    if (primitive && typeof primitive.maximumScreenSpaceError === "number" && "tilesLoaded" in primitive) parts.push(primitive);
+  }
+  if (scene.globe && typeof scene.globe.maximumScreenSpaceError === "number") parts.push(scene.globe);
+  return parts;
+};
+
 /**
- * One frame of the scene as a PNG at the capture's size: the middle of the view, cut to its shape. Drawn finer than the window where
- * the window is narrower than the capture (so it is never a small frame stretched), then the window's own resolution is put back. Read
- * as soon as it is drawn, in the frame's own postRender. Rejects with what went wrong: a browser that will not let a canvas be read
- * (imagery without leave to) throws a SecurityError.
+ * One frame of the scene as a PNG at the capture's size, the middle of the view cut to its shape, with what ``readPose`` says of the
+ * camera as that very frame was drawn: { blob, pose }. Drawn finer than the window where the window is narrower than the capture, and
+ * with the detail to match: Cesium judges a tile by its error over the pixel ratio, so a finer frame alone draws the window's tiles
+ * larger. Their error is lowered by as much while the capture waits (``tilesWaitMs`` at most) for the finer tiles to come, then the
+ * window's resolution and detail are put back. Rejects with what went wrong, a frame that never came (``waitMs``) included.
  */
-export const captureFrame = (viewer, { width = CAPTURE_WIDTH, height = CAPTURE_HEIGHT, makeCanvas } = {}) =>
+export const captureFrame = (viewer, {
+  width = CAPTURE_WIDTH, height = CAPTURE_HEIGHT, makeCanvas, readPose, waitMs = CAPTURE_WAIT_MS, tilesWaitMs = TILES_WAIT_MS,
+  now = () => Date.now(), later = (fn, ms) => setTimeout(fn, ms),
+} = {}) =>
   new Promise((resolve, reject) => {
     const { scene } = viewer;
     const before = viewer.resolutionScale;
-    const finer = width / Math.max(1, scene.canvas.width);
+    const finer = Math.min(width / Math.max(1, scene.canvas.width), MAX_FINER);
+    const parts = finer > 1 ? detailed(scene) : [];
+    const errors = parts.map((part) => part.maximumScreenSpaceError);
     if (finer > 1) {
-      viewer.resolutionScale = before * Math.min(finer, MAX_FINER);
+      viewer.resolutionScale = before * finer;
       viewer.resize?.();
+      parts.forEach((part) => { part.maximumScreenSpaceError /= finer; });
     }
-    const putBack = () => {
+    const started = now();
+    let done = false;
+    let stop = () => {};
+    const finish = (error, value) => {
+      if (done) return;
+      done = true;
+      stop();
+      parts.forEach((part, i) => { part.maximumScreenSpaceError = errors[i]; });
       if (viewer.resolutionScale !== before) {
         viewer.resolutionScale = before;
         viewer.resize?.();
       }
+      if (error) reject(error);
+      else resolve(value);
     };
-    const stop = scene.postRender.addEventListener(() => {
-      stop();
+    later(() => finish(new Error("The 3D view drew no frame to capture: close it and open it again.")), waitMs);
+    stop = scene.postRender.addEventListener(() => {
+      if (done) return;
+      if (parts.some((part) => !part.tilesLoaded) && now() - started < tilesWaitMs) {
+        later(() => { if (!done) scene.requestRender(); }, 100);
+        return;
+      }
       try {
+        const pose = readPose ? readPose() : null;
         const out = makeCanvas ? makeCanvas() : document.createElement("canvas");
         out.width = width;
         out.height = height;
@@ -66,11 +106,10 @@ export const captureFrame = (viewer, { width = CAPTURE_WIDTH, height = CAPTURE_H
         const cutW = width / scale;
         const cutH = height / scale;
         out.getContext("2d").drawImage(source, (source.width - cutW) / 2, (source.height - cutH) / 2, cutW, cutH, 0, 0, width, height);
-        putBack();
-        out.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("The 3D view could not be captured."))), "image/png");
+        stop();
+        out.toBlob((blob) => (blob ? finish(null, { blob, pose }) : finish(new Error("The 3D view could not be captured."))), "image/png");
       } catch (error) {
-        putBack();
-        reject(error);
+        finish(error);
       }
     });
     scene.requestRender();
