@@ -1,4 +1,4 @@
-import React, { useId } from "react";
+import React, { useCallback, useId, useState } from "react";
 import Icon from "../ui/Icon";
 import { useToast } from "../ui/Toast";
 import { FIELD_SECTIONS, STATUS_WORDS, fullField } from "./surveyFields";
@@ -7,11 +7,13 @@ import SurveyMap from "./SurveyMap";
 import Measurements, { MeasurePreview } from "./Measurements";
 import Disagreements from "./Disagreements";
 import SurveyPhotos from "./SurveyPhotos";
+import PagePreview, { saveBlob } from "./PagePreview";
+import { PublishDialog, ReviewPanel, Revisions } from "./Publishing";
 
 /*
- * One LZ's survey (docs/LZ_SURVEYS.md, step L1): the field survey's values in the old book's sections, the map in survey mode
- * (target, boundary, best approach and exit, the slope map and contours), what EZ/PZ measured, field against computed, and the
- * photos. The page's PDF and its preview, sign-off and publishing come with step L5.
+ * One LZ's survey, for the book's editors (docs/LZ_SURVEYS.md): the field survey's values in the old book's sections, the map in survey
+ * mode (target, boundary, best approach and exit, the slope map and contours), what EZ/PZ measured, field against computed, the
+ * photos, review and publishing, the printed page and every revision.
  */
 
 const Field = ({ spec, value, onChange, readOnly }) => {
@@ -56,9 +58,17 @@ const whyNotMeasured = (diagram, survey) => {
   return null;
 };
 
+const pdfName = (survey, rev) =>
+  `${[survey.hlz_id, survey.name, rev ? `REV ${rev}` : (survey.status === "in_review" ? "IN REVIEW" : "DRAFT")].filter(Boolean).join(" ")}.pdf`;
+
 const SurveyEditor = ({ surveys }) => {
   const { show } = useToast();
-  const { survey, draft, busy } = surveys;
+  const { survey, draft, busy, loadPage, loadPdf } = surveys;
+  const [publishing, setPublishing] = useState(false);
+  const [showingRev, setShowingRev] = useState(null);
+  const uuid = survey?.uuid;
+  const loadNow = useCallback(() => loadPage(uuid), [loadPage, uuid]);
+  const loadRev = useCallback(() => loadPage(uuid, { rev: showingRev }), [loadPage, uuid, showingRev]);
   if (!survey || !draft) return null;
   const archived = Boolean(survey.archived);
   const why = whyNotMeasured(draft.diagram, survey);
@@ -148,17 +158,61 @@ const SurveyEditor = ({ surveys }) => {
             onUpdate={surveys.updatePhoto}
             onRemove={surveys.removePhoto}
           />
-          <section className="survey-panel survey-panel--placeholder" aria-labelledby="survey-page-preview">
-            <h3 id="survey-page-preview" className="survey-panel__title">Page preview</h3>
-            <p className="survey-muted">
-              The one-page PDF, its preview, sign-off and publishing are not built yet. The page will print the computed value
-              wherever the survey and EZ/PZ both have one, unless a decision above says otherwise.
-            </p>
-          </section>
+          <ReviewPanel
+            survey={survey}
+            dirty={surveys.dirty}
+            busy={busy}
+            onSubmit={() => surveys.setReview("review")}
+            onBackToDraft={() => surveys.setReview("draft")}
+            onAskPublish={() => setPublishing(true)}
+          />
+          <PagePreview
+            heading="The page as saved"
+            title={`${survey.name}, the page as saved`}
+            note="It prints the computed value wherever the survey and EZ/PZ both have one, unless a decision above says otherwise."
+            load={loadNow}
+            loadPdf={() => loadPdf(uuid)}
+            fileName={pdfName(survey)}
+            stale={surveys.dirty}
+          />
+          <Revisions
+            revisions={survey.revisions}
+            showing={showingRev}
+            onShow={(number) => setShowingRev((current) => (current === number ? null : number))}
+            onPdf={async (number) => {
+              try {
+                saveBlob(await loadPdf(uuid, { rev: number }), pdfName(survey, number));
+              } catch (err) {
+                show({ message: err?.message || "The PDF could not be made.", tone: "error" });
+              }
+            }}
+          />
+          {showingRev && (
+            <PagePreview
+              key={showingRev}
+              heading={`REV ${showingRev}, as signed off`}
+              title={`${survey.name}, REV ${showingRev}`}
+              load={loadRev}
+              loadPdf={() => loadPdf(uuid, { rev: showingRev })}
+              fileName={pdfName(survey, showingRev)}
+              autoLoad
+            />
+          )}
         </div>
       </div>
       {surveys.preview && (
         <MeasurePreview preview={surveys.preview} busy={busy === "applying"} onApply={apply} onCancel={surveys.dismissPreview} />
+      )}
+      {publishing && (
+        <PublishDialog
+          survey={survey}
+          onCancel={() => setPublishing(false)}
+          onPublish={async (values) => {
+            const revision = await surveys.publish(values);
+            setPublishing(false);
+            if (revision) show({ message: `${survey.name} published as REV ${revision.number}.` });
+          }}
+        />
       )}
     </div>
   );

@@ -49,16 +49,34 @@ const survey = (changes = {}) => ({
   comparisons: COMPARISONS,
   disagreements: 1,
   assets: [],
+  book: { uuid: "b-1", name: "AASF 1 HLZ SURVEY BOOK" },
+  revisions: [],
+  next_revision: 1,
+  published_revision: null,
+  suggested_changes: "New format. Grid refined; lat/long recomputed; elevation, size and slope from LZ/PZ.",
   updated_by: "CW3 Admin",
   archived: false,
   ...changes,
 });
 
+const BOOK = { uuid: "b-1", name: "AASF 1 HLZ SURVEY BOOK", unit_line: "AASF 1", team: null, can_edit: true, archived: false, published_count: 0, survey_count: 1, revision: 2, page_order: ["s-1"], updated_at: "2026-10-26T12:00:00Z" };
+const ROW = { uuid: "s-1", hlz_id: "GA 034", name: "LZ DONOVAN", status: "draft", disagreements: 2, surveyed_on: "OCT 2023", grid: "16S GD 63415 31994", measured_at: "2026-10-26T12:00:00Z", updated_at: "2026-10-26T12:00:00Z", updated_by: "CW3 Admin", archived: false, published_revision: null };
+const PAGE = "<!doctype html><html><body><div class=\"sheet\">LZ DONOVAN page</div></body></html>";
+
 const fakeClient = (overrides = {}) => ({
-  listSurveys: jest.fn(async () => ({
-    book: { name: "AASF 1 HLZ SURVEY BOOK", revision: 2, page_order: ["s-1"] },
-    surveys: [{ uuid: "s-1", hlz_id: "GA 034", name: "LZ DONOVAN", status: "draft", disagreements: 2, surveyed_on: "OCT 2023", grid: "16S GD 63415 31994", measured_at: "2026-10-26T12:00:00Z", updated_at: "2026-10-26T12:00:00Z", updated_by: "CW3 Admin", archived: false }],
+  listBooks: jest.fn(async () => ({ books: [BOOK], teams: [{ id: 3, name: "B CO 1-171 AVN" }], can_make_for_no_team: true })),
+  getBook: jest.fn(async () => ({ book: BOOK, surveys: [ROW] })),
+  createBook: jest.fn(async ({ name, teamId }) => ({ ...BOOK, uuid: "b-2", name, team: teamId ? { id: teamId, name: "B CO 1-171 AVN" } : null })),
+  archiveBook: jest.fn(),
+  restoreBook: jest.fn(),
+  submitSurvey: jest.fn(async (uuid, revision) => survey({ status: "in_review", revision: revision + 1 })),
+  backToDraft: jest.fn(async (uuid, revision) => survey({ status: "draft", revision: revision + 1 })),
+  publishSurvey: jest.fn(async (uuid, revision) => ({
+    survey: survey({ status: "published", revision: revision + 1, published_revision: 1 }),
+    revision: { number: 1, published_at: "2026-10-27T12:00:00Z", changes: "New format.", signoff: { name: "J. Doe" } },
   })),
+  fetchPage: jest.fn(async () => PAGE),
+  fetchPdf: jest.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
   getSurvey: jest.fn(async () => survey()),
   createSurvey: jest.fn(async ({ name, hlzId }) => survey({ uuid: "s-2", name, hlz_id: hlzId, field: {}, snapshot: null, comparisons: [], revision: 1 })),
   saveSurvey: jest.fn(async (uuid, revision, body) => survey({ ...body, revision: revision + 1 })),
@@ -72,8 +90,12 @@ const fakeClient = (overrides = {}) => ({
   ...overrides,
 });
 
-const renderBook = async (client = fakeClient(), onClose = jest.fn()) => {
-  render(<SurveyBook client={client} onClose={onClose} />);
+const renderBook = async (client = fakeClient(), onClose = jest.fn(), props = {}) => {
+  render(<SurveyBook client={client} onClose={onClose} {...props} />);
+  const book = await screen.findByRole("button", { name: "AASF 1 HLZ SURVEY BOOK" });
+  await act(async () => {
+    fireEvent.click(book);
+  });
   await screen.findByText("LZ DONOVAN");
   return { client, onClose };
 };
@@ -104,6 +126,7 @@ describe("the survey book", () => {
   it("lists every LZ with its status, what to look at and when it was surveyed", async () => {
     await renderBook();
     expect(screen.getByRole("heading", { name: "AASF 1 HLZ SURVEY BOOK" })).toBeInTheDocument();
+    expect(screen.getByText(/No team · everyone with LZ surveys reads it · AASF 1 · you edit it/)).toBeInTheDocument();
     const row = screen.getByRole("button", { name: "LZ DONOVAN" }).closest("tr");
     expect(within(row).getByText("GA 034")).toBeInTheDocument();
     expect(within(row).getByText("Draft")).toBeInTheDocument();
@@ -113,11 +136,11 @@ describe("the survey book", () => {
 
   it("says a survey never measured is not measured, not that it has nothing to look at", async () => {
     const client = fakeClient({
-      listSurveys: jest.fn(async () => ({
-        book: { name: "AASF 1 HLZ SURVEY BOOK", revision: 2, page_order: ["s-1", "s-2"] },
+      getBook: jest.fn(async () => ({
+        book: BOOK,
         surveys: [
-          { uuid: "s-1", hlz_id: "GA 034", name: "LZ DONOVAN", status: "draft", disagreements: 0, surveyed_on: "", grid: "", measured_at: null, updated_at: "2026-10-26T12:00:00Z", updated_by: "CW3 Admin", archived: false },
-          { uuid: "s-2", hlz_id: "GA 035", name: "LZ EAGLE", status: "draft", disagreements: 0, surveyed_on: "", grid: "", measured_at: "2026-10-26T12:00:00Z", updated_at: "2026-10-26T12:00:00Z", updated_by: "CW3 Admin", archived: false },
+          { ...ROW, disagreements: 0, surveyed_on: "", grid: "", measured_at: null },
+          { ...ROW, uuid: "s-2", hlz_id: "GA 035", name: "LZ EAGLE", disagreements: 0, surveyed_on: "", grid: "" },
         ],
       })),
     });
@@ -137,7 +160,7 @@ describe("the survey book", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Make the survey" }));
     });
-    expect(client.createSurvey).toHaveBeenCalledWith({ name: "LZ EAGLE", hlzId: "GA 035", field: {}, diagram: null });
+    expect(client.createSurvey).toHaveBeenCalledWith({ book: "b-1", name: "LZ EAGLE", hlzId: "GA 035", field: {}, diagram: null });
     expect(await screen.findByRole("heading", { name: "GA 035 · LZ EAGLE" })).toBeInTheDocument();
   });
 
@@ -166,7 +189,7 @@ describe("the survey editor", () => {
     expect(screen.getByText(/Within limits at 000°/)).toBeInTheDocument();
     expect(screen.getByText("3 UH-60Ls by area")).toBeInTheDocument();
     expect(screen.getByTestId("survey-map")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Page preview" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "The page as saved" })).toBeInTheDocument();
   });
 
   it("saves what is typed, naming the revision it was opened at", async () => {
@@ -269,17 +292,136 @@ describe("the survey editor", () => {
 describe("the account menu", () => {
   const openAccount = () => fireEvent.click(screen.getByRole("button", { name: /Account:/ }));
 
-  it("offers the survey book to an admin", () => {
+  it("offers the survey books to whoever the app gives the way in to (an admin, or LZ surveys ticked)", () => {
     const onOpenSurveys = jest.fn();
-    render(<TopBar user={{ name: "CW3 Admin", email: "a@example.mil" }} isAdmin onOpenSurveys={onOpenSurveys} />);
+    render(<TopBar user={{ name: "Pilot", email: "p@example.mil" }} onOpenSurveys={onOpenSurveys} />);
     openAccount();
-    fireEvent.click(screen.getByRole("menuitem", { name: /LZ survey book/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /LZ survey books/ }));
     expect(onOpenSurveys).toHaveBeenCalled();
   });
 
   it("not to anyone else", () => {
-    render(<TopBar user={{ name: "Pilot", email: "p@example.mil" }} onOpenSurveys={jest.fn()} />);
+    render(<TopBar user={{ name: "Pilot", email: "p@example.mil" }} isAdmin={false} />);
     openAccount();
     expect(screen.queryByRole("menuitem", { name: /LZ survey book/ })).toBeNull();
+  });
+});
+
+describe("the books", () => {
+  it("lists the books with who they are for and what this person may do in each", async () => {
+    const client = fakeClient({
+      listBooks: jest.fn(async () => ({
+        books: [BOOK, { ...BOOK, uuid: "b-9", name: "B CO HLZ BOOK", team: { id: 3, name: "B CO 1-171 AVN" }, can_edit: false, published_count: 7 }],
+        teams: [], can_make_for_no_team: false,
+      })),
+    });
+    render(<SurveyBook client={client} onClose={jest.fn()} />);
+    const row = (await screen.findByRole("button", { name: "B CO HLZ BOOK" })).closest("tr");
+    expect(within(row).getByText("B CO 1-171 AVN")).toBeInTheDocument();
+    expect(within(row).getByText("Read")).toBeInTheDocument();
+    expect(within(row).getByText("7")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New book" })).toBeNull();     // no team to make one for
+  });
+
+  it("makes a book for a team and opens it", async () => {
+    const client = fakeClient();
+    render(<SurveyBook client={client} onClose={jest.fn()} isAdmin />);
+    fireEvent.click(await screen.findByRole("button", { name: "New book" }));
+    const dialog = screen.getByRole("dialog", { name: "New survey book" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "b co hlz book" } });
+    fireEvent.change(within(dialog).getByLabelText("For"), { target: { value: "3" } });
+    expect(within(dialog).getByText(/B CO 1-171 AVN's owner and admins make and publish its surveys/)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Make the book" }));
+    });
+    expect(client.createBook).toHaveBeenCalledWith({ name: "B CO HLZ BOOK", unitLine: "", teamId: 3 });
+    expect(client.getBook).toHaveBeenCalledWith("b-2", { archived: false });
+  });
+});
+
+describe("a reader", () => {
+  const READER_BOOK = { ...BOOK, can_edit: false, published_count: 1 };
+  const PUBLISHED = { uuid: "s-1", hlz_id: "GA 034", name: "LZ DONOVAN", status: "published", published_revision: 2, published_at: "2026-10-27T12:00:00Z", signoff: { rank: "CW4", name: "J. Doe", title: "SIP", date: "27 OCT 2026" }, changes: "Surface regraded." };
+
+  const readerClient = () => fakeClient({
+    listBooks: jest.fn(async () => ({ books: [READER_BOOK], teams: [], can_make_for_no_team: false })),
+    getBook: jest.fn(async () => ({ book: READER_BOOK, surveys: [PUBLISHED] })),
+    getSurvey: jest.fn(async () => ({ ...PUBLISHED, book: { uuid: "b-1", name: BOOK.name }, revisions: [
+      { number: 1, published_at: "2026-10-01T12:00:00Z", published_by: "CW3 Admin", signoff: { name: "J. Doe" }, changes: "New format." },
+      { number: 2, published_at: "2026-10-27T12:00:00Z", published_by: "CW3 Admin", signoff: PUBLISHED.signoff, changes: "Surface regraded." },
+    ] })),
+  });
+
+  it("sees the published pages, never a draft, and opens one on its page", async () => {
+    const client = readerClient();
+    await renderBook(client);
+    expect(screen.queryByRole("button", { name: "New survey" })).toBeNull();
+    const row = screen.getByRole("button", { name: "LZ DONOVAN" }).closest("tr");
+    expect(within(row).getByText("REV 2")).toBeInTheDocument();
+    expect(within(row).getByText("CW4 J. Doe")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "LZ DONOVAN" }));
+    });
+    const frame = await screen.findByTitle("LZ DONOVAN, REV 2");
+    expect(frame).toHaveAttribute("sandbox", "");
+    expect(frame.getAttribute("srcdoc")).toContain("LZ DONOVAN page");
+    expect(client.fetchPage).toHaveBeenLastCalledWith("s-1", expect.objectContaining({ rev: 2 }));
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "Page" })[1]);   // the revisions are newest first
+    });
+    expect(client.fetchPage).toHaveBeenLastCalledWith("s-1", expect.objectContaining({ rev: 1 }));
+    expect(screen.queryByLabelText("Grid")).toBeNull();
+  });
+});
+
+describe("publishing", () => {
+  it("sends a measured draft for review, then signs it off as REV 1", async () => {
+    const client = fakeClient();
+    await openDonovan(client);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send for review" }));
+    });
+    expect(client.submitSurvey).toHaveBeenCalledWith("s-1", 4);
+    fireEvent.click(screen.getByRole("button", { name: "Publish…" }));
+    const dialog = screen.getByRole("dialog", { name: "Publish LZ DONOVAN as REV 1" });
+    expect(within(dialog).getByLabelText("CHANGES line")).toHaveValue(survey().suggested_changes);
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Publish REV 1" }));
+    });
+    expect(within(dialog).getByText(/Say who signed it off/)).toBeInTheDocument();
+    expect(client.publishSurvey).not.toHaveBeenCalled();
+    fireEvent.change(within(dialog).getByLabelText("Rank"), { target: { value: "cw4" } });
+    fireEvent.change(within(dialog).getByLabelText("Approver's name"), { target: { value: "J. Doe" } });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Publish REV 1" }));
+    });
+    const [uuid, revision, body] = client.publishSurvey.mock.calls[0];
+    expect([uuid, revision]).toEqual(["s-1", 5]);
+    expect(body.signoff).toEqual(expect.objectContaining({ name: "J. Doe", rank: "CW4" }));
+    expect(body.signoff.date).toMatch(/^\d{2} [A-Z]{3} \d{4}$/);
+    expect(body.opacity).toBe(55);
+    expect(await screen.findByText(/Published as REV 1: readers see this page/)).toBeInTheDocument();
+  });
+
+  it("does not send an unmeasured draft for review, and says why", async () => {
+    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ snapshot: null, comparisons: [] })) }));
+    expect(screen.getByRole("button", { name: "Send for review" })).toBeDisabled();
+    expect(screen.getByText("Measure the LZ first.")).toBeInTheDocument();
+  });
+
+  it("shows the page as saved, and says plainly when the server cannot print the PDF", async () => {
+    const pdfUnavailable = Object.assign(new Error("503"), {
+      response: { status: 503, data: new Blob([JSON.stringify({ code: "pdf_unavailable" })], { type: "application/json" }) },
+    });
+    const client = fakeClient({ fetchPdf: jest.fn(async () => { throw pdfUnavailable; }) });
+    await openDonovan(client);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Show the page" }));
+    });
+    expect(screen.getByTitle("LZ DONOVAN, the page as saved").getAttribute("srcdoc")).toContain("LZ DONOVAN page");
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "Download PDF" })[0]);
+    });
+    expect(await screen.findByText(/PDFs are not printed on this server yet/)).toBeInTheDocument();
   });
 });

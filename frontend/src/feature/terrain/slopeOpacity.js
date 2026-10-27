@@ -22,7 +22,8 @@ export const slopeOpacityOf = (percent) => {
   return Math.round(within / SLOPE_OPACITY.STEP) * SLOPE_OPACITY.STEP;
 };
 
-const readStored = () => {
+/** The opacity this browser keeps, for what draws the slope map outside the map (an LZ survey's printed page). */
+export const readSlopeOpacity = () => {
   try {
     const kept = window.localStorage.getItem(SLOPE_OPACITY_STORAGE_KEY);
     return kept === null ? SLOPE_OPACITY.DEFAULT : slopeOpacityOf(kept);
@@ -41,7 +42,7 @@ const store = (percent) => {
 
 /** The slope map's opacity, a percentage ([SLOPE_OPACITY]), and its setter, which keeps it on the nearest step and remembers it in this browser. */
 const useSlopeOpacity = () => {
-  const [slopeOpacity, setOpacity] = useState(readStored);
+  const [slopeOpacity, setOpacity] = useState(readSlopeOpacity);
   const setSlopeOpacity = useCallback((percent) => {
     const kept = slopeOpacityOf(percent);
     setOpacity(kept);

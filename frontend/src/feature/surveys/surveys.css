@@ -112,3 +112,18 @@
   .survey-photo__thumb { width: 100%; height: 180px; }
   .survey-map__place .ui-input { width: 100%; }
 }
+
+/* The printed page (step L5): a frame the page's own size, scaled to the panel; it runs nothing. */
+.survey-page-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.survey-page-frame { position: relative; overflow: hidden; border: 1px solid var(--ff-border, rgba(255, 255, 255, 0.14)); border-radius: 6px; background: #fff; margin-top: 8px; }
+.survey-page-frame iframe { border: 0; display: block; background: #fff; }
+.survey-signoff { display: grid; gap: 0 12px; }
+.survey-signoff--who { grid-template-columns: 90px 1fr; }
+.survey-signoff--what { grid-template-columns: 1fr 150px; }
+.survey-book__about { margin: 0 0 8px; }
+.survey-reader { display: flex; flex-direction: column; gap: 12px; max-width: 900px; margin: 0 auto; }
+.survey-table__actions { white-space: nowrap; text-align: right; }
+.survey-table__actions .ui-btn + .ui-btn { margin-left: 6px; }
+@media (max-width: 640px) {
+  .survey-signoff--who, .survey-signoff--what { grid-template-columns: 1fr; }
+}

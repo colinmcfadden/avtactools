@@ -153,8 +153,8 @@ const TopBar = ({
               onSelect={() => window.open(`${(process.env.REACT_APP_API_URL || "").replace(/\/api\/?$/, "")}/admin`, "_blank", "noopener")}
             />
           )}
-          {isAdmin && onOpenSurveys && (
-            <MenuItem icon={<Icon name="hexagon" size={15} />} title="LZ survey book" onClose={account.close} onSelect={onOpenSurveys} />
+          {onOpenSurveys && (
+            <MenuItem icon={<Icon name="hexagon" size={15} />} title="LZ survey books" onClose={account.close} onSelect={onOpenSurveys} />
           )}
           <MenuItem icon={<Icon name="logOut" size={15} />} title="Sign out" onClose={account.close} onSelect={onSignOut} />
         </Menu>
