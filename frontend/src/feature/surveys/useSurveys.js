@@ -5,6 +5,7 @@ import { fullField } from "./surveyFields";
 import { diagramToSave } from "./surveyDiagram";
 import { readSlopeOpacity } from "../terrain/slopeOpacity";
 import { IMPORT_ACTIVE } from "./SurveyImport";
+import { capturedOn } from "./capture3d";
 
 /*
  * The LZ survey books' state (docs/LZ_SURVEYS.md): the books this person reads or edits, the one open with its surveys, and the
@@ -664,6 +665,18 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     return asset;
   }, [client, withAssets]);
 
+  /** Keeps a frame of the 3D window as the survey's 3D view, with the camera that took it: it takes the place of the last, as the
+   * server keeps it. */
+  const captureView = useCallback(async (blob, pose) => {
+    const uuid = surveyRef.current.uuid;
+    const file = new File([blob], "view-3d.png", { type: "image/png" });
+    const { survey: moved, ...asset } = await client.uploadAsset(uuid, file, {
+      kind: "view_3d", caption: "", heading_deg: pose.headingDeg, taken_on: capturedOn(), pose: JSON.stringify(pose),
+    });
+    withAssets(uuid, (assets) => [...assets.filter((a) => a.kind !== "view_3d"), asset], moved);
+    return asset;
+  }, [client, withAssets]);
+
   const updatePhoto = useCallback(async (id, meta) => {
     const uuid = surveyRef.current.uuid;
     const { survey: moved, ...asset } = await client.updateAsset(uuid, id, meta);
@@ -730,6 +743,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     loadPage,
     loadPdf,
     uploadPhoto,
+    captureView,
     updatePhoto,
     removePhoto,
   };
