@@ -1,10 +1,10 @@
 # LZ surveys — architecture and plan
 
-Status: **L1, L5, L2, L6 and L4 built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for
-review, signed off and published as a one-page PDF that readers open; the old book's 44 pages are imported as drafts and measured in
-the background; the whole book prints as one PDF; and what stands on and round each LZ is measured from the LiDAR; §12 to §16 say what
-each settled that the plan did not). **Books are many** (the owner, 2026-10-26, §11 R8): a book may be a team's, its owner and admins
-edit it and its members read it. L3 is next. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing is open. This file is
+Status: **every step built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for review,
+signed off and published as a one-page PDF that readers open; the old book's 44 pages are imported as drafts and measured in the
+background; the whole book prints as one PDF; what stands on and round each LZ is measured from the LiDAR; and the page's 3D view is
+captured in the editor; §12 to §17 say what each settled that the plan did not). **Books are many** (the owner, 2026-10-26, §11 R8): a
+book may be a team's, its owner and admins edit it and its members read it. What is later is §9's last row. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing is open. This file is
 the plan for building the feature; where it and the code disagree once it is built, the code wins (AGENTS.md §16).
 
 ---
@@ -482,3 +482,27 @@ snapshot's `obstacles` (`measure.py`), the page's `clearance` (`compile.py`, `fi
   two pages, served from memory through the stream's own `Streamer`: a tree line 200 m out on the approach, a tower 400 m out on the
   exit, a tree in the LZ, a building outside it, a bird and noise. Not measured against a real survey: how long a cold measure takes at
   Ellijay (the reading is a hundred or two pieces of about 350 KB from AWS), and how the numbers compare with a ground survey.
+
+## 17. L3 as built (2026-10-26)
+
+What the 3D capture settled that the plan did not. The code is `frontend/src/feature/surveys/Survey3D.jsx` (the editor's *3D view*
+and its window), `capture3d.js` (the view down the approach, the frame, the camera), `Viewer3D`'s `view` and `capturable`, and on the
+server the capture's `pose` (`survey_routes._pose`) and the page's caption (`compile._view3d`).
+
+- **The 3D window is the planning one's** (`feature/viewer3d/Viewer3D`), opened on the LZ's target as the editor's map has it, streamed
+  as the planning 3D view streams it, in a dialog at the page's shape (16:10). It opens **looking down the best approach**: facing the
+  field's best approach, 20° down (the 3D view's own opening is 35° from the north-west), framed as the 3D view frames an LZ; *LZ* flies
+  back to that look. Without a best approach it opens as the 3D view does. The admin turns it as they want it.
+- **Capture draws one frame at 1,600 × 1,000**: the middle of the view cut to 16:10, drawn finer than its window where the window is
+  narrower (Cesium's resolution scale, at most four times), read in the frame's own postRender from a buffer kept for it
+  (`preserveDrawingBuffer`, asked for only by this window), then the window's own resolution put back. A browser that will not let the
+  canvas be read (imagery without leave to) is said, and nothing is kept.
+- **Kept with the camera that took it**: a `view_3d` PNG (the server checks it is one and keeps it as sent), its heading as the
+  asset's, and its `pose`: heading and pitch, its distance from the LZ's middle, and the LiDAR survey it shows, taken from the snapshot's
+  obstacles (the 3D view and the obstacles choose the same survey for a place, the newest covering it). A pose is a capture's alone,
+  checked as it comes and never changed after; capture again to change it.
+- **One 3D view a page**: a new capture takes the place of the last, which is kept on the server (a published page may show it). The
+  page prints the newest, captioned the way it looks and with its survey: "3D · LOOKING 090°T · LIDAR GA_STATEWIDE_B3_2018".
+- **Not verifiable here**: anything WebGL draws cannot be seen from an agent session (AGENTS.md §14), so the frame itself, Mapbox's
+  imagery being readable, and how the capture looks on the page want a person's eye: open a survey, *Open 3D*, Capture, and look at the
+  page's preview. The flow is held by tests with the viewer and the frame stood in for.
