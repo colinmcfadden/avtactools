@@ -421,6 +421,27 @@ class Streamer:
     def _piece_url(self, survey, node) -> str:
         return f"{self._base}/{survey.name}/ept-data/{node}.laz"
 
+    def laz(self, key: str, node: ept.Node) -> bytes:
+        """A piece of the survey as USGS publishes it (LAZ), fetched once and kept beside the streamed pieces, for what reads a point's
+        class and its height above the ground (survey/obstacles.py): a streamed .pnts keeps neither. Never served (the file route
+        serves only tileset and piece names), and let go of with the pieces when the cache is pruned."""
+        survey = self._survey(key)
+        path = self.root / key / "laz" / f"{node}.laz"
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = None
+        if data is not None:
+            self._touch(path)
+            return data
+        with self._claim(path):
+            if path.is_file():
+                return path.read_bytes()
+            data = self._fetch(self._piece_url(survey, node), MAX_PIECE_BYTES)
+            _write_atomic(path, data)
+            self._wrote()
+        return data
+
     def _survey_range(self, key, survey, root_data=None):
         """The survey's intensity range, taken once from its root piece (a
         sample across all of it) and kept, so every piece is shaded alike.
@@ -479,8 +500,9 @@ class Streamer:
 
     def prune(self, cap: float | None = None) -> int:
         """Let go of the pieces used longest ago until the cache is under its
-        cap. The survey's index and tileset files stay: they are small and
-        every view starts from them. Returns the bytes freed."""
+        cap, streamed or kept as USGS publishes them (``laz``). The survey's
+        index and tileset files stay: they are small and every view starts
+        from them. Returns the bytes freed."""
         cap = _cap_bytes() if cap is None else cap
         files, total = [], 0
         for path in self.root.rglob("*"):
@@ -491,7 +513,7 @@ class Streamer:
             except OSError:
                 continue
             total += stat.st_size
-            if path.suffix == ".pnts":
+            if path.suffix in (".pnts", ".laz"):
                 files.append((stat.st_mtime, stat.st_size, path))
         freed = 0
         for _mtime, size, path in sorted(files):

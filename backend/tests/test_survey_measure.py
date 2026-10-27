@@ -7,6 +7,7 @@ out by hand: no SAM, no network, no DEM download.
 import json
 import math
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -22,7 +23,7 @@ import numpy as np  # noqa: E402
 import rasterio  # noqa: E402
 from rasterio.transform import from_origin  # noqa: E402
 
-from survey import compare, geometry, measure  # noqa: E402
+from survey import compare, geometry, measure, obstacles  # noqa: E402
 from survey.fields import FIELD_KEYS, clean_field  # noqa: E402
 from terrain_provider import LocalRasterCatalog  # noqa: E402
 
@@ -189,7 +190,51 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(snap['grid'], measure.grid_text(*TARGET))
         self.assertTrue(snap['grid'].startswith('16S GD 6341'))
         self.assertEqual(snap['latLong'], measure.lat_long_text(*TARGET))
-        self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 2))
+        self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 3))
+
+    def test_the_exit_is_kept_and_a_change_to_it_is_said(self):
+        field = {'approachDeg': '360', 'exitDeg': '180'}
+        with Terrain():
+            snap = self.snapshot(field=field, boundary=square())
+        self.assertEqual(snap['exitDeg'], 180.0)
+        self.assertEqual(measure.stale(snap, diagram(boundary=square()), field), [])
+        self.assertEqual(measure.stale(snap, diagram(boundary=square()), {**field, 'exitDeg': '090'}),
+                         ['The best exit changed after it was measured: measured at 180°, now 090°.'])
+        self.assertEqual(measure.stale({**snap, 'version': 2}, diagram(boundary=square()), field),
+                         ['It was measured by an earlier version of EZ/PZ.'])           # measured before the obstacles were
+
+    def test_without_the_lidar_it_says_so_and_it_is_no_problem(self):
+        with Terrain(), patch.object(obstacles, 'default_source', return_value=None):
+            snap = self.snapshot(boundary=square())
+        self.assertEqual(snap['obstacles'], {'status': 'unavailable', 'words': obstacles.NO_SERVER})
+        self.assertNotIn(obstacles.NO_SERVER, snap['problems'])
+
+    def test_a_lidar_reading_that_failed_is_a_problem_to_measure_again(self):
+        class Unreachable:
+            def survey_for(self, lat, lon):
+                raise OSError('the coverage index could not be fetched')
+        with Terrain(), self.assertLogs('survey.obstacles', level='ERROR'):
+            snap = measure.measure(diagram(boundary=square()), {'approachDeg': '360'}, 'Admin', self.NOW, lidar=Unreachable())
+        self.assertEqual(snap['obstacles']['status'], 'failed')
+        self.assertIn(obstacles.FAILED, snap['problems'])
+
+    def test_what_stands_is_measured_along_the_approach_and_the_exit(self):
+        from test_survey_obstacles import BASE, SECRET, FakeSurvey
+        from lidar import stream
+
+        survey = FakeSurvey()
+        root = tempfile.mkdtemp(prefix='measure-obstacles-')
+        self.addCleanup(shutil.rmtree, root, True)
+        source = stream.Streamer(Path(root), fetch=survey.fetch, geoid=lambda lons, lats: [-30.35] * len(lons), index=survey.index(),
+                                 base=BASE, secret=SECRET)
+        with Terrain():
+            snap = measure.measure(diagram(boundary=square()), {'approachDeg': '090', 'exitDeg': '090'}, 'Admin', self.NOW, lidar=source)
+        found = snap['obstacles']
+        self.assertEqual((found['status'], found['survey']['name']), ('measured', survey.name))
+        self.assertEqual((found['approach']['headingDeg'], found['exit']['headingDeg']), (90.0, 90.0))
+        self.assertEqual(found['profileTops']['heading'], 90)                      # the line the page's profile along 090° draws
+        changed = {**snap, 'obstacles': {**found, 'inside': {**(found['inside'] or {}), 'heightFt': 1.0}}}
+        self.assertIn('Tallest in the LZ (ft)', [c['label'] for c in measure.differences(snap, changed)])
 
     def test_size_area_and_fit(self):
         with Terrain():

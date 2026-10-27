@@ -1,6 +1,7 @@
 """Field against computed: where the unit's survey and EZ/PZ's measurement disagree, and what the page prints (docs/LZ_SURVEYS.md §2).
 
-Only the measured quantities have both (§11, R3): the grid, the lat/long, the elevation, the size and the slope. Where both
+Only the measured quantities have both (§11, R3): the grid, the lat/long, the elevation, the size, the slope and the approach's
+obstacle (the survey profile's, against the LiDAR's that sets the approach's clearance, step L4). Where both
 exist the computed value is printed, unless an admin overrides it with the field's, with a reason. An admin can also accept
 a disagreement (the computed value stands, said so), which takes it off the count. A choice is kept with the two values it
 was made on: once either changes (the field retyped, the LZ measured again), it no longer settles the disagreement, which
@@ -23,9 +24,12 @@ POSITION_M = 50.0          # the import's own check of grid against lat/long (§
 ELEVATION_FT = 25.0        # a few times a 10 m DEM's vertical error
 SLOPE_DEG = 2.0
 SIZE_FRACTION = 0.10
+OBSTACLE_FT = 25.0         # a tree's growth over a few seasons, and the laser's reading of its top
+OBSTACLE_M = 50.0
 
-KEYS = ("grid", "latLong", "elevation", "size", "slope")
-LABELS = {"grid": "Grid", "latLong": "Lat/long", "elevation": "Elevation", "size": "Size", "slope": "Slope"}
+KEYS = ("grid", "latLong", "elevation", "size", "slope", "obstacle")
+LABELS = {"grid": "Grid", "latLong": "Lat/long", "elevation": "Elevation", "size": "Size", "slope": "Slope",
+          "obstacle": "Approach obstacle"}
 CHOICES = ("computed", "field")
 MAX_REASON = 500
 
@@ -175,6 +179,20 @@ def _rows(field, snapshot):
         rows.append(_row("slope", typed, computed, f"{degrees:.1f}° apart", degrees > SLOPE_DEG))
     else:
         rows.append(_row("slope", typed, computed, None, bool(typed and computed)))
+
+    # The survey profile's obstacle ("100 ft at 200 m") against the LiDAR's that sets the approach's clearance from the LZ's edge.
+    feet, metres = (_numbers(field.get(key) or "") for key in ("profileObstacleFt", "profileDistanceM"))
+    typed = f"{feet[0]:g} ft at {metres[0]:g} m" if feet and metres else ""
+    obstacle = (((snapshot.get("obstacles") or {}).get("approach") or {}).get("clearance") or {}).get("obstacle") or {}
+    computed = ""
+    if obstacle.get("heightFt") is not None and obstacle.get("fromEdgeM") is not None:
+        computed = (f"{obstacle['heightFt']:.0f} ft at {obstacle['fromEdgeM']:.0f} m"
+                    + (" (the ground)" if obstacle.get("kind") == "terrain" else " (LiDAR)"))
+    if typed and computed:
+        dh, dd = abs(obstacle["heightFt"] - feet[0]), abs(obstacle["fromEdgeM"] - metres[0])
+        rows.append(_row("obstacle", typed, computed, f"{dh:.0f} ft, {dd:.0f} m apart", dh > OBSTACLE_FT or dd > OBSTACLE_M))
+    else:
+        rows.append(_row("obstacle", typed, computed, None, False))
     return rows
 
 

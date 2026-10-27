@@ -370,10 +370,24 @@ def profile(line, view, width=640, height=170, treetops=None):
         parts.append(f'<polygon points="{sx(run[0][0]):.1f},{bottom} {pts} {sx(run[-1][0]):.1f},{bottom}" fill="url(#hatch-{view})"/>')
         parts.append(f'<polyline points="{pts}" fill="none" stroke="{INK}" stroke-width="2.2" stroke-linejoin="round"/>')
     if tops:
-        pts = [(d, t) for d, t in zip(line["distancesFt"], treetops) if t is not None]
-        if len(pts) > 1:
-            parts.append(f'<polyline points="{" ".join(f"{sx(d):.1f},{sy(t):.1f}" for d, t in pts)}" fill="none" stroke="#2e7d32" '
-                         f'stroke-width="1.8" stroke-dasharray="3 2"/>')
+        # A run of steps where something stands: one stand of trees is not joined to the next across the ground between them.
+        tree_runs, run = [], []
+        for d, t in zip(line["distancesFt"], treetops):
+            if t is None:
+                if run:
+                    tree_runs.append(run)
+                run = []
+            else:
+                run.append((d, t))
+        if run:
+            tree_runs.append(run)
+        for run in tree_runs:
+            if len(run) == 1:
+                (d, t), = run
+                parts.append(f'<line x1="{sx(d):.1f}" y1="{sy(t):.1f}" x2="{sx(d):.1f}" y2="{bottom:.1f}" stroke="#2e7d32" stroke-width="1.8"/>')
+            else:
+                parts.append(f'<polyline points="{" ".join(f"{sx(d):.1f},{sy(t):.1f}" for d, t in run)}" fill="none" stroke="#2e7d32" '
+                             f'stroke-width="1.8" stroke-dasharray="3 2"/>')
     # The highest ground in the LZ, as the draft marks it, and the axis's low end in the gutter.
     inside = [(d, h) for d, h in zip(line["distancesFt"], line["elevationsFt"]) if h is not None and lz and lz[0] <= d <= lz[1]]
     if inside:
@@ -419,6 +433,72 @@ def survey_profile(spec, width=300, height=120):
         f'<text x="{(hx + ox) / 2 - 10}" y="{(ground + oy) / 2 - 8}" font-size="15" font-weight="800" text-anchor="middle">{spec["angleDeg"]:.1f}°</text>',
     ]
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="field-profile">{"".join(parts)}</svg>'
+
+
+TREETOPS = "#2e6b30"
+
+
+def clearance(spec, width=380, height=104):
+    """The LiDAR's clearance (step L4) as the page's clearance box draws it: the approach on the left, flown towards the LZ, and the
+    exit on the right, each its ground and the highest thing in each 10 m of its corridor from the LZ's edge out to 1,000 m, the line
+    from the edge that clears the steepest of them, and its words over it. None where neither way was measured."""
+    sides = [s for s in ((spec or {}).get("approach"), (spec or {}).get("exit")) if isinstance(s, dict)]
+    values = [v for s in sides for v in s["groundFt"] + s["topsFt"] + [s.get("edgeFt")] if _num(v)]
+    if not values:
+        return None
+    low, high = min(values), max(values)
+    span = max(high - low, 60.0)
+    floor = low - span * 0.06
+    top, bottom, pad, gap = 30.0, height - 13.0, 4.0, 30.0
+    half = (width - 2 * pad - gap) / 2.0
+
+    def sy(h):
+        return bottom - (h - floor) / (span * 1.06) * (bottom - top)
+
+    parts = [f'<rect x="{pad + half:.1f}" y="{bottom - 6:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>',
+             f'<text x="{width / 2:.1f}" y="{height - 2:.1f}" font-size="10" font-weight="800" text-anchor="middle">LZ</text>']
+    for spec_side, left in ((spec.get("approach"), True), (spec.get("exit"), False)):
+        if not isinstance(spec_side, dict):
+            continue
+        step = spec_side.get("binM") or 10
+        length = step * max(len(spec_side["groundFt"]), 1)
+
+        def sx(metres, left=left, length=length):
+            return (pad + half - metres / length * half) if left else (pad + half + gap + metres / length * half)
+
+        def line(values, colour, widthpx, step=step, sx=sx):
+            runs, run = [], []
+            for k, v in enumerate(values):
+                if _num(v):
+                    run.append(f"{sx((k + 0.5) * step):.1f},{sy(v):.1f}")
+                else:
+                    if len(run) > 1:
+                        runs.append(run)
+                    run = []
+            if len(run) > 1:
+                runs.append(run)
+            return "".join(f'<polyline points="{" ".join(r)}" fill="none" stroke="{colour}" stroke-width="{widthpx}" '
+                           f'stroke-linejoin="round"/>' for r in runs)
+
+        # The treetops under the ground's line, so they show only where something stands above it.
+        parts.append(line(spec_side["topsFt"], TREETOPS, 1.1))
+        parts.append(line(spec_side["groundFt"], INK, 1.6))
+        obstacle = spec_side.get("obstacle")
+        if obstacle and _num(spec_side.get("edgeFt")) and _num(spec_side.get("angleDeg")) and spec_side["angleDeg"] > 0:
+            x0, y0 = sx(0.0), sy(spec_side["edgeFt"])
+            x1, y1 = sx(obstacle["fromEdgeM"]), sy(obstacle["topFt"])
+            parts.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="{INK}" stroke-width="1.3" '
+                         f'stroke-dasharray="4 3"/>'
+                         f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
+        x_words = pad + 2 if left else width - pad - 2
+        anchor = "start" if left else "end"
+        parts.append(f'<text x="{x_words:.1f}" y="11" font-size="10.5" font-weight="800" text-anchor="{anchor}">'
+                     f'{escape(spec_side.get("angle") or spec_side["label"] + " " + (spec_side.get("heading") or ""))}</text>')
+        parts.append(f'<text x="{x_words:.1f}" y="23" font-size="9.5" text-anchor="{anchor}">'
+                     f'{escape(spec_side.get("what") or "NO RETURNS IN ITS CORRIDOR")}</text>')
+        parts.append(f'<text x="{(pad if left else width - pad):.1f}" y="{height - 2:.1f}" font-size="8.5" '
+                     f'text-anchor="{anchor}">{length / 1000:g} KM</text>')
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="clearance">{"".join(parts)}</svg>'
 
 
 # The cover's overview map: about 7.6 by 7.0 inches at the plan's 200 pixels to the inch.
