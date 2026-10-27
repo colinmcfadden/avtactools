@@ -2,15 +2,19 @@
 every LZ, its index, and every published page numbered in the book, printed in the background and kept until a page in it changes.
 Gotenberg and the map's tiles are stood in for; the printer runs in the test's own thread."""
 
+import io
 import os
 import re
 import sys
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
+
+from PIL import Image  # noqa: E402
 
 from models import SurveyBookPrint, db  # noqa: E402
 from survey import assets as asset_store  # noqa: E402
@@ -62,6 +66,9 @@ class BookPdfCase(BookCase):
 
     def pdf(self, head=None):
         return self.client.get(f'/api/survey-books/{self.book["uuid"]}/pdf', headers=head or self.admin)
+
+    def book_revision(self):
+        return self.client.get(f'/api/survey-books/{self.book["uuid"]}', headers=self.admin).get_json()['book']['revision']
 
 
 class BookPdfTests(BookPdfCase):
@@ -186,6 +193,99 @@ class BookPdfTests(BookPdfCase):
             self.assertEqual(self.status()['state'], 'ready')
         with self.app.app_context():
             self.assertEqual([r.state for r in SurveyBookPrint.query.all()], ['ready'])
+
+    def test_a_print_whose_file_has_gone_is_printed_again(self):
+        self.published()
+        self.printed()
+        with self.app.app_context():
+            gone = SurveyBookPrint.query.one().pdf_sha256
+        asset_store.store().delete(gone)                                          # a redeploy with no SURVEY_ASSETS_DIR
+        self.assertEqual(self.status()['state'], 'none')
+        self.assertEqual(self.pdf().get_json()['code'], 'not_printed')
+        self.answer = lambda: FakeAnswer(content=b'%PDF-1.7\n%again')
+        self.assertEqual(self.printed()['state'], 'ready')
+        self.assertEqual(self.pdf().data, b'%PDF-1.7\n%again')
+
+    def test_an_archived_book_is_not_printed(self):
+        self.published()
+        self.client.post(f'/api/survey-books/{self.book["uuid"]}/archive', headers=self.admin)
+        refused = self.ask()
+        self.assertEqual((refused.status_code, refused.get_json()['code']), (409, 'book_archived'))
+        with self.app.app_context():
+            self.assertEqual(SurveyBookPrint.query.count(), 0)
+
+    def test_who_asked_for_a_print_is_not_told_to_readers(self):
+        self.published()
+        self.assertNotIn('requested_by', self.printed())
+
+    def test_the_same_book_is_never_printed_twice(self):
+        survey = self.published()
+        self.assertEqual(self.ask().status_code, 202)                             # waiting behind another book
+        changed = self.patch_survey(survey, {'field': {**survey['field'], 'surface': 'Gravel'}}, head=self.admin)
+        self.publish(changed.get_json())
+        self.assertEqual(self.status()['state'], 'none')
+        self.assertEqual(self.ask().status_code, 202)                             # asked again for the book as it is now
+        self.printer.run_pending(self.app)
+        self.assertEqual(len(self.posted), 1)                                     # the first prints it as it is now; the second finds it done
+        self.assertEqual(self.status()['state'], 'ready')
+        self.assertEqual(self.pdf().status_code, 200)
+        with self.app.app_context():
+            self.assertEqual([r.state for r in SurveyBookPrint.query.all()], ['ready'])
+
+    def test_a_print_that_failed_after_one_was_printed_does_not_hide_it(self):
+        self.published()
+        self.printed()
+        with self.app.app_context():
+            done = SurveyBookPrint.query.one()
+            db.session.add(SurveyBookPrint(book_id=done.book_id, fingerprint=done.fingerprint, state='failed', pages=1, done_pages=0,
+                                           error='The printer could not print the book.', started_at=done.started_at))
+            db.session.commit()
+        self.assertEqual(self.status()['state'], 'ready')
+        self.assertEqual(self.pdf().status_code, 200)
+
+    def test_each_page_carries_the_book_s_name_as_the_book_has_it_now(self):
+        self.published()
+        self.client.patch(f'/api/survey-books/{self.book["uuid"]}', headers={**self.admin, 'If-Match': f'"{self.book_revision()}"'},
+                          json={'name': 'A CO HLZ BOOK'})
+        self.printed()
+        html = self.posted[0]['html']
+        self.assertIn('<div class="book">A CO HLZ BOOK</div>', html)
+        self.assertNotIn('B CO HLZ BOOK', html)
+
+    def test_a_long_cover_text_is_cut_and_says_so(self):
+        lines, cut = book_pdf.cover_text('\n'.join(f'Line {i}' for i in range(12)))
+        self.assertEqual((len(lines), cut, lines[-1]), (book_pdf.COVER_LINES, True, 'Line 6 …'))
+        self.assertEqual(book_pdf.cover_text('One line.\n\n'), (['One line.'], False))
+        self.assertEqual(len(book_pdf.cover_text('word ' * 400)[0]), book_pdf.COVER_LINES)        # wrapped as it prints, then cut
+        self.client.patch(f'/api/survey-books/{self.book["uuid"]}', headers={**self.admin, 'If-Match': f'"{self.book_revision()}"'},
+                          json={'cover_text': 'x\n' * 20})
+        self.published()
+        self.printed()
+        self.assertIn('all of it is in the book\'s details in EZ/PZ', self.posted[0]['html'])
+
+    def test_pictures_are_printed_no_larger_than_the_page_needs(self):
+        big = io.BytesIO()
+        Image.new('RGB', (2400, 1600), (90, 120, 60)).save(big, 'JPEG')
+        data, kind = pages.for_print(big.getvalue(), 'image/jpeg')
+        with Image.open(io.BytesIO(data)) as small:
+            self.assertEqual((max(small.size), kind), (pages.PRINT_EDGE_PX, 'image/jpeg'))
+        capture = io.BytesIO()
+        Image.new('RGBA', (1600, 1000), (1, 2, 3, 255)).save(capture, 'PNG')
+        self.assertEqual(pages.for_print(capture.getvalue(), 'image/png')[1], 'image/jpeg')
+        tiny = io.BytesIO()
+        Image.new('RGB', (600, 400)).save(tiny, 'JPEG')
+        self.assertEqual(pages.for_print(tiny.getvalue(), 'image/jpeg'), (tiny.getvalue(), 'image/jpeg'))
+        self.assertEqual(pages.for_print(b'not a picture', 'image/jpeg'), (b'not a picture', 'image/jpeg'))
+
+    def test_a_printer_thread_that_ended_is_replaced(self):
+        printed = []
+        printer = book_pdf.Printer()
+        printer._queue.append((5, printed.append))
+        printer._known.add(5)
+        printer._thread = threading.Thread(target=lambda: None)                  # ended without letting go
+        printer.resume(self.app, 5, printed.append)                               # already queued: the look starts a thread all the same
+        printer._thread.join(5)
+        self.assertEqual(printed, [5])
 
     def test_progress_is_said_page_by_page(self):
         self.published()

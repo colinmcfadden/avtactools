@@ -14,8 +14,10 @@
   .band.top { top: 2.6in; } .band.top span { left: 0.02in; top: 0; }
   .band.bottom { bottom: 0.45in; } .band.bottom span { left: 0.02in; top: 0; }
   .head { height: 0.62in; display: grid; grid-template-columns: 2.45in 1fr 2.6in; align-items: end; padding-bottom: 0.05in; }
-  .head .hlz { font-size: 21pt; font-weight: 800; line-height: 1; }
-  .head .book { font-size: 8.5pt; letter-spacing: 0.03em; margin-top: 3pt; }
+  .head .id, .head .title { min-width: 0; }
+  .head .hlz { font-size: 21pt; font-weight: 800; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .head .hlz.long { font-size: 14pt; }
+  .head .book { font-size: 8.5pt; letter-spacing: 0.03em; margin-top: 3pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .head .mid { text-align: center; }
   .head .logo { font-size: 11pt; font-weight: 800; letter-spacing: 0.06em; }
   .head .when { margin-top: 4pt; font-size: 9pt; display: inline-flex; align-items: center; gap: 6pt; }
@@ -23,7 +25,11 @@
   .head .mark { background: #111417; color: #fff; font-weight: 800; padding: 1pt 5pt; letter-spacing: 0.06em; }
   .head .title { text-align: right; }
   .head .kicker { font-size: 11pt; letter-spacing: 0.04em; }
-  .head .name { font-size: 19pt; font-weight: 800; line-height: 1.05; }
+  /* A name keeps to the header, however long: smaller, then two lines, then cut. */
+  .head .name { font-size: 19pt; font-weight: 800; line-height: 1.05; overflow: hidden; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+  .head .name.mid { font-size: 14pt; }
+  .head .name.long { font-size: 10.5pt; -webkit-line-clamp: 2; }
   .frame { border: 1.3pt solid #111417; height: 9.02in; display: flex; flex-direction: column; }
   .facts { height: 2.42in; display: flex; flex-direction: column; border-bottom: 1.3pt solid #111417; }
   .cells { display: flex; border-bottom: 0.8pt solid #111417; }

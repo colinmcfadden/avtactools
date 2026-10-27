@@ -97,6 +97,7 @@ class PermissionTests(SurveyCase):
         return (('get', '/api/survey-books', None), ('post', '/api/survey-books', {'name': 'X'}),
                 ('get', book, None), ('patch', book, {'name': 'X'}), ('post', f'{book}/archive', None),
                 ('post', f'{book}/restore', None), ('post', f'{book}/import', None),
+                ('get', f'{book}/print', None), ('post', f'{book}/print', None), ('get', f'{book}/pdf', None),
                 ('post', '/api/surveys', {'book': self.book['uuid'], 'name': 'LZ X'}),
                 ('get', base, None), ('patch', base, {'name': 'X'}), ('post', f'{base}/archive', None),
                 ('post', f'{base}/restore', None), ('post', f'{base}/measure', {}),

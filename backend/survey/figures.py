@@ -90,6 +90,12 @@ def _text(x, y, words, size, colour=WHITE, anchor="start", weight=700, halo=INK,
             f'stroke-width="{halo_w}" paint-order="stroke" font-weight="{weight}">{escape(str(words))}</text>')
 
 
+def _fit(words, most):
+    """``words`` cut to at most ``most`` characters, the last of them "…", where they are longer."""
+    most = max(most, 2)
+    return words if len(words) <= most else words[:most - 1].rstrip() + "…"
+
+
 def _box_label(x, y, words, size=20, anchor="start"):
     """A word on a white box, as the draft's contour and arrow labels are."""
     words = str(words)
@@ -210,8 +216,10 @@ def plan(spec, width_px=PLAN_W, height_px=PLAN_H):
     # The name's box and the target are kept clear; a contour's number that would sit on them, or on a number already placed, is left
     # out (the server spaces them 40 m apart, which at a page's zoom can be a label's width), majors first.
     tx, ty = frame.project(*target)
-    name = spec.get("label") or ""
-    sub = spec.get("sublabel") or ""
+    # A name too long for the room on either side of the target is cut to the wider side, never drawn off the picture.
+    room = max(frame.width - 10 - (tx + 26), tx - 26 - 10)
+    name = _fit(spec.get("label") or "", int((room - 16) // 16))
+    sub = _fit(spec.get("sublabel") or "", int((room - 16) // 12))
     name_w = max(len(name) * 16 + 16, len(sub) * 12 + 16)
     name_x = tx + 26 if tx + 26 + name_w < frame.width - 10 else tx - 26 - name_w
     taken = [(tx - 18, ty - 18, tx + 18, ty + 18), (name_x, ty - 34, name_x + name_w, ty + 22)]

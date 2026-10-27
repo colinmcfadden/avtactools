@@ -7,12 +7,12 @@
   <div class="band top"><span>HLZ SURVEY{% if m.book.unitLine %} · {{ m.book.unitLine }}{% endif %}</span></div>
   <div class="band bottom"><span>EZ/PZ{% if m.version %} v{{ m.version }}{% endif %} · {{ m.printedLong }}</span></div>
   <header class="head">
-    <div class="id"><div class="hlz">{{ m.hlzId or '—' }}</div><div class="book">{{ m.book.name }}</div></div>
+    <div class="id"><div class="hlz{% if (m.hlzId or '')|length > 12 %} long{% endif %}">{{ m.hlzId or '—' }}</div><div class="book">{{ m.book.name }}</div></div>
     <div class="mid">
       <div class="logo">EZ/PZ</div>
       <div class="when"><span>{{ m.printedOn }}</span>{% if m.page %}<span class="pg">{{ m.page.n }}</span>{% endif %}{% if m.mark %}<span class="mark">{{ m.mark }}</span>{% endif %}{% if m.revision %}<span>{{ m.revision }}</span>{% endif %}</div>
     </div>
-    <div class="title"><div class="kicker">HLZ SURVEY</div><div class="name">{{ m.name }}</div></div>
+    <div class="title"><div class="kicker">HLZ SURVEY</div><div class="name{% if (m.name or '')|length > 32 %} long{% elif (m.name or '')|length > 20 %} mid{% endif %}">{{ m.name }}</div></div>
   </header>
   <main class="frame">
     <section class="facts">

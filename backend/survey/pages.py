@@ -10,10 +10,12 @@ it, is the editor's preview where the server has no Gotenberg (``preview_html``)
 from __future__ import annotations
 
 import base64
+import io
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
+from PIL import Image
 
 from brief import gotenberg
 from survey import figures
@@ -24,6 +26,25 @@ _env = Environment(loader=FileSystemLoader(str(_TEMPLATES)), autoescape=select_a
 PAPER = ("8.5", "11")
 MARGINS = ("0.3", "0.3", "0.3", "0.3")
 _EXTENSIONS = {"image/jpeg": ".jpg", "image/png": ".png"}
+# A photo or a 3D capture is printed at most this many pixels on its long side: no slot on the page is 4 in wide, so this is 300 dpi
+# and more, where a kept photo's 2,400 pixels made a book's PDF several times the size, every one passed through to it by Chromium.
+PRINT_EDGE_PX = 1200
+
+
+def for_print(data, content_type):
+    """A picture as the page prints it: (bytes, content type), made smaller where it is larger than the page needs, else as it is."""
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            if max(image.size) <= PRINT_EDGE_PX:
+                return data, content_type
+            image.draft("RGB", (PRINT_EDGE_PX, PRINT_EDGE_PX))   # a JPEG decodes at a fraction of its size where it can
+            small = image.convert("RGB")
+        small.thumbnail((PRINT_EDGE_PX, PRINT_EDGE_PX), Image.LANCZOS)
+        out = io.BytesIO()
+        small.save(out, "JPEG", quality=85, optimize=True)
+        return out.getvalue(), "image/jpeg"
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return data, content_type
 
 
 def _figures(model, asset_bytes, prefix=""):
@@ -40,7 +61,7 @@ def _figures(model, asset_bytes, prefix=""):
         found = asset_bytes(asset_id)
         if not found:
             return None
-        data, content_type = found
+        data, content_type = for_print(*found)
         name = prefix + stem + _EXTENSIONS.get(content_type, ".jpg")
         files[name] = data
         return name

@@ -1124,15 +1124,17 @@ def _suggested_changes(survey, previous):
         return ''
 
 
-def _page_model(survey, revision=None, opacity=None, page=None):
-    """The page's model: a published revision's as it was signed, else the survey's as it is now. ``page`` numbers it in the whole
-    book's PDF, in place of the place in the book it was published at."""
+def _page_model(survey, revision=None, opacity=None, page=None, in_book=None):
+    """The page's model: a published revision's as it was signed, else the survey's as it is now. In the whole book's PDF, ``page``
+    numbers it and ``in_book`` (``book.cover_of``) names the book, in place of the place and the book it was published in."""
     book = _book_of(survey)
     if revision is not None:
         stored = revision.page or {}
+        named = ({'name': in_book['name'], 'unitLine': in_book['unitLine']} if in_book is not None
+                 else {'name': stored.get('bookName') or book.name, 'unitLine': stored.get('unitLine') or ''})
         return compile_page(
             _revision_source(survey, revision),
-            book={'name': stored.get('bookName') or book.name, 'unitLine': stored.get('unitLine') or ''},
+            book=named,
             page=page or ({'n': stored['pageN'], 'of': stored.get('pageOf')} if isinstance(stored.get('pageN'), int) else None),
             version=stored.get('version') or __version__,
             printed_on=as_date(stored.get('printedOn')) or revision.published_at,
@@ -1253,9 +1255,15 @@ def _published(book):
     return entries
 
 
-def _latest_print(book, key):
-    return (SurveyBookPrint.query.filter_by(book_id=book.id, fingerprint=key)
-            .order_by(SurveyBookPrint.id.desc()).first())
+def _print_for(book, key):
+    """The print that answers for the book as it stands (``key``, its fingerprint): one printed whose file is there, else one on its
+    way, else the last that failed. A print whose file has gone (a redeploy with no SURVEY_ASSETS_DIR, a restore) answers for
+    nothing, so the book can be printed again; nor does a newer print that failed hide one that was printed."""
+    store = asset_store.store()
+    rows = SurveyBookPrint.query.filter_by(book_id=book.id, fingerprint=key).order_by(SurveyBookPrint.id.desc()).all()
+    return (next((r for r in rows if r.state == 'ready' and r.pdf_sha256 and store.has(r.pdf_sha256)), None)
+            or next((r for r in rows if r.state == 'printing'), None)
+            or next((r for r in rows if r.state == 'failed'), None))
 
 
 def _print_json(row, entries):
@@ -1267,7 +1275,6 @@ def _print_json(row, entries):
         'printed_at': _iso(row.finished_at) if ready else None,
         'size_bytes': row.size_bytes if ready else None,
         'error': row.error if row is not None and row.state == 'failed' else None,
-        'requested_by': row.requested_by_name if row is not None else None,
         'available': bool(gotenberg.url()),
     }
 
@@ -1282,10 +1289,12 @@ def book_print(book_uuid):
     if book is None:
         return _not_found('book')
     entries = _published(book)
-    key = book_pdf.fingerprint(book, entries, __version__)
-    row = _latest_print(book, key)
+    key = book_pdf.fingerprint(book_pdf.cover_of(book), entries, __version__)
+    row = _print_for(book, key)
     app = current_app._get_current_object()
     if request.method == 'POST':
+        if book.archived_at is not None:
+            return _error('This book is archived: restore it to print it.', 409, 'book_archived')
         if not entries:
             return _error('Nothing in the book is published yet: its PDF holds the published pages.', 409, 'nothing_published')
         if not gotenberg.url():
@@ -1305,18 +1314,23 @@ def book_print(book_uuid):
 @survey_bp.route('/api/survey-books/<book_uuid>/pdf', methods=['GET'])
 @signed_in
 def book_pdf_file(book_uuid):
-    """The book's PDF as it was printed for the book as it stands; 409 ``not_printed`` until it is."""
+    """The book's PDF as it was printed for the book as it stands; 409 ``not_printed`` until it is. Sent from the disk where the store
+    keeps it there, never read whole into memory (a book is tens of megabytes)."""
     book = _readable_book(book_uuid)
     if book is None:
         return _not_found('book')
     entries = _published(book)
-    row = _latest_print(book, book_pdf.fingerprint(book, entries, __version__))
-    data = asset_store.store().get(row.pdf_sha256) if row is not None and row.state == 'ready' and row.pdf_sha256 else None
-    if data is None:
+    row = _print_for(book, book_pdf.fingerprint(book_pdf.cover_of(book), entries, __version__))
+    store = asset_store.store()
+    if row is None or row.state != 'ready':
         return _error('The book has not been printed as it stands: print it first.', 409, 'not_printed')
     words = re.sub(r'[^A-Za-z0-9 _.-]+', '', f'{book.name} {row.finished_at:%Y-%m-%d}').strip() or 'survey book'
-    response = send_file(io.BytesIO(data), mimetype='application/pdf', as_attachment=request.args.get('download') == '1',
-                         download_name=f'{words}.pdf')
+    on_disk = store.path(row.pdf_sha256)
+    data = None if on_disk else store.get(row.pdf_sha256)
+    if on_disk is None and data is None:
+        return _error('The book has not been printed as it stands: print it first.', 409, 'not_printed')
+    response = send_file(on_disk or io.BytesIO(data), mimetype='application/pdf', as_attachment=request.args.get('download') == '1',
+                         download_name=f'{words}.pdf', conditional=False, etag=False)
     response.headers['Cache-Control'] = 'private, no-store'
     return response
 
@@ -1353,13 +1367,23 @@ def _print_book_now(print_id):
     entries = _published(book)
     if not entries:
         return failed('Nothing in the book is published any more.')
-    # The book may have moved on since it was asked for: what is printed is named for what it holds.
-    row.fingerprint, row.pages = book_pdf.fingerprint(book, entries, __version__), len(entries)
+    # The book may have moved on since it was asked for: what is printed is named for what it holds, its words read once.
+    cover = book_pdf.cover_of(book)
+    key = book_pdf.fingerprint(cover, entries, __version__)
+    store = asset_store.store()
+    done = SurveyBookPrint.query.filter(SurveyBookPrint.book_id == book.id, SurveyBookPrint.fingerprint == key,
+                                        SurveyBookPrint.id != row.id, SurveyBookPrint.state == 'ready').all()
+    if any(other.pdf_sha256 and store.has(other.pdf_sha256) for other in done):
+        # Printed meanwhile, by a print asked for the book as it stood then: nothing is printed twice.
+        db.session.delete(row)
+        db.session.commit()
+        return
+    row.fingerprint, row.pages = key, len(entries)
     db.session.commit()
     total = len(entries)
-    pages_in = [(_page_model(survey, revision, page={'n': n, 'of': total}), _asset_reader(survey))
+    pages_in = [(_page_model(survey, revision, page={'n': n, 'of': total}, in_book=cover), _asset_reader(survey))
                 for n, (survey, revision) in enumerate(entries, start=1)]
-    model = book_pdf.compile_book(book, [(m, rev) for (m, _read), (_s, rev) in zip(pages_in, entries)], datetime.utcnow(), __version__)
+    model = book_pdf.compile_book(cover, [(m, rev) for (m, _read), (_s, rev) in zip(pages_in, entries)], datetime.utcnow(), __version__)
 
     def progress(n):
         row.done_pages = n
@@ -1373,19 +1397,19 @@ def _print_book_now(print_id):
     except gotenberg.Failed as problem:
         log.warning('surveys: the book %s could not be printed: %s', book.uuid, problem)
         return failed('The printer could not print the book. Try again in a moment.')
-    key = hashlib.sha256(pdf).hexdigest()
-    store = asset_store.store()
-    store.put(key, pdf)
-    row.state, row.pdf_sha256, row.size_bytes, row.done_pages, row.finished_at = 'ready', key, len(pdf), total, datetime.utcnow()
+    pdf_key = hashlib.sha256(pdf).hexdigest()
+    store.put(pdf_key, pdf)
+    row.state, row.pdf_sha256, row.size_bytes, row.done_pages, row.finished_at = 'ready', pdf_key, len(pdf), total, datetime.utcnow()
     row.error = None
     db.session.commit()
-    # The book's older prints are let go: a book is tens of megabytes, and only the newest is ever served. One still marked as
-    # printing from before this process started, that the printer does not hold, was left by a restart for a book that has moved
-    # on since: nothing will look for it. (One started since may be on its way to the printer.)
+    # The book's older prints are let go: only the newest is ever served, and a book is tens of megabytes. A print's file is the
+    # book's alone (its bytes name the book on their cover), so nothing else refers to it. One still marked as printing from before
+    # this process started, that the printer does not hold, was left by a restart for a book that has moved on since: nothing will
+    # look for it. (One started since may be on its way to the printer.)
     for old in SurveyBookPrint.query.filter(SurveyBookPrint.book_id == book.id, SurveyBookPrint.id != row.id).all():
         if old.state == 'printing' and (book_pdf.PRINTER.knows(old.id) or old.started_at >= book_pdf.PRINTER.started):
             continue
-        if old.pdf_sha256 and old.pdf_sha256 != key:
+        if old.pdf_sha256 and old.pdf_sha256 != pdf_key:
             store.delete(old.pdf_sha256)
         db.session.delete(old)
     db.session.commit()
