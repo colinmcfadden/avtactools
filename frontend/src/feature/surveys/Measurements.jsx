@@ -3,6 +3,7 @@ import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
 import SlopeProfile from "../terrain/SlopeProfile";
 import { slopeProfileFor } from "../terrain/groundProfile";
+import Obstacles from "./Obstacles";
 
 /*
  * What EZ/PZ measured of the LZ (the survey's snapshot, docs/LZ_SURVEYS.md §3.3), and the dialog that shows what a new measurement
@@ -119,6 +120,7 @@ const Measurements = ({ snapshot, stale = [], onMeasure, busy, canMeasure, whyNo
           )}
           <SlopeTable slope={snapshot.slope} />
           {profile && <div className="survey-profile"><SlopeProfile profile={profile} /></div>}
+          <Obstacles obstacles={snapshot.obstacles} />
           {snapshot.problems?.length > 0 && (
             <ul className="survey-problems">
               {snapshot.problems.map((problem) => <li key={problem}>{problem}</li>)}

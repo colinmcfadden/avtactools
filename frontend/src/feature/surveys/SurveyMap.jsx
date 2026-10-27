@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
+import { CircleMarker, ImageOverlay, MapContainer, Polygon, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import api from "../auth/api";
 import Icon from "../ui/Icon";
@@ -11,6 +11,7 @@ import useSlopeOpacity from "../terrain/slopeOpacity";
 import { mgrsToLatLon } from "../../utils/mgrs";
 import { parseCoordinate } from "../../utils/coordParse";
 import { approachArrows, boundaryOf } from "./surveyDiagram";
+import { spotWords } from "./Obstacles";
 
 /*
  * The survey's map (docs/LZ_SURVEYS.md, the editor's survey mode): the LZ/PZ diagram's target and boundary, the best approach and
@@ -20,7 +21,18 @@ import { approachArrows, boundaryOf } from "./surveyDiagram";
  *
  * Tools: set the target (a click, or a grid or coordinate typed), find the boundary with the model at the target (/analyze-field,
  * as the LZ/PZ panel's Analyze does), or draw it a corner at a click.
+ *
+ * What the LiDAR found (step L4) is a layer of its own: the tallest thing standing in each 2 m cell round the LZ, in four bands, and
+ * the tallest in the LZ and within 100 m of it, marked. For the admin to read; the page does not print it.
  */
+
+/** The tree-height picture's bands, as the server colours them (survey/obstacles.py's HEIGHT_BANDS). */
+const HEIGHT_BANDS = [
+  ["1–5 m", "rgba(255, 236, 160, 0.9)"],
+  ["5–15 m", "rgba(255, 170, 60, 0.9)"],
+  ["15–30 m", "rgba(232, 74, 40, 0.9)"],
+  ["30 m and more", "rgba(150, 20, 92, 0.9)"],
+];
 
 const DEFAULT_CENTER = [34.6, -84.1];
 
@@ -48,17 +60,22 @@ export const placeOf = (text) => {
   return coordinate ? { lat: coordinate.lat, lon: coordinate.lon } : null;
 };
 
-const SurveyMap = ({ diagram, field, terrain, onSetTarget, onSetBoundary, readOnly = false }) => {
+const SurveyMap = ({ diagram, field, terrain, obstacles = null, onSetTarget, onSetBoundary, readOnly = false }) => {
   const { show } = useToast();
   const [mode, setMode] = useState(null);
   const [corners, setCorners] = useState([]);
   const [finding, setFinding] = useState(false);
   const [styleId, setStyleId] = useState("satellite");
   const [showSlope, setShowSlope] = useState(true);
+  const [showHeights, setShowHeights] = useState(true);
   const [place, setPlace] = useState("");
   const { slopeOpacity, setSlopeOpacity } = useSlopeOpacity();
 
   const target = diagram?.target ?? null;
+  const heights = obstacles?.status === "measured" ? obstacles.heightMap ?? null : null;
+  const tallest = obstacles?.status === "measured"
+    ? [["Tallest in the LZ", obstacles.inside], ["Tallest within 100 m", obstacles.around]].filter(([, spot]) => spot)
+    : [];
   const boundary = boundaryOf(diagram);
   const arrows = useMemo(() => approachArrows(target, field), [target, field]);
   const style = getMapStyle(styleId);
@@ -174,6 +191,12 @@ const SurveyMap = ({ diagram, field, terrain, onSetTarget, onSetBoundary, readOn
           <Recentre target={target} />
           <Clicks onClick={click} />
           {terrain && <SlopeLayer terrainData={terrain} shown={showSlope} opacity={slopeOpacity / 100} />}
+          {heights && showHeights && <ImageOverlay url={heights.overlay} bounds={heights.bounds} opacity={1} />}
+          {showHeights && tallest.map(([label, spot]) => (
+            <CircleMarker key={label} center={[spot.lat, spot.lon]} radius={7} pathOptions={{ color: "#a21caf", weight: 3, fillOpacity: 0 }}>
+              <Tooltip>{label}: {spotWords(spot)}</Tooltip>
+            </CircleMarker>
+          ))}
           {boundary && (
             <Polygon positions={boundary} pathOptions={{ color: "#fbbf24", weight: 2, dashArray: "6 4", fillOpacity: 0.05 }} />
           )}
@@ -219,6 +242,21 @@ const SurveyMap = ({ diagram, field, terrain, onSetTarget, onSetBoundary, readOn
         </label>
         {terrain && showSlope && <SlopeOpacityControl value={slopeOpacity} onChange={setSlopeOpacity} />}
         {!terrain && <span className="survey-muted">Measure to see the slope map.</span>}
+        {heights && (
+          <>
+            <label className="survey-check">
+              <input type="checkbox" checked={showHeights} onChange={(event) => setShowHeights(event.target.checked)} />
+              What stands (LiDAR)
+            </label>
+            {showHeights && (
+              <ul className="survey-legend" aria-label="Height above the ground">
+                {HEIGHT_BANDS.map(([words, colour]) => (
+                  <li key={words}><span className="survey-legend__swatch" style={{ background: colour }} aria-hidden="true" />{words}</li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

@@ -134,6 +134,7 @@ const SurveyEditor = ({ surveys }) => {
             diagram={draft.diagram}
             field={draft.field}
             terrain={survey.snapshot?.terrain ?? null}
+            obstacles={survey.snapshot?.obstacles ?? null}
             onSetTarget={setTarget}
             onSetBoundary={setBoundary}
             readOnly={archived}
