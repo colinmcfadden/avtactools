@@ -85,6 +85,28 @@ def test_what_a_page_lacks_is_named_never_made_up():
     assert page['field']['surveyedOn'] == 'OCT 2023'
 
 
+def test_an_elevation_with_a_thousands_comma_is_its_number():
+    page = book.read_page(_page([(206, 69, 'Grid:'), (223, 69, '16S GD 6341 3199'), (400, 69, 'Elevation: 1,850 ft msl')]), 9)
+    assert page['field']['elevationFt'] == '1850'
+    page = book.read_page(_page([(206, 69, 'Grid:'), (223, 69, '16S GD 6341 3199'), (400, 69, 'Elevation: UNK')]), 9)
+    assert page['field']['elevationFt'] == 'UNK'
+    assert page['warnings'] == ['Elevation is "UNK", not a number: kept as written.']
+
+
+def test_the_footer_s_values_end_at_the_next_label():
+    footer = 'Survey Date: OCT 2023 Surveyed by: AASF1, CW3 J. SIMPSON, ASO Checked: MAJ R. LEE'
+    page = book.read_page(_page([(206, 69, 'Grid:'), (223, 69, '16S GD 6341 3199'), (1100, 69, footer)]), 9)
+    field = page['field']
+    assert (field['surveyedOn'], field['surveyUnit'], field['surveyedBy']) == ('OCT 2023', 'AASF1', 'CW3 J. SIMPSON, ASO')
+    assert page['warnings'] == ['The footer\'s "Checked" is not one the importer reads: "MAJ R. LEE" was left out.']
+
+
+def test_a_page_without_the_survey_profile_s_title_says_so():
+    page = book.read_page(_page([(206, 69, 'Grid:'), (223, 69, '16S GD 6341 3199'), (1100, 69, 'Survey Date: OCT 2023')]), 9)
+    assert 'Survey profile' in page['unread']
+    assert 'Survey profile' not in book.read_page(PAGES[5], 5)['unread']
+
+
 def test_the_bundle_holds_a_manifest_and_the_photos(tmp_path):
     photo = tmp_path / 'p.jpg'
     photo.write_bytes(b'\xff\xd8photo')

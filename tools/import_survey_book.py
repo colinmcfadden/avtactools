@@ -59,7 +59,11 @@ LABEL_WORDS = {
 # Values a page may leave blank without anything being missed: the book has these blank on many pages.
 MAY_BE_BLANK = {"size", "maxWeight", "remarks", "warning", "hazards", "maxAcNight"}
 PROFILE_TITLE = re.compile(r"HLZ\s+Survey\s+Profile", re.I)
-# Two photos of a page are its biggest pictures; the form's own small images (arrows, a helicopter) are far smaller.
+# A label in the footer: a few words written as words are, not in capitals as its values are, and a colon ("Survey Date:", "Last Survey
+# by:"), so the end of "…, ASO Checked:" is the label "Checked".
+FOOTER_LABEL = re.compile(r"\b[A-Z][a-z]+(?:\s+[A-Za-z][a-z]*)*\s*:")
+# A page's photos are the first two of its pictures, top to bottom, of at least this many square points: the form's own small images
+# (arrows, a helicopter) are far smaller.
 MIN_PHOTO_AREA = 40_000
 
 
@@ -165,8 +169,9 @@ def _clean(text):
 
 
 def _number(text):
-    match = re.search(r"-?\d+(?:\.\d+)?", text or "")
-    return match.group() if match else None
+    """The first number in ``text``, its thousands' commas taken out ("1,850 ft msl" is 1850)."""
+    match = re.search(r"-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?", text or "")
+    return match.group().replace(",", "") if match else None
 
 
 def read_page(page, number):
@@ -234,6 +239,8 @@ def read_page(page, number):
         feet = _number(field["elevationFt"])
         if feet is not None:
             field["elevationFt"] = feet
+        else:
+            warnings.append(f'Elevation is "{field["elevationFt"]}", not a number: kept as written.')
     for key in list(field):
         if not field[key] and key not in MAY_BE_BLANK:
             blank.append(LABEL_WORDS.get(key, key))
@@ -243,8 +250,11 @@ def read_page(page, number):
         blank.append("Max A/C")
 
     # The survey profile's box, read by where its numbers are: the obstacle's height up its right edge (beside "Feet"), the distance
-    # along its foot (beside "Meters"). A mark after the distance ("75’ Meters", on some pages) is not taken for a height.
-    if profile_top is not None:
+    # along its foot (beside "Meters"). A mark after the distance ("75’ Meters", on some pages) is not taken for a height. A page
+    # without the box's title has its profile named as not found, never left out without a word.
+    if profile_top is None:
+        unread.append("Survey profile")
+    else:
         box = [p for p in pieces if p["top"] >= profile_top - 2 and p["right"] <= split + 40
                and (footer is None or p["top"] < footer["top"] - 4)]
         meters = next((p for p in box if re.search(r"meters?|metres?", p["words"], re.I)), None)
@@ -260,15 +270,23 @@ def read_page(page, number):
             blank.append("Survey profile")
 
     if footer is not None:
-        match = re.search(r"Survey\s+Date\s*:\s*(.*?)\s*(?:Last\s+Survey\s+by\s*:\s*(.*))?$", footer["text"], re.I)
-        if match:
-            field["surveyedOn"] = _clean(match.group(1))
-            by = _clean(match.group(2) or "")
-            if "," in by:
-                unit, person = by.split(",", 1)
-                field["surveyUnit"], field["surveyedBy"] = unit.strip(), person.strip()
-            elif by:
-                field["surveyedBy"] = by
+        # The footer's labelled values, each up to the next label: "Survey Date: OCT 2023 Last Survey by: AASF1, CW3 J. SIMPSON, ASO".
+        # A label the importer does not know is said, never read into the value before it.
+        labels = list(FOOTER_LABEL.finditer(footer["text"]))
+        for index, label in enumerate(labels):
+            end = labels[index + 1].start() if index + 1 < len(labels) else len(footer["text"])
+            value = _clean(footer["text"][label.end():end])
+            words = _clean(label.group())
+            if re.search(r"Survey\s+Date\s*:$", words, re.I):
+                field["surveyedOn"] = value
+            elif re.search(r"Survey(?:ed)?\s+by\s*:$", words, re.I):
+                if "," in value:
+                    unit, person = value.split(",", 1)
+                    field["surveyUnit"], field["surveyedBy"] = unit.strip(), person.strip()
+                elif value:
+                    field["surveyedBy"] = value
+            else:
+                warnings.append(f'The footer\'s "{words.rstrip(":")}" is not one the importer reads: "{value}" was left out.')
     for key, words in (("surveyedOn", "Survey Date"), ("surveyedBy", "Last Survey by")):
         if not field.get(key):
             unread.append(words)
@@ -339,8 +357,10 @@ def read_book(pdf, workdir, pages=None):
                 continue
             name = f"photos/p{number:03d}-{'north' if photo['kind'] == 'photo_north' else 'approach'}{source.suffix.lower()}"
             files[name] = source
+            # A photo is dated by the survey, when its date is one (the server takes at most 40 characters).
+            surveyed_on = survey["field"].get("surveyedOn", "")
             kept.append({"file": name, "kind": photo["kind"], "heading_deg": photo["heading_deg"],
-                         "taken_on": survey["field"].get("surveyedOn", "")})
+                         "taken_on": surveyed_on if len(surveyed_on) <= 40 else ""})
         survey["photos"] = kept
         surveys.append(survey)
     if not surveys:
