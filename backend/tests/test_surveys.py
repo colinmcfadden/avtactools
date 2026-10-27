@@ -381,6 +381,22 @@ class AssetTests(SurveyCase):
         kept = self.client.get(f'/api/surveys/{self.survey["uuid"]}/assets/{first["id"]}', headers=self.admin)
         self.assertEqual(kept.status_code, 200)                                    # kept: a published page may show it
 
+    def test_taking_the_3d_view_off_takes_off_every_capture_still_live(self):
+        # The review's: two captures made at once both stayed live, and taking the newest off brought the other back to the page.
+        first = self.upload(self.png(), filename='view.png', kind='view_3d', heading_deg='90').get_json()
+        with self.app.app_context():
+            kept = db.session.get(LzSurveyAsset, first['id'])
+            twin = LzSurveyAsset(survey_id=kept.survey_id, kind='view_3d', caption='', heading_deg=270.0, content_type=kept.content_type,
+                                 width=kept.width, height=kept.height, size_bytes=kept.size_bytes, sha256=kept.sha256,
+                                 created_by=kept.created_by, created_by_name=kept.created_by_name)
+            db.session.add(twin)
+            db.session.commit()
+            twin_id = twin.id
+        removed = self.client.delete(f'/api/surveys/{self.survey["uuid"]}/assets/{twin_id}', headers=self.admin)
+        self.assertEqual(removed.status_code, 200)
+        full = self.client.get(f'/api/surveys/{self.survey["uuid"]}', headers=self.admin).get_json()
+        self.assertEqual([a['id'] for a in full['assets'] if a['kind'] == 'view_3d'], [])
+
     def test_a_pose_is_a_capture_s_and_is_checked(self):
         pose = json.dumps({'headingDeg': 90, 'pitchDeg': -20, 'rangeM': 500})
         self.assertEqual(self.upload(jpeg_with_exif((800, 600), 1), kind='photo_north', pose=pose).get_json()['code'], 'invalid_asset')

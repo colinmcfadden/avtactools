@@ -78,7 +78,7 @@ def heading_words(value):
     heading = value if _finite(value) else measure.heading_of(value)
     if heading is None:
         return None
-    whole = int(round(heading)) % 360
+    whole = profile.js_round(heading) % 360                 # halves up, as the editor rounds it (Python's round goes to even)
     return f"{whole or 360:03d}°"
 
 
@@ -320,11 +320,17 @@ def _view3d(assets):
     if not captures:
         return None
     capture = max(captures, key=lambda a: a["id"])
-    heading = capture.get("heading_deg")
-    caption = f"3D · LOOKING {int(round(heading)) % 360:03d}°T" if _finite(heading) else "3D"
-    survey = _get(capture, "pose", "survey", "name")
-    if isinstance(survey, str) and survey.strip():
-        caption += f" · LIDAR {_one_line(survey).upper()[:28]}"
+    heading = heading_words(capture.get("heading_deg")) if _finite(capture.get("heading_deg")) else None
+    caption = f"3D · LOOKING {heading}T" if heading else "3D"
+    # The survey by its year, which says how old its trees are, in a tag that stays short over the picture; its name only where its
+    # year is not known, and then whole words of it.
+    survey = _get(capture, "pose", "survey")
+    year = survey.get("year") if isinstance(survey, dict) else None
+    name = _one_line(survey.get("name")).upper() if isinstance(survey, dict) else ""
+    if isinstance(year, int) and not isinstance(year, bool):
+        caption += f" · LIDAR {year}"
+    elif name:
+        caption += f" · LIDAR {name if len(name) <= 24 else name[:23] + '…'}"
     return {"assetId": capture["id"], "caption": caption}
 
 

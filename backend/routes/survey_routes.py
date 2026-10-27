@@ -1552,6 +1552,8 @@ def upload_asset(survey_uuid):
         )
         if meta['kind'] in CAPTURE_KINDS:
             # The page prints one 3D view: a new capture takes the place of the last, which is kept (a published page may show it).
+            # Two at once go one after the other: each takes the survey's row before it looks for the last, or both stay live.
+            LzSurvey.query.filter_by(id=survey.id).with_for_update().populate_existing().first()
             now = datetime.utcnow()
             for old in LzSurveyAsset.query.filter_by(survey_id=survey.id, kind=meta['kind'], removed_at=None).all():
                 old.removed_at = now
@@ -1637,6 +1639,10 @@ def remove_asset(survey_uuid, asset_id):
         if asset.removed_at is not None:
             return _reply({'removed': asset.id, 'survey': {'status': survey.status, 'revision': survey.revision, 'was': survey.revision}})
         asset.removed_at = datetime.utcnow()
+        if asset.kind in CAPTURE_KINDS:
+            # Taking the 3D view off takes it off: another capture still live (two kept at once) would come back in its place.
+            for other in LzSurveyAsset.query.filter_by(survey_id=survey.id, kind=asset.kind, removed_at=None).all():
+                other.removed_at = asset.removed_at
         moved = _photos_changed(survey)
         if _photo_saved():
             return _reply({'removed': asset.id, 'survey': moved})
