@@ -1,0 +1,105 @@
+{
+  "_about": "The LZ/PZ diagram an imported survey is given (backend/survey/importing.py diagram_at, then with_boundary once the model has found its boundary), at LZ DONOVAN's grid, with its id and times fixed. The web's serializeLzDiagram must give each back unchanged (surveyDiagram.test.js), so a draft the import made opens and saves in the editor as one made there.",
+  "grid": "16S GD 6341 3199",
+  "targeted": {
+    "schemaVersion": 2,
+    "id": "00000000-0000-4000-8000-000000000005",
+    "savedId": null,
+    "name": "LZ DONOVAN",
+    "dirty": false,
+    "createdAt": "2026-10-26T12:00:00Z",
+    "updatedAt": "2026-10-26T12:00:00Z",
+    "status": "targeted",
+    "target": {
+      "lat": 34.59601685277441,
+      "lon": -84.12779028344909,
+      "mgrs": "16S GD 63415 31995"
+    },
+    "mapData": {
+      "mgrs": "16S GD 63415 31995"
+    },
+    "flightData": {},
+    "analysis": {
+      "customLZ": null,
+      "detectedLZ": null,
+      "terrainData": null,
+      "results": null,
+      "gridElevation": "",
+      "latLong": ""
+    },
+    "graphics": {
+      "doghouses": [],
+      "helicopters": [],
+      "pzMarkers": [],
+      "sectorsOfFire": [],
+      "goArounds": [],
+      "units": [],
+      "measurements": [],
+      "exportBox": null
+    },
+    "view": {
+      "mapStyle": "satellite",
+      "showLZOutline": true,
+      "showHeatmap": false
+    }
+  },
+  "analyzed": {
+    "schemaVersion": 2,
+    "id": "00000000-0000-4000-8000-000000000005",
+    "savedId": null,
+    "name": "LZ DONOVAN",
+    "dirty": false,
+    "createdAt": "2026-10-26T12:00:00Z",
+    "updatedAt": "2026-10-26T12:00:00Z",
+    "status": "analyzed",
+    "target": {
+      "lat": 34.59601685277441,
+      "lon": -84.12779028344909,
+      "mgrs": "16S GD 63415 31995"
+    },
+    "mapData": {
+      "mgrs": "16S GD 63415 31995"
+    },
+    "flightData": {},
+    "analysis": {
+      "customLZ": null,
+      "detectedLZ": [
+        [
+          34.5964662,
+          -84.1283357
+        ],
+        [
+          34.5964662,
+          -84.1272449
+        ],
+        [
+          34.5955675,
+          -84.1272449
+        ],
+        [
+          34.5955675,
+          -84.1283357
+        ]
+      ],
+      "terrainData": null,
+      "results": null,
+      "gridElevation": "",
+      "latLong": ""
+    },
+    "graphics": {
+      "doghouses": [],
+      "helicopters": [],
+      "pzMarkers": [],
+      "sectorsOfFire": [],
+      "goArounds": [],
+      "units": [],
+      "measurements": [],
+      "exportBox": null
+    },
+    "view": {
+      "mapStyle": "satellite",
+      "showLZOutline": true,
+      "showHeatmap": false
+    }
+  }
+}

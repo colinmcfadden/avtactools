@@ -96,10 +96,12 @@ class PermissionTests(SurveyCase):
         book = f'/api/survey-books/{self.book["uuid"]}'
         return (('get', '/api/survey-books', None), ('post', '/api/survey-books', {'name': 'X'}),
                 ('get', book, None), ('patch', book, {'name': 'X'}), ('post', f'{book}/archive', None),
-                ('post', f'{book}/restore', None), ('post', '/api/surveys', {'book': self.book['uuid'], 'name': 'LZ X'}),
+                ('post', f'{book}/restore', None), ('post', f'{book}/import', None),
+                ('post', '/api/surveys', {'book': self.book['uuid'], 'name': 'LZ X'}),
                 ('get', base, None), ('patch', base, {'name': 'X'}), ('post', f'{base}/archive', None),
                 ('post', f'{base}/restore', None), ('post', f'{base}/measure', {}),
                 ('post', f'{base}/submit', None), ('post', f'{base}/draft', None), ('post', f'{base}/publish', {}),
+                ('post', f'{base}/import/checked', None),
                 ('get', f'{base}/pdf', None), ('get', f'{base}/page', None),
                 ('post', f'{base}/assets', None), ('get', f'{base}/assets/1', None),
                 ('patch', f'{base}/assets/1', {'caption': 'x'}), ('delete', f'{base}/assets/1', None))

@@ -73,6 +73,64 @@ def find_field_contour(image):
         return approx
     return None
 
+class ImageryUnavailable(RuntimeError):
+    """The satellite tile the model looks at could not be fetched."""
+
+
+def boundary_in_tile(image, tile, lat, lon):
+    """The model's boundary of the open area at (lat, lon) in a fetched tile, [[lat, lon], …], or None where it finds none.
+    One analysis at a time (``_sam_lock``)."""
+    # 2. CALCULATE EXACT PIXEL (The Fix)
+    # We map the lat/lon to the specific 0-256 pixel on the tile
+    bounds = mercantile.bounds(tile)
+    
+    # Calculate percentage relative to tile bounds
+    # (lon - West) / Width
+    x_pct = (lon - bounds.west) / (bounds.east - bounds.west)
+    # (North - lat) / Height (Note: Latitude grows upwards, pixels grow downwards)
+    y_pct = (bounds.north - lat) / (bounds.north - bounds.south)
+    
+    # Convert to pixel coordinates (256x256 image)
+    prompt_x = int(x_pct * 256)
+    prompt_y = int(y_pct * 256)
+    
+    print(f"DEBUG: Prompting AI at pixel [{prompt_x}, {prompt_y}]")
+
+    # 3. Run SAM AI with the specific point
+    # We prompt with the calculated [prompt_x, prompt_y].
+    # imgsz=512: the source tile is only 256px, so the default 1024
+    # inference size just upscales it 4x and runs the encoder at 1024^2 —
+    # ~3.3GB of memory (OOM-kills a 2GB machine) for no added detail.
+    with _sam_lock:
+        results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4, imgsz=512)
+
+    if results[0].masks is None:
+        return None
+    # Get the mask with the highest score (usually the first one)
+    # Sometimes SAM returns multiple options (small, medium, large). 
+    # We sort by area to prefer the main field, or just take the first.
+    best_mask = results[0].masks.xy[0]
+    
+    # 4. Convert Resulting Pixels back to Lat/Lon
+    lz_polygon = []
+    for point in best_mask:
+        px, py = float(point[0]), float(point[1])
+        
+        p_lon = bounds.west + (px / 256) * (bounds.east - bounds.west)
+        p_lat = bounds.north - (py / 256) * (bounds.north - bounds.south)
+        
+        lz_polygon.append([p_lat, p_lon])
+    return lz_polygon
+
+
+def find_lz_boundary(lat, lon, zoom=14):
+    """What /api/analyze-field finds at (lat, lon), for work that is not a request (an imported survey measured in the background,
+    survey/importing.py): the boundary, or None. Raises ImageryUnavailable when the imagery cannot be fetched."""
+    image, tile = fetch_satellite_tile(lat, lon, zoom=zoom)
+    if image is None:
+        raise ImageryUnavailable("Map data unavailable")
+    return boundary_in_tile(image, tile, lat, lon)
+
 # --- ROUTES ---
 
 @terrain_bp.route('/api/analyze-field', methods=['POST'])
@@ -111,47 +169,9 @@ def analyze_field():
     if image is None:
         return jsonify({"status": "error", "message": "Map data unavailable"}), 500
 
-    # 2. CALCULATE EXACT PIXEL (The Fix)
-    # We map the lat/lon to the specific 0-256 pixel on the tile
-    bounds = mercantile.bounds(tile)
-    
-    # Calculate percentage relative to tile bounds
-    # (lon - West) / Width
-    x_pct = (lon - bounds.west) / (bounds.east - bounds.west)
-    # (North - lat) / Height (Note: Latitude grows upwards, pixels grow downwards)
-    y_pct = (bounds.north - lat) / (bounds.north - bounds.south)
-    
-    # Convert to pixel coordinates (256x256 image)
-    prompt_x = int(x_pct * 256)
-    prompt_y = int(y_pct * 256)
-    
-    print(f"DEBUG: Prompting AI at pixel [{prompt_x}, {prompt_y}]")
-
-    # 3. Run SAM AI with the specific point
     try:
-        # We prompt with the calculated [prompt_x, prompt_y].
-        # imgsz=512: the source tile is only 256px, so the default 1024
-        # inference size just upscales it 4x and runs the encoder at 1024^2 —
-        # ~3.3GB of memory (OOM-kills a 2GB machine) for no added detail.
-        with _sam_lock:
-            results = model.predict(image, points=[[prompt_x, prompt_y]], labels=[1], conf=0.4, imgsz=512)
-        
-        if results[0].masks is not None:
-            # Get the mask with the highest score (usually the first one)
-            # Sometimes SAM returns multiple options (small, medium, large). 
-            # We sort by area to prefer the main field, or just take the first.
-            best_mask = results[0].masks.xy[0]
-            
-            # 4. Convert Resulting Pixels back to Lat/Lon
-            lz_polygon = []
-            for point in best_mask:
-                px, py = float(point[0]), float(point[1])
-                
-                p_lon = bounds.west + (px / 256) * (bounds.east - bounds.west)
-                p_lat = bounds.north - (py / 256) * (bounds.north - bounds.south)
-                
-                lz_polygon.append([p_lat, p_lon])
-
+        lz_polygon = boundary_in_tile(image, tile, lat, lon)
+        if lz_polygon is not None:
             return jsonify({
                 "status": "success",
                 "suggested_lz": lz_polygon, 
