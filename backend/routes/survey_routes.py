@@ -28,6 +28,7 @@ from flask import Blueprint, current_app, g, jsonify, make_response, request, se
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
+from werkzeug.exceptions import RequestEntityTooLarge
 
 import terrain_tiles
 from brief import gotenberg
@@ -380,66 +381,142 @@ def restore_book(book_uuid):
 
 # -- Surveys -----------------------------------------------------------------------
 
-@survey_bp.route('/api/survey-books/<book_uuid>/import', methods=['POST'])
-@signed_in
-def import_pages(book_uuid):
-    """The old book's pages as drafts in this book (docs/LZ_SURVEYS.md §6), from the bundle tools/import_survey_book.py writes. A page
-    whose HLZ ID the book has already is left out, never written over. Each draft is then measured in the background, one at a time."""
-    book = _readable_book(book_uuid, lock=True)
+def _import_refusal(book):
     if book is None:
         return _not_found('book')
     if not access.can_edit(_me(), book):
         return _not_editor()
     if book.archived_at is not None:
-        return _error('This book is archived: restore it to import into it.', 409, 'archived')
-    # Refused before the form is read: the file would otherwise be spooled whole first.
-    if request.content_length is not None and request.content_length > importing.MAX_BUNDLE_BYTES + 64 * 1024:
-        return _error('The bundle is larger than an import takes (100 MB). Import the book in parts (--pages).', 413, 'bundle_too_large')
-    upload = request.files.get('bundle')
+        return _error('This book is archived: restore it to import into it.', 409, 'book_archived')
+    return None
+
+
+def _import_plan(book, bundle):
+    """Which of the bundle's pages to make, and why each other one is left as it is: a page of the same book imported before (so
+    importing twice, or again after an answer that was lost, adds nothing), a page the bundle has twice, and an HLZ ID the book has
+    already, archived or not, or the bundle has on an earlier page. In page order."""
+    surveys = LzSurvey.query.filter_by(book_id=book.id).all()
+    taken = {s.hlz_id.upper(): s.archived_at is not None for s in surveys if s.hlz_id}
+    done = {(record.source, record.page) for record in
+            LzSurveyImport.query.join(LzSurvey, LzSurvey.id == LzSurveyImport.survey_id).filter(LzSurvey.book_id == book.id)}
+    make, skipped, pages_seen, ids_seen = [], [], set(), {}
+
+    def skip(page, reason):
+        skipped.append({'page': page['page'], 'hlz_id': page['hlzId'], 'name': page['name'], 'reason': reason})
+
+    for page in bundle.pages:
+        number, hlz_id = page['page'], page['hlzId']
+        if bundle.source and (bundle.source, number) in done:
+            skip(page, f'Page {number} of {bundle.source} was imported into this book already: left as it is.')
+        elif number in pages_seen:
+            skip(page, f'Page {number} is in the bundle twice: imported once.')
+        elif hlz_id and hlz_id in taken:
+            skip(page, f'{hlz_id} is in the book already, archived: restore it there.' if taken[hlz_id]
+                 else f'{hlz_id} is in the book already: left as it is.')
+        elif hlz_id and hlz_id in ids_seen:
+            skip(page, f'{hlz_id} is on page {ids_seen[hlz_id]} of the bundle too: imported from that page.')
+        else:
+            make.append(page)
+        pages_seen.add(number)
+        if hlz_id:
+            ids_seen.setdefault(hlz_id, number)
+    return make, skipped
+
+
+def _import_photos(bundle, page, store):
+    """The page's photos read one at a time, made ready as any upload is (no metadata) and kept in the store; what is made of each,
+    or a warning on the page for one that cannot be used."""
+    warnings, kept = page['notes']['warnings'], []
+    for photo in page['photos']:
+        words = importing.photo_words(photo['kind'])
+        try:
+            data = bundle.photo(photo)
+        except importing.Damaged:
+            warnings.append(f'The {words} is damaged in the bundle and was left out.')
+            continue
+        if data is None:
+            warnings.append(f'The {words} is larger than 20 MB and was left out.')
+            continue
+        try:
+            prepared = asset_store.prepare_photo(data)
+        except asset_store.AssetError as problem:
+            # A picture that cannot be read refuses nothing but itself.
+            warnings.append(f'A photo could not be read ({problem}) and was left out.')
+            continue
+        store.put(prepared.key, prepared.data)
+        kept.append({**photo, 'content_type': prepared.content_type, 'width': prepared.width, 'height': prepared.height,
+                     'size_bytes': len(prepared.data), 'sha256': prepared.key})
+    return kept
+
+
+@survey_bp.route('/api/survey-books/<book_uuid>/import', methods=['POST'])
+@signed_in
+def import_pages(book_uuid):
+    """The old book's pages as drafts in this book (docs/LZ_SURVEYS.md §6), from the bundle tools/import_survey_book.py writes. A page
+    imported into the book before, or whose HLZ ID the book has already, is left out, never written over. Each draft is then
+    measured in the background, one at a time.
+
+    Everything slow is done before the book is locked: the upload is read, the bundle checked and every photo made ready and kept,
+    one at a time. Only then is the book taken (two imports, or an import and a new page, go one after the other), what to make
+    worked out again, and the drafts written."""
+    book = _readable_book(book_uuid)
+    refused = _import_refusal(book)
+    if refused:
+        return refused
+    limit = importing.MAX_BUNDLE_BYTES + 64 * 1024
+    # Refused before the form is read: the file would otherwise be spooled whole first. A request that gives no length (chunked) is
+    # held to the same size as it is read.
+    if request.content_length is not None and request.content_length > limit:
+        return _error(importing.TOO_LARGE, 413, 'bundle_too_large')
+    request.max_content_length = limit
+    try:
+        upload = request.files.get('bundle')
+    except RequestEntityTooLarge:
+        return _error(importing.TOO_LARGE, 413, 'bundle_too_large')
     if upload is None:
         return _error('Send the bundle as the form\'s "bundle".', 400, 'missing_file')
+    store = asset_store.store()
     try:
-        bundle = importing.read_bundle(upload.stream.read(importing.MAX_BUNDLE_BYTES + 1))
+        with importing.read_bundle(upload.stream.read(importing.MAX_BUNDLE_BYTES + 1)) as bundle:
+            make, _skipped = _import_plan(book, bundle)
+            # Nothing is held while the photos are made ready: they take seconds, and the database's connection goes back meanwhile.
+            db.session.rollback()
+            photos = {page['page']: _import_photos(bundle, page, store) for page in make}
     except importing.BundleError as problem:
         return _error(str(problem), 413 if problem.code == 'bundle_too_large' else 400, problem.code)
-    user, who, store = _me(), _who(), asset_store.store()
-    taken = {s.hlz_id.upper() for s in _book_surveys(book) if s.hlz_id}
-    made, skipped = [], []
-    for page in bundle['pages']:
-        hlz_id = page['hlzId']
-        if hlz_id and hlz_id in taken:
-            skipped.append({'page': page['page'], 'hlz_id': hlz_id, 'name': page['name'],
-                            'reason': f'{hlz_id} is in the book already: left as it is.'})
-            continue
-        if hlz_id:
-            taken.add(hlz_id)
+
+    book = _readable_book(book_uuid, lock=True)
+    refused = _import_refusal(book)
+    if refused:
+        return refused
+    # Another import may have taken some of these pages meanwhile: their photos stay in the store unused. One that was not to be
+    # made a moment ago (an HLZ ID let go of meanwhile) has had no photos made ready, and waits for the next import.
+    make, skipped = _import_plan(book, bundle)
+    for page in [page for page in make if page['page'] not in photos]:
+        make.remove(page)
+        skipped.append({'page': page['page'], 'hlz_id': page['hlzId'], 'name': page['name'],
+                        'reason': 'The book changed while the bundle was read: import it again to take this page.'})
+    user, who = _me(), _who()
+    made = []
+    for page in make:
         place, note = importing.place_of(page['field'])
         warnings = ([note] if note else []) + page['notes']['warnings']
         survey = LzSurvey(
-            uuid=str(uuid_lib.uuid4()), book_id=book.id, hlz_id=hlz_id, name=page['name'], status='draft', revision=1,
+            uuid=str(uuid_lib.uuid4()), book_id=book.id, hlz_id=page['hlzId'], name=page['name'], status='draft', revision=1,
             field=page['field'], overrides={}, diagram=importing.diagram_at(place[0], place[1], page['name']) if place else None,
             snapshot=None, created_by=user.id, created_by_name=who, updated_by=user.id, updated_by_name=who,
         )
         db.session.add(survey)
         db.session.flush()
-        for photo in page['photos']:
-            if photo['data'] is None:
-                continue
-            try:
-                prepared = asset_store.prepare_photo(photo['data'])
-            except asset_store.AssetError as problem:
-                # A picture that cannot be read refuses nothing but itself.
-                warnings.append(f'A photo could not be read ({problem}) and was left out.')
-                continue
-            store.put(prepared.key, prepared.data)
+        for photo in photos.get(page['page'], []):
             db.session.add(LzSurveyAsset(
                 survey_id=survey.id, kind=photo['kind'], caption=f"From page {page['page']} of the old book",
-                heading_deg=photo['heading_deg'], taken_on=photo['taken_on'], content_type=prepared.content_type,
-                width=prepared.width, height=prepared.height, size_bytes=len(prepared.data), sha256=prepared.key,
+                heading_deg=photo['heading_deg'], taken_on=photo['taken_on'], content_type=photo['content_type'],
+                width=photo['width'], height=photo['height'], size_bytes=photo['size_bytes'], sha256=photo['sha256'],
                 created_by=user.id, created_by_name=who,
             ))
         db.session.add(LzSurveyImport(
-            survey_id=survey.id, source=bundle['source'], page=page['page'], notes={**page['notes'], 'warnings': warnings},
+            survey_id=survey.id, source=bundle.source, page=page['page'], notes={**page['notes'], 'warnings': warnings},
             state='queued' if place else 'no_target',
             reason=None if place else "Set the LZ's target on the map, then measure it.",
             imported_by=user.id, imported_by_name=who,
@@ -453,7 +530,7 @@ def import_pages(book_uuid):
     importing.MEASURER.enqueue(current_app._get_current_object(), [s.id for s in made if s.diagram is not None])
     records = _import_records(made)
     return _reply({
-        'source': bundle['source'],
+        'source': bundle.source,
         'created': [_summary(s, records.get(s.id)) for s in made],
         'skipped': skipped,
         'book': _book_json(book),

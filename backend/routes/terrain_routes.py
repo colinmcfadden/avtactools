@@ -25,6 +25,10 @@ _sam_lock = threading.Lock()
 
 # --- HELPER FUNCTIONS ---
 
+# Seconds to connect to an outside service, and to wait for each part of its answer.
+SERVICE_TIMEOUT_S = (5, 30)
+
+
 def fetch_satellite_tile(lat, lon, zoom=16):
     """
     Downloads the specific map tile for a lat/lon
@@ -36,7 +40,11 @@ def fetch_satellite_tile(lat, lon, zoom=16):
     # Note: In production, use your Mapbox URL for better quality
     url = f"https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{zoom}/{tile.y}/{tile.x}"
     
-    response = requests.get(url)
+    # A service that stops answering must not hold the caller for good: the import's measuring has one thread (survey/importing.py).
+    try:
+        response = requests.get(url, timeout=SERVICE_TIMEOUT_S)
+    except requests.RequestException:
+        return None, None
     if response.status_code == 200:
         # Convert bytes to an image OpenCV can read
         image = np.asarray(bytearray(response.content), dtype="uint8")
@@ -147,7 +155,7 @@ def analyze_field():
     try:
         # Use the same API you used in terrain_analysis
         elev_url = f"https://api.opentopodata.org/v1/srtm30m?locations={lat},{lon}"
-        elev_res = requests.get(elev_url).json()
+        elev_res = requests.get(elev_url, timeout=SERVICE_TIMEOUT_S).json()
         
         # Extract the value (default to 0 if API fails)
         results = elev_res.get('results', [])

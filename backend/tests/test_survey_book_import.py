@@ -5,6 +5,7 @@ import io
 import json
 import math
 import sys
+import threading
 import uuid
 import zipfile
 from pathlib import Path
@@ -15,6 +16,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from PIL import Image  # noqa: E402
+from sqlalchemy.exc import OperationalError  # noqa: E402
 
 from models import LzSurvey, LzSurveyAsset, LzSurveyImport, Team, TeamMember, User, db  # noqa: E402
 from survey import assets as asset_store  # noqa: E402
@@ -61,6 +63,36 @@ def two_pages():
         page(5, 'GA 034', 'LZ DONOVAN', DONOVAN['field'], photos=(('photo_north', 0.0), ('photo_approach', 0.0))),
         page(1, 'NGA 030', 'LZ BIG STAMP', BIG_STAMP, photos=(('photo_north', 0.0), ('photo_approach', 290.0)), blank=['Surface Condition']),
     ]
+
+
+def locked(info):
+    info.flag_bits |= 0x1                                                       # "encrypted": the importer never locks one
+
+
+def deflate64(info):
+    info.compress_type = 9                                                      # a method zipfile does not read
+
+
+def rezip(data, name, change):
+    """The bundle with the entry ``name``'s header changed by ``change(info)``, its bytes as they were."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(data)) as source, zipfile.ZipFile(out, 'w') as target:
+        for info in source.infolist():
+            raw = source.open(info).read()
+            if info.filename == name:
+                change(info)
+            target.writestr(info, raw) if info.filename != name else _write_as(target, info, raw)
+    return out.getvalue()
+
+
+def _write_as(target, info, raw):
+    """Writes ``raw`` deflated under ``info``'s header as ``change`` left it: a header zipfile would not write itself."""
+    method, flags = info.compress_type, info.flag_bits
+    info.compress_type = zipfile.ZIP_DEFLATED
+    with target.open(info, 'w') as member:
+        member.write(raw)
+    written = target.infolist()[-1]
+    written.compress_type, written.flag_bits = method, written.flag_bits | flags
 
 
 class ImportCase(SurveyCase):
@@ -142,7 +174,7 @@ class ImportTests(ImportCase):
         self.assertEqual((snapshot['measuredBy'], snapshot['grid']), ('CW3 Admin', '16S GD 63415 31995'))
         self.assertIsNotNone(snapshot['elevation'])
         self.assertIsNotNone(snapshot['slope'])
-        self.assertEqual(donovan['updated_by'], 'CW3 Admin')
+        self.assertEqual(donovan['updated_by'], 'EZ/PZ (import)')                  # not the importer, who did not save it then
         self.assertEqual(donovan['status'], 'draft')
 
     def test_a_page_whose_hlz_id_is_in_the_book_is_left_as_it_is(self):
@@ -154,6 +186,27 @@ class ImportTests(ImportCase):
         self.assertEqual(self.survey(mine['uuid'])['revision'], 1)
         again = self.imported()                                              # importing twice adds nothing
         self.assertEqual((again['created'], len(again['skipped'])), ([], 2))
+
+    def test_importing_again_adds_nothing_even_pages_with_no_hlz_id(self):
+        pages = [page(1, '', 'LZ NO ID', BIG_STAMP), page(2, 'GA 040', 'LZ TWICE', BIG_STAMP), page(2, 'GA 041', 'LZ AGAIN', BIG_STAMP),
+                 page(3, 'GA 040', 'LZ SAME ID', BIG_STAMP)]
+        first = self.imported(bundle(pages))
+        self.assertEqual([(s['imported']['page'], s['name']) for s in first['created']], [(1, 'LZ NO ID'), (2, 'LZ TWICE')])
+        self.assertEqual([s['reason'] for s in first['skipped']], [
+            'Page 2 is in the bundle twice: imported once.',
+            'GA 040 is on page 2 of the bundle too: imported from that page.',
+        ])
+        again = self.imported(bundle(pages))                                   # sent again after an answer that was lost
+        self.assertEqual(again['created'], [])
+        self.assertEqual(again['skipped'][0]['reason'],
+                         'Page 1 of LZ-SURVEYS-OCT-2023.pdf was imported into this book already: left as it is.')
+        self.assertEqual(self.listing().get_json()['book']['survey_count'], 2)
+
+    def test_an_hlz_id_archived_in_the_book_is_not_imported_again(self):
+        mine = self.new_survey()
+        self.client.post(f'/api/surveys/{mine["uuid"]}/archive', headers=self.admin)
+        body = self.imported()
+        self.assertEqual(body['skipped'][0]['reason'], 'GA 034 is in the book already, archived: restore it there.')
 
     def test_no_boundary_found_is_said_and_nothing_is_measured(self):
         self.boundary = lambda lat, lon: None
@@ -285,21 +338,76 @@ class BundleTests(ImportCase):
         self.assertIn('another version', self.refused(bundle(two_pages(), version=2)))
         self.assertIn('no pages', self.refused(bundle([])))
 
-    def test_a_page_is_checked_as_the_editor_checks_a_survey(self):
-        bad = page(7, 'GA 036', 'LZ FINNEY', {**BIG_STAMP, 'altimeter': 'KJZP'})
-        self.assertIn("Page 7: field has no value called 'altimeter'", self.refused(bundle([bad])))
-        self.assertIn('Page 7: maxAcDay must be text', self.refused(bundle([page(7, 'GA 036', 'LZ FINNEY', {'maxAcDay': 2})])))
-        self.assertIn('no page number', self.refused(bundle([{**two_pages()[0], 'page': 'five'}])))
-        self.assertIn('HLZ ID is longer', self.refused(bundle([{**two_pages()[0], 'hlzId': 'X' * 41}])))
-        heading = two_pages()[0]
-        heading['photos'][0]['heading_deg'] = 400
-        self.assertIn("heading is not 0 to 360", self.refused(bundle([heading])))
+    def warnings(self, body, index=0):
+        return self.survey(body['created'][index]['uuid'])['imported']['notes']['warnings']
 
-    def test_a_photo_must_be_one_the_bundle_holds(self):
-        pages = two_pages()
-        self.assertIn('names no file', self.refused(bundle(pages, files={})))
-        pages[0]['photos'][0]['file'] = '../../etc/passwd'
-        self.assertIn('names no file', self.refused(bundle(pages, files={'../../etc/passwd': b'x'})))
+    def test_a_page_is_held_to_the_editor_s_rules_and_what_they_refuse_is_left_out_and_said(self):
+        self.assertIn('no page number', self.refused(bundle([{**two_pages()[0], 'page': 'five'}])))   # only what is no page refuses
+        bad = page(7, 'GA 036', 'LZ FINNEY', {**BIG_STAMP, 'altimeter': 'KJZP', 'maxAcDay': 2, 'remarks': 'x' * 2001},
+                   photos=(('photo_north', 400), ('photo_approach', 10 ** 400)))
+        bad['photos'][0]['taken_on'] = 'Last Survey by: AASF1, CW3 J. SIMPSON, ASO, B CO'
+        body = self.imported(bundle([bad, two_pages()[0]]))                    # one page's odd values never stop the rest
+        self.assertEqual([s['hlz_id'] for s in body['created']], ['GA 034', 'GA 036'])
+        finney = self.survey(body['created'][1]['uuid'])
+        self.assertFalse({'altimeter', 'maxAcDay', 'remarks'} & set(finney['field']))
+        self.assertEqual(finney['field']['grid'], BIG_STAMP['grid'])
+        self.assertEqual(finney['imported']['notes']['warnings'], [
+            'A value was not imported: maxAcDay must be text, as the survey wrote it.',
+            "A value was not imported: field has no value called 'altimeter'.",
+            'A value was not imported: remarks can be at most 2000 characters.',
+            "The north photo's heading is not 0 to 360 degrees: it was left blank.",
+            "The north photo's date is longer than 40 characters: it was left blank.",
+            "The best approach photo's heading is not 0 to 360 degrees: it was left blank.",
+        ])
+        north, approach = finney['assets']
+        self.assertEqual((north['heading_deg'], north['taken_on'], approach['heading_deg']), (None, '', None))
+
+    def test_a_name_and_hlz_id_are_held_to_the_editor_s_rules_once_in_capitals(self):
+        long_id = page(7, 'ß' * 30, 'LZ FINNEY', BIG_STAMP)                    # SS once in capitals: 60 characters, past 40
+        long_name = page(8, 'GA 037', 'ﬃ' * 40, BIG_STAMP)                     # FFI: 120, past 100
+        two_lines = page(9, 'GA\t038', 'LZ\nHOLLY', BIG_STAMP)
+        body = self.imported(bundle([long_id, long_name, two_lines], source='OLD\x00BOOK.pdf'))
+        made = {s['imported']['page']: self.survey(s['uuid']) for s in body['created']}
+        self.assertEqual((made[7]['hlz_id'], made[7]['name']), ('', 'LZ FINNEY'))
+        self.assertEqual(made[7]['imported']['notes']['warnings'], ["The page's HLZ ID is longer than 40 characters and was left out."])
+        self.assertEqual((made[8]['hlz_id'], made[8]['name']), ('GA 037', 'PAGE 8'))
+        self.assertEqual(made[8]['imported']['notes']['warnings'],
+                         ["The page's name is longer than 100 characters: the survey is called PAGE 8."])
+        self.assertEqual((made[9]['hlz_id'], made[9]['name']), ('', 'PAGE 9'))
+        self.assertEqual(body['source'], 'OLDBOOK.pdf')
+        saved = self.patch_survey(made[9], {'name': 'LZ HOLLY', 'hlz_id': 'GA 038'})   # the editor takes what was imported
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+
+    def test_a_photo_the_bundle_does_not_hold_is_left_out_and_said(self):
+        pages = [two_pages()[0]]
+        pages[0]['photos'][1]['file'] = '../../etc/passwd'
+        body = self.imported(bundle(pages, files={'photos/p005-north.jpg': jpeg_with_exif(size=(600, 400)), '../../etc/passwd': b'x'}))
+        self.assertEqual([a['kind'] for a in self.survey(body['created'][0]['uuid'])['assets']], ['photo_north'])
+        self.assertIn('The best approach photo is not in the bundle and was left out.', self.warnings(body))
+
+    def test_a_damaged_file_is_said_and_a_damaged_manifest_refuses_the_bundle(self):
+        good = jpeg_with_exif(size=(600, 400))
+        data = bytearray(bundle([two_pages()[0]], files={'photos/p005-north.jpg': good, 'photos/p005-approach.jpg': good}))
+        at = data.rfind(b'photos/p005-approach.jpg', 0, data.find(b'PK\x01\x02')) + len('photos/p005-approach.jpg')
+        data[at + 40] ^= 0xFF                                                   # the second photo's bytes, inside its deflate stream
+        body = self.imported(bytes(data))
+        self.assertEqual([a['kind'] for a in self.survey(body['created'][0]['uuid'])['assets']], ['photo_north'])
+        self.assertIn('The best approach photo is damaged in the bundle and was left out.', self.warnings(body))
+
+        for change in (locked, deflate64):
+            with self.subTest(change.__name__):
+                pages = [page(9, '', f'LZ {change.__name__.upper()}', BIG_STAMP, photos=(('photo_north', 0.0),))]
+                body = self.imported(rezip(bundle(pages, source=f'{change.__name__}.pdf'), 'photos/p009-north.jpg', change))
+                self.assertIn('The north photo is damaged in the bundle and was left out.', self.warnings(body))
+
+    def test_a_damaged_manifest_refuses_the_bundle(self):
+        self.assertIn('its manifest.json cannot be read', self.refused(rezip(bundle([two_pages()[0]]), 'manifest.json', deflate64)))
+
+    def test_a_manifest_nested_past_reading_is_not_json(self):
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, 'w') as archive:
+            archive.writestr('manifest.json', '[' * 200_000 + ']' * 200_000)
+        self.assertIn('manifest is not JSON', self.refused(out.getvalue()))
 
     def test_a_photo_too_large_or_unreadable_is_left_out_and_said(self):
         pages = [two_pages()[0]]
@@ -321,10 +429,85 @@ class BundleTests(ImportCase):
         with patch.object(importing, 'MAX_BUNDLE_BYTES', 1000):
             self.refused(bundle(two_pages()), 413, 'bundle_too_large')
 
+    def test_a_request_with_no_length_is_held_to_the_same_size_as_it_is_read(self):
+        body, content_type = _multipart(b'\0' * 4_000_000)
+        stream = _Counted(body)
+        with patch.object(importing, 'MAX_BUNDLE_BYTES', 1000):
+            response = self.client.post(f'/api/survey-books/{self.book["uuid"]}/import', headers=self.admin, input_stream=stream,
+                                        content_type=content_type,
+                                        environ_overrides={'wsgi.input_terminated': True, 'CONTENT_LENGTH': '', 'HTTP_TRANSFER_ENCODING': 'chunked'})
+        self.assertEqual((response.status_code, response.get_json()['code']), (413, 'bundle_too_large'))
+        self.assertLess(stream.read_bytes, 1_000_000)                          # refused as it was read, never spooled whole
+
     def test_a_request_without_the_bundle_is_refused(self):
         response = self.client.post(f'/api/survey-books/{self.book["uuid"]}/import', headers=self.admin, data={},
                                     content_type='multipart/form-data')
         self.assertEqual((response.status_code, response.get_json()['code']), (400, 'missing_file'))
+
+
+class _Counted(io.BytesIO):
+    """A request body that counts what is read of it."""
+
+    read_bytes = 0
+
+    def read(self, size=-1):
+        data = super().read(size)
+        self.read_bytes += len(data)
+        return data
+
+    def readline(self, size=-1):
+        data = super().readline(size)
+        self.read_bytes += len(data)
+        return data
+
+
+def _multipart(data):
+    boundary = 'ezpz-test-boundary'
+    body = (f'--{boundary}\r\nContent-Disposition: form-data; name="bundle"; filename="book-bundle.zip"\r\n'
+            'Content-Type: application/zip\r\n\r\n').encode() + data + f'\r\n--{boundary}--\r\n'.encode()
+    return body, f'multipart/form-data; boundary={boundary}'
+
+
+class MeasurerThreadTests(ImportCase):
+    def test_the_thread_outlives_a_database_that_goes_away(self):
+        measured = []
+
+        def measure(survey_id, _find):
+            measured.append(survey_id)
+            if survey_id == 1:
+                raise ConnectionError('the imagery stalled')
+        measurer = importing.Measurer(find_boundary=self.find)                 # its own thread, as on the server
+        away = OperationalError('SELECT 1', {}, Exception('the database went away'))
+        with patch.object(importing, 'measure_imported', measure), patch.object(importing.db.session, 'rollback', side_effect=away), \
+                self.assertLogs('survey.importing', level='ERROR'):
+            measurer.enqueue(self.app, [1])
+            measurer._thread.join(5)
+        self.assertFalse(measurer.knows(1))                                    # let go, still waiting, for the book's next look
+        with patch.object(importing, 'measure_imported', measure):
+            measurer.enqueue(self.app, [2])
+            if measurer._thread is not None:
+                measurer._thread.join(5)
+        self.assertEqual(measured, [1, 2])
+
+    def test_a_queue_with_no_thread_left_is_taken_up_again(self):
+        measured = []
+        measurer = importing.Measurer(find_boundary=self.find)
+        measurer._queue.append(7)
+        measurer._known.add(7)
+        measurer._thread = threading.Thread(target=lambda: None)              # a thread that ended without letting go
+        with patch.object(importing, 'measure_imported', lambda survey_id, _find: measured.append(survey_id)):
+            measurer.resume(self.app, [])                                      # nothing new to queue: the next look starts it all the same
+            measurer._thread.join(5)
+        self.assertEqual(measured, [7])
+
+
+class FetchTests(ImportCase):
+    def test_the_imagery_fetch_gives_up_on_a_silent_service(self):
+        import requests
+        from routes import terrain_routes
+        with patch('routes.terrain_routes.requests.get', side_effect=requests.Timeout('silent')) as get:
+            self.assertEqual(terrain_routes.fetch_satellite_tile(34.596, -84.1278), (None, None))
+        self.assertEqual(get.call_args.kwargs['timeout'], terrain_routes.SERVICE_TIMEOUT_S)
 
 
 class WhoImportsTests(ImportCase):
@@ -343,7 +526,7 @@ class WhoImportsTests(ImportCase):
         self.assertEqual((refused.status_code, refused.get_json()['code']), (403, 'not_editor'))
         self.client.post(f'/api/survey-books/{self.book["uuid"]}/archive', headers=self.admin)
         archived = self.send(bundle(two_pages()))
-        self.assertEqual((archived.status_code, archived.get_json()['code']), (409, 'archived'))
+        self.assertEqual((archived.status_code, archived.get_json()['code']), (409, 'book_archived'))
         with self.app.app_context():
             self.assertEqual((LzSurvey.query.count(), LzSurveyImport.query.count()), (0, 0))
 
@@ -368,6 +551,15 @@ class PlaceTests(ImportCase):
         self.assertEqual(note, "The book's grid and lat/long are 97 m apart: the target is at the grid. Check which is right.")
         _place, note = importing.place_of({'grid': 'GD 5941 4456', 'latLong': 'N 34 42.662 W084 10.078'})
         self.assertEqual(note, "The book's grid could not be read: the target is at its lat/long.")
+
+    def test_a_lat_long_in_another_form_is_still_checked_and_one_unread_is_said(self):
+        place, note = importing.place_of({**DONOVAN['field'], 'latLong': '34°35\'34.7"N 84°07\'24.1"W'})
+        self.assertEqual(note, "The book's grid and lat/long are 528 m apart: the target is at the grid. Check which is right.")
+        for text in ('N34 35 34.7 W084 07 24.1', '34 35.579N 084 07.402W'):
+            self.assertIsNotNone(importing.latlon_of_text(text), text)
+        place, note = importing.place_of({**DONOVAN['field'], 'latLong': 'SMUDGED'})
+        self.assertEqual(note, "The book's lat/long could not be read, so it was not checked against the grid: check it.")
+        self.assertEqual(place, importing.latlon_of_grid(DONOVAN['field']['grid']))
 
     def test_the_diagram_is_the_web_s_own_document(self):
         lat, lon = importing.latlon_of_grid(FIXTURE['grid'])
