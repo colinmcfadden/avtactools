@@ -117,9 +117,11 @@ Every streamed point already carries its **height above ground** (`lidar/pieces.
 ground returns), and the pieces are cached on the server (`LIDAR_STREAM_CACHE_DIR`). From them, for the survey's LZ:
 
 - **The approach and departure clearance profile** (replacing the field survey's hand-drawn box, "100 ft at 200 m"): along the best
-  approach and the best exit, a corridor 30 m each side of the line out to 1,000 m (§11, R5), the tallest point above ground in each 10 m along it, drawn as a
-  treetop line over the ground profile, with the angle from the LZ's edge that clears the tallest obstacle with no margin, and that obstacle's height and distance (no margin
-  until doctrine gives one).
+  approach and the best exit, from the touchdown point, a lane 10 m each side of the track out to 1,000 m (§11, R5), the highest thing in
+  the way in each 10 m along it drawn over the track's ground, with the shallowest angle that clears everything in the way with no margin
+  (no margin until doctrine gives one), what sets it, where that path is 100 ft above the ground (the approach's descent from 100 ft AGL
+  begins there, the owner's, 2026-10-27), and what stands more than 100 ft above the track's ground past it. The editor may type the
+  approach's angle over the LiDAR's, with a reason: the page prints it as the editor's.
 - **Obstacles in and round the LZ:** the tallest point inside the boundary and within 100 m of it, with bearing, distance and height;
   points standing more than 2 m inside the boundary counted and drawn, and trees found one by one where there are some
   (built as a local-maximum finder over the canopy's 1 m grid, §16; `filters.litree` was tried on Ellijay hardwood: AGENTS.md §13). This
@@ -260,7 +262,7 @@ The owner took the recommended answer to each (2026-10-26).
 | R2 | The sign-off | Recorded by the publishing admin: approver's name, rank, title and date, printed; the approver need not have an account, and the publishing admin may be the approver |
 | R3 | Which values "computed" covers | The measured ones only (grid, lat/long, elevation, size, axis, slope, obstacles); max A/C, best approach and exit, surface, hazards and remarks stay the admin's, from the field |
 | R4 | Elevation | The touchdown point's height in the slope's DEM, not SRTM30 (§2) |
-| R5 | The approach corridor and the clearance | 30 m each side of the approach line, out to 1,000 m; print the angle that clears the tallest obstacle with no margin and the obstacle's height and distance, until doctrine gives a margin (AGENTS.md §13: do not invent separation values) |
+| R5 | The approach corridor and the clearance | 30 m each side of the approach line, out to 1,000 m; print the angle that clears the tallest obstacle with no margin and the obstacle's height and distance, until doctrine gives a margin (AGENTS.md §13: do not invent separation values). **Decided again 2026-10-27**, after the old book showed the edge's angle unusable (§16): from the touchdown point along a lane 10 m each side of the track, out to 1,000 m, what stands 5 m or more (2 m built) and the ground where it rises; print the shallowest angle that clears it with no margin and where a descent from 100 ft AGL must begin to fly it, flag what stands over 100 ft past that, and let the editor type the angle over the LiDAR's, with a reason, printed as theirs |
 | R6 | Backups | Back up `SURVEY_ASSETS_DIR` off the VM (photos cannot be measured again), and watch the disk |
 | R7 | The LZ/PZ panel's slope tile judges the steepest slope; the survey the 95th percentile | Keep them apart for now; bring the panel to the 95th percentile on the web first if wanted |
 | R8 | One book, or many (asked while L5 was built) | **Many**: a book may be for a team (an organization's, once they exist). A team's owner and admins make, edit and publish its books; its members with `lz_surveys` read them; a book for no team is read by everyone with the key. Site admins do everything (§7) |
@@ -450,12 +452,14 @@ What the book's PDF settled that the plan did not. The code is `backend/survey/b
 
 What the LiDAR's obstacles settled that the plan did not. The code is `backend/survey/obstacles.py`, `lidar/stream.py`'s `laz`, the
 snapshot's `obstacles` (`measure.py`), the page's `clearance` (`compile.py`, `figures.clearance`, the sheet's LIDAR box), the comparison's
-`obstacle` (`compare.py`), and on the web `Obstacles.jsx` and the survey map's height layer.
+`approach` (`compare.py`), and on the web `Obstacles.jsx`, the angle's dialog (`Disagreements.jsx`) and the survey map's height layer.
 
 - **Part of Measure, not a step of its own**: the obstacles are measured with the rest of the snapshot (and by the import's background
   measuring), so one snapshot says what one target, boundary, best approach and best exit were measured for. The snapshot keeps the
-  best exit (version 3), and is version 4 since the review's fixes below (a 3's angle from the edge could be a return's scatter): a survey
-  measured before either, or before its exit changed, is measured again before review or publishing.
+  best exit (version 3), was version 4 after the review's fixes below (a 3's angle from the edge could be a return's scatter), and is
+  version 5 since the angle is from the touchdown point (a 4's, from the edge, read 87-90° on every LZ of the old book): a survey measured
+  before any of them, or before its exit changed, is measured again before review or publishing, and its page meanwhile says it was
+  measured by an earlier EZ/PZ rather than print an angle from the edge as one from the touchdown point.
 - **Read from USGS's own pieces**: the streamed `.pnts` keep neither a point's class nor its height above the ground, so the survey the
   3D view streams for the place is read as USGS publishes it (LAZ), every piece of the octree that meets what is measured, at every
   level, eight at a time, each kept beside the streamed pieces (`<key>/laz/`, never served, let go of with them when the cache is
@@ -474,49 +478,75 @@ snapshot's `obstacles` (`measure.py`), the page's `clearance` (`compile.py`, `fi
   Fort Campbell) is judged by its returns: measured where they hold vegetation or buildings, else said to classify only the ground.
 - **An obstacle is what stands 2 m or more above its own ground, and the ground where it rises.** The review proved the first version's
   angles were set by noise: every return past the edge counted, so a ground return a few centimetres up and a centimetre out, or grass,
-  read 80-89° on flat open ground. Now grass, a crop or a low bush is none; the ground counts in 10 m squares of the corridor, each the
-  median of its returns' rise (the triangles' ground under the return less theirs at the start on its own line across, so a cross-slope
-  and the triangles' low lean take nothing from it), where that is more than 0.3 m. Checked: scatter to 15 cm with grass, 0°; a tree line
-  200 m out, 8.6° for 8.5°; ground rising 5%, 3.0° for 2.9°; a 20 m ridge at 300 m, 3.8° for 3.8°; a 20% cross-slope, 0°. The trees in
-  the LZ leave out buildings, wires, towers and bridges, and its tallest and its count of standing points are obstacles only.
-- **The clearance** (§11 R5): the corridor is 30 m each side of the line through the touchdown point, from where it last leaves the
-  boundary out to 1,000 m, the approach's behind the LZ (it is flown towards it) and the exit's ahead; the angle is from the edge, with no
-  margin, to the steepest obstacle in the corridor. **Each is measured from the edge's ground at its own place across the corridor**, as
-  if flown down its own line: measured from the track's edge, ground that only rose to one side (a hillside the corridor runs along)
-  asked for 30° a metre past the edge. A corridor keeps how many of its 10 m steps the survey has returns in (a lake's water counts), and
-  why it has no angle where it has none (no returns; no ground at the edge). The angle from the touchdown point is kept beside it for the
-  editor, which the page does not print.
-- **Tried against the old book (2026-10-27), and not usable as built.** The 31 pages of the OCT 2023 book with a survey profile and a
-  best approach were read (`tools/import_survey_book.py`), each profile's angle taken as atan(height / distance) from the HLZ (the profile
-  draws the distance from there, the landing point), and each approach measured in GA_Statewide_B3_2018 from the book's grid. **From the
-  edge, as the page prints it, every LZ read 87-90°**: real LZs are clearings in timber, and a corridor 60 m wide whose obstacles are
-  measured by their distance along the track takes the tree line beside the approach path as standing at the edge. From the landing
-  point with that corridor: 3 of 31 within 5° of the field's. From the landing point along a lane 10 m each side of the flight path,
-  counting what stands 5 m or more: 10 of 31 within 5°, 16 within 10°, the median 9.7° apart; where the book's grid stands 6 m or more
-  from a tree in the LiDAR (24 LZs), the median 7.3° apart and 4.3° steeper on average. At seven LZs (BIG STAMP, HAWK MOUNTAIN, MERRILL,
-  MOSBY, RICO, SIMMONS, SWING BRIDGE) the grid stands 0.4-5.7 m from a tree 5 m or taller in the 2018 LiDAR, so any angle from it is
-  near-vertical: cleared since, or the grid is not where the aircraft lands. The field's numbers read as estimates (15 of 31 say 100 ft;
-  distances of 50, 75, 100 or 200 m) and stand taller than the LiDAR finds. **What the page prints instead is the owner's to decide**
-  (the reference, the lane, the least height); until then it prints the edge's angle as built. The results are with the session's notes.
+  read 80-89° on flat open ground. Now grass, a crop or a low bush is none; the ground counts in 10 m squares of the lane, each the
+  median of its returns' rise (the triangles' ground under the return less theirs at the touchdown point on its own line across, so a
+  cross-slope and the triangles' low lean take nothing from it), where that is more than 0.3 m. Checked: scatter to 15 cm with grass, 0°;
+  ground rising 5%, a 20 m ridge, a 20% cross-slope, a wire, each as the arithmetic says. The trees in the LZ leave out buildings, wires,
+  towers and bridges, and its tallest and its count of standing points are obstacles only.
+- **Tried against the old book (2026-10-27): the first angle could not be used.** The 31 pages of the OCT 2023 book with a survey
+  profile and a best approach were read (`tools/import_survey_book.py`), each profile's angle taken as atan(height / distance) from the HLZ
+  (the profile draws the distance from there, the landing point), and each approach measured in GA_Statewide_B3_2018 from the book's
+  grid. As first built, **from the LZ's edge across a corridor 60 m wide, every LZ read 87-90°**: real LZs are clearings in timber, and a
+  corridor that wide whose obstacles are measured by their distance along the track takes the tree line beside the approach path as
+  standing at the edge. From the landing point with that corridor: 3 of 31 within 5° of the field's. From the landing point along a lane
+  10 m each side of the flight path, counting what stands 5 m or more: 10 of 31 within 5°, 16 within 10°, the median 9.7° apart; where
+  the book's grid stands 6 m or more from a tree in the LiDAR (24 LZs), the median 7.3° apart and 4.3° steeper on average (2 m or more
+  read 9.3°; 5 m each side, 8.3°). At seven LZs (BIG STAMP, HAWK MOUNTAIN, MERRILL, MOSBY, RICO, SIMMONS, SWING BRIDGE) the grid stands
+  0.4-5.7 m from a tree 5 m or taller in the 2018 LiDAR, so any angle from it is near-vertical: cleared since, or the grid is not where
+  the aircraft lands. The field's numbers read as estimates (15 of 31 say 100 ft; distances of 50, 75, 100 or 200 m).
+- **The angle, as the owner chose it (2026-10-27; §11 R5)**: from the touchdown point along a lane 10 m each side of the track (a
+  UH-60's rotor and a little), out to 1,000 m, the approach's behind the touchdown point (it is flown towards it) and the exit's ahead,
+  everything in the lane counted, in the LZ or out of it. In the way is what stands 5 m or more above its own ground (the tree line, not
+  the brush round an LZ, which the field's surveys leave out too), 2 m for what the survey marks as built (a building, a wire, a tower, a
+  bridge), and the ground where it rises. **The angle is the shallowest that clears all of it with no margin**, each thing measured from
+  the touchdown point's ground on its own line across the lane. **Where that path is 100 ft above the ground under it** (`descent`, the
+  owner's 100 ft AGL at the point of initial descent): going out from the touchdown point, the first place the path at the angle stands
+  100 ft over the track's ground, between its 10 m steps, so ground falling away from an LZ on a hill brings it nearer and ground rising
+  puts it further out (past 1,000 m is said so). The approach's descent from 100 ft AGL begins there at the latest; the exit has climbed
+  to 100 ft AGL. **What stands more than 100 ft above the track's ground past it is flagged** (`tall`, runs of 10 m steps, nearest
+  first, each by its highest): flown at 100 ft AGL, it is in the way. A lane keeps how many of its steps the survey has returns in, and
+  why it has no angle where it has none (no returns; no ground at the touchdown point).
+- **Run again over the book with that angle**: the angles as above. Where the book's profile says 100 ft (13 of the 24 LZs clear of
+  trees), its distance stands a median 18 m from where the LiDAR's path is 100 ft AGL (26 m from where it is 100 ft over the LZ's own
+  height), which reads the book's profile as the owner does: 100 ft AGL at the point of initial descent. **Every one of the 24 has trees
+  standing more than 100 ft above the track's ground past the descent** (233 places in all, each 100-168 ft, the median 109 ft; all
+  vegetation but 8 unclassified returns): in this timber an approach flown at 100 ft AGL is at or under the canopy, and every page's
+  notes say so. Whether the 100 ft is meant over the ground or over the treetops is the owner's to say.
+- **The editor's angle**: an editor may type the approach's angle over the LiDAR's, in degrees to a tenth (over 0, under 90), with a
+  reason (`compare`'s `typed` choice on `approach`, kept with who, when and the two values it was typed against). The page prints it
+  marked as the editor's, with the LiDAR's beside it (EDITOR'S · LIDAR 8.5°), its path and descent from 100 ft AGL drawn over the
+  LiDAR's ground, and what stands over 100 ft past that descent. Only where the LiDAR has an angle (else the field's profile is typed),
+  and once either value changes (the profile retyped, the LZ measured again) it stands no longer: the LiDAR's is printed and the row is
+  open again, whether or not the two then disagree, since the page no longer prints what the editor typed. A choice kept on the
+  approach's obstacle, before its angle, is let go when the editor's next save sends it back.
 - **On the page**: the field's survey profile box becomes CLEARANCE · the survey's year · its name (the year first, before a long name is
-  cut): the approach on the left and the exit on the right, each its ground, its treetops (drawn only where something stands above the
-  track's ground, never ground rising to one side) and the dashed line that clears them to the obstacle's rise over the edge, with the
-  angle and what sets it (vegetation under 5 m is BRUSH; NOTHING ABOVE THE EDGE at 0°) and, where the survey covers part of the corridor,
-  how much; then the tallest in the LZ and within 100 m, and what the LiDAR cannot see. Something standing over 2 m in the LZ is a hazard
-  line of its own. The profile along the best approach has its treetop line: the LiDAR's height above its own ground laid on the ground
-  the profile draws, so a DEM a little off the LiDAR's moves no tree; within the LZ's span only what stands in the LZ. **The field's own
-  profile is printed whenever there is no LiDAR clearance along the approach** (no best approach, no ground at the edge), with a line
-  saying why, as when an editor chooses it, with a reason (`compare`'s `obstacle`: the field's "100 ft at 200 m" against the LiDAR
-  obstacle's rise over the edge's ground, the height the field's angle is to; 25 ft or 50 m apart is a disagreement, and "nothing above
-  the edge" against a field obstacle over 25 ft). The page's figure prints its words at 5 to 6 pt, and the box ends inside its border.
-- **In the editor**: the measurements' *Standing on and round the LZ* (each way's angle from the edge and from the touchdown point, what
-  sets it, the tallest in the LZ and round it, the points over 2 m, the trees), and on the survey's map *What stands (LiDAR)*: the tallest
-  in each 2 m cell round the LZ in four bands, and the tallest in the LZ and within 100 m marked.
+  cut), its figure the box's full width: the approach on the left and the exit on the right, each its track's ground (thicker over the
+  LZ) from the touchdown point, the highest thing in the way in each 10 m (drawn only where something stands above the track's ground,
+  never ground rising to one side), the path at the angle printed to its descent (a dot) and 100 ft over the ground past it (dashed),
+  what sets the LiDAR's angle (a triangle) and what stands over 100 ft past the dot (a ring); its words over it (APCH 360° · 8.5°,
+  DESCEND FROM 100′ AGL AT 204 M or CLIMB TO 100′ AGL AT 249 M, 98′ TREE AT 200 M, NOTHING IN THE WAY at 0°) and, where the survey
+  covers part of the lane, how much in its corner. Then the tallest in the LZ and within 100 m, and what the LiDAR cannot see. Something
+  standing over 2 m in the LZ is a hazard line of its own; what stands over 100 ft past each way's descent is a numbered note ("LiDAR:
+  past the approach's descent from 100 ft AGL, a tree 600 m out stands 131 ft above the track's ground; 3 more places."), not a hazard:
+  the hazards' box holds three lines, the field's own come last, and in timber the note is said of nearly every LZ (tried on the real
+  DONOVAN: as hazards they pushed the field's off the page). The profile along the
+  best approach has its treetop line: the LiDAR's height above its own ground laid on the ground the profile draws, so a DEM a little off
+  the LiDAR's moves no tree; within the LZ's span only what stands in the LZ. **The field's own profile is printed whenever there is no
+  LiDAR angle along the approach** (no best approach, no ground at the touchdown point, a lane from an earlier EZ/PZ), with a line saying
+  why, as when an editor chooses it, with a reason (`compare`'s `approach`: the field's "100 ft at 200 m" as its angle, 8.7°, against the
+  LiDAR's; more than 5° apart is a disagreement). The page's figure prints its words at 5 to 6 pt, and the box ends inside its border.
+- **In the editor**: the measurements' *Standing on and round the LZ* (each way's angle from the touchdown point, where its path is 100
+  ft AGL, what sets it, what stands over 100 ft past that, the tallest in the LZ and round it, the points over 2 m, the trees), with *Type
+  the approach's angle…* (and, once typed, what the page prints and *Print the LiDAR's*); the same dialog from the approach's row of
+  *Field against computed*. On the survey's map *What stands (LiDAR)*: the tallest in each 2 m cell round the LZ in four bands, and the
+  tallest in the LZ and within 100 m marked.
 - **Tested** against a survey made by the tests (`test_survey_obstacles.py`): an EPT octree of a scene round the Ellijay LZ, its index in
-  two pages, served from memory through the stream's own `Streamer`: a tree line 200 m out on the approach, a tower 400 m out on the
-  exit, a tree in the LZ, a building outside it, a bird and noise; and against point clouds made by the tests for each of the review's
-  findings (scatter and grass at the edge, rising, ridged and cross-sloping ground, a wire, a building in the LZ, a lake, a narrow LZ, a
-  reading that fails, hangs, overflows or meets an unreadable index or piece), each test checked to fail without its fix. Every test runs
+  two pages, served from memory through the stream's own `Streamer`: a tree line 258 m out on the approach, a tower 459 m out on the
+  exit (164 ft: flagged past the exit's climb), a tree in the LZ, a building outside it, a bird and noise; against point clouds made by
+  the tests for each of the review's findings (scatter and grass, rising, ridged and cross-sloping ground, a wire, a building in the LZ, a
+  lake, a narrow LZ, a reading that fails, hangs, overflows or meets an unreadable index or piece) and for the lane (brush in no one's
+  way, a shed in it from 2 m, a tree in the LZ in it, one beside the lane not, the descent over level, rising, falling and gapped ground,
+  a tree on a bank over 100 ft above the track's ground though under it above its own), each test checked to fail without its fix. Every test runs
   with `LIDAR_STREAM_CACHE_DIR` unset (`tests/conftest.py`), so none reaches AWS through a development `.env`. Against the real survey: a
   cold reading round one of the book's LZs took 3-12 s from this Mac.
 

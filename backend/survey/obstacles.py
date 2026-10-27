@@ -1,8 +1,8 @@
 """What stands on and round an LZ, from the USGS LiDAR (docs/LZ_SURVEYS.md §4, step L4).
 
 The survey the 3D view streams for the LZ's place (``lidar.stream``: the newest covering it) is read over just what is measured: the LZ
-and 100 m round it, a corridor 30 m each side of the best approach and of the best exit out to 1,000 m past the LZ's edge (§11 R5), and
-the slope profile's line through the LZ. Every piece of USGS's octree that meets them is read, at every level (a piece holds points
+and 100 m round it, a lane 10 m each side of the best approach and of the best exit from the touchdown point out to 1,000 m (§11 R5),
+and the slope profile's line through the LZ. Every piece of USGS's octree that meets them is read, at every level (a piece holds points
 between its parent's), each fetched from AWS once and kept beside the streamed pieces as USGS publishes it (``Streamer.laz``): the
 streamed ``.pnts`` keep neither a point's class nor its height above the ground, which is what is wanted here. A reading is bounded: at
 most ``MAX_POINTS`` returns (a 1 km LZ at 3DEP's density), ``FETCH_DEADLINE_S`` to fetch them, and the first piece that cannot be
@@ -11,15 +11,18 @@ fetched or read ends it.
 Every point that is not ground, noise or water is measured above the ground the survey's own ground returns make (the lowest in each
 2 m, between them a triangle at a time), and counts as standing unless it is a lone return, a bird or a glint with no other within 3 m
 (what the survey marks as a wire, a tower or a bridge excepted: a conductor's returns are often further apart). An **obstacle** is what
-stands 2 m or more above its own ground (grass, a crop or a low bush is none), and the ground itself where it rises: the median of its
-returns in each 10 m square of a corridor, where that is more than 0.3 m over the LZ's edge (a ground return scatters by a few
-centimetres, and the steepest of thousands of them a centimetre past the edge once read 86–89° on flat ground). From them:
+stands 2 m or more above its own ground (grass, a crop or a low bush is none). From them:
 
-- the clearance along the approach and the exit: the angle from where the line leaves the LZ that clears the steepest obstacle in its
-  corridor with no margin (a margin is doctrine's, not EZ/PZ's: AGENTS.md §13), with that obstacle's height, its rise over the edge's
-  ground, its distance and what it is; how many of the corridor's 10 m steps the survey has returns in; and its tallest obstacle. Each
-  obstacle is measured from the edge's ground at its own place across the corridor, as if flown down its own line: ground that only
-  rises to one side of the track (a hillside the corridor runs along) needs no angle;
+- along the approach and the exit, from the touchdown point: the shallowest angle that clears everything in the way in the lane with
+  no margin (a margin is doctrine's, not EZ/PZ's: AGENTS.md §13), and the thing that sets it, its height, its rise over the touchdown
+  point's ground, its distance and what it is. In the way is what stands 5 m or more above its own ground (2 m for what the survey marks
+  as built: a building, a wire, a tower or a bridge), and the ground itself where it rises: the median of its returns in each 10 m
+  square of the lane, where that is more than 0.3 m over the touchdown point's ground (a ground return scatters by a few centimetres,
+  and the steepest of thousands of them a centimetre out once read 86-89° on flat ground). Each is measured from the touchdown point's
+  ground on its own line across the lane, so a slope across it takes nothing from the angle. With it: where that path stands 100 ft
+  above the ground under it (the approach's descent from 100 ft AGL begins there, and the exit is 100 ft up), the places where
+  something stands more than 100 ft above the track's ground (flown at 100 ft AGL, it is in the way), and how many of the lane's 10 m
+  steps the survey has returns in;
 - the tallest obstacle inside the boundary, and within 100 m round it, with its bearing and distance from the touchdown point;
 - the points standing more than 2 m inside the boundary, counted;
 - the trees inside the boundary, one by one: the canopy's highest point within 3 m round, standing 5 m or more (a building, a wire, a
@@ -53,10 +56,24 @@ log = logging.getLogger(__name__)
 FEET_PER_METRE = tp.FEET_PER_METRE
 METRES_PER_DEGREE = tp.METRES_PER_DEGREE
 
-# §11 R5: the corridor along the best approach and the best exit, from the LZ's edge.
-CORRIDOR_HALF_WIDTH_M = 30.0
-CORRIDOR_LENGTH_M = 1000.0
+# §11 R5: the lane along the best approach and the best exit, from the touchdown point: a UH-60's rotor (16.4 m) and a little each
+# side of the track. Tried against the old book's 31 survey profiles (docs/LZ_SURVEYS.md §16), from the touchdown point along this lane
+# the LiDAR read a median 7.3° from the field's angle, where the book's grid is clear of the trees; from the LZ's edge across 60 m it read
+# 87-90° on every LZ, taking the tree line beside the path as standing in it.
+LANE_HALF_WIDTH_M = 10.0
+LANE_LENGTH_M = 1000.0
 BIN_M = 10.0
+# In the lane, what stands this far above its own ground is in the way: a tree, not the brush round an LZ, which the field's surveys
+# leave out too (2 m read 9.3° from the field's angle, 5 m 7.3°). What the survey marks as built is in the way from ``STANDING_M``: few
+# buildings, wires, towers or bridges stand taller, and a wire seldom shows at all.
+LANE_LEAST_M = 5.0
+# The approach is flown this far above the ground until its descent begins, and the exit climbs to it (the owner, 2026-10-27).
+AGL_FT = 100.0
+AGL_M = AGL_FT * 0.3048
+# At most this many places where something stands more than ``AGL_FT`` above the track's ground are kept for a way, nearest first.
+MAX_TALL_PLACES = 20
+# The slope profile's treetop line is what stands within this of its line.
+PROFILE_HALF_WIDTH_M = 30.0
 # §4: round the LZ.
 AROUND_M = 100.0
 # What stands this far above its own ground is an obstacle: grass, a crop or a low bush is not.
@@ -82,15 +99,15 @@ NOT_STANDING = (2, 7, 9, 18, 20)
 GROUND = 2
 # What a survey marks as a wire, a tower or a bridge stands even alone: a conductor's returns are often more than 3 m apart.
 NEVER_ALONE = (13, 14, 15, 16, 17)
-# What is no tree, whatever its height.
-NOT_TREES = (6, 13, 14, 15, 16, 17)
+# What a survey marks as built (a building, a wire, a tower, a bridge): no tree, whatever its height, and in a lane's way from 2 m.
+BUILT = (6, 13, 14, 15, 16, 17)
 # A survey whose name gives no year classifies more than the ground where its returns hold one of these.
 STANDING_CLASSES = (3, 4, 5, 6)
 KINDS = {1: "unclassified", 3: "vegetation", 4: "vegetation", 5: "vegetation", 6: "building", 13: "wire", 14: "wire",
          15: "tower", 16: "wire", 17: "bridge"}
 # Past this many pieces an LZ's reading is not what was asked for (a survey indexed far finer than 3DEP's).
 MAX_PIECES = 600
-# A reading holds at most this many returns: a 1 km LZ and its corridors at 3DEP's density (about 3.5 a square metre), measured in
+# A reading holds at most this many returns: a 1 km LZ and its lanes at 3DEP's density (about 3.5 a square metre), measured in
 # about 7 s and 0.7 GB. Unbounded, a 1 km LZ took 1.6 GB of the API's one worker, and a 2 km one (SAM's boundary on a field) twice that.
 MAX_POINTS = 6_000_000
 FETCH_THREADS = 8
@@ -115,8 +132,8 @@ TOO_MUCH = "The LiDAR here is indexed too finely to read for one LZ."
 TOO_LARGE = ("The LZ and 100 m round it hold more of the LiDAR than one measure reads: draw its boundary closer round the landing "
              "area.")
 UNREADABLE = "USGS's index of the LiDAR here cannot be read, so nothing standing is measured."
-# Why a way has no clearance.
-MISSING = ("no_returns", "no_edge_ground")
+# Why a way has no angle.
+MISSING = ("no_returns", "no_target_ground")
 
 
 def _ground_only(survey):
@@ -488,72 +505,110 @@ def _medians(keys, values):
     return unique, values[start + (count - 1) // 2], count
 
 
-def corridor(frame, points, ring, heading_deg, *, approach):
-    """The clearance along one way in or out: ``heading_deg`` is the way the aircraft flies (towards the LZ on the approach, away from it
-    on the exit), so the corridor lies behind the LZ for the approach and ahead of it for the exit."""
+def _finite(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def descent_point(angle_deg, start_ft, ground_ft, bin_m=BIN_M):
+    """Where a path at ``angle_deg`` from the touchdown point first stands ``AGL_FT`` above the ground under it, going out along the
+    track: the approach's descent from 100 ft AGL begins there (the nearest it can, to fly that angle), and the exit is 100 ft up there.
+    ``start_ft`` is the ground at the touchdown point and ``ground_ft`` the track's ground in the middle of each ``bin_m`` step out from
+    it (a lane's ``bins``), in feet; a step with no ground is passed over, the path measured over the ground either side of it.
+    {fromTargetM, groundFt}, both None where the path is not 100 ft up within the steps; None for a path that does not rise, or no ground
+    at the touchdown point."""
+    if not (_finite(angle_deg) and 0 < angle_deg < 90 and _finite(start_ft)):
+        return None
+    slope = math.tan(math.radians(angle_deg))
+    before = (0.0, start_ft, 0.0)
+    for k, ground in enumerate(ground_ft):
+        if not _finite(ground):
+            continue
+        x = (k + 0.5) * bin_m
+        height = x * slope - (ground - start_ft) / FEET_PER_METRE
+        if height >= AGL_M:
+            x0, g0, h0 = before
+            t = (AGL_M - h0) / (height - h0)
+            return {"fromTargetM": round(x0 + t * (x - x0), 1), "groundFt": round(g0 + t * (ground - g0), 1)}
+        before = (x, ground, height)
+    return {"fromTargetM": None, "groundFt": None}
+
+
+def in_the_way(tall, descent):
+    """Of a lane's ``tall`` places, where something stands more than ``AGL_FT`` above the track's ground, those past ``descent``: the
+    approach is flown there at 100 ft AGL, and the exit is 100 ft up. None where the path is not 100 ft up within the lane (all of it is
+    under the path), or does not rise."""
+    if not isinstance(descent, dict) or not _finite(descent.get("fromTargetM")):
+        return []
+    return [p for p in tall or [] if isinstance(p, dict) and _finite(p.get("toM")) and p["toM"] > descent["fromTargetM"]]
+
+
+def lane(frame, points, ring, heading_deg, *, approach):
+    """One way in or out, from the touchdown point: ``heading_deg`` is the way the aircraft flies (towards the LZ on the approach, away
+    from it on the exit), so the lane lies behind the touchdown point for the approach and ahead of it for the exit. Its ``clearance`` is
+    the shallowest angle that clears everything in the way with no margin, and what sets it; ``descent`` where that path is 100 ft above
+    the track's ground; ``tall`` the places where something stands more than 100 ft above the track's ground; ``bins`` the track's ground
+    and what stands in the way, each 10 m out, for the page's figure."""
     bearing = (heading_deg + 180.0) % 360.0 if approach else heading_deg % 360.0
     direction = _unit(bearing)
     right = _unit((heading_deg + 90.0) % 360.0)              # the pilot's right, flying the heading
-    edge = leaves(ring, direction)
-    bins = int(round(CORRIDOR_LENGTH_M / BIN_M))
-    squares = int(round(2 * CORRIDOR_HALF_WIDTH_M / BIN_M))  # 10 m squares across the corridor
+    bins = int(round(LANE_LENGTH_M / BIN_M))
+    squares = int(round(2 * LANE_HALF_WIDTH_M / BIN_M))      # 10 m squares across the lane
 
-    # The corridor's returns, every class: what is beyond the edge, within the corridor, and not in the LZ.
-    box = Strip((0.0, 0.0), bearing, edge, CORRIDOR_LENGTH_M, CORRIDOR_HALF_WIDTH_M).corners()
+    # The lane's returns, every class, past the touchdown point: in the LZ or out of it, what stands in the way is in the way.
+    box = Strip((0.0, 0.0), bearing, 0.0, LANE_LENGTH_M, LANE_HALF_WIDTH_M).corners()
     (east_lo, north_lo), (east_hi, north_hi) = box.min(axis=0), box.max(axis=0)
     index = np.flatnonzero((points.east >= east_lo) & (points.east <= east_hi) & (points.north >= north_lo) & (points.north <= north_hi))
     along = points.east[index] * direction[0] + points.north[index] * direction[1]
     offset = points.east[index] * right[0] + points.north[index] * right[1]
-    held = (along > edge) & (along <= edge + CORRIDOR_LENGTH_M) & (np.abs(offset) <= CORRIDOR_HALF_WIDTH_M)
+    held = (along > 0.0) & (along <= LANE_LENGTH_M) & (np.abs(offset) <= LANE_HALF_WIDTH_M)
     index, along, offset = index[held], along[held], offset[held]
-    out_of_lz = ~inside(ring, points.east[index], points.north[index])
-    index, along, offset = index[out_of_lz], along[out_of_lz], offset[out_of_lz]
-    which = np.minimum(((along - edge) // BIN_M).astype(int), bins - 1)
+    which = np.minimum((along // BIN_M).astype(int), bins - 1)
     covered = np.bincount(which, minlength=bins) > 0
 
-    centre = edge + (np.arange(bins) + 0.5) * BIN_M
-    ground = points.ground_at(direction[0] * centre, direction[1] * centre)
+    centre = (np.arange(bins) + 0.5) * BIN_M
+    track = points.ground_at(direction[0] * centre, direction[1] * centre)
+    start = float(points.ground_at(0.0, 0.0)[0])
+    edge = leaves(ring, direction)
     edge_point = direction * edge
-    edge_ground = float(points.ground_at(edge_point[0], edge_point[1])[0])
 
-    # The obstacles: what stands 2 m or more above its own ground, and the ground in each 10 m square of the corridor where it rises.
-    tall = points.obstacles()[index]
+    # In the way: what stands 5 m or more above its own ground (2 m what is built), and the ground in each 10 m square where it rises,
+    # each measured from the touchdown point's ground on its own line across the lane.
+    above = points.above[index]
+    least = np.where(np.isin(points.cls[index], BUILT), STANDING_M, LANE_LEAST_M)
+    tall = points.standing[index] & np.isfinite(above) & (np.nan_to_num(above, nan=-1.0) >= least)
     s, s_along, s_offset, s_bin = index[tall], along[tall], offset[tall], which[tall]
+
+    def bases(offsets):
+        return points.ground_at(right[0] * offsets, right[1] * offsets)
+
+    s_base = bases(s_offset)
+    s_rise = points.z[s] - s_base
+
+    # Each 10 m square's rise: the median of its ground returns' rises, each the ground under it less the touchdown point's ground on
+    # its own line across, both from the triangles, so a slope across the lane, and the triangles' own lean (the lowest return in each
+    # 2 m, under the median where the returns scatter), take nothing from it. Only squares with GROUND_SQUARE_RETURNS returns or more.
     g = points.is_ground[index]
-    g_index, g_along, g_offset = index[g], along[g], offset[g]
-    g_square = which[g] * squares + np.clip(((g_offset + CORRIDOR_HALF_WIDTH_M) // BIN_M).astype(int), 0, squares - 1)
+    g_index, g_offset = index[g], offset[g]
+    g_square = which[g] * squares + np.clip(((g_offset + LANE_HALF_WIDTH_M) // BIN_M).astype(int), 0, squares - 1)
     g_ground = points.ground_at(points.east[g_index], points.north[g_index])
-
-    def bases(start, offsets):
-        return points.ground_at(direction[0] * start + right[0] * offsets, direction[1] * start + right[1] * offsets)
-
-    def ground_rises(start):
-        """Each 10 m square's rise over the ground at ``start`` metres along the line: the median of its ground returns' rises, each the
-        ground under it less the ground at ``start`` on its own line across, both from the triangles. A slope across the corridor, and
-        the triangles' own lean (the lowest return in each 2 m, under the median where the returns scatter), take nothing from it.
-        (keys, rises, the ground's top, its along and its offset), the squares with ``GROUND_SQUARE_RETURNS`` returns or more."""
-        rise = g_ground - bases(start, g_offset)
-        known = np.isfinite(rise)
-        if not known.any():
-            return (np.zeros(0, dtype=int),) + (np.zeros(0),) * 4
-        keys, rises, counts = _medians(g_square[known], rise[known])
-        _keys, tops, _counts = _medians(g_square[known], g_ground[known])
+    g_rise = g_ground - bases(g_offset)
+    known = np.isfinite(g_rise)
+    t_keys, t_rise, t_top = np.zeros(0, dtype=int), np.zeros(0), np.zeros(0)
+    if known.any():
+        t_keys, t_rise, counts = _medians(g_square[known], g_rise[known])
+        _keys, t_top, _counts = _medians(g_square[known], g_ground[known])
         enough = counts >= GROUND_SQUARE_RETURNS
-        keys, rises, tops = keys[enough], rises[enough], tops[enough]
-        return (keys, rises, tops, edge + (keys // squares + 0.5) * BIN_M,
-                -CORRIDOR_HALF_WIDTH_M + (keys % squares + 0.5) * BIN_M)
+        t_keys, t_rise, t_top = t_keys[enough], t_rise[enough], t_top[enough]
+    t_along = (t_keys // squares + 0.5) * BIN_M
+    t_offset = -LANE_HALF_WIDTH_M + (t_keys % squares + 0.5) * BIN_M
 
-    def steepest(start):
-        """The angle from ``start`` metres along the line that clears every obstacle, each from the ground there at its own place
-        across the corridor, and the obstacle that sets it: {angleDeg, obstacle} (no obstacle where nothing rises above the start's
-        ground, at 0°). None where the ground there is not known."""
-        s_base = bases(start, s_offset)
-        _keys, t_rise, t_top, t_along, t_offset = ground_rises(start)
-        if not (np.isfinite(s_base).any() or t_rise.size or math.isfinite(float(bases(start, np.zeros(1))[0]))):
+    def steepest():
+        """The shallowest angle that clears everything in the way, and what sets it: {angleDeg, obstacle} (no obstacle where nothing
+        rises above the touchdown point's ground, at 0°). None where no ground near the touchdown point is known."""
+        if not (np.isfinite(s_base).any() or t_rise.size or math.isfinite(start)):
             return None
-        s_rise = points.z[s] - s_base
-        s_angle = np.where(np.isfinite(s_rise), np.arctan2(np.nan_to_num(s_rise, nan=0.0), s_along - start), -np.inf)
-        t_angle = np.where(t_rise > GROUND_RISE_M, np.arctan2(t_rise, t_along - start), -np.inf)
+        s_angle = np.where(np.isfinite(s_rise), np.arctan2(np.nan_to_num(s_rise, nan=0.0), s_along), -np.inf)
+        t_angle = np.where(t_rise > GROUND_RISE_M, np.arctan2(t_rise, t_along), -np.inf)
         best_s = int(np.argmax(s_angle)) if s_angle.size else None
         best_t = int(np.argmax(t_angle)) if t_angle.size else None
         top_s = s_angle[best_s] if best_s is not None else -np.inf
@@ -561,32 +616,53 @@ def corridor(frame, points, ring, heading_deg, *, approach):
         if max(top_s, top_t) <= 0:
             return {"angleDeg": 0.0, "obstacle": None}
         if top_s >= top_t:
-            i = int(s[best_s])
-            extra = {"fromEdgeM": round(float(s_along[best_s] - edge), 1), "offsetM": round(float(s_offset[best_s]), 1),
+            extra = {"fromTargetM": round(float(s_along[best_s]), 1), "offsetM": round(float(s_offset[best_s]), 1),
                      "riseFt": _ft(float(s_rise[best_s])), "baseFt": _ft(float(s_base[best_s]))}
-            return {"angleDeg": round(math.degrees(float(top_s)), 1), "obstacle": _spot(frame, points, i, extra)}
+            return {"angleDeg": round(math.degrees(float(top_s)), 1), "obstacle": _spot(frame, points, int(s[best_s]), extra)}
         east = direction[0] * t_along[best_t] + right[0] * t_offset[best_t]
         north = direction[1] * t_along[best_t] + right[1] * t_offset[best_t]
-        extra = {"fromEdgeM": round(float(t_along[best_t] - edge), 1), "offsetM": round(float(t_offset[best_t]), 1),
+        extra = {"fromTargetM": round(float(t_along[best_t]), 1), "offsetM": round(float(t_offset[best_t]), 1),
                  "riseFt": _ft(float(t_rise[best_t])), "baseFt": _ft(float(t_top[best_t] - t_rise[best_t]))}
         return {"angleDeg": round(math.degrees(float(top_t)), 1),
                 "obstacle": _ground_spot(frame, east, north, float(t_top[best_t]), extra)}
 
-    # Each 10 m step for the page's figure: the ground along the line, and over it the highest obstacle's top as the angle sees it (the
-    # edge's ground and the obstacle's rise over its own line's), so ground rising to one side draws no treetop.
-    edge_rise = np.full(bins, -np.inf)
+    # Where something stands more than 100 ft above the track's ground: in each 10 m step the one standing highest over it, and a run
+    # of such steps one place, said by the highest in it.
+    places = []
+    if s.size:
+        over = points.z[s] - points.ground_at(direction[0] * s_along, direction[1] * s_along)
+        high = np.flatnonzero(np.isfinite(over) & (over > AGL_M))
+        if high.size:
+            order = high[np.lexsort((-over[high], s_bin[high]))]
+            steps, first = np.unique(s_bin[order], return_index=True)
+            best = order[first]
+            begin = 0
+            for k in range(1, steps.size + 1):
+                if k < steps.size and steps[k] == steps[k - 1] + 1:
+                    continue
+                j = int(best[begin + int(np.argmax(over[best[begin:k]]))])
+                places.append({"fromM": float(steps[begin] * BIN_M), "toM": float((steps[k - 1] + 1) * BIN_M),
+                               "overFt": _ft(float(over[j])),
+                               "obstacle": _spot(frame, points, int(s[j]), {"fromTargetM": round(float(s_along[j]), 1),
+                                                                            "offsetM": round(float(s_offset[j]), 1)})})
+                begin = k
+                if len(places) == MAX_TALL_PLACES:
+                    break
+
+    # Each 10 m step for the page's figure: the track's ground, and over it the highest thing in the way as the angle sees it (the
+    # touchdown point's ground and its rise over its own line's), so ground rising to one side draws nothing standing.
+    rise = np.full(bins, -np.inf)
     tallest = np.full(bins, -np.inf)
     if s.size:
-        rise = points.z[s] - bases(edge, s_offset)
-        np.maximum.at(edge_rise, s_bin, np.where(np.isfinite(rise), rise, -np.inf))
+        np.maximum.at(rise, s_bin, np.where(np.isfinite(s_rise), s_rise, -np.inf))
         np.maximum.at(tallest, s_bin, points.above[s])
     rows = []
     for k in range(bins):
-        row = {"groundFt": _ft(float(ground[k])), "topFt": None, "tallestFt": None}
+        row = {"groundFt": _ft(float(track[k])), "topFt": None, "tallestFt": None}
         if covered[k]:
-            top = float(ground[k])
-            if math.isfinite(edge_rise[k]) and math.isfinite(edge_ground):
-                top = edge_ground + edge_rise[k] if not math.isfinite(top) else max(top, edge_ground + edge_rise[k])
+            top = float(track[k])
+            if math.isfinite(rise[k]) and math.isfinite(start):
+                top = start + rise[k] if not math.isfinite(top) else max(top, start + rise[k])
             row["topFt"] = _ft(top)
         if math.isfinite(tallest[k]):
             row["tallestFt"] = _ft(float(tallest[k]))
@@ -594,28 +670,25 @@ def corridor(frame, points, ring, heading_deg, *, approach):
     result = {
         "headingDeg": round(heading_deg % 360.0, 1),
         "bearingDeg": round(bearing, 1),
+        "start": {"groundFt": _ft(start)},
         "edge": {**dict(zip(("lat", "lon"), (round(v, 7) for v in frame.latlon(*edge_point)))), "fromTargetM": round(edge, 1),
-                 "groundFt": _ft(edge_ground)},
-        "lengthM": CORRIDOR_LENGTH_M, "halfWidthM": CORRIDOR_HALF_WIDTH_M, "binM": BIN_M,
+                 "groundFt": _ft(float(points.ground_at(edge_point[0], edge_point[1])[0]))},
+        "lengthM": LANE_LENGTH_M, "halfWidthM": LANE_HALF_WIDTH_M, "binM": BIN_M,
         "bins": rows,
         "covered": int(covered.sum()),
         "clearance": None,
+        "descent": None,
+        "tall": places,
         "missing": None,
-        "fromTarget": None,
-        "tallest": None,
     }
     if not index.size:
         result["missing"] = "no_returns"
         return result
-    result["clearance"] = steepest(edge)
+    result["clearance"] = steepest()
     if result["clearance"] is None:
-        result["missing"] = "no_edge_ground"
-    # The same from the touchdown point, which an approach is flown to, for the editor (§11 R5 prints the edge's).
-    result["fromTarget"] = steepest(0.0)
-    if s.size:
-        j = int(np.argmax(points.above[s]))
-        result["tallest"] = _spot(frame, points, int(s[j]), {"fromEdgeM": round(float(s_along[j] - edge), 1),
-                                                             "offsetM": round(float(s_offset[j]), 1)})
+        result["missing"] = "no_target_ground"
+        return result
+    result["descent"] = descent_point(result["clearance"]["angleDeg"], result["start"]["groundFt"], [r["groundFt"] for r in rows])
     return result
 
 
@@ -624,7 +697,7 @@ def _trees(frame, points, ring, inner):
     and stands ``TREE_MIN_M`` or more, one to a crown however flat its top. A building, a wire, a tower or a bridge is no tree."""
     from scipy import ndimage
 
-    inner = inner[~np.isin(points.cls[inner], NOT_TREES)]
+    inner = inner[~np.isin(points.cls[inner], BUILT)]
     if not inner.size:
         return []
     east, north, above = points.east[inner], points.north[inner], points.above[inner]
@@ -705,7 +778,7 @@ def profile_tops(frame, points, ring, profiles, approach_deg):
     along = de * direction[0] + dn * direction[1]
     across = de * right[0] + dn * right[1]
     which = np.round((along + half) / p["stepM"]).astype(int)
-    held = (np.abs(across) <= CORRIDOR_HALF_WIDTH_M) & (which >= 0) & (which < count)
+    held = (np.abs(across) <= PROFILE_HALF_WIDTH_M) & (which >= 0) & (which < count)
     index, along, which = index[held], along[held], which[held]
     shifted = ring - centre
     within = (along < leaves(shifted, direction)) & (along > -leaves(shifted, -direction))
@@ -752,7 +825,7 @@ def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *
         if heading is None:
             continue
         bearing = (heading + 180.0) % 360.0 if approach else heading % 360.0
-        shapes.append(Strip((0.0, 0.0), bearing, leaves(ring, _unit(bearing)), CORRIDOR_LENGTH_M, CORRIDOR_HALF_WIDTH_M))
+        shapes.append(Strip((0.0, 0.0), bearing, 0.0, LANE_LENGTH_M, LANE_HALF_WIDTH_M))
     p = None
     if approach_deg is not None:
         from survey import profile as profile_lib
@@ -762,7 +835,7 @@ def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *
             centre = frame.local([p["center"][0]], [p["center"][1]])
             base = profile_lib.js_round(approach_deg / p["headingStepDeg"]) * p["headingStepDeg"] % 180
             shapes.append(Strip((float(centre[0][0]), float(centre[1][0])), base, -p["halfLengthM"], 2 * p["halfLengthM"],
-                                CORRIDOR_HALF_WIDTH_M))
+                                PROFILE_HALF_WIDTH_M))
     wanted = [np.array([frame.to_mercator(*corner) for corner in shape.corners(GROUND_MARGIN_M)]) for shape in shapes]
 
     try:
@@ -792,8 +865,8 @@ def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *
         "survey": named,
         "points": int(points.z.size),
         "pieces": len(nodes),
-        "approach": corridor(frame, points, ring, approach_deg, approach=True) if approach_deg is not None else None,
-        "exit": corridor(frame, points, ring, exit_deg, approach=False) if exit_deg is not None else None,
+        "approach": lane(frame, points, ring, approach_deg, approach=True) if approach_deg is not None else None,
+        "exit": lane(frame, points, ring, exit_deg, approach=False) if exit_deg is not None else None,
         **round_the_lz(frame, points, ring),
         "heightMap": height_map(frame, points, shapes[0]),
         "profileTops": profile_tops(frame, points, ring, profiles, approach_deg) if p is not None else None,

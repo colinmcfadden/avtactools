@@ -1,11 +1,14 @@
-import React, { useId } from "react";
+import React, { useId, useState } from "react";
+import { AngleDialog } from "./Disagreements";
 
 /*
- * What the LiDAR found standing on and round the LZ (the snapshot's obstacles, docs/LZ_SURVEYS.md §4): the clearance along the best
- * approach and the best exit, from the LZ's edge as the page prints it and from the touchdown point beside it (an approach is flown to
- * the touchdown point; §11 R5 prints the edge's), the tallest in the LZ and within 100 m of it, what stands over 2 m in it and its
- * trees; or why there is nothing, in the server's words. An obstacle is what stands 2 m or more above its own ground, and the ground
- * itself where it rises (survey/obstacles.py). Every number names its survey, and the page says what the LiDAR cannot see.
+ * What the LiDAR found standing on and round the LZ (the snapshot's obstacles, docs/LZ_SURVEYS.md §4): along the best approach and the
+ * best exit, from the touchdown point, the shallowest angle that clears what stands in a lane 10 m each side of the track, where that
+ * path is 100 ft above the ground (the approach's descent from 100 ft AGL begins there; the exit has climbed to it) and what stands
+ * more than 100 ft above the track's ground past it; the tallest in the LZ and within 100 m of it, what stands over 2 m in it and its
+ * trees; or why there is nothing, in the server's words. In the way is what stands 5 m or more above its own ground (2 m for what is
+ * built) and the ground where it rises (survey/obstacles.py). The editor can type the approach's angle over the LiDAR's: the page
+ * prints theirs, and the LiDAR's stays here beside it. Every number names its survey, and the page says what the LiDAR cannot see.
  */
 
 const KIND = {
@@ -22,8 +25,8 @@ const KIND = {
 const TREE_MIN_FT = 16.4;
 // Why a way has no angle (survey/obstacles.py's ``missing``).
 const MISSING = {
-  no_returns: "No LiDAR returns in its corridor",
-  no_edge_ground: "No ground at the LZ's edge in the LiDAR",
+  no_returns: "No LiDAR returns in its lane",
+  no_target_ground: "No ground at the touchdown point in the LiDAR",
 };
 
 const feet = (value) => `${Math.round(value).toLocaleString()} ft`;
@@ -38,59 +41,115 @@ export const spotWords = (spot) =>
   spot ? `${feet(spot.heightFt)} ${kindWords(spot)}, ${metres(spot.distanceM)} at ${headingWords(spot.bearingDeg)}` : null;
 
 /**
- * The obstacle that sets a way's clearance, from the LZ's edge: "98 ft tree 198 m out, 4 m right of the track". Where its top stands
- * higher or lower over the edge's ground than it stands over its own (ground rising or falling away from the LZ), that too: the angle
- * is to that height.
+ * What sets a way's angle, from the touchdown point: "98 ft tree 200 m out, 4 m right of the track". Where its top stands higher or
+ * lower over the touchdown point's ground than it stands over its own (ground rising or falling away from the LZ), that too: the
+ * angle is to that height.
  */
 export const obstacleWords = (obstacle) => {
   if (!obstacle) return null;
-  const out = `${metres(obstacle.fromEdgeM ?? obstacle.distanceM)} out`;
+  const out = `${metres(obstacle.fromTargetM ?? obstacle.distanceM)} out`;
   const side = Number.isFinite(obstacle.offsetM) && Math.abs(obstacle.offsetM) >= 1
     ? `, ${metres(Math.abs(obstacle.offsetM))} ${obstacle.offsetM > 0 ? "right" : "left"} of the track`
     : "";
   const rise = Number.isFinite(obstacle.riseFt) ? obstacle.riseFt : null;
   if (obstacle.kind === "terrain") {
-    return `The ground ${out}${rise !== null ? `, ${feet(rise)} above the edge` : ""}${side}`;
+    return `The ground ${out}${rise !== null ? `, ${feet(rise)} above the touchdown point` : ""}${side}`;
   }
-  const over = rise !== null && Math.abs(rise - obstacle.heightFt) >= 5 ? ` (${feet(rise)} above the edge)` : "";
+  const over = rise !== null && Math.abs(rise - obstacle.heightFt) >= 5 ? ` (${feet(rise)} above the touchdown point)` : "";
   return `${feet(obstacle.heightFt)} ${kindWords(obstacle)} ${out}${over}${side}`;
 };
 
-const Way = ({ label, which, corridor }) => {
-  if (!corridor) {
+/** Of a lane's places over 100 ft above its track's ground, those past where its path is 100 ft up (survey/obstacles.py's in_the_way). */
+export const inTheWay = (lane) => {
+  const at = lane?.descent?.fromTargetM;
+  return Number.isFinite(at) ? (lane.tall ?? []).filter((place) => Number.isFinite(place?.toM) && place.toM > at) : [];
+};
+
+/** Where a way's path is 100 ft above the ground: "204 m out", "Past 1,000 m", or none for a path that needs no climb. */
+const aglWords = (lane) => {
+  if (!lane.descent) return "—";
+  return Number.isFinite(lane.descent.fromTargetM) ? `${metres(lane.descent.fromTargetM)} out` : `Past ${metres(lane.lengthM ?? 1000)}`;
+};
+
+const Way = ({ label, which, lane }) => {
+  if (!lane || !lane.start) {
     return (
       <tr>
-        <th scope="row">{label}</th>
-        <td colSpan={3} className="survey-muted">Not measured: set the best {which} and measure again.</td>
+        <th scope="row">{label}{lane ? ` ${headingWords(lane.headingDeg)}` : ""}</th>
+        <td colSpan={3} className="survey-muted">
+          {lane ? "Measured by an earlier EZ/PZ: measure the LZ again." : `Not measured: set the best ${which} and measure again.`}
+        </td>
       </tr>
     );
   }
-  const clear = corridor.clearance;
-  let what = MISSING[corridor.missing] ?? MISSING.no_returns;
-  if (clear) what = clear.obstacle && clear.angleDeg > 0 ? obstacleWords(clear.obstacle) : "Nothing above the edge";
+  const clear = lane.clearance;
+  let what = MISSING[lane.missing] ?? MISSING.no_returns;
+  if (clear) what = clear.obstacle && clear.angleDeg > 0 ? obstacleWords(clear.obstacle) : "Nothing in the way";
   return (
     <tr>
-      <th scope="row">{label} {headingWords(corridor.headingDeg)}</th>
+      <th scope="row">{label} {headingWords(lane.headingDeg)}</th>
       <td>{clear ? angle(clear.angleDeg) : "—"}</td>
+      <td>{clear ? aglWords(lane) : "—"}</td>
       <td>{what}</td>
-      <td>{corridor.fromTarget ? angle(corridor.fromTarget.angleDeg) : "—"}</td>
     </tr>
   );
 };
 
-/** How much of a way's corridor the survey has returns in, where it is not all of it: an angle over a part is not the corridor's. */
-const coverageWords = (label, corridor) => {
-  const steps = corridor?.bins?.length;
-  if (!steps || !Number.isInteger(corridor.covered) || corridor.covered >= steps) return null;
-  const step = corridor.binM ?? 10;
-  return `LiDAR over ${metres(corridor.covered * step)} of the ${label}'s ${metres(steps * step)}: its angle is over that part.`;
+/** How much of a way's lane the survey has returns in, where it is not all of it: an angle over a part is not the lane's. */
+const coverageWords = (label, lane) => {
+  const steps = lane?.bins?.length;
+  if (!steps || !Number.isInteger(lane.covered) || lane.covered >= steps) return null;
+  const step = lane.binM ?? 10;
+  return `LiDAR over ${metres(lane.covered * step)} of the ${label}'s ${metres(steps * step)}: its angle is over that part.`;
 };
 
-const Obstacles = ({ obstacles }) => {
+/** What stands over 100 ft above a way's track past where its path is 100 ft up, which a path flown at 100 ft AGL does not clear. */
+const tallWords = (which, lane) => {
+  const places = inTheWay(lane);
+  if (!places.length) return null;
+  const [first] = places;
+  const past = which === "approach" ? "past the approach's descent from 100 ft AGL" : "past where the exit is 100 ft AGL";
+  const more = places.length > 1 ? `, and ${places.length - 1} more place${places.length === 2 ? "" : "s"}` : "";
+  return `Over 100 ft AGL ${past}: a ${kindWords(first.obstacle ?? {})} ${metres(first.obstacle?.fromTargetM ?? first.fromM)} out stands `
+    + `${feet(first.overFt)} above the track's ground${more}.`;
+};
+
+/** The approach's angle the page prints where the editor typed it, beside the LiDAR's, with ways to change it or let it go. */
+const Printed = ({ row, busy, onType, onUndecide }) => {
+  const typed = row?.override?.choice === "typed" ? row.override : null;
+  if (!typed && !row?.computed) return null;
+  return (
+    <div className="survey-obstacles__printed">
+      {typed && (
+        <p className={`survey-state survey-state--${row.overrideStands ? "info" : "warn"}`}>
+          {row.overrideStands
+            ? `The page prints ${angle(typed.value)} for the approach, typed by ${typed.by || "an editor"}: “${typed.reason}”`
+            : `Your ${angle(typed.value)} was typed against other values and is no longer printed: look again.`}
+        </p>
+      )}
+      {onType && (
+        <div className="survey-actions">
+          <button type="button" className="ui-btn ui-btn--28" disabled={busy || !row.computed} onClick={onType}>
+            {typed ? "Change your angle…" : "Type the approach's angle…"}
+          </button>
+          {typed && onUndecide && (
+            <button type="button" className="ui-btn ui-btn--28 ui-btn--ghost" disabled={busy} onClick={() => onUndecide(row.key)}>
+              Print the LiDAR's
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Obstacles = ({ obstacles, approach = null, onDecide, onUndecide, busy = false }) => {
   const headingId = useId();
+  const [typing, setTyping] = useState(false);
   if (!obstacles) return null;
   const survey = obstacles.survey ? `${obstacles.survey.name}${obstacles.survey.year && !String(obstacles.survey.name).includes(String(obstacles.survey.year)) ? ` (${obstacles.survey.year})` : ""}` : null;
   const partial = [coverageWords("approach", obstacles.approach), coverageWords("exit", obstacles.exit)].filter(Boolean);
+  const tall = [tallWords("approach", obstacles.approach), tallWords("exit", obstacles.exit)].filter(Boolean);
   return (
     <div className="survey-obstacles" aria-labelledby={headingId} role="group">
       <h4 id={headingId} className="survey-obstacles__title">Standing on and round the LZ{survey ? ` · LiDAR ${survey}` : ""}</h4>
@@ -102,16 +161,18 @@ const Obstacles = ({ obstacles }) => {
             <thead>
               <tr>
                 <th scope="col">Way</th>
-                <th scope="col">Clears at, from the LZ&apos;s edge</th>
+                <th scope="col">Clears at</th>
+                <th scope="col">100 ft AGL</th>
                 <th scope="col">What sets it</th>
-                <th scope="col">From the touchdown point</th>
               </tr>
             </thead>
             <tbody>
-              <Way label="Approach" which="approach" corridor={obstacles.approach} />
-              <Way label="Exit" which="exit" corridor={obstacles.exit} />
+              <Way label="Approach" which="approach" lane={obstacles.approach} />
+              <Way label="Exit" which="exit" lane={obstacles.exit} />
             </tbody>
           </table>
+          <Printed row={approach} busy={busy} onType={onDecide ? () => setTyping(true) : null} onUndecide={onUndecide} />
+          {tall.map((words) => <p key={words} className="survey-state survey-state--warn">{words}</p>)}
           {partial.map((words) => <p key={words} className="survey-state survey-state--warn">{words}</p>)}
           <dl className="survey-facts">
             <div><dt>Tallest in the LZ</dt><dd>{spotWords(obstacles.inside) ?? "Nothing standing 2 m or more"}</dd></div>
@@ -133,11 +194,23 @@ const Obstacles = ({ obstacles }) => {
             </div>
           </dl>
           <p className="survey-muted">
-            Angles clear the steepest obstacle with no margin: what stands 2 m or more above its ground, and the ground where it rises.
-            These are the tallest things found in the LiDAR, not every obstacle: trees have grown or fallen since it was flown, wires and
-            poles seldom show in it, and treetops read up to a metre low.
+            Angles are from the touchdown point, with no margin, over everything in a lane 10 m each side of the track: what stands 5 m or
+            more above its ground (2 m for a building, a wire, a tower or a bridge), and the ground where it rises. The approach is
+            flown at 100 ft above the ground until its descent. These are the tallest things found in the LiDAR, not every obstacle: trees
+            have grown or fallen since it was flown, wires and poles seldom show in it, and treetops read up to a metre low.
           </p>
         </>
+      )}
+      {typing && approach && (
+        <AngleDialog
+          row={approach}
+          onCancel={() => setTyping(false)}
+          onConfirm={async (value, reason) => {
+            const saved = await onDecide(approach.key, "typed", reason, value);
+            if (saved) setTyping(false);
+            return Boolean(saved);
+          }}
+        />
       )}
     </div>
   );

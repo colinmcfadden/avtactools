@@ -197,10 +197,14 @@ def _slope_fact(rows, field, snapshot):
 KIND_WORDS = {"vegetation": "TREE", "building": "BUILDING", "tower": "TOWER", "wire": "WIRE", "bridge": "BRIDGE",
               "unclassified": "OBSTACLE", "other": "OBSTACLE", "terrain": "GROUND"}
 TREE_MIN_FT = round(obstacles.TREE_MIN_M * FEET_PER_METRE, 1)
-LIDAR_CAVEAT = ("Angles from the LZ's edge, no margin, to what stands 2 m or more and the ground. The tallest found in the LiDAR, not every "
-                "obstacle: trees grow and fall, wires and poles seldom show, treetops read up to a metre low.")
-# Why a way has no clearance (survey/obstacles.py's ``missing``).
-MISSING_WORDS = {"no_returns": "NO LIDAR RETURNS", "no_edge_ground": "NO GROUND AT THE EDGE"}
+LIDAR_CAVEAT = ("From the touchdown point, no margin, over 10 m each side of the track: what stands 5 m or more (2 m built) and the "
+                "ground. Not every obstacle: trees grow and fall, wires and poles seldom show, treetops read up to a metre low.")
+# Why a way has no angle (survey/obstacles.py's ``missing``); "earlier", a snapshot from before the lane (version 4 and older).
+MISSING_WORDS = {"no_returns": "NO LIDAR RETURNS", "no_target_ground": "NO GROUND AT THE TOUCHDOWN POINT",
+                 "earlier": "MEASURED BY AN EARLIER EZ/PZ"}
+AGL_FT = obstacles.AGL_FT
+# Where each way's path is 100 ft above the ground, as the box says it: the approach's descent begins there, the exit has climbed to it.
+CLIMB_WORDS = {"APCH": "DESCEND FROM", "EXIT": "CLIMB TO"}
 
 
 def _kind_words(kind, height_ft):
@@ -253,8 +257,11 @@ def _hazards(field, snapshot):
     return out
 
 
-def _notes(field, snapshot):
-    """The numbered notes: the field's warning and remarks (one a line), its max weight, then what the page needs said."""
+def _notes(field, snapshot, clearance=None):
+    """The numbered notes: the field's warning and remarks (one a line), its max weight, then what the page needs said: among it what
+    stands over 100 ft past where each way's path is 100 ft above the ground (``clearance``'s, for the angle the page prints). A note,
+    not a hazard: the hazards' box holds three lines, and in timber it is said of nearly every LZ, which would push the field's own
+    hazards off the page."""
     notes = []
     warning = _one_line(field.get("warning"))
     if warning:
@@ -269,6 +276,14 @@ def _notes(field, snapshot):
     fit = snapshot.get("fit") if isinstance(snapshot.get("fit"), dict) else None
     if fit and isinstance(fit.get("count"), int):
         notes.append(f"Area fits {fit['count']} × {fit.get('aircraft') or 'UH-60L'} by LZ/PZ geometry; Max A/C governs.")
+    for way, past in (("approach", "past the approach's descent from 100 ft AGL"), ("exit", "past where the exit is 100 ft AGL")):
+        lane = (clearance or {}).get(way) if (clearance or {}).get("status") == "measured" else None
+        tall = lane.get("tall") if isinstance(lane, dict) else None
+        if tall:
+            first = tall[0]
+            more = f"; {len(tall) - 1} more place{'' if len(tall) == 2 else 's'}" if len(tall) > 1 else ""
+            notes.append(f"LiDAR: {past}, a {first['kind'].lower()} {profile.js_round(first['fromTargetM'])} m out stands "
+                         f"{profile.js_round(first['overFt'])} ft above the track's ground{more}.")
     interval = _get(snapshot, "terrain", "contours", "intervalFt")
     if snapshot.get("terrain"):
         contours = f"{interval:g}′ contours; " if _finite(interval) else ""
@@ -421,55 +436,90 @@ def _survey_profile(field):
     return {"obstacleFt": int(round(feet)), "distanceM": int(round(metres)), "angleDeg": round(angle, 1), "who": who}
 
 
-def _corridor(corridor, label):
-    """One way in or out as the clearance box draws it: its ground and treetops every 10 m from the LZ's edge, the angle that clears
-    them from the edge with no margin, and the obstacle that sets it; or why there is none. ``partial`` says how much of the corridor
-    the survey has returns in, where it is not all of it (the figure says it under the angle): an angle over a part is not the
-    corridor's."""
-    if not isinstance(corridor, dict):
+def _lane(lane, label, typed=None):
+    """One way in or out as the clearance box draws it, from the touchdown point: the track's ground and the highest thing in the way
+    every 10 m out, the angle printed (the LiDAR's, or the one the editor ``typed`` over it), its ``path`` from the touchdown point to
+    where it is 100 ft above the ground (the approach's descent from 100 ft AGL begins there), the ``level`` 100 ft above the track's
+    ground past that, what sets the LiDAR's angle, and what stands more than 100 ft above the track's ground past it (``tall``); or why
+    there is none. ``partial`` says how much of the lane the survey has returns in, where it is not all of it: an angle over a part is
+    not the lane's."""
+    if not isinstance(lane, dict):
         return None
-    bins = [b if isinstance(b, dict) else {} for b in corridor.get("bins") or []]
-    clear = corridor.get("clearance") if isinstance(corridor.get("clearance"), dict) else None
-    heading = heading_words(corridor.get("headingDeg"))
-    step = corridor.get("binM") if _finite(corridor.get("binM")) else 10
-    covered = corridor.get("covered")
+    bins = [b if isinstance(b, dict) else {} for b in lane.get("bins") or []]
+    heading = heading_words(lane.get("headingDeg"))
+    step = lane.get("binM") if _finite(lane.get("binM")) else 10
+    covered = lane.get("covered")
     partial = None
     if isinstance(covered, int) and not isinstance(covered, bool) and bins and covered < len(bins):
         partial = f"LIDAR OVER {profile.js_round(covered * step):,} OF {profile.js_round(len(bins) * step):,} M"
+    measured = isinstance(lane.get("start"), dict)
+    clear = lane.get("clearance") if measured and isinstance(lane.get("clearance"), dict) else None
+    missing = MISSING_WORDS.get(lane.get("missing") if measured else "earlier", MISSING_WORDS["no_returns"])
+    start = _get(lane, "start", "groundFt")
+    edge = _get(lane, "edge", "fromTargetM")
     out = {
         "label": label,
         "heading": heading,
-        "edgeFt": _get(corridor, "edge", "groundFt") if _finite(_get(corridor, "edge", "groundFt")) else None,
+        "startFt": start if _finite(start) else None,
+        "edgeM": edge if _finite(edge) and measured else None,
         "binM": step,
         "groundFt": [b.get("groundFt") if _finite(b.get("groundFt")) else None for b in bins],
         "topsFt": [b.get("topFt") if _finite(b.get("topFt")) else None for b in bins],
         "angleDeg": None,
+        "lidarDeg": None,
+        "typed": False,
         "obstacle": None,
+        "descentM": None,
+        "path": [],
+        "level": [],
+        "tall": [],
         "partial": partial,
-        "words": f"{label} {heading} · {MISSING_WORDS.get(corridor.get('missing'), MISSING_WORDS['no_returns'])}",
+        "angle": None,
+        "climb": None,
+        "what": missing,
+        "words": f"{label} {heading} · {missing}",
     }
     if not clear or not _finite(clear.get("angleDeg")):
-        out["what"] = MISSING_WORDS.get(corridor.get("missing"), MISSING_WORDS["no_returns"])
         return out
+    lidar = max(clear["angleDeg"], 0.0)
+    angle = typed if typed is not None else lidar
+    out.update({"angleDeg": angle, "lidarDeg": lidar, "typed": typed is not None,
+                "angle": f"{label} {heading} · {profile.to_fixed(angle, 1)}°"})
+    descent = obstacles.descent_point(angle, out["startFt"], out["groundFt"], step)
+    if descent is None:
+        out["climb"] = "NOTHING IN THE WAY" if angle <= 0 else None
+    elif not _finite(descent["fromTargetM"]):
+        length = step * len(bins)
+        out["climb"] = f"{CLIMB_WORDS[label]} 100′ AGL PAST {profile.js_round(length):,} M"
+        if out["startFt"] is not None:
+            out["path"] = [[0.0, out["startFt"]],
+                           [length, out["startFt"] + length * math.tan(math.radians(angle)) * FEET_PER_METRE]]
+    else:
+        at = descent["fromTargetM"]
+        out["descentM"] = at
+        out["climb"] = f"{CLIMB_WORDS[label]} 100′ AGL AT {profile.js_round(at):,} M"
+        out["path"] = [[0.0, out["startFt"]], [at, descent["groundFt"] + AGL_FT]]
+        out["level"] = [[at, descent["groundFt"] + AGL_FT]] + [
+            [(k + 0.5) * step, g + AGL_FT] for k, g in enumerate(out["groundFt"]) if g is not None and (k + 0.5) * step > at]
+        for place in obstacles.in_the_way(lane.get("tall"), descent):
+            thing = place.get("obstacle") if isinstance(place.get("obstacle"), dict) else {}
+            k = int(thing["fromTargetM"] // step) if _finite(thing.get("fromTargetM")) else -1
+            if not (0 <= k < len(bins) and _finite(place.get("overFt")) and out["groundFt"][k] is not None):
+                continue
+            out["tall"].append({"fromTargetM": thing["fromTargetM"], "overFt": place["overFt"], "topFt": out["groundFt"][k] + place["overFt"],
+                                "kind": _kind_words(thing.get("kind"), thing.get("heightFt"))})
     obstacle = clear.get("obstacle") if isinstance(clear.get("obstacle"), dict) else None
-    out["angleDeg"] = clear["angleDeg"]
-    out["angle"] = f"{label} {heading} · {profile.to_fixed(max(clear['angleDeg'], 0.0), 1)}°"
-    what = "NOTHING ABOVE THE EDGE"
-    if obstacle and clear["angleDeg"] > 0 and _finite(obstacle.get("fromEdgeM")):
-        # The obstacle as the angle sees it: its rise over the edge's ground on its own line (a snapshot from before rises were kept:
-        # its top over the edge's ground on the track).
-        rise = obstacle.get("riseFt")
-        if not _finite(rise) and _finite(obstacle.get("topFt")) and out["edgeFt"] is not None:
-            rise = obstacle["topFt"] - out["edgeFt"]
-        if _finite(rise):
-            out["obstacle"] = {"fromEdgeM": obstacle["fromEdgeM"], "riseFt": rise, "kind": obstacle.get("kind")}
-        at = f"AT {profile.js_round(obstacle['fromEdgeM'])} M"
+    what = None
+    if obstacle and lidar > 0 and _finite(obstacle.get("fromTargetM")):
+        if _finite(obstacle.get("riseFt")):
+            out["obstacle"] = {"fromTargetM": obstacle["fromTargetM"], "riseFt": obstacle["riseFt"], "kind": obstacle.get("kind")}
+        at = f"AT {profile.js_round(obstacle['fromTargetM'])} M"
         if obstacle.get("kind") == "terrain":
             what = f"THE GROUND {at}"
         else:
             what = f"{profile.js_round(obstacle.get('heightFt') or 0)}′ {_kind_words(obstacle.get('kind'), obstacle.get('heightFt'))} {at}"
-    out["what"] = what
-    out["words"] = f"{out['angle']} · {what}"
+    out["what"] = f"EDITOR'S · LIDAR {profile.to_fixed(lidar, 1)}°" if out["typed"] else what
+    out["words"] = " · ".join(t for t in (out["angle"], out["climb"], what) if t)
     return out
 
 
@@ -494,21 +544,25 @@ def _along_tops(tops, profiles):
 
 
 def _clearance(rows, snapshot, profiles):
-    """What the LiDAR found (§4, step L4), as the page prints it in place of the field's survey profile: the clearance along the
+    """What the LiDAR found (§4, step L4), as the page prints it in place of the field's survey profile: the angle along the
     approach and the exit, what stands in the LZ and round it, and the profile's treetop line; or why there is none. ``printed`` is
-    "field" where the field's survey profile is printed instead: an editor chose it over the LiDAR's, or the LiDAR has no clearance along
-    the approach and the field has one (``note`` says which). None for a snapshot from before L4."""
+    "field" where the field's survey profile is printed instead: an editor chose it over the LiDAR's, or the LiDAR has no angle along
+    the approach and the field has one (``note`` says which); "typed" where the approach's angle is the one the editor typed over the
+    LiDAR's. None for a snapshot from before L4."""
     found = snapshot.get("obstacles") if isinstance(snapshot.get("obstacles"), dict) else None
     if found is None:
         return None
-    row = next((r for r in rows if r["key"] == "obstacle"), None)
+    row = next((r for r in rows if r["key"] == "approach"), None)
     survey = found.get("survey") if isinstance(found.get("survey"), dict) else {}
     year = survey.get("year") if isinstance(survey.get("year"), int) and not isinstance(survey.get("year"), bool) else None
     out = {"status": found.get("status"), "words": _one_line(found.get("words")) or None,
            "survey": _one_line(survey.get("name")).upper() or None, "year": year, "printed": "computed", "note": None}
     if found.get("status") != "measured":
         return out
-    approach = _corridor(found.get("approach"), "APCH")
+    typed = compare.typed_angle((row["override"] or {}).get("value")) if row and row["printed"] == "typed" else None
+    approach = _lane(found.get("approach"), "APCH", typed=typed)
+    if typed is not None:
+        out["printed"] = "typed"
     if row and row["printed"] == "field":
         out["printed"] = "field"
         if row["computed"]:
@@ -518,7 +572,7 @@ def _clearance(rows, snapshot, profiles):
     standing = found.get("standing") if isinstance(found.get("standing"), dict) else {}
     out.update({
         "approach": approach,
-        "exit": _corridor(found.get("exit"), "EXIT"),
+        "exit": _lane(found.get("exit"), "EXIT"),
         "inside": _spot_words(found.get("inside")),
         "around": _spot_words(found.get("around"), out_of_lz=True),
         "standing": standing.get("count") if isinstance(standing.get("count"), int) else 0,
@@ -565,6 +619,7 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
     # A page drawn from a snapshot the survey has moved on from says so: it cannot be sent for review or published like that. A
     # published page is what was signed and says nothing of it (a revision's snapshot was taken as it was then).
     stale = [] if status == "published" else [f"{reason} Measure it again." for reason in measure.stale(snapshot, diagram, field)]
+    clearance = _clearance(rows, snapshot, profiles)
     name = _one_line(source.get("name")).upper()
     short_name = re.sub(r"^(LZ|PZ|HLZ)\s+", "", name) or name
 
@@ -595,7 +650,7 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
             "slopeHeading": heading_words(measured_heading(snapshot)),
         },
         "hazards": _hazards(field, snapshot),
-        "notes": _notes(field, snapshot),
+        "notes": _notes(field, snapshot, clearance),
         "shape": _shape(snapshot, boundary),
         "size": size,
         "plan": {
@@ -617,7 +672,7 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
         "profiles": profiles,
         "terrain": _terrain_table(snapshot, profiles),
         "surveyProfile": _survey_profile(field),
-        "clearance": _clearance(rows, snapshot, profiles),
+        "clearance": clearance,
         "comparisons": [{"key": r["key"], "label": r["label"], "printed": r["printed"]} for r in rows],
         "problems": [p for p in snapshot.get("problems") or [] if isinstance(p, str)],
         "stale": stale,

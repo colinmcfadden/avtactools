@@ -239,6 +239,10 @@ describe("useSurveys", () => {
       await result.current.undecide("elevation");
     });
     expect(client.saveSurvey.mock.calls[1][2].overrides).toEqual({});
+    await act(async () => {
+      await result.current.decide("approach", "typed", "Tree line cut in 2024", 12.5);
+    });
+    expect(client.saveSurvey.mock.calls[2][2].overrides).toEqual({ approach: { choice: "typed", reason: "Tree line cut in 2024", value: 12.5 } });
   });
 
   it("keeps photos as they come, without a new revision", async () => {
