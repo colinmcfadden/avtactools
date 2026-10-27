@@ -16,7 +16,7 @@ import os
 # (routes/admin_routes.set_features), never an "off", so taking a key out of this
 # set really does turn it on for everyone, including people whose access an admin
 # edited while it was off.
-DEFAULT_OFF = frozenset({"mission_packs", "mission_brief"})
+DEFAULT_OFF = frozenset({"mission_packs", "mission_brief", "lz_surveys"})
 
 # Canonical feature keys and human labels for the admin UI. Add new keys here;
 # they default to enabled for everyone until an admin turns one off (or, while
@@ -35,6 +35,8 @@ FEATURES = (
     ),
     ("mission_packs", "Mission packs", "Plan together in shared packs of LZs, routes and point sets, and join teams"),
     ("mission_brief", "Mission brief", "Air movement and hasty multi-ship briefs from the plan: the PDF and the live sandtable"),
+    # A reader's key, not a tool's (docs/LZ_SURVEYS.md §7): the published pages of the unit's HLZ survey book. Admins always have it.
+    ("lz_surveys", "LZ surveys", "Read the HLZ survey book: the published survey pages and their PDFs"),
 )
 
 FEATURE_KEYS = tuple(key for key, _label, _desc in FEATURES)

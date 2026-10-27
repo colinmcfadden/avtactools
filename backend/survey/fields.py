@@ -16,6 +16,8 @@ FIELD_KEYS = (
     "exitDeg",
     "maxAcDay",
     "maxAcNight",
+    # The book's "Maximum Weight (if applicable)"
+    "maxWeight",
     # The ground
     "elevationFt",
     "size",
