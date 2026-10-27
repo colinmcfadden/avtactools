@@ -362,24 +362,37 @@ routes in `backend/routes/survey_routes.py`, and `frontend/src/feature/surveys/S
 
 - **One poppler tool, `pdftohtml -xml`**, rather than `pdftotext -layout` and `pdfimages`: it gives every piece of text and every
   picture with its place on the page, which the form needs. Each line is rebuilt from its pieces (the book writes "OCT 202" and "3" in
-  two fonts, and a raised "th" one point above its "5"), each value is the text after its label up to the next label, the photos are the
-  page's two largest pictures (north first), and the approach photo looks down its "View 290°" caption, else the best approach. What a
-  page does not have is named (`unread`), a label with nothing after it is `blank`, and anything to check is a warning (a Max A/C that is
-  not a number by day and night, kept as written: "**HOIST ONLY**", "N/A"). Nothing is made up. The tests run over two real pages saved
-  as poppler writes them (`tools/fixtures/survey_book_pages.xml`), so they need no poppler.
+  two fonts, and a raised "th" one point above its "5"), each value is the text after its label up to the next label (the footer's too,
+  so a label the importer does not know is said, never read into the date before it), a number keeps its thousands ("1,850 ft msl" is
+  1850), the photos are the first two of the page's pictures, top to bottom, of at least 40,000 square points (north first; the form's own
+  small images are far smaller), and the approach photo looks down its "View 290°" caption, else the best approach. What a page does not
+  have is named (`unread`, a survey profile with no title of its own included), a label with nothing after it is `blank`, and anything
+  to check is a warning (a Max A/C that is not a number by day and night, kept as written: "**HOIST ONLY**", "N/A"). Nothing is made up.
+  The tests run over two real pages saved as poppler writes them (`tools/fixtures/survey_book_pages.xml`), so they need no poppler.
 - **The bundle** is one zip, `manifest.json` (format `ezpz-survey-import`, version 1) and `photos/`: 14 MB for the 44 pages. The server
-  takes it as input from anyone: 100 MB at most (Cloudflare's limit), 400 MB inflated, 2,000 files, 20 MB a photo, read without
-  extracting anything, only the photos the manifest names, every page's values held to the editor's fields.
+  takes it as input from anyone: 100 MB at most (Cloudflare's limit, a request with no length held to it as it is read), 400 MB
+  inflated, 2,000 files, 20 MB a photo, read without extracting anything, only the photos the manifest names, one at a time. Each page
+  is held to the editor's rules (its values, its name and HLZ ID once in capitals, its photos' dates): what they would refuse, and a
+  photo that is damaged in the bundle, is left out and said in the page's warnings, so one odd page never stops the book; only a bundle
+  that is no bundle, and an entry that is no page, are refused. Everything slow (the upload, the bundle, every photo made ready) is done
+  before the book is locked, so a large import holds nothing others wait on.
 - **A draft per page, in page order**, with its photos re-encoded as any upload is (no metadata), its target at the book's grid (the
   centre of the square the grid names), and an LZ/PZ diagram that is the web's own document (`contracts/fixtures/surveys/imported_diagram.json`,
-  held both sides: the web's `serializeLzDiagram` gives it back unchanged). A page whose HLZ ID is in the book already is left as it is,
-  so importing twice adds nothing.
-- **Grid against lat/long** (§2): a page whose two are more than 50 m apart says so, and the target stays at the grid. Of the 44: LZ
+  held both sides: the web's `serializeLzDiagram` gives it back unchanged). A page of the same file imported into the book before, a
+  page the bundle has twice, and a page whose HLZ ID the book has (archived or not) or the bundle has on an earlier page, are left as
+  they are, so importing twice, or again after an answer that was lost, adds nothing.
+- **Grid against lat/long** (§2): a page whose two are more than 50 m apart says so, and the target stays at the grid. The lat/long is
+  read as the editor reads one (degrees and decimal minutes, degrees, minutes and seconds, or decimal degrees), and one that cannot be read
+  is said, never passed over. Of the 44: LZ
   DONOVAN 527 m (not the 460 m first estimated), LZ RICO 97 m, LZ ROCK 77 m. A page with no grid to read is placed at its lat/long, with a
   note; with neither, it has no target, and says to set one.
 - **Measuring in the background** (`Measurer`): one thread, one survey at a time, in the order imported: SAM's boundary at the target (the
   analysis's own code, `terrain_routes.find_lz_boundary`), then the snapshot, each written only if no editor saved the survey meanwhile
-  (else the survey says it changed while measured, and the editor's work stands). How each stands is on its import record
+  (else the survey says it changed while measured, and the editor's work stands), in the name "EZ/PZ (import)", not the importer's, who
+  did not save it then. A survey open in the editor while it is measured is read again every 5 s, and what the measuring wrote comes in
+  under what was typed (`rebaseDraft`), so its next save is not refused as someone else's. The imagery the model reads and the elevation
+  service give up after 30 s of silence, and the thread outlives a database that goes away (that survey waits for the book's next look).
+  How each stands is on its import record
   (`lz_survey_import`: queued, finding, measuring, done, no target, no boundary, failed, changed), kept apart from the survey so writing it
   never moves the survey's revision; the book's list reads itself again every 5 s while any is waiting. A restart loses the thread, and the
   book's next look queues again what was waiting. Tried against a scratch server with the real model: three of the book's pages imported

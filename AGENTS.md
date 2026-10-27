@@ -338,7 +338,9 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 - **Which backend is live is decided by `REACT_APP_API_URL` in Vercel.**
 - The container runs **one gunicorn worker with 8 threads** and a 180 s
   timeout. One worker because SAM holds about 1 GB resident and the rate
-  limiter, QR store and route-share store are in-process — do not add workers
+  limiter, QR store and route-share store are in-process, and so is the LZ survey
+  import's measurer (`survey/importing.py`: a second worker would measure the same
+  surveys again after its `resume`) — do not add workers
   or machines without moving them to Redis. Threads so terrain tiles and
   point-cloud files load side by side; SAM runs one analysis at a time behind
   `_sam_lock` (its predictor keeps state between calls). Anything else
