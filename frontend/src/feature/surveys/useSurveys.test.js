@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import useSurveys, { IMPORT_POLL_MS, changedBetween, editableOf, rebaseDraft } from "./useSurveys";
+import useSurveys, { IMPORT_POLL_MS, PRINT_POLL_MS, changedBetween, editableOf, rebaseDraft } from "./useSurveys";
 
 const { readFixture } = require("../../contracts/readFixture");
 
@@ -49,6 +49,7 @@ const fakeClient = (overrides = {}) => ({
   uploadAsset: jest.fn(async () => ({ id: 7, kind: "photo_north", url: "/surveys/s-1/assets/7" })),
   updateAsset: jest.fn(async (uuid, id, meta) => ({ id, kind: "photo_north", ...meta })),
   removeAsset: jest.fn(async () => ({ removed: 7 })),
+  bookPrint: jest.fn(async () => ({ state: "empty", pages: 0, available: true })),
   ...overrides,
 });
 
@@ -460,6 +461,44 @@ describe("useSurveys", () => {
     expect(result.current.survey.imported.checked).toBe(true);
     expect(result.current.survey.revision).toBe(1);
     expect(result.current.survey.name).toBe(DONOVAN.name);
+  });
+
+  it("asks how the book's PDF stands as the book opens, and again only while the server prints it", async () => {
+    jest.useFakeTimers();
+    try {
+      const answers = [{ state: "none", pages: 1, available: true }];
+      const client = fakeClient({
+        bookPrint: jest.fn(async () => answers[answers.length - 1]),
+        printBook: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })),
+      });
+      const { result } = renderHook(() => useSurveys({ client }));
+      await act(async () => {
+        await result.current.openBook("b-1");
+      });
+      expect(client.bookPrint).toHaveBeenCalledWith("b-1");
+      expect(result.current.bookPrint.print.state).toBe("none");
+      const asked = client.bookPrint.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS * 2);
+      });
+      expect(client.bookPrint.mock.calls.length).toBe(asked);                     // not printing: nobody asks
+      await act(async () => {
+        await result.current.printBook();
+      });
+      expect(result.current.bookPrint.print.state).toBe("printing");
+      answers.push({ state: "ready", pages: 1, size_bytes: 10, printed_at: "2026-10-27T00:00:00Z", available: true });
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS);
+      });
+      expect(result.current.bookPrint.print.state).toBe("ready");
+      const after = client.bookPrint.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS * 3);
+      });
+      expect(client.bookPrint.mock.calls.length).toBe(after);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("names what someone else changed", () => {

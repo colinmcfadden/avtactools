@@ -61,6 +61,18 @@ export const saveSurvey = async (uuid, revision, patch) => (await api.patch(`/su
 
 export const archiveSurvey = async (uuid) => (await api.post(`/surveys/${uuid}/archive`)).data;
 
+/**
+ * The whole book's PDF (step L6): how it stands, `state` "empty" (nothing published), "none", "printing" (`done_pages` of `pages`),
+ * "ready" (`printed_at`, `size_bytes`) or "failed" (`error`), and whether the server prints at all (`available`).
+ */
+export const bookPrint = async (uuid) => (await api.get(`/survey-books/${uuid}/print`)).data;
+
+/** Prints the book in the background if it is not printed as it stands; how it stands. */
+export const printBook = async (uuid) => (await api.post(`/survey-books/${uuid}/print`)).data;
+
+/** The book's PDF as a Blob, once printed. */
+export const fetchBookPdf = async (uuid) => (await api.get(`/survey-books/${uuid}/pdf`, { responseType: "blob" })).data;
+
 /** The import's notes on a survey have been looked at: the survey, its revision unchanged. */
 export const markImportChecked = async (uuid) => (await api.post(`/surveys/${uuid}/import/checked`)).data;
 
@@ -132,6 +144,8 @@ const WORDS = {
     "The bundle holds more than an import takes (100 MB sent, 400 MB unpacked). Run the importer on part of the book (--pages) and import each part.",
   book_archived: "This book is archived: restore it to import into it.",
   not_imported: "This survey was not imported.",
+  nothing_published: "Nothing in the book is published yet: its PDF holds the published pages.",
+  not_printed: "The book has changed since it was printed: print it again.",
 };
 
 /** The app's words for why a survey call failed (never the server's own text, which is for a developer, but for a 400's). */

@@ -89,6 +89,9 @@ const fakeClient = (overrides = {}) => ({
   removeAsset: jest.fn(),
   importBook: jest.fn(),
   markImportChecked: jest.fn(),
+  bookPrint: jest.fn(async () => ({ state: "empty", pages: 0, done_pages: 0, available: true })),
+  printBook: jest.fn(),
+  fetchBookPdf: jest.fn(),
   ...overrides,
 });
 
@@ -581,6 +584,68 @@ describe("importing the old book", () => {
     expect(within(panel).getByText("Checked by CW3 Admin on 2026-10-27.")).toHaveFocus();   // the button it replaces had it
     expect(within(panel).queryByRole("button", { name: "Mark as checked" })).toBeNull();
     expect(screen.getByText(/Saved · revision 4/)).toBeInTheDocument();          // not a change to the survey: its revision stays
+  });
+});
+
+describe("the book's PDF", () => {
+  const READY = { state: "ready", pages: 2, done_pages: 0, size_bytes: 3355443, printed_at: "2026-10-27T01:00:00Z", available: true };
+
+  it("says it holds the published pages when nothing is published", async () => {
+    await renderBook();
+    const panel = screen.getByRole("region", { name: "The book's PDF" });
+    expect(within(panel).getByText(/nothing is published yet/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button")).toBeNull();
+  });
+
+  it("is printed when asked, said while it prints, and downloaded once printed", async () => {
+    const answers = [{ state: "none", pages: 2, done_pages: 0, available: true }];
+    const client = fakeClient({
+      bookPrint: jest.fn(async () => answers[answers.length - 1]),
+      printBook: jest.fn(async () => ({ state: "printing", pages: 2, done_pages: 0, available: true })),
+      fetchBookPdf: jest.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
+    });
+    await renderBook(client);
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Print the book (2 pages)" }));
+    });
+    expect(client.printBook).toHaveBeenCalledWith("b-1");
+    expect(within(panel).getByText("Printing the book: 2 pages to draw…")).toBeInTheDocument();
+    answers.push(READY);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Refresh the list" }));
+    });
+    expect(within(panel).getByText(/2 pages with its cover and index · 3.2 MB · printed 2026-10-27/)).toBeInTheDocument();
+    const created = jest.fn(() => "blob:book");
+    Object.assign(URL, { createObjectURL: created, revokeObjectURL: jest.fn() });
+    const clicked = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});   // jsdom does not navigate
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Download the book" }));
+    });
+    expect(client.fetchBookPdf).toHaveBeenCalledWith("b-1");
+    expect(created).toHaveBeenCalled();
+    expect(clicked).toHaveBeenCalled();
+  });
+
+  it("says why it could not be printed, and offers to try again", async () => {
+    const client = fakeClient({
+      bookPrint: jest.fn(async () => ({ state: "failed", pages: 2, done_pages: 0, error: "The printer could not print the book. Try again in a moment.", available: true })),
+      printBook: jest.fn(async () => { throw Object.assign(new Error("503"), { response: { status: 503, data: { code: "pdf_unavailable" } } }); }),
+    });
+    await renderBook(client);
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    expect(within(panel).getByText("The printer could not print the book. Try again in a moment.")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Try again" }));
+    });
+    expect(within(panel).getByText(/PDFs are not printed on this server yet/)).toBeInTheDocument();
+  });
+
+  it("says when the server prints no PDFs, and a reader downloads one printed", async () => {
+    await renderBook(fakeClient({ bookPrint: jest.fn(async () => ({ state: "none", pages: 1, done_pages: 0, available: false })) }));
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    expect(within(panel).getByText(/not printed on this server yet/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button")).toBeNull();
   });
 });
 
