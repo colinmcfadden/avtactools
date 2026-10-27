@@ -399,8 +399,9 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
     size = _size(rows, field, snapshot)
     profiles = _profiles(snapshot, measured_heading(snapshot))
     elevation = _elevation_fact(rows, field, snapshot)
-    # A page drawn from a snapshot the survey has moved on from says so: it cannot be sent for review or published like that.
-    stale = [f"{reason} Measure it again." for reason in measure.stale(snapshot, diagram, field)]
+    # A page drawn from a snapshot the survey has moved on from says so: it cannot be sent for review or published like that. A
+    # published page is what was signed and says nothing of it (a revision's snapshot was taken as it was then).
+    stale = [] if status == "published" else [f"{reason} Measure it again." for reason in measure.stale(snapshot, diagram, field)]
     name = _one_line(source.get("name")).upper()
     short_name = re.sub(r"^(LZ|PZ|HLZ)\s+", "", name) or name
 
