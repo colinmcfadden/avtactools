@@ -189,7 +189,7 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(snap['grid'], measure.grid_text(*TARGET))
         self.assertTrue(snap['grid'].startswith('16S GD 6341'))
         self.assertEqual(snap['latLong'], measure.lat_long_text(*TARGET))
-        self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 1))
+        self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 2))
 
     def test_size_area_and_fit(self):
         with Terrain():

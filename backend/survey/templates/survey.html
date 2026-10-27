@@ -129,6 +129,7 @@
           <div class="notes">
             {% for note in m.notes %}{{ loop.index }}. {{ note }} {% endfor %}
             {% for p in m.problems %}<span class="problem">Not measured: {{ p }}</span> {% endfor %}
+            {% for p in m.stale %}<span class="problem">{{ p }}</span> {% endfor %}
             {% if not m.measured %}<span class="problem">Not measured yet: every value is the field survey's.</span>{% endif %}
           </div>
         </div>

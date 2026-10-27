@@ -235,7 +235,11 @@ site admins', never everyone's). A survey belongs to one book and holds the fiel
 doghouses are the best approach and exit) and the last snapshot taken in. Nothing is deleted: a survey is `archived_at`, a photo
 `removed_at` with its bytes kept, because a published revision (L5) may show it. A photo's bytes are in the asset store under
 their SHA-256 (`survey/assets.py`: `LocalAssetStore` under `SURVEY_ASSETS_DIR`, re-encoded by Pillow with **no metadata**, a phone's
-GPS position included), never in the database.
+GPS position included), never in the database. A survey's `revision` is what If-Match names and also SQLAlchemy's version
+counter (`version_id_generator=False`): every write is `WHERE revision = <the one read>`, so a request that measures or prints for
+seconds cannot undo a save made meanwhile (StaleDataError, answered 409); set the next revision yourself (`_stamp`). A snapshot keeps
+the target, boundary and best approach it was measured for, and one the survey has moved on from (`measure.stale`) is measured again
+before review or publishing.
 
 **Mission packs are stored apart from the library** (`docs/MISSION_PACKS.md`). Items
 hold the library's JSON unchanged, but in their own table, so nothing about packs

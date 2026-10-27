@@ -156,12 +156,23 @@ class WhoReadsTests(BookCase):
         for head, status in ((self.member, 403), (self.outsider, 404)):
             with self.subTest(head=head):
                 self.assertEqual(self.client.patch(book_path, headers=self.at(1, head), json={'name': 'X'}).status_code, status)
-                self.assertEqual(self.client.patch(survey_path, headers=self.at(1, head), json={'name': 'X'}).status_code, status)
-                self.assertEqual(self.client.post(f'{survey_path}/measure', headers=head, json={}).status_code, status)
+                # A draft is not told to exist to anyone but its editors, the book's readers included.
+                self.assertEqual(self.client.patch(survey_path, headers=self.at(1, head), json={'name': 'X'}).status_code, 404)
+                self.assertEqual(self.client.post(f'{survey_path}/measure', headers=head, json={}).status_code, 404)
                 made = self.client.post('/api/surveys', headers=head, json={'book': self.book['uuid'], 'name': 'LZ X'})
                 self.assertEqual(made.status_code, status)
-        renamed = self.client.patch(survey_path, headers=self.at(1, self.second), json={'name': 'LZ DONOVAN NORTH'})
+        published = self.publish(self.measured(self.survey))['survey']
+        for head, status in ((self.member, 403), (self.outsider, 404)):
+            with self.subTest(head=head, published=True):
+                # Published, it is the member's to read, and changing it is the editors'.
+                refused = self.client.patch(survey_path, headers=self.at(published['revision'], head), json={'name': 'X'})
+                self.assertEqual(refused.status_code, status)
+                self.assertEqual(self.client.post(f'{survey_path}/measure', headers=head, json={}).status_code, status)
+                self.assertEqual(self.client.delete(f'{survey_path}/assets/1', headers=head).status_code, status)
+        renamed = self.client.patch(survey_path, headers=self.at(published['revision'], self.second), json={'name': 'LZ DONOVAN NORTH'})
         self.assertEqual((renamed.status_code, renamed.get_json()['updated_by']), (200, 'Second'))
+        self.client.post(f'{survey_path}/archive', headers=self.second)
+        self.assertEqual(self.client.patch(survey_path, headers=self.at(1, self.member), json={'name': 'X'}).status_code, 404)
 
     def test_only_a_site_admin_gives_a_book_to_another_team(self):
         path = f'/api/survey-books/{self.book["uuid"]}'

@@ -122,8 +122,10 @@ def split_ppr(text):
 
 
 def _first_number(text):
+    """The first number in a field's text, or None: one too long to be a number anyone typed (it reads as infinity) is none."""
     match = _NUMBER.search((text or "").replace("−", "-"))
-    return float(match.group()) if match else None
+    number = float(match.group()) if match else None
+    return number if number is not None and math.isfinite(number) else None
 
 
 def _feet_words(value):
@@ -288,9 +290,16 @@ def _rise_words(line):
     return f"{'RISES' if line['changeFt'] > 0 else 'FALLS'} {feet}′ THROUGH LZ · {profile.to_fixed(line['averageDeg'], 1)}° AVG"
 
 
-def _profiles(snapshot, approach):
+def measured_heading(snapshot):
+    """The best approach the snapshot was measured at: what its slope numbers and profiles are for, whatever the field says now."""
+    if "approachDeg" in snapshot:
+        return snapshot["approachDeg"] if _finite(snapshot["approachDeg"]) else None
+    heading = _get(snapshot, "slope", "headingDeg")
+    return heading if _finite(heading) else None
+
+
+def _profiles(snapshot, heading):
     profiles = _get(snapshot, "terrain", "profiles")
-    heading = measure.heading_of(approach) if isinstance(approach, str) else None
     found = profile.slope_profile_for(profiles, heading)
     if found is None:
         return None
@@ -388,8 +397,10 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
     day, night = _one_line(field.get("maxAcDay")), _one_line(field.get("maxAcNight"))
     max_ac = " / ".join(t for t in ((f"{day} DAY" if day else ""), (f"{night} NIGHT" if night else "")) if t)
     size = _size(rows, field, snapshot)
-    profiles = _profiles(snapshot, approach)
+    profiles = _profiles(snapshot, measured_heading(snapshot))
     elevation = _elevation_fact(rows, field, snapshot)
+    # A page drawn from a snapshot the survey has moved on from says so: it cannot be sent for review or published like that.
+    stale = [f"{reason} Measure it again." for reason in measure.stale(snapshot, diagram, field)]
     name = _one_line(source.get("name")).upper()
     short_name = re.sub(r"^(LZ|PZ|HLZ)\s+", "", name) or name
 
@@ -417,7 +428,7 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
             "elevation": elevation,
             "surface": _one_line(field.get("surface")).upper() or DASH,
             "slope": _slope_fact(rows, field, snapshot),
-            "slopeHeading": heading_words(approach),
+            "slopeHeading": heading_words(measured_heading(snapshot)),
         },
         "hazards": _hazards(field, snapshot),
         "notes": _notes(field, snapshot),
@@ -445,6 +456,7 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
         "clearance": None,
         "comparisons": [{"key": r["key"], "label": r["label"], "printed": r["printed"]} for r in rows],
         "problems": [p for p in snapshot.get("problems") or [] if isinstance(p, str)],
+        "stale": stale,
         "measured": bool(snapshot),
         "footer": {
             "changes": _one_line(source.get("changes")),

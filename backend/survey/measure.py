@@ -18,6 +18,10 @@ never replaced in silence, and a published revision keeps the snapshot it was si
 - **The slope map, contours and profiles**: /api/terrain-analysis's answer, kept for the editor and the page.
 
 Where something cannot be measured it is None and ``problems`` says why in words: a value is never made up (AGENTS.md §14).
+
+A snapshot keeps what it was measured for (the target, the boundary and the best approach), so ``stale`` can say when the survey has
+moved on since: its numbers would then print beside a plan and an approach they were not measured for, and it is measured again before
+it is sent for review or published.
 """
 
 from __future__ import annotations
@@ -32,7 +36,8 @@ from pygeodesy.ellipsoidalExact import LatLon
 import terrain_provider as tp
 from survey import geometry
 
-SNAPSHOT_VERSION = 1
+# 2: the snapshot keeps the boundary and the best approach it was measured for (``stale``).
+SNAPSHOT_VERSION = 2
 FEET_PER_METRE = tp.FEET_PER_METRE
 # The UH-60 limits by the names a survey uses (terrain_provider's are the slope tile's "noseHigh"/"noseLow").
 LIMITS_DEG = {
@@ -100,6 +105,14 @@ def boundary_of(diagram):
 
 
 _LEADING_NUMBER = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)")
+
+
+def _rounded_ring(ring):
+    return [[round(lat, 7) + 0.0, round(lon, 7) + 0.0] for lat, lon in ring] if ring else None
+
+
+def _rounded_heading(heading):
+    return None if heading is None else round(heading, 1) + 0.0
 
 
 def heading_of(text):
@@ -228,6 +241,8 @@ def measure(diagram, field, by_name="", now=None):
         "measuredAt": (now or datetime.utcnow()).replace(microsecond=0).isoformat() + "Z",
         "measuredBy": by_name or "",
         "target": {"lat": round(lat, 7), "lon": round(lon, 7)},
+        "boundary": _rounded_ring(boundary),
+        "approachDeg": _rounded_heading(heading),
         "grid": grid_text(lat, lon),
         "latLong": lat_long_text(lat, lon),
         "elevation": None,
@@ -282,6 +297,31 @@ def measure(diagram, field, by_name="", now=None):
     except RuntimeError:
         problems.append("The slope map and profiles could not be drawn: no terrain covers the LZ.")
     return snapshot
+
+
+def _heading_words(value):
+    return f"{int(round(value)) % 360 or 360:03d}°" if isinstance(value, (int, float)) and math.isfinite(value) else "none"
+
+
+def stale(snapshot, diagram, field):
+    """Why ``snapshot`` no longer describes the survey, in words: empty when it does, or when there is none (not measured is said
+    elsewhere). The target, the boundary and the best approach are each compared with what it was measured for."""
+    if not isinstance(snapshot, dict) or not snapshot:
+        return []
+    if not isinstance(snapshot.get("version"), int) or snapshot["version"] < 2 or "boundary" not in snapshot or "approachDeg" not in snapshot:
+        return ["It was measured by an earlier version of EZ/PZ."]
+    reasons = []
+    target = target_of(diagram)
+    then = snapshot.get("target") if isinstance(snapshot.get("target"), dict) else {}
+    if target is None or (round(target[0], 7), round(target[1], 7)) != (then.get("lat"), then.get("lon")):
+        reasons.append("The target moved after it was measured.")
+    if _rounded_ring(boundary_of(diagram)) != snapshot.get("boundary"):
+        reasons.append("The boundary changed after it was measured.")
+    now = _rounded_heading(heading_of((field or {}).get("approachDeg")))
+    if now != snapshot.get("approachDeg"):
+        reasons.append(f"The best approach changed after it was measured: measured at {_heading_words(snapshot.get('approachDeg'))}, "
+                       f"now {_heading_words(now)}.")
+    return reasons
 
 
 def _pick(snapshot, *path):

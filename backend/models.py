@@ -619,6 +619,11 @@ class LzSurvey(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     archived_at = db.Column(db.DateTime, nullable=True)
 
+    # Every write says which revision it was made from (``WHERE revision = …``), and refuses (StaleDataError) when another write got
+    # there first: If-Match, checked when a request begins, does not cover a request that takes seconds to measure or publish. The
+    # routes set the next revision themselves (``version_id_generator`` False), so a change to its status alone can leave it as it is.
+    __mapper_args__ = {'version_id_col': revision, 'version_id_generator': False}
+
 
 class LzSurveyRevision(db.Model):
     """A published revision, never changed: the survey as it was signed off, and its page (written by publishing, step L5)."""

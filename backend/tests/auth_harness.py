@@ -30,13 +30,15 @@ IOS = {'X-EZPZ-Client': 'ios/2.0.0 (9)'}
 
 class NativeAuthCase(unittest.TestCase):
     extra_blueprints = ()
+    # In memory unless a test needs two connections at once (two requests in two threads): then a file, which both see.
+    database_uri = 'sqlite://'
 
     def setUp(self):
         clear_rate_limits()
         self.app = Flask(__name__)
         self.app.config.update(
             TESTING=True,
-            SQLALCHEMY_DATABASE_URI='sqlite://',
+            SQLALCHEMY_DATABASE_URI=self.database_uri,
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
             JWT_SECRET_KEY='test-only-secret-that-is-over-32-bytes',
             JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=24),

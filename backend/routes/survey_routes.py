@@ -7,7 +7,9 @@ person may not do is not what holds. A book or survey a person cannot read is "n
 No answer is cached by anything between (``Cache-Control: private``, AGENTS.md §14).
 
 A save names the revision it was made on (``If-Match: "3"``): two people editing one survey or book get a 409 on the older one, with
-the server's copy, and nothing is overwritten. A book and a survey are archived, never deleted; so is a photo taken off a survey.
+the server's copy, and nothing is overwritten. A survey's revision is checked again as it is written (LzSurvey's version counter), so a
+save that lands while another request measures or publishes is not undone by it; a book's writers take its row first. A book and a
+survey are archived, never deleted; so is a photo taken off a survey.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import re
 import uuid as uuid_lib
 from datetime import datetime
@@ -24,6 +27,7 @@ from functools import wraps
 from flask import Blueprint, g, jsonify, make_response, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.exc import StaleDataError
 
 import terrain_tiles
 from brief import gotenberg
@@ -133,6 +137,18 @@ def _precondition(record, serialize):
     return None
 
 
+def _saved(survey_uuid):
+    """Commits a change to a survey: None, or the refusal when another save got there first since this request read it (the revision
+    is checked as it is written, not only when the request began)."""
+    try:
+        db.session.commit()
+    except StaleDataError:
+        db.session.rollback()
+        return _error('Someone saved this since you opened it. Nothing was overwritten.', 409, 'revision_conflict',
+                      server=_full(_survey(survey_uuid)))
+    return None
+
+
 def _clean_text(value, limit, label, required=False):
     if value is None:
         value = ''
@@ -146,8 +162,13 @@ def _clean_text(value, limit, label, required=False):
 
 # -- Books ------------------------------------------------------------------------
 
-def _book_by_uuid(book_uuid):
-    return SurveyBook.query.filter_by(uuid=book_uuid).first() if isinstance(book_uuid, str) and book_uuid else None
+def _book_by_uuid(book_uuid, lock=False):
+    """The book, or None. ``lock``: for a request that changes it, which takes its row until it commits, so two writers of one book
+    (two surveys made at once, a rename and a new page order) go one after the other rather than one undoing the other."""
+    if not isinstance(book_uuid, str) or not book_uuid:
+        return None
+    query = SurveyBook.query.filter_by(uuid=book_uuid)
+    return (query.with_for_update().populate_existing() if lock else query).first()
 
 
 def _team_json(team_id):
@@ -188,12 +209,20 @@ def _book_json(book):
     }
     if editing:
         body.update(page_order=list(book.page_order or []), survey_count=len(surveys), created_by=book.created_by_name)
+    else:
+        # A reader learns nothing of the drafts: the book's revision and its last change move with them. When it last published is theirs.
+        for key in ('revision', 'updated_by', 'updated_at'):
+            body.pop(key)
+        last = (db.session.query(db.func.max(LzSurveyRevision.published_at))
+                .join(LzSurvey, LzSurvey.id == LzSurveyRevision.survey_id)
+                .filter(LzSurvey.book_id == book.id, LzSurvey.archived_at.is_(None)).scalar())
+        body['published_at'] = _iso(last)
     return body
 
 
-def _readable_book(book_uuid):
+def _readable_book(book_uuid, lock=False):
     """The book a person may read or edit, or None (told as not found)."""
-    book = _book_by_uuid(book_uuid)
+    book = _book_by_uuid(book_uuid, lock)
     user = _me()
     if book is None or not (access.can_read(user, book) or access.can_edit(user, book)):
         return None
@@ -270,7 +299,7 @@ def get_book(book_uuid):
 @survey_bp.route('/api/survey-books/<book_uuid>', methods=['PATCH'])
 @signed_in
 def update_book(book_uuid):
-    book = _readable_book(book_uuid)
+    book = _readable_book(book_uuid, lock=True)
     if book is None:
         return _not_found('book')
     if not access.can_edit(_me(), book):
@@ -319,7 +348,7 @@ def update_book(book_uuid):
 @survey_bp.route('/api/survey-books/<book_uuid>/archive', methods=['POST'])
 @signed_in
 def archive_book(book_uuid):
-    book = _readable_book(book_uuid)
+    book = _readable_book(book_uuid, lock=True)
     if book is None:
         return _not_found('book')
     if not access.can_edit(_me(), book):
@@ -335,7 +364,7 @@ def archive_book(book_uuid):
 @survey_bp.route('/api/survey-books/<book_uuid>/restore', methods=['POST'])
 @signed_in
 def restore_book(book_uuid):
-    book = _book_by_uuid(book_uuid)
+    book = _book_by_uuid(book_uuid, lock=True)
     # An archived book is a site admin's alone, until one restores it.
     if book is None or not is_admin(_me()):
         return _not_found('book')
@@ -461,6 +490,7 @@ def _full(survey):
         'overrides': survey.overrides or {},
         'diagram': survey.diagram,
         'snapshot': survey.snapshot,
+        'stale': measure.stale(survey.snapshot, survey.diagram, survey.field),
         'comparisons': compare.compare(survey.field, survey.snapshot, survey.overrides),
         'asset_ids': [a.id for a in asset_rows],
         'assets': [_asset_json(a, survey.uuid) for a in asset_rows],
@@ -470,15 +500,17 @@ def _full(survey):
 
 
 def _editable(survey_uuid):
-    """(survey, book, None) for a survey this person edits, else (None, None, the refusal)."""
+    """(survey, book, None) for a survey this person edits, else (None, None, the refusal): "only editors" to a reader of its published
+    page, "not found" to anyone else, so a draft or an archived survey is not told to exist."""
     survey = _survey(survey_uuid)
     book = _book_of(survey)
     user = _me()
-    if survey is None or book is None or not (access.can_edit(user, book) or access.can_read(user, book)):
-        return None, None, _not_found()
-    if not access.can_edit(user, book):
+    if survey is not None and book is not None and access.can_edit(user, book):
+        return survey, book, None
+    if (survey is not None and book is not None and survey.archived_at is None and access.can_read(user, book)
+            and _latest_number(survey)):
         return None, None, _not_editor()
-    return survey, book, None
+    return None, None, _not_found()
 
 
 def _clean_diagram(value):
@@ -520,7 +552,7 @@ def create_survey():
     data = _body()
     if not data.get('book'):
         return _error('Say which book the survey is for.', 400, 'book_required')
-    book = _readable_book(data.get('book'))
+    book = _readable_book(data.get('book'), lock=True)
     if book is None:
         return _not_found('book')
     if not access.can_edit(_me(), book):
@@ -590,6 +622,9 @@ def update_survey(survey_uuid):
             return _not_found('book')
         if not access.can_edit(_me(), target):
             return _not_editor()
+        # Both books' page orders change: their rows are taken, in one order, so a move each way at once cannot wait on each other.
+        (SurveyBook.query.filter(SurveyBook.id.in_([book.id, target.id])).order_by(SurveyBook.id)
+         .with_for_update().populate_existing().all())
     changed = ((name, hlz_id, field, diagram, overrides) != (survey.name, survey.hlz_id, survey.field, survey.diagram, survey.overrides)
                or target is not book)
     if changed:
@@ -601,7 +636,9 @@ def update_survey(survey_uuid):
             target.revision += 1
             survey.book_id = target.id
         _touch(survey)
-        db.session.commit()
+        refused = _saved(survey_uuid)
+        if refused:
+            return refused
     return _reply(_full(survey))
 
 
@@ -624,7 +661,9 @@ def _set_archived(survey_uuid, archived):
     if (survey.archived_at is not None) != archived:
         survey.archived_at = datetime.utcnow() if archived else None
         _stamp(survey)
-        db.session.commit()
+        refused = _saved(survey_uuid)
+        if refused:
+            return refused
     return _reply(_full(survey))
 
 
@@ -652,7 +691,10 @@ def measure_survey(survey_uuid):
     if apply:
         survey.snapshot = snapshot
         _touch(survey)
-        db.session.commit()
+        # Measuring takes seconds: a save that landed meanwhile wins, and this measurement (of the copy before it) is not kept.
+        refused = _saved(survey_uuid)
+        if refused:
+            return refused
     return _reply({
         'applied': apply,
         'snapshot': snapshot,
@@ -677,10 +719,25 @@ def _status_change(survey_uuid, allowed, to, refusal):
         return _error(refusal, 409, 'invalid_status')
     if to == 'in_review' and not survey.snapshot:
         return _error('Measure the LZ before sending its survey for review.', 409, 'not_measured')
+    if to == 'in_review':
+        refused = _stale_refusal(survey, 'sending it for review')
+        if refused:
+            return refused
     survey.status = to
     _stamp(survey)
-    db.session.commit()
+    refused = _saved(survey_uuid)
+    if refused:
+        return refused
     return _reply(_full(survey))
+
+
+def _stale_refusal(survey, doing):
+    """The refusal for a survey whose snapshot it has moved on from (the target moved, the boundary or best approach changed): its
+    grid, size and slope would print beside a plan and an approach they were not measured for."""
+    reasons = measure.stale(survey.snapshot, survey.diagram, survey.field)
+    if not reasons:
+        return None
+    return _error(f'Measure the LZ again before {doing}. ' + ' '.join(reasons), 409, 'measure_again', reasons=reasons)
 
 
 @survey_bp.route('/api/surveys/<survey_uuid>/submit', methods=['POST'])
@@ -709,10 +766,12 @@ def _clean_signoff(value):
 
 def _opacity(value, default=55):
     try:
-        number = int(round(float(value)))
+        number = float(value)
     except (TypeError, ValueError):
         return default
-    return max(10, min(100, number))
+    if not math.isfinite(number):
+        return default
+    return max(10, min(100, int(round(number))))
 
 
 @survey_bp.route('/api/surveys/<survey_uuid>/publish', methods=['POST'])
@@ -733,6 +792,9 @@ def publish_survey(survey_uuid):
         return _error('Send the survey for review before it is published.', 409, 'invalid_status')
     if not survey.snapshot:
         return _error('Measure the LZ before publishing its survey.', 409, 'not_measured')
+    refused = _stale_refusal(survey, 'publishing it')
+    if refused:
+        return refused
     data = _body()
     previous = _latest(survey)
     try:
@@ -742,15 +804,19 @@ def publish_survey(survey_uuid):
         return _error(str(problem), 400, 'invalid_publish')
     now = datetime.utcnow()
     position = _position(survey, book)
+    asset_rows = _assets(survey)
     revision = LzSurveyRevision(
         survey_id=survey.id, number=(previous.number if previous else 0) + 1,
         field=dict(survey.field or {}), overrides=dict(survey.overrides or {}), diagram=survey.diagram, snapshot=survey.snapshot,
-        asset_ids=[a.id for a in _assets(survey)], signoff=signoff,
+        asset_ids=[a.id for a in asset_rows], signoff=signoff,
         changes=typed or _suggested_changes(survey, previous),
         page={
             'hlzId': survey.hlz_id, 'name': survey.name, 'bookName': book.name, 'unitLine': book.unit_line,
             'pageN': position['n'] if position else None, 'pageOf': position['of'] if position else None,
             'printedOn': now.date().isoformat(), 'version': __version__, 'opacity': _opacity(data.get('opacity')),
+            # The pictures as they were signed: what each is, its caption, heading and date. A photo changed later is the next
+            # revision's; this one's page never moves (its bytes are named by their hash and never change).
+            'assets': _asset_source(asset_rows),
         },
         published_by=_me().id, published_by_name=_who(), published_at=now,
     )
@@ -759,16 +825,20 @@ def publish_survey(survey_uuid):
     _stamp(survey)
     try:
         db.session.commit()
-    except IntegrityError:
-        # Someone published the same survey a moment before: the If-Match should have caught it, the unique number does.
+    except (IntegrityError, StaleDataError):
+        # Someone published or saved the same survey a moment before: its revision, checked as it is written, or the unique number
+        # caught it.
         db.session.rollback()
-        return _error('Someone published this survey a moment ago. Nothing was overwritten.', 409, 'revision_conflict',
+        return _error('Someone changed or published this survey a moment ago. Nothing was overwritten.', 409, 'revision_conflict',
                       server=_full(_survey(survey_uuid)))
     if gotenberg.url():
         try:
             _keep_pdf(survey, revision)
         except (gotenberg.Unavailable, gotenberg.Failed) as problem:
             log.warning('surveys: REV %s of %s will be printed when first asked for: %s', revision.number, survey.uuid, problem)
+        except Exception:  # noqa: BLE001 - it is published: its PDF is printed when first asked for
+            db.session.rollback()
+            log.exception('surveys: REV %s of %s could not be printed now', revision.number, survey.uuid)
     return _reply({'survey': _full(survey), 'revision': _revision_json(revision)}, 201)
 
 
@@ -783,6 +853,13 @@ def _asset_source(rows):
     return [{'id': a.id, 'kind': a.kind, 'caption': a.caption, 'heading_deg': a.heading_deg, 'taken_on': a.taken_on} for a in rows]
 
 
+def _frozen_assets(value):
+    """A revision's pictures as it kept them, or None for a revision published before it kept them."""
+    if not isinstance(value, list):
+        return None
+    return [dict(a) for a in value if isinstance(a, dict) and isinstance(a.get('id'), int) and not isinstance(a.get('id'), bool)]
+
+
 def _current_source(survey):
     return {
         'hlzId': survey.hlz_id, 'name': survey.name, 'status': survey.status, 'nextRevision': (_latest_number(survey) or 0) + 1,
@@ -793,24 +870,33 @@ def _current_source(survey):
 
 def _revision_source(survey, revision):
     page = revision.page or {}
-    ids = [i for i in revision.asset_ids or [] if isinstance(i, int)]
-    rows = LzSurveyAsset.query.filter(LzSurveyAsset.survey_id == survey.id, LzSurveyAsset.id.in_(ids)).all() if ids else []
-    by_id = {a.id: a for a in rows}
+    assets = _frozen_assets(page.get('assets'))
+    if assets is None:
+        ids = [i for i in revision.asset_ids or [] if isinstance(i, int)]
+        rows = LzSurveyAsset.query.filter(LzSurveyAsset.survey_id == survey.id, LzSurveyAsset.id.in_(ids)).all() if ids else []
+        by_id = {a.id: a for a in rows}
+        assets = _asset_source([by_id[i] for i in ids if i in by_id])
     return {
         'hlzId': page.get('hlzId', survey.hlz_id), 'name': page.get('name', survey.name), 'status': 'published',
         'revision': revision.number, 'field': revision.field or {}, 'overrides': revision.overrides or {},
         'diagram': revision.diagram, 'snapshot': revision.snapshot,
-        'assets': _asset_source([by_id[i] for i in ids if i in by_id]),
+        'assets': assets,
         'signoff': revision.signoff, 'changes': revision.changes,
     }
 
 
 def _suggested_changes(survey, previous):
-    current = _current_source(survey)
-    if previous is None:
-        return change_lines.first(current['field'], current['snapshot'], current['overrides'])
-    book = _book_of(survey)
-    return change_lines.later(_revision_source(survey, previous), current, {'name': book.name if book else '', 'unitLine': ''})
+    """The CHANGES line to offer at publishing. A suggestion: one that cannot be worked out (a page that will not compile) is none, and
+    never stops the survey opening."""
+    try:
+        current = _current_source(survey)
+        if previous is None:
+            return change_lines.first(current['field'], current['snapshot'], current['overrides'])
+        book = _book_of(survey)
+        return change_lines.later(_revision_source(survey, previous), current, {'name': book.name if book else '', 'unitLine': ''})
+    except Exception:  # noqa: BLE001
+        log.exception('surveys: no CHANGES line could be suggested for %s', survey.uuid)
+        return ''
 
 
 def _page_model(survey, revision=None, opacity=None):
@@ -865,7 +951,7 @@ def _which_page(survey_uuid):
         return None, None, _not_found()
     raw = request.args.get('rev')
     if raw not in (None, ''):
-        if not raw.isdigit():
+        if not re.fullmatch(r'[0-9]{1,6}', raw):
             return None, None, _error('rev is a revision number.', 400, 'invalid_revision')
         revision = _revision(survey, int(raw))
         if revision is None:
@@ -959,6 +1045,36 @@ def _asset_fields(source, partial):
     return out
 
 
+# How often a photo's change is tried again when an editor's save lands on the survey in between.
+PHOTO_TRIES = 3
+
+
+def _photos_changed(survey):
+    """A photo added, changed or taken off a survey under review or published makes it a draft again, with a new revision: its page is
+    no longer the one signed (or about to be), so a publish made from the copy before is refused. What the editor needs to follow:
+    the survey's status and revision, and the revision it had (``was``), so a copy that held that one takes the new."""
+    was = survey.revision
+    if survey.status in ('in_review', 'published'):
+        survey.status = 'draft'
+        _stamp(survey)
+    return {'status': survey.status, 'revision': survey.revision, 'was': was}
+
+
+def _photo_saved():
+    """Commits a photo's change with its survey's; False when an editor's save landed in between (try again)."""
+    try:
+        db.session.commit()
+        return True
+    except StaleDataError:
+        db.session.rollback()
+        return False
+
+
+def _photo_conflict(survey_uuid):
+    return _error('The survey kept changing while the photo was changed. Try again.', 409, 'revision_conflict',
+                  server=_full(_survey(survey_uuid)))
+
+
 @survey_bp.route('/api/surveys/<survey_uuid>/assets', methods=['POST'])
 @signed_in
 def upload_asset(survey_uuid):
@@ -983,14 +1099,20 @@ def upload_asset(survey_uuid):
     key = prepared.key
     asset_store.store().put(key, prepared.data)
     user = _me()
-    asset = LzSurveyAsset(
-        survey_id=survey.id, kind=meta['kind'], caption=meta['caption'], heading_deg=meta['heading_deg'],
-        taken_on=meta['taken_on'], content_type=prepared.content_type, width=prepared.width, height=prepared.height,
-        size_bytes=len(prepared.data), sha256=key, created_by=user.id, created_by_name=_who(),
-    )
-    db.session.add(asset)
-    db.session.commit()
-    return _reply(_asset_json(asset, survey.uuid), 201)
+    for _try in range(PHOTO_TRIES):
+        survey, _book, refused = _editable(survey_uuid)
+        if refused:
+            return refused
+        asset = LzSurveyAsset(
+            survey_id=survey.id, kind=meta['kind'], caption=meta['caption'], heading_deg=meta['heading_deg'],
+            taken_on=meta['taken_on'], content_type=prepared.content_type, width=prepared.width, height=prepared.height,
+            size_bytes=len(prepared.data), sha256=key, created_by=user.id, created_by_name=_who(),
+        )
+        db.session.add(asset)
+        moved = _photos_changed(survey)
+        if _photo_saved():
+            return _reply({**_asset_json(asset, survey.uuid), 'survey': moved}, 201)
+    return _photo_conflict(survey_uuid)
 
 
 def _asset(survey, asset_id):
@@ -1032,10 +1154,22 @@ def update_asset(survey_uuid, asset_id):
         return _error(str(problem), 400, 'invalid_asset')
     if 'kind' in changes and (changes['kind'] in CAPTURE_KINDS) != (asset.kind in CAPTURE_KINDS):
         return _error('A photo stays a photo and a 3D capture a capture.', 400, 'invalid_asset')
-    for key, value in changes.items():
-        setattr(asset, key, value)
-    db.session.commit()
-    return _reply(_asset_json(asset, survey.uuid))
+    for _try in range(PHOTO_TRIES):
+        survey, _book, refused = _editable(survey_uuid)
+        if refused:
+            return refused
+        asset = _asset(survey, asset_id)
+        if asset is None or asset.removed_at is not None:
+            return _error('There is no such picture.', 404, 'not_found')
+        if all(getattr(asset, key) == value for key, value in changes.items()):
+            return _reply({**_asset_json(asset, survey.uuid), 'survey': {'status': survey.status, 'revision': survey.revision,
+                                                                           'was': survey.revision}})
+        for key, value in changes.items():
+            setattr(asset, key, value)
+        moved = _photos_changed(survey)
+        if _photo_saved():
+            return _reply({**_asset_json(asset, survey.uuid), 'survey': moved})
+    return _photo_conflict(survey_uuid)
 
 
 @survey_bp.route('/api/surveys/<survey_uuid>/assets/<int:asset_id>', methods=['DELETE'])
@@ -1048,7 +1182,15 @@ def remove_asset(survey_uuid, asset_id):
     asset = _asset(survey, asset_id)
     if asset is None:
         return _error('There is no such picture.', 404, 'not_found')
-    if asset.removed_at is None:
+    for _try in range(PHOTO_TRIES):
+        survey, _book, refused = _editable(survey_uuid)
+        if refused:
+            return refused
+        asset = _asset(survey, asset_id)
+        if asset.removed_at is not None:
+            return _reply({'removed': asset.id, 'survey': {'status': survey.status, 'revision': survey.revision, 'was': survey.revision}})
         asset.removed_at = datetime.utcnow()
-        db.session.commit()
-    return _reply({'removed': asset.id})
+        moved = _photos_changed(survey)
+        if _photo_saved():
+            return _reply({'removed': asset.id, 'survey': moved})
+    return _photo_conflict(survey_uuid)

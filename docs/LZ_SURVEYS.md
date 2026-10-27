@@ -333,4 +333,22 @@ What L5 had to decide that the plan did not, each with its reason. The code is `
 - **Readers** see, in each book open to them, the published surveys only, each on its latest revision's page (any revision can be
   chosen), and its PDF. A survey being edited after it was published is a draft its readers never see; the last REV stays theirs.
 - **The admin dashboard's users list ticks people** and gives a feature to all of them, or takes it away (an "off" is never stored for a
-  feature not launched yet).
+  feature not launched yet). `lz_surveys` is never launched to everyone by taking it out of `DEFAULT_OFF`: that would open every book
+  for no team to every account, and let every team's owner and admins edit and sign off its pages.
+
+What L5's independent review found, and what now holds (each with a test, `backend/tests/test_survey_revisions.py`):
+
+- **A snapshot says what it was measured for** (version 2: the target, the boundary and the best approach), and a survey whose target
+  moved, boundary changed or approach turned since is **measured again before it is sent for review or published** (409
+  `measure_again`, with the reasons). Until then its page says so, and its slope line, table and profiles are labelled with the heading
+  they were measured at, never the approach typed since: measured at 090° and turned to 270°, the page once printed "Slope at 270°" over
+  numbers from 090°, hiding an 8° nose-down slope over the 6° limit. A snapshot from L1 is measured again once.
+- **A revision keeps its pictures as they were signed** (`page.assets`: each one's kind, caption, heading and date). A caption changed
+  for the next revision never reaches a reader's REV n.
+- **A photo added, changed or taken off a survey under review or published makes it a draft again**, with a new revision, as any other
+  change does; its answer carries the survey's status and revision, which the editor takes only if it held the revision before.
+- **A survey's revision is checked as it is written** (`LzSurvey`'s version counter), not only when a request begins: a save that lands
+  while another request measures for seconds is not undone by it (the measurement answers 409 with the server's copy). A book's writers
+  take its row first.
+- **A reader is not told that a draft or an archived survey exists** (404, where an editor's route once answered 403), and a reader's
+  book carries no revision or last change, which move with the drafts; it says when the book last published.
