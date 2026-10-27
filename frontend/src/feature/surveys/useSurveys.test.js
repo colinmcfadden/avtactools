@@ -259,6 +259,95 @@ describe("useSurveys", () => {
     expect(result.current.survey.assets).toEqual([]);
   });
 
+  it("takes the draft a photo makes of a published survey, but only on the revision it held", async () => {
+    const published = surveyAt(4, { status: "published" });
+    const client = fakeClient({
+      getSurvey: jest.fn(async () => published),
+      uploadAsset: jest.fn(async () => ({ id: 8, kind: "photo_other", survey: { status: "draft", revision: 5, was: 4 } })),
+      updateAsset: jest.fn(async (uuid, id, meta) => ({ id, kind: "photo_other", ...meta, survey: { status: "draft", revision: 7, was: 6 } })),
+    });
+    const { result } = await opened(client);
+    await act(async () => {
+      await result.current.uploadPhoto(new Blob(["x"]), { kind: "photo_other" });
+    });
+    expect(result.current.survey).toMatchObject({ status: "draft", revision: 5 });
+    expect(result.current.survey.assets).toEqual([{ id: 8, kind: "photo_other" }]);      // the survey's state is not kept as a photo
+    // Someone else's save came between (6): this copy keeps 5, and its next save meets theirs as a conflict.
+    await act(async () => {
+      await result.current.updatePhoto(8, { caption: "South" });
+    });
+    expect(result.current.survey.revision).toBe(5);
+    expect(result.current.survey.assets[0].caption).toBe("South");
+  });
+
+  it("lets go of a survey that answers once another was asked for", async () => {
+    let first;
+    const client = fakeClient({
+      getSurvey: jest.fn((uuid) => (uuid === "s-1" ? new Promise((resolve) => { first = resolve; }) : Promise.resolve(surveyAt(1, { uuid: "s-2", name: "LZ OTHER" })))),
+    });
+    const { result } = renderHook(() => useSurveys({ client }));
+    let slow;
+    await act(async () => {
+      slow = result.current.openSurvey("s-1");
+      await result.current.openSurvey("s-2");
+    });
+    await act(async () => {
+      first(surveyAt(1));
+      await slow;
+    });
+    expect(result.current.survey.uuid).toBe("s-2");
+    expect(result.current.busy).toBeNull();
+  });
+
+  it("is not left opening when the survey being opened is closed", async () => {
+    const client = fakeClient({ getSurvey: jest.fn(() => new Promise(() => {})) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    act(() => {
+      result.current.openSurvey("s-1");
+    });
+    expect(result.current.busy).toBe("opening");
+    await act(async () => {
+      result.current.closeSurvey();
+    });
+    expect(result.current.busy).toBeNull();
+  });
+
+  it("does not put a book's archiving into another book opened meanwhile", async () => {
+    let answer;
+    const other = { ...BOOK, uuid: "b-2", name: "OTHER BOOK" };
+    const client = fakeClient({
+      archiveBook: jest.fn(() => new Promise((resolve) => { answer = resolve; })),
+      getBook: jest.fn(async (uuid) => ({ book: uuid === "b-2" ? other : BOOK, surveys: [] })),
+    });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    let archiving;
+    await act(async () => {
+      archiving = result.current.setBookArchived(true);
+      await result.current.openBook("b-2");
+    });
+    await act(async () => {
+      answer({ ...BOOK, archived: true });
+      await archiving;
+    });
+    expect(result.current.bookUuid).toBe("b-2");
+    expect(result.current.list.book.name).toBe("OTHER BOOK");
+  });
+
+  it("closes the book it archived while it is still the one open", async () => {
+    const client = fakeClient({ archiveBook: jest.fn(async () => ({ ...BOOK, archived: true })) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    await act(async () => {
+      await result.current.setBookArchived(true);
+    });
+    expect(result.current.bookUuid).toBeNull();
+  });
+
   it("names what someone else changed", () => {
     const base = surveyAt(1);
     expect(changedBetween(base, surveyAt(2))).toEqual([]);

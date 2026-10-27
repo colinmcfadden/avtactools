@@ -215,7 +215,6 @@ const SurveyBook = ({ onClose, client, isAdmin = false }) => {
             try {
               await surveys.setBookArchived(true);
               show({ message: `${book.name} archived.` });
-              surveys.closeBook();
             } catch (err) {
               show({ message: err.message, tone: "error" });
             }

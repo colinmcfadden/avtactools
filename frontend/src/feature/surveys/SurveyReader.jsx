@@ -31,6 +31,7 @@ const SurveyReader = ({ surveys }) => {
         )}
       </div>
       <PagePreview
+        key={rev}
         heading={rev === reading.published_revision ? "The page" : `REV ${rev}`}
         title={`${reading.name}, REV ${rev}`}
         load={load}

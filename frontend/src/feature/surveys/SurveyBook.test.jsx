@@ -372,6 +372,38 @@ describe("a reader", () => {
     expect(client.fetchPage).toHaveBeenLastCalledWith("s-1", expect.objectContaining({ rev: 1 }));
     expect(screen.queryByLabelText("Grid")).toBeNull();
   });
+
+  it("never shows a page asked for before another revision was chosen", async () => {
+    const pending = {};
+    const client = readerClient();
+    client.fetchPage = jest.fn((uuid, { rev }) => new Promise((resolve) => { pending[rev] = resolve; }));
+    await renderBook(client);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "LZ DONOVAN" }));
+    });
+    await screen.findByText("Drawing the page…");
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "Page" })[1]);   // REV 1, while REV 2 is still drawing
+    });
+    await act(async () => {
+      pending[1]("<p>REV ONE</p>");
+    });
+    await act(async () => {
+      pending[2]("<p>REV TWO</p>");
+    });
+    const frame = screen.getByTitle("LZ DONOVAN, REV 1");
+    expect(frame.getAttribute("srcdoc")).toBe("<p>REV ONE</p>");
+    expect(screen.queryByTitle("LZ DONOVAN, REV 2")).toBeNull();
+  });
+
+  it("is shown when the book last published, not when its drafts last changed", async () => {
+    const client = readerClient();
+    const { revision: _r, updated_at: _u, updated_by: _b, page_order: _o, survey_count: _c, ...readerBook } = READER_BOOK;
+    client.listBooks = jest.fn(async () => ({ books: [{ ...readerBook, published_at: "2026-10-27T12:00:00Z" }], teams: [], can_make_for_no_team: false }));
+    render(<SurveyBook client={client} onClose={jest.fn()} />);
+    const row = (await screen.findByRole("button", { name: "AASF 1 HLZ SURVEY BOOK" })).closest("tr");
+    expect(within(row).getByText("2026-10-27")).toBeInTheDocument();
+  });
 });
 
 describe("publishing", () => {
@@ -401,6 +433,21 @@ describe("publishing", () => {
     expect(body.signoff.date).toMatch(/^\d{2} [A-Z]{3} \d{4}$/);
     expect(body.opacity).toBe(55);
     expect(await screen.findByText(/Published as REV 1: readers see this page/)).toBeInTheDocument();
+  });
+
+  it("holds a survey measured before it changed back from review and publishing, and says why", async () => {
+    const stale = ["The best approach changed after it was measured: measured at 090°, now 270°."];
+    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ stale })) }));
+    expect(screen.getByRole("button", { name: "Send for review" })).toBeDisabled();
+    expect(screen.getByText(`Measure the LZ again first. ${stale[0]}`)).toBeInTheDocument();
+    expect(screen.getByText(/Measured before the survey changed: measure it again/)).toBeInTheDocument();
+  });
+
+  it("does not publish a survey under review that was measured before it changed", async () => {
+    const stale = ["The target moved after it was measured."];
+    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ status: "in_review", stale })) }));
+    expect(screen.getByRole("button", { name: "Publish…" })).toBeDisabled();
+    expect(screen.getByText(`Measure the LZ again first. ${stale[0]}`)).toBeInTheDocument();
   });
 
   it("does not send an unmeasured draft for review, and says why", async () => {

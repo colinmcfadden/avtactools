@@ -107,6 +107,7 @@ const WORDS = {
   too_large_to_measure: "The boundary is more than 3 km across: too large to be an LZ. Draw it again.",
   not_found: "That is no longer there, or you cannot open it.",
   not_measured: "Measure the LZ first.",
+  measure_again: "Measure the LZ again first: the target, the boundary or the best approach changed after it was measured.",
   invalid_status: "The survey has moved on since you opened it. Reload it.",
   pdf_unavailable: "PDFs are not printed on this server yet: the page preview shows the page.",
   pdf_failed: "The PDF could not be made. Try again in a moment.",

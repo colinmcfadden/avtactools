@@ -103,7 +103,9 @@ export const ReviewPanel = ({ survey, dirty, busy, onSubmit, onBackToDraft, onAs
   const headingId = useId();
   const measured = Boolean(survey.snapshot);
   const archived = Boolean(survey.archived);
-  const why = archived ? "Restore the survey first." : dirty ? null : !measured ? "Measure the LZ first." : null;
+  const stale = survey.stale ?? [];
+  const remeasure = stale.length ? `Measure the LZ again first. ${stale.join(" ")}` : null;
+  const why = archived ? "Restore the survey first." : dirty ? null : !measured ? "Measure the LZ first." : remeasure;
   const published = survey.published_revision;
   return (
     <section className="survey-panel" aria-labelledby={headingId}>
@@ -128,7 +130,8 @@ export const ReviewPanel = ({ survey, dirty, busy, onSubmit, onBackToDraft, onAs
         <>
           <p>Under review: this page, as it stands, is the one to be signed off. A change makes it a draft again.</p>
           <div className="survey-page-bar">
-            <button type="button" className="ui-btn ui-btn--primary ui-btn--34" onClick={onAskPublish} disabled={Boolean(busy) || dirty || archived}>
+            <button type="button" className="ui-btn ui-btn--primary ui-btn--34" onClick={onAskPublish}
+              disabled={Boolean(busy) || dirty || archived || Boolean(remeasure)}>
               <Icon name="check" size={14} />
               Publish…
             </button>
@@ -137,10 +140,14 @@ export const ReviewPanel = ({ survey, dirty, busy, onSubmit, onBackToDraft, onAs
             </button>
           </div>
           {dirty && <p className="survey-muted">Save or undo your changes first: they would make it a draft again.</p>}
+          {!dirty && remeasure && <p className="survey-muted">{remeasure}</p>}
         </>
       )}
       {survey.status === "published" && (
-        <p>Published as REV {published}: readers see this page. Any change makes it a draft again, and REV {published} stays theirs until the next.</p>
+        <p>
+          Published as REV {published}: readers see this page. Any change, a photo's included, makes it a draft again, and REV {published}{" "}
+          stays theirs until the next.
+        </p>
       )}
     </section>
   );

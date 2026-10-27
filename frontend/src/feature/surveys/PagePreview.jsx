@@ -33,14 +33,21 @@ const PagePreview = ({ title, load, loadPdf, fileName, autoLoad = false, stale =
   const box = useRef(null);
   const loadRef = useRef(load);
   loadRef.current = load;
+  // Each drawing is numbered: only the latest one's answer is shown, so a page asked for before another revision was chosen never
+  // shows under that revision's heading.
+  const drawing = useRef(0);
 
   const draw = async () => {
+    const ticket = ++drawing.current;
     setStatus("loading");
     setError(null);
     try {
-      setHtml(await loadRef.current());
+      const page = await loadRef.current();
+      if (ticket !== drawing.current) return;
+      setHtml(page);
       setStatus("ready");
     } catch (err) {
+      if (ticket !== drawing.current) return;
       setError(err?.message || "The page could not be drawn.");
       setStatus("error");
     }

@@ -138,7 +138,7 @@ const SurveyEditor = ({ surveys }) => {
           />
           <Measurements
             snapshot={survey.snapshot}
-            field={survey.field}
+            stale={survey.stale ?? []}
             busy={busy}
             canMeasure={!archived && Boolean(draft.diagram?.target)}
             whyNot={why}

@@ -63,6 +63,12 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
   const surveyRef = useRef(null);
   const draftRef = useRef(null);
   const bookRef = useRef(null);
+  // Each survey asked for is numbered: an answer that comes once another was asked for, or the book or survey was closed, is let go.
+  const opening = useRef(0);
+  const stopOpening = useCallback(() => {
+    opening.current += 1;
+    setBusy((current) => (current === "opening" ? null : current));
+  }, []);
   surveyRef.current = survey;
   draftRef.current = draft;
   bookRef.current = bookUuid;
@@ -120,20 +126,22 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
   }, [refresh, showArchived]);
 
   const openBook = useCallback((uuid) => {
+    stopOpening();
     bookRef.current = uuid;
     setBookUuid(uuid);
     setList({ ...NO_LIST, status: "loading" });
     return refresh(showArchived, uuid);
-  }, [refresh, showArchived]);
+  }, [refresh, showArchived, stopOpening]);
 
   const closeBook = useCallback(() => {
+    stopOpening();
     bookRef.current = null;
     setBookUuid(null);
     setList(NO_LIST);
     take(null);
     setReading(null);
     refreshBooks();
-  }, [refreshBooks, take]);
+  }, [refreshBooks, stopOpening, take]);
 
   /** Makes a book; the new book, or throws why not in words. */
   const createBook = useCallback(async ({ name, unitLine, teamId }) => {
@@ -152,7 +160,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     if (!book) return null;
     try {
       const answer = await client.updateBook(book.uuid, book.revision, patch);
-      setList((current) => ({ ...current, book: answer }));
+      if (bookRef.current === book.uuid) setList((current) => ({ ...current, book: answer }));
       return answer;
     } catch (err) {
       if (err?.response?.status === 409) refresh();
@@ -162,26 +170,32 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
 
   const renameBook = useCallback((name) => updateBook({ name }), [updateBook]);
 
+  /** Archives (and closes) or restores the open book; throws why not in words. An answer that comes once another book is open is not its. */
   const setBookArchived = useCallback(async (archived) => {
     const book = list.book;
     if (!book) return null;
+    let answer;
     try {
-      const answer = archived ? await client.archiveBook(book.uuid) : await client.restoreBook(book.uuid);
-      setList((current) => ({ ...current, book: answer }));
-      return answer;
+      answer = archived ? await client.archiveBook(book.uuid) : await client.restoreBook(book.uuid);
     } catch (err) {
       throw new Error(surveyFailure(err, archived ? "The book could not be archived." : "The book could not be restored."));
     }
-  }, [client, list.book]);
+    if (bookRef.current !== book.uuid) return answer;
+    if (archived) closeBook();
+    else setList((current) => ({ ...current, book: answer }));
+    return answer;
+  }, [client, closeBook, list.book]);
 
   // -- Surveys ------------------------------------------------------------------
 
   /** Opens a survey: in the editor for an editor, on its published page for a reader. Null when it opened, else why not, in words. */
   const openSurvey = useCallback(async (uuid) => {
+    const ticket = ++opening.current;
     setBusy("opening");
     setError(null);
     try {
       const answer = await client.getSurvey(uuid);
+      if (ticket !== opening.current) return null;
       if (answer.field) {
         take(answer);
         setReading(null);
@@ -192,20 +206,21 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
       setPreview(null);
       return null;
     } catch (err) {
-      return surveyFailure(err, "The survey could not be opened.");
+      return ticket === opening.current ? surveyFailure(err, "The survey could not be opened.") : null;
     } finally {
-      setBusy(null);
+      if (ticket === opening.current) setBusy(null);
     }
   }, [client, take]);
 
   const closeSurvey = useCallback(() => {
+    stopOpening();
     take(null);
     setReading(null);
     setConflict(null);
     setPreview(null);
     setError(null);
     refresh();
-  }, [refresh, take]);
+  }, [refresh, stopOpening, take]);
 
   const create = useCallback(async ({ name, hlzId }) => {
     setBusy("creating");
@@ -406,32 +421,41 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     }
   }, [client]);
 
-  // Photos change the survey's list of assets, not its revision: they are kept as they come.
-  const withAssets = useCallback((update) => {
+  /**
+   * Photos change the survey's list of assets as they come. On a survey under review or published a change also makes it a draft
+   * again, with a new revision (`moved`): this copy takes it only if it held the revision the change was made on, else someone else's
+   * save came between, and the next save here meets it as a conflict. Nothing lands on a survey other than the one it was made on.
+   */
+  const withAssets = useCallback((uuid, update, moved) => {
     const current = surveyRef.current;
-    if (!current) return;
+    if (!current || current.uuid !== uuid) return;
     const assets = update(current.assets ?? []);
-    const next = { ...current, assets, asset_ids: assets.map((a) => a.id) };
+    let next = { ...current, assets, asset_ids: assets.map((a) => a.id) };
+    if (moved && moved.was === current.revision && moved.revision !== current.revision) {
+      next = { ...next, status: moved.status, revision: moved.revision };
+    }
     surveyRef.current = next;
     setSurvey(next);
   }, []);
 
   const uploadPhoto = useCallback(async (file, meta) => {
-    const base = surveyRef.current;
-    const asset = await client.uploadAsset(base.uuid, file, meta);
-    withAssets((assets) => [...assets, asset]);
+    const uuid = surveyRef.current.uuid;
+    const { survey: moved, ...asset } = await client.uploadAsset(uuid, file, meta);
+    withAssets(uuid, (assets) => [...assets, asset], moved);
     return asset;
   }, [client, withAssets]);
 
   const updatePhoto = useCallback(async (id, meta) => {
-    const asset = await client.updateAsset(surveyRef.current.uuid, id, meta);
-    withAssets((assets) => assets.map((a) => (a.id === id ? asset : a)));
+    const uuid = surveyRef.current.uuid;
+    const { survey: moved, ...asset } = await client.updateAsset(uuid, id, meta);
+    withAssets(uuid, (assets) => assets.map((a) => (a.id === id ? asset : a)), moved);
     return asset;
   }, [client, withAssets]);
 
   const removePhoto = useCallback(async (id) => {
-    await client.removeAsset(surveyRef.current.uuid, id);
-    withAssets((assets) => assets.filter((a) => a.id !== id));
+    const uuid = surveyRef.current.uuid;
+    const answer = await client.removeAsset(uuid, id);
+    withAssets(uuid, (assets) => assets.filter((a) => a.id !== id), answer?.survey);
   }, [client, withAssets]);
 
   return {

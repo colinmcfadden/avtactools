@@ -145,7 +145,7 @@ const BooksPage = ({ surveys, onOpen, onNew, isAdmin }) => {
                   {book.can_edit && typeof book.survey_count === "number" && <span className="survey-muted"> of {book.survey_count}</span>}
                 </td>
                 <td><span className="ui-chip">{book.archived ? "Archived" : book.can_edit ? "Edit" : "Read"}</span></td>
-                <td>{book.updated_at ? book.updated_at.slice(0, 10) : "—"}</td>
+                <td>{(book.updated_at ?? book.published_at)?.slice(0, 10) ?? "—"}</td>
               </tr>
             ))}
           </tbody>
