@@ -190,7 +190,7 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(snap['grid'], measure.grid_text(*TARGET))
         self.assertTrue(snap['grid'].startswith('16S GD 6341'))
         self.assertEqual(snap['latLong'], measure.lat_long_text(*TARGET))
-        self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 4))
+        self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 5))
 
     def test_the_exit_is_kept_and_a_change_to_it_is_said(self):
         field = {'approachDeg': '360', 'exitDeg': '180'}
@@ -204,6 +204,8 @@ class MeasureTests(unittest.TestCase):
                          ['It was measured by an earlier version of EZ/PZ.'])           # measured before the obstacles were
         self.assertEqual(measure.stale({**snap, 'version': 3}, diagram(boundary=square()), field),
                          ['It was measured by an earlier version of EZ/PZ.'])           # its edge angles could be a return's scatter
+        self.assertEqual(measure.stale({**snap, 'version': 4}, diagram(boundary=square()), field),
+                         ['It was measured by an earlier version of EZ/PZ.'])           # its angles were from the LZ's edge
 
     def test_without_the_lidar_it_says_so_and_it_is_no_problem(self):
         with Terrain(), patch.object(obstacles, 'default_source', return_value=None):
@@ -458,6 +460,63 @@ class CompareTests(unittest.TestCase):
         changed = compare.clean_overrides({'elevation': {'choice': 'field', 'reason': 'GPS, checked'}}, first, DONOVAN['field'], snap,
                                           'Admin B', datetime(2026, 10, 26))
         self.assertEqual(changed['elevation']['by'], 'Admin B')
+
+    def lidar_snapshot(self, angle=8.5):
+        """A snapshot whose LiDAR found the approach's angle set by a 98 ft tree 200 m out (survey/obstacles.py's lane)."""
+        obstacle = {'heightFt': 98.4, 'kind': 'vegetation', 'fromTargetM': 200.0, 'riseFt': 98.4}
+        return self.snapshot(obstacles={'status': 'measured', 'approach': {'start': {'groundFt': 2200.0},
+                                                                            'clearance': {'angleDeg': angle, 'obstacle': obstacle}}})
+
+    def test_an_angle_is_typed_over_the_lidar_s_with_a_reason(self):
+        snap = self.lidar_snapshot()
+        typed = compare.clean_overrides({'approach': {'choice': 'typed', 'value': 12.04, 'reason': 'Tree line cut in 2024'}}, {},
+                                        DONOVAN['field'], snap, 'Admin', datetime(2026, 10, 27))
+        entry = typed['approach']
+        self.assertEqual((entry['value'], entry['by'], entry['field'], entry['computed']),
+                         (12.0, 'Admin', '8.7° (100 ft at 200 m)', '8.5° (LiDAR: 98 ft tree 200 m out)'))
+        row = self.rows(snapshot=snap, overrides=typed)['approach']
+        self.assertEqual((row['printed'], row['open'], row['overrideStands']), ('typed', False, True))
+        # Sent back as it is, it keeps who typed it; another angle is another choice.
+        self.assertEqual(compare.clean_overrides({'approach': {**entry}}, typed, DONOVAN['field'], snap, 'Admin B'), typed)
+        changed = compare.clean_overrides({'approach': {**entry, 'value': 13}}, typed, DONOVAN['field'], snap, 'Admin B')
+        self.assertEqual((changed['approach']['value'], changed['approach']['by']), (13.0, 'Admin B'))
+        for bad in ({'choice': 'typed', 'value': 12, 'reason': ' '}, {'choice': 'typed', 'reason': 'Cut'},
+                    {'choice': 'typed', 'value': 0.04, 'reason': 'Cut'}, {'choice': 'typed', 'value': 90, 'reason': 'Cut'},
+                    {'choice': 'typed', 'value': '12', 'reason': 'Cut'}, {'choice': 'typed', 'value': True, 'reason': 'Cut'},
+                    {'choice': 'typed', 'value': float('nan'), 'reason': 'Cut'}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                compare.clean_overrides({'approach': bad}, {}, DONOVAN['field'], snap, 'Admin')
+        with self.assertRaises(ValueError):                                      # only the approach's angle is typed
+            compare.clean_overrides({'elevation': {'choice': 'typed', 'value': 12, 'reason': 'GPS'}}, {}, DONOVAN['field'], snap, 'Admin')
+        with self.assertRaises(ValueError) as refused:                           # nor where the LiDAR has no angle to type over
+            compare.clean_overrides({'approach': {'choice': 'typed', 'value': 12, 'reason': 'Cut'}}, {}, DONOVAN['field'], self.snapshot(),
+                                    'Admin')
+        self.assertIn('no angle here', str(refused.exception))
+
+    def test_a_typed_angle_that_no_longer_stands_is_looked_at_again(self):
+        typed = compare.clean_overrides({'approach': {'choice': 'typed', 'value': 12, 'reason': 'Tree line cut in 2024'}}, {},
+                                        DONOVAN['field'], self.lidar_snapshot(), 'Admin')
+        # Measured again to 9.0°, within 5° of the field's 8.7°: no disagreement, but the page no longer prints the editor's angle.
+        row = self.rows(snapshot=self.lidar_snapshot(angle=9.0), overrides=typed)['approach']
+        self.assertEqual((row['disagrees'], row['overrideStands'], row['open'], row['printed']), (False, False, True, 'computed'))
+        self.assertEqual(compare.open_count(DONOVAN['field'], self.lidar_snapshot(angle=9.0), typed), 1 + compare.open_count(
+            DONOVAN['field'], self.lidar_snapshot(angle=9.0), {}))
+        # A choice kept on the approach's obstacle (before its angle) is let go when it comes back; one never kept is refused.
+        old = {'obstacle': {'choice': 'field', 'reason': 'Cut', 'by': 'Admin', 'at': '2026-10-01T00:00:00Z', 'field': '', 'computed': ''}}
+        kept = compare.clean_overrides({**old, **typed}, {**old, **typed}, DONOVAN['field'], self.lidar_snapshot(), 'Admin')
+        self.assertEqual(kept, typed)
+        with self.assertRaises(ValueError):
+            compare.clean_overrides(old, {}, DONOVAN['field'], self.lidar_snapshot(), 'Admin')
+
+    def test_a_kept_typed_choice_stands_only_as_an_angle_of_the_approach(self):
+        snap = self.lidar_snapshot()
+        rows = self.rows(snapshot=snap)
+        made = {key: {'choice': 'typed', 'value': value, 'reason': 'Cut', 'field': rows[key]['field'], 'computed': rows[key]['computed']}
+                for key, value in (('approach', 95), ('elevation', 12))}
+        for key in made:
+            with self.subTest(key=key):
+                row = self.rows(snapshot=snap, overrides={key: made[key]})[key]
+                self.assertEqual((row['overrideStands'], row['open'], row['printed']), (False, True, 'computed'))
 
     def test_lat_long_as_people_write_it(self):
         for text in ('N 34 35.579 W084 07.402', 'N34 35.579 W084 07.402', '34°35\'34.74"N 84°07\'24.12"W', '34.592983, -84.123367',

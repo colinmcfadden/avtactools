@@ -438,26 +438,33 @@ def survey_profile(spec, width=300, height=120):
 TREETOPS = "#2e6b30"
 
 
-def clearance(spec, width=380, height=104):
-    """The LiDAR's clearance (step L4) as the page's clearance box draws it: the approach on the left, flown towards the LZ, and the
-    exit on the right, each its ground and the highest thing in each 10 m of its corridor from the LZ's edge out to 1,000 m, the line
-    from the edge that clears the steepest of them, and its words over it (and how much of the corridor the survey covers, where it is
-    not all of it). None where neither way was measured. The box prints it 0.6 in high, about 0.42 pt to a unit: its words are 11 to 15
-    units, 4.6 to 6.3 pt."""
+def clearance(spec, width=512, height=104):
+    """The LiDAR's angles (step L4) as the page's clearance box draws them, from the touchdown point: the approach on the left, flown
+    towards the LZ, and the exit on the right, each its track's ground (thicker over the LZ) and the highest thing in the way in each 10
+    m of its lane out to 1,000 m; the path at the angle printed out to where it is 100 ft above the ground (a dot), then 100 ft above
+    the ground past it (dashed); the thing that sets the LiDAR's angle (a triangle) and what stands higher than 100 ft past the dot (a
+    ring); and its words over it (how much of the lane the survey covers in the corner, where it is not all of it). None where neither
+    way was measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11 to 15 units, 4.4 to
+    6 pt."""
     sides = [s for s in ((spec or {}).get("approach"), (spec or {}).get("exit")) if isinstance(s, dict)]
-    values = [v for s in sides for v in s["groundFt"] + s["topsFt"] + [s.get("edgeFt")] if _num(v)]
+    values = [v for s in sides for v in s["groundFt"] + s["topsFt"] + [s.get("startFt")] if _num(v)]
+    values += [h for s in sides for _m, h in (s.get("path") or []) + (s.get("level") or []) if _num(h)]
     if not values:
         return None
     low, high = min(values), max(values)
     span = max(high - low, 60.0)
     floor = low - span * 0.06
-    top, bottom, pad, gap = 46.0, height - 14.0, 4.0, 30.0
+    # The plot starts below the third line of words, and the marks drawn over its top (a triangle's tip, a ring) clear them.
+    top, bottom, pad, gap = 50.0, height - 14.0, 4.0, 30.0
     half = (width - 2 * pad - gap) / 2.0
 
     def sy(h):
         return bottom - (h - floor) / (span * 1.06) * (bottom - top)
 
-    parts = [f'<rect x="{pad + half:.1f}" y="{bottom - 6:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>',
+    # The LZ between the two ways, on the touchdown point's ground where it is known (both ways start from it).
+    start = next((s["startFt"] for s in sides if _num(s.get("startFt"))), None)
+    lz_y = sy(start) - 3 if start is not None else bottom - 6
+    parts = [f'<rect x="{pad + half:.1f}" y="{lz_y:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>',
              f'<text x="{width / 2:.1f}" y="{height - 2:.1f}" font-size="12" font-weight="800" text-anchor="middle">LZ</text>']
     for spec_side, left in ((spec.get("approach"), True), (spec.get("exit"), False)):
         if not isinstance(spec_side, dict):
@@ -468,43 +475,56 @@ def clearance(spec, width=380, height=104):
         def sx(metres, left=left, length=length):
             return (pad + half - metres / length * half) if left else (pad + half + gap + metres / length * half)
 
-        def line(values, colour, widthpx, step=step, sx=sx):
+        def line(points, colour, widthpx, dashed=False):
             runs, run = [], []
-            for k, v in enumerate(values):
+            for metres, v in points:
                 if _num(v):
-                    run.append(f"{sx((k + 0.5) * step):.1f},{sy(v):.1f}")
+                    run.append(f"{sx(metres):.1f},{sy(v):.1f}")
                 else:
                     if len(run) > 1:
                         runs.append(run)
                     run = []
             if len(run) > 1:
                 runs.append(run)
+            dash = ' stroke-dasharray="4 3"' if dashed else ""
             return "".join(f'<polyline points="{" ".join(r)}" fill="none" stroke="{colour}" stroke-width="{widthpx}" '
-                           f'stroke-linejoin="round"/>' for r in runs)
+                           f'stroke-linejoin="round"{dash}/>' for r in runs)
 
-        # The treetops under the ground's line, so they show only where something stands above it.
-        parts.append(line(spec_side["topsFt"], TREETOPS, 1.1))
-        parts.append(line(spec_side["groundFt"], INK, 1.6))
+        def steps(values, step=step):
+            return [((k + 0.5) * step, v) for k, v in enumerate(values)]
+
+        # The treetops under the ground's line, so they show only where something stands above it; the ground thicker over the LZ.
+        parts.append(line(steps(spec_side["topsFt"]), TREETOPS, 1.1))
+        parts.append(line(steps(spec_side["groundFt"]), INK, 1.6))
+        if _num(spec_side.get("edgeM")) and _num(spec_side.get("startFt")):
+            inside = [(0.0, spec_side["startFt"])] + [(m, v) for m, v in steps(spec_side["groundFt"]) if m < spec_side["edgeM"]]
+            parts.append(line(inside, INK, 3.2))
+        path, level = spec_side.get("path") or [], spec_side.get("level") or []
+        parts.append(line([tuple(p) for p in path], INK, 1.3))
+        parts.append(line([tuple(p) for p in level], INK, 1.1, dashed=True))
+        if level:
+            x, y = sx(level[0][0]), sy(level[0][1])
+            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.4" fill="{INK}"/>')
         obstacle = spec_side.get("obstacle")
-        if obstacle and _num(spec_side.get("edgeFt")) and _num(obstacle.get("riseFt")) and _num(spec_side.get("angleDeg")) \
-                and spec_side["angleDeg"] > 0:
-            # To the obstacle as the angle sees it: its rise over the edge's ground on its own line across the corridor.
-            x0, y0 = sx(0.0), sy(spec_side["edgeFt"])
-            x1, y1 = sx(obstacle["fromEdgeM"]), sy(spec_side["edgeFt"] + obstacle["riseFt"])
-            parts.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="{INK}" stroke-width="1.3" '
-                         f'stroke-dasharray="4 3"/>'
-                         f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
+        if obstacle and _num(spec_side.get("startFt")) and _num(obstacle.get("riseFt")) and _num(obstacle.get("fromTargetM")):
+            # The thing that sets the LiDAR's angle, as the angle sees it: its rise over the touchdown point's ground.
+            x1, y1 = sx(obstacle["fromTargetM"]), sy(spec_side["startFt"] + obstacle["riseFt"])
+            parts.append(f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
+        for tall in spec_side.get("tall") or []:
+            parts.append(f'<circle cx="{sx(tall["fromTargetM"]):.1f}" cy="{sy(tall["topFt"]):.1f}" r="3" fill="#ffffff" stroke="{INK}" '
+                         f'stroke-width="1.2"/>')
         x_words = pad + 2 if left else width - pad - 2
         anchor = "start" if left else "end"
-        parts.append(f'<text x="{x_words:.1f}" y="13" font-size="15" font-weight="800" text-anchor="{anchor}">'
-                     f'{escape(spec_side.get("angle") or spec_side["label"] + " " + (spec_side.get("heading") or ""))}</text>')
-        parts.append(f'<text x="{x_words:.1f}" y="27" font-size="13" text-anchor="{anchor}">'
-                     f'{escape(spec_side.get("what") or "NO LIDAR RETURNS")}</text>')
-        if spec_side.get("partial"):
-            parts.append(f'<text x="{x_words:.1f}" y="40" font-size="11.5" font-weight="800" text-anchor="{anchor}">'
-                         f'{escape(spec_side["partial"])}</text>')
+        lines = ((13, 15, 800, spec_side.get("angle") or spec_side["label"] + " " + (spec_side.get("heading") or "")),
+                 (27, 13, 400, spec_side.get("climb")),
+                 (40, 11.5, 800, spec_side.get("what")))
+        for y, size, weight, words in lines:
+            if words:
+                parts.append(f'<text x="{x_words:.1f}" y="{y}" font-size="{size}" font-weight="{weight}" text-anchor="{anchor}">'
+                             f'{escape(words)}</text>')
         parts.append(f'<text x="{(pad if left else width - pad):.1f}" y="{height - 2:.1f}" font-size="11" '
-                     f'text-anchor="{anchor}">{length / 1000:g} KM</text>')
+                     f'font-weight="{800 if spec_side.get("partial") else 400}" text-anchor="{anchor}">'
+                     f'{escape(spec_side.get("partial") or f"{length / 1000:g} KM")}</text>')
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="clearance">{"".join(parts)}</svg>'
 
 
